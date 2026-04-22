@@ -12,7 +12,11 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 import httpx
 from jvspatial.core.annotations import attribute
 
-from jvagent.action.model.language.base import LanguageModelAction, ModelActionResult
+from jvagent.action.model.language.base import (
+    LanguageModelAction,
+    ModelActionResult,
+    ReasoningModelConfig,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +31,19 @@ class AnthropicLanguageModelAction(LanguageModelAction):
     provider: str = attribute(default="anthropic", description="Provider name")
     anthropic_version: str = attribute(
         default="2023-06-01", description="Anthropic API version header value"
+    )
+    thinking_budget_tokens: int = attribute(
+        default=0,
+        description="Default Anthropic thinking budget_tokens for loop requests.",
+    )
+    effort_budget_map: Dict[str, int] = attribute(
+        default_factory=lambda: {
+            "minimal": 1024,
+            "low": 2048,
+            "medium": 6000,
+            "high": 12000,
+        },
+        description="Fallback mapping from reasoning_effort to Anthropic thinking budget.",
     )
 
     async def on_register(self) -> None:
@@ -98,6 +115,39 @@ class AnthropicLanguageModelAction(LanguageModelAction):
             )
 
         return normalized
+
+    def translate_reasoning_config(self, cfg: ReasoningModelConfig) -> Dict[str, Any]:
+        if cfg.profile == "final":
+            return {}
+
+        budget = int(cfg.reasoning_budget_tokens or 0)
+        if budget <= 0 and cfg.reasoning_enabled is not False:
+            effort = (cfg.reasoning_effort or "").strip().lower()
+            if effort:
+                budget = int((self.effort_budget_map or {}).get(effort, 0))
+        if (
+            budget <= 0
+            and cfg.reasoning_enabled is None
+            and cfg.reasoning_effort is None
+            and int(self.thinking_budget_tokens or 0) > 0
+        ):
+            budget = int(self.thinking_budget_tokens)
+
+        translated: Dict[str, Any] = {}
+        if budget > 0 and cfg.reasoning_enabled is not False:
+            translated["thinking"] = {"type": "enabled", "budget_tokens": budget}
+            translated["max_tokens"] = max(int(self.max_tokens or 1), budget + 1)
+
+        if cfg.reasoning_extra:
+            translated.update(dict(cfg.reasoning_extra))
+        return translated
+
+    def prepare_messages_for_reasoning(
+        self, messages: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        from jvagent.action.skill.loop_context import LoopContext
+
+        return LoopContext.convert_for_provider(messages, "anthropic")
 
     def _extract_system_and_messages(
         self, messages: List[Dict[str, Any]]
@@ -408,11 +458,9 @@ class AnthropicLanguageModelAction(LanguageModelAction):
             )
         except httpx.HTTPStatusError:
             raise
-        except httpx.TimeoutException as e:
-            logger.error(f"Anthropic API timeout: {e}", exc_info=True)
+        except httpx.TimeoutException:
             raise
-        except httpx.RequestError as e:
-            logger.error(f"Anthropic API request failed: {e}", exc_info=True)
+        except httpx.RequestError:
             raise
         except Exception as e:
             logger.error(f"Anthropic query failed: {e}", exc_info=True)
@@ -425,6 +473,7 @@ class AnthropicLanguageModelAction(LanguageModelAction):
         **kwargs: Any,
     ) -> ModelActionResult:
         """Execute a streaming query to Anthropic."""
+        thinking_queue = kwargs.get("_jv_thinking_queue")
         await self._initialize_http_client()
         payload = self._build_payload(messages, tools=tools, stream=True, **kwargs)
         model_override = kwargs.get("model", self.model)
@@ -437,11 +486,15 @@ class AnthropicLanguageModelAction(LanguageModelAction):
             tool_calls=[],
             thinking_content=None,
             thinking_tokens=None,
+            thinking_queue=thinking_queue,
         )
 
         async def stream_generator() -> AsyncGenerator[str, None]:
             text_chunks: List[str] = []
             thinking_chunks: List[str] = []
+            # index -> partial tool_use assembly (streaming input JSON)
+            tool_use_blocks: Dict[int, Dict[str, Any]] = {}
+            assembled_tool_calls: List[Dict[str, Any]] = []
 
             try:
                 async with self._http_client.stream(  # type: ignore[union-attr]
@@ -472,7 +525,17 @@ class AnthropicLanguageModelAction(LanguageModelAction):
                             continue
 
                         event_type = event.get("type")
-                        if event_type == "content_block_delta":
+                        if event_type == "content_block_start":
+                            cb = event.get("content_block") or {}
+                            idx = event.get("index")
+                            if cb.get("type") == "tool_use" and isinstance(idx, int):
+                                tool_use_blocks[idx] = {
+                                    "id": cb.get("id") or "",
+                                    "name": cb.get("name") or "",
+                                    "input_json": "",
+                                }
+                        elif event_type == "content_block_delta":
+                            idx = event.get("index")
                             delta = event.get("delta", {})
                             delta_type = delta.get("type")
                             if delta_type == "text_delta":
@@ -484,6 +547,34 @@ class AnthropicLanguageModelAction(LanguageModelAction):
                                 chunk = delta.get("thinking", "")
                                 if chunk:
                                     thinking_chunks.append(chunk)
+                                    result.push_thinking_delta(chunk)
+                            elif (
+                                delta_type == "input_json_delta"
+                                and isinstance(idx, int)
+                                and idx in tool_use_blocks
+                            ):
+                                partial = delta.get("partial_json") or ""
+                                tool_use_blocks[idx]["input_json"] += str(partial)
+                        elif event_type == "content_block_stop":
+                            idx = event.get("index")
+                            if isinstance(idx, int) and idx in tool_use_blocks:
+                                block = tool_use_blocks.pop(idx)
+                                raw_json = block.get("input_json") or ""
+                                try:
+                                    input_obj = json.loads(raw_json) if raw_json else {}
+                                except json.JSONDecodeError:
+                                    input_obj = {}
+                                assembled_tool_calls.append(
+                                    {
+                                        "id": block.get("id") or "",
+                                        "type": "function",
+                                        "function": {
+                                            "name": block.get("name") or "",
+                                            "arguments": json.dumps(input_obj),
+                                        },
+                                    }
+                                )
+                                result.tool_calls = list(assembled_tool_calls)
                         elif event_type == "message_delta":
                             delta = event.get("delta", {})
                             stop_reason = delta.get("stop_reason")
@@ -503,7 +594,7 @@ class AnthropicLanguageModelAction(LanguageModelAction):
                                 _, tool_calls, finish_reason = (
                                     self._extract_result_fields(message)
                                 )
-                                if tool_calls:
+                                if tool_calls and not assembled_tool_calls:
                                     result.tool_calls = tool_calls
                                 if finish_reason:
                                     result.finish_reason = finish_reason
@@ -518,11 +609,9 @@ class AnthropicLanguageModelAction(LanguageModelAction):
                             raise RuntimeError(message_text)
             except httpx.HTTPStatusError:
                 raise
-            except httpx.TimeoutException as e:
-                logger.error(f"Anthropic streaming timeout: {e}", exc_info=True)
+            except httpx.TimeoutException:
                 raise
-            except httpx.RequestError as e:
-                logger.error(f"Anthropic streaming request failed: {e}", exc_info=True)
+            except httpx.RequestError:
                 raise
             except Exception as e:
                 logger.error(f"Anthropic streaming failed: {e}", exc_info=True)

@@ -5,10 +5,13 @@ This module provides the core abstractions for model integrations:
 """
 
 import asyncio
+import email.utils
 import logging
+import random
 import time
 from abc import ABC
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
+from typing import Any, Callable, Coroutine, Dict, List, Optional, TypeVar
 
 import httpx
 from jvspatial.core.annotations import attribute
@@ -16,6 +19,8 @@ from jvspatial.core.annotations import attribute
 from jvagent.action.base import Action
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
 class BaseModelAction(Action, ABC):
@@ -46,7 +51,148 @@ class BaseModelAction(Action, ABC):
             "implementations use provider-specific environment variables."
         ),
     )
-    timeout: int = attribute(default=30, description="Request timeout in seconds", ge=1)
+    timeout: int = attribute(
+        default=120, description="Request timeout in seconds", ge=1
+    )
+
+    max_retries: int = attribute(
+        default=2,
+        description="Max extra attempts after the first failure (0 disables retries)",
+        ge=0,
+    )
+    retry_initial_delay: float = attribute(
+        default=1.0,
+        description="Initial backoff delay in seconds before the first retry",
+        ge=0.0,
+    )
+    retry_max_delay: float = attribute(
+        default=20.0,
+        description="Maximum backoff delay in seconds between retries",
+        ge=0.0,
+    )
+    retry_backoff_multiplier: float = attribute(
+        default=2.0,
+        description="Multiplier applied to delay after each retry attempt",
+        ge=1.0,
+    )
+    retry_jitter: bool = attribute(
+        default=True,
+        description="Randomize delay (0.5x–1.5x) to avoid thundering herd",
+    )
+    retry_on_status_codes: List[int] = attribute(
+        default_factory=lambda: [408, 425, 429, 500, 502, 503, 504],
+        description="HTTP status codes that trigger a retry when raised as HTTPStatusError",
+    )
+
+    def _retryable_status_codes(self) -> List[int]:
+        codes = getattr(self, "retry_on_status_codes", None)
+        if isinstance(codes, list) and codes:
+            return [int(c) for c in codes]
+        return [408, 425, 429, 500, 502, 503, 504]
+
+    def _is_retryable_exception(self, exc: BaseException) -> bool:
+        if isinstance(exc, asyncio.CancelledError):
+            return False
+        if isinstance(exc, httpx.TimeoutException):
+            return True
+        if isinstance(exc, httpx.TransportError):
+            return True
+        if isinstance(exc, httpx.HTTPStatusError):
+            return exc.response.status_code in self._retryable_status_codes()
+        return False
+
+    def _parse_retry_after_header(self, response: httpx.Response) -> Optional[float]:
+        value = response.headers.get("Retry-After")
+        if not value:
+            return None
+        value = value.strip()
+        try:
+            return max(0.0, float(value))
+        except ValueError:
+            pass
+        try:
+            dt = email.utils.parsedate_to_datetime(value)
+            if dt is None:
+                return None
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            return max(0.0, (dt - now).total_seconds())
+        except Exception:
+            return None
+
+    def _compute_retry_delay_seconds(
+        self, attempt: int, exception: Optional[BaseException] = None
+    ) -> float:
+        """attempt is 0-based index of the failure (first failure = 0)."""
+        delay: float
+        if isinstance(exception, httpx.HTTPStatusError):
+            code = exception.response.status_code
+            if code in (429, 503):
+                ra = self._parse_retry_after_header(exception.response)
+                if ra is not None:
+                    delay = min(self.retry_max_delay, ra)
+                    if self.retry_jitter:
+                        delay *= random.uniform(0.5, 1.5)
+                    return max(0.0, delay)
+
+        delay = min(
+            self.retry_max_delay,
+            self.retry_initial_delay * (self.retry_backoff_multiplier**attempt),
+        )
+        if self.retry_jitter:
+            delay *= random.uniform(0.5, 1.5)
+        return max(0.0, delay)
+
+    async def _execute_with_retry(
+        self,
+        op_factory: Callable[[], Coroutine[Any, Any, T]],
+        *,
+        op_name: str,
+    ) -> T:
+        """Run an async operation with retries on transient httpx failures.
+
+        ``op_factory`` must return a new coroutine each call (coroutines are single-use).
+        """
+        max_attempts = self.max_retries + 1
+        for attempt in range(max_attempts):
+            try:
+                coro = op_factory()
+                if not asyncio.iscoroutine(coro):
+                    raise TypeError(
+                        f"{op_name}: op_factory must return a coroutine object"
+                    )
+                return await coro
+            except BaseException as exc:
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
+                if not self._is_retryable_exception(exc):
+                    logger.error(
+                        "%s failed (non-retryable): %s",
+                        op_name,
+                        exc,
+                        exc_info=True,
+                    )
+                    raise
+                if attempt >= max_attempts - 1:
+                    logger.error(
+                        "%s failed after %s attempts: %s",
+                        op_name,
+                        max_attempts,
+                        exc,
+                        exc_info=True,
+                    )
+                    raise
+                delay = self._compute_retry_delay_seconds(attempt, exc)
+                logger.warning(
+                    "%s attempt %s/%s failed: %s; retrying in %.2fs",
+                    op_name,
+                    attempt + 1,
+                    max_attempts,
+                    exc,
+                    delay,
+                )
+                await asyncio.sleep(delay)
 
     def api_key_from_context(self, *environment_variable_names: str) -> str:
         """Resolve API key: explicit ``api_key`` attribute, then env vars in order."""

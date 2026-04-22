@@ -105,6 +105,101 @@ class TestModelActionResultThinking:
         assert result.thinking_tokens == 500
 
 
+class TestModelActionResultThinkingStream:
+    """Live thinking delta queue on ModelActionResult."""
+
+    @pytest.mark.asyncio
+    async def test_iter_thinking_yields_deltas_until_close(self):
+        import asyncio
+
+        from jvagent.action.model.language.base import ModelActionResult
+
+        q = asyncio.Queue()
+        r = ModelActionResult(thinking_queue=q)
+        r.push_thinking_delta("a")
+        r.push_thinking_delta("b")
+        r.close_thinking_stream()
+        chunks = [c async for c in r.iter_thinking()]
+        assert chunks == ["a", "b"]
+
+    @pytest.mark.asyncio
+    async def test_close_thinking_stream_idempotent_shared_queue(self):
+        import asyncio
+
+        from jvagent.action.model.language.base import ModelActionResult
+
+        q = asyncio.Queue()
+        r1 = ModelActionResult(thinking_queue=q)
+        r2 = ModelActionResult(thinking_queue=q)
+        r1.push_thinking_delta("z")
+        r1.close_thinking_stream()
+        r2.close_thinking_stream()
+        chunks = [c async for c in r1.iter_thinking()]
+        assert chunks == ["z"]
+
+    def test_drain_thinking_queue_sync_resets_end_flag(self):
+        import asyncio
+
+        from jvagent.action.model.language.base import ModelActionResult
+
+        q = asyncio.Queue()
+        r = ModelActionResult(thinking_queue=q)
+        r.push_thinking_delta("x")
+        r.close_thinking_stream()
+        ModelActionResult.drain_thinking_queue_sync(q)
+        assert getattr(q, "_jv_thinking_end_sent", False) is False
+
+
+class TestOpenAIReasoningHelpers:
+    """Unit tests for OpenAI reasoning normalization (used with streaming)."""
+
+    def test_normalize_reasoning_content_string(self):
+        from jvagent.action.model.language.openai.openai import (
+            OpenAILanguageModelAction,
+        )
+
+        assert OpenAILanguageModelAction._normalize_reasoning_content("abc") == "abc"
+
+    def test_normalize_reasoning_content_list_of_dicts(self):
+        from jvagent.action.model.language.openai.openai import (
+            OpenAILanguageModelAction,
+        )
+
+        raw = [{"text": "one"}, {"content": "two"}]
+        # List fragments are joined with a newline to preserve multi-line
+        # structure (e.g. list items) in the reasoning stream.
+        assert OpenAILanguageModelAction._normalize_reasoning_content(raw) == "one\ntwo"
+
+
+class TestOllamaThinkingPayload:
+    """Ollama ``think`` flag from reasoning kwargs."""
+
+    def test_build_payload_sets_think_when_reasoning_requests(self):
+        from unittest.mock import MagicMock
+
+        from jvagent.action.model.language.ollama.ollama import (
+            OllamaLanguageModelAction,
+        )
+
+        action = MagicMock(spec=OllamaLanguageModelAction)
+        action.model = "llama3.1"
+        action.temperature = 0.3
+        action.top_p = 1.0
+        action.max_tokens = 4096
+        action._to_ollama_messages = lambda messages: [
+            {"role": m["role"], "content": m.get("content", "")} for m in messages
+        ]
+
+        payload = OllamaLanguageModelAction._build_payload(
+            action,
+            [{"role": "user", "content": "hi"}],
+            tools=None,
+            stream=True,
+            reasoning={"think": True},
+        )
+        assert payload.get("think") is True
+
+
 # --- Helpers ---
 
 

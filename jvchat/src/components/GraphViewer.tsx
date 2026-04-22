@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
-import * as d3 from 'd3'
-import { graphviz } from 'd3-graphviz'
+import { select } from 'd3-selection'
+import { zoomIdentity } from 'd3-zoom'
 import type { Core } from 'cytoscape'
 import { apiClient } from '../config/api'
 import { useTheme } from '../context/ThemeContext'
@@ -242,7 +242,15 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
 
   const containerRef = useRef<HTMLDivElement>(null)
   const splitRowRef = useRef<HTMLDivElement>(null)
-  const graphvizRef = useRef<ReturnType<typeof graphviz> | null>(null)
+  const graphvizRef = useRef<{
+    width: (w: number) => { height: (h: number) => { renderDot: (s: string) => void } }
+    renderDot: (s: string) => void
+    zoomBehavior: () => {
+      scaleBy: (s: unknown, k: number) => void
+      transform: (s: unknown, t: { k: number; x: number; y: number }) => void
+    } | null
+    zoomSelection: () => unknown
+  } | null>(null)
   const cyRef = useRef<Core | null>(null)
   const expandModelRef = useRef<GraphExpandModel>(createExpandModel())
   const cyHandlersRef = useRef<{
@@ -411,7 +419,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
     }
 
     const container = containerRef.current
-    d3.select(container).selectAll('*').remove()
+    select(container).selectAll('*').remove()
     destroyCy(cyRef.current)
     cyRef.current = null
 
@@ -472,40 +480,55 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
     applyLayout(true)
   }, [layoutPreset, graphMode, loading, applyLayout])
 
-  const renderGraph = useCallback(
-    (container: HTMLDivElement, dotSource: string, width: number, height: number) => {
+  useEffect(() => {
+    if (graphMode !== 'dot' || !graphData || !containerRef.current || loading) {
+      return
+    }
+
+    const container = containerRef.current
+    destroyCy(cyRef.current)
+    cyRef.current = null
+    select(container).selectAll('*').remove()
+    graphvizRef.current = null
+
+    let cancelled = false
+    void (async () => {
+      let d3Mod: typeof import('d3')
+      let graphviz: typeof import('d3-graphviz')['graphviz']
+      try {
+        ;[d3Mod, { graphviz }] = await Promise.all([
+          import('d3'),
+          import('d3-graphviz'),
+        ])
+      } catch (e) {
+        if (!cancelled) {
+          console.error('Failed to load graph diagram libraries:', e)
+          setError('Failed to load graph diagram')
+        }
+        return
+      }
+      if (cancelled) return
+
+      const width = container.clientWidth || 800
+      const height = container.clientHeight || 600
+      const dotSource = theme === 'dark' ? applyDarkModeDot(graphData) : graphData
+
       const gv = graphviz(container, false)
         .zoom(true)
         .fit(true)
         .width(width)
         .height(height)
         .zoomScaleExtent([0.1, 10])
-        .transition(() => d3.transition('graphviz').duration(0))
+        .transition(() => d3Mod.transition('graphviz').duration(0))
         .onerror((err: unknown) => {
           console.error('Graphviz rendering error:', err)
           setError('Failed to render graph diagram')
         })
 
+      if (cancelled) return
       graphvizRef.current = gv
       gv.renderDot(dotSource)
-    },
-    []
-  )
-
-  useEffect(() => {
-    if (graphMode !== 'dot' || !graphData || !containerRef.current || loading) return
-
-    const container = containerRef.current
-    destroyCy(cyRef.current)
-    cyRef.current = null
-    d3.select(container).selectAll('*').remove()
-
-    const width = container.clientWidth || 800
-    const height = container.clientHeight || 600
-
-    const dotSource = theme === 'dark' ? applyDarkModeDot(graphData) : graphData
-
-    renderGraph(container, dotSource, width, height)
+    })()
 
     let resizeTimeout: ReturnType<typeof setTimeout> | undefined
     const resizeObserver = new ResizeObserver(() => {
@@ -521,12 +544,13 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
     resizeObserver.observe(container)
 
     return () => {
+      cancelled = true
       clearTimeout(resizeTimeout)
       resizeObserver.disconnect()
       graphvizRef.current = null
-      d3.select(container).selectAll('*').remove()
+      select(container).selectAll('*').remove()
     }
-  }, [graphData, loading, theme, renderGraph, graphMode])
+  }, [graphData, loading, theme, graphMode])
 
   const handleZoomIn = () => {
     if (graphMode === 'progressive' && cyRef.current) {
@@ -565,7 +589,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
     const zoomBehavior = gv?.zoomBehavior()
     const zoomSelection = gv?.zoomSelection()
     if (zoomBehavior && zoomSelection) {
-      zoomBehavior.transform(zoomSelection, d3.zoomIdentity)
+      zoomBehavior.transform(zoomSelection, zoomIdentity)
     }
   }
 

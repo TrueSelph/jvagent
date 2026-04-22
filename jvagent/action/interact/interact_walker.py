@@ -102,6 +102,9 @@ class InteractWalker(Walker):
     )
     _agent: Optional["Agent"] = None  # Agent node, set in on_agent for access control
     _task_service: Optional["TaskService"] = None
+    _bootstrap_error: Optional[str] = (
+        None  # outcome code from _bootstrap_interaction when failed
+    )
     background_actions: List["InteractAction"] = (
         []
     )  # Actions deferred for post-interaction execution
@@ -479,8 +482,9 @@ class InteractWalker(Walker):
         """
         self._agent = here
         if not self.interaction:
-            await self._bootstrap_interaction(here)
+            code = await self._bootstrap_interaction(here)
             if not self.interaction:
+                self._bootstrap_error = code
                 return
 
         # Get Actions node

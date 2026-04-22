@@ -203,6 +203,7 @@ class InteractAction(Action, ABC):
         thought_type: Optional[str] = None,
         segment_id: Optional[str] = None,
         relay_to_adapters: bool = False,
+        allow_empty: bool = False,
     ) -> Optional[Any]:
         """Publish a response directly to the response bus via publish.
 
@@ -224,11 +225,12 @@ class InteractAction(Action, ABC):
             segment_id: Optional segment identifier for grouping streamed chunks.
             relay_to_adapters: Whether thought messages should be relayed to channel adapters
                 that opt in. Ignored for user messages.
+            allow_empty: If True, allow empty ``content`` (e.g. stream end marker for thoughts).
 
         Returns:
             ResponseMessage from ResponseBus.publish, or None if not published.
         """
-        if not content:
+        if not content and not allow_empty:
             logger.error("InteractAction.publish: content is required")
             return None
 
@@ -282,6 +284,7 @@ class InteractAction(Action, ABC):
         relay_to_adapters: Optional[bool] = None,
         metadata: Optional[Dict[str, Any]] = None,
         stream: Optional[bool] = None,
+        allow_empty: bool = False,
     ) -> Optional[Any]:
         """Publish a thought-category message with action-level relay defaults."""
         relay_default = bool(getattr(self, "relay_thoughts_to_channels", False))
@@ -298,6 +301,7 @@ class InteractAction(Action, ABC):
             relay_to_adapters=(
                 relay_default if relay_to_adapters is None else relay_to_adapters
             ),
+            allow_empty=allow_empty,
         )
 
     async def respond(

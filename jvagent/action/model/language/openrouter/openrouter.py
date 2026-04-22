@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 
+from jvagent.action.model.language.base import ReasoningModelConfig
 from jvagent.action.model.language.openai.openai import OpenAILanguageModelAction
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,27 @@ class OpenRouterLanguageModelAction(OpenAILanguageModelAction):
 
     def _http_bearer_token(self) -> str:
         return self.api_key_from_context("OPENROUTER_API_KEY", "OPENAI_API_KEY")
+
+    def _detect_reasoning_model(self, model_id: str, **kwargs: Any) -> bool:
+        """OpenRouter uses nested ``reasoning: {effort: ...}``; do not reshape like native OpenAI."""
+        return False
+
+    def translate_reasoning_config(self, cfg: ReasoningModelConfig) -> Dict[str, Any]:
+        if cfg.profile == "final":
+            return {}
+        effort = cfg.reasoning_effort
+        extra = dict(cfg.reasoning_extra or {})
+        enabled = cfg.reasoning_enabled
+        should_emit = bool(effort) or bool(extra) or enabled is True
+        if enabled is False:
+            should_emit = False
+        if not should_emit:
+            return {}
+        reasoning: Dict[str, Any] = {}
+        if effort:
+            reasoning["effort"] = str(effort)
+        reasoning.update(extra)
+        return {"reasoning": reasoning}
 
     async def on_register(self) -> None:
         """Initialize HTTP client and validate configuration."""
@@ -166,7 +188,11 @@ class OpenRouterLanguageModelAction(OpenAILanguageModelAction):
     # Helper Methods
     # ============================================================================
 
-    def _estimate_cost(self, usage: Dict[str, int]) -> None:
+    def _estimate_cost(
+        self,
+        usage: Dict[str, Any],
+        model_name: Optional[str] = None,
+    ) -> None:
         """Estimate cost based on token usage.
 
         OpenRouter provides pricing info in the response, but for estimation
@@ -174,13 +200,15 @@ class OpenRouterLanguageModelAction(OpenAILanguageModelAction):
 
         Args:
             usage: Usage dict with token counts
+            model_name: Model id used for the request (per-call override)
         """
+        mid = model_name or self.model
         # Check if we have pricing for this model
-        pricing = self._model_pricing.get(self.model)
+        pricing = self._model_pricing.get(mid)
 
         if pricing:
             # Use model-specific pricing
-            super()._estimate_cost(usage)
+            super()._estimate_cost(usage, model_name=mid)
         else:
             # Use generic estimation for OpenRouter
             # Approximate: $1 per 1M input tokens, $2 per 1M output tokens

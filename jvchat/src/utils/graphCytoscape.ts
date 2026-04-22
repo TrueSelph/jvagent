@@ -191,6 +191,37 @@ export type DagreLayoutOptions = {
   rankSep?: number
 }
 
+const LAYOUT_FIT_PADDING = 48
+
+/** Fit viewport to all graph elements; safe if empty. */
+function fitAfterLayout(cy: Core): void {
+  try {
+    cy.fit(undefined, LAYOUT_FIT_PADDING)
+  } catch {
+    /* empty or no extent */
+  }
+}
+
+/** Run a layout, then fit the viewport (required so Root/App are not off-screen). */
+function runLayoutWithFit(
+  cy: Core,
+  layoutOptions: Record<string, unknown>,
+  animate: boolean
+): void {
+  const layout = cy.layout({
+    ...layoutOptions,
+    animate,
+    animationDuration: animate ? 280 : 0,
+  } as never)
+  if (animate) {
+    layout.one('layoutstop', () => fitAfterLayout(cy))
+  }
+  layout.run()
+  if (!animate) {
+    fitAfterLayout(cy)
+  }
+}
+
 export function runDagreLayout(
   cy: Core,
   animate = true,
@@ -203,16 +234,18 @@ export function runDagreLayout(
     edgeSep,
     rankSep,
   } = options
-  cy.layout({
-    name: 'dagre',
-    rankDir,
-    spacingFactor,
-    ...(nodeSep != null ? { nodeSep } : {}),
-    ...(edgeSep != null ? { edgeSep } : {}),
-    ...(rankSep != null ? { rankSep } : {}),
-    animate,
-    animationDuration: animate ? 280 : 0,
-  } as never).run()
+  runLayoutWithFit(
+    cy,
+    {
+      name: 'dagre',
+      rankDir,
+      spacingFactor,
+      ...(nodeSep != null ? { nodeSep } : {}),
+      ...(edgeSep != null ? { edgeSep } : {}),
+      ...(rankSep != null ? { rankSep } : {}),
+    },
+    animate
+  )
 }
 
 /** Apply dagre LR/TB or breadthfirst tree from ``n.Root.root`` (or first node if missing). */
@@ -230,15 +263,17 @@ export function runGraphLayout(
       root.nonempty() && root.isNode()
         ? root
         : cy.nodes().first()
-    cy.layout({
-      name: 'breadthfirst',
-      directed: true,
-      roots,
-      spacingFactor: 1.35,
-      avoidOverlap: true,
-      animate,
-      animationDuration: animate ? 280 : 0,
-    } as never).run()
+    runLayoutWithFit(
+      cy,
+      {
+        name: 'breadthfirst',
+        directed: true,
+        roots,
+        spacingFactor: 1.35,
+        avoidOverlap: true,
+      },
+      animate
+    )
     return
   }
 

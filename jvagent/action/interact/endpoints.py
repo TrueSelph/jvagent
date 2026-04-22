@@ -616,7 +616,29 @@ async def interact_endpoint(
                                     "request_id": profile.request_id,
                                 },
                             )
-                    raise RuntimeError("Interaction was not created during traversal")
+                    error_code = getattr(walker, "_bootstrap_error", None)
+                    error_detail = next(
+                        (
+                            item.get("error")
+                            for item in (report or [])
+                            if isinstance(item, dict) and "error" in item
+                        ),
+                        None,
+                    )
+                    logger.error(
+                        "interact_not_created",
+                        extra={
+                            "agent_id": agent_id,
+                            "channel": channel,
+                            "request_id": profile.request_id,
+                            "bootstrap_error": error_code,
+                            "detail": error_detail,
+                        },
+                    )
+                    msg = "Interaction was not created during traversal"
+                    if error_code:
+                        msg = f"{msg} [{error_code}]"
+                    raise RuntimeError(msg)
 
                 # Mark interaction as not streamed
                 interaction.streamed = False
@@ -778,10 +800,35 @@ async def _stream_interaction(
                         )
                     )
                     return
+            error_code = getattr(walker, "_bootstrap_error", None)
+            error_detail = next(
+                (
+                    item.get("error")
+                    for item in (stream_report or [])
+                    if isinstance(item, dict) and "error" in item
+                ),
+                None,
+            )
+            logger.error(
+                "interact_not_created",
+                extra={
+                    "agent_id": walker.agent_id,
+                    "channel": walker.channel,
+                    "request_id": profile.request_id,
+                    "bootstrap_error": error_code,
+                    "detail": error_detail,
+                    "stream": True,
+                },
+            )
+            stream_msg = "Interaction was not created during traversal."
+            if error_code:
+                stream_msg = (
+                    f"Interaction was not created during traversal [{error_code}]."
+                )
             yield format_sse_chunk(
                 _sse_error_event(
                     profile.request_id,
-                    message="Interaction was not created during traversal.",
+                    message=stream_msg,
                 )
             )
             return

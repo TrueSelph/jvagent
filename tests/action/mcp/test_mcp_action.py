@@ -15,20 +15,33 @@ def _tool(name: str):
     return tool
 
 
+def test_strip_trailing_path_keeps_scoped_npm_package():
+    """Regression: do not strip @scope/pkg — npx would treat the only path as cwd/package."""
+    action = MCPAction(servers=[])
+    base = ["-y", "@modelcontextprotocol/server-filesystem"]
+    assert action._strip_trailing_path_arg(base) == base
+    with_dot = list(base) + ["."]
+    assert action._strip_trailing_path_arg(with_dot) == base
+
+
 class TestMCPActionFiltering:
-    def test_filter_tools_all_with_denied_patterns(self):
+    @pytest.mark.asyncio
+    async def test_filter_tools_all_with_denied_patterns(self):
         action = MCPAction(
+            sandbox_mode=False,
             servers=[
                 {
                     "name": "filesystem",
                     "transport": "stdio",
                     "command": "npx",
+                    "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
                     "tools": "-all",
                     "denied_tools": ["delete_*"],
                 }
-            ]
+            ],
         )
-        action._build_server_entries()
+        with patch.object(MCPAction, "get_agent", new=AsyncMock(return_value=None)):
+            await action._build_server_entries()
         entry = action._servers_by_name["filesystem"]
 
         filtered = action._filter_tools(
@@ -36,19 +49,23 @@ class TestMCPActionFiltering:
         )
         assert [t.name for t in filtered] == ["read_file", "list_files"]
 
-    def test_filter_tools_allow_list_and_globs(self):
+    @pytest.mark.asyncio
+    async def test_filter_tools_allow_list_and_globs(self):
         action = MCPAction(
+            sandbox_mode=False,
             servers=[
                 {
                     "name": "filesystem",
                     "transport": "stdio",
                     "command": "npx",
+                    "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
                     "tools": ["read_*", "list_files"],
                     "denied_tools": [],
                 }
-            ]
+            ],
         )
-        action._build_server_entries()
+        with patch.object(MCPAction, "get_agent", new=AsyncMock(return_value=None)):
+            await action._build_server_entries()
         entry = action._servers_by_name["filesystem"]
 
         filtered = action._filter_tools(
@@ -86,9 +103,13 @@ class TestMCPActionFulfill:
             patch.object(
                 MCPAction, "get_model_action", new=AsyncMock(return_value=model_action)
             ),
-            patch.object(MCPAction, "get_client", return_value=client),
+            patch.object(
+                MCPAction,
+                "get_client_for_user",
+                new=AsyncMock(return_value=client),
+            ),
         ):
-            result = await action.fulfill("read README.md")
+            result = await action.fulfill("read README.md", user_id="user-123")
 
         assert result.is_error is False
         assert result.text == "contents"

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
-from typing import Any, ClassVar, Dict, Optional
+from typing import Any, ClassVar, Dict, List, Optional
 
 from jvspatial.core import Edge, Node
 from jvspatial.core.annotations import attribute
+
+logger = logging.getLogger(__name__)
 
 
 class RepairState(Node):
@@ -39,13 +42,27 @@ class RepairState(Node):
 
     @classmethod
     async def current(cls, app: Any) -> Optional["RepairState"]:
-        """Return the current RepairState node connected to app, if present."""
+        """Return the current RepairState node connected to app, if present.
+
+        Prefer :meth:`find_all` when you need to detect and purge duplicates.
+        """
         if app is None:
             return None
         for node in await app.nodes():
             if isinstance(node, cls):
                 return node
         return None
+
+    @classmethod
+    async def find_all(cls, app: Any) -> List["RepairState"]:
+        """Return ALL RepairState nodes connected to app.
+
+        Unlike :meth:`current`, this returns every instance so callers can
+        detect and clean up duplicate nodes left by previous crashed runs.
+        """
+        if app is None:
+            return []
+        return [node for node in await app.nodes() if isinstance(node, cls)]
 
     @classmethod
     async def begin(
@@ -87,9 +104,30 @@ class RepairState(Node):
         await self.save()
 
     async def finish(self) -> None:
-        """Delete state node and its edges when repair is complete/reset."""
+        """Delete state node and its edges when repair is complete/reset.
+
+        After deleting each edge this method also calls
+        ``context.atomic_remove_edge_id`` on the *other* endpoint (typically
+        the App node) so that its stored ``edge_ids`` attribute is kept
+        consistent.  Without this, the sync phase of the next repair run would
+        always detect a stale edge reference on App and report
+        ``node_edge_ids_synced: 1``, causing an apparent never-ending repair
+        loop even on a healthy graph.
+        """
         context = await self.get_context()
         for edge in await self.edges(direction="both"):
-            if isinstance(edge, Edge):
-                await context.delete(edge, cascade=False)
+            if not isinstance(edge, Edge):
+                continue
+            # Determine the other endpoint of this edge (not self)
+            other_id = edge.target if edge.source == self.id else edge.source
+            if other_id:
+                try:
+                    await context.atomic_remove_edge_id(other_id, edge.id)
+                except Exception:
+                    logger.warning(
+                        "repair_state.finish: could not remove edge_id %s from node %s",
+                        edge.id,
+                        other_id,
+                    )
+            await context.delete(edge, cascade=False)
         await self.delete(cascade=False)

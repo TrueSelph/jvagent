@@ -1,10 +1,34 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { Login } from './components/Login'
-import { AgentSelector } from './components/AgentSelector'
-import { ChatInterface } from './components/ChatInterface'
-import { DebugInteractions } from './components/DebugInteractions'
 import { AppLayout } from './components/AppLayout'
 import { getToken } from './utils/storage'
+
+const Login = lazy(async () => {
+  const m = await import('./components/Login')
+  return { default: m.Login }
+})
+const AgentSelector = lazy(async () => {
+  const m = await import('./components/AgentSelector')
+  return { default: m.AgentSelector }
+})
+const ChatInterface = lazy(async () => {
+  const m = await import('./components/ChatInterface')
+  return { default: m.ChatInterface }
+})
+const DebugInteractions = lazy(async () => {
+  const m = await import('./components/DebugInteractions')
+  return { default: m.DebugInteractions }
+})
+
+const routeFallback = (
+  <div
+    className="h-full min-h-0 flex items-center justify-center bg-gray-50 dark:bg-slate-900"
+    role="status"
+    aria-label="Loading"
+  >
+    <div className="animate-spin rounded-full h-10 w-10 border-2 border-indigo-600 border-t-transparent" />
+  </div>
+)
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const token = getToken()
@@ -14,7 +38,8 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <BrowserRouter>
-      <Routes>
+      <Suspense fallback={routeFallback}>
+        <Routes>
         <Route path="/login" element={<Login />} />
         <Route
           path="/agents"
@@ -56,7 +81,8 @@ function App() {
             </div>
           </div>
         } />
-      </Routes>
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   )
 }

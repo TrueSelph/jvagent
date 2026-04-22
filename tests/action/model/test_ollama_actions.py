@@ -208,6 +208,64 @@ async def test_ollama_lm_query_stream_normalizes_tool_calls():
 
 
 @pytest.mark.asyncio
+async def test_ollama_lm_query_stream_accumulates_tool_calls_from_early_chunks():
+    """Tool calls may appear before the final done chunk (e.g. kimi via Ollama Cloud)."""
+    action = OllamaLanguageModelAction()
+    action._http_client = _MockHttpClient(
+        stream_response=_MockStreamResponse(
+            [
+                json.dumps(
+                    {
+                        "message": {
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "call_early",
+                                    "function": {
+                                        "name": "read_skill",
+                                        "arguments": "{}",
+                                    },
+                                }
+                            ],
+                        },
+                        "done": False,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "message": {
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "call_early",
+                                    "function": {
+                                        "name": "read_skill",
+                                        "arguments": '{"skill_name": "answer"}',
+                                    },
+                                }
+                            ],
+                        },
+                        "done": True,
+                        "done_reason": "tool_calls",
+                        "prompt_eval_count": 4,
+                        "eval_count": 5,
+                    }
+                ),
+            ]
+        )
+    )
+
+    result = await action.query_stream("Use skill")
+    async for _ in result.iter_stream():
+        pass
+
+    assert len(result.tool_calls) == 1
+    call = result.tool_calls[0]
+    assert call["function"]["name"] == "read_skill"
+    assert '"skill_name": "answer"' in call["function"]["arguments"]
+
+
+@pytest.mark.asyncio
 async def test_ollama_embedding_parses_vector_and_dimensions():
     action = OllamaEmbeddingModelAction()
     action._http_client = _MockHttpClient(

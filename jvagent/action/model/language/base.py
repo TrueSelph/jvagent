@@ -4,8 +4,10 @@ This module provides the base class for all language model implementations
 and related types for text generation and multimodal interactions.
 """
 
+import asyncio
 import logging
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -25,6 +27,9 @@ if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
 
 logger = logging.getLogger(__name__)
+
+# Sentinel end-of-stream marker for thinking/reasoning delta queues
+_THINKING_END = object()
 
 # Type aliases for multimodal content
 ContentPart = Dict[
@@ -81,6 +86,7 @@ class ModelActionResult:
         calling_action_name: Optional[str] = None,
         thinking_content: Optional[str] = None,
         thinking_tokens: Optional[int] = None,
+        thinking_queue: Optional[asyncio.Queue] = None,
     ):
         """Initialize a model action result.
 
@@ -99,6 +105,8 @@ class ModelActionResult:
             calling_action_name: Name of the action that initiated this model call
             thinking_content: Extended thinking text (Anthropic extended thinking)
             thinking_tokens: Number of tokens used for extended thinking
+            thinking_queue: Optional shared asyncio.Queue for live thinking/reasoning
+                deltas (str chunks); ``_THINKING_END`` ends the stream.
         """
         self.response = response
         self.stream = stream
@@ -114,6 +122,9 @@ class ModelActionResult:
         self.thinking_content = thinking_content
         self.thinking_tokens = thinking_tokens
 
+        self._thinking_queue: Optional[asyncio.Queue] = thinking_queue
+        self._thinking_closed: bool = False
+
         # Build metrics dict with usage and duration
         self.metrics: Dict[str, Any] = {}
         if usage:
@@ -123,6 +134,51 @@ class ModelActionResult:
 
         # Track whether usage was estimated (for streaming)
         self._usage_estimated: bool = False
+
+    def _ensure_thinking_queue(self) -> asyncio.Queue:
+        if self._thinking_queue is None:
+            self._thinking_queue = asyncio.Queue()
+        return self._thinking_queue
+
+    def push_thinking_delta(self, text: str) -> None:
+        """Push one thinking/reasoning text delta (live stream)."""
+        if not text:
+            return
+        q = self._ensure_thinking_queue()
+        if getattr(q, "_jv_thinking_end_sent", False):
+            return
+        q.put_nowait(text)
+
+    def close_thinking_stream(self) -> None:
+        """Signal end of thinking deltas (idempotent per shared queue)."""
+        q = self._ensure_thinking_queue()
+        if getattr(q, "_jv_thinking_end_sent", False):
+            self._thinking_closed = True
+            return
+        setattr(q, "_jv_thinking_end_sent", True)
+        self._thinking_closed = True
+        q.put_nowait(_THINKING_END)
+
+    @staticmethod
+    def drain_thinking_queue_sync(queue: asyncio.Queue) -> None:
+        """Remove pending items from a thinking queue (e.g. before stream retry)."""
+        while True:
+            try:
+                queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+        setattr(queue, "_jv_thinking_end_sent", False)
+
+    async def iter_thinking(self) -> AsyncGenerator[str, None]:
+        """Yield thinking/reasoning deltas until the stream is closed."""
+        if self._thinking_queue is None:
+            return
+        while True:
+            item = await self._thinking_queue.get()
+            if item is _THINKING_END:
+                break
+            if isinstance(item, str):
+                yield item
 
     def update_usage(self, usage: Dict[str, int], estimated: bool = True) -> None:
         """Update usage metrics after stream completion.
@@ -193,6 +249,18 @@ class ModelActionResult:
             "tool_calls": self.tool_calls,
             "is_streaming": self.is_streaming,
         }
+
+
+@dataclass
+class ReasoningModelConfig:
+    """Provider-agnostic reasoning configuration for SkillInteractAction calls."""
+
+    reasoning_effort: Optional[str] = None
+    reasoning_budget_tokens: int = 0
+    reasoning_enabled: Optional[bool] = None
+    reasoning_extra: Optional[Dict[str, Any]] = None
+    mirror_assistant_stream_as_thoughts: Optional[bool] = None
+    profile: str = "reasoning"
 
 
 class LanguageModelAction(BaseModelAction, ABC):
@@ -585,11 +653,94 @@ class LanguageModelAction(BaseModelAction, ABC):
         if start_time is None:
             start_time = time.time()
 
-        # Route to appropriate implementation
+        # Route to appropriate implementation (retries for transient httpx failures)
         if stream:
-            result = await self._query_stream(messages, tools, **kwargs)
+            thinking_queue: asyncio.Queue = asyncio.Queue()
+            stream_kwargs = dict(kwargs)
+            stream_kwargs["_jv_thinking_queue"] = thinking_queue
+
+            result = await self._execute_with_retry(
+                lambda: self._query_stream(messages, tools, **stream_kwargs),
+                op_name="lm_query_stream_init",
+            )
+            result._thinking_queue = thinking_queue
+            initial_stream = result.stream
+
+            async def stream_with_retry() -> AsyncGenerator[str, None]:
+                retries_left = self.max_retries
+                failure_attempt = 0
+                current_stream = initial_stream
+                outer_result = result
+
+                while True:
+                    if not current_stream:
+                        return
+                    got_any_chunk = False
+                    it = current_stream.__aiter__()
+                    try:
+                        try:
+                            chunk = await it.__anext__()
+                        except StopAsyncIteration:
+                            return
+                        got_any_chunk = True
+                        yield chunk
+                        async for chunk in it:
+                            yield chunk
+                        return
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as e:
+                        if not self._is_retryable_exception(e):
+                            logger.error(
+                                "lm_query_stream failed (non-retryable): %s",
+                                e,
+                                exc_info=True,
+                            )
+                            outer_result.close_thinking_stream()
+                            raise
+                        if got_any_chunk:
+                            outer_result.close_thinking_stream()
+                            raise
+                        if retries_left <= 0:
+                            logger.error(
+                                "lm_query_stream failed after %s attempts: %s",
+                                self.max_retries + 1,
+                                e,
+                                exc_info=True,
+                            )
+                            outer_result.close_thinking_stream()
+                            raise
+                        delay = self._compute_retry_delay_seconds(failure_attempt, e)
+                        failure_attempt += 1
+                        retries_left -= 1
+                        logger.warning(
+                            "lm_query_stream attempt failed: %s; retrying in %.2fs",
+                            e,
+                            delay,
+                        )
+                        await asyncio.sleep(delay)
+                        ModelActionResult.drain_thinking_queue_sync(thinking_queue)
+                        new_result = await self._query_stream(
+                            messages, tools, **stream_kwargs
+                        )
+                        outer_result.model = new_result.model
+                        outer_result.provider = new_result.provider
+                        outer_result.finish_reason = new_result.finish_reason
+                        outer_result.tool_calls = new_result.tool_calls or []
+                        outer_result.metrics.update(new_result.metrics)
+                        outer_result.is_streaming = new_result.is_streaming
+                        if hasattr(new_result, "_messages_for_estimation"):
+                            outer_result._messages_for_estimation = (
+                                new_result._messages_for_estimation
+                            )
+                        current_stream = new_result.stream
+
+            result.stream = stream_with_retry()
         else:
-            result = await self._query(messages, tools, **kwargs)
+            result = await self._execute_with_retry(
+                lambda: self._query(messages, tools, **kwargs),
+                op_name="lm_query",
+            )
 
         # Calculate duration
         duration = time.time() - start_time
@@ -653,6 +804,10 @@ class LanguageModelAction(BaseModelAction, ABC):
                             chunks.append(chunk)
                             yield chunk
                     finally:
+                        try:
+                            result.close_thinking_stream()
+                        except Exception:
+                            pass
                         # After stream completes, estimate tokens if the provider
                         # did not already attach usage (e.g. Anthropic message_stop).
                         if chunks:
@@ -801,6 +956,28 @@ class LanguageModelAction(BaseModelAction, ABC):
     # ============================================================================
     # Helper Methods
     # ============================================================================
+
+    def translate_reasoning_config(self, cfg: ReasoningModelConfig) -> Dict[str, Any]:
+        """Translate generic reasoning config into provider-specific query kwargs."""
+        return {}
+
+    def prepare_messages_for_reasoning(
+        self, messages: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Allow providers to reshape reasoning-loop messages before query_messages()."""
+        return messages
+
+    def should_mirror_assistant_stream_as_thoughts(
+        self, cfg: ReasoningModelConfig, **kwargs: Any
+    ) -> bool:
+        """Whether assistant stream text should also be emitted as thought deltas."""
+        if cfg.mirror_assistant_stream_as_thoughts is not None:
+            return bool(cfg.mirror_assistant_stream_as_thoughts)
+        return False
+
+    def supports_native_thinking_stream(self) -> bool:
+        """Whether this provider can emit native reasoning/thinking deltas."""
+        return True
 
     def format_messages(
         self,

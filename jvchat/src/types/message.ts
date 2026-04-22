@@ -14,6 +14,10 @@ export interface Message {
   thoughtType?: 'reasoning' | 'tool_call' | 'tool_result' | 'status'
   /** Segment key grouping thought stream chunks. */
   segmentId?: string
+  /** Loop iteration index when emitted by server. */
+  iteration?: number
+  /** Stable insertion order for deterministic grouping/rendering. */
+  order?: number
 }
 
 export interface StreamingMessage {

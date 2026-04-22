@@ -85,13 +85,110 @@ describe("useStreaming thought handling", () => {
 
     await waitFor(() => {
       expect(result.current.isStreaming).toBe(false);
-      expect(result.current.thoughtMessages).toHaveLength(1);
     });
 
-    expect(result.current.thoughtMessages[0].category).toBe("thought");
-    expect(result.current.thoughtMessages[0].content).toBe("Thinking...");
-    expect(result.current.thoughtMessages[0].streaming).toBe(false);
+    const thought = result.current.messages.find((m) => m.category === "thought");
+    expect(thought?.category).toBe("thought");
+    expect(thought?.content).toBe("Thinking...");
+    expect(thought?.streaming).toBe(false);
     expect(result.current.messages.some((m) => m.role === "user")).toBe(true);
+  });
+
+  it("merges thought adhoc flush into the streaming row instead of duplicating", async () => {
+    mockStreamInteract.mockImplementation(async (_agentId, _request, onChunk) => {
+      onChunk({
+        type: "start",
+        interaction_id: "int-merge",
+        session_id: "sess-merge",
+      });
+      onChunk({
+        type: "message",
+        message: {
+          id: "o.ResponseMessage.abc123",
+          session_id: "sess-merge",
+          interaction_id: "int-merge",
+          message_type: "stream_chunk",
+          content: "Part ",
+          channel: "default",
+          category: "thought",
+          thought_type: "reasoning",
+          segment_id: "seg-1",
+          metadata: {},
+        },
+      });
+      onChunk({
+        type: "message",
+        message: {
+          id: "o.ResponseMessage.abc123",
+          session_id: "sess-merge",
+          interaction_id: "int-merge",
+          message_type: "stream_chunk",
+          content: "two",
+          channel: "default",
+          category: "thought",
+          thought_type: "reasoning",
+          segment_id: "seg-1",
+          metadata: {},
+        },
+      });
+      onChunk({
+        type: "message",
+        message: {
+          id: "o.ResponseMessage.abc123",
+          session_id: "sess-merge",
+          interaction_id: "int-merge",
+          message_type: "adhoc",
+          content: "Part two",
+          channel: "default",
+          category: "thought",
+          thought_type: "reasoning",
+          segment_id: "seg-1",
+          metadata: {},
+        },
+      });
+      onChunk({
+        type: "message",
+        message: {
+          id: "o.ResponseMessage.abc123",
+          session_id: "sess-merge",
+          interaction_id: "int-merge",
+          message_type: "final",
+          content: "",
+          channel: "default",
+          category: "thought",
+          thought_type: "reasoning",
+          metadata: {},
+        },
+      });
+      onChunk({
+        type: "final",
+        interaction: {
+          id: "int-merge",
+          utterance: "hello",
+          actions: [],
+          directives: [],
+          parameters: [],
+          model_log: [],
+          messages: [],
+          streamed: true,
+        },
+      });
+    });
+
+    const { result } = renderHook(() => useStreaming("agent-1", "sess-merge"));
+
+    await act(async () => {
+      await result.current.sendMessage("hello");
+    });
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(false);
+    });
+
+    const thoughts = result.current.messages.filter((m) => m.category === "thought");
+    expect(thoughts).toHaveLength(1);
+    expect(thoughts[0]?.content).toBe("Part two");
+    expect(thoughts[0]?.streaming).toBe(false);
   });
 
   it("does not route category=user messages into thought stream from metadata", async () => {
@@ -139,7 +236,7 @@ describe("useStreaming thought handling", () => {
       expect(result.current.isStreaming).toBe(false);
     });
 
-    expect(result.current.thoughtMessages).toHaveLength(0);
+    expect(result.current.messages.filter((m) => m.category === "thought")).toHaveLength(0);
     expect(
       result.current.messages.some(
         (m) => m.role === "assistant" && m.content === "Visible assistant response",
@@ -147,7 +244,7 @@ describe("useStreaming thought handling", () => {
     ).toBe(true);
   });
 
-  it("keeps thought messages ephemeral when loading saved transcript", async () => {
+  it("persists thought messages inside transcript when loading saved transcript", async () => {
     mockStreamInteract.mockImplementation(async (_agentId, _request, onChunk) => {
       onChunk({
         type: "start",
@@ -189,7 +286,7 @@ describe("useStreaming thought handling", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.thoughtMessages).toHaveLength(1);
+      expect(result.current.messages.filter((m) => m.category === "thought")).toHaveLength(1);
     });
 
     act(() => {
@@ -204,7 +301,7 @@ describe("useStreaming thought handling", () => {
     });
 
     expect(result.current.messages).toHaveLength(1);
-    expect(result.current.thoughtMessages).toHaveLength(0);
+    expect(result.current.messages[0].category).not.toBe("thought");
     expect(mockSaveMessages).toHaveBeenCalled();
   });
 });

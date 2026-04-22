@@ -43,7 +43,6 @@ function isThoughtMessage(msg: ResponseMessageData): boolean {
 
 export function useStreaming(agentId: string, sessionId?: string) {
   const [messages, setMessages] = useState<Message[]>([])
-  const [thoughtMessages, setThoughtMessages] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(sessionId)
@@ -51,6 +50,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
   const interactionIdRef = useRef<string | null>(null)
   const streamSessionIdRef = useRef<string | undefined>(undefined)
   const streamUserMessageRef = useRef<Message | null>(null)
+  const messageOrderRef = useRef<number>(0)
 
   const sessionIdRef = useRef<string | undefined>(sessionId)
   const messagesRef = useRef<Message[]>(messages)
@@ -58,6 +58,11 @@ export function useStreaming(agentId: string, sessionId?: string) {
   // Keep messagesRef in sync with messages
   useEffect(() => {
     messagesRef.current = messages
+    for (const msg of messages) {
+      if (typeof msg.order === 'number' && Number.isFinite(msg.order)) {
+        messageOrderRef.current = Math.max(messageOrderRef.current, msg.order + 1)
+      }
+    }
   }, [messages])
 
   useEffect(() => {
@@ -83,7 +88,6 @@ export function useStreaming(agentId: string, sessionId?: string) {
       // Always clear when session changes (including when setting to undefined for new conversation)
       // This ensures messages from different sessions don't mix
       setMessages([])
-      setThoughtMessages([])
       prevMessagesRef.current = []
 
       // Update state after clearing messages
@@ -187,7 +191,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                 const thoughtType = normalizeThoughtType(msg)
                 if (msg.message_type === 'stream_chunk') {
                   const thoughtMessageId = msg.id || `thought-${Date.now()}`
-                  setThoughtMessages((prev) => {
+                  setMessages((prev) => {
                     const existingIndex = prev.findIndex((m) => m.id === thoughtMessageId)
                     if (existingIndex >= 0) {
                       const existing = prev[existingIndex]
@@ -202,6 +206,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                               thoughtType: thoughtType,
                               segmentId: msg.segment_id,
                               category: 'thought',
+                              iteration: typeof msg.metadata?.iteration === 'number' ? (msg.metadata.iteration as number) : m.iteration,
                             }
                           : m
                       )
@@ -217,6 +222,8 @@ export function useStreaming(agentId: string, sessionId?: string) {
                       category: 'thought',
                       thoughtType: thoughtType,
                       segmentId: msg.segment_id,
+                      iteration: typeof msg.metadata?.iteration === 'number' ? (msg.metadata.iteration as number) : undefined,
+                      order: messageOrderRef.current++,
                     }
                     return [...prev, newThoughtMessage]
                   })
@@ -224,26 +231,78 @@ export function useStreaming(agentId: string, sessionId?: string) {
                 } else if (msg.message_type === 'final') {
                   const thoughtMessageId = msg.id || ''
                   if (!thoughtMessageId) return
-                  setThoughtMessages((prev) =>
+                  setMessages((prev) =>
                     prev.map((m) =>
                       m.id === thoughtMessageId && m.streaming ? { ...m, streaming: false } : m
                     )
                   )
                   return
                 } else if (msg.message_type === 'adhoc') {
-                  const thoughtMessage: Message = {
-                    id: msg.id || `thought-adhoc-${Date.now()}-${Math.random()}`,
-                    role: 'assistant',
-                    interactionId: msg.interaction_id,
-                    content: msg.content || '',
-                    timestamp: msg.timestamp || new Date().toISOString(),
-                    streaming: false,
-                    metadata: mergeResponseMetadata(undefined, msg.metadata),
-                    category: 'thought',
-                    thoughtType: thoughtType,
-                    segmentId: msg.segment_id,
-                  }
-                  setThoughtMessages((prev) => [...prev, thoughtMessage])
+                  const thoughtMessageId = msg.id || `thought-adhoc-${Date.now()}-${Math.random()}`
+                  setMessages((prev) => {
+                    const byId = prev.findIndex(
+                      (m) => m.category === 'thought' && m.id === thoughtMessageId
+                    )
+                    if (byId >= 0) {
+                      return prev.map((m, idx) =>
+                        idx === byId
+                          ? {
+                              ...m,
+                              content: msg.content || '',
+                              streaming: false,
+                              interactionId: m.interactionId || msg.interaction_id,
+                              metadata: mergeResponseMetadata(m.metadata, msg.metadata),
+                              thoughtType: thoughtType ?? m.thoughtType,
+                              segmentId: msg.segment_id ?? m.segmentId,
+                              timestamp: msg.timestamp || m.timestamp,
+                            }
+                          : m
+                      )
+                    }
+                    // Older servers omitted id on thought flush; match the in-flight stream row.
+                    if (
+                      !msg.id &&
+                      msg.interaction_id &&
+                      msg.segment_id
+                    ) {
+                      const bySeg = prev.findIndex(
+                        (m) =>
+                          m.category === 'thought' &&
+                          m.streaming === true &&
+                          m.interactionId === msg.interaction_id &&
+                          m.segmentId === msg.segment_id
+                      )
+                      if (bySeg >= 0) {
+                        return prev.map((m, idx) =>
+                          idx === bySeg
+                            ? {
+                                ...m,
+                                content: msg.content || '',
+                                streaming: false,
+                                metadata: mergeResponseMetadata(m.metadata, msg.metadata),
+                                thoughtType: thoughtType ?? m.thoughtType,
+                                timestamp: msg.timestamp || m.timestamp,
+                              }
+                            : m
+                        )
+                      }
+                    }
+                    const thoughtMessage: Message = {
+                      id: thoughtMessageId,
+                      role: 'assistant',
+                      interactionId: msg.interaction_id,
+                      content: msg.content || '',
+                      timestamp: msg.timestamp || new Date().toISOString(),
+                      streaming: false,
+                      metadata: mergeResponseMetadata(undefined, msg.metadata),
+                      category: 'thought',
+                      thoughtType: thoughtType,
+                      segmentId: msg.segment_id,
+                      iteration: typeof msg.metadata?.iteration === 'number' ? (msg.metadata.iteration as number) : undefined,
+                      order: messageOrderRef.current++,
+                    }
+                    return [...prev, thoughtMessage]
+                  })
                   return
                 }
               }
@@ -686,7 +745,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
   const clearMessages = useCallback(() => {
     isLoadingRef.current = true // Prevent auto-save during clear
     setMessages([])
-    setThoughtMessages([])
+    messageOrderRef.current = 0
     streamingMessageRef.current = ''
     interactionIdRef.current = null
     // Clear previous messages ref to prevent stale saves
@@ -713,10 +772,18 @@ export function useStreaming(agentId: string, sessionId?: string) {
     isLoadingRef.current = true
 
     // Create a deep copy to prevent reference issues and ensure isolation
-    const messagesToLoad = loadedMessages.map(msg => ({ ...msg }))
+    const messagesToLoad = loadedMessages
+      .filter((msg) => msg.category !== 'thought' || Boolean(msg.interactionId))
+      .map((msg, idx) => ({
+        ...msg,
+        order:
+          typeof msg.order === 'number' && Number.isFinite(msg.order)
+            ? msg.order
+            : idx,
+      }))
 
     setMessages(messagesToLoad)
-    setThoughtMessages([])
+    messageOrderRef.current = messagesToLoad.length
     // Update prevMessagesRef to match loaded messages
     prevMessagesRef.current = [...messagesToLoad]
     // Update prevSessionIdRef to match current session (use ref, not state)
@@ -803,7 +870,6 @@ export function useStreaming(agentId: string, sessionId?: string) {
 
   return {
     messages,
-    thoughtMessages,
     sendMessage,
     clearMessages,
     loadMessages,

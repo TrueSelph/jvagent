@@ -46,7 +46,6 @@ export function ChatInterface() {
     useConversations(agentId);
   const {
     messages,
-    thoughtMessages,
     sendMessage,
     clearMessages,
     loadMessages,
@@ -688,16 +687,16 @@ export function ChatInterface() {
           </div>
 
           <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-            {messages.length === 0 && thoughtMessages.length === 0 ? (
+            {messages.length === 0 ? (
               <WelcomeScreen agentName={agent.alias || agent.name || "Agent"} />
             ) : (
               <MessageList
                 messages={messages}
-                thoughtMessages={thoughtMessages}
                 showThinking={
                   isStreaming &&
-                  !messages.some((m) => m.role === "assistant" && m.streaming) &&
-                  !thoughtMessages.some((m) => m.streaming)
+                  !messages.some(
+                    (m) => m.role === "assistant" && m.category !== "thought" && m.streaming,
+                  )
                 }
               />
             )}

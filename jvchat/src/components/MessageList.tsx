@@ -109,72 +109,243 @@ function MessageMediaBlock({ message }: { message: Message }) {
 
 interface MessageListProps {
   messages: Message[];
-  thoughtMessages?: Message[];
   showThinking?: boolean;
   thinkingText?: string;
 }
 
-type DisplayMessage = {
-  message: Message;
-  source: "messages" | "thoughts";
-  index: number;
-};
-
-function formatThoughtType(thoughtType: Message["thoughtType"]): string {
-  if (!thoughtType) return "Thought";
-  return thoughtType
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+interface ThinkingPanelProps {
+  /** Opaque unique key for the panel (turn-scoped). Used for toggle state and callbacks. */
+  panelKey: string;
+  /** interactionId derived from the first thought in the group (for test hooks / styling). */
+  interactionId: string;
+  thoughts: Message[];
+  open: boolean;
+  onToggle: (panelKey: string, next: boolean) => void;
+  variant?: "anchored" | "orphan";
 }
 
-function isToolingThought(message: Message): boolean {
+/** Split thought body on blank lines for paragraph-style spacing in the panel. */
+function thoughtDisplayParagraphs(content: string | undefined): string[] {
+  const raw = content ?? "";
+  if (!raw) {
+    return [""];
+  }
+  return raw.split(/\n{2,}/).map((p) => p.trimEnd());
+}
+
+function ThinkingPanel({
+  panelKey,
+  interactionId,
+  thoughts,
+  open,
+  onToggle,
+  variant = "anchored",
+}: ThinkingPanelProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const isStreaming = thoughts.some((t) => t.streaming);
+  const summaryLabel = isStreaming
+    ? `Thinking · ${thoughts.length}`
+    : `Thoughts · ${thoughts.length} · click to expand`;
+
+  // Keep the thinking stream pinned to the latest text while streaming (and when open).
+  const thoughtsScrollSignature = thoughts
+    .map((t) => `${t.id}:${t.content?.length ?? 0}:${Boolean(t.streaming)}`)
+    .join("|");
+  useEffect(() => {
+    if (!open) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const scrollToBottom = () => {
+      el.scrollTop = el.scrollHeight;
+    };
+    requestAnimationFrame(() => requestAnimationFrame(scrollToBottom));
+  }, [open, thoughtsScrollSignature, isStreaming]);
+
   return (
-    message.category === "thought" &&
-    (message.thoughtType === "tool_call" || message.thoughtType === "tool_result")
+    <div
+      className="flex justify-start animate-fade-in"
+      data-thinking-panel={variant}
+      data-interaction-id={interactionId}
+    >
+      <details
+        open={open}
+        onToggle={(e) => {
+          const next = (e.currentTarget as HTMLDetailsElement).open;
+          if (!panelKey) return;
+          onToggle(panelKey, next);
+        }}
+        className="max-w-[85%] sm:max-w-3xl px-1 py-1"
+      >
+        <summary className="cursor-pointer text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex items-center gap-2 select-none">
+          <span className="italic">{summaryLabel}</span>
+          {isStreaming && (
+            <span className="inline-flex gap-1">
+              <span className="w-1 h-1 rounded-full bg-slate-400 dark:bg-slate-500 animate-bounce [animation-delay:0ms]" />
+              <span className="w-1 h-1 rounded-full bg-slate-400 dark:bg-slate-500 animate-bounce [animation-delay:150ms]" />
+              <span className="w-1 h-1 rounded-full bg-slate-400 dark:bg-slate-500 animate-bounce [animation-delay:300ms]" />
+            </span>
+          )}
+        </summary>
+        <div
+          ref={scrollRef}
+          className="mt-1.5 max-h-[min(18rem,45vh)] min-h-0 overflow-y-auto overscroll-contain rounded-sm py-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+          data-thinking-scroll-region
+        >
+          <div className="space-y-2.5 border-l border-slate-200 pl-2 dark:border-slate-700">
+          {thoughts.map((thought) => {
+            const prefix =
+              thought.thoughtType === "tool_call"
+                ? ">"
+                : thought.thoughtType === "tool_result"
+                  ? "←"
+                  : "·";
+            const paragraphs = thoughtDisplayParagraphs(thought.content);
+            return (
+              <div key={thought.id} className="space-y-2">
+                {paragraphs.map((para, pi) => (
+                  <div
+                    key={`${thought.id}-p-${pi}`}
+                    className="text-xs font-mono leading-[1.65] text-slate-500 dark:text-slate-400 pl-2 whitespace-pre-wrap break-words"
+                  >
+                    {pi === 0 ? (
+                      <>
+                        <span className="select-none opacity-90">{prefix}</span>{" "}
+                        {para}
+                      </>
+                    ) : (
+                      para
+                    )}
+                    {thought.streaming && pi === paragraphs.length - 1 ? (
+                      <span className="inline-block w-0.5 h-3 ml-1 bg-current animate-pulse align-middle" />
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+          </div>
+        </div>
+      </details>
+    </div>
   );
 }
 
 export function MessageList({
   messages,
-  thoughtMessages = [],
   showThinking = false,
   thinkingText = "Thinking...",
 }: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const prevLenRef = useRef<number>(0);
   const [debugMessage, setDebugMessage] = useState<Message | null>(null);
-  const displayMessages = useMemo<DisplayMessage[]>(() => {
-    const combined: DisplayMessage[] = [
-      ...messages.map((message, index) => ({
-        message,
-        source: "messages" as const,
-        index,
-      })),
-      ...thoughtMessages.map((message, index) => ({
-        message,
-        source: "thoughts" as const,
-        index,
-      })),
-    ];
-
-    return combined.sort((a, b) => {
-      const leftTime = Date.parse(a.message.timestamp || "");
-      const rightTime = Date.parse(b.message.timestamp || "");
+  const displayMessages = useMemo<Message[]>(() => {
+    return [...messages].sort((a, b) => {
+      const leftTime = Date.parse(a.timestamp || "");
+      const rightTime = Date.parse(b.timestamp || "");
       const leftValid = Number.isFinite(leftTime);
       const rightValid = Number.isFinite(rightTime);
 
       if (leftValid && rightValid && leftTime !== rightTime) {
         return leftTime - rightTime;
       }
-
-      if (a.source !== b.source) {
-        return a.source === "messages" ? -1 : 1;
+      const leftOrder =
+        typeof a.order === "number" && Number.isFinite(a.order)
+          ? a.order
+          : Number.MAX_SAFE_INTEGER;
+      const rightOrder =
+        typeof b.order === "number" && Number.isFinite(b.order)
+          ? b.order
+          : Number.MAX_SAFE_INTEGER;
+      if (leftOrder !== rightOrder) {
+        return leftOrder - rightOrder;
       }
-
-      return a.index - b.index;
+      return a.id.localeCompare(b.id);
     });
-  }, [messages, thoughtMessages]);
+  }, [messages]);
+  // Turn-scoped thought grouping.
+  //
+  // A "turn" is the sequence of messages after a user message and up to the
+  // next assistant-intended (non-thought, non-user) anchor message. Thoughts
+  // only belong to the turn in which they arrived; they never leak into later
+  // panels when new interactions arrive.
+  interface TurnGroup {
+    key: string;
+    anchorId: string | null;
+    thoughts: Message[];
+  }
+  const turnGroups = useMemo<TurnGroup[]>(() => {
+    const groups: TurnGroup[] = [];
+    let pending: Message[] = [];
+    let lastUserId: string | null = null;
+    let orphanCounter = 0;
+    for (const m of displayMessages) {
+      if (m.category === "thought") {
+        pending.push(m);
+        continue;
+      }
+      if (m.role === "user") {
+        if (pending.length > 0) {
+          groups.push({
+            key: `orphan-${lastUserId ?? `idx-${orphanCounter++}`}`,
+            anchorId: null,
+            thoughts: pending,
+          });
+          pending = [];
+        }
+        lastUserId = m.id;
+        continue;
+      }
+      groups.push({
+        key: `anchor-${m.id}`,
+        anchorId: m.id,
+        thoughts: pending,
+      });
+      pending = [];
+    }
+    if (pending.length > 0) {
+      groups.push({
+        key: `orphan-${lastUserId ?? `tail-${orphanCounter++}`}`,
+        anchorId: null,
+        thoughts: pending,
+      });
+    }
+    return groups;
+  }, [displayMessages]);
+
+  const thoughtsByAnchorId = useMemo(() => {
+    const m = new Map<string, { key: string; thoughts: Message[] }>();
+    for (const g of turnGroups) {
+      if (g.anchorId) m.set(g.anchorId, { key: g.key, thoughts: g.thoughts });
+    }
+    return m;
+  }, [turnGroups]);
+
+  const orphanThoughtGroups = useMemo(
+    () =>
+      turnGroups
+        .filter((g) => !g.anchorId && g.thoughts.length > 0)
+        .map((g) => ({ key: g.key, thoughts: g.thoughts })),
+    [turnGroups],
+  );
+
+  const [openThinking, setOpenThinking] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    const updates: Record<string, boolean> = {};
+    for (const g of turnGroups) {
+      const streaming = g.thoughts.some((m) => m.streaming);
+      if (streaming && openThinking[g.key] !== true) {
+        updates[g.key] = true;
+      } else if (!streaming && !(g.key in openThinking)) {
+        updates[g.key] = false;
+      }
+    }
+    if (Object.keys(updates).length > 0) {
+      setOpenThinking((prev) => ({ ...prev, ...updates }));
+    }
+  }, [turnGroups, openThinking]);
+  const handleThinkingToggle = (panelKey: string, next: boolean) => {
+    setOpenThinking((prev) => ({ ...prev, [panelKey]: next }));
+  };
   const totalVisibleMessages = displayMessages.length;
 
   useEffect(() => {
@@ -182,7 +353,7 @@ export function MessageList({
     const behavior = totalVisibleMessages > prevLenRef.current ? "smooth" : "auto";
     messagesEndRef.current?.scrollIntoView({ behavior });
     prevLenRef.current = totalVisibleMessages;
-  }, [messages, thoughtMessages, totalVisibleMessages]);
+  }, [messages, totalVisibleMessages]);
 
   if (displayMessages.length === 0) {
     return null;
@@ -191,12 +362,35 @@ export function MessageList({
   return (
     <>
       <div className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-4 py-4 sm:py-6 space-y-3 sm:space-y-4">
-        {displayMessages.map(({ message }) => {
-          const isThought = message.category === "thought";
+        {displayMessages.map((message) => {
+          if (message.category === "thought") {
+            return null;
+          }
           const isUser = message.role === "user";
+          const anchoredGroup = !isUser
+            ? thoughtsByAnchorId.get(message.id)
+            : undefined;
+          const interactionThoughts = anchoredGroup?.thoughts ?? [];
+          const panelKey = anchoredGroup?.key ?? "";
           return (
+          <React.Fragment key={message.id}>
+          {interactionThoughts.length > 0 && !isUser && (
+            <ThinkingPanel
+              key={`thinking-${panelKey}`}
+              panelKey={panelKey}
+              interactionId={
+                interactionThoughts[0]?.interactionId || message.interactionId || ""
+              }
+              thoughts={interactionThoughts}
+              open={
+                openThinking[panelKey] ??
+                interactionThoughts.some((t) => t.streaming)
+              }
+              onToggle={handleThinkingToggle}
+              variant="anchored"
+            />
+          )}
           <div
-            key={message.id}
             className={`flex ${
                 isUser ? "justify-end" : "justify-start"
             } animate-fade-in`}
@@ -205,39 +399,14 @@ export function MessageList({
               data-message-category={message.category || "transcript"}
               data-message-role={message.role}
               className={`max-w-[85%] sm:max-w-3xl rounded-2xl px-3 sm:px-4 py-2 sm:py-3 relative shadow-sm ${
-                isThought
-                  ? "bg-amber-50 text-amber-950 border border-amber-200/70 dark:bg-amber-900/20 dark:text-amber-100 dark:border-amber-700/40"
-                  : isUser
+                isUser
                   ? "bg-slate-600 text-white dark:bg-indigo-900/40 dark:text-indigo-200"
                   : "bg-gray-200 text-gray-900 dark:bg-slate-800 dark:text-slate-100 dark:border dark:border-slate-700"
               }`}
             >
-              {isThought && (
-                <div className="flex items-center justify-between mb-1 gap-2">
-                  <span className="text-[11px] sm:text-xs uppercase tracking-wide font-semibold text-amber-700 dark:text-amber-300">
-                    {formatThoughtType(message.thoughtType)}
-                  </span>
-                  <span className="text-[11px] sm:text-xs text-amber-700/80 dark:text-amber-300/80">
-                    internal stream
-                  </span>
-                </div>
-              )}
               <div className="break-words text-sm sm:text-base">
-                {!isThought && <MessageMediaBlock message={message} />}
-                {isThought ? (
-                  <div
-                    className={`whitespace-pre-wrap break-words ${
-                      isToolingThought(message)
-                        ? "font-mono text-xs sm:text-sm"
-                        : "text-sm sm:text-base"
-                    }`}
-                  >
-                    {message.content}
-                    {message.streaming && (
-                      <span className="inline-block w-0.5 sm:w-1 h-3 sm:h-4 ml-0.5 sm:ml-1 bg-current animate-pulse align-middle" />
-                    )}
-                  </div>
-                ) : message.content?.trim() ? (
+                <MessageMediaBlock message={message} />
+                {message.content?.trim() ? (
                   <div className="markdown-content">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
@@ -414,9 +583,7 @@ export function MessageList({
               <div className="flex items-center justify-between mt-1 sm:mt-2 gap-2">
                 <div
                   className={`text-xs ${
-                      isThought
-                        ? "text-amber-800/80 dark:text-amber-300/80"
-                        : isUser
+                    isUser
                       ? "text-slate-300 dark:text-indigo-200"
                       : "text-slate-500 dark:text-slate-400"
                   }`}
@@ -428,7 +595,6 @@ export function MessageList({
                   // 1. Message has debugData, OR
                   // 2. Message is the last assistant message for its interactionId
                   const shouldShowDebug =
-                    !isThought &&
                     (message.debugData ||
                     (message.role === "assistant" &&
                       message.interactionId &&
@@ -469,8 +635,21 @@ export function MessageList({
               </div>
             </div>
           </div>
+          </React.Fragment>
           );
         })}
+
+        {orphanThoughtGroups.map(({ key, thoughts }) => (
+          <ThinkingPanel
+            key={`orphan-thinking-${key}`}
+            panelKey={key}
+            interactionId={thoughts[0]?.interactionId || ""}
+            thoughts={thoughts}
+            open={openThinking[key] ?? thoughts.some((t) => t.streaming)}
+            onToggle={handleThinkingToggle}
+            variant="orphan"
+          />
+        ))}
 
         {showThinking && (
           <div className="flex justify-start animate-fade-in">

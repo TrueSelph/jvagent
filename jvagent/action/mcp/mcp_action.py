@@ -3,6 +3,8 @@
 import fnmatch
 import json
 import logging
+import os
+import sys
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -15,8 +17,53 @@ from jvagent.action.mcp.prompts import (
     build_tool_selection_prompt,
 )
 from jvagent.action.mcp.result import MCPFulfillResult
+from jvagent.action.mcp.sandbox import (
+    absolute_under_files_root,
+    is_local_file_interface,
+    provision_sandbox_dir,
+    resolve_mcp_sandbox_relpath,
+    resolve_sandbox_root,
+    should_use_jvspatial_fs_server,
+)
+from jvagent.core.config import parse_env_bool
 
 logger = logging.getLogger(__name__)
+
+_JVFS_MODULE = "jvagent.action.mcp.jvspatial_fs_server"
+
+
+def _coalesce_bool(
+    server_val: Any, action_val: Optional[bool], env_key: str, default: bool = False
+) -> bool:
+    if server_val is not None:
+        return bool(server_val)
+    if action_val is not None:
+        return bool(action_val)
+    raw = os.getenv(env_key)
+    if raw is not None and str(raw).strip():
+        v = parse_env_bool(raw)
+        if v is not None:
+            return v
+    return default
+
+
+def _coalesce_sandbox_root(action_root: Optional[str], env_key: str) -> str:
+    e = (os.getenv(env_key) or "").strip()
+    if e:
+        return e
+    if action_root and str(action_root).strip():
+        return str(action_root).strip()
+    return ""
+
+
+def _is_filesystem_mcp_server(raw: Dict[str, Any], use_jvfs: bool) -> bool:
+    if use_jvfs:
+        return True
+    args = raw.get("args") or []
+    if not isinstance(args, (list, tuple)):
+        return False
+    s = " ".join(str(x) for x in args)
+    return "server-filesystem" in s or "modelcontextprotocol/server-filesystem" in s
 
 
 @dataclass
@@ -30,6 +77,23 @@ class _ServerEntry:
     tools_selector: Any
     denied_tools: List[str] = field(default_factory=list)
     tool_cache: Optional[List[Any]] = None
+    # Sandbox: optional per-user MCP subprocesses (user_id -> client)
+    user_clients: Dict[str, MCPClientWrapper] = field(default_factory=dict)
+    user_lock: Any = field(default=None)
+    sandbox_mode: bool = False
+    sandbox_user_scoped: bool = False
+    use_jvfs: bool = False
+    files_root: str = ""
+    sandbox_agent_id: str = ""
+    default_sandbox_user: str = "anonymous"
+    npx_base_args: List[str] = field(default_factory=list)
+    connect_timeout: float = 10.0
+    call_timeout: float = 30.0
+    transport: str = "stdio"
+    base_command: str = ""
+    mcp_npx_cmd: str = "npx"
+    base_env: Optional[Dict[str, str]] = None
+    base_url: str = ""
 
 
 def _format_tools_description(tools: List[Tuple[str, Any]]) -> str:
@@ -156,7 +220,8 @@ class MCPAction(Action):
         description=(
             "MCP server entries. Each item supports: "
             "name, enabled, transport, command, args, env, url, "
-            "mcp_connect_timeout, mcp_call_timeout, tools, denied_tools."
+            "mcp_connect_timeout, mcp_call_timeout, tools, denied_tools, "
+            "sandbox_mode, sandbox_user_scoped, sandbox_root."
         ),
     )
     model_action_type: str = attribute(
@@ -172,17 +237,114 @@ class MCPAction(Action):
     mcp_call_timeout: float = attribute(
         default=30.0, description="MCP tool call timeout (s)"
     )
+    sandbox_mode: Optional[bool] = attribute(
+        default=None,
+        description="When set, confine STDIO filesystem MCP to jvspatial file root (per-server can override).",
+    )
+    sandbox_user_scoped: Optional[bool] = attribute(
+        default=None,
+        description="Per-user subprocess sandbox under agents/<ns>/<name>/users/<id> (per-server can override).",
+    )
+    sandbox_root: Optional[str] = attribute(
+        default=None,
+        description="Optional override for sandbox root; defaults to jvspatial files root (JVSPATIAL_FILES_ROOT_PATH).",
+    )
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._servers_by_name: Dict[str, _ServerEntry] = {}
 
-    def _build_server_entries(self) -> None:
+    def _strip_trailing_path_arg(self, args: List[str]) -> List[str]:
+        """Remove a trailing local filesystem root from MCP filesystem server args.
+
+        The official args end with a directory, e.g. ``.`` or an absolute path.
+        Do **not** treat ``@scope/package`` (npm specifiers) as paths: they contain
+        ``/`` but must not be stripped, or npx would see only ``-y <path>`` and
+        look for ``package.json`` in the sandbox.
+        """
+        if not args:
+            return args
+        last = str(args[-1]).strip()
+        if not last:
+            return list(args)
+        if last in (".", "..") or last.startswith(("/", "./", "../", "~")):
+            return list(args[:-1])
+        if len(last) > 1 and last[0].isalpha() and last[1] == ":":  # Windows "C:\..."
+            return list(args[:-1])
+        if last.startswith("@"):
+            return list(args)  # scoped npm package, not a filesystem root
+        if "/" in last or (os.path.sep in last and len(last) < 512):
+            return list(args[:-1])
+        return list(args)
+
+    def _args_for_jvfs(
+        self, rel_prefix: str, connect_t: float, call_t: float
+    ) -> Tuple[str, List[str], MCPClientWrapper]:
+        rel = (rel_prefix or "").replace("\\", "/").strip().strip("/")
+        cmd = sys.executable
+        args: List[str] = ["-m", _JVFS_MODULE, "--root-prefix", rel]
+        return (
+            cmd,
+            args,
+            MCPClientWrapper(
+                "stdio",
+                command=cmd,
+                args=args,
+                env=None,
+                url="",
+                connect_timeout=connect_t,
+                call_timeout=call_t,
+            ),
+        )
+
+    def _args_for_npx_filesystem(
+        self,
+        npx_cmd: str,
+        base_args: List[str],
+        absolute_root: str,
+        connect_t: float,
+        call_t: float,
+        env: Optional[Dict[str, str]],
+    ) -> Tuple[str, List[str], MCPClientWrapper]:
+        a = self._strip_trailing_path_arg(list(base_args))
+        a = list(a) + [absolute_root]
+        cmd = (npx_cmd or "npx").strip() or "npx"
+        return (
+            cmd,
+            a,
+            MCPClientWrapper(
+                "stdio",
+                command=cmd,
+                args=a,
+                env=env,
+                url="",
+                connect_timeout=connect_t,
+                call_timeout=call_t,
+            ),
+        )
+
+    async def _build_server_entries(self) -> None:
         """Compile configured server entries into runtime objects."""
         import asyncio
 
         self._servers_by_name = {}
         seen: set[str] = set()
+        ag = await self.get_agent()
+        raw_agent_id = (getattr(self, "agent_id", "") or "").strip()
+        if ag and not raw_agent_id:
+            raw_agent_id = str(getattr(ag, "id", "") or "").strip()
+        if not raw_agent_id:
+            raw_agent_id = "unknown"
+
+        def_user = (
+            os.getenv("MCP_FILESYSTEM_SANDBOX_DEFAULT_USER") or "anonymous"
+        ).strip() or "anonymous"
+
+        action_sandbox = _coalesce_sandbox_root(
+            self.sandbox_root, "MCP_FILESYSTEM_SANDBOX_ROOT"
+        )
+        files_root = resolve_sandbox_root(action_sandbox or "")
+
         for raw in self.servers or []:
             if not isinstance(raw, dict):
                 continue
@@ -200,10 +362,14 @@ class MCPAction(Action):
             transport = str(raw.get("transport") or "streamable_http")
             command = str(raw.get("command") or "")
             args = raw.get("args") or []
+            if not isinstance(args, list):
+                args = []
             env = raw.get("env")
             url = str(raw.get("url") or "")
-            connect_timeout = float(raw.get("mcp_connect_timeout", 10.0))
-            call_timeout = float(raw.get("mcp_call_timeout", 30.0))
+            connect_timeout = float(
+                raw.get("mcp_connect_timeout", self.mcp_connect_timeout)
+            )
+            call_timeout = float(raw.get("mcp_call_timeout", self.mcp_call_timeout))
             enabled = bool(raw.get("enabled", True))
             tools_selector = raw.get("tools", "-all")
             denied_tools_raw = raw.get("denied_tools", [])
@@ -213,15 +379,55 @@ class MCPAction(Action):
                 else []
             )
 
-            client = MCPClientWrapper(
-                transport,
-                command=command,
-                args=args if isinstance(args, list) else [],
-                env=env if isinstance(env, dict) else None,
-                url=url,
-                connect_timeout=connect_timeout,
-                call_timeout=call_timeout,
+            sroot = (raw.get("sandbox_root") or "").strip() or action_sandbox
+            files_root = resolve_sandbox_root(sroot or "")
+
+            sb_mode = _coalesce_bool(
+                raw.get("sandbox_mode"),
+                self.sandbox_mode,
+                "MCP_FILESYSTEM_SANDBOX_MODE",
+                False,
             )
+            sb_user = _coalesce_bool(
+                raw.get("sandbox_user_scoped"),
+                self.sandbox_user_scoped,
+                "MCP_FILESYSTEM_SANDBOX_USER_SCOPED",
+                False,
+            )
+            use_jvfs = bool(sb_mode and should_use_jvspatial_fs_server())
+            is_fs = transport == "stdio" and _is_filesystem_mcp_server(
+                {"args": args}, use_jvfs
+            )
+
+            npx_base = self._strip_trailing_path_arg(list(args))
+            npx_cmd = (command or "npx").strip() or "npx"
+            env_d = env if isinstance(env, dict) else None
+            mcp_npx_cmd = npx_cmd
+
+            client: MCPClientWrapper
+            if sb_mode and is_fs and use_jvfs:
+                rel = resolve_mcp_sandbox_relpath(raw_agent_id, def_user)
+                cmd, a, client = self._args_for_jvfs(rel, connect_timeout, call_timeout)
+                command, args = cmd, a
+            elif sb_mode and is_fs and not use_jvfs:
+                rel = resolve_mcp_sandbox_relpath(raw_agent_id, def_user)
+                abs_r = absolute_under_files_root(files_root, rel)
+                command, a, client = self._args_for_npx_filesystem(
+                    npx_cmd, npx_base, abs_r, connect_timeout, call_timeout, env_d
+                )
+                args = a
+            else:
+                client = MCPClientWrapper(
+                    transport,
+                    command=command,
+                    args=args,
+                    env=env_d,
+                    url=url,
+                    connect_timeout=connect_timeout,
+                    call_timeout=call_timeout,
+                )
+
+            ulock = asyncio.Lock()
             self._servers_by_name[name] = _ServerEntry(
                 name=name,
                 enabled=enabled,
@@ -229,12 +435,59 @@ class MCPAction(Action):
                 lock=asyncio.Lock(),
                 tools_selector=tools_selector,
                 denied_tools=denied_tools,
+                tool_cache=None,
+                user_clients={},
+                user_lock=ulock,
+                sandbox_mode=sb_mode and is_fs,
+                sandbox_user_scoped=sb_user and is_fs and sb_mode,
+                use_jvfs=use_jvfs and is_fs and sb_mode,
+                files_root=files_root,
+                sandbox_agent_id=raw_agent_id,
+                default_sandbox_user=def_user,
+                npx_base_args=npx_base,
+                connect_timeout=connect_timeout,
+                call_timeout=call_timeout,
+                transport=transport,
+                base_command=command,
+                mcp_npx_cmd=mcp_npx_cmd,
+                base_env=env_d,
+                base_url=url,
             )
+
+    async def _provision_sandboxes(self) -> None:
+        from jvagent.core.app import App
+
+        app = await App.get()
+        if not app or not getattr(app, "file_storage_enabled", True):
+            return
+        try:
+            fi = await app.get_file_interface()
+        except Exception as e:
+            logger.warning(
+                "MCPAction: could not get file interface for provision: %s", e
+            )
+            return
+        for ent in self._servers_by_name.values():
+            if not ent.sandbox_mode:
+                continue
+            rel = resolve_mcp_sandbox_relpath(
+                ent.sandbox_agent_id, ent.default_sandbox_user
+            )
+            if is_local_file_interface(fi):
+                abs_p = absolute_under_files_root(ent.files_root, rel)
+                p = abs_p
+            else:
+                p = rel.replace("\\", "/")
+            try:
+                await provision_sandbox_dir(p, fi)
+            except Exception as e:
+                logger.debug("provision_sandbox for %s: %s", ent.name, e)
 
     async def on_register(self) -> None:
         """Build server registry and set default label if empty."""
         await super().on_register()
-        self._build_server_entries()
+        await self._build_server_entries()
+        await self._provision_sandboxes()
         if not (getattr(self, "label", None) or "").strip():
             server_names = self.get_server_names()
             if len(server_names) == 1:
@@ -245,7 +498,8 @@ class MCPAction(Action):
     async def on_startup(self) -> None:
         """Rebuild in-memory server registry after app restart."""
         await super().on_startup()
-        self._build_server_entries()
+        await self._build_server_entries()
+        await self._provision_sandboxes()
 
     async def on_disable(self) -> None:
         """Disconnect MCP clients when action is disabled."""
@@ -291,6 +545,12 @@ class MCPAction(Action):
         if not entry:
             return
         entry.tool_cache = None
+        for _uid, ucl in list((entry.user_clients or {}).items()):
+            try:
+                await ucl.disconnect()
+            except Exception as e:
+                logger.debug("MCP user client disconnect: %s", e)
+        entry.user_clients = {}
         if entry.client is not None:
             try:
                 await entry.client.disconnect()
@@ -330,8 +590,19 @@ class MCPAction(Action):
                 inventory.append((server_name, tool))
         return inventory
 
-    async def fulfill(self, natural_language_command: str) -> MCPFulfillResult:
-        """Map NL command to one tool across configured servers and execute it."""
+    async def fulfill(
+        self,
+        natural_language_command: str,
+        user_id: Optional[str] = None,
+    ) -> MCPFulfillResult:
+        """Map NL command to one tool across configured servers and execute it.
+
+        Args:
+            natural_language_command: The natural language request to fulfill.
+            user_id: Optional caller identity. When ``sandbox_user_scoped`` is
+                enabled the per-user sandbox client is used instead of the
+                shared default (anonymous) client.
+        """
         try:
             inventory = await self._resolve_tool_inventory()
         except Exception as e:
@@ -408,7 +679,10 @@ class MCPAction(Action):
                 tool_name=tool_name,
             )
 
-        client = self.get_client(selected_server)
+        try:
+            client = await self.get_client_for_user(selected_server, user_id)
+        except Exception:
+            client = self.get_client(selected_server)
         try:
             call_result = await client.call_tool(tool_name, arguments)
         except Exception as e:
@@ -458,6 +732,64 @@ class MCPAction(Action):
             The MCPClientWrapper instance for the requested server.
         """
         return self._get_server_entry(server_name).client
+
+    async def get_client_for_user(
+        self, server_name: str, user_id: Optional[str]
+    ) -> MCPClientWrapper:
+        """Return the MCP client for this server, scoped to a user if configured.
+
+        When ``sandbox_user_scoped`` is True for a filesystem stdio server, creates
+        (and caches) a separate subprocess per sanitized ``user_id`` under
+        ``<files_root>/<agentId>/<userId>`` (see ``resolve_mcp_sandbox_relpath``).
+        The default client (``entry.client``) uses the ``MCP_FILESYSTEM_SANDBOX_DEFAULT_USER``
+        path (default ``anonymous``) and is returned when no real user ID is available or
+        when sandbox scoping is not enabled.
+
+        Used by both ``ToolExecutor._dispatch_mcp_tool`` (LLM-driven dispatch) and
+        ``fulfill()`` (NL-gateway dispatch) so that the folder always bears the caller's
+        user ID rather than the startup-time default.
+        """
+        entry = self._get_server_entry(server_name)
+        if not entry.sandbox_mode or not entry.sandbox_user_scoped:
+            return entry.client
+        if entry.transport != "stdio":
+            return entry.client
+        uid = (user_id or "").strip() or entry.default_sandbox_user or "anonymous"
+        if uid == (entry.default_sandbox_user or "anonymous"):
+            return entry.client
+        async with entry.user_lock:
+            if uid in entry.user_clients:
+                return entry.user_clients[uid]
+            urel = resolve_mcp_sandbox_relpath(entry.sandbox_agent_id, uid)
+            from jvagent.core.app import App
+
+            app = await App.get()
+            if app and getattr(app, "file_storage_enabled", True):
+                try:
+                    fi = await app.get_file_interface()
+                    if is_local_file_interface(fi):
+                        abs_u = absolute_under_files_root(entry.files_root, urel)
+                        await provision_sandbox_dir(abs_u, fi)
+                    else:
+                        await provision_sandbox_dir(urel.replace("\\", "/"), fi)
+                except Exception as e:
+                    logger.debug("user sandbox provision: %s", e)
+            if entry.use_jvfs:
+                _c, _a, cl = self._args_for_jvfs(
+                    urel, entry.connect_timeout, entry.call_timeout
+                )
+            else:
+                abs_u = absolute_under_files_root(entry.files_root, urel)
+                _c, _a, cl = self._args_for_npx_filesystem(
+                    entry.mcp_npx_cmd,
+                    entry.npx_base_args,
+                    abs_u,
+                    entry.connect_timeout,
+                    entry.call_timeout,
+                    entry.base_env,
+                )
+            entry.user_clients[uid] = cl
+            return cl
 
     async def get_tools_cached(self, server_name: str) -> List[Any]:
         """List tools from one MCP server with caching (public accessor).

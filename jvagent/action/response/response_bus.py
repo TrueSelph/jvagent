@@ -9,6 +9,9 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 from jvagent.action.response.message import ResponseMessage
+from jvagent.action.response.thought_formatting import (
+    normalize_thought_text_for_publish,
+)
 from jvagent.core.app import App
 
 logger = logging.getLogger(__name__)
@@ -296,6 +299,9 @@ class ResponseBus:
             deliver_transient: bool,
             relay_override: Optional[bool] = None,
         ) -> None:
+            if flush_message.category == "thought":
+                full_content = normalize_thought_text_for_publish(full_content)
+                flush_message.content = full_content
             filter_ok = await self._apply_channel_filters(
                 flush_message, flush_message.channel
             )
@@ -410,6 +416,7 @@ class ResponseBus:
 
             full_content = "".join(acc.chunks)
             flush_message = ResponseMessage(
+                id=acc.message_id,
                 session_id=session_id,
                 user_id=acc.user_id or "",
                 interaction_id=interaction_id,
@@ -491,6 +498,7 @@ class ResponseBus:
             # streaming_complete=True: flush accumulator
             full_content = "".join(acc.chunks)
             flush_message = ResponseMessage(
+                id=acc.message_id,
                 session_id=session_id,
                 user_id=acc.user_id or "",
                 interaction_id=interaction_id,
@@ -606,8 +614,9 @@ class ResponseBus:
                 self._thought_accumulation.pop(key, None)
                 continue
 
-            full_content = "".join(acc.chunks)
+            full_content = normalize_thought_text_for_publish("".join(acc.chunks))
             message = ResponseMessage(
+                id=acc.message_id,
                 session_id=acc.session_id,
                 user_id=acc.user_id or "",
                 interaction_id=interaction_id,

@@ -72,9 +72,9 @@ The memory system manages agent memory with an optimized architecture:
 Root
 └── App
     └── Agents
-        └── Agent (example_agent)
+        └── Agent (e.g. jvagent/example_agent, resolv/resolv_demo)
             ├── Actions
-            │   └── Action (example_action)
+            │   └── Action nodes (per agent.yaml)
             └── Memory
                 └── User
                     └── Conversation

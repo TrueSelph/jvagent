@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `app.yaml` default agents: `jvagent/example_agent` and `resolv/resolv_demo` (optional `jvagent/skills_agent`); `.env.example` documents `RESOLV_TEST_*` and Ollama; README/STRUCTURE/SETUP/docs aligned with the on-disk layout.
+
 ### Added
 - Initial boilerplate structure
 - Example action implementation

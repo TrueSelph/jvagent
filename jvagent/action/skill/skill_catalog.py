@@ -6,8 +6,11 @@ discovery, catalog rendering, activation validation, and response mode
 resolution.
 """
 
+import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Set
+import re
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from jvagent.action.skill.prompts import (
     GROUNDING_INSTRUCTION_TEMPLATE,
@@ -26,6 +29,23 @@ from jvagent.scaffold.skill_resolve import (
 
 logger = logging.getLogger(__name__)
 
+# TTL for skill discovery cache (seconds)
+SKILL_DISCOVERY_CACHE_TTL = 60
+
+# Regexes for questions about the agent (skills, identity, "what can you do?"),
+# as opposed to task work. Merged with ``SkillInteractAction.meta_intent_patterns``.
+DEFAULT_META_INTENT_PATTERNS: Tuple[str, ...] = (
+    r"\bwhat(\s+are)?\s+your\s+skills\b",
+    r"\bwhat(\s+skills)?\s+do\s+you\s+have\b",
+    r"\blist(\s+of)?\s+your\s+skills\b",
+    r"\bwhat(\s+can)\s+you(\s+do)?\b",
+    r"\byour\s+capabilities\b",
+    r"\bhow\s+can\s+you\s+help\b",
+    r"\bwho\s+are\s+you\b",
+    r"\bwhat(\s+are)?\s+you(r)?\s+abilities\b",
+    r"\bshow\s+me\s+what\s+you(\s+can)?\s+do\b",
+)
+
 
 class SkillCatalog:
     """Manages skill discovery, catalog rendering, and metadata access.
@@ -33,7 +53,16 @@ class SkillCatalog:
     Encapsulates the resolved skill bundle dictionary and provides methods
     for rendering the skill index (system prompt and tool responses),
     validating skill activations, and resolving response mode overrides.
+
+    Caching:
+        ``discover()`` caches resolved skill bundles per agent with a TTL
+        to avoid redundant disk I/O across interactions. Call
+        ``invalidate_cache()`` after installing or removing skills.
     """
+
+    # Class-level cache: {cache_key: (discovered_skills_dict, cached_at)}
+    _cache: Dict[str, Tuple[Dict[str, Dict[str, Any]], datetime]] = {}
+    _cache_lock = asyncio.Lock()
 
     def __init__(self, discovered_skills: Dict[str, Dict[str, Any]]):
         self._skills = discovered_skills
@@ -42,6 +71,10 @@ class SkillCatalog:
     def skills(self) -> Dict[str, Dict[str, Any]]:
         """Raw skill data dictionary."""
         return self._skills
+
+    @skills.setter
+    def skills(self, value: Dict[str, Dict[str, Any]]) -> None:
+        self._skills = value
 
     @property
     def is_empty(self) -> bool:
@@ -162,6 +195,76 @@ class SkillCatalog:
             )
         return None
 
+    async def preflight_check(
+        self,
+        *,
+        action_resolver: Any,
+        tool_executor: Any,
+    ) -> List[Dict[str, Any]]:
+        """Run a deterministic pre-loop capability check for all discovered skills.
+
+        Validates ``requires_actions`` metadata for every skill against the
+        live agent graph and checks that required tools are registered in the
+        ToolExecutor.  Emits machine-readable failure records (not exceptions)
+        so the loop can decide how to proceed.
+
+        Args:
+            action_resolver: ActionResolver instance (or None if not in agent context).
+            tool_executor: Initialised ToolExecutor with registered tools.
+
+        Returns:
+            List of failure dicts with keys ``skill_name``, ``kind``
+            (``"missing_action"`` | ``"missing_tool"``), and ``detail``.
+            Empty list means all checks passed.
+        """
+        failures: List[Dict[str, Any]] = []
+        registered_tools = set(
+            getattr(tool_executor, "get_tool_names", lambda: set())()
+        )
+
+        for skill_name, skill_data in self._skills.items():
+            # Check requires_actions
+            requires_actions: List[str] = skill_data.get("requires_actions", [])
+            if requires_actions and action_resolver:
+                try:
+                    errors = await action_resolver.validate_requirements(
+                        requires_actions
+                    )
+                    for missing in errors or []:
+                        failures.append(
+                            {
+                                "skill_name": skill_name,
+                                "kind": "missing_action",
+                                "detail": missing,
+                            }
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "SkillCatalog.preflight_check: validation error for '%s': %s",
+                        skill_name,
+                        exc,
+                    )
+
+            # Check required_tools (optional frontmatter key)
+            required_tools: List[str] = skill_data.get("required_tools", [])
+            for tool in required_tools:
+                if tool and tool not in registered_tools:
+                    failures.append(
+                        {
+                            "skill_name": skill_name,
+                            "kind": "missing_tool",
+                            "detail": tool,
+                        }
+                    )
+
+        if failures:
+            logger.warning(
+                "SkillCatalog.preflight_check: %d failure(s): %s",
+                len(failures),
+                failures[:5],
+            )
+        return failures
+
     def get_response_mode_override(
         self,
         activated_skills: Set[str],
@@ -225,6 +328,60 @@ class SkillCatalog:
         for skill_name, skill_data, _ in top_skills:
             lines.append(self.format_index_entry(skill_name, skill_data))
         return "\n".join(lines)
+
+    def top_relevance_score(self, query: str) -> float:
+        """Maximum lexical relevance score between ``query`` and any skill.
+
+        Uses the same weighting as :meth:`search` (:meth:`_compute_relevance`).
+        Empty or token-less queries return ``0.0``.
+
+        Args:
+            query: User utterance or search string.
+
+        Returns:
+            Highest score across all skills, or ``0.0`` if none match.
+        """
+        query_tokens = self._normalize_tokens(query)
+        if not query_tokens:
+            return 0.0
+        query_lower = query.lower()
+        best = 0.0
+        for skill_name, skill_data in self._skills.items():
+            score = self._compute_relevance(
+                skill_name, skill_data, query_tokens, query_lower
+            )
+            if score > best:
+                best = score
+        return best
+
+    def has_relevant_match(self, query: str, threshold: float) -> bool:
+        """Whether any skill meets or exceeds the relevance threshold."""
+        return self.top_relevance_score(query) >= threshold
+
+    @classmethod
+    def is_meta_intent(
+        cls, utterance: str, extra_patterns: Optional[List[str]] = None
+    ) -> bool:
+        """Whether the user is asking a meta / introspective question (skills, identity).
+
+        These turns should not get a "skill activation" nudge, and the final
+        review pass is often unhelpful for plain catalog-style answers.
+        """
+        if not (utterance or "").strip():
+            return False
+        all_patterns: List[str] = list(DEFAULT_META_INTENT_PATTERNS)
+        if extra_patterns:
+            for p in extra_patterns:
+                if p and str(p).strip():
+                    all_patterns.append(str(p))
+        text = utterance
+        for p in all_patterns:
+            try:
+                if re.search(p, text, re.IGNORECASE | re.UNICODE):
+                    return True
+            except re.error as e:
+                logger.warning("is_meta_intent: invalid pattern %r: %s", p, e)
+        return False
 
     @staticmethod
     def _normalize_tokens(text: str) -> List[str]:
@@ -295,6 +452,77 @@ class SkillCatalog:
 
         return score
 
+    @staticmethod
+    def _build_cache_key(
+        namespace: str,
+        agent_name: str,
+        skills_source: str,
+        skills_selector: Any,
+        denied_skills: Optional[List[str]],
+        app_root: str,
+    ) -> str:
+        """Build a deterministic cache key for skill discovery."""
+        # Normalize selector to a hashable tuple
+        if isinstance(skills_selector, (list, tuple)):
+            selector_key = tuple(str(s) for s in skills_selector)
+        else:
+            selector_key = (str(skills_selector),)
+
+        # Normalize denied skills
+        if denied_skills:
+            denied_key = tuple(str(d) for d in denied_skills)
+        else:
+            denied_key = ()
+
+        return "|".join(
+            [
+                namespace,
+                agent_name,
+                str(skills_source),
+                ",".join(selector_key),
+                ",".join(denied_key),
+                str(app_root),
+            ]
+        )
+
+    @classmethod
+    async def invalidate_cache(
+        cls,
+        namespace: Optional[str] = None,
+        agent_name: Optional[str] = None,
+    ) -> None:
+        """Invalidate cached skill discovery entries.
+
+        Args:
+            namespace: If provided, invalidate only entries for this namespace.
+            agent_name: If provided with namespace, invalidate only for this agent.
+        """
+        async with cls._cache_lock:
+            if namespace is None:
+                cls._cache.clear()
+                logger.debug("SkillCatalog cache cleared")
+                return
+
+            keys_to_remove = []
+            for key in cls._cache:
+                parts = key.split("|")
+                if len(parts) >= 2:
+                    key_ns = parts[0]
+                    key_agent = parts[1]
+                    if key_ns == namespace:
+                        if agent_name is None or key_agent == agent_name:
+                            keys_to_remove.append(key)
+
+            for key in keys_to_remove:
+                del cls._cache[key]
+
+            logger.debug(
+                "SkillCatalog cache invalidated for %s/%s (%d entries)",
+                namespace or "*",
+                agent_name or "*",
+                len(keys_to_remove),
+            )
+
     @classmethod
     async def discover(
         cls,
@@ -304,6 +532,10 @@ class SkillCatalog:
         denied_skills: Optional[List[str]] = None,
     ) -> "SkillCatalog":
         """Factory: resolve skill bundles from configured sources.
+
+        Uses an in-memory TTL cache keyed by agent identity and selector
+        to avoid redundant disk I/O across interactions. Call
+        ``invalidate_cache()`` after installing or removing skills.
 
         Args:
             visitor: The InteractWalker (must have _agent attribute).
@@ -326,8 +558,41 @@ class SkillCatalog:
         if selector is None or selector == [] or selector == "":
             return cls({})
 
+        app_root = get_app_root()
+        cache_key = cls._build_cache_key(
+            namespace=agent.namespace,
+            agent_name=agent.name,
+            skills_source=source,
+            skills_selector=selector,
+            denied_skills=denied_skills,
+            app_root=str(app_root),
+        )
+
+        # Check cache
+        now = datetime.utcnow()
+        async with cls._cache_lock:
+            if cache_key in cls._cache:
+                cached_skills, cached_at = cls._cache[cache_key]
+                age = (now - cached_at).total_seconds()
+                if age < SKILL_DISCOVERY_CACHE_TTL:
+                    logger.debug(
+                        "SkillCatalog cache hit for %s/%s (age: %.1fs)",
+                        agent.namespace,
+                        agent.name,
+                        age,
+                    )
+                    return cls(cached_skills)
+                else:
+                    logger.debug(
+                        "SkillCatalog cache expired for %s/%s (age: %.1fs)",
+                        agent.namespace,
+                        agent.name,
+                        age,
+                    )
+                    del cls._cache[cache_key]
+
+        # Cache miss — resolve from disk
         try:
-            app_root = get_app_root()
             if source == "both":
                 discovered_skills = resolve_merged_skill_bundles(
                     app_root=app_root,
@@ -363,6 +628,11 @@ class SkillCatalog:
                 agent.name,
                 source,
             )
+
+            # Store in cache
+            async with cls._cache_lock:
+                cls._cache[cache_key] = (discovered_skills, now)
+
             return cls(discovered_skills)
         except Exception as e:
             logger.warning(

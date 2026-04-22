@@ -55,3 +55,5 @@ Actions follow a strict directory structure:
 1. **Defaults**: Defined as Pydantic `attribute` fields in the Action class.
 2. **Overrides**: Provided in the `context` block of `agent.yaml`.
 3. **Validation**: Handled by Pydantic at runtime.
+
+**Model HTTP retries**: `BaseModelAction` / `LanguageModelAction` support configurable retries for transient timeouts and transport errors (`max_retries`, `retry_initial_delay`, `retry_max_delay`, `retry_backoff_multiplier`, `retry_jitter`, `retry_on_status_codes`). Defaults apply to all LM providers; tune per action in `agent.yaml`. See [docs/language-models.md](docs/language-models.md).

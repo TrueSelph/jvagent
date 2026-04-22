@@ -1,4 +1,10 @@
-"""Shared conversation task lifecycle service."""
+"""Shared conversation task lifecycle service.
+
+Internally operates on typed ``TaskRecord`` objects with validated state
+machine transitions.  External API surfaces (``list``, ``get``, ``start``,
+etc.) still return plain dicts for backward compatibility with existing
+callers; use ``get_record`` for typed access.
+"""
 
 import uuid
 from contextlib import AbstractAsyncContextManager
@@ -6,17 +12,14 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union
 
 from jvagent.memory.conversation import Conversation
-
-ACTIVE_STATUSES = {"active", "pending", "triggered", "reserved"}
-TERMINAL_STATUSES = {
-    "completed",
-    "failed",
-    "cancelled",
-    "timed_out",
-    "max_iterations",
-    "superseded",
-}
-ALLOWED_STATUSES = ACTIVE_STATUSES | TERMINAL_STATUSES
+from jvagent.memory.task_record import (
+    ACTIVE_STATUSES,
+    ALLOWED_STATUSES,
+    TERMINAL_STATUSES,
+    InvalidTaskTransition,
+    StepRecord,
+    TaskRecord,
+)
 
 
 def _now_iso() -> str:
@@ -67,6 +70,10 @@ class TaskHandle:
 
     async def get(self) -> Optional[Dict[str, Any]]:
         return self._service.get(task_id=self.task_id)
+
+    async def get_record(self) -> Optional[TaskRecord]:
+        """Return the typed TaskRecord (preferred over the legacy dict)."""
+        return self._service.get_record(task_id=self.task_id)
 
 
 class _TaskTrackingContext(AbstractAsyncContextManager):
@@ -120,7 +127,15 @@ class _TaskTrackingContext(AbstractAsyncContextManager):
 
 
 class TaskService:
-    """Conversation-scoped task lifecycle service."""
+    """Conversation-scoped task lifecycle service.
+
+    Stores tasks as typed ``TaskRecord`` objects serialised to legacy dict
+    format in ``conversation.active_tasks`` so existing consumers (API
+    response builders, etc.) continue to work without changes.
+
+    Use ``get_record`` / ``list_records`` for typed access; ``get`` / ``list``
+    for backward-compatible plain-dict access.
+    """
 
     def __init__(self, conversation: Conversation) -> None:
         self.conversation = conversation
@@ -135,6 +150,52 @@ class TaskService:
         if not conversation:
             raise RuntimeError(f"Conversation not found: {conversation_or_id}")
         return cls(conversation)
+
+    # ------------------------------------------------------------------
+    # Typed access (preferred)
+    # ------------------------------------------------------------------
+
+    def get_record(
+        self,
+        *,
+        task_id: Optional[str] = None,
+        task_type: Optional[str] = None,
+        description: Optional[str] = None,
+        action_name: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> Optional[TaskRecord]:
+        """Return a typed TaskRecord matching the filter criteria, or None."""
+        raw = self.get(
+            task_id=task_id,
+            task_type=task_type,
+            description=description,
+            action_name=action_name,
+            status=status,
+        )
+        if raw is None:
+            return None
+        try:
+            return TaskRecord.from_dict(raw)
+        except Exception:
+            return None
+
+    def list_records(
+        self,
+        status: Optional[Union[str, List[str]]] = None,
+        action_name: Optional[str] = None,
+    ) -> List[TaskRecord]:
+        """Return typed TaskRecords, optionally filtered."""
+        records: List[TaskRecord] = []
+        for raw in self.list(status=status, action_name=action_name):
+            try:
+                records.append(TaskRecord.from_dict(raw))
+            except Exception:
+                pass
+        return records
+
+    # ------------------------------------------------------------------
+    # Legacy dict access (backward compatible)
+    # ------------------------------------------------------------------
 
     def list(
         self,
@@ -186,40 +247,26 @@ class TaskService:
         trigger_condition: Optional[str] = None,
         singleton_action: bool = False,
     ) -> TaskHandle:
-        now = _now_iso()
         meta = dict(metadata or {})
         if trigger_at:
             meta["trigger_time"] = trigger_at
         if trigger_condition is not None:
             meta["trigger_condition"] = trigger_condition
 
-        resolved_task_id = task_id
-        if not resolved_task_id:
-            short_uuid = uuid.uuid4().hex[:12]
-            resolved_task_id = (
-                f"{action_name}:{short_uuid}"
-                if action_name
-                else f"task_{uuid.uuid4().hex}"
-            )
-
-        entry: Dict[str, Any] = {
-            "task_id": resolved_task_id,
-            "task_type": task_type,
-            "description": description,
-            "action_name": action_name,
-            "status": "active",
-            "next_trigger_at": trigger_at or meta.get("trigger_time"),
-            "trigger_condition": (
+        record = TaskRecord.create(
+            description=description,
+            task_type=task_type,
+            action_name=action_name,
+            task_id=task_id,
+            metadata=meta,
+            trigger_at=trigger_at or meta.get("trigger_time"),
+            trigger_condition=(
                 trigger_condition
                 if trigger_condition is not None
                 else meta.get("trigger_condition")
             ),
-            "metadata": meta,
-            "created_at": now,
-            "updated_at": now,
-            "last_heartbeat_at": now,
-            "terminal_at": None,
-        }
+        )
+        resolved_task_id = record.task_id
 
         existing_idx = self._find_task_index(task_id=task_id) if task_id else None
         if existing_idx is None and singleton_action and action_name:
@@ -236,10 +283,12 @@ class TaskService:
                         summary="Superseded by new singleton action task.",
                     )
 
+        entry = record.to_legacy_dict()
+
         if existing_idx is not None:
             current = self.conversation.active_tasks[existing_idx]
             entry["task_id"] = current.get("task_id", resolved_task_id)
-            entry["created_at"] = current.get("created_at", now)
+            entry["created_at"] = current.get("created_at", record.created_at)
             self.conversation.active_tasks[existing_idx] = entry
             await self.conversation.save()
             await self._emit_updated(entry)
@@ -248,7 +297,7 @@ class TaskService:
         self.conversation.active_tasks.append(entry)
         await self.conversation.save()
         await self._emit_created(entry)
-        return TaskHandle(self, entry["task_id"])
+        return TaskHandle(self, record.task_id)
 
     def track(
         self,
@@ -288,15 +337,21 @@ class TaskService:
         if not task:
             return False
         metadata = dict(task.get("metadata") or {})
-        steps = list(metadata.get("steps") or [])
-        step = {
-            "type": step_type,
-            "iteration": iteration,
-            "timestamp": _now_iso(),
+        # Build typed StepRecord then serialise for metadata storage
+        step_record = StepRecord(
+            step_type=step_type,
+            iteration=iteration,
+            timestamp=_now_iso(),
+            details=dict(details or {}),
+        )
+        step_dict = {
+            "type": step_record.step_type,
+            "iteration": step_record.iteration,
+            "timestamp": step_record.timestamp,
+            **step_record.details,
         }
-        if details:
-            step.update(details)
-        steps.append(step)
+        steps = list(metadata.get("steps") or [])
+        steps.append(step_dict)
         metadata["steps"] = steps
         metadata["iterations"] = max(int(metadata.get("iterations", 0)), int(iteration))
         if step_type == "tool_call":
@@ -365,8 +420,18 @@ class TaskService:
         if idx is None:
             return False
         task = dict(self.conversation.active_tasks[idx])
+        # Idempotent: already terminal
         if task.get("status") in TERMINAL_STATUSES:
             return True
+        # Validate transition via TaskRecord state machine
+        try:
+            record = TaskRecord.from_dict(task)
+            record.transition(status)
+        except InvalidTaskTransition as ite:
+            import logging
+
+            logging.getLogger(__name__).warning("TaskService.complete: %s", ite)
+            return False
         now = _now_iso()
         metadata = dict(task.get("metadata") or {})
         if summary:

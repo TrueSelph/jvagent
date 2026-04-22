@@ -18,8 +18,8 @@ When activated by the InteractRouter, this action:
 - **Progressive skill disclosure**: Skills are exposed via a `read_skill` tool. Their Python tool modules are only loaded when the LLM calls `read_skill`, keeping the tool list lean until specialization is needed.
 - **Tool name namespacing**: Skill bundle tools are registered with a `{skill_name}__` prefix (e.g., `calendar__list_events`) to prevent silent handler overwrites when multiple bundles share tool filenames.
 - **Deterministic tool dispatch**: The LLM decides which tool to call; ToolExecutor dispatches directly via `MCPClientWrapper.call_tool()`, bypassing `MCPAction.fulfill()` NL-to-tool mapping.
-- **Multi-provider support**: OpenAI and Anthropic message formats handled transparently via `LoopContext.convert_for_provider()`.
-- **Extended thinking**: Anthropic extended thinking with configurable token budget, streamed as `thought_type="reasoning"`.
+- **Multi-provider support**: Provider-specific shaping is handled in each `LanguageModelAction` via `translate_reasoning_config()` and `prepare_messages_for_reasoning()`.
+- **Extended thinking/reasoning**: Generic reasoning config on `SkillInteractAction` is translated per provider and streamed as `thought_type="reasoning"`.
 - **Grounding by default**: Prompt policy, per-skill activation reminders, and forced-termination constraints discourage hallucinations and unsupported claims.
 - **Skill helper tools**: Optional `list_skills` and `skill_search` tools improve skill selection when many bundles are available.
 - **Metadata-driven skill search**: `SkillCatalog.search()` uses weighted token overlap over structured skill metadata (name, tags, description, scope_hint) — language-agnostic, no hardcoded synonyms or domain biases.
@@ -94,7 +94,7 @@ SkillInteractAction.execute(visitor)
   |
   +--->_run_agentic_loop()
           |
-          +--->_build_model_kwargs()
+          +--->_build_reasoning_model_config()
           +--->LoopContext.build_initial_messages(system_prompt, utterance, conversation, interaction, skill_index_section)
           |       Injects skill index section from SkillCatalog.render_system_prompt_section()
           +---> LOOP (iteration < max, elapsed < timeout):
@@ -102,7 +102,7 @@ SkillInteractAction.execute(visitor)
           |       +--->tools = tool_executor.get_tools_list()  # re-fetched each iteration
           |       +--->_call_model(messages, tools, visitor, kwargs)
           |       |       calls model_action.query_messages()
-          |       |       applies LoopContext.convert_for_provider() when provider is "anthropic"
+          |       |       provider applies prepare_messages_for_reasoning() / translate_reasoning_config()
           |       +--->IF thinking_content: publish_thought(thought_type="reasoning")
           |       +--->IF no tool_calls: loop_state=TERMINATE -> BREAK
           |       +--->IF tool_calls:
@@ -207,7 +207,10 @@ SkillInteractAction defaults to a stricter reliability posture:
 - **Default-on guardrails**: `strict_grounding=True`, `plan_first=True`, and `enable_skill_helper_tools=True`.
 - **Skill selection discipline**: Prompt instructions include when to use skills and when *not* to use them; `list_skills` / `skill_search` are available for disambiguation.
 - **Metadata-driven search**: `SkillCatalog.search()` uses weighted token overlap over structured skill metadata — language-agnostic, no hardcoded synonyms or domain biases.
-- **Skill-first retry**: When skills are available but none are activated, the loop nudges the model with `SKILL_FIRST_RETRY_PROMPT` once before proceeding.
+- **Skill-first retry**: When skills are available but no skill bundle has been activated via `read_skill`, the utterance clears a lexical relevance threshold, and there has been **no** tool use yet in the loop, the model may be nudged with `SKILL_FIRST_RETRY_PROMPT` (up to `skill_first_retry_limit` times, default 1). Nudges are **not** sent after any tool call (e.g. `list_skills` already provided evidence), when the utterance matches **meta intent** (what are your skills, who are you, … — see `meta_intent_skip_nudge` / `meta_intent_patterns`), or when the candidate answer already **names a discovered skill** at sufficient length. Optional `conversational_skip_patterns` and a short-utterance + low-relevance heuristic also skip the nudge.
+- **Best-candidate recovery**: If a nudge (or a bad second turn) produces a very short or degenerate answer while a better candidate was already produced, the loop prefers the best candidate. With `response_mode: respond`, **PersonaAction** is skipped when the final loop output is still degenerate so the persona cannot invent a substitute answer.
+- **Reasoning stream UX**: `mirror_assistant_stream_as_thoughts` can force/disable assistant-stream mirroring into thoughts. When unset, provider defaults apply (OpenAI reasoning models can auto-enable).
+- **Task metadata** adds `helper_tools_called`, `meta_intent_detected`, `retry_nudges_fired`, `best_candidate_length`, and step types: `skill_first_retry`, `candidate`, `candidate_accepted`, `candidate_discarded`, `final_review_skipped`.
 - **Per-skill scope grounding**: `read_skill` responses append `GROUNDING_INSTRUCTION_TEMPLATE` guidance using each bundle's resolved `scope_hint`.
 - **Activation guard**: `max_skill_activations` caps speculative skill loading; overflow returns `SKILL_ACTIVATION_LIMIT_MESSAGE`.
 - **Stuck detection**: `StuckDetector` tracks per-iteration tool-call signatures in a sliding window; repeated identical signatures trigger `STUCK_DETECTION_PROMPT`. After `max_midcourse_corrections`, the action forces termination.
@@ -229,7 +232,7 @@ The core algorithm in `_run_agentic_loop()`:
    b. Re-fetch tool list (includes newly activated skill tools)
    c. Record "thinking" step on TaskHandle, loop_state=MODEL
    d. Call LLM via model_action.query_messages()
-      (applies LoopContext.convert_for_provider() for Anthropic)
+      (provider translates generic reasoning config and reshapes messages as needed)
    e. Publish reasoning thought (if Anthropic extended thinking)
    f. If no tool_calls -> extract text, termination_reason=COMPLETED, loop_state=TERMINATE, BREAK
    g. If tool_calls present:
@@ -266,7 +269,7 @@ All attributes can be overridden via `context` in agent.yaml.
 | `description` | str | `"Long-running agentic loop for multi-step tasks with tool use."` | Action description |
 | `max_iterations` | int | `25` | Hard cap on think-act-observe cycles |
 | `max_duration_seconds` | float | `300.0` | Wall-clock timeout (seconds) |
-| `thinking_budget_tokens` | int | `0` | Anthropic extended thinking budget (0 = disabled) |
+| `reasoning_budget_tokens` | int | `0` | Generic reasoning budget tokens (provider translated) |
 | `model_action_type` | str | `"AnthropicLanguageModelAction"` | LanguageModelAction entity type |
 | `model` | str | `"claude-sonnet-4-20250514"` | Model identifier |
 | `model_temperature` | float | `0.3` | LLM temperature |
@@ -277,8 +280,22 @@ All attributes can be overridden via `context` in agent.yaml.
 | `response_mode` | str | `"publish"` | How to deliver the final response: `"publish"` (direct bus delivery) or `"respond"` (route through PersonaAction for persona-enriched responses with parameters, directives, and persona attributes) |
 | `tool_servers` | List[str] | `[]` | Names of MCPAction instances providing tools |
 | `allow_local_tools` | bool | `False` | Whether ToolExecutor can register local Python tools |
-| `prioritize_skills_first` | bool | `True` | When skills are available but none activated, inject a nudge on the first failed iteration |
-| `skill_first_retry_limit` | int | `1` | Maximum skill-first retry nudges per loop |
+| `prioritize_skills_first` | bool | `True` | When skills are available but none activated, nudge only if the utterance is skill-relevant and not skipped by conversational rules |
+| `skill_first_retry_limit` | int | `1` | Maximum skill-first retry nudges per loop (`0` disables) |
+| `skill_first_retry_min_relevance` | float | `0.25` | Minimum `SkillCatalog.top_relevance_score` for the utterance before nudging |
+| `conversational_skip_patterns` | List[str] | `[]` | Optional `re.UNICODE` regexes; if any matches the utterance, skip the nudge (add per-locale phrases yourself) |
+| `skill_first_conversational_heuristic` | bool | `True` | Language-agnostic skip when the utterance is short (chars/tokens) and relevance is below `conversational_heuristic_max_relevance` |
+| `conversational_short_utterance_max_chars` | int | `60` | Heuristic: max characters |
+| `conversational_short_utterance_max_tokens` | int | `8` | Heuristic: max tokens (`SkillCatalog` tokenization) |
+| `conversational_heuristic_max_relevance` | float | `3.0` | Heuristic: skip only if `top_relevance_score` is below this |
+| `conversational_min_response_chars` | int | `20` | Minimum model reply length before conversational skip applies |
+| `meta_intent_skip_nudge` | bool | `True` | If True, skip skill-first nudge for meta/identity questions (see `SkillCatalog.is_meta_intent` + `meta_intent_patterns`) |
+| `meta_intent_patterns` | List[str] | `[]` | Extra regexes (merged with catalog defaults) for meta intent detection |
+| `degenerate_response_max_chars` | int | `25` | Shorter than this, the reply may be treated as a bare ack when detecting degenerate final output |
+| `best_candidate_shrink_ratio` | float | `0.4` | Prefer `best_candidate` if a later answer is shorter than this fraction of the best |
+| `reasoning_enabled` | bool \| `None` | `None` | Generic reasoning enable flag; provider maps to native switches |
+| `reasoning_extra` | dict \| `None` | `None` | Provider-native reasoning override object (escape hatch) |
+| `mirror_assistant_stream_as_thoughts` | bool \| `None` | `None` | Provider-agnostic assistant-stream mirroring toggle for thought stream |
 | `stream_thinking` | bool | `True` | Publish reasoning thoughts via `publish_thought()` |
 | `stream_tool_progress` | bool | `True` | Publish tool_call and tool_result thoughts via `publish_thought()` |
 | `commit_intermediate_messages` | bool | `True` | Publish (and persist) any text the model emits alongside tool calls as a `category="user"` message so the conversation history matches what the assistant said. |
@@ -384,7 +401,7 @@ actions:
       model_max_tokens: 16384
       max_iterations: 25
       max_duration_seconds: 300
-      thinking_budget_tokens: 0        # 0 = disabled (OpenAI)
+      reasoning_budget_tokens: 0       # generic budget field (provider translated)
       skills:                          # Skill bundle selector
         - "code_review"
         - "local_research"
@@ -443,11 +460,11 @@ skills_source: none       # disable skill bundle resolution entirely
     enabled: true
     model_action_type: "AnthropicLanguageModelAction"
     model: "claude-sonnet-4-20250514"
-    thinking_budget_tokens: 10000
+    reasoning_budget_tokens: 10000
     stream_thinking: true
 ```
 
-When `thinking_budget_tokens > 0`, the action injects `thinking: {type: "enabled", budget_tokens: N}` into the API call. Anthropic requires `max_tokens >= budget_tokens + 1`; the action auto-adjusts if needed. When thinking is enabled, Anthropic omits `temperature` from the payload (a provider requirement).
+When `reasoning_budget_tokens > 0`, the Anthropic provider translates this to `thinking: {type: "enabled", budget_tokens: N}` and ensures `max_tokens >= budget_tokens + 1`.
 
 ### Minimal (Reasoning-Only, No Tools or Skills)
 
@@ -768,15 +785,15 @@ jvagent skill show <skill_name> [--agent <agent_ref>] [--builtin]
 
 ## Extended Thinking (Anthropic)
 
-When `model_action_type` is `AnthropicLanguageModelAction` and `thinking_budget_tokens > 0`:
+When `model_action_type` is `AnthropicLanguageModelAction` and `reasoning_budget_tokens > 0`:
 
-- The action injects `thinking: {type: "enabled", budget_tokens: N}` into model kwargs
+- The provider adapter translates reasoning config to `thinking: {type: "enabled", budget_tokens: N}`
 - Anthropic's `_build_payload()` omits `temperature` (required by the API when thinking is on)
 - `max_tokens` is auto-adjusted to `>= budget_tokens + 1` if needed
-- Thinking content is extracted from `model_result.thinking_content` and `thinking_tokens`
-- If `stream_thinking=True`, thinking content is published as `category="thought"` with `thought_type="reasoning"`
+- Thinking content is accumulated into `model_result.thinking_content` and `thinking_tokens` after each streamed model call
+- During the agentic loop, the model is called with **streaming** enabled; thinking deltas arrive live as `thinking_delta` SSE events and are published as `category="thought"` / `thought_type="reasoning"` chunks (see Streaming below)
 
-**Note:** Extended thinking is Anthropic-only. Set `thinking_budget_tokens: 0` (default) for OpenAI providers.
+**Non-Anthropic reasoning:** set generic fields on `SkillInteractAction` (`reasoning_effort`, `reasoning_enabled`, `reasoning_extra`). Each provider maps them to native API parameters.
 
 ## Streaming
 
@@ -787,9 +804,11 @@ SkillInteractAction publishes two logical tracks:
 
 Thought track events include:
 
-- `thought_type="reasoning"` with `segment_id="iter-{n}-reasoning"`
+- `thought_type="reasoning"` with `segment_id="iter-{n}-reasoning"`: **streamed** during each LLM call (`stream=True` on `query_messages`), with multiple chunks per iteration (`streaming_complete=False`) and a final empty chunk with `streaming_complete=True` and `allow_empty=True` to close the segment when at least one delta was emitted
 - `thought_type="tool_call"` with `segment_id="iter-{n}-call-{tool_name}-{idx}"`
 - `thought_type="tool_result"` with `segment_id="iter-{n}-result-{tool_call_id}"`
+
+Forced termination and final-review model calls use **non-streaming** completions and do not emit live reasoning chunks.
 
 Thought messages are never appended to `interaction.response`; they are stored in `interaction.agent_trace`. Clients can route thoughts to a separate panel by checking `category`, `thought_type`, and `segment_id`.
 
