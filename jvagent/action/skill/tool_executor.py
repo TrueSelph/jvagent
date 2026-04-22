@@ -26,6 +26,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from jvagent.action.mcp.mcp_action import _normalize_call_result
@@ -501,14 +502,61 @@ class ToolExecutor:
         if skill_name in self._active_skill_bundles:
             return []
 
+        dir_path = str(bundle.get("dir_path") or "").strip()
+        if dir_path and dir_path not in self._allowed_tool_paths:
+            self._allowed_tool_paths.append(dir_path)
+
+        # Ensure a parent package exists in sys.modules to enable relative imports
+        # e.g. "jvagent_skill_appointment_booking"
+        safe_skill_name = skill_name.replace("-", "_")
+        package_name = f"jvagent_skill_{safe_skill_name}"
+        if package_name not in sys.modules:
+            parent_module = importlib.util.module_from_spec(
+                importlib.util.spec_from_loader(package_name, None)
+            )
+            parent_module.__path__ = [dir_path]
+            sys.modules[package_name] = parent_module
+
+        # First, scan and load ALL non-tool .py files in the directory to satisfy dependencies
+        # (like _config.py)
+        if dir_path and os.path.isdir(dir_path):
+            for filename in os.listdir(dir_path):
+                if filename.startswith("__") or not filename.endswith(".py"):
+                    continue
+                stem = filename[:-3]
+                full_mod_name = f"{package_name}.{stem}"
+                if full_mod_name in sys.modules:
+                    continue
+                # Skip tool files for this pass (they are loaded below)
+                if filename in bundle.get("tool_files", []):
+                    continue
+
+                file_path = os.path.join(dir_path, filename)
+                try:
+                    spec = importlib.util.spec_from_file_location(full_mod_name, file_path)
+                    if spec and spec.loader:
+                        mod = importlib.util.module_from_spec(spec)
+                        mod.__package__ = package_name
+                        sys.modules[full_mod_name] = mod
+                        spec.loader.exec_module(mod)
+                except Exception as e:
+                    logger.warning(
+                        "ToolExecutor: failed to pre-load dependency '%s': %s",
+                        filename,
+                        e,
+                    )
+
         registered: List[str] = []
         allowed_tools: Set[str] = bundle.get("allowed_tools", set())
         for file_path in bundle.get("tool_files", []):
+            stem = Path(file_path).stem
+            full_mod_name = f"{package_name}.{stem}"
             loaded_tool = self._load_dynamic_tool_from_file(
                 file_path=file_path,
-                module_prefix=f"jvagent_skill_{skill_name}",
+                full_module_name=full_mod_name,
+                package_name=package_name,
                 allowed_tools=allowed_tools if allowed_tools else None,
-                tool_name_prefix=skill_name,
+                tool_name_prefix=safe_skill_name,
             )
             if loaded_tool:
                 registered.append(loaded_tool)
@@ -841,13 +889,12 @@ class ToolExecutor:
     def _load_dynamic_tool_from_file(
         self,
         file_path: str,
-        module_prefix: str,
+        full_module_name: str,
+        package_name: Optional[str] = None,
         allowed_tools: Optional[Set[str]] = None,
         tool_name_prefix: Optional[str] = None,
     ) -> Optional[str]:
         """Import one local tool module and register it if valid."""
-        from pathlib import Path
-
         source = Path(file_path).resolve()
         if not source.is_file():
             return None
@@ -871,16 +918,14 @@ class ToolExecutor:
                     return None
             # If no allowed_tool_paths configured, allow cwd-relative only
 
-        # Deterministic, safe module name
-        safe_stem = re.sub(r"[^a-zA-Z0-9_]", "_", source.stem)
-        module_name = f"{module_prefix}_{safe_stem}"
-
-        spec = importlib.util.spec_from_file_location(module_name, str(source))
+        spec = importlib.util.spec_from_file_location(full_module_name, str(source))
         if not spec or not spec.loader:
             return None
 
         module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
+        if package_name:
+            module.__package__ = package_name
+        sys.modules[full_module_name] = module
         with _syspath_containing_tool_file(str(source)):
             spec.loader.exec_module(module)
 

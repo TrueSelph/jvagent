@@ -226,8 +226,9 @@ class SkillAction:
                 )
                 if not ctx.config.plan_first:
                     system_prompt += (
-                        "\n\nOverride: Skip plan-first behavior unless the user "
-                        "explicitly asks for a plan."
+                        "\n\nOverride: Skip all plan-first behavior, summaries, and preambles. "
+                        "Go straight to execution—silently call tools in the same turn. "
+                        "Do not narrate your intent or explain what you are about to do."
                     )
                 if not ctx.config.strict_grounding:
                     system_prompt += (
@@ -306,7 +307,14 @@ class SkillAction:
 
         # Skill discovery
         # Build a minimal visitor-like object for SkillCatalog (which expects visitor)
-        _visitor_shim = _AgentShim(ctx.agent, action_resolver, user_id=ctx.user_id)
+        _visitor_shim = _AgentShim(
+            ctx.agent,
+            action_resolver,
+            user_id=ctx.user_id,
+            conversation=ctx.conversation,
+            interaction=ctx.interaction,
+            session_id=ctx.session_id,
+        )
         skill_catalog = await SkillCatalog.discover(
             visitor=_visitor_shim,
             skills_selector=cfg.skills,
@@ -2805,7 +2813,15 @@ class _AgentShim:
         agent: Any,
         action_resolver: Optional[ActionResolver],
         user_id: Optional[str] = None,
+        conversation: Any = None,
+        interaction: Any = None,
+        session_id: Optional[str] = None,
     ) -> None:
         self._agent = agent
         self.action_resolver = action_resolver
         self.user_id = (user_id or "").strip() or None
+        # Many local skill tools rely on visitor.conversation for persisted context.
+        # Keep this shim compatible with both SkillCatalog (discovery) and ToolExecutor (dispatch).
+        self.conversation = conversation
+        self.interaction = interaction
+        self.session_id = session_id
