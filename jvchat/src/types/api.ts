@@ -135,6 +135,8 @@ export interface PageIndexDocument {
   root_id: string
   collection_name?: string
   metadata?: Record<string, unknown>
+  /** Number of DocumentNode chunks (from API); omit on older backends */
+  chunks?: number
 }
 
 export interface PageIndexListResponse {
@@ -145,6 +147,8 @@ export interface PageIndexUploadResponse {
   doc_name: string
   root_id: string
   doc_description?: string
+  /** Present after sync ingest; 0 for async until documents are listed again */
+  chunks?: number
 }
 
 export interface PageIndexDeleteResponse {

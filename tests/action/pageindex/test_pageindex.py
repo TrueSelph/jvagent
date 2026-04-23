@@ -32,6 +32,7 @@ from jvagent.action.pageindex.documents import (
     assimilate_document,
     delete_document,
     enrich_structure_titles,
+    export_documents,
     get_document_root,
     get_document_roots,
     list_document_chunks,
@@ -264,6 +265,33 @@ async def test_list_documents_with_metadata_filter(pageindex_temp_db, sample_mar
     )
     assert len(docs) == 1
     assert docs[0]["doc_name"] == "doc_internal"
+    assert docs[0]["chunks"] > 0
+
+
+@pytest.mark.asyncio
+async def test_chunks_list_export_and_root(pageindex_temp_db, sample_markdown):
+    """list_documents, export roots, and DocumentRootNode carry consistent chunk counts."""
+    await assimilate_document(
+        sample_markdown,
+        doc_name="chunky_doc",
+        if_add_node_summary="no",
+        collection_name="col_chunks",
+    )
+    docs = await list_documents(collection_name="col_chunks")
+    assert len(docs) == 1
+    chunks_listed = docs[0]["chunks"]
+    assert isinstance(chunks_listed, int) and chunks_listed > 0
+
+    root = await get_document_root("chunky_doc", collection_name="col_chunks")
+    assert root is not None
+    assert root.chunks == chunks_listed
+
+    exported = await export_documents(
+        collection_name="col_chunks", doc_name="chunky_doc"
+    )
+    assert len(exported["roots"]) == 1
+    assert exported["roots"][0]["chunks"] == chunks_listed
+    assert len(exported["nodes"]) == chunks_listed
 
 
 @pytest.mark.asyncio

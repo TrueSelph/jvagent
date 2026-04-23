@@ -8,6 +8,7 @@ import asyncio
 import functools
 import logging
 import os
+from collections import Counter
 import tempfile
 import threading
 from io import BytesIO
@@ -527,6 +528,23 @@ async def get_document_root(
         _safe_restore_context(prev)
 
 
+async def _document_node_counts_by_doc_name(collection_name: str) -> Dict[str, int]:
+    """Live DocumentNode counts per doc_name within a collection."""
+    nodes = await DocumentNode.find({"context.collection_name": collection_name})
+    return dict(Counter(n.doc_name for n in nodes))
+
+
+async def count_document_chunks(doc_name: str, collection_name: str) -> int:
+    """Number of DocumentNode chunks for a single document."""
+    nodes = await DocumentNode.find(
+        {
+            "context.doc_name": doc_name,
+            "context.collection_name": collection_name,
+        }
+    )
+    return len(nodes)
+
+
 async def list_documents(
     collection_name: str = "default",
     metadata_filter: Optional[Dict[str, Any]] = None,
@@ -540,6 +558,7 @@ async def list_documents(
         query: Dict[str, Any] = {"context.collection_name": collection_name}
         query.update(_build_metadata_query(metadata_filter or {}))
         roots = await DocumentRootNode.find(query)
+        counts = await _document_node_counts_by_doc_name(collection_name)
         return [
             {
                 "doc_name": r.doc_name,
@@ -548,6 +567,7 @@ async def list_documents(
                 "root_id": r.id,
                 "collection_name": r.collection_name,
                 "metadata": r.metadata,
+                "chunks": counts.get(r.doc_name, 0),
             }
             for r in roots
         ]
@@ -645,8 +665,12 @@ async def export_documents(
             or getattr(e, "target", None) in node_ids
         ]
 
+        chunk_counts = Counter(n.doc_name for n in nodes)
         return {
-            "roots": [r.model_dump() for r in roots],
+            "roots": [
+                {**r.model_dump(), "chunks": chunk_counts.get(r.doc_name, 0)}
+                for r in roots
+            ],
             "nodes": [n.model_dump() for n in nodes],
             "edges": [e.model_dump() for e in edges],
         }

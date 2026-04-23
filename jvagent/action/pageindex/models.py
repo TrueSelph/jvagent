@@ -48,6 +48,10 @@ class DocumentRootNode(Node):
         default=None,
         description="Custom key-value metadata for filtering at query time",
     )
+    chunks: Optional[int] = attribute(
+        default=None,
+        description="Number of DocumentNode chunks for this document",
+    )
 
 
 class DocumentNode(Node):

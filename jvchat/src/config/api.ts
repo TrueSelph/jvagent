@@ -1292,6 +1292,40 @@ class ApiClient {
   }
 
   /**
+   * Re-queue a failed jvforge job (jvagent → jvforge ``POST /v1/jobs/{jobId}/retry``).
+   * Path: POST /api/agents/{agentId}/pageindex/documents_queue/{jobId}/retry
+   */
+  async retryPageIndexQueueJob(
+    agentId: string,
+    jobId: string
+  ): Promise<{
+    job_id: string
+    status: string
+    queue_position?: { overall: number, per_agent: number }
+    message: string
+    status_url?: string
+  }> {
+    const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents_queue/${encodeURIComponent(jobId)}/retry`
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.post(path, {}, { baseURL })
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.post(
+            `/agents/${encodeURIComponent(agentId)}/pageindex/documents_queue/${encodeURIComponent(jobId)}/retry`,
+            {},
+            { baseURL }
+          )
+        }
+        throw err
+      }
+    })
+    const data = response.data
+    if (data?.success && data?.data) return data.data
+    return data
+  }
+
+  /**
    * Get job queue position.
    * Path: GET /v1/jobs/{jobId}/position
    */
@@ -1310,39 +1344,62 @@ class ApiClient {
   }
 
   /**
-   * Boost job to front of queue (emergency).
-   * Path: POST /v1/jobs/{jobId}/boost
+   * Boost job to front of queue (jvagent → jvforge ``POST /v1/jobs/{jobId}/boost``).
+   * Path: POST /api/agents/{agentId}/pageindex/documents_queue/{jobId}/boost
    */
-  async boostJvforgeJob(jobId: string): Promise<{
+  async boostPageIndexQueueJob(agentId: string, jobId: string): Promise<{
     job_id: string
     status: 'boosted'
     queue_position: { overall: number, per_agent: number }
     message: string
     status_url?: string
   }> {
-    const path = `/v1/jobs/${encodeURIComponent(jobId)}/boost`
-    const headers = this._jvforgeHeaders()
-    const response = await this._withJvforgeFallback((baseURL) =>
-      this.client.post(path, {}, { baseURL, headers })
-    )
-    return response.data
+    const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents_queue/${encodeURIComponent(jobId)}/boost`
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.post(path, {}, { baseURL })
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.post(
+            `/agents/${encodeURIComponent(agentId)}/pageindex/documents_queue/${encodeURIComponent(jobId)}/boost`,
+            {},
+            { baseURL }
+          )
+        }
+        throw err
+      }
+    })
+    const data = response.data
+    if (data?.success && data?.data) return data.data
+    return data
   }
 
   /**
-   * Cancel job and remove from queue.
-   * Path: DELETE /v1/jobs/{jobId}
+   * Cancel processing-queue job (jvagent → jvforge ``DELETE /v1/jobs/{jobId}``).
+   * Path: DELETE /api/agents/{agentId}/pageindex/documents_queue/{jobId}
    */
-  async cancelJvforgeJob(jobId: string): Promise<{
+  async cancelPageIndexQueueJob(agentId: string, jobId: string): Promise<{
     job_id: string
     status: 'cancelled'
     message: string
   }> {
-    const path = `/v1/jobs/${encodeURIComponent(jobId)}`
-    const headers = this._jvforgeHeaders()
-    const response = await this._withJvforgeFallback((baseURL) =>
-      this.client.delete(path, { baseURL, headers })
-    )
-    return response.data
+    const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents_queue/${encodeURIComponent(jobId)}`
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.delete(path, { baseURL })
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.delete(
+            `/agents/${encodeURIComponent(agentId)}/pageindex/documents_queue/${encodeURIComponent(jobId)}`,
+            { baseURL }
+          )
+        }
+        throw err
+      }
+    })
+    const data = response.data
+    if (data?.success && data?.data) return data.data
+    return data
   }
 
   /**

@@ -182,6 +182,9 @@ async def persist_structure(
         for node in top_level:
             await root.connect(node, edge=DocumentContentEdge, direction="out")
 
+        root.chunks = _count_structure_nodes(structure)
+        await root.save()
+
         persisted_nodes = _count_structure_nodes(structure)
         logger.info(
             "Persisted document '%s' to PageIndex graph root=%s persisted_document_nodes=%s",

@@ -28,7 +28,7 @@ import os
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 import httpx
 from fastapi import Query, Request
@@ -52,6 +52,7 @@ from .documents import (
     PAGEINDEX_UPLOAD_EXTENSIONS,
     _ensure_pageindex_work_dir,
     assimilate_document,
+    count_document_chunks,
     delete_document,
     delete_document_chunk,
     export_documents,
@@ -619,6 +620,11 @@ async def _do_assimilate(
                 description="Optional document description",
                 example=None,
             ),
+            "chunks": ResponseField(
+                field_type=int,
+                description="Number of indexed chunks (DocumentNodes); 0 when async or not yet imported",
+                example=42,
+            ),
         }
     ),
 )
@@ -642,9 +648,10 @@ async def ingest_document_endpoint(
     | ocr | string | No | "yes" or "no" – enable OCR when using Docling on PDF (default: no) |
     | metadata | string | No | JSON object for tagging, e.g. `{"topic": "finance", "year": 2024}` |
 
-    **Response:** `doc_name`, `root_id`, `doc_description`. With ``JVAGENT_JVFORGE_ASYNC=true``,
-    responses also include ``status``, ``job_id``, ``queue_position``, and ``message``; ``root_id``
-    is empty and ``doc_description`` is null until the webhook finishes importing the graph.
+    **Response:** `doc_name`, `root_id`, `doc_description`, `chunks` (chunk count when the graph
+    is available). With ``JVAGENT_JVFORGE_ASYNC=true``, responses also include ``status``,
+    ``job_id``, ``queue_position``, and ``message``; ``root_id`` is empty, ``doc_description`` is
+    null, and ``chunks`` is 0 until the webhook finishes importing the graph.
 
     Documents are stored in the agent's collection (collection = `agent_id` from path).
 
@@ -738,6 +745,7 @@ async def ingest_document_endpoint(
                 "doc_name": (pick or {}).get("doc_name") or effective_dn or "",
                 "root_id": (pick or {}).get("root_id", ""),
                 "doc_description": (pick or {}).get("doc_description") if pick else None,
+                "chunks": int((pick or {}).get("chunks") or 0),
             }
 
         if file_url:
@@ -810,6 +818,7 @@ async def ingest_document_endpoint(
                         "message": result["message"],
                         "root_id": "",
                         "doc_description": None,
+                        "chunks": 0,
                     }
                 else:
                     # Sync mode: wait for processing to complete
@@ -848,10 +857,17 @@ async def ingest_document_endpoint(
         except ValueError as e:
             raise ValidationError(str(e))
 
+        doc_name_out = result.get("doc_name", "")
+        chunks_out = (
+            await count_document_chunks(doc_name_out, collection_name)
+            if doc_name_out
+            else 0
+        )
         return {
-            "doc_name": result.get("doc_name", ""),
+            "doc_name": doc_name_out,
             "root_id": result.get("_root_id", ""),
             "doc_description": result.get("doc_description"),
+            "chunks": chunks_out,
         }
     finally:
         await _delete_staged_file(staged_path)
@@ -867,7 +883,7 @@ async def ingest_document_endpoint(
         data={
             "documents": ResponseField(
                 field_type=List[Dict[str, Any]],
-                description="Documents with doc_name, doc_description, root_id, collection_name, metadata",
+                description="Documents with doc_name, doc_description, root_id, collection_name, metadata, chunks",
                 example=[
                     {
                         "doc_name": "my_doc",
@@ -875,6 +891,7 @@ async def ingest_document_endpoint(
                         "root_id": "n.DocumentRootNode.abc123",
                         "collection_name": "example_agent",
                         "metadata": {"topic": "finance"},
+                        "chunks": 42,
                     }
                 ],
             ),
@@ -895,7 +912,7 @@ async def list_documents_endpoint(
     |-------|------|-------------|
     | metadata | string | Optional JSON object to filter by document metadata (AND semantics) |
 
-    **Response:** `documents` — array of `{doc_name, doc_description, root_id, collection_name, metadata}`
+    **Response:** `documents` — array of `{doc_name, doc_description, root_id, collection_name, metadata, chunks}`
 
     Collection is determined by `agent_id` from the path.
     """
@@ -983,6 +1000,10 @@ async def list_collection_chunks_endpoint(
                 field_type=str,
                 description="Collection (typically agent_id)",
             ),
+            "chunks": ResponseField(
+                field_type=int,
+                description="Number of DocumentNode chunks for this document",
+            ),
         }
     ),
 )
@@ -996,7 +1017,7 @@ async def get_document_endpoint(agent_id: str, doc_name: str) -> Dict[str, Any]:
     | agent_id | Agent identifier (collection scope) |
     | doc_name | Document identifier |
 
-    **Response:** `doc_name`, `doc_description`, `root_id`
+    **Response:** `doc_name`, `doc_description`, `root_id`, `chunks`
 
     Returns 404 if the document is not found in the agent's collection.
     """
@@ -1007,12 +1028,14 @@ async def get_document_endpoint(agent_id: str, doc_name: str) -> Dict[str, Any]:
             message=f"Document '{doc_name}' not found",
             details={"doc_name": doc_name},
         )
+    chunks = await count_document_chunks(doc_name, agent_id)
     return {
         "doc_name": root.doc_name,
         "doc_description": root.doc_description,
         "root_id": root.id,
         "metadata": root.metadata,
         "collection_name": root.collection_name,
+        "chunks": chunks,
     }
 
 
@@ -1839,3 +1862,238 @@ async def get_documents_queue_endpoint(
     jobs = body.get("jobs", []) if isinstance(body, dict) else []
     total = int(body.get("total", len(jobs))) if isinstance(body, dict) else len(jobs)
     return {"jobs": jobs, "total": total}
+
+
+async def _jvforge_verify_queue_job_agent(agent_id: str, job_id: str) -> str:
+    """Resolve jvforge base URL and confirm ``GET /v1/jobs/{job_id}`` belongs to ``agent_id``.
+
+    Returns:
+        Stripped forge base URL for further httpx calls.
+    """
+    forge_base = (get_jvagent_jvforge_base_url() or "").strip().rstrip("/")
+    if not forge_base:
+        raise ValidationError(
+            message="JVAGENT_JVFORGE_BASE_URL is not configured",
+            details={"agent_id": agent_id},
+        )
+    safe_jid = quote(job_id, safe="")
+    job_get_url = f"{forge_base}/v1/jobs/{safe_jid}"
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        get_resp = await client.get(job_get_url)
+    if get_resp.status_code == 404:
+        raise ResourceNotFoundError(
+            message="Job not found",
+            details={"job_id": job_id, "agent_id": agent_id},
+        )
+    get_resp.raise_for_status()
+    meta = get_resp.json()
+    if not isinstance(meta, dict):
+        raise ResourceNotFoundError(
+            message="Job not found",
+            details={"job_id": job_id, "agent_id": agent_id},
+        )
+    job_agent = (meta.get("agent_id") or "").strip()
+    if job_agent != agent_id:
+        raise ResourceNotFoundError(
+            message="Job not found",
+            details={"job_id": job_id, "agent_id": agent_id},
+        )
+    return forge_base
+
+
+@endpoint(
+    "/agents/{agent_id}/pageindex/documents_queue/{job_id}",
+    methods=["DELETE"],
+    auth=True,
+    roles=["admin"],
+    tags=["PageIndex"],
+    response=success_response(
+        data={
+            "job_id": ResponseField(
+                field_type=str,
+                description="jvforge job id",
+            ),
+            "status": ResponseField(
+                field_type=str,
+                description="Expected `cancelled` after delete",
+            ),
+            "message": ResponseField(
+                field_type=str,
+                description="Human-readable status",
+            ),
+        }
+    ),
+)
+async def cancel_documents_queue_job_endpoint(
+    agent_id: str,
+    job_id: str,
+) -> Dict[str, Any]:
+    """Remove a processing-queue job (proxied to jvforge ``DELETE /v1/jobs/{job_id}``).
+
+    Verifies the job belongs to ``agent_id`` before forwarding.
+    """
+    forge_base = await _jvforge_verify_queue_job_agent(agent_id, job_id)
+    safe_jid = quote(job_id, safe="")
+    delete_url = f"{forge_base}/v1/jobs/{safe_jid}"
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        del_resp = await client.delete(delete_url)
+    if del_resp.status_code == 404:
+        raise ResourceNotFoundError(
+            message="Job not found in queue",
+            details={"job_id": job_id, "agent_id": agent_id},
+        )
+    if del_resp.status_code >= 400:
+        err_payload = del_resp.json() if del_resp.content else {}
+        detail: Any = err_payload.get("detail") if isinstance(err_payload, dict) else del_resp.text
+        if isinstance(detail, list) and detail:
+            detail = detail[0]
+        msg = str(detail) if detail else "Cannot cancel job"
+        raise ValidationError(
+            message=msg,
+            details={"job_id": job_id, "agent_id": agent_id},
+        )
+    body = del_resp.json()
+    if not isinstance(body, dict):
+        raise ValidationError(
+            message="Unexpected response from jvforge",
+            details={"agent_id": agent_id},
+        )
+    return body
+
+
+@endpoint(
+    "/agents/{agent_id}/pageindex/documents_queue/{job_id}/boost",
+    methods=["POST"],
+    auth=True,
+    roles=["admin"],
+    tags=["PageIndex"],
+    response=success_response(
+        data={
+            "job_id": ResponseField(
+                field_type=str,
+                description="jvforge job id",
+            ),
+            "status": ResponseField(
+                field_type=str,
+                description="Expected `boosted`",
+            ),
+            "queue_position": ResponseField(
+                field_type=Dict[str, Any],
+                description="Overall and per-agent queue position",
+            ),
+            "message": ResponseField(
+                field_type=str,
+                description="Human-readable status",
+            ),
+            "status_url": ResponseField(
+                field_type=str,
+                description="jvforge job status URL",
+            ),
+        }
+    ),
+)
+async def boost_documents_queue_job_endpoint(
+    agent_id: str,
+    job_id: str,
+) -> Dict[str, Any]:
+    """Move a queued job to the front (proxied to jvforge ``POST /v1/jobs/{job_id}/boost``).
+
+    Verifies the job belongs to ``agent_id`` before forwarding.
+    """
+    forge_base = await _jvforge_verify_queue_job_agent(agent_id, job_id)
+    safe_jid = quote(job_id, safe="")
+    boost_url = f"{forge_base}/v1/jobs/{safe_jid}/boost"
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        post_resp = await client.post(boost_url)
+    if post_resp.status_code == 404:
+        raise ResourceNotFoundError(
+            message="Job not found",
+            details={"job_id": job_id, "agent_id": agent_id},
+        )
+    if post_resp.status_code == 400:
+        err_payload = post_resp.json()
+        detail: Any = err_payload.get("detail") if isinstance(err_payload, dict) else post_resp.text
+        if isinstance(detail, list) and detail:
+            detail = detail[0]
+        msg = str(detail) if detail else "Cannot boost job"
+        raise ValidationError(
+            message=msg,
+            details={"job_id": job_id, "agent_id": agent_id},
+        )
+    post_resp.raise_for_status()
+    body = post_resp.json()
+    if not isinstance(body, dict):
+        raise ValidationError(
+            message="Unexpected response from jvforge",
+            details={"agent_id": agent_id},
+        )
+    return body
+
+
+@endpoint(
+    "/agents/{agent_id}/pageindex/documents_queue/{job_id}/retry",
+    methods=["POST"],
+    auth=True,
+    roles=["admin"],
+    tags=["PageIndex"],
+    response=success_response(
+        data={
+            "job_id": ResponseField(
+                field_type=str,
+                description="jvforge job id",
+            ),
+            "status": ResponseField(
+                field_type=str,
+                description="Expected `queued` after retry",
+            ),
+            "queue_position": ResponseField(
+                field_type=Dict[str, Any],
+                description="Overall and per-agent queue position",
+            ),
+            "message": ResponseField(
+                field_type=str,
+                description="Human-readable status",
+            ),
+            "status_url": ResponseField(
+                field_type=str,
+                description="jvforge job status URL",
+            ),
+        }
+    ),
+)
+async def retry_documents_queue_job_endpoint(
+    agent_id: str,
+    job_id: str,
+) -> Dict[str, Any]:
+    """Re-queue a failed processing job (proxied to jvforge ``POST /v1/jobs/{job_id}/retry``).
+
+    Verifies the job belongs to ``agent_id`` before forwarding.
+    """
+    forge_base = await _jvforge_verify_queue_job_agent(agent_id, job_id)
+    safe_jid = quote(job_id, safe="")
+    retry_url = f"{forge_base}/v1/jobs/{safe_jid}/retry"
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        post_resp = await client.post(retry_url)
+    if post_resp.status_code == 404:
+        raise ResourceNotFoundError(
+            message="Job not found",
+            details={"job_id": job_id, "agent_id": agent_id},
+        )
+    if post_resp.status_code == 400:
+        err_payload = post_resp.json()
+        detail: Any = err_payload.get("detail") if isinstance(err_payload, dict) else post_resp.text
+        if isinstance(detail, list) and detail:
+            detail = detail[0]
+        msg = str(detail) if detail else "Cannot retry job"
+        raise ValidationError(
+            message=msg,
+            details={"job_id": job_id, "agent_id": agent_id},
+        )
+    post_resp.raise_for_status()
+    body = post_resp.json()
+    if not isinstance(body, dict):
+        raise ValidationError(
+            message="Unexpected response from jvforge",
+            details={"agent_id": agent_id},
+        )
+    return body

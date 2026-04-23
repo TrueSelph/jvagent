@@ -302,6 +302,31 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     doc_name=doc_name,
                 )
 
+            async def _mark_ingest_failed() -> None:
+                docs = getattr(google_drive_documents_node, source)
+                if doc_type == "added":
+                    docs["added"].pop(0)
+                    google_drive_documents_node.failed_documents["added"].append(
+                        file_info
+                    )
+                else:
+                    docs["modified"].pop(0)
+                    google_drive_documents_node.failed_documents["modified"].append(
+                        file_info
+                    )
+                google_drive_documents_node.active_document = ""
+                ingesting = google_drive_documents_node.ingesting_documents
+                google_drive_documents_node.status = (
+                    "failed"
+                    if (
+                        not ingesting["added"]
+                        and not ingesting["modified"]
+                        and not ingesting["removed"]
+                    )
+                    else "pending"
+                )
+                await google_drive_documents_node.save()
+
             async def _do_ingest() -> Dict[str, Any]:
                 file_bytes = await google_drive_action.get_media(file_id=file_id)
                 forge_base = get_jvagent_jvforge_base_url()
@@ -370,9 +395,49 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 )
                 return {"doc_name": doc_name}
 
-            result = await asyncio.wait_for(_do_ingest(), timeout=timeout_seconds)
+            try:
+                result = await asyncio.wait_for(_do_ingest(), timeout=timeout_seconds)
+            except asyncio.TimeoutError:
+                cancel_event.set()
+                await _mark_ingest_failed()
+                logger.warning(
+                    "Document %s timed out after %ss", doc_name, timeout_seconds
+                )
+                return {
+                    "success": False,
+                    "skipped": False,
+                    "doc_name": doc_name,
+                    "ingestion_message": f"Timed out ingesting {doc_name}",
+                }
+            except Exception:
+                await _mark_ingest_failed()
+                logger.exception("Error ingesting document %s", doc_name)
+                return {
+                    "success": False,
+                    "skipped": False,
+                    "doc_name": doc_name,
+                    "ingestion_message": (
+                        f"Failed to ingest {doc_name}"
+                        if doc_type == "added"
+                        else f"Failed to update {doc_name}"
+                    ),
+                }
 
-            if result.get("doc_name"):
+            if not result.get("doc_name"):
+                await _mark_ingest_failed()
+                logger.error("Ingestion returned no doc_name for %s", doc_name)
+                return {
+                    "success": False,
+                    "skipped": False,
+                    "doc_name": doc_name,
+                    "ingestion_message": (
+                        f"Failed to ingest {doc_name}"
+                        if doc_type == "added"
+                        else f"Failed to update {doc_name}"
+                    ),
+                }
+
+            try:
                 docs = getattr(google_drive_documents_node, source)
                 if doc_type == "added":
                     docs["added"].pop(0)
@@ -395,7 +460,11 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     else "pending"
                 )
                 await google_drive_documents_node.save()
-
+            except Exception:
+                logger.exception(
+                    "post-ingest sync state failed for %s (document may be indexed)",
+                    doc_name,
+                )
                 msg = (
                     f"Added {doc_name}"
                     if doc_type == "added"
@@ -404,77 +473,28 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 jid = result.get("jvforge_job_id")
                 if jid:
                     msg = f"{msg} (jvforge job {jid})"
-
+                msg = f"{msg} (warning: sync state not updated)"
                 return {
                     "success": True,
                     "skipped": False,
                     "doc_name": doc_name,
                     "ingestion_message": msg,
                 }
-            else:
-                raise ValueError("ingestion returned no doc_name")
-        except asyncio.TimeoutError:
-            cancel_event.set()
-            docs = getattr(google_drive_documents_node, source)
-            if doc_type == "added":
-                docs["added"].pop(0)
-                google_drive_documents_node.failed_documents["added"].append(file_info)
-            else:
-                docs["modified"].pop(0)
-                google_drive_documents_node.failed_documents["modified"].append(
-                    file_info
-                )
-            google_drive_documents_node.active_document = ""
-            ingesting = google_drive_documents_node.ingesting_documents
-            google_drive_documents_node.status = (
-                "failed"
-                if (
-                    not ingesting["added"]
-                    and not ingesting["modified"]
-                    and not ingesting["removed"]
-                )
-                else "pending"
+
+            msg = (
+                f"Added {doc_name}"
+                if doc_type == "added"
+                else f"Updated {doc_name}"
             )
-            await google_drive_documents_node.save()
-            logger.warning(f"Document {doc_name} timed out after {timeout_seconds}s")
+            jid = result.get("jvforge_job_id")
+            if jid:
+                msg = f"{msg} (jvforge job {jid})"
+
             return {
-                "success": False,
+                "success": True,
                 "skipped": False,
                 "doc_name": doc_name,
-                "ingestion_message": f"Timed out ingesting {doc_name}",
-            }
-        except Exception as e:
-            docs = getattr(google_drive_documents_node, source)
-            if doc_type == "added":
-                docs["added"].pop(0)
-                google_drive_documents_node.failed_documents["added"].append(file_info)
-            else:
-                docs["modified"].pop(0)
-                google_drive_documents_node.failed_documents["modified"].append(
-                    file_info
-                )
-            google_drive_documents_node.active_document = ""
-            ingesting = google_drive_documents_node.ingesting_documents
-            google_drive_documents_node.status = (
-                "failed"
-                if (
-                    not ingesting["added"]
-                    and not ingesting["modified"]
-                    and not ingesting["removed"]
-                )
-                else "pending"
-            )
-            await google_drive_documents_node.save()
-            logger.error(f"Error ingesting document {doc_name}: {e}")
-            return {
-                "success": False,
-                "skipped": False,
-                "doc_name": doc_name,
-                "ingestion_message": (
-                    f"Failed to ingest {doc_name}"
-                    if doc_type == "added"
-                    else f"Failed to update {doc_name}"
-                ),
+                "ingestion_message": msg,
             }
         finally:
             # Ensure active_document is always cleared

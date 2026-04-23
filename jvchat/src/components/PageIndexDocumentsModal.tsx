@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { apiClient } from '../config/api'
 import type {
   GoogleDriveFileEntry,
@@ -261,6 +261,9 @@ export function PageIndexDocumentsModal({
   const [driveRemoveDeleted, setDriveRemoveDeleted] = useState(false)
 
   const [chunksDocName, setChunksDocName] = useState('')
+  const chunksDocPickerRef = useRef<HTMLDivElement>(null)
+  const [chunksDocPickerOpen, setChunksDocPickerOpen] = useState(false)
+  const [chunksDocPickerQuery, setChunksDocPickerQuery] = useState('')
   const [chunkEnabledFilter, setChunkEnabledFilter] = useState<ChunkEnabledFilter>('all')
   const [chunkFilterInput, setChunkFilterInput] = useState('')
   const [chunkFilterQ, setChunkFilterQ] = useState('')
@@ -415,6 +418,48 @@ export function PageIndexDocumentsModal({
   useEffect(() => {
     setChunksPage(1)
   }, [chunksDocName, chunkFilterQ, chunksPerPage, chunkEnabledFilter])
+
+  const chunksDocFiltered = useMemo(() => {
+    const q = chunksDocPickerQuery.trim().toLowerCase()
+    if (!q) return documents
+    return documents.filter((d) => d.doc_name.toLowerCase().includes(q))
+  }, [documents, chunksDocPickerQuery])
+
+  useEffect(() => {
+    if (!chunksDocPickerOpen) return
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (!chunksDocPickerRef.current?.contains(e.target as Node)) {
+        setChunksDocPickerOpen(false)
+      }
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setChunksDocPickerOpen(false)
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDocMouseDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [chunksDocPickerOpen])
+
+  const openChunksDocPicker = useCallback(() => {
+    setChunksDocPickerQuery(chunksDocName)
+    setChunksDocPickerOpen(true)
+  }, [chunksDocName])
+
+  const toggleChunksDocPicker = useCallback(() => {
+    setChunksDocPickerOpen((open) => {
+      if (!open) setChunksDocPickerQuery(chunksDocName)
+      return !open
+    })
+  }, [chunksDocName])
+
+  const selectChunksDocument = useCallback((name: string) => {
+    setChunksDocName(name)
+    setChunksDocPickerQuery(name)
+    setChunksDocPickerOpen(false)
+  }, [])
 
   const fetchChunks = useCallback(async () => {
     if (activeTab !== 'chunks') return
@@ -628,7 +673,7 @@ export function PageIndexDocumentsModal({
 
   const handleBoostJob = async (jobId: string) => {
     try {
-      await apiClient.boostJvforgeJob(jobId)
+      await apiClient.boostPageIndexQueueJob(agentId, jobId)
       await fetchQueue()
     } catch (err: any) {
       console.error('Boost failed:', err)
@@ -636,14 +681,28 @@ export function PageIndexDocumentsModal({
     }
   }
 
-  const handleCancelJob = async (jobId: string) => {
-    if (!confirm('Are you sure you want to cancel this job?')) return
+  const handleCancelJob = async (jobId: string, status?: string) => {
+    const message =
+      status === 'processing'
+        ? 'This job is running. Cancel will remove it from the queue; in-flight work may still complete briefly. Continue?'
+        : 'Are you sure you want to cancel this job?'
+    if (!confirm(message)) return
     try {
-      await apiClient.cancelJvforgeJob(jobId)
+      await apiClient.cancelPageIndexQueueJob(agentId, jobId)
       await fetchQueue()
     } catch (err: any) {
       console.error('Cancel failed:', err)
       setUploadError(err.message || 'Failed to cancel job')
+    }
+  }
+
+  const handleRetryJob = async (jobId: string) => {
+    try {
+      await apiClient.retryPageIndexQueueJob(agentId, jobId)
+      await fetchQueue()
+    } catch (err: any) {
+      console.error('Retry failed:', err)
+      setUploadError(err.message || 'Failed to retry job')
     }
   }
 
@@ -1665,20 +1724,107 @@ export function PageIndexDocumentsModal({
         {activeTab === 'chunks' && (
           <div className="space-y-4">
             <div className="flex flex-col lg:flex-row lg:flex-wrap gap-3 lg:items-end">
-              <div className="flex-1 min-w-[200px]">
-                <label className={`block ${labelClass} mb-1`}>Document</label>
-                <select
-                  value={chunksDocName}
-                  onChange={(e) => setChunksDocName(e.target.value)}
-                  className={inputClass}
-                >
-                  <option value="">Select a document</option>
-                  {documents.map((d) => (
-                    <option key={d.doc_name} value={d.doc_name}>
-                      {d.doc_name}
-                    </option>
-                  ))}
-                </select>
+              <div className="flex-1 min-w-[200px]" ref={chunksDocPickerRef}>
+                <label className={`block ${labelClass} mb-1`} htmlFor="chunks-doc-combobox">
+                  Document
+                </label>
+                <div className="relative">
+                  <input
+                    id="chunks-doc-combobox"
+                    type="text"
+                    role="combobox"
+                    aria-expanded={chunksDocPickerOpen}
+                    aria-controls="chunks-doc-picker-list"
+                    aria-autocomplete="list"
+                    autoComplete="off"
+                    placeholder="Search or select a document…"
+                    value={chunksDocPickerOpen ? chunksDocPickerQuery : chunksDocName}
+                    onChange={(e) => {
+                      setChunksDocPickerQuery(e.target.value)
+                      if (!chunksDocPickerOpen) setChunksDocPickerOpen(true)
+                    }}
+                    onFocus={openChunksDocPicker}
+                    className={`${inputClass} pr-9`}
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-label={chunksDocPickerOpen ? 'Close document list' : 'Open document list'}
+                    className={`absolute right-1 top-1/2 -translate-y-1/2 p-1.5 rounded-md ${
+                      dark
+                        ? 'text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+                        : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+                    }`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={toggleChunksDocPicker}
+                  >
+                    <span
+                      className={`block text-xs transition-transform ${chunksDocPickerOpen ? 'rotate-180' : ''}`}
+                      aria-hidden
+                    >
+                      ▼
+                    </span>
+                  </button>
+                  {chunksDocPickerOpen && (
+                    <ul
+                      id="chunks-doc-picker-list"
+                      role="listbox"
+                      className={
+                        dark
+                          ? 'absolute z-50 mt-1 w-full max-h-60 overflow-auto rounded-lg border border-slate-600 bg-slate-800 shadow-lg py-1'
+                          : 'absolute z-50 mt-1 w-full max-h-60 overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg py-1'
+                      }
+                    >
+                      <li role="presentation">
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={chunksDocName === ''}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => selectChunksDocument('')}
+                          className={`w-full text-left px-3 py-2 text-sm border-b ${
+                            dark
+                              ? 'border-slate-600 text-slate-200 hover:bg-slate-700'
+                              : 'border-gray-100 text-gray-900 hover:bg-gray-100'
+                          } ${chunksDocName === '' ? (dark ? 'bg-slate-700/80' : 'bg-indigo-50') : ''}`}
+                        >
+                          Whole collection (all documents)
+                        </button>
+                      </li>
+                      {chunksDocFiltered.length === 0 ? (
+                        <li
+                          className={`px-3 py-2 text-sm ${dark ? 'text-slate-500' : 'text-gray-500'}`}
+                        >
+                          No documents match your search.
+                        </li>
+                      ) : (
+                        chunksDocFiltered.map((d) => (
+                          <li key={d.doc_name} role="presentation">
+                            <button
+                              type="button"
+                              role="option"
+                              aria-selected={chunksDocName === d.doc_name}
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => selectChunksDocument(d.doc_name)}
+                              className={`w-full text-left px-3 py-2 text-sm truncate ${
+                                dark ? 'text-slate-100 hover:bg-slate-700' : 'text-gray-900 hover:bg-gray-100'
+                              } ${
+                                chunksDocName === d.doc_name
+                                  ? dark
+                                    ? 'bg-slate-700/80'
+                                    : 'bg-indigo-50'
+                                  : ''
+                              }`}
+                              title={d.doc_name}
+                            >
+                              {d.doc_name}
+                            </button>
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                  )}
+                </div>
               </div>
               <div className="flex-1 min-w-[200px]">
                 <label className={`block ${labelClass} mb-1`}>Filter chunks</label>
@@ -2506,10 +2652,22 @@ export function PageIndexDocumentsModal({
                                   ⚡ Boost
                                 </button>
                               )}
-                              {(job.status === 'queued' || job.status === 'failed') && (
+                              {job.status === 'failed' && (
                                 <button
-                                  onClick={() => handleCancelJob(job.job_id)}
+                                  onClick={() => handleRetryJob(job.job_id)}
+                                  className="text-emerald-600 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300 text-sm font-medium"
+                                  title="Re-queue this job for processing"
+                                >
+                                  Retry
+                                </button>
+                              )}
+                              {(job.status === 'queued' ||
+                                job.status === 'failed' ||
+                                job.status === 'processing') && (
+                                <button
+                                  onClick={() => handleCancelJob(job.job_id, job.status)}
                                   className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 text-sm font-medium"
+                                  title={job.status === 'processing' ? 'Stop and remove this job' : undefined}
                                 >
                                   Cancel
                                 </button>
@@ -2560,6 +2718,13 @@ export function PageIndexDocumentsModal({
                               dark ? 'text-slate-400' : 'text-gray-500'
                             }`}
                           >
+                            Chunks
+                          </th>
+                          <th
+                            className={`px-4 py-2 text-left text-xs font-medium uppercase hidden sm:table-cell ${
+                              dark ? 'text-slate-400' : 'text-gray-500'
+                            }`}
+                          >
                             Description
                           </th>
                           <th
@@ -2592,6 +2757,13 @@ export function PageIndexDocumentsModal({
                           <tr key={doc.doc_name}>
                             <td className={`px-4 py-3 text-sm ${dark ? 'text-slate-100' : 'text-gray-900'}`}>
                               {doc.doc_name}
+                            </td>
+                            <td
+                              className={`px-4 py-3 text-sm hidden sm:table-cell tabular-nums ${
+                                dark ? 'text-slate-300' : 'text-gray-600'
+                              }`}
+                            >
+                              {doc.chunks !== undefined && doc.chunks !== null ? doc.chunks : '—'}
                             </td>
                             <td
                               className={`px-4 py-3 text-sm hidden sm:table-cell max-w-[200px] truncate ${
