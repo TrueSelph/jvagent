@@ -8,7 +8,7 @@ from string import Template
 
 DIRECTIVE_TEMPLATE_PLAIN = Template(
     "Use this context to inform your response to the user's query:\n\n"
-    "$results\n\n"
+    "{results}\n\n"
     "[END OF CONTEXT]"
 )
 
@@ -21,16 +21,16 @@ DIRECTIVE_TEMPLATE = Template(
     "- At the end of your response, list ONLY the references you actually cited—copy each cited "
     "line verbatim from the block below. Do not modify, reorder, or paraphrase them.\n"
     "- If your response does not cite any source, do NOT include a references section at all.\n\n"
-    "$results\n\n"
+    "{results}\n\n"
     "Available references (include only those you cited):\n\n"
-    "$references\n\n"
+    "{references}\n\n"
     "[END OF CONTEXT]"
 )
 
 DIRECTIVE_TEMPLATE_NO_REFS = Template(
     "Use the following numbered excerpts to inform your response to the user's query.\n"
     "Cite sources using bracketed reference numbers (e.g. [1], [2]) where appropriate.\n\n"
-    "$results\n\n"
+    "{results}\n\n"
     "[END OF CONTEXT]"
 )
 
