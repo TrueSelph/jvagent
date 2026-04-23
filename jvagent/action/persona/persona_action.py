@@ -36,6 +36,7 @@ from jvagent.action.persona.prompts import (
     format_parameter,
     get_channel_directive,
 )
+from jvagent.core.channel import normalize_channel
 from jvagent.memory import Interaction
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,19 @@ class PersonaAction(Action):
         default=500,
         description="Maximum words for persona replies on non-voice channels (0 = disabled).",
     )
+
+    channel_response_limits: dict = attribute(
+        default={
+            "default": 500,
+            "email": 10000,
+            "sms": 500,
+            "facebook": 1000,
+            "whatsapp": 1000,
+            "web": 10000
+        },
+        description="Maximum words for persona replies on different channels.",
+    )
+
     voice_response_limit: int = attribute(
         default=60,
         description="Maximum words for voice channel (TTS). Used when channel=voice.",
@@ -320,6 +334,18 @@ class PersonaAction(Action):
         if last_sentence_end > limit // 2:
             truncated = truncated[: last_sentence_end + 1]
         return " ".join(truncated).strip()
+
+    def _non_voice_response_word_limit(self, interaction: Interaction) -> int:
+        """Word cap for non-voice replies: per-channel override then ``response_limit``."""
+        ch = normalize_channel(getattr(interaction, "channel", None))
+        limits = self.channel_response_limits
+        if isinstance(limits, dict) and ch in limits:
+            raw = limits[ch]
+            try:
+                return int(raw)
+            except (TypeError, ValueError):
+                pass
+        return self.response_limit if self.response_limit > 0 else 0
 
     def _use_voice_formatting(
         self, interaction: Interaction, visitor: Optional[Any]
@@ -664,7 +690,7 @@ class PersonaAction(Action):
         if use_voice:
             word_limit = self.voice_response_limit
         else:
-            word_limit = self.response_limit if self.response_limit > 0 else 0
+            word_limit = self._non_voice_response_word_limit(interaction)
         if word_limit > 0:
             response_length_section = RESPONSE_LENGTH_PROMPT.format(limit=word_limit)
         else:

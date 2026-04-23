@@ -22,9 +22,9 @@ All routes are agent-scoped (collection = agent_id from path unless noted).
 import json
 import logging
 import mimetypes
-import os
 import tempfile
 import uuid
+import os
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -650,7 +650,7 @@ async def ingest_document_endpoint(
 
     When ``JVAGENT_JVFORGE_BASE_URL`` is set, ingestion is delegated to that jvforge service
     (``POST /v1/process``) with ``llm_webhook_url`` from the agent's PageIndex retrieval action;
-    set ``JVAGENT_JVFORGE_API_KEY`` (or ``JVFORGE_API_KEY``) if jvforge requires ``X-API-Key``.
+    set ``JVAGENT_JVFORGE_API_KEY`` if you add ingress auth in front of jvforge.
     """
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     content_type = request.headers.get("content-type", "")
@@ -737,9 +737,7 @@ async def ingest_document_endpoint(
             return {
                 "doc_name": (pick or {}).get("doc_name") or effective_dn or "",
                 "root_id": (pick or {}).get("root_id", ""),
-                "doc_description": (
-                    (pick or {}).get("doc_description") if pick else None
-                ),
+                "doc_description": (pick or {}).get("doc_description") if pick else None,
             }
 
         if file_url:
@@ -770,10 +768,10 @@ async def ingest_document_endpoint(
 
         effective_doc_name = doc_name or filename
         forge_base = get_jvagent_jvforge_base_url()
-
+        
         # Check if async mode is enabled
         async_mode = os.environ.get("JVAGENT_JVFORGE_ASYNC", "false").lower() == "true"
-
+        
         try:
             if forge_base:
                 retrieval_action = await _get_pageindex_retrieval_action(agent_id)
@@ -781,7 +779,7 @@ async def ingest_document_endpoint(
                 summary_for_forge = if_add_node_summary
                 if summary_for_forge is None:
                     summary_for_forge = "yes" if get_pageindex_node_summary() else "no"
-
+                
                 if async_mode:
                     # Async mode: queue job and return immediately
                     result = await assimilate_via_jvforge_async(
@@ -801,7 +799,7 @@ async def ingest_document_endpoint(
                         llm_webhook_url=llm_wh_url,
                         emergency=False,  # Can be made configurable via form field
                     )
-
+                    
                     # Return async response with queue position (root_id/description
                     # only exist after processing; schema requires these keys)
                     return {
@@ -1736,20 +1734,9 @@ async def pageindex_llm_webhook(request: Request, agent_id: str) -> Dict[str, An
             message="PageIndexRetrievalInteractAction not found for this agent",
             details={"agent_id": agent_id},
         )
-
-    data = getattr(request.state, "parsed_payload", None)
-    if data is None:
-        try:
-            body = await request.body()
-            if body:
-                data = await request.json()
-            else:
-                data = {}
-        except Exception:
-            data = {}
-
+    data = await request.json()
     if not isinstance(data, dict):
-        data = {}
+        data = await request.body()
 
     process_url = (data.get("process_document_url") or "").strip()
     if process_url:
@@ -1771,9 +1758,7 @@ async def pageindex_llm_webhook(request: Request, agent_id: str) -> Dict[str, An
         except ValidationError:
             raise
         except Exception as e:
-            logger.error(
-                "PageIndex process_document_url import failed: %s", e, exc_info=True
-            )
+            logger.error("PageIndex process_document_url import failed: %s", e, exc_info=True)
             raise ValidationError(
                 message=f"process_document_url import failed: {e}",
                 details={"agent_id": agent_id},
@@ -1785,15 +1770,72 @@ async def pageindex_llm_webhook(request: Request, agent_id: str) -> Dict[str, An
                 "message": "Documents imported successfully",
             },
         }
+    else:
+        try:
+            result = await action.handle_webhook_payload(data)
+            return {"status": "received", "result": result}
+        except ValidationError:
+            raise
+        except Exception as e:
+            logger.error("PageIndex LLM webhook failed: %s", e, exc_info=True)
+            raise ValidationError(
+                message=f"LLM webhook failed: {e}",
+                details={"agent_id": agent_id},
+            )
 
-    try:
-        result = await action.handle_webhook_payload(data)
-        return {"status": "received", "result": result}
-    except ValidationError:
-        raise
-    except Exception as e:
-        logger.error("PageIndex LLM webhook failed: %s", e, exc_info=True)
+
+
+
+@endpoint(
+    "/agents/{agent_id}/pageindex/documents_queue",
+    methods=["GET"],
+    auth=True,
+    roles=["admin"],
+    tags=["PageIndex"],
+    response=success_response(
+        data={
+            "jobs": ResponseField(
+                field_type=List[Dict[str, Any]],
+                description="Documents queue",
+                example=[{
+                    "job_id": "123",
+                    "doc_name": "Document 1",
+                    "status": "queued",
+                }],
+            ),
+            "total": ResponseField(
+                field_type=int,
+                description="Total number of documents in the queue",
+                example=100,
+            ),
+        }
+    ),
+)
+async def get_documents_queue_endpoint(
+    agent_id: str,
+) -> Dict[str, Any]:
+    """Get the documents queue for the agent (proxied from jvforge ``/v1/queue``).
+
+    Args:
+        agent_id: Agent id.
+
+    Returns:
+        The documents queue for the agent.
+
+    Raises:
+        ResourceNotFoundError: If the agent or PageIndex retrieval action is missing.
+    """
+    forge_base = (get_jvagent_jvforge_base_url() or "").strip().rstrip("/")
+    if not forge_base:
         raise ValidationError(
-            message=f"LLM webhook failed: {e}",
+            message="JVAGENT_JVFORGE_BASE_URL is not configured",
             details={"agent_id": agent_id},
         )
+    url = f"{forge_base}/v1/queue?agent_id={agent_id}"
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response = await client.get(url)
+    response.raise_for_status()
+    body = response.json()
+    jobs = body.get("jobs", []) if isinstance(body, dict) else []
+    total = int(body.get("total", len(jobs))) if isinstance(body, dict) else len(jobs)
+    return {"jobs": jobs, "total": total}

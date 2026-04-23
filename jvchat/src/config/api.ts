@@ -1223,8 +1223,8 @@ class ApiClient {
   }
 
   /**
-   * Get jvforge queue for an agent.
-   * Path: GET /v1/queue?agent_id={id}
+   * Get jvforge processing queue for an agent (proxied through jvagent; same job shape as jvforge).
+   * Path: GET /api/agents/{agentId}/pageindex/documents_queue
    */
   async getJvforgeQueue(agentId: string): Promise<{
     jobs: Array<{
@@ -1241,12 +1241,54 @@ class ApiClient {
     }>
     total: number
   }> {
-    const path = `/v1/queue?agent_id=${encodeURIComponent(agentId)}`
-    const headers = this._jvforgeHeaders()
-    const response = await this._withJvforgeFallback((baseURL) =>
-      this.client.get(path, { baseURL, headers })
-    )
-    return response.data
+    type QueueJob = {
+      job_id: string
+      doc_name: string
+      status: 'queued' | 'processing' | 'completed' | 'failed' | 'webhook_failed'
+      queue_position?: { overall: number, per_agent: number }
+      enqueued_at: string
+      agent_id?: string
+      client_ref?: string
+      artifact_url?: string
+      error?: string
+      status_url?: string
+    }
+    const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents_queue`
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.get(path, { baseURL })
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.get(
+            `/agents/${encodeURIComponent(agentId)}/pageindex/documents_queue`,
+            { baseURL }
+          )
+        }
+        throw err
+      }
+    })
+    const raw = response.data as Record<string, unknown> | unknown[] | null | undefined
+    if (Array.isArray(raw)) {
+      return { jobs: raw as QueueJob[], total: raw.length }
+    }
+    // jvagent: { success, data: { jobs, total } } — same shape as direct jvforge
+    if (raw && typeof raw === 'object' && !Array.isArray(raw) && 'success' in raw) {
+      const w = raw as { success?: boolean, data?: { jobs?: unknown, total?: number } }
+      if (w.success && w.data && typeof w.data === 'object' && w.data !== null) {
+        const d = w.data
+        const jobs = Array.isArray(d.jobs) ? d.jobs : []
+        const total = typeof d.total === 'number' ? d.total : jobs.length
+        return { jobs: jobs as QueueJob[], total }
+      }
+    }
+    if (raw && typeof raw === 'object' && !Array.isArray(raw) && Array.isArray((raw as { jobs?: unknown }).jobs)) {
+      const o = raw as { jobs: unknown[], total?: number }
+      return {
+        jobs: o.jobs as QueueJob[],
+        total: typeof o.total === 'number' ? o.total : o.jobs.length,
+      }
+    }
+    return { jobs: [], total: 0 }
   }
 
   /**

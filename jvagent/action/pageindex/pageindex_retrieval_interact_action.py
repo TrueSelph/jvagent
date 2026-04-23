@@ -36,8 +36,7 @@ from jvagent.action.pageindex.config import (
 from jvagent.action.pageindex.prompts import (
     DIRECTIVE_TEMPLATE,
     DIRECTIVE_TEMPLATE_NO_REFS,
-    DIRECTIVE_TEMPLATE_PLAIN,
-    DIRECTIVE_TEMPLATE_STR,
+    DIRECTIVE_TEMPLATE_PLAIN
 )
 from jvagent.action.pageindex.retrieval import search_documents
 from jvagent.core.public_url import get_public_base_url
@@ -189,8 +188,16 @@ class PageIndexRetrievalInteractAction(InteractAction):
         description="Execution weight (runs after InteractRouter)",
     )
     directive: str = attribute(
-        default=DIRECTIVE_TEMPLATE_STR,
+        default=DIRECTIVE_TEMPLATE.template,
         description="Template for formatting the directive. Placeholder: {results}",
+    )
+    directive_no_refs: str = attribute(
+        default=DIRECTIVE_TEMPLATE_NO_REFS.template,
+        description="Template for formatting the directive without references. Placeholder: {results}",
+    )
+    directive_plain: str = attribute(
+        default=DIRECTIVE_TEMPLATE_PLAIN.template,
+        description="Template for formatting the directive in plain text. Placeholder: {results}",
     )
     strategy: str = attribute(
         default="tree_search",
@@ -606,7 +613,7 @@ class PageIndexRetrievalInteractAction(InteractAction):
             doc = r.get("doc_name", "")
             prefix = f"[{doc}] {title}: " if doc or title else ""
             parts.append(f"- {prefix}{content}")
-        return DIRECTIVE_TEMPLATE_PLAIN.safe_substitute(results="\n".join(parts))
+        return self.directive_plain.format(results="\n".join(parts))
 
     def _format_directive_with_references(self, results: List[Dict[str, Any]]) -> str:
         """Numbered excerpts with deduplicated references.
@@ -652,7 +659,7 @@ class PageIndexRetrievalInteractAction(InteractAction):
 
         results_str = "\n".join(excerpt_lines)
         if has_ref_metadata and ref_entries:
-            return DIRECTIVE_TEMPLATE.safe_substitute(
+            return self.directive.format(
                 results=results_str, references="\n".join(ref_entries)
             )
-        return DIRECTIVE_TEMPLATE_NO_REFS.safe_substitute(results=results_str)
+        return self.directive_no_refs.format(results=results_str)
