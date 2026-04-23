@@ -22,6 +22,22 @@ from jvagent.action.model.language.base import (
 logger = logging.getLogger(__name__)
 
 
+def _log_openai_http_error(operation: str, exc: httpx.HTTPStatusError) -> None:
+    """Log OpenAI error response body so 4xx failures are diagnosable from logs."""
+    resp = exc.response
+    snippet = ""
+    try:
+        snippet = (resp.text or "")[:4000]
+    except Exception as read_err:  # pragma: no cover - defensive
+        snippet = f"<failed to read body: {read_err}>"
+    logger.error(
+        "%s: OpenAI HTTP %s. Response body (truncated): %s",
+        operation,
+        resp.status_code,
+        snippet or "(empty)",
+    )
+
+
 class OpenAILanguageModelAction(LanguageModelAction):
     """OpenAI language model integration action.
 
@@ -316,7 +332,11 @@ class OpenAILanguageModelAction(LanguageModelAction):
                 json=payload,
                 headers=request_headers,
             )
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                _log_openai_http_error("OpenAI chat/completions (sync)", e)
+                raise
             data = response.json()
 
             # Extract response
@@ -357,10 +377,6 @@ class OpenAILanguageModelAction(LanguageModelAction):
                 thinking_content=thinking_content,
             )
 
-        except httpx.HTTPStatusError:
-            # Re-raise immediately - let the error handler log and format the response
-            # This prevents duplicate logging and ensures consistent error formatting
-            raise
         except httpx.TimeoutException:
             raise
         except httpx.RequestError:
@@ -470,7 +486,12 @@ class OpenAILanguageModelAction(LanguageModelAction):
                     json=payload,
                     headers=request_headers,
                 ) as response:
-                    response.raise_for_status()
+                    try:
+                        response.raise_for_status()
+                    except httpx.HTTPStatusError as e:
+                        await response.aread()
+                        _log_openai_http_error("OpenAI chat/completions (stream)", e)
+                        raise
 
                     # Parse SSE stream
                     async for line in response.aiter_lines():

@@ -481,11 +481,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     "ingestion_message": msg,
                 }
 
-            msg = (
-                f"Added {doc_name}"
-                if doc_type == "added"
-                else f"Updated {doc_name}"
-            )
+            msg = f"Added {doc_name}" if doc_type == "added" else f"Updated {doc_name}"
             jid = result.get("jvforge_job_id")
             if jid:
                 msg = f"{msg} (jvforge job {jid})"

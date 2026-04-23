@@ -22,9 +22,9 @@ All routes are agent-scoped (collection = agent_id from path unless noted).
 import json
 import logging
 import mimetypes
+import os
 import tempfile
 import uuid
-import os
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -744,7 +744,9 @@ async def ingest_document_endpoint(
             return {
                 "doc_name": (pick or {}).get("doc_name") or effective_dn or "",
                 "root_id": (pick or {}).get("root_id", ""),
-                "doc_description": (pick or {}).get("doc_description") if pick else None,
+                "doc_description": (
+                    (pick or {}).get("doc_description") if pick else None
+                ),
                 "chunks": int((pick or {}).get("chunks") or 0),
             }
 
@@ -776,10 +778,10 @@ async def ingest_document_endpoint(
 
         effective_doc_name = doc_name or filename
         forge_base = get_jvagent_jvforge_base_url()
-        
+
         # Check if async mode is enabled
         async_mode = os.environ.get("JVAGENT_JVFORGE_ASYNC", "false").lower() == "true"
-        
+
         try:
             if forge_base:
                 retrieval_action = await _get_pageindex_retrieval_action(agent_id)
@@ -787,7 +789,7 @@ async def ingest_document_endpoint(
                 summary_for_forge = if_add_node_summary
                 if summary_for_forge is None:
                     summary_for_forge = "yes" if get_pageindex_node_summary() else "no"
-                
+
                 if async_mode:
                     # Async mode: queue job and return immediately
                     result = await assimilate_via_jvforge_async(
@@ -807,7 +809,7 @@ async def ingest_document_endpoint(
                         llm_webhook_url=llm_wh_url,
                         emergency=False,  # Can be made configurable via form field
                     )
-                    
+
                     # Return async response with queue position (root_id/description
                     # only exist after processing; schema requires these keys)
                     return {
@@ -1781,7 +1783,9 @@ async def pageindex_llm_webhook(request: Request, agent_id: str) -> Dict[str, An
         except ValidationError:
             raise
         except Exception as e:
-            logger.error("PageIndex process_document_url import failed: %s", e, exc_info=True)
+            logger.error(
+                "PageIndex process_document_url import failed: %s", e, exc_info=True
+            )
             raise ValidationError(
                 message=f"process_document_url import failed: {e}",
                 details={"agent_id": agent_id},
@@ -1807,8 +1811,6 @@ async def pageindex_llm_webhook(request: Request, agent_id: str) -> Dict[str, An
             )
 
 
-
-
 @endpoint(
     "/agents/{agent_id}/pageindex/documents_queue",
     methods=["GET"],
@@ -1820,11 +1822,13 @@ async def pageindex_llm_webhook(request: Request, agent_id: str) -> Dict[str, An
             "jobs": ResponseField(
                 field_type=List[Dict[str, Any]],
                 description="Documents queue",
-                example=[{
-                    "job_id": "123",
-                    "doc_name": "Document 1",
-                    "status": "queued",
-                }],
+                example=[
+                    {
+                        "job_id": "123",
+                        "doc_name": "Document 1",
+                        "status": "queued",
+                    }
+                ],
             ),
             "total": ResponseField(
                 field_type=int,
@@ -1944,7 +1948,11 @@ async def cancel_documents_queue_job_endpoint(
         )
     if del_resp.status_code >= 400:
         err_payload = del_resp.json() if del_resp.content else {}
-        detail: Any = err_payload.get("detail") if isinstance(err_payload, dict) else del_resp.text
+        detail: Any = (
+            err_payload.get("detail")
+            if isinstance(err_payload, dict)
+            else del_resp.text
+        )
         if isinstance(detail, list) and detail:
             detail = detail[0]
         msg = str(detail) if detail else "Cannot cancel job"
@@ -2012,7 +2020,11 @@ async def boost_documents_queue_job_endpoint(
         )
     if post_resp.status_code == 400:
         err_payload = post_resp.json()
-        detail: Any = err_payload.get("detail") if isinstance(err_payload, dict) else post_resp.text
+        detail: Any = (
+            err_payload.get("detail")
+            if isinstance(err_payload, dict)
+            else post_resp.text
+        )
         if isinstance(detail, list) and detail:
             detail = detail[0]
         msg = str(detail) if detail else "Cannot boost job"
@@ -2081,7 +2093,11 @@ async def retry_documents_queue_job_endpoint(
         )
     if post_resp.status_code == 400:
         err_payload = post_resp.json()
-        detail: Any = err_payload.get("detail") if isinstance(err_payload, dict) else post_resp.text
+        detail: Any = (
+            err_payload.get("detail")
+            if isinstance(err_payload, dict)
+            else post_resp.text
+        )
         if isinstance(detail, list) and detail:
             detail = detail[0]
         msg = str(detail) if detail else "Cannot retry job"

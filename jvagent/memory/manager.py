@@ -864,13 +864,17 @@ class Memory(Node):
             cutoff = now - timedelta(minutes=recent_minutes)
             time_filter["context.started_at"] = {"$gte": cutoff}
 
-        # Scope to interactions belonging to this Memory's users by memory_id.
+        # Scope to this Memory and legacy/unscoped rows (missing or empty memory_id).
         base_filter: Dict[str, Any] = {
             "entity": "Interaction",
             "context.conversation_id": {"$ne": ""},
         }
         if self.id:
-            base_filter["context.memory_id"] = self.id
+            base_filter["$or"] = [
+                {"context.memory_id": self.id},
+                {"context.memory_id": ""},
+                {"context.memory_id": None},
+            ]
         base_filter.update(time_filter)
 
         deleted = 0

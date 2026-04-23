@@ -389,6 +389,9 @@ async def _handle_media_batching(
     data_dict: Dict[str, Any],
     agent_id: str,
     whatsapp_action: Any,
+    *,
+    vision_base64: Optional[str] = None,
+    vision_mime: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Handle media batching logic with thread-safe batch manager.
 
@@ -414,6 +417,8 @@ async def _handle_media_batching(
             data_dict=data_dict,
             agent_id=agent_id,
             whatsapp_action=whatsapp_action,
+            vision_base64=vision_base64,
+            vision_mime=vision_mime,
         )
     except Exception as e:
         logger.error(
@@ -462,6 +467,7 @@ async def _handle_media_message(
             # Handle potential data: URI prefix
             if "," in media_b64:
                 media_b64 = media_b64.split(",")[1]
+            media_b64 = media_b64.strip()
 
             try:
                 media_bytes = base64.b64decode(media_b64)
@@ -485,6 +491,16 @@ async def _handle_media_message(
                         "whatsapp_payload": _convert_message_payload_to_dict(data)
                     }
 
+                    # Inline base64 for LLM vision: OpenAI cannot fetch many public URLs
+                    # (e.g. ngrok-free.app returns an HTML interstitial to their servers).
+                    vision_b64_arg: Optional[str] = None
+                    vision_mime_arg: Optional[str] = None
+                    mt = (data.message_type or "").lower()
+                    mime = (data.mime_type or "").lower()
+                    if mt == "image" or mime.startswith("image/"):
+                        vision_b64_arg = media_b64
+                        vision_mime_arg = (data.mime_type or "").strip() or "image/jpeg"
+
                     # Handle batching for media messages
                     return await _handle_media_batching(
                         sender,
@@ -493,6 +509,8 @@ async def _handle_media_message(
                         data_dict,
                         agent_id,
                         whatsapp_action,
+                        vision_base64=vision_b64_arg,
+                        vision_mime=vision_mime_arg,
                     )
 
             except (ValueError, base64.binascii.Error) as e:

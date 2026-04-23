@@ -39,8 +39,7 @@ async def test_post_ingest_save_failure_single_pop_success_returned():
     )
     page_index_action = SimpleNamespace(get_webhook_url=AsyncMock(return_value=""))
 
-    action = PageIndexGoogleDriveSyncAction.__new__(PageIndexGoogleDriveSyncAction)
-    action.document_timeout = 600
+    action = PageIndexGoogleDriveSyncAction(document_timeout=600)
 
     with (
         patch(

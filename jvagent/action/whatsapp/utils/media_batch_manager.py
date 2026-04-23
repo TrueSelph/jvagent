@@ -74,16 +74,31 @@ def _is_vision_image(item: Dict[str, Any]) -> bool:
 
 
 def _media_item(
-    media_url: str, utterance: Optional[str], data_dict: Dict[str, Any]
+    media_url: str,
+    utterance: Optional[str],
+    data_dict: Dict[str, Any],
+    *,
+    vision_base64: Optional[str] = None,
+    vision_mime: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Single media entry for a batch (types from visitor payload)."""
+    """Single media entry for a batch (types from visitor payload).
+
+    When ``vision_base64`` is set (raw base64, no data-URI prefix), LLM vision
+    uses inline data instead of ``media_url``. That avoids OpenAI fetching
+    URLs that are not reachable from their servers (e.g. ngrok-free interstitials).
+    """
     payload = _get_payload(data_dict)
-    return {
+    out: Dict[str, Any] = {
         "url": media_url,
         "utterance": utterance,
         "message_type": payload.get("message_type"),
         "mime_type": payload.get("mime_type"),
     }
+    if vision_base64:
+        out["vision_base64"] = vision_base64
+    if vision_mime:
+        out["vision_mime"] = vision_mime
+    return out
 
 
 # Constants for batch management
@@ -124,13 +139,24 @@ class MediaBatchManager:
         utterance: Optional[str],
         data_dict: Dict[str, Any],
         agent_id: str,
+        *,
+        vision_base64: Optional[str] = None,
+        vision_mime: Optional[str] = None,
     ) -> None:
         """Process a single media item inline (no batching).
 
         Used when batching must not apply (e.g. single-item pass-through).
         """
         batch = {
-            "media_items": [_media_item(media_url, utterance, data_dict)],
+            "media_items": [
+                _media_item(
+                    media_url,
+                    utterance,
+                    data_dict,
+                    vision_base64=vision_base64,
+                    vision_mime=vision_mime,
+                )
+            ],
             "data": data_dict,
             "agent_id": agent_id,
         }
@@ -144,6 +170,9 @@ class MediaBatchManager:
         data_dict: Dict[str, Any],
         agent_id: str,
         whatsapp_action: Any,
+        *,
+        vision_base64: Optional[str] = None,
+        vision_mime: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Add media to batch for sender (thread-safe).
 
@@ -153,7 +182,14 @@ class MediaBatchManager:
         mode = _get_media_batch_mode()
         if mode == "deferred":
             return await self._get_or_create_batch_persistent(
-                sender, media_url, utterance, data_dict, agent_id, whatsapp_action
+                sender,
+                media_url,
+                utterance,
+                data_dict,
+                agent_id,
+                whatsapp_action,
+                vision_base64=vision_base64,
+                vision_mime=vision_mime,
             )
 
         lock = await self._get_lock(sender)
@@ -180,12 +216,20 @@ class MediaBatchManager:
                         agent_id,
                         whatsapp_action,
                         current_time,
+                        vision_base64=vision_base64,
+                        vision_mime=vision_mime,
                     )
                     self._batches[sender] = batch
                 else:
                     # Add to existing batch
                     batch["media_items"].append(
-                        _media_item(media_url, utterance, data_dict)
+                        _media_item(
+                            media_url,
+                            utterance,
+                            data_dict,
+                            vision_base64=vision_base64,
+                            vision_mime=vision_mime,
+                        )
                     )
                     batch["updated_at"] = current_time
 
@@ -205,6 +249,8 @@ class MediaBatchManager:
                     agent_id,
                     whatsapp_action,
                     current_time,
+                    vision_base64=vision_base64,
+                    vision_mime=vision_mime,
                 )
                 self._batches[sender] = batch
 
@@ -251,6 +297,9 @@ class MediaBatchManager:
         data_dict: Dict[str, Any],
         agent_id: str,
         whatsapp_action: Any,
+        *,
+        vision_base64: Optional[str] = None,
+        vision_mime: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Add media to persistent batch (serverless / prime database).
 
@@ -260,7 +309,13 @@ class MediaBatchManager:
         """
         current_time = time.time()
         db = get_prime_database()
-        media_item = _media_item(media_url, utterance, data_dict)
+        media_item = _media_item(
+            media_url,
+            utterance,
+            data_dict,
+            vision_base64=vision_base64,
+            vision_mime=vision_mime,
+        )
 
         update: Dict[str, Any] = {
             "$push": {"media_items": media_item},
@@ -405,10 +460,21 @@ class MediaBatchManager:
         agent_id: str,
         whatsapp_action: Any,
         current_time: float,
+        *,
+        vision_base64: Optional[str] = None,
+        vision_mime: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a new batch structure with per-item metadata."""
         return {
-            "media_items": [_media_item(media_url, utterance, data_dict)],
+            "media_items": [
+                _media_item(
+                    media_url,
+                    utterance,
+                    data_dict,
+                    vision_base64=vision_base64,
+                    vision_mime=vision_mime,
+                )
+            ],
             "data": data_dict,
             "agent_id": agent_id,
             "action": whatsapp_action,
@@ -445,14 +511,24 @@ class MediaBatchManager:
     @staticmethod
     def _batch_utterance_and_media_urls(
         media_items: List[Dict[str, Any]], payload: Dict[str, Any]
-    ) -> Tuple[str, List[str], List[str]]:
-        """Build combined utterance and URL lists for visitor.data."""
+    ) -> Tuple[str, List[str], List[Any]]:
+        """Build combined utterance, media URL list, and vision inputs for visitor.data."""
         from .endpoint_helpers import _build_utterance_with_quoted_context
 
         all_media = [item["url"] for item in media_items]
-        whatsapp_image_urls = [
-            item["url"] for item in media_items if _is_vision_image(item)
-        ]
+        whatsapp_image_urls: List[Any] = []
+        for item in media_items:
+            if not _is_vision_image(item):
+                continue
+            b64 = item.get("vision_base64")
+            if b64:
+                spec: Dict[str, Any] = {"base64": str(b64).strip()}
+                mime = item.get("vision_mime") or item.get("mime_type")
+                if mime:
+                    spec["mime_type"] = mime
+                whatsapp_image_urls.append(spec)
+            else:
+                whatsapp_image_urls.append({"url": item["url"]})
 
         utterances = [
             item.get("utterance") for item in media_items if item.get("utterance")

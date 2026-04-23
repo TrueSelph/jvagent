@@ -5,7 +5,8 @@ multimodal prompts from visitor.data when image URLs are present.
 
 Standard key: visitor.data["image_urls"] is the canonical key for image URLs
 across channels (WhatsApp, Interact API, etc.). Media sources should populate
-this key with a list of URLs or [{url, detail?}] dicts.
+this key with a list of URL strings, ``{url, detail?}`` dicts, or ``{base64, mime_type?}``
+dicts (inline images; preferred when remote URLs are not fetchable by the model provider).
 
 - build_prompt_for_vision(): Builds multimodal content for the main response.
 - generate_image_interpretation(): Produces an extensive image description behind
@@ -91,6 +92,9 @@ def build_prompt_for_vision(
 async def generate_image_interpretation(
     image_urls: Any,
     model_action: "LanguageModelAction",
+    model: Optional[str] = None,
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
 ) -> str:
     """Generate an extensive image interpretation behind the scenes.
 
@@ -101,6 +105,10 @@ async def generate_image_interpretation(
     Args:
         image_urls: List of image URLs or [{url, detail?}] dicts
         model_action: LanguageModelAction with create_multimodal_content and generate
+        model: Optional model override for this call only. When None the model_action's
+            own default is used (preserving existing behavior).
+        temperature: Optional temperature override. When None the provider default is used.
+        max_tokens: Optional max-tokens override. When None the provider default is used.
 
     Returns:
         Raw interpretation string, or empty string if no valid images
@@ -112,11 +120,20 @@ async def generate_image_interpretation(
     prompt = model_action.create_multimodal_content(
         text=IMAGE_INTERPRETATION_PROMPT, images=normalized
     )
+    extra: dict = {}
+    if model is not None:
+        extra["model"] = model
+    if temperature is not None:
+        extra["temperature"] = temperature
+    if max_tokens is not None:
+        extra["max_tokens"] = max_tokens
+
     result = await model_action.generate(
         prompt=prompt,
         stream=False,
         history=None,
         calling_action_name="PersonaAction",
         transient=True,
+        **extra,
     )
     return (result or "").strip()

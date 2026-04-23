@@ -1114,7 +1114,10 @@ class LanguageModelAction(BaseModelAction, ABC):
                         }
                     )
                 elif "base64" in img:
-                    data_uri = f"data:image/jpeg;base64,{img['base64']}"
+                    mime = img.get("mime_type") or "image/jpeg"
+                    if not str(mime).startswith("image/"):
+                        mime = "image/jpeg"
+                    data_uri = f"data:{mime};base64,{img['base64']}"
                     content.append(
                         {
                             "type": "image_url",

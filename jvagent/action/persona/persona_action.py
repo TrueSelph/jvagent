@@ -56,6 +56,10 @@ class PersonaAction(Action):
         model: Default model name
         model_temperature: Temperature for LLM generation
         model_max_tokens: Max tokens for LLM generation
+        vision_model_action_type: Optional alternate LanguageModelAction for the vision-analysis pass (stored interpretation)
+        vision_model: Optional model id override for that pass only
+        vision_model_temperature: Optional temperature for that pass only
+        vision_model_max_tokens: Optional max_tokens for that pass only
         persona_name: Agent display name (for prompt formatting)
         persona_description: Detailed agent description (for prompt formatting)
         persona_capabilities: List of agent capabilities (for prompt formatting)
@@ -96,20 +100,55 @@ class PersonaAction(Action):
         description="Max tokens for voice channel (~100 words); used when channel=voice",
     )
 
+    # Vision model configuration (optional; used only for the behind-the-scenes image
+    # analysis pass that stores a description on Interaction.image_interpretation so
+    # follow-up questions work without re-attaching the image). When these are unset
+    # the primary model_action / model is used instead, preserving existing behavior.
+    vision_model_action_type: str = attribute(
+        default="",
+        description=(
+            "LanguageModelAction entity type to use for analyzing attached images "
+            "(e.g. 'OpenAILanguageModelAction'). When empty the primary model_action_type "
+            "is used. Set this to route vision analysis to a dedicated vision/omni provider "
+            "while keeping a different model for normal text replies."
+        ),
+    )
+    vision_model: str = attribute(
+        default="",
+        description=(
+            "Model identifier for the vision-analysis pass only "
+            "(e.g. 'gpt-4o', 'claude-opus-4-7'). When empty the resolved LanguageModelAction's "
+            "own default model is used."
+        ),
+    )
+    vision_model_temperature: Optional[float] = attribute(
+        default=None,
+        description=(
+            "Temperature override for the vision-analysis pass. "
+            "When None the provider's default is used."
+        ),
+    )
+    vision_model_max_tokens: Optional[int] = attribute(
+        default=None,
+        description=(
+            "Max-tokens override for the vision-analysis pass. "
+            "When None the provider's default is used."
+        ),
+    )
+
     # Response length limits (words, prompt-based; model generates concise output)
     response_limit: int = attribute(
-        default=500,
+        default=10000,
         description="Maximum words for persona replies on non-voice channels (0 = disabled).",
     )
 
     channel_response_limits: dict = attribute(
         default={
-            "default": 500,
             "email": 10000,
-            "sms": 500,
-            "facebook": 1000,
-            "whatsapp": 1000,
-            "web": 10000
+            "sms": 160,
+            "facebook": 500,
+            "whatsapp": 500,
+            "web": 500,  # webchat
         },
         description="Maximum words for persona replies on different channels.",
     )
@@ -292,6 +331,33 @@ class PersonaAction(Action):
         except Exception as e:
             logger.debug(f"PersonaAction: failed to resolve user display name: {e}")
         return "user"
+
+    async def _get_vision_model_action(self) -> Optional[Any]:
+        """Resolve the optional LanguageModelAction for the vision-analysis pass.
+
+        Returns the action identified by `vision_model_action_type` when configured,
+        falling back to None (caller should then use the primary model_action) when
+        the attribute is empty or the action cannot be found.
+        """
+        from jvagent.action.model.language.base import LanguageModelAction
+
+        action_type = getattr(self, "vision_model_action_type", None)
+        if not action_type:
+            return None
+        try:
+            action = await self.get_action(action_type)
+            if action and isinstance(action, LanguageModelAction):
+                return action
+            logger.warning(
+                f"PersonaAction: vision_model_action_type '{action_type}' not found or not a "
+                f"LanguageModelAction — falling back to primary model_action for vision analysis."
+            )
+        except Exception as e:
+            logger.warning(
+                f"PersonaAction: failed to resolve vision_model_action_type '{action_type}': {e} "
+                f"— falling back to primary model_action for vision analysis."
+            )
+        return None
 
     def _sanitize_voice_response(
         self, response: str, max_words: Optional[int] = None
@@ -961,8 +1027,20 @@ class PersonaAction(Action):
             image_urls = data.get("image_urls") or []
             if image_urls and data.get("image_interpretation") is not False:
                 try:
+                    vision_pass_model_action = (
+                        await self._get_vision_model_action() or model_action
+                    )
+                    vision_pass_kwargs: dict = {}
+                    if self.vision_model:
+                        vision_pass_kwargs["model"] = self.vision_model
+                    if self.vision_model_temperature is not None:
+                        vision_pass_kwargs["temperature"] = (
+                            self.vision_model_temperature
+                        )
+                    if self.vision_model_max_tokens is not None:
+                        vision_pass_kwargs["max_tokens"] = self.vision_model_max_tokens
                     interpretation = await generate_image_interpretation(
-                        image_urls, model_action
+                        image_urls, vision_pass_model_action, **vision_pass_kwargs
                     )
                     if interpretation:
                         interaction.image_interpretation = interpretation

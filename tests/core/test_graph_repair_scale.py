@@ -17,11 +17,13 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict
 
 import pytest
 from jvspatial.core import Root, get_default_context
 
+from jvagent.core.agents import Agents
 from jvagent.core.app import App
 from jvagent.core.app_loader import AppLoader
 from jvagent.core.graph_repair import repair_agent_graph
@@ -34,22 +36,40 @@ from jvagent.memory.user import User
 MAX_REPAIR_STATE_BYTES = 64 * 1024  # 64 KB
 
 
-async def _seed_graph(n_users: int = 50, interactions_per_conv: int = 5) -> Memory:
+async def _seed_graph(
+    temp_dir: Path, n_users: int = 50, interactions_per_conv: int = 5
+) -> Memory:
     """Create a synthetic graph via the public API.
 
     Returns the Memory node.  Keeps counts small for unit tests; the assertions
     are about structural properties, not absolute scale.
     """
-    from jvagent.core.agent_loader import AgentLoader
+    (temp_dir / "app.yaml").write_text(
+        """app: scale_repair_test
+version: 1.0.0
+author: Test
+agents:
+  - scale_ns/scale_agent
+"""
+    )
+    agent_dir = temp_dir / "agents" / "scale_ns" / "scale_agent"
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "agent.yaml").write_text(
+        """agent: scale_ns/scale_agent
+version: 1.0.0
+author: Test
+"""
+    )
 
-    loader = AppLoader()
-    await loader.load()
-    agent_loader = AgentLoader()
-    await agent_loader.load()
+    loader = AppLoader(str(temp_dir))
+    await loader.bootstrap_application(update_mode="source")
     app = await App.get()
     assert app is not None
-    agent = await app.get_agent()
-    assert agent is not None
+    agents_node = await app.node(node=Agents)
+    assert agents_node is not None
+    connected = await agents_node.get_connected_agents()
+    assert connected, "expected an installed agent from bootstrap"
+    agent = connected[0]
     memory = await agent.get_memory()
     assert memory is not None
 
@@ -60,18 +80,16 @@ async def _seed_graph(n_users: int = 50, interactions_per_conv: int = 5) -> Memo
         session_id = f"sess_{i}"
         conv = await user.get_conversation_by_session(session_id)
         if conv is None:
-            conv = await user.create_conversation(
-                session_id=session_id,
-                title=f"Conversation {i}",
-            )
+            conv = await user.create_conversation(session_id=session_id)
         assert conv is not None
         for j in range(interactions_per_conv):
             interaction = Interaction(
                 conversation_id=conv.id,
                 memory_id=memory.id,
                 user_id=user_id,
-                role="user",
-                content=f"Message {j} from user {i}",
+                utterance=f"Message {j} from user {i}",
+                channel=conv.channel,
+                session_id=conv.session_id,
                 started_at=datetime.now(timezone.utc),
             )
             await interaction.save()
@@ -97,7 +115,7 @@ class TestRepairStateSize:
     async def test_repair_state_bounded_on_medium_graph(self, temp_dir, test_db):
         """RepairState cursor JSON stays under 64 KB during repair of a 50-user graph."""
         await Root.get()
-        memory = await _seed_graph(n_users=50, interactions_per_conv=3)
+        memory = await _seed_graph(temp_dir, n_users=50, interactions_per_conv=3)
         app = await App.get()
         assert app is not None
 
@@ -115,7 +133,7 @@ class TestRepairStateSize:
     async def test_no_stray_repair_states_after_completion(self, temp_dir, test_db):
         """After all repair waves complete, at most one RepairState exists."""
         await Root.get()
-        await _seed_graph(n_users=20, interactions_per_conv=2)
+        await _seed_graph(temp_dir, n_users=20, interactions_per_conv=2)
         app = await App.get()
         assert app is not None
 
@@ -136,7 +154,7 @@ class TestWaveLatency:
     async def test_wave_returns_within_budget(self, temp_dir, test_db):
         """A repair wave must return within max_seconds * 1.1."""
         await Root.get()
-        await _seed_graph(n_users=30, interactions_per_conv=2)
+        await _seed_graph(temp_dir, n_users=30, interactions_per_conv=2)
 
         max_s = 3.0
         start = time.monotonic()
@@ -155,7 +173,7 @@ class TestCounterCorrectness:
     async def test_memory_counters_match_after_repair(self, temp_dir, test_db):
         """After a full repair run, total_users matches actual User nodes."""
         await Root.get()
-        memory = await _seed_graph(n_users=15, interactions_per_conv=2)
+        memory = await _seed_graph(temp_dir, n_users=15, interactions_per_conv=2)
 
         await _run_all_waves(max_seconds=5.0)
 
@@ -183,7 +201,7 @@ class TestOrphanCleanup:
         from jvspatial.core import get_default_context
 
         await Root.get()
-        memory = await _seed_graph(n_users=5, interactions_per_conv=3)
+        memory = await _seed_graph(temp_dir, n_users=5, interactions_per_conv=3)
 
         # Delete a conversation directly (bypass counter hooks to simulate a crash).
         users = await memory.users_scoped_to_this_memory()

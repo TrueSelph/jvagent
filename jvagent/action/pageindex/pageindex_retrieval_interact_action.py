@@ -36,7 +36,7 @@ from jvagent.action.pageindex.config import (
 from jvagent.action.pageindex.prompts import (
     DIRECTIVE_TEMPLATE,
     DIRECTIVE_TEMPLATE_NO_REFS,
-    DIRECTIVE_TEMPLATE_PLAIN
+    DIRECTIVE_TEMPLATE_PLAIN,
 )
 from jvagent.action.pageindex.retrieval import search_documents
 from jvagent.core.public_url import get_public_base_url

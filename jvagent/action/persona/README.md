@@ -10,7 +10,7 @@ The Persona Action provides a flexible framework for generating agent responses 
 
 ### Key Features
 
-- **Image/Vision Support**: Base persona capability "Can view and interpret images shared by users" is always included. When `visitor.data["image_urls"]` contains images (URLs or base64), PersonaAction builds multimodal prompts via `build_prompt_for_vision()` so the model receives and interprets images. An extensive image interpretation is generated behind the scenes and stored on the Interaction for follow-up questions (e.g., "What color was the car?"). Set `visitor.data["image_interpretation"] = False` to suppress vision (e.g., document uploads).
+- **Image/Vision Support**: Base persona capability "Can view and interpret images shared by users" is always included. When `visitor.data["image_urls"]` contains images (URLs or base64), PersonaAction builds multimodal prompts via `build_prompt_for_vision()` so the model receives and interprets images. An extensive image interpretation is generated behind the scenes and stored on the Interaction for follow-up questions (e.g., "What color was the car?"). Set `visitor.data["image_interpretation"] = False` to suppress vision (e.g., document uploads). Optional **`vision_model_*`** attributes let you route that behind-the-scenes analysis pass to a different `LanguageModelAction` and/or model id than the primary persona model (see [Optional vision_model configuration](#optional-vision_model-configuration)).
 - **Directive-Driven Execution**: Ensures directives are executed with ~95%+ consistency through three-layer reinforcement
 - **Configurable Parameters**: Conditional behavioral rules applied when context matches
 - **Multi-Call Awareness**: Handles continuation scenarios within single interactions
@@ -190,6 +190,12 @@ class PersonaAction(Action):
     model: str = "gpt-4o"
     model_temperature: float = 0.3
     model_max_tokens: int = 4096
+
+    # Optional: dedicated provider/model for behind-the-scenes image analysis only
+    vision_model_action_type: str = ""
+    vision_model: str = ""
+    vision_model_temperature: float | None = None
+    vision_model_max_tokens: int | None = None
 
     # Prompt configuration
     system_prompt: str = SYSTEM_PROMPT_TEMPLATE  # Override for custom prompts
@@ -379,12 +385,31 @@ actions:
       model: "gpt-4o"
       model_temperature: 0.3
       model_max_tokens: 2048
+      # Optional: see "Optional vision_model_*" below — e.g. same provider, explicit vision model:
+      # vision_model: "gpt-4o"
       parameters:
         - condition: "User asks about refund policy"
           response: "Explain the 30-day refund policy clearly"
         - condition: "User is angry or frustrated"
           response: "Remain calm, empathize, and offer solutions"
 ```
+
+### Optional vision_model configuration
+
+The user-visible reply still uses `model_action_type`, `model`, `model_temperature`, and `model_max_tokens` from PersonaAction together with `build_prompt_for_vision()`. Separately, PersonaAction runs **`generate_image_interpretation`** to produce a long description stored on **`Interaction.image_interpretation`** so users can ask follow-up questions without re-attaching images.
+
+By default that pass uses the same **`LanguageModelAction`** as `get_model_action()`, with no extra `model` / `temperature` / `max_tokens` overrides (the provider action’s own defaults apply). When your primary persona model is text-only or you want a cheaper/faster default on `OpenAILanguageModelAction` while still using a strong vision model for this stored description, set the optional fields below.
+
+| Attribute | When to set | Effect |
+|-----------|-------------|--------|
+| `vision_model_action_type` | Non-empty string | Resolve that entity type as the `LanguageModelAction` for the vision-analysis pass only. If missing or invalid, PersonaAction logs a warning and falls back to the primary model action. |
+| `vision_model` | Non-empty string | Passed as `model=` only to that pass’s `generate` call. |
+| `vision_model_temperature` | Set (float) | Passed as `temperature=` only for that pass. Omit or leave unset for provider default. |
+| `vision_model_max_tokens` | Set (int) | Passed as `max_tokens=` only for that pass. Omit or leave unset for provider default. |
+
+**Example:** one `OpenAILanguageModelAction` in `agent.yaml` with `model: gpt-4o-mini`, but Persona uses `model: gpt-4o` for replies — set `vision_model: "gpt-4o"` so the stored image description uses the same multimodal model as the reply without duplicating a whole second action.
+
+**Example:** two language model actions on the agent (e.g. `OpenAILanguageModelAction` for text and another configured for vision) — set `vision_model_action_type` to the vision action’s type and optionally `vision_model` to the vision model id.
 
 ### Default Parameters
 
@@ -776,6 +801,10 @@ model_action_type: str              # LanguageModelAction type
 model: str                          # Model name (e.g., "gpt-4o")
 model_temperature: float            # Temperature for generation
 model_max_tokens: int               # Max tokens for generation
+vision_model_action_type: str        # Optional: alternate LanguageModelAction for vision-analysis pass only ("" = primary)
+vision_model: str                    # Optional: model id for that pass only ("" = do not override)
+vision_model_temperature: float | None  # Optional temperature for that pass only
+vision_model_max_tokens: int | None      # Optional max_tokens for that pass only
 
 # Prompt configuration
 system_prompt: str                  # System prompt template
