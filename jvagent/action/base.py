@@ -34,9 +34,16 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound="Action")
 
 
-@compound_index([("context.agent_id", 1), ("context.enabled", 1)], name="agent_enabled")
+@compound_index([("agent_id", 1), ("enabled", 1)], name="agent_enabled")
 @compound_index(
-    [("context.agent_id", 1), ("context.label", 1)], name="agent_label", unique=True
+    [("agent_id", 1), ("label", 1)],
+    name="agent_label",
+    unique=True,
+    partial_filter_expression={
+        "context.agent_id": {"$gt": ""},
+        "context.label": {"$gt": ""},
+        "context.namespace": {"$gt": ""},
+    },
 )
 class Action(Node):
     """Base action class for all action types.

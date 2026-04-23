@@ -39,37 +39,61 @@ class QuestionGraphBuilder:
         """
         question_graph = self.action._get_question_graph()
 
-        # Create StateNodes for interview states
+        # Create StateNodes for interview states (find-or-create for idempotency)
         state_node_map = {}
+        interview_type = self.action.get_class_name()
         for state in [
             InterviewState.REVIEW,
             InterviewState.COMPLETED,
             InterviewState.CANCELLED,
         ]:
-            state_node = await StateNode.create(
-                agent_id=self.action.agent_id,
-                interview_type=self.action.get_class_name(),
-                state_type=state,
-                label=state.value.upper(),
+            state_label = state.value.upper()
+            existing_state = await StateNode.find_one(
+                {
+                    "context.agent_id": self.action.agent_id,
+                    "context.interview_type": interview_type,
+                    "context.label": state_label,
+                }
             )
-            state_node_map[state.value.upper()] = state_node
-            await self.action.connect(state_node)
+            if existing_state:
+                state_node = existing_state
+            else:
+                state_node = await StateNode.create(
+                    agent_id=self.action.agent_id,
+                    interview_type=interview_type,
+                    state_type=state,
+                    label=state_label,
+                )
+            state_node_map[state_label] = state_node
+            if not await self.action.is_connected_to(state_node):
+                await self.action.connect(state_node)
 
-        # Create all question nodes first
+        # Create all question nodes first (find-or-create for idempotency)
         question_node_map = {}
         for question_config in question_graph:
             question_name = question_config.get("name", "")
             if not question_name:
                 continue
 
-            question_node = await QuestionNode.create(
-                agent_id=self.action.agent_id,
-                interview_type=self.action.get_class_name(),
-                state=question_config,
-                label=question_name,
+            existing_question = await QuestionNode.find_one(
+                {
+                    "context.agent_id": self.action.agent_id,
+                    "context.interview_type": interview_type,
+                    "context.label": question_name,
+                }
             )
+            if existing_question:
+                question_node = existing_question
+            else:
+                question_node = await QuestionNode.create(
+                    agent_id=self.action.agent_id,
+                    interview_type=interview_type,
+                    state=question_config,
+                    label=question_name,
+                )
             question_node_map[question_name] = question_node
-            await self.action.connect(question_node)
+            if not await self.action.is_connected_to(question_node):
+                await self.action.connect(question_node)
 
         def resolve_target(target_name: str):
             """Resolve target name to node (question or state)."""

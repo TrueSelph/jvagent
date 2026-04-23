@@ -722,7 +722,12 @@ async def repair_graph(
         30.0,
         ge=0.5,
         le=600.0,
-        description="Wall-clock budget per request; call again until status is completed",
+        description=(
+            "Server-side wall-clock budget for this **single** repair step; a full repair "
+            "requires multiple calls until status is completed. Use a long enough client "
+            "timeout or poll GET /graph/repair/state; sub-progress inside a step may also "
+            "checkpoint."
+        ),
     ),
 ) -> Dict[str, Any]:
     """Run memory repair (all agents) then agent graph repair (admin only, manually triggered).
@@ -736,8 +741,8 @@ async def repair_graph(
         dry_run: Optional - report issues without making changes (memory repair and
             interaction pruning skipped)
         recent_minutes: Optional - passed to memory repair to limit orphan interaction cleanup
-        max_seconds: Per-request wall-clock budget; call endpoint again until
-            returned status becomes completed.
+        max_seconds: Wall-clock budget for one repair **step**; re-invoke until
+            status becomes completed.
 
     Returns:
         Dictionary with memory repair counts, graph repair counts, interactions_pruned,
@@ -749,3 +754,171 @@ async def repair_graph(
         max_seconds=max_seconds,
     )
     return result
+
+
+@endpoint(
+    "/graph/repair/state",
+    methods=["GET"],
+    auth=True,
+    roles=["admin"],
+    tags=["App"],
+    response=success_response(
+        data={
+            "status": ResponseField(
+                field_type=str,
+                description="no_app, idle, or active",
+                example="active",
+            ),
+            "phase": ResponseField(
+                field_type=Optional[str],
+                description="Current repair phase when status is active",
+                example="dead_edges",
+                default=None,
+            ),
+            "started_at": ResponseField(
+                field_type=Optional[str],
+                description="ISO timestamp when the repair session started",
+                default=None,
+            ),
+            "age_seconds": ResponseField(
+                field_type=Optional[float],
+                description="Seconds since RepairState was last updated",
+                default=None,
+            ),
+            "stall_count": ResponseField(
+                field_type=Optional[int],
+                description="Stall counter from RepairState",
+                default=None,
+            ),
+            "run_id": ResponseField(
+                field_type=Optional[str],
+                description="Scratch / repair run id",
+                default=None,
+            ),
+            "scratch_row_count": ResponseField(
+                field_type=Optional[int],
+                description="Total scratch rows for this run",
+                default=None,
+            ),
+            "version": ResponseField(
+                field_type=Optional[str],
+                description="RepairState version",
+                default=None,
+            ),
+        }
+    ),
+)
+async def graph_repair_state() -> Dict[str, Any]:
+    """Read current RepairState phase and metadata without modifying anything.
+
+    Returns:
+        Dictionary with phase, age_seconds, stall_count, scratch_row_count,
+        run_id, and started_at for the active repair session (if any).
+    """
+    from datetime import datetime, timezone
+
+    from jvspatial.core import get_default_context
+
+    from jvagent.core.app import App
+    from jvagent.core.repair_scratch import scratch_count
+    from jvagent.core.repair_state import RepairState
+
+    app = await App.get()
+    if app is None:
+        return {"status": "no_app"}
+
+    all_states = await RepairState.find_all(app)
+    if not all_states:
+        return {"status": "idle"}
+
+    rs = sorted(
+        all_states,
+        key=lambda s: s.started_at or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )[0]
+
+    now = datetime.now(timezone.utc)
+    age = (now - rs.updated_at).total_seconds() if rs.updated_at else None
+
+    db = get_default_context().database
+    scratch_rows = 0
+    if rs.run_id:
+        for kind in ("all_node_id", "bfs_seen", "node_edge", "valid_edge", "edge_pair"):
+            scratch_rows += await scratch_count(db, rs.run_id, kind)
+
+    return {
+        "status": "active",
+        "phase": rs.phase,
+        "started_at": rs.started_at.isoformat() if rs.started_at else None,
+        "age_seconds": age,
+        "stall_count": rs.stall_count,
+        "run_id": rs.run_id,
+        "scratch_row_count": scratch_rows,
+        "version": rs.version,
+    }
+
+
+@endpoint(
+    "/graph/repair/abort",
+    methods=["POST"],
+    auth=True,
+    roles=["admin"],
+    tags=["App"],
+    response=success_response(
+        data={
+            "status": ResponseField(
+                field_type=str,
+                description="no_app or aborted",
+                example="aborted",
+            ),
+            "removed": ResponseField(
+                field_type=int,
+                description="Number of RepairState records removed",
+                example=1,
+            ),
+            "scratch_runs_dropped": ResponseField(
+                field_type=Optional[int],
+                description="Number of scratch runs dropped (present when status is aborted)",
+                default=None,
+            ),
+        }
+    ),
+)
+async def graph_repair_abort() -> Dict[str, Any]:
+    """Force-evict all RepairState nodes for this App and drop scratch rows.
+
+    This is an escape hatch for incidents where repair is stuck.  It invokes
+    ``RepairState.purge_stale(ttl_seconds=0)`` which removes all states
+    regardless of age, then drops the scratch data for the active run_id.
+
+    Returns:
+        Dictionary with count of RepairState nodes removed.
+    """
+    from jvspatial.core import get_default_context
+
+    from jvagent.core.app import App
+    from jvagent.core.repair_scratch import scratch_drop_run
+    from jvagent.core.repair_state import RepairState
+
+    app = await App.get()
+    if app is None:
+        return {"status": "no_app", "removed": 0}
+
+    # Collect run_ids before purging so we can drop scratch too.
+    all_states = await RepairState.find_all(app)
+    run_ids = [rs.run_id for rs in all_states if rs.run_id]
+
+    removed = await RepairState.purge_stale(app_id=app.id, ttl_seconds=0)
+
+    db = get_default_context().database
+    for run_id in run_ids:
+        try:
+            await scratch_drop_run(db, run_id)
+        except Exception:
+            pass
+
+    return {
+        "status": "aborted",
+        "removed": removed,
+        "scratch_runs_dropped": len(run_ids),
+    }

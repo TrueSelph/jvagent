@@ -112,7 +112,11 @@ class Memory(Node):
                 last_seen=now,
             )
             await self.connect(user)
-            await self.refresh_memory_counters_from_graph()
+            # Atomic increment keeps the hot path O(1) regardless of graph size.
+            # refresh_memory_counters_from_graph is only called during repair.
+            ctx = await self.get_context()
+            await ctx.atomic_increment(self.id, "total_users", 1)
+            self.total_users = (self.total_users or 0) + 1
             return user
         return None
 
@@ -492,6 +496,7 @@ class Memory(Node):
         Returns:
             List of purged users, or None if no users found
         """
+        from jvagent.memory.conversation import Conversation
         from jvagent.memory.user import User
 
         users = await self.users_scoped_to_this_memory()
@@ -502,11 +507,15 @@ class Memory(Node):
             return None
 
         purged = []
+        ctx = await self.get_context()
         for user in users:
+            # Count conversations before cascade-delete so we can decrement accurately.
+            n_convs = len(await user.nodes(node=Conversation))
             purged.append(user)
             await user.delete(cascade=True)
-
-        await self.refresh_memory_counters_from_graph()
+            await ctx.atomic_increment(self.id, "total_users", -1)
+            if n_convs:
+                await ctx.atomic_increment(self.id, "total_conversations", -n_convs)
 
         return purged
 
@@ -793,15 +802,24 @@ class Memory(Node):
         if fixed:
             await self.save()
 
-        # Reconcile interaction_count on each conversation
+        # Reconcile interaction_count on each conversation using a count query
+        # (avoids loading every Interaction object just to count them).
+        from jvspatial.core import get_default_context
+
+        db = get_default_context().database
         for conv in all_convs:
-            interactions = await conv.get_interactions(limit=0)
-            actual_count = len(interactions)
+            actual_count = await db.count(
+                "node",
+                {"entity": "Interaction", "context.conversation_id": conv.id},
+            )
             if conv.interaction_count != actual_count:
                 conv.interaction_count = actual_count
-                # Repair last_interaction_id reference when it has drifted
-                if interactions:
-                    conv.last_interaction_id = interactions[-1].id
+                # Repair last_interaction_id only if the count drifted.
+                if actual_count > 0:
+                    interactions = await conv.get_interactions(limit=0)
+                    conv.last_interaction_id = (
+                        interactions[-1].id if interactions else None
+                    )
                 else:
                     conv.last_interaction_id = None
                 await conv.save()
@@ -814,8 +832,10 @@ class Memory(Node):
     ) -> int:
         """Delete orphaned interactions whose conversation node no longer exists.
 
-        Internal helper for repair_memory. When recent_minutes is set, only
-        cleans orphans from the last N minutes.
+        Uses id-range pagination instead of a ``$nin`` query to avoid building
+        an unbounded exclusion list that Mongo cannot index efficiently.  For
+        each page of Interaction nodes we collect the distinct ``conversation_id``
+        values and verify them with a single ``$in`` lookup.
 
         Args:
             recent_minutes: If set, only delete orphans with started_at within
@@ -826,44 +846,88 @@ class Memory(Node):
         """
         from datetime import datetime, timedelta, timezone
 
+        from jvspatial.core import get_default_context
+
+        from jvagent.core.app import App
         from jvagent.memory.conversation import Conversation
         from jvagent.memory.interaction import Interaction
 
-        users = await self.users_scoped_to_this_memory()
-        remaining_conversations = []
-        for user in users:
-            remaining_conversations.extend(await user.nodes(node=Conversation))
-        valid_conv_ids = list({c.id for c in remaining_conversations}) + [""]
-
-        from jvagent.core.app import App
-
         app = await App.get()
         now = await app.now() if app else datetime.now(timezone.utc)
+        context = get_default_context()
+        db = context.database
+        BATCH = 500
 
-        query: Dict[str, Any] = {
-            "$and": [
-                {"context.conversation_id": {"$nin": valid_conv_ids}},
-                {"context.conversation_id": {"$ne": ""}},
-            ]
-        }
+        # Build a time filter for the paged scan when recent_minutes is set.
+        time_filter: Dict[str, Any] = {}
         if recent_minutes is not None and recent_minutes > 0:
             cutoff = now - timedelta(minutes=recent_minutes)
-            query["context.started_at"] = {"$gte": cutoff}
+            time_filter["context.started_at"] = {"$gte": cutoff}
 
-        orphaned = await Interaction.find(query)
+        # Scope to interactions belonging to this Memory's users by memory_id.
+        base_filter: Dict[str, Any] = {
+            "entity": "Interaction",
+            "context.conversation_id": {"$ne": ""},
+        }
+        if self.id:
+            base_filter["context.memory_id"] = self.id
+        base_filter.update(time_filter)
+
         deleted = 0
-        for interaction in orphaned:
-            if interaction.conversation_id:
+        last_id: Optional[str] = None
+
+        while True:
+            page_filter = dict(base_filter)
+            if last_id:
+                page_filter["id"] = {"$gt": last_id}
+            rows = await db.find(
+                "node",
+                page_filter,
+                limit=BATCH,
+                sort=[("id", 1)],
+            )
+            if not rows:
+                break
+
+            # Collect distinct conversation_ids referenced in this page
+            page_conv_ids = {
+                r.get("context", {}).get("conversation_id") or r.get("conversation_id")
+                for r in rows
+            } - {None, ""}
+
+            # Batch-verify which conversations actually exist
+            existing_conv_ids: set = set()
+            if page_conv_ids:
+                existing_rows = await db.find(
+                    "node",
+                    {"id": {"$in": list(page_conv_ids)}, "entity": "Conversation"},
+                    limit=len(page_conv_ids) + 1,
+                )
+                existing_conv_ids = {r["id"] for r in existing_rows if r.get("id")}
+
+            for row in rows:
+                ctx = row.get("context", {})
+                conv_id = ctx.get("conversation_id") or row.get("conversation_id")
+                if not conv_id:
+                    continue
+                if conv_id in existing_conv_ids:
+                    continue
+                # conversation is truly gone – delete the interaction
+                interaction_id = row.get("id")
+                if not interaction_id:
+                    continue
                 try:
-                    # Only hard-delete when the referenced conversation node is
-                    # truly gone. If the conversation still exists (for example
-                    # under another Memory root), preserve the interaction.
-                    conversation = await Conversation.get(interaction.conversation_id)
-                    if conversation is None:
+                    interaction = await Interaction.get(interaction_id)
+                    if interaction:
                         await interaction.delete(cascade=True)
                         deleted += 1
                 except Exception:
                     pass
+
+            last_id = rows[-1].get("id")
+            if len(rows) < BATCH:
+                break
+
         return deleted
 
     async def export_memory(self, user_id: str = "") -> Dict[str, Any]:

@@ -16,8 +16,22 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@compound_index([("context.session_id", 1)], name="conversation_session_id")
-@compound_index([("context.user_id", 1), ("context.status", 1)], name="user_status")
+# Compound field names are model fields (``session_id``); jvspatial maps them to
+# ``context.<name>`` in MongoDB. A ``context.`` prefix on the model field becomes
+# ``context.context.*``.
+@compound_index(
+    [("session_id", 1)],
+    name="conversation_session_id",
+    unique=True,
+    partial_filter_expression={
+        "context.session_id": {"$gt": ""},
+        "context.status": {"$gt": ""},
+    },
+)
+@compound_index(
+    [("user_id", 1), ("status", 1)],
+    name="user_status",
+)
 @compound_index(
     [("active_tasks.status", 1), ("active_tasks.next_trigger_at", 1)],
     name="active_task_trigger",
@@ -50,9 +64,7 @@ class Conversation(DeferredSaveMixin, Node):
         context: Conversation context dictionary for storing state
     """
 
-    session_id: str = attribute(
-        indexed=True, index_unique=True, default="", description="Session identifier"
-    )
+    session_id: str = attribute(default="", description="Session identifier")
     user_id: str = attribute(indexed=True, default="", description="Owning user ID")
     status: str = attribute(
         indexed=True,
@@ -940,7 +952,9 @@ class Conversation(DeferredSaveMixin, Node):
         await super().delete(cascade=cascade)
 
         if memory:
-            await memory.refresh_memory_counters_from_graph()
+            # Atomic decrement keeps deletion O(1); counters are reconciled in repair.
+            ctx = await memory.get_context()
+            await ctx.atomic_increment(memory.id, "total_conversations", -1)
 
     async def get_statistics(self) -> Dict[str, Any]:
         """Get conversation statistics.

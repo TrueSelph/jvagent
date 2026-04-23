@@ -5,14 +5,80 @@ Public entry: :func:`repair_agent_graph`. The actual work is paginated by
 module for traversal and orphan reattachment).
 """
 
+import asyncio
 import logging
 from collections import defaultdict, deque
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, AsyncGenerator, Dict, List, Optional, Set
 
 from jvspatial.core import Node, get_default_context
+from jvspatial.db.work_claim import claim_record, release_claim
 
 logger = logging.getLogger(__name__)
+
+_REPAIR_LOCK_COLLECTION = "repair_lock"
+# Grace period added on top of max_seconds so that a Lambda invocation that is
+# forcibly terminated (OOM, timeout) has its lock expire soon after its budget.
+_REPAIR_LOCK_GRACE_SECONDS = 60
+
+
+@asynccontextmanager
+async def _distributed_repair_lock(
+    app_id: str,
+    *,
+    max_seconds: float = 30.0,
+) -> AsyncGenerator[bool, None]:
+    """Acquire a distributed repair lock for the given App.
+
+    Yields True when the lock was acquired, False when another worker holds it.
+    The lock is stored as a document in ``repair_lock`` and is DB-level atomic
+    on MongoDB (``find_one_and_update``); JSON/SQLite fall back to best-effort.
+
+    ``stale_seconds`` is derived from ``max_seconds`` so a Lambda invocation
+    that is forcibly terminated never blocks other workers for more than
+    ``max_seconds + _REPAIR_LOCK_GRACE_SECONDS`` seconds.
+    """
+    from jvspatial.core import get_default_context
+
+    db = get_default_context().database
+    record_id = f"graph_repair:{app_id}"
+    stale_seconds = max_seconds + _REPAIR_LOCK_GRACE_SECONDS
+
+    # Atomically create the lock document if it does not exist.
+    # Using find_one_and_update with upsert=True avoids the TOCTOU race that
+    # occurs when two concurrent Lambda invocations both find no document and
+    # both call db.save — the second save would silently wipe the first.
+    try:
+        if hasattr(db, "find_one_and_update"):
+            await db.find_one_and_update(
+                _REPAIR_LOCK_COLLECTION,
+                {"_id": record_id},
+                {"$setOnInsert": {"id": record_id, "_id": record_id}},
+                upsert=True,
+            )
+        else:
+            # Fallback for non-Mongo backends (SQLite / JsonDB).
+            existing = await db.get(_REPAIR_LOCK_COLLECTION, record_id)
+            if existing is None:
+                await db.save(
+                    _REPAIR_LOCK_COLLECTION, {"id": record_id, "_id": record_id}
+                )
+    except Exception:
+        pass
+
+    doc, token = await claim_record(
+        db,
+        _REPAIR_LOCK_COLLECTION,
+        record_id,
+        stale_seconds=stale_seconds,
+    )
+    acquired = token is not None
+    try:
+        yield acquired
+    finally:
+        if acquired and token:
+            await release_claim(db, _REPAIR_LOCK_COLLECTION, record_id, token)
 
 
 async def repair_agent_graph(
@@ -22,10 +88,16 @@ async def repair_agent_graph(
     max_seconds: float = 30.0,
     batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Run one bounded wave of app-wide graph repair with persisted state.
+    """Run graph repair with a synchronous one-tick / one-step contract.
 
-    Callers should re-invoke this API until ``status`` becomes ``completed``.
-    Progress is stored in a temporary ``RepairState`` node attached to ``App``.
+    When an ``App`` exists, each call runs **one** top-level phase tick, then
+    persists to ``RepairState``. Re-invoke (or schedule) until ``status`` is
+    ``completed``; a crash or timeout can resume on the next call from
+    ``phase``/``cursor`` (or from in-tick ``_checkpoint`` data).
+
+    When there is **no** ``App`` node, progress cannot be stored; the in-memory
+    session runs to completion in a single call (safety-capped) so dev/tests
+    without a bootstrapped app still get a full pass.
     """
     from jvagent.core.app import App
     from jvagent.core.graph_repair_job import (
@@ -51,100 +123,213 @@ async def repair_agent_graph(
             app = await App.get()
     started_at = datetime.now(timezone.utc)
 
-    if app is None:
-        state = _initial_session_state(dry_run, recent_minutes)
-        state = await run_repair_session(state, limits)
-        return _build_http_response(state, _build_message, PH_DONE, started_at)
-
-    async with RepairState._lock:
-        # Collect ALL RepairState nodes — previous crashed runs may have left
-        # more than one attached to App.
-        all_states = await RepairState.find_all(app)
-
-        if len(all_states) > 1:
-            # Evict all but the most recently started node.
-            all_states.sort(
-                key=lambda s: s.started_at or datetime.min.replace(tzinfo=timezone.utc)
-            )
-            for stale in all_states[:-1]:
-                logger.warning(
-                    "repair_agent_graph: removing stale RepairState %s", stale.id
-                )
-                try:
-                    await stale.finish()
-                except Exception:
-                    logger.warning(
-                        "repair_agent_graph: could not remove stale RepairState %s",
-                        stale.id,
-                        exc_info=True,
-                    )
-            repair_state: Optional[RepairState] = all_states[-1]
-        elif all_states:
-            repair_state = all_states[0]
-        else:
-            repair_state = None
-
-        if repair_state and (
-            repair_state.dry_run != dry_run
-            or (
-                recent_minutes is not None
-                and repair_state.recent_minutes != recent_minutes
-            )
-            or repair_state.version != STATE_VERSION
-        ):
-            await repair_state.finish()
-            repair_state = None
-
-        if repair_state is None:
-            repair_state = await RepairState.begin(
-                app,
-                dry_run=dry_run,
-                recent_minutes=recent_minutes,
-                version=STATE_VERSION,
-            )
-            state = _initial_session_state(dry_run, recent_minutes)
-        else:
-            state = state_from_dict(
-                {
-                    "v": repair_state.version,
-                    "phase": repair_state.phase,
-                    "cursor": repair_state.cursor,
-                    "result": repair_state.result,
-                    "dry_run": repair_state.dry_run,
-                    "recent_minutes": repair_state.recent_minutes,
-                },
-                dry_run=dry_run,
-                recent_minutes=recent_minutes,
-            )
-        started_at = repair_state.started_at or started_at
-
+    # GC stray RepairState nodes via entity type-scan before acquiring the lock.
+    # This catches detached nodes that find_all(app) cannot see.
+    if app is not None:
         try:
-            state = await run_repair_session(state, limits)
-            payload = state_to_dict(state)
-
-            if state.get("phase") == PH_DONE:
-                await repair_state.finish()
-            else:
-                await repair_state.save_progress(
-                    phase=payload["phase"],
-                    cursor=payload["cursor"],
-                    result=payload["result"],
+            purged = await RepairState.purge_stale(app_id=app.id)
+            if purged:
+                logger.info(
+                    "repair_agent_graph: purged %d stale RepairState(s)", purged
                 )
         except Exception:
+            logger.warning("repair_agent_graph: purge_stale failed", exc_info=True)
+
+    if app is None:
+        # No App node: RepairState cannot be attached, so we cannot resume across
+        # HTTP calls. Run ticks in-process until the pipeline finishes (or a safety
+        # cap), matching tests and minimal graphs without a bootstrapped app.
+        state = _initial_session_state(dry_run, recent_minutes)
+        _no_app_max_steps = 200_000
+        for _step in range(_no_app_max_steps):
+            if state.get("phase") == PH_DONE:
+                break
+            state = await run_repair_session(state, limits)
+        else:
             logger.error(
-                "repair_agent_graph: session raised unexpectedly; cleaning up RepairState %s",
-                repair_state.id,
-                exc_info=True,
+                "repair_agent_graph: no-App session exceeded %d step(s); phase=%s",
+                _no_app_max_steps,
+                state.get("phase"),
             )
+        return _build_http_response(state, _build_message, PH_DONE, started_at)
+
+    # Use a distributed lock so multiple FastAPI workers cannot race to create
+    # duplicate RepairState nodes.  The in-process asyncio.Lock (_get_lock)
+    # is kept as a secondary guard within the same process and is created
+    # lazily so it is always bound to the current running event loop
+    # (important for Lambda warm-container reuse with framework event loops).
+    async with RepairState._get_lock():
+        async with _distributed_repair_lock(
+            app.id, max_seconds=max_seconds
+        ) as acquired:
+            if not acquired:
+                # Another worker is actively repairing; return current status.
+                repair_state = await RepairState.current(app)
+                if repair_state:
+                    phase = repair_state.phase
+                    result = dict(repair_state.result or {})
+                    result["message"] = "Another worker is running repair"
+                    result["status"] = "in_progress"
+                    result["phase"] = phase
+                    result["started_at"] = (
+                        repair_state.started_at.isoformat()
+                        if repair_state.started_at
+                        else started_at.isoformat()
+                    )
+                    result["elapsed_seconds"] = 0.0
+                    return result
+                # No state found; safe to proceed (lock may have just expired).
+
+            # Drop duplicate / orphan RepairState rows (e.g. tests, crashed links)
+            # before re-loading progress so a stray node cannot hide the live one.
             try:
-                await repair_state.finish()
+                n_cons = await RepairState.consolidate_for_app(app)
+                if n_cons:
+                    logger.info(
+                        "repair_agent_graph: consolidated %d stray RepairState(s)",
+                        n_cons,
+                    )
             except Exception:
                 logger.warning(
-                    "repair_agent_graph: could not clean up RepairState %s after session error",
+                    "repair_agent_graph: consolidate_for_app failed", exc_info=True
+                )
+
+            # Collect ALL RepairState nodes — previous crashed runs may have left
+            # more than one attached to App.
+            all_states = await RepairState.find_all(app)
+
+            if len(all_states) > 1:
+                # Keep the most recently *updated* row (it holds the last checkpoint).
+                all_states.sort(
+                    key=lambda s: (
+                        s.updated_at or datetime.min.replace(tzinfo=timezone.utc),
+                        s.started_at or datetime.min.replace(tzinfo=timezone.utc),
+                    )
+                )
+                for stale in all_states[:-1]:
+                    logger.warning(
+                        "repair_agent_graph: removing stale RepairState %s", stale.id
+                    )
+                    try:
+                        await stale.finish()
+                    except Exception:
+                        logger.warning(
+                            "repair_agent_graph: could not remove stale RepairState %s",
+                            stale.id,
+                            exc_info=True,
+                        )
+                repair_state: Optional[RepairState] = all_states[-1]
+            elif all_states:
+                repair_state = all_states[0]
+            else:
+                repair_state = None
+
+            if repair_state and (
+                repair_state.dry_run != dry_run
+                or (
+                    recent_minutes is not None
+                    and repair_state.recent_minutes != recent_minutes
+                )
+                or repair_state.version != STATE_VERSION
+            ):
+                await repair_state.finish()
+                repair_state = None
+
+            if repair_state is None:
+                repair_state = await RepairState.begin(
+                    app,
+                    dry_run=dry_run,
+                    recent_minutes=recent_minutes,
+                    version=STATE_VERSION,
+                )
+                state = _initial_session_state(dry_run, recent_minutes)
+                # Persist the run_id immediately so GC and abort can find scratch rows.
+                repair_state.run_id = state.get("run_id", "")
+                await repair_state.save()
+            else:
+                # Drop any cached instance so the resumed cursor/phase are read
+                # from the database after a previous wave (context cache can be stale).
+                ctx = get_default_context()
+                await ctx._remove_from_cache(repair_state.id)
+                reloaded = await ctx.get(RepairState, repair_state.id)
+                if reloaded is not None:
+                    repair_state = reloaded
+                state = state_from_dict(
+                    {
+                        "v": repair_state.version,
+                        "phase": repair_state.phase,
+                        "cursor": repair_state.cursor,
+                        "result": repair_state.result,
+                        "dry_run": repair_state.dry_run,
+                        "recent_minutes": repair_state.recent_minutes,
+                        "run_id": repair_state.run_id,
+                        "stall_count": repair_state.stall_count,
+                    },
+                    dry_run=dry_run,
+                    recent_minutes=recent_minutes,
+                )
+            started_at = repair_state.started_at or started_at
+
+            async def _persist_repair_state(s: dict) -> None:
+                if s.get("phase") == PH_DONE:
+                    return
+                p = state_to_dict(s)
+                await repair_state.save_progress(
+                    phase=p["phase"],
+                    cursor=p["cursor"],
+                    result=p["result"],
+                    run_id=p.get("run_id", ""),
+                    stall_count=s.get("stall_count", 0),
+                )
+
+            state["_checkpoint"] = _persist_repair_state
+            try:
+                # Stall / force-advance is meant for multiple ticks in one
+                # ``run_repair_session`` (e.g. no-App in-process loop). One tick per
+                # HTTP call must not combine with a previous call's stall count or
+                # we skip a phase after two slow-but-legit single-tick steps.
+                state["stall_count"] = 0
+                state = await run_repair_session(state, limits)
+            except asyncio.CancelledError:
+                if state.get("phase") != PH_DONE:
+                    try:
+                        await _persist_repair_state(state)
+                    except Exception:
+                        logger.debug(
+                            "repair_agent_graph: best-effort checkpoint on cancel failed",
+                            exc_info=True,
+                        )
+                raise
+            except Exception:
+                logger.error(
+                    "repair_agent_graph: session raised unexpectedly; cleaning up RepairState %s",
                     repair_state.id,
                     exc_info=True,
                 )
-            raise
+                try:
+                    await repair_state.finish()
+                except Exception:
+                    logger.warning(
+                        "repair_agent_graph: could not clean up RepairState %s after session error",
+                        repair_state.id,
+                        exc_info=True,
+                    )
+                raise
+            else:
+                payload = state_to_dict(state)
+
+                if state.get("phase") == PH_DONE:
+                    await repair_state.finish()
+                else:
+                    await repair_state.save_progress(
+                        phase=payload["phase"],
+                        cursor=payload["cursor"],
+                        result=payload["result"],
+                        run_id=payload.get("run_id", ""),
+                        stall_count=state.get("stall_count", 0),
+                    )
+            finally:
+                state.pop("_checkpoint", None)
 
     return _build_http_response(state, _build_message, PH_DONE, started_at)
 
@@ -232,8 +417,14 @@ async def _reattach_orphans_chunk(
     node_ids: List[str],
     orphan_ids: Set[str],
     dry_run: bool,
+    reattach_ctx: Optional[Dict[str, Any]] = None,
 ) -> int:
-    """Reattach handlers for a subset of orphan node ids (batched repair)."""
+    """Reattach handlers for a subset of orphan node ids (batched repair).
+
+    ``reattach_ctx`` is a pre-built lookup dict produced by
+    ``_build_reattach_context`` in the job module.  Passing it avoids per-orphan
+    ``Memory.find({})`` and ``Agent.find({})`` calls in the handlers.
+    """
     from jvagent.action.base import Action
     from jvagent.core.graph_repair_handlers import get_reattach_handler
 
@@ -255,7 +446,7 @@ async def _reattach_orphans_chunk(
                 handler = get_reattach_handler("Action")
 
             if handler:
-                if await handler(context, node, orphan_ids, dry_run):
+                if await handler(context, node, orphan_ids, dry_run, reattach_ctx):
                     reattached += 1
 
         except Exception as e:

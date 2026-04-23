@@ -244,8 +244,12 @@ jvagent - Agentive Platform
         jvagent <app_root> [run] [--update] [--debug] [--serverless]    Start server with app root path
                                 --update: Update existing agents/actions from YAML files
                                 --serverless: Simulate serverless runtime (single-threaded, no background tasks)
+    jvagent [run] [--debug] --stress-seed --user-memory-nodes N --interactions-per-user-memory-node M ...
+                                After bootstrap, populate the memory graph, then start the server (same DB)
     jvagent [<app_root>] status             Show application status
     jvagent [<app_root>] validate         Check app.yaml and agent.yaml structure (exit 1 if issues; for CI)
+    jvagent [<app_root>] stress-seed --user-memory-nodes N --interactions-per-user-memory-node M
+                                  Seed synthetic UserLongMemoryNode + Interaction graph (stress testing)
     jvagent [<app_root>] bootstrap [--update]  Bootstrap application graph
                                   --update: Update existing agents/actions from YAML files
     jvagent [<app_root>] bundle [<app_root>]
@@ -305,6 +309,8 @@ Examples:
     jvagent --serverless                      # Run with serverless runtime simulation
     jvagent /path/to/my_app bootstrap          # Bootstrap from specified directory
     jvagent /path/to/my_app bootstrap --update # Bootstrap with merge update
+    jvagent --stress-seed --user-memory-nodes 50 --interactions-per-user-memory-node 20
+    jvagent stress-seed --user-memory-nodes 50 --interactions-per-user-memory-node 20
     jvagent /path/to/my_app bundle             # Generate Dockerfile in app directory
     jvagent bundle /path/to/my_app             # Generate Dockerfile (path after command)
     jvagent bundle                             # Generate Dockerfile in current directory
@@ -344,7 +350,10 @@ class StartupLogCounter(logging.Handler):
 
 
 def run_server(
-    update_mode: Optional[str] = None, debug: bool = False, app_root: str = None
+    update_mode: Optional[str] = None,
+    debug: bool = False,
+    app_root: str = None,
+    stress_seed: Any = None,
 ) -> None:
     """Start the jvagent server.
 
@@ -353,6 +362,8 @@ def run_server(
                      destructive overwrite from YAML, or None to skip existing.
         debug: If True, enable debug logging.
         app_root: Path to the app root directory. If None, uses current working directory.
+        stress_seed: When set (``StressSeedConfig``), populate the graph after bootstrap
+            and before ``server.run()``, on the same database the server will use.
     """
     if app_root is None:
         app_root = os.getcwd()
@@ -376,6 +387,26 @@ def run_server(
         admin_exists = asyncio.run(
             pre_startup_bootstrap(server, update_mode=update_mode, app_root=app_root)
         )
+
+        if stress_seed is not None:
+            from jvagent.stress_seed_graph import (
+                StressSeedConfig,
+                execute_stress_seed_graph,
+            )
+
+            if not isinstance(stress_seed, StressSeedConfig):
+                raise TypeError("stress_seed must be a StressSeedConfig or None")
+            os.environ.setdefault("JVSPATIAL_ENABLE_DEFERRED_SAVES", "false")
+            logger.info(
+                "Graph stress-seed: writing %d user memory nodes with %d interactions each "
+                "to the app database, then starting the server.",
+                stress_seed.user_memory_nodes,
+                stress_seed.interactions_per_user_memory_node,
+            )
+            asyncio.run(execute_stress_seed_graph(stress_seed))
+            from jvagent.core.app import App
+
+            App.clear_cache()
 
         if admin_exists:
             if debug:
@@ -526,6 +557,10 @@ async def bootstrap_only(
     root_logger.addHandler(log_counter)
 
     try:
+        from jvagent.core.index_bootstrap import run_index_migration
+
+        await run_index_migration()
+
         effective_update_mode = await resolve_bootstrap_update_mode(update_mode)
         await bootstrap_application_graph(
             update_mode=effective_update_mode, app_root=app_root

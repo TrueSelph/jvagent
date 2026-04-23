@@ -45,9 +45,6 @@ actions:
     description: MCP gateway for filesystem and optional web search servers
     model_action_type: OpenAILanguageModelAction
     model: gpt-4o-mini
-    # Sandboxed filesystem: allowed root = JVSPATIAL_FILES_ROOT_PATH/<agentId>/<userId>/
-    # (agent graph id + user id; set MCP_FILESYSTEM_SANDBOX_MODE=false to disable). S3: jvspatial_fs_server.
-    # Default user for list_tools/fulfill: MCP_FILESYSTEM_SANDBOX_DEFAULT_USER (default anonymous).
     sandbox_mode: true
     sandbox_user_scoped: true
     servers:
@@ -92,8 +89,6 @@ actions:
     - User requests debugging or troubleshooting with file inspection
     model_action_type: OpenAILanguageModelAction
     model: gpt-4.1
-    # model_action_type: OllamaLanguageModelAction
-    # model: kimi-k2.6:cloud
     reasoning_enabled: false
     model_max_tokens: 32768
     stream_thinking: true
@@ -108,6 +103,7 @@ actions:
     - pageindex_docs
     - web_search
     - skill_hub
+    - gws-docs-write
     skills_source: both
     denied_skills: []
     strict_grounding: true

@@ -121,10 +121,10 @@ The architecture includes several performance optimizations:
 - Database-level operations instead of client-side filtering
 
 **Indexing:**
-- Automatic database indexes on frequently queried fields
-- Indexed fields: `user_id`, `session_id`, `status`, `conversation_id`
-- Compound indexes for multi-field queries
-- Transparent index creation on first use
+- Declarative indexes on frequently queried fields (see jvspatial `attribute` / `@compound_index` — [jvspatial optimization doc](../../../../jvspatial/docs/md/optimization.md#declarative-database-indexing))
+- Indexed fields include `user_id`, `session_id`, `status`, `conversation_id` where defined on entity models
+- Compound and partial indexes for multi-field queries and shared `node` collections
+- jvagent startup index migration: see [database-indexing.md](../../../docs/database-indexing.md) (`run_index_migration`, deprecated index drops, eager `ensure_indexes`). jvspatial may still call `ensure_indexes` on first `save`/`find` per class when auto-create is enabled
 
 **Memory Management:**
 - Rolling window pruning for conversation interactions

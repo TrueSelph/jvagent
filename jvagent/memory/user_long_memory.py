@@ -41,9 +41,13 @@ CATEGORY_TITLES: Dict[str, str] = {
 
 
 @compound_index(
-    [("context.user_node_id", 1), ("context.category", 1)],
+    [("user_node_id", 1), ("category", 1)],
     name="user_node_category",
     unique=True,
+    partial_filter_expression={
+        "context.user_node_id": {"$gt": ""},
+        "context.category": {"$gt": ""},
+    },
 )
 class UserLongMemoryNode(Node):
     """A single long-memory category node attached to a User.
@@ -148,6 +152,7 @@ class UserLongMemory(Node):
     user_node_id: str = attribute(
         indexed=True,
         index_unique=True,
+        index_partial_filter_expression={"context.user_node_id": {"$gt": ""}},
         default="",
         description="Graph id of the owning User node",
     )

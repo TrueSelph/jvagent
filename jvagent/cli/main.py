@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import List, Optional, Tuple
 
 from jvspatial.env import env
 from jvspatial.logging import configure_standard_logging
@@ -25,6 +26,7 @@ from jvagent.cli.commands import (
 )
 from jvagent.cli.server_config import _set_db_env_from_config
 from jvagent.core.config import is_development_mode
+from jvagent.stress_seed_graph import STRESS_FLAG_NAMES, parse_stress_seed_for_run
 
 configure_standard_logging(
     level=env("JVSPATIAL_LOG_LEVEL", default="INFO"),
@@ -36,17 +38,9 @@ logger = logging.getLogger(__name__)
 # Suppress noisy asyncio selector logs
 logging.getLogger("asyncio").setLevel(logging.WARNING)
 
-
-def main() -> None:
-    """Main entry point for jvagent application."""
-    # Parse command-line arguments
-    args = sys.argv[1:]
-
-    # Extract app root path (first positional argument that's not a flag or command)
-    # This handles both: "jvagent /path/to/app bundle" and "jvagent bundle /path/to/app"
-    app_root = None
-    commands = [
-        "run",
+# Subcommands that are not the default (HTTP) server. ``run`` is optional and is stripped.
+DISPATCH = frozenset(
+    {
         "status",
         "agent",
         "skill",
@@ -55,43 +49,96 @@ def main() -> None:
         "bundle",
         "app",
         "validate",
-    ]
-    flags = ["--debug", "--update", "--purge", "--source", "--merge", "--serverless"]
+        "stress-seed",
+        "stress_seed",
+    }
+)
 
-    # Find app root: first argument that's not a command or flag
-    # This extracts paths whether they appear before or after the command
-    for i, arg in enumerate(args):
-        if arg not in commands and arg not in flags and not arg.startswith("-"):
-            # Check if it's a valid path
-            potential_path = Path(arg).expanduser().resolve()
-            if potential_path.exists() and potential_path.is_dir():
-                app_root = str(potential_path)
-                args = args[:i] + args[i + 1 :]  # Remove from args
-                break
 
-    # Default to current working directory if not provided
-    # This handles: "cd /path/to/app && jvagent bundle"
-    if app_root is None:
-        app_root = os.getcwd()
+def _first_app_root_path(
+    args_in: List[str], subcommands: frozenset
+) -> Tuple[Optional[str], List[str]]:
+    """Return (app_root, argv_without_path_tokens).
 
-    logger.debug(f"Using app root: {app_root}")
+    Strips tokens that are existing directories (app root), but keeps subcommands, known
+    flags, and :data:`STRESS_FLAG_NAMES` so ``--user-memory-nodes 700`` is not mis-parsed.
+    """
+    static_flags = frozenset(
+        [
+            "--debug",
+            "--update",
+            "--purge",
+            "--source",
+            "--merge",
+            "--serverless",
+            "-h",
+            "--help",
+        ]
+    )
+    static_flags = static_flags | frozenset(STRESS_FLAG_NAMES)
+    app: Optional[str] = None
+    out: list[str] = []
+    i = 0
+    n = len(args_in)
+    while i < n:
+        arg = args_in[i]
+        if arg in subcommands or arg in static_flags:
+            out.append(arg)
+            i += 1
+            continue
+        if arg.startswith("-"):
+            out.append(arg)
+            i += 1
+            if i < n and not args_in[i].startswith("-"):
+                nxt = args_in[i]
+                if nxt in subcommands or nxt in static_flags:
+                    out.append(nxt)
+                    i += 1
+                else:
+                    p2 = Path(nxt).expanduser().resolve()
+                    if p2.is_dir() and p2.exists():
+                        if app is None:
+                            app = str(p2)
+                        i += 1
+                    else:
+                        out.append(nxt)
+                        i += 1
+            continue
+        p = Path(arg).expanduser().resolve()
+        if p.is_dir() and p.exists():
+            if app is None:
+                app = str(p)
+            i += 1
+        else:
+            out.append(arg)
+            i += 1
+    return app, out
 
-    # Load .env first so JVAGENT_APP_ID and other vars override app.yaml before any other code runs
+
+def main() -> None:
+    """Main entry point for jvagent application."""
+    raw = list(sys.argv[1:])
+
+    # Path segments + all CLI names that must not be treated as a directory
+    subcommands = DISPATCH | frozenset({"run"})
+
+    first_path, args = _first_app_root_path(raw, subcommands)
+    app_root = first_path if first_path is not None else os.getcwd()
+
+    logger.debug("Using app root: %s", app_root)
+
     load_app_env(app_root=app_root)
 
-    # Set the global app root for config loading in other modules
     from jvagent.core.app_context import set_app_root
 
     set_app_root(app_root)
 
-    # Reload performance configs now that app root is set
     from jvagent.core.cache import reload_performance_config
     from jvagent.core.profiling import reload_profiling_config
 
     reload_performance_config()
     reload_profiling_config()
 
-    # Check for --serverless flag (overrides .env; simulates serverless + Lambda for local dev)
     if "--serverless" in args:
         args = [arg for arg in args if arg != "--serverless"]
         os.environ["SERVERLESS_MODE"] = "true"
@@ -102,19 +149,15 @@ def main() -> None:
 
     _set_db_env_from_config(app_root)
 
-    # Check for --debug flag
     debug_flag = "--debug" in args
     if debug_flag:
         args = [arg for arg in args if arg != "--debug"]
-        # Set logging to DEBUG level for root and all jvagent loggers
         root_logger = logging.getLogger()
         root_logger.setLevel(logging.DEBUG)
         for handler in root_logger.handlers:
             handler.setLevel(logging.DEBUG)
-        # Also set DEBUG level for all jvagent loggers to ensure they inherit properly
         logging.getLogger("jvagent").setLevel(logging.DEBUG)
 
-    # Check for --update flag and sub-flags (--source / --merge)
     has_update = "--update" in args
     has_source = "--source" in args
     has_merge = "--merge" in args
@@ -131,7 +174,6 @@ def main() -> None:
 
     args = [arg for arg in args if arg not in ["--update", "--source", "--merge"]]
 
-    # Check for --purge flag (development mode only)
     purge_flag = "--purge" in args
     if purge_flag:
         args = [arg for arg in args if arg != "--purge"]
@@ -145,30 +187,54 @@ def main() -> None:
 
         purge_app_data(app_root=app_root)
 
-    # If no arguments or "run" command, start the server
-    if not args or args[0] == "run":
-        run_server(update_mode=update_mode, debug=debug_flag, app_root=app_root)
-    elif args[0] == "status":
-        # Show application status
-        asyncio.run(show_status(app_root=app_root))
-    elif args[0] == "app":
-        app_commands.handle_app_command(args[1:], default_cwd=app_root)
-    elif args[0] == "agent":
-        # Agent management commands
-        handle_agent_command(args[1:], app_root=app_root)
-    elif args[0] == "action":
-        # Action management commands
-        handle_action_command(args[1:], app_root=app_root)
-    elif args[0] == "skill":
-        # Skill bundle commands
-        handle_skill_command(args[1:], app_root=app_root)
-    elif args[0] == "bootstrap":
-        # Bootstrap application graph
-        asyncio.run(bootstrap_only(update_mode=update_mode, app_root=app_root))
-    elif args[0] == "bundle":
-        # Bundle application for deployment
-        handle_bundle_command(args[1:], app_root=app_root)
-    elif args[0] == "validate":
-        sys.exit(run_validate(app_root))
-    else:
+    # ``jvagent`` and ``jvagent run`` are the same
+    if args and args[0] == "run":
+        args = args[1:]
+
+    if args and args[0] in ("-h", "--help"):
         print_usage()
+        return
+
+    # -------------------------------------------------------------------------
+    # Exclusive subcommands (not the default server)
+    # -------------------------------------------------------------------------
+    if args and args[0] in DISPATCH:
+        if args[0] == "status":
+            asyncio.run(show_status(app_root=app_root))
+        elif args[0] == "app":
+            app_commands.handle_app_command(args[1:], default_cwd=app_root)
+        elif args[0] == "agent":
+            handle_agent_command(args[1:], app_root=app_root)
+        elif args[0] == "action":
+            handle_action_command(args[1:], app_root=app_root)
+        elif args[0] == "skill":
+            handle_skill_command(args[1:], app_root=app_root)
+        elif args[0] == "bootstrap":
+            asyncio.run(bootstrap_only(update_mode=update_mode, app_root=app_root))
+        elif args[0] == "bundle":
+            handle_bundle_command(args[1:], app_root=app_root)
+        elif args[0] == "validate":
+            sys.exit(run_validate(app_root))
+        elif args[0] in ("stress-seed", "stress_seed"):
+            from jvagent.stress_seed_graph import main as stress_seed_main
+
+            stress_seed_main(args[1:], app_root=app_root)
+        return
+
+    # -------------------------------------------------------------------------
+    # Default: start HTTP server (``jvagent``, ``jvagent --debug``, ``jvagent --stress-seed`` …)
+    # -------------------------------------------------------------------------
+    stress_seed, args_rest = parse_stress_seed_for_run(args, allow_env_defaults=True)
+    if args_rest:
+        bad = [a for a in args_rest if not str(a).startswith("-")]
+        if bad:
+            logger.error("Unknown argument(s): %s", " ".join(bad))
+            print_usage()
+            sys.exit(2)
+
+    run_server(
+        update_mode=update_mode,
+        debug=debug_flag,
+        app_root=app_root,
+        stress_seed=stress_seed,
+    )

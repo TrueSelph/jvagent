@@ -43,9 +43,7 @@ def interaction_sort_key(node: Any) -> tuple:
     return (st, getattr(node, "id", ""))
 
 
-@compound_index(
-    [("context.conversation_id", 1), ("context.started_at", -1)], name="conv_timestamp"
-)
+@compound_index([("conversation_id", 1), ("started_at", -1)], name="conv_timestamp")
 class Interaction(DeferredSaveMixin, Node):
     """Single exchange within a Conversation.
 

@@ -1,8 +1,12 @@
-"""Batched graph repair session engine.
+"""Synchronous-step graph repair engine.
 
-Each :func:`run_repair_session` call runs bounded work over a mutable repair
-state dict. State serialization/deserialization helpers are provided for
-persisting progress between API calls.
+Each :func:`run_repair_session` call runs **exactly one** top-level phase tick
+on a mutable repair state dict, then returns. Progress is persisted after each
+tick (via :func:`jvagent.core.graph_repair.repair_agent_graph`), so the run
+can fail or time out at any point and **resume** on the next invocation from
+the stored ``phase`` / ``cursor``. Callers (HTTP, cron, Lambda) should re-invoke
+until ``status == "completed"``; do not rely on one process finishing the full
+pipeline in a single call.
 """
 
 from __future__ import annotations
@@ -13,12 +17,12 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from inspect import isawaitable
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
 SORT_ID_ASC: List[Tuple[str, int]] = [("id", 1)]
-STATE_VERSION = 2
+STATE_VERSION = 3
 
 # Phases (ordered)
 PH_MEMORY_COUNTERS = "memory_counters"
@@ -44,10 +48,22 @@ PH_DONE = "done"
 
 @dataclass
 class RepairLimits:
-    """Bounds for one repair HTTP invocation (may run many internal batches)."""
+    """Bounds for one repair step (one phase tick); work inside the tick is batched."""
 
     batch_size: int
     max_seconds: Optional[float]
+
+
+def _repair_result_is_pristine(result: Optional[Dict[str, Any]]) -> bool:
+    """True when ``result`` has only zero counters (never accumulated repair work)."""
+    if not result:
+        return True
+    baseline = _new_result_counters()
+    for k in baseline:
+        v = result.get(k)
+        if (v or 0) != 0:
+            return False
+    return all(not (k not in baseline and (v or 0) != 0) for k, v in result.items())
 
 
 def _new_result_counters() -> Dict[str, Any]:
@@ -77,12 +93,16 @@ def _initial_session_state(
     dry_run: bool,
     recent_minutes: Optional[int],
 ) -> Dict[str, Any]:
+    import uuid
+
     return {
         "phase": PH_MEMORY_COUNTERS if not dry_run else PH_SCHEMA_APP_DEDUPE,
         "dry_run": dry_run,
         "recent_minutes": recent_minutes,
         "result": _new_result_counters(),
         "cursor": {},
+        "run_id": uuid.uuid4().hex,
+        "stall_count": 0,
     }
 
 
@@ -95,6 +115,8 @@ def state_to_dict(state: Dict[str, Any]) -> Dict[str, Any]:
         "result": state.get("result") or _new_result_counters(),
         "dry_run": bool(state.get("dry_run")),
         "recent_minutes": state.get("recent_minutes"),
+        "run_id": state.get("run_id") or "",
+        "stall_count": int(state.get("stall_count", 0)),
     }
 
 
@@ -113,17 +135,47 @@ def state_from_dict(
     if bool(payload.get("dry_run")) != dry_run:
         logger.warning("Repair state dry_run mismatch, restarting repair")
         return _initial_session_state(dry_run, recent_minutes)
+    cursor_in = payload.get("cursor")
+    if cursor_in is None:
+        cur: Dict[str, Any] = {}
+    else:
+        cur = dict(cursor_in) if cursor_in else {}
+    result = payload.get("result") or _new_result_counters()
+    phase: str = str(payload.get("phase", PH_DONE))
+    # Legacy: RepairState.begin used phase="done" (same string as PH_DONE) before
+    # the first save_progress, so a timeout before the first checkpoint looked
+    # "complete" and repair exited without work or deleted the state.
+    if phase == PH_DONE and not cur and _repair_result_is_pristine(result):
+        logger.warning(
+            "Repair state had phase=done with empty cursor and no counters; "
+            "remapping to the first work phase (unfinished session)"
+        )
+        phase = PH_SCHEMA_APP_DEDUPE if dry_run else PH_MEMORY_COUNTERS
     return {
-        "phase": payload.get("phase", PH_DONE),
+        "phase": phase,
         "dry_run": dry_run,
         "recent_minutes": (
             recent_minutes
             if recent_minutes is not None
             else payload.get("recent_minutes")
         ),
-        "result": payload.get("result") or _new_result_counters(),
-        "cursor": payload.get("cursor") or {},
+        "result": result,
+        "cursor": cur,
+        "run_id": payload.get("run_id") or "",
+        "stall_count": int(payload.get("stall_count", 0)),
     }
+
+
+async def _repair_checkpoint(state: Dict[str, Any]) -> None:
+    """If ``state['_checkpoint']`` is set (by :func:`repair_agent_graph`), flush it.
+
+    Long-running phase ticks (e.g. per-agent memory repair) can exceed HTTP client
+    timeouts; persisting the cursor after each sub-step prevents stuck ``agent_index``
+    and allows resume even when the request is cancelled mid-tick.
+    """
+    fn = state.get("_checkpoint")
+    if fn is not None and callable(fn):
+        await fn(state)
 
 
 async def _find_edges_page(
@@ -149,17 +201,136 @@ async def _find_nodes_page(
 
 
 async def _tick_memory_counters(state: Dict[str, Any], limits: RepairLimits) -> bool:
-    from jvagent.core.graph_repair import _reconcile_all_memory_counters
+    """Paged memory counter reconciliation with deadline awareness.
 
-    res = state["result"]
-    fixed = await _reconcile_all_memory_counters()
-    res["counters_fixed"] = res.get("counters_fixed", 0) + fixed
-    state["phase"] = PH_MEMORY_AGENTS
-    state["cursor"] = {"agent_index": 0, "agent_ids": None}
+    Processes at most ``batch_size`` Memory nodes per tick instead of running
+    the full _reconcile_all_memory_counters in a single unbounded call.
+
+    The persisted cursor is advanced **before** the slow ``_recalculate_counters``
+    call and flushed via :func:`_repair_checkpoint` so that a client disconnect
+    (or any ``asyncio.CancelledError``) cannot strand the whole wave on the same
+    Memory id forever.
+    """
+    from jvagent.memory.manager import Memory
+
+    cur = state["cursor"]
+    if cur.get("mc_memory_ids") is None:
+        memories = await Memory.find({})
+        cur["mc_memory_ids"] = [m.id for m in memories]
+        cur["mc_index"] = 0
+
+    memory_ids: List[str] = cur["mc_memory_ids"]
+    idx = int(cur.get("mc_index", 0))
+    batch = limits.batch_size
+    deadline = time.monotonic() + (limits.max_seconds or 1e9)
+    fixed = 0
+    processed = 0
+
+    while idx < len(memory_ids) and processed < batch:
+        if limits.max_seconds and time.monotonic() >= deadline:
+            break
+
+        memory_id = memory_ids[idx]
+        idx += 1
+        processed += 1
+        cur["mc_index"] = idx
+        await _repair_checkpoint(state)
+
+        try:
+            mem = await Memory.get(memory_id)
+            if mem:
+                fixed += await mem._recalculate_counters()
+        except Exception:
+            logger.warning(
+                "repair_tick memory_counters: skipped %s (error)",
+                memory_id,
+                exc_info=True,
+            )
+
+    state["result"]["counters_fixed"] = state["result"].get("counters_fixed", 0) + fixed
+
+    if idx >= len(memory_ids):
+        state["phase"] = PH_MEMORY_AGENTS
+        state["cursor"] = {"agent_index": 0, "agent_ids": None}
     return True
 
 
+# Ordered sub-steps of Memory.repair_memory used by the repair engine.
+#
+# Each entry is ``(step_key, result_counters)``.  ``step_key`` drives dispatch
+# in ``_tick_memory_agents``; ``result_counters`` names the fields in
+# ``state["result"]`` that the step can write to.  All four sub-steps are
+# idempotent, so a wave that gets cancelled mid-step can safely re-run it.
+_MEMORY_AGENT_STEPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    ("cleanup_orphans", ("orphaned_interactions_deleted",)),
+    (
+        "repair_chain",
+        (
+            "dual_edges_removed",
+            "conversation_first_edges_restored",
+            "conversation_branch_edges_removed",
+        ),
+    ),
+    ("reconnect_users", ("orphaned_users_reconnected",)),
+    ("recalc_counters", ("counters_fixed",)),
+)
+
+# Max times we'll attempt the same (agent_index, step_idx) across waves before
+# skipping the step.  Prevents a single slow sub-step from blocking global progress
+# when the HTTP client timeout is shorter than the step's runtime.
+_MEMORY_AGENT_STEP_MAX_ATTEMPTS = 3
+
+
+async def _run_memory_agent_step(
+    memory: Any, step_key: str, recent_minutes: Optional[int]
+) -> Dict[str, int]:
+    """Execute a single sub-step of :meth:`Memory.repair_memory`.
+
+    Returns a mapping of ``state["result"]`` counters to their delta.
+    """
+    if step_key == "cleanup_orphans":
+        deleted = await memory._cleanup_orphaned_interactions(recent_minutes)
+        return {"orphaned_interactions_deleted": int(deleted or 0)}
+    if step_key == "repair_chain":
+        dual, first, branch = await memory._repair_interaction_chain_invariants()
+        return {
+            "dual_edges_removed": int(dual or 0),
+            "conversation_first_edges_restored": int(first or 0),
+            "conversation_branch_edges_removed": int(branch or 0),
+        }
+    if step_key == "reconnect_users":
+        reconnected = await memory._reconnect_orphaned_users()
+        return {"orphaned_users_reconnected": int(reconnected or 0)}
+    if step_key == "recalc_counters":
+        fixed = await memory._recalculate_counters()
+        return {"counters_fixed": int(fixed or 0)}
+    return {}
+
+
 async def _tick_memory_agents(state: Dict[str, Any], limits: RepairLimits) -> bool:
+    """Repair per-agent ``Memory`` graphs with fine-grained resume support.
+
+    Each agent's ``repair_memory`` is decomposed into the four idempotent
+    sub-steps defined in :data:`_MEMORY_AGENT_STEPS`.  The cursor tracks the
+    current agent (``agent_index``) **and** which sub-step within that agent
+    (``agent_step``) is next, plus ``step_attempts`` for how many waves have
+    tried the current sub-step.
+
+    The cursor's ``agent_step`` is advanced **only** after the sub-step's work
+    returns, but ``step_attempts`` is incremented and checkpointed **before**
+    running the step.  So:
+
+    * If a sub-step completes, we advance to the next one.
+    * If a wave is cancelled mid sub-step, the next wave retries **the same**
+      sub-step (they are idempotent), with ``step_attempts`` now incremented.
+    * Once ``step_attempts`` reaches :data:`_MEMORY_AGENT_STEP_MAX_ATTEMPTS`
+      we skip the offending sub-step so global repair can still finish; the
+      skip is logged.
+
+    Fatal exceptions from a single sub-step are logged and treated like a
+    successful step (i.e. we advance) so one broken agent/memory cannot block
+    the wider repair.
+    """
     from jvagent.core.agent import Agent
 
     cur = state["cursor"]
@@ -168,46 +339,112 @@ async def _tick_memory_agents(state: Dict[str, Any], limits: RepairLimits) -> bo
         cur["agent_ids"] = [a.id for a in agents]
     agent_ids: List[str] = cur["agent_ids"]
     idx = int(cur.get("agent_index", 0))
+    step_idx = int(cur.get("agent_step", 0))
+    step_attempts = int(cur.get("step_attempts", 0))
     batch = limits.batch_size
     deadline = time.monotonic() + (limits.max_seconds or 1e9)
-    processed = 0
+    processed_steps = 0
     res = state["result"]
 
-    while idx < len(agent_ids) and processed < batch:
+    while idx < len(agent_ids):
         if limits.max_seconds and time.monotonic() >= deadline:
             break
+        if processed_steps >= batch:
+            break
 
-        agent = await Agent.get(agent_ids[idx])
-        idx += 1
-        processed += 1
-        if not agent:
-            continue
-        memory = await agent.get_memory()
-        if not memory:
-            continue
-        repair = await memory.repair_memory(recent_minutes=state.get("recent_minutes"))
-        repair_keys = (
-            "orphaned_interactions_deleted",
-            "orphaned_users_reconnected",
-            "dual_edges_removed",
-            "conversation_first_edges_restored",
-            "conversation_branch_edges_removed",
-            "counters_fixed",
-        )
-        # Only count this agent as "repaired" when at least one sub-counter is
-        # non-zero.  Previously this was incremented unconditionally (once per
-        # agent processed), which caused the metric to always report N agents
-        # repaired even on a fully healthy graph.
-        if any(repair.get(k, 0) > 0 for k in repair_keys):
-            res["memory_repair_agents"] = res.get("memory_repair_agents", 0) + 1
-        for key in repair_keys:
-            res[key] = res.get(key, 0) + repair.get(key, 0)
+        agent_id = agent_ids[idx]
 
-    cur["agent_index"] = idx
+        if step_idx >= len(_MEMORY_AGENT_STEPS):
+            # All sub-steps completed for this agent – advance to the next agent.
+            if _agent_had_repair_activity(res, cur):
+                res["memory_repair_agents"] = res.get("memory_repair_agents", 0) + 1
+            cur.pop("_agent_deltas", None)
+            idx += 1
+            step_idx = 0
+            step_attempts = 0
+            cur["agent_index"] = idx
+            cur["agent_step"] = step_idx
+            cur["step_attempts"] = step_attempts
+            await _repair_checkpoint(state)
+            continue
+
+        step_key, _ = _MEMORY_AGENT_STEPS[step_idx]
+
+        if step_attempts >= _MEMORY_AGENT_STEP_MAX_ATTEMPTS:
+            logger.warning(
+                "repair_tick memory_agents: skipping step %s on agent %s after %d failed attempts",
+                step_key,
+                agent_id,
+                step_attempts,
+            )
+            step_idx += 1
+            step_attempts = 0
+            cur["agent_step"] = step_idx
+            cur["step_attempts"] = step_attempts
+            await _repair_checkpoint(state)
+            continue
+
+        # Record an attempt for this (agent, step) BEFORE awaiting the work so
+        # a cancellation leaves the attempt counter incremented.
+        step_attempts += 1
+        cur["step_attempts"] = step_attempts
+        await _repair_checkpoint(state)
+
+        deltas: Dict[str, int] = {}
+        try:
+            agent = await Agent.get(agent_id)
+            if not agent:
+                step_idx = len(_MEMORY_AGENT_STEPS)
+            else:
+                memory = await agent.get_memory()
+                if not memory:
+                    step_idx = len(_MEMORY_AGENT_STEPS)
+                else:
+                    deltas = await _run_memory_agent_step(
+                        memory, step_key, state.get("recent_minutes")
+                    )
+        except Exception:
+            logger.warning(
+                "repair_tick memory_agents: step %s failed on agent %s (advancing)",
+                step_key,
+                agent_id,
+                exc_info=True,
+            )
+            deltas = {}
+
+        for key, delta in deltas.items():
+            if delta:
+                res[key] = res.get(key, 0) + delta
+                agent_deltas = cur.setdefault("_agent_deltas", {})
+                agent_deltas[key] = agent_deltas.get(key, 0) + delta
+
+        # Sub-step (or its error path) completed – advance past it.
+        # Note: the "agent/memory missing" branches above set step_idx to
+        # len(_MEMORY_AGENT_STEPS) directly so the next loop iteration will
+        # advance the agent; do not double-increment in that case.
+        if step_idx < len(_MEMORY_AGENT_STEPS):
+            step_idx += 1
+        step_attempts = 0
+        cur["agent_step"] = step_idx
+        cur["step_attempts"] = step_attempts
+        processed_steps += 1
+        await _repair_checkpoint(state)
+
     if idx >= len(agent_ids):
         state["phase"] = PH_SCHEMA_APP_DEDUPE
         state["cursor"] = {}
     return True
+
+
+def _agent_had_repair_activity(res: Dict[str, Any], cur: Dict[str, Any]) -> bool:
+    """Return True iff the just-finished agent produced any non-zero counters."""
+    deltas = cur.get("_agent_deltas") or {}
+    return any(v > 0 for v in deltas.values())
+
+
+async def _entity_count(context: Any, entity: str) -> int:
+    """Return the number of nodes with the given entity type using count."""
+    return await context.database.count("node", {"entity": entity})
 
 
 async def _tick_schema_app_dedupe(
@@ -215,6 +452,13 @@ async def _tick_schema_app_dedupe(
 ) -> bool:
     from jvagent.core.app import App
     from jvagent.core.graph_repair import _compute_reachable_nodes_excluding_root
+
+    # Fast-skip: if only one App node exists there cannot be duplicates.
+    app_count = await _entity_count(context, "App")
+    if app_count <= 1:
+        state["phase"] = PH_SCHEMA_AGENT_DEDUPE
+        state["cursor"] = {}
+        return True
 
     apps = await App.find({})
     if len(apps) <= 1:
@@ -256,8 +500,16 @@ async def _tick_schema_agent_dedupe(
     from jvagent.core.agent import Agent
     from jvagent.core.graph_repair import _compute_reachable_nodes_below
 
+    context = get_default_context()
     cur = state["cursor"]
     if cur.get("dup_groups") is None:
+        # Fast-skip: if there is only one Agent no duplicates are possible.
+        agent_count = await _entity_count(context, "Agent")
+        if agent_count <= 1:
+            state["phase"] = PH_SCHEMA_ACTIONS_DEDUPE
+            state["cursor"] = {"agent_ids": None, "agent_index": 0}
+            return True
+
         grouped: Dict[str, List[str]] = defaultdict(list)
         for agent in await Agent.find({}):
             ns = getattr(agent, "namespace", "")
@@ -531,6 +783,9 @@ async def _tick_schema_singleton_actions(
     return True
 
 
+_DEAD_EDGES_CHECKPOINT_EVERY = 32
+
+
 async def _tick_dead_edges(
     context: Any, state: Dict[str, Any], limits: RepairLimits
 ) -> bool:
@@ -540,6 +795,7 @@ async def _tick_dead_edges(
     last = cur.get("last_edge_id") or ""
     batch = limits.batch_size
     removed = 0
+    deadline = time.monotonic() + (limits.max_seconds or 1e9)
     page = await _find_edges_page(context, last if last else None, batch)
     if not page:
         state["phase"] = PH_SYNC_PREPARE
@@ -550,12 +806,16 @@ async def _tick_dead_edges(
         }
         return True
 
+    processed = 0
     for data in page:
+        if limits.max_seconds and time.monotonic() >= deadline:
+            break
+
         source_id = data.get("source", "")
         target_id = data.get("target", "")
         eid = data.get("id", "")
 
-        async def try_delete(edge_data: dict = data, edge_id: str = eid) -> int:
+        async def try_delete(edge_data: dict, edge_id: str) -> int:
             try:
                 edge = await context._deserialize_entity(Edge, edge_data)
                 if edge:
@@ -567,23 +827,39 @@ async def _tick_dead_edges(
 
         if not source_id or not target_id:
             if not state["dry_run"]:
-                removed += await try_delete()
+                removed += await try_delete(data, eid)
             else:
                 removed += 1
-            continue
+        else:
+            source_node = await context.get(Node, source_id)
+            target_node = await context.get(Node, target_id)
+            if source_node is None or target_node is None:
+                if not state["dry_run"]:
+                    removed += await try_delete(data, eid)
+                else:
+                    removed += 1
 
-        source_node = await context.get(Node, source_id)
-        target_node = await context.get(Node, target_id)
-        if source_node is None or target_node is None:
-            if not state["dry_run"]:
-                removed += await try_delete()
-            else:
-                removed += 1
+        if eid:
+            cur["last_edge_id"] = eid
+        processed += 1
+        if processed % _DEAD_EDGES_CHECKPOINT_EVERY == 0 or processed == len(page):
+            await _repair_checkpoint(state)
 
-    state["result"]["dead_edges_removed"] += removed
-    last_id = page[-1].get("id", "")
-    cur["last_edge_id"] = last_id
-    if len(page) < batch:
+    state["result"]["dead_edges_removed"] = (
+        state["result"].get("dead_edges_removed", 0) + removed
+    )
+
+    full_page = processed == len(page) and len(page) > 0
+    if not full_page and processed:
+        # Budget ran out mid-page — last_edge_id is the last *processed* edge;
+        # next wave continues with ``$gt`` from there.
+        await _repair_checkpoint(state)
+        return True
+    if not full_page and not processed:
+        # Nothing done this wave (e.g. instant deadline) — keep cursor.
+        return True
+
+    if len(page) < batch and full_page:
         state["phase"] = PH_SYNC_PREPARE
         state["cursor"] = {
             "last_edge_id": "",
@@ -596,66 +872,89 @@ async def _tick_dead_edges(
 async def _tick_sync_prepare(
     context: Any, state: Dict[str, Any], limits: RepairLimits
 ) -> bool:
-    """Accumulate node->edge ids and valid edge ids from paged edges."""
+    """Accumulate node->edge ids and valid edge ids from paged edges.
+
+    Uses the repair_scratch collection so the RepairState cursor stays small
+    regardless of graph size.
+    """
+    from jvagent.core.repair_scratch import (
+        SCRATCH_COLLECTION,
+        ensure_scratch_indexes,
+        scratch_upsert_bulk,
+    )
+
     cur = state["cursor"]
+    run_id: str = cur.get("run_id") or state.get("run_id") or ""
+    if not run_id:
+        import uuid
+
+        run_id = uuid.uuid4().hex
+        state["run_id"] = run_id
+        cur["run_id"] = run_id
+        db = context.database
+        await ensure_scratch_indexes(db)
+
     last = cur.get("last_edge_id") or ""
     batch = limits.batch_size
-    acc: Dict[str, List[str]] = {
-        k: list(v) for k, v in cur.get("acc_node_edges", {}).items()
-    }
-    valid: Set[str] = set(cur.get("acc_valid_ids", []))
+    db = context.database
 
     page = await _find_edges_page(context, last if last else None, batch)
     if not page:
         state["phase"] = PH_SYNC_APPLY
-        state["cursor"] = {
-            "last_node_id": "",
-            "acc_node_edges": acc,
-            "acc_valid_ids": sorted(valid),
-        }
+        state["cursor"] = {"last_node_id": "", "run_id": run_id}
         return True
 
+    node_edge_items: List[Tuple[str, str]] = []
+    valid_edge_items: List[Tuple[str, str]] = []
     for data in page:
         eid = data.get("id")
         source = data.get("source")
         target = data.get("target")
         if eid:
-            valid.add(eid)
+            valid_edge_items.append((eid, ""))
         if eid and source:
-            acc.setdefault(source, []).append(eid)
+            # key = "<node_id>|<edge_id>" so we can group by node in apply phase
+            node_edge_items.append((f"{source}|{eid}", eid))
         if eid and target:
-            acc.setdefault(target, []).append(eid)
+            node_edge_items.append((f"{target}|{eid}", eid))
+
+    if node_edge_items:
+        await scratch_upsert_bulk(db, run_id, "node_edge", node_edge_items)
+    if valid_edge_items:
+        await scratch_upsert_bulk(db, run_id, "valid_edge", valid_edge_items)
 
     cur["last_edge_id"] = page[-1].get("id", "")
-    cur["acc_node_edges"] = {k: sorted(set(v)) for k, v in acc.items()}
-    cur["acc_valid_ids"] = sorted(valid)
+    cur["run_id"] = run_id
     if len(page) < batch:
         state["phase"] = PH_SYNC_APPLY
-        state["cursor"] = {
-            "last_node_id": "",
-            "acc_node_edges": cur["acc_node_edges"],
-            "acc_valid_ids": cur["acc_valid_ids"],
-        }
+        state["cursor"] = {"last_node_id": "", "run_id": run_id}
     return True
 
 
 async def _tick_sync_apply(
     context: Any, state: Dict[str, Any], limits: RepairLimits
 ) -> bool:
+    """Sync node edge_ids reading valid/expected sets from the scratch collection."""
     from jvspatial.core import Node
 
+    from jvagent.core.repair_scratch import scratch_page
+
     cur = state["cursor"]
-    acc = {k: set(v) for k, v in cur.get("acc_node_edges", {}).items()}
-    valid_ids = set(cur.get("acc_valid_ids", []))
+    run_id: str = cur.get("run_id") or state.get("run_id") or ""
     last = cur.get("last_node_id") or ""
     batch = limits.batch_size
     synced = 0
+    db = context.database
 
     page = await _find_nodes_page(context, last if last else None, batch)
     if not page:
         state["phase"] = PH_ORPHANS_LIST_NODES
-        state["cursor"] = {"last_node_id": "", "all_node_ids": []}
+        state["cursor"] = {"last_node_id": "", "run_id": run_id}
         return True
+
+    # Build valid_edge set from scratch (page-sized window to keep memory bounded)
+    valid_rows = await scratch_page(db, run_id, "valid_edge", None, 50000)
+    valid_ids: Set[str] = {r["key"] for r in valid_rows}
 
     dry = state["dry_run"]
     for data in page:
@@ -663,7 +962,16 @@ async def _tick_sync_apply(
         if not node_id:
             continue
         current_edge_ids = set(data.get("edges", []))
-        expected = acc.get(node_id, set())
+
+        # Look up expected edges for this node from scratch
+        node_edge_rows = await scratch_page(db, run_id, "node_edge", None, batch)
+        expected: Set[str] = set()
+        for r in node_edge_rows:
+            # key format: "<node_id>|<edge_id>"
+            k = r.get("key", "")
+            if k.startswith(f"{node_id}|"):
+                expected.add(k.split("|", 1)[1])
+
         valid_current = current_edge_ids & valid_ids
         new_edge_ids = valid_current | expected
         if set(current_edge_ids) != new_edge_ids:
@@ -683,75 +991,89 @@ async def _tick_sync_apply(
 
     state["result"]["node_edge_ids_synced"] += synced
     cur["last_node_id"] = page[-1].get("id", "")
+    cur["run_id"] = run_id
     if len(page) < batch:
         state["phase"] = PH_ORPHANS_LIST_NODES
-        state["cursor"] = {
-            "last_node_id": "",
-            "all_node_ids": [],
-        }
+        state["cursor"] = {"last_node_id": "", "run_id": run_id}
     return True
 
 
 async def _tick_orphans_list_nodes(
     context: Any, state: Dict[str, Any], limits: RepairLimits
 ) -> bool:
+    """Enumerate all node IDs into the repair_scratch collection.
+
+    Each node id is stored as a scratch row of kind ``all_node_id`` so the
+    RepairState cursor only holds the pagination watermark.
+    """
+    from jvspatial.core import Root
+
+    from jvagent.core.repair_scratch import ensure_scratch_indexes, scratch_upsert_bulk
+
     cur = state["cursor"]
+    run_id: str = cur.get("run_id") or state.get("run_id") or ""
+    if not run_id:
+        import uuid
+
+        run_id = uuid.uuid4().hex
+        state["run_id"] = run_id
+        cur["run_id"] = run_id
+        await ensure_scratch_indexes(context.database)
+
     last = cur.get("last_node_id") or ""
     batch = limits.batch_size
-    all_ids: List[str] = list(cur.get("all_node_ids", []))
+    db = context.database
 
     page = await _find_nodes_page(context, last if last else None, batch)
     if not page:
-        from jvspatial.core import Root
-
         root = await Root.get()
         rid = root.id if root else "n.Root.root"
         state["phase"] = PH_ORPHANS_BFS
-        state["cursor"] = {
-            "all_node_ids": sorted(set(all_ids)),
-            "bfs_queue": [rid],
-            "bfs_seen": [],
-        }
+        state["cursor"] = {"bfs_queue": [rid], "run_id": run_id}
         return True
 
-    for data in page:
-        nid = data.get("id")
-        if nid:
-            all_ids.append(nid)
-    cur["all_node_ids"] = all_ids
-    cur["last_node_id"] = page[-1].get("id", "")
-    if len(page) < batch:
-        state["phase"] = PH_ORPHANS_BFS
-        from jvspatial.core import Root
+    items = [(data["id"], "") for data in page if data.get("id")]
+    if items:
+        await scratch_upsert_bulk(db, run_id, "all_node_id", items)
 
+    cur["last_node_id"] = page[-1].get("id", "")
+    cur["run_id"] = run_id
+    if len(page) < batch:
         root = await Root.get()
-        state["cursor"] = {
-            "all_node_ids": sorted(set(all_ids)),
-            "bfs_queue": [root.id],
-            "bfs_seen": [],
-        }
+        rid = root.id if root else "n.Root.root"
+        state["phase"] = PH_ORPHANS_BFS
+        state["cursor"] = {"bfs_queue": [rid], "run_id": run_id}
     return True
 
 
 async def _tick_orphans_bfs(
     context: Any, state: Dict[str, Any], limits: RepairLimits
 ) -> bool:
+    """BFS from root to mark reachable nodes; persists visited set in scratch.
+
+    ``bfs_seen`` is no longer stored in the cursor dict; instead we upsert
+    ``bfs_seen`` rows into the scratch collection and only keep the queue
+    (a short list of pending node ids) in the cursor.
+    """
     from jvspatial.core import Node, Root
 
+    from jvagent.core.repair_scratch import scratch_contains, scratch_upsert_bulk
+
     cur = state["cursor"]
+    run_id: str = cur.get("run_id") or state.get("run_id") or ""
     queue = deque(cur.get("bfs_queue", []))
-    seen: Set[str] = set(cur.get("bfs_seen", []) or [])
     batch = limits.batch_size
     deadline = time.monotonic() + (limits.max_seconds or 1e9)
     steps = 0
+    db = context.database
 
     while queue and steps < batch:
         if limits.max_seconds and time.monotonic() >= deadline:
             break
         nid = queue.popleft()
-        if nid in seen:
+        if await scratch_contains(db, run_id, "bfs_seen", nid):
             continue
-        seen.add(nid)
+        await scratch_upsert_bulk(db, run_id, "bfs_seen", [(nid, "")])
         steps += 1
         try:
             node = await context.get(Node, nid)
@@ -759,24 +1081,78 @@ async def _tick_orphans_bfs(
                 continue
             neighbors = await node.nodes(direction="both")
             for nb in neighbors:
-                if nb.id not in seen:
+                if not await scratch_contains(db, run_id, "bfs_seen", nb.id):
                     queue.append(nb.id)
         except Exception as e:
             logger.debug("BFS error at %s: %s", nid, e)
 
     cur["bfs_queue"] = list(queue)
-    cur["bfs_seen"] = sorted(seen)
+    cur["run_id"] = run_id
     if not queue:
+        # Compute orphans: all_node_id rows NOT in bfs_seen rows.
+        # Both sets live in scratch; we page through all_node_id and check seen.
+        from jvagent.core.repair_scratch import scratch_page
+
         root = await Root.get()
-        all_ids = set(cur.get("all_node_ids", []))
-        reachable = set(seen)
         root_id = root.id if root else "n.Root.root"
-        orphan_ids = sorted(all_ids - reachable)
-        if root_id in orphan_ids:
-            orphan_ids.remove(root_id)
+        orphan_ids: List[str] = []
+        after_key: Optional[str] = None
+        while True:
+            rows = await scratch_page(db, run_id, "all_node_id", after_key, 500)
+            if not rows:
+                break
+            for r in rows:
+                nid = r["key"]
+                if nid == root_id:
+                    continue
+                if not await scratch_contains(db, run_id, "bfs_seen", nid):
+                    orphan_ids.append(nid)
+            after_key = rows[-1]["key"]
+            if len(rows) < 500:
+                break
+
         state["phase"] = PH_ORPHANS_REATTACH
-        state["cursor"] = {"orphan_ids": orphan_ids, "orphan_index": 0}
+        state["cursor"] = {
+            "orphan_ids": orphan_ids,
+            "orphan_index": 0,
+            "run_id": run_id,
+        }
     return True
+
+
+async def _build_reattach_context() -> Dict[str, Any]:
+    """Build lookup maps used by all reattach handlers.
+
+    Fetches Memory and Agent collections once so handlers never need to call
+    Memory.find({}) / Agent.find({}) per-orphan (which was O(orphans * memories)).
+    """
+    from jvagent.core.agent import Agent
+    from jvagent.memory.manager import Memory
+
+    memories = await Memory.find({})
+    agents = await Agent.find({})
+    memory_by_id = {m.id: m for m in memories}
+    memory_by_agent_id = {
+        getattr(m, "agent_id", ""): m for m in memories if getattr(m, "agent_id", "")
+    }
+    agents_without_memory = []
+    agents_without_actions = []
+    for agent in agents:
+        mem = await agent.node(node="Memory")
+        if not mem:
+            agents_without_memory.append(agent)
+        actions_mgr = await agent.node(node="Actions")
+        if not actions_mgr:
+            agents_without_actions.append(agent)
+
+    return {
+        "memories": memories,
+        "memory_by_id": memory_by_id,
+        "memory_by_agent_id": memory_by_agent_id,
+        "agents": agents,
+        "agents_without_memory": agents_without_memory,
+        "agents_without_actions": agents_without_actions,
+    }
 
 
 async def _tick_orphans_reattach(
@@ -793,13 +1169,19 @@ async def _tick_orphans_reattach(
     orphan_set = set(oids)
     reattached = 0
 
+    # Build lookup maps once at the start of this phase (not per-orphan).
+    if cur.get("reattach_ctx") is None:
+        cur["reattach_ctx"] = await _build_reattach_context()
+
+    reattach_ctx = cur["reattach_ctx"]
+
     while idx < len(oids):
         if limits.max_seconds and time.monotonic() >= deadline:
             break
         chunk = oids[idx : idx + batch]
         if not chunk:
             break
-        n = await _reattach_orphans_chunk(context, chunk, orphan_set, dry)
+        n = await _reattach_orphans_chunk(context, chunk, orphan_set, dry, reattach_ctx)
         reattached += n
         idx += len(chunk)
 
@@ -807,7 +1189,7 @@ async def _tick_orphans_reattach(
     state["result"]["orphaned_nodes_reattached"] += reattached
     if idx >= len(oids):
         state["phase"] = PH_ORPHANS_INTERACTION
-        state["cursor"] = {"orphan_ids": oids}
+        state["cursor"] = {"orphan_ids": oids, "run_id": cur.get("run_id", "")}
     return True
 
 
@@ -884,25 +1266,54 @@ async def _tick_orphans_delete(
 async def _tick_dup_prepare(
     context: Any, state: Dict[str, Any], limits: RepairLimits
 ) -> bool:
+    """Accumulate duplicate edge pairs into scratch rather than cursor."""
+    from jvagent.core.repair_scratch import ensure_scratch_indexes, scratch_upsert_bulk
+
     cur = state["cursor"]
+    run_id: str = cur.get("run_id") or state.get("run_id") or ""
+    if not run_id:
+        import uuid
+
+        run_id = uuid.uuid4().hex
+        state["run_id"] = run_id
+        cur["run_id"] = run_id
+        await ensure_scratch_indexes(context.database)
+
     last = cur.get("last_edge_id") or ""
     batch = limits.batch_size
     deadline = time.monotonic() + (limits.max_seconds or 1e9)
-    dup_by_key: Dict[str, List[str]] = {
-        k: list(v) for k, v in cur.get("dup_by_key", {}).items()
-    }
+    db = context.database
 
     page = await _find_edges_page(context, last if last else None, batch)
     if not page:
-        keys = sorted(k for k, v in dup_by_key.items() if len(v) > 1)
+        # Identify keys that have >1 edge: read back from scratch and keep only dups
+        from jvagent.core.repair_scratch import scratch_page
+
+        dup_keys: List[str] = []
+        after_key: Optional[str] = None
+        # Group edge_pair rows by source_target key
+        seen_keys: Dict[str, int] = {}
+        while True:
+            rows = await scratch_page(db, run_id, "edge_pair", after_key, 1000)
+            if not rows:
+                break
+            for r in rows:
+                # key = "<source>\n<target>", value = edge_id
+                pair_key = r["key"]
+                seen_keys[pair_key] = seen_keys.get(pair_key, 0) + 1
+            after_key = rows[-1]["key"]
+            if len(rows) < 1000:
+                break
+        dup_keys = sorted(k for k, cnt in seen_keys.items() if cnt > 1)
         state["phase"] = PH_DUP_APPLY
         state["cursor"] = {
-            "dup_keys": keys,
+            "dup_keys": dup_keys,
             "dup_key_index": 0,
-            "dup_by_key": dup_by_key,
+            "run_id": run_id,
         }
         return True
 
+    items: List[Tuple[str, str]] = []
     for data in page:
         if limits.max_seconds and time.monotonic() >= deadline:
             break
@@ -910,21 +1321,35 @@ async def _tick_dup_prepare(
         target = data.get("target")
         eid = data.get("id")
         if source and target and eid:
-            key = f"{source}\n{target}"
-            dup_by_key.setdefault(key, []).append(eid)
+            pair_key = f"{source}\n{target}"
+            items.append((f"{pair_key}|{eid}", eid))
 
-    for k in list(dup_by_key.keys()):
-        dup_by_key[k] = sorted(set(dup_by_key[k]))
+    if items:
+        await scratch_upsert_bulk(db, run_id, "edge_pair", items)
 
     cur["last_edge_id"] = page[-1].get("id", "")
-    cur["dup_by_key"] = dup_by_key
+    cur["run_id"] = run_id
     if len(page) < batch:
-        keys = sorted(k for k, v in dup_by_key.items() if len(v) > 1)
+        from jvagent.core.repair_scratch import scratch_page
+
+        seen_keys_final: Dict[str, int] = {}
+        after_key_f: Optional[str] = None
+        while True:
+            rows = await scratch_page(db, run_id, "edge_pair", after_key_f, 1000)
+            if not rows:
+                break
+            for r in rows:
+                pair_key = r["key"].rsplit("|", 1)[0]
+                seen_keys_final[pair_key] = seen_keys_final.get(pair_key, 0) + 1
+            after_key_f = rows[-1]["key"]
+            if len(rows) < 1000:
+                break
+        dup_keys_f = sorted(k for k, cnt in seen_keys_final.items() if cnt > 1)
         state["phase"] = PH_DUP_APPLY
         state["cursor"] = {
-            "dup_keys": keys,
+            "dup_keys": dup_keys_f,
             "dup_key_index": 0,
-            "dup_by_key": dup_by_key,
+            "run_id": run_id,
         }
     return True
 
@@ -934,7 +1359,10 @@ async def _tick_dup_apply(
 ) -> bool:
     from jvspatial.core import Edge, Node
 
+    from jvagent.core.repair_scratch import scratch_page
+
     cur = state["cursor"]
+    run_id: str = cur.get("run_id") or state.get("run_id") or ""
     keys: List[str] = cur.get("dup_keys", [])
     ki = int(cur.get("dup_key_index", 0))
     batch = limits.batch_size
@@ -942,6 +1370,7 @@ async def _tick_dup_apply(
     dry = state["dry_run"]
     removed = 0
     processed_keys = 0
+    db = context.database
 
     while ki < len(keys) and processed_keys < batch:
         if limits.max_seconds and time.monotonic() >= deadline:
@@ -950,7 +1379,12 @@ async def _tick_dup_apply(
         ki += 1
         processed_keys += 1
         src, _, tgt = key.partition("\n")
-        group_ids = list(cur.get("dup_by_key", {}).get(key, []))
+        # Load all edge ids for this pair from scratch
+        prefix = f"{key}|"
+        pair_rows = await scratch_page(db, run_id, "edge_pair", prefix[:-1], 200)
+        group_ids = sorted(
+            {r["value"] for r in pair_rows if r.get("key", "").startswith(prefix)}
+        )
         if len(group_ids) <= 1:
             continue
         for dup_id in group_ids[1:]:
@@ -978,14 +1412,19 @@ async def _tick_dup_apply(
         _ = (src, tgt)
 
     cur["dup_key_index"] = ki
+    cur["run_id"] = run_id
     state["result"]["duplicate_edges_removed"] += removed
     if ki >= len(keys):
         if not state["dry_run"]:
             state["phase"] = PH_PRUNE_AGENTS
-            state["cursor"] = {"prune_agent_index": 0, "prune_agent_ids": None}
+            state["cursor"] = {
+                "prune_agent_index": 0,
+                "prune_agent_ids": None,
+                "run_id": run_id,
+            }
         else:
             state["phase"] = PH_DONE
-            state["cursor"] = {}
+            state["cursor"] = {"run_id": run_id}
     return True
 
 
@@ -993,6 +1432,7 @@ async def _tick_prune_agents(state: Dict[str, Any], limits: RepairLimits) -> boo
     from jvagent.core.agent import Agent
 
     cur = state["cursor"]
+    run_id: str = cur.get("run_id") or state.get("run_id") or ""
     if cur.get("prune_agent_ids") is None:
         agents = await Agent.find({})
         cur["prune_agent_ids"] = [a.id for a in agents]
@@ -1016,6 +1456,18 @@ async def _tick_prune_agents(state: Dict[str, Any], limits: RepairLimits) -> boo
                 state["result"]["interactions_pruned"] += pruned
     cur["prune_agent_index"] = idx
     if idx >= len(ids):
+        # Drop scratch data for this run now that we're done.
+        if run_id:
+            try:
+                from jvspatial.core import get_default_context
+
+                from jvagent.core.repair_scratch import scratch_drop_run
+
+                await scratch_drop_run(get_default_context().database, run_id)
+            except Exception:
+                logger.debug(
+                    "_tick_prune_agents: scratch_drop_run failed", exc_info=True
+                )
         state["phase"] = PH_DONE
         state["cursor"] = {}
     return processed > 0 or idx >= len(ids)
@@ -1076,63 +1528,155 @@ def _build_message(state: Dict[str, Any]) -> str:
     return msg
 
 
+_PHASE_ORDER: List[str] = [
+    PH_MEMORY_COUNTERS,
+    PH_MEMORY_AGENTS,
+    PH_SCHEMA_APP_DEDUPE,
+    PH_SCHEMA_AGENT_DEDUPE,
+    PH_SCHEMA_ACTIONS_DEDUPE,
+    PH_SCHEMA_MEMORY_DEDUPE,
+    PH_SCHEMA_SINGLETON_ACTIONS,
+    PH_DEAD_EDGES,
+    PH_SYNC_PREPARE,
+    PH_SYNC_APPLY,
+    PH_ORPHANS_LIST_NODES,
+    PH_ORPHANS_BFS,
+    PH_ORPHANS_REATTACH,
+    PH_ORPHANS_INTERACTION,
+    PH_ORPHANS_DELETE,
+    PH_DUP_PREPARE,
+    PH_DUP_APPLY,
+    PH_PRUNE_AGENTS,
+    PH_DONE,
+]
+
+
+def _next_phase(current: str) -> Optional[str]:
+    """Return the next phase after ``current`` or None if already at DONE."""
+    try:
+        idx = _PHASE_ORDER.index(current)
+        if idx + 1 < len(_PHASE_ORDER):
+            return _PHASE_ORDER[idx + 1]
+    except ValueError:
+        pass
+    return None
+
+
 async def run_repair_session(
     state: Dict[str, Any], limits: RepairLimits
 ) -> Dict[str, Any]:
-    """Run one bounded repair wave and return mutated state."""
+    """Run **one** top-level repair phase tick and return.
+
+    This is the synchronous step contract: a single call advances the pipeline
+    by at most one tick; :func:`repair_agent_graph` persists state after the
+    tick so the next call continues from the same ``phase``/``cursor`` (or
+    from a sub-step checkpoint inside a tick).
+
+    Consecutive logical stalls (tick ran but produced no progress) use
+    ``state["stall_count"]``; after two stalls the engine force-advances to the
+    next phase to avoid a permanent ``in_progress``.
+    """
     from jvspatial.core import get_default_context
 
     context = get_default_context()
-    deadline = time.monotonic() + (limits.max_seconds or 86400.0)
+    stall_count: int = int(state.get("stall_count", 0))
 
-    while time.monotonic() < deadline:
-        phase = state["phase"]
-        if phase == PH_DONE:
-            break
-        before = json.dumps(state.get("cursor"), sort_keys=True)
-        phase_before = state["phase"]
-        if phase == PH_MEMORY_COUNTERS:
-            await _tick_memory_counters(state, limits)
-        elif phase == PH_MEMORY_AGENTS:
-            await _tick_memory_agents(state, limits)
-        elif phase == PH_SCHEMA_APP_DEDUPE:
-            await _tick_schema_app_dedupe(context, state, limits)
-        elif phase == PH_SCHEMA_AGENT_DEDUPE:
-            await _tick_schema_agent_dedupe(state, limits)
-        elif phase == PH_SCHEMA_ACTIONS_DEDUPE:
-            await _tick_schema_actions_dedupe(state, limits)
-        elif phase == PH_SCHEMA_MEMORY_DEDUPE:
-            await _tick_schema_memory_dedupe(state, limits)
-        elif phase == PH_SCHEMA_SINGLETON_ACTIONS:
-            await _tick_schema_singleton_actions(context, state, limits)
-        elif phase == PH_DEAD_EDGES:
-            await _tick_dead_edges(context, state, limits)
-        elif phase == PH_SYNC_PREPARE:
-            await _tick_sync_prepare(context, state, limits)
-        elif phase == PH_SYNC_APPLY:
-            await _tick_sync_apply(context, state, limits)
-        elif phase == PH_ORPHANS_LIST_NODES:
-            await _tick_orphans_list_nodes(context, state, limits)
-        elif phase == PH_ORPHANS_BFS:
-            await _tick_orphans_bfs(context, state, limits)
-        elif phase == PH_ORPHANS_REATTACH:
-            await _tick_orphans_reattach(context, state, limits)
-        elif phase == PH_ORPHANS_INTERACTION:
-            await _tick_orphans_interaction(context, state, limits)
-        elif phase == PH_ORPHANS_DELETE:
-            await _tick_orphans_delete(context, state, limits)
-        elif phase == PH_DUP_PREPARE:
-            await _tick_dup_prepare(context, state, limits)
-        elif phase == PH_DUP_APPLY:
-            await _tick_dup_apply(context, state, limits)
-        elif phase == PH_PRUNE_AGENTS:
-            await _tick_prune_agents(state, limits)
-        else:
-            break
-        after = json.dumps(state.get("cursor"), sort_keys=True)
-        if before == after and phase_before == state["phase"]:
-            break
-        if state["phase"] == PH_DONE:
-            break
+    phase = state.get("phase", PH_DONE)
+    if phase == PH_DONE:
+        state["stall_count"] = stall_count
+        return state
 
+    before = json.dumps(state.get("cursor"), sort_keys=True)
+    phase_before = state["phase"]
+
+    # --- dispatch (single tick) ---
+    tick_coro = None
+    if phase == PH_MEMORY_COUNTERS:
+        tick_coro = _tick_memory_counters(state, limits)
+    elif phase == PH_MEMORY_AGENTS:
+        tick_coro = _tick_memory_agents(state, limits)
+    elif phase == PH_SCHEMA_APP_DEDUPE:
+        tick_coro = _tick_schema_app_dedupe(context, state, limits)
+    elif phase == PH_SCHEMA_AGENT_DEDUPE:
+        tick_coro = _tick_schema_agent_dedupe(state, limits)
+    elif phase == PH_SCHEMA_ACTIONS_DEDUPE:
+        tick_coro = _tick_schema_actions_dedupe(state, limits)
+    elif phase == PH_SCHEMA_MEMORY_DEDUPE:
+        tick_coro = _tick_schema_memory_dedupe(state, limits)
+    elif phase == PH_SCHEMA_SINGLETON_ACTIONS:
+        tick_coro = _tick_schema_singleton_actions(context, state, limits)
+    elif phase == PH_DEAD_EDGES:
+        tick_coro = _tick_dead_edges(context, state, limits)
+    elif phase == PH_SYNC_PREPARE:
+        tick_coro = _tick_sync_prepare(context, state, limits)
+    elif phase == PH_SYNC_APPLY:
+        tick_coro = _tick_sync_apply(context, state, limits)
+    elif phase == PH_ORPHANS_LIST_NODES:
+        tick_coro = _tick_orphans_list_nodes(context, state, limits)
+    elif phase == PH_ORPHANS_BFS:
+        tick_coro = _tick_orphans_bfs(context, state, limits)
+    elif phase == PH_ORPHANS_REATTACH:
+        tick_coro = _tick_orphans_reattach(context, state, limits)
+    elif phase == PH_ORPHANS_INTERACTION:
+        tick_coro = _tick_orphans_interaction(context, state, limits)
+    elif phase == PH_ORPHANS_DELETE:
+        tick_coro = _tick_orphans_delete(context, state, limits)
+    elif phase == PH_DUP_PREPARE:
+        tick_coro = _tick_dup_prepare(context, state, limits)
+    elif phase == PH_DUP_APPLY:
+        tick_coro = _tick_dup_apply(context, state, limits)
+    elif phase == PH_PRUNE_AGENTS:
+        tick_coro = _tick_prune_agents(state, limits)
+    else:
+        state["stall_count"] = stall_count
+        return state
+
+    tick_start = time.monotonic()
+    try:
+        await tick_coro
+    except Exception:
+        tick_ms = int((time.monotonic() - tick_start) * 1000)
+        logger.error(
+            "run_repair_session: tick for phase %s raised unexpectedly (duration_ms=%d)",
+            phase,
+            tick_ms,
+            exc_info=True,
+        )
+        raise
+
+    await _repair_checkpoint(state)
+
+    tick_ms = int((time.monotonic() - tick_start) * 1000)
+    logger.info(
+        "repair_tick phase=%s status=ok duration_ms=%d",
+        phase,
+        tick_ms,
+    )
+
+    after = json.dumps(state.get("cursor"), sort_keys=True)
+    stalled = before == after and phase_before == state["phase"]
+    if stalled:
+        stall_count += 1
+        logger.warning(
+            "run_repair_session: stall detected in phase %s (stall_count=%d; cursor_keys=%s)",
+            phase,
+            stall_count,
+            list((state.get("cursor") or {}).keys())[:10],
+        )
+        if stall_count >= 2:
+            next_ph = _next_phase(phase)
+            if next_ph:
+                logger.warning(
+                    "run_repair_session: force-advancing from %s to %s after %d stalls",
+                    phase,
+                    next_ph,
+                    stall_count,
+                )
+                state["phase"] = next_ph
+                state["cursor"] = {}
+            stall_count = 0
+    else:
+        stall_count = 0
+
+    state["stall_count"] = stall_count
     return state

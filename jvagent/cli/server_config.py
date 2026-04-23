@@ -492,6 +492,10 @@ async def pre_startup_bootstrap(
         True if admin user exists, False otherwise
     """
     try:
+        from jvagent.core.index_bootstrap import run_index_migration
+
+        await run_index_migration()
+
         effective_update_mode = await resolve_bootstrap_update_mode(update_mode)
         await bootstrap_application_graph(
             update_mode=effective_update_mode, app_root=app_root

@@ -17,6 +17,10 @@ if TYPE_CHECKING:
     [("memory_id", 1), ("user_id", 1)],
     name="memory_user",
     unique=True,
+    partial_filter_expression={
+        "context.memory_id": {"$gt": ""},
+        "context.user_id": {"$gt": ""},
+    },
 )
 class User(Node):
     """Internal user model - identifier only, not an account.
@@ -116,7 +120,10 @@ class User(Node):
 
         memory = await self.node(direction="in", node=Memory)
         if memory:
-            await memory.refresh_memory_counters_from_graph()
+            # Atomic increment keeps the hot path O(1) regardless of graph size.
+            ctx = await memory.get_context()
+            await ctx.atomic_increment(memory.id, "total_conversations", 1)
+            memory.total_conversations = (memory.total_conversations or 0) + 1
 
         return conv
 

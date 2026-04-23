@@ -1,11 +1,15 @@
 """Orphan reattach handlers for graph repair.
 
-Each handler is an async function(context, node, orphan_ids, dry_run) -> bool
+Each handler is an async function(context, node, orphan_ids, dry_run, reattach_ctx) -> bool
 that returns True if the node was reattached (and node_id was discarded from orphan_ids).
+
+``reattach_ctx`` is an optional pre-built lookup dict produced by
+``_build_reattach_context`` in ``graph_repair_job``.  When supplied it avoids
+per-orphan ``Memory.find({})`` / ``Agent.find({})`` scans.
 """
 
 from collections import deque
-from typing import Any, Callable, Dict, Set
+from typing import Any, Callable, Dict, List, Optional, Set
 
 _REATTACH_HANDLERS: Dict[str, Callable] = {}
 
@@ -26,7 +30,11 @@ def get_reattach_handler(entity_name: str) -> Callable:
 
 
 async def _reattach_app(
-    context: Any, node: Any, orphan_ids: Set[str], dry_run: bool
+    context: Any,
+    node: Any,
+    orphan_ids: Set[str],
+    dry_run: bool,
+    reattach_ctx: Optional[Dict[str, Any]] = None,
 ) -> bool:
     from jvspatial.core import Root
 
@@ -40,7 +48,11 @@ async def _reattach_app(
 
 
 async def _reattach_agents(
-    context: Any, node: Any, orphan_ids: Set[str], dry_run: bool
+    context: Any,
+    node: Any,
+    orphan_ids: Set[str],
+    dry_run: bool,
+    reattach_ctx: Optional[Dict[str, Any]] = None,
 ) -> bool:
     from jvagent.core.app import App
 
@@ -55,7 +67,11 @@ async def _reattach_agents(
 
 
 async def _reattach_agent(
-    context: Any, node: Any, orphan_ids: Set[str], dry_run: bool
+    context: Any,
+    node: Any,
+    orphan_ids: Set[str],
+    dry_run: bool,
+    reattach_ctx: Optional[Dict[str, Any]] = None,
 ) -> bool:
     from jvagent.core.agents import Agents
 
@@ -70,15 +86,24 @@ async def _reattach_agent(
 
 
 async def _reattach_actions(
-    context: Any, node: Any, orphan_ids: Set[str], dry_run: bool
+    context: Any,
+    node: Any,
+    orphan_ids: Set[str],
+    dry_run: bool,
+    reattach_ctx: Optional[Dict[str, Any]] = None,
 ) -> bool:
     from jvagent.core.agent import Agent
 
-    agents_without_actions = []
-    for a in await Agent.find({}):
-        actions_mgr = await a.node(node="Actions")
-        if not actions_mgr:
-            agents_without_actions.append(a)
+    # Use pre-built list if available to avoid per-orphan Agent.find({}) scan.
+    if reattach_ctx and "agents_without_actions" in reattach_ctx:
+        agents_without_actions: List[Any] = reattach_ctx["agents_without_actions"]
+    else:
+        agents_without_actions = []
+        for a in await Agent.find({}):
+            actions_mgr = await a.node(node="Actions")
+            if not actions_mgr:
+                agents_without_actions.append(a)
+
     if len(agents_without_actions) == 1 and not await agents_without_actions[
         0
     ].is_connected_to(node):
@@ -90,7 +115,11 @@ async def _reattach_actions(
 
 
 async def _reattach_memory(
-    context: Any, node: Any, orphan_ids: Set[str], dry_run: bool
+    context: Any,
+    node: Any,
+    orphan_ids: Set[str],
+    dry_run: bool,
+    reattach_ctx: Optional[Dict[str, Any]] = None,
 ) -> bool:
     from jvagent.core.agent import Agent
 
@@ -113,7 +142,12 @@ async def _reattach_memory(
         return False
 
     if getattr(node, "agent_id", None):
-        owning_agent = await Agent.get(node.agent_id)
+        owning_agent = reattach_ctx.get("agents", {}) if reattach_ctx else None
+        # Look up in pre-built dict first
+        agent_by_id = {}
+        if reattach_ctx:
+            agent_by_id = {a.id: a for a in reattach_ctx.get("agents", [])}
+        owning_agent = agent_by_id.get(node.agent_id) or await Agent.get(node.agent_id)
         if owning_agent and not await owning_agent.is_connected_to(node):
             if not dry_run:
                 await owning_agent.connect(node, direction="out")
@@ -125,11 +159,16 @@ async def _reattach_memory(
         orphan_ids.discard(node.id)
         return True
 
-    agents_without_memory = []
-    for agent in await Agent.find({}):
-        mem = await agent.node(node="Memory")
-        if not mem:
-            agents_without_memory.append(agent)
+    # Use pre-built list if available.
+    if reattach_ctx and "agents_without_memory" in reattach_ctx:
+        agents_without_memory: List[Any] = reattach_ctx["agents_without_memory"]
+    else:
+        agents_without_memory = []
+        for agent in await Agent.find({}):
+            mem = await agent.node(node="Memory")
+            if not mem:
+                agents_without_memory.append(agent)
+
     if len(agents_without_memory) == 1 and not await agents_without_memory[
         0
     ].is_connected_to(node):
@@ -138,8 +177,6 @@ async def _reattach_memory(
         orphan_ids.discard(node.id)
         return True
 
-    # If this Memory contains descendant user data but we cannot confidently
-    # reattach it, preserve it from deletion.
     if await has_descendant_memory_data(node):
         orphan_ids.discard(node.id)
         return True
@@ -147,7 +184,11 @@ async def _reattach_memory(
 
 
 async def _reattach_user(
-    context: Any, node: Any, orphan_ids: Set[str], dry_run: bool
+    context: Any,
+    node: Any,
+    orphan_ids: Set[str],
+    dry_run: bool,
+    reattach_ctx: Optional[Dict[str, Any]] = None,
 ) -> bool:
     from jvagent.memory.manager import Memory
 
@@ -164,7 +205,12 @@ async def _reattach_user(
         orphan_ids.discard(node.id)
         return True
 
-    memories = await Memory.find({})
+    # Use pre-built list if available to avoid per-orphan Memory.find({}) scan.
+    if reattach_ctx and "memories" in reattach_ctx:
+        memories: List[Any] = reattach_ctx["memories"]
+    else:
+        memories = await Memory.find({})
+
     preferred_id = getattr(node, "memory_id", "")
     preferred = [m for m in memories if preferred_id and m.id == preferred_id]
     others = sorted(
@@ -180,22 +226,34 @@ async def _reattach_user(
                 setattr(node, "memory_id", memory.id)
                 await node.save()
                 await memory.connect(node, direction="out")
-                await memory.refresh_memory_counters_from_graph()
+                # Use atomic increment instead of full recount.
+                ctx = await memory.get_context()
+                await ctx.atomic_increment(memory.id, "total_users", 1)
             orphan_ids.discard(node.id)
             return True
     return False
 
 
 async def _reattach_conversation(
-    context: Any, node: Any, orphan_ids: Set[str], dry_run: bool
+    context: Any,
+    node: Any,
+    orphan_ids: Set[str],
+    dry_run: bool,
+    reattach_ctx: Optional[Dict[str, Any]] = None,
 ) -> bool:
     from jvagent.memory.manager import Memory
     from jvagent.memory.user import User
 
+    # Use pre-built list if available.
+    if reattach_ctx and "memories" in reattach_ctx:
+        memories: List[Any] = reattach_ctx["memories"]
+    else:
+        memories = await Memory.find({})
+
     user_id = getattr(node, "user_id", None)
     if not user_id:
         return False
-    for memory in await Memory.find({}):
+    for memory in memories:
         user = await memory.node(node=User, user_id=user_id)
         if not user:
             continue
@@ -212,15 +270,15 @@ async def _reattach_conversation(
     if not interactions:
         return False
 
-    memories = sorted(await Memory.find({}), key=lambda memory: memory.id)
+    sorted_memories = sorted(memories, key=lambda m: m.id)
     target_memory = None
     conversation_memory_id = getattr(node, "memory_id", "")
     if conversation_memory_id:
         target_memory = next(
-            (memory for memory in memories if memory.id == conversation_memory_id), None
+            (m for m in sorted_memories if m.id == conversation_memory_id), None
         )
-    if target_memory is None and len(memories) == 1:
-        target_memory = memories[0]
+    if target_memory is None and len(sorted_memories) == 1:
+        target_memory = sorted_memories[0]
     if target_memory is None:
         return False
 
@@ -238,7 +296,11 @@ async def _reattach_conversation(
 
 
 async def _reattach_action(
-    context: Any, node: Any, orphan_ids: Set[str], dry_run: bool
+    context: Any,
+    node: Any,
+    orphan_ids: Set[str],
+    dry_run: bool,
+    reattach_ctx: Optional[Dict[str, Any]] = None,
 ) -> bool:
     from jvagent.action.base import Action
     from jvagent.core.agent import Agent
@@ -248,7 +310,13 @@ async def _reattach_action(
     action_agent_id = getattr(node, "agent_id", None)
     if not action_agent_id:
         return False
-    agent = await Agent.get(action_agent_id)
+    # Use pre-built dict if available.
+    agent = None
+    if reattach_ctx:
+        agent_by_id = {a.id: a for a in reattach_ctx.get("agents", [])}
+        agent = agent_by_id.get(action_agent_id)
+    if agent is None:
+        agent = await Agent.get(action_agent_id)
     if not agent:
         return False
     actions_manager = await agent.get_actions_manager()

@@ -26,7 +26,10 @@ class Agent(Node):
 
     namespace: str = attribute(indexed=True, description="Namespace for the agent")
     name: str = attribute(
-        indexed=True, index_unique=True, description="Unique machine name for the agent"
+        indexed=True,
+        index_unique=True,
+        index_partial_filter_expression={"context.name": {"$gt": ""}},
+        description="Unique machine name for the agent",
     )
     alias: str = attribute(description="Human-readable display name")
     enabled: bool = attribute(default=True, description="Whether the agent is enabled")

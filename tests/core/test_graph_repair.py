@@ -1,10 +1,11 @@
 """Tests for agent graph repair utility."""
 
 from types import SimpleNamespace
+from typing import Any, Dict
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from jvspatial.core import Edge, Root, get_default_context
+from jvspatial.core import Edge, Node, Root, get_default_context
 
 from jvagent.core import graph_repair_job
 from jvagent.core.agent_loader import AgentLoader
@@ -16,6 +17,18 @@ from jvagent.memory.conversation import Conversation
 from jvagent.memory.interaction import Interaction
 from jvagent.memory.manager import Memory
 from jvagent.memory.user import User
+
+# Synchronous engine: re-invoke until the pipeline reports completed.
+_REPAIR_MAX_STEPS = 20_000
+
+
+async def _repair_to_completion(**kwargs: Any) -> Dict[str, Any]:
+    last: Dict[str, Any] = {}
+    for _ in range(_REPAIR_MAX_STEPS):
+        last = await repair_agent_graph(**kwargs)
+        if last.get("status") == "completed":
+            return last
+    raise AssertionError("repair did not complete within %d steps" % _REPAIR_MAX_STEPS)
 
 
 def _dead_edge_data(edge_id: str, source: str, target: str) -> dict:
@@ -39,7 +52,7 @@ class TestGraphRepair:
         """Repair returns dict with all expected keys including memory repair fields."""
         await Root.get()
 
-        result = await repair_agent_graph(dry_run=False)
+        result = await _repair_to_completion(dry_run=False)
 
         assert "memory_repair_agents" in result
         assert "orphaned_interactions_deleted" in result
@@ -78,7 +91,7 @@ author: Test
         await loader.install_agent("ns", "agent1")
 
         # First run may fix orphans from install; second run should be clean
-        await repair_agent_graph(dry_run=False)
+        await _repair_to_completion(dry_run=False)
         result = await repair_agent_graph(dry_run=False)
 
         assert result["message"] == "No repairs needed"
@@ -99,7 +112,7 @@ author: Test
         )
         await ctx.database.save("edge", dead_edge)
 
-        result = await repair_agent_graph(dry_run=False)
+        result = await _repair_to_completion(dry_run=False)
 
         assert result["dead_edges_removed"] == 1
         assert "dead edge(s) removed" in result["message"]
@@ -120,7 +133,7 @@ author: Test
         )
         await ctx.database.save("edge", dead_edge)
 
-        result = await repair_agent_graph(dry_run=True)
+        result = await _repair_to_completion(dry_run=True)
 
         assert result["dry_run"] is True
         assert result["dead_edges_removed"] == 1
@@ -144,7 +157,7 @@ author: Test
             "jvagent.core.graph_repair_job._tick_prune_agents",
             new_callable=AsyncMock,
         ) as mock_prune:
-            result = await repair_agent_graph(dry_run=True)
+            result = await _repair_to_completion(dry_run=True)
 
         mock_memory_counters.assert_not_called()
         mock_memory_agents.assert_not_called()
@@ -172,16 +185,26 @@ agents: []
 
         ctx = get_default_context()
         root = await Root.get()
-        edges_data = await ctx.database.find(
-            "edge", {"source": root.id, "target": app.id}
-        )
-        for e in edges_data:
-            edge_obj = await ctx._deserialize_entity(Edge, e)
-            if edge_obj:
-                await ctx.delete(edge_obj, cascade=False)
-                break
+        # Remove every edge between Root and App (both directions; bidirectional
+        # or duplicate rows can leave a connection if we only delete one).
+        for q in (
+            {"source": root.id, "target": app.id},
+            {"source": app.id, "target": root.id},
+        ):
+            for e in await ctx.database.find("edge", q):
+                edge_obj = await ctx._deserialize_entity(Edge, e)
+                if edge_obj:
+                    await ctx.delete(edge_obj, cascade=False)
+        # Reload to avoid cached edges / stale is_connected on node instances
+        App.clear_cache()
+        app_live = await ctx.get(Node, app.id)
+        root_live = await ctx.get(Node, root.id)
+        assert app_live and root_live
+        assert not await root_live.is_connected_to(
+            app_live
+        ), "Test setup must leave App disconnected from Root"
 
-        result = await repair_agent_graph(dry_run=False)
+        result = await _repair_to_completion(dry_run=False)
 
         assert result["orphaned_nodes_reattached"] >= 1
         assert "orphan(s) reattached" in result["message"]
@@ -219,7 +242,7 @@ agents: []
             "jvagent.core.graph_repair_job._tick_prune_agents",
             side_effect=patched_tick_prune,
         ):
-            await repair_agent_graph(dry_run=False)
+            await _repair_to_completion(dry_run=False)
 
         assert call_order[0] == "memory", "Memory repair must run before graph repair"
         assert "graph" in call_order, "Graph repair steps must run"
@@ -245,8 +268,12 @@ agents: []
 
         out: dict = {}
         guard = 0
-        while guard < 200:
-            out = await repair_agent_graph(dry_run=False, max_seconds=0.5, batch_size=1)
+        while guard < 20_000:
+            out = await repair_agent_graph(
+                dry_run=False,
+                max_seconds=0.5,
+                batch_size=1,
+            )
             if out["status"] == "completed":
                 break
             repair_state = await RepairState.current(app)
@@ -257,7 +284,7 @@ agents: []
         assert out["phase"] == graph_repair_job.PH_DONE
         assert await RepairState.current(app) is None
 
-        once = await repair_agent_graph(dry_run=False)
+        once = await _repair_to_completion(dry_run=False)
         assert once.get("status") == "completed"
         assert once["dead_edges_removed"] == 0
         assert once["message"] == "No repairs needed"
@@ -335,7 +362,11 @@ agents: []
         )
         stale_id = stale.id
 
-        out = await repair_agent_graph(dry_run=True, max_seconds=0.5, batch_size=1)
+        out = await _repair_to_completion(
+            dry_run=True,
+            max_seconds=0.5,
+            batch_size=1,
+        )
 
         ctx = get_default_context()
         assert await ctx.database.get("node", stale_id) is None
@@ -356,7 +387,9 @@ agents: []
             "dry_run": False,
         }
         limits = graph_repair_job.RepairLimits(batch_size=10, max_seconds=5.0)
-        context = SimpleNamespace()
+        context = SimpleNamespace(
+            database=SimpleNamespace(count=AsyncMock(return_value=3))
+        )
 
         app_a = SimpleNamespace(id="n.App.a", delete=AsyncMock())
         app_b = SimpleNamespace(id="n.App.b", delete=AsyncMock())
@@ -415,9 +448,13 @@ agents: []
             return {keep.id: keep, drop.id: drop}.get(agent_id)
 
         with patch(
+            "jvagent.core.graph_repair_job._entity_count", new=AsyncMock(return_value=3)
+        ), patch(
             "jvagent.core.agent.Agent.find",
             new=AsyncMock(return_value=[keep, drop, other]),
-        ), patch("jvagent.core.agent.Agent.get", side_effect=get_agent), patch(
+        ), patch(
+            "jvagent.core.agent.Agent.get", side_effect=get_agent
+        ), patch(
             "jvagent.core.graph_repair._compute_reachable_nodes_below",
             side_effect=density,
         ):
