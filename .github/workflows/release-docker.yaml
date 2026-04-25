@@ -3,6 +3,7 @@ name: Release jvagent-base to Docker repo
 on:
   push:
     branches:
+      - dev
       - main
     paths:
       - 'jvagent/version.py'
