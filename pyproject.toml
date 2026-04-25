@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jvagent"
-version = "0.0.1"
+dynamic = ["version"]
 description = "A modular, pluggable agentive platform built on jvspatial"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -100,6 +100,9 @@ Documentation = "https://github.com/trueselph/jvagent/blob/main/README.md"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["jvagent*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "jvagent.version.__version__"}
 
 [tool.setuptools.package-data]
 "jvagent.scaffold.builtin_profiles" = ["*.yaml"]
@@ -211,4 +214,3 @@ exclude_lines = [
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
 ]
-
