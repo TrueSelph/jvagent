@@ -52,7 +52,7 @@ config:
   # Interact endpoint defaults
   interact:
     rate_limit_per_minute: 60
-    max_utterance_length: 2000
+    max_utterance_length: 100000
 
   # CORS defaults (deploy-specific values may override via env)
   cors:
@@ -76,5 +76,6 @@ config:
 agents:
   - jvagent/skills_agent
   - jvagent/example_agent
+  - jvagent/proposal_agent
   - resolv/resolv_demo
   # Optional: jvagent/skills_agent (Ollama + skills; see agents/jvagent/skills_agent/)

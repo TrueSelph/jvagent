@@ -26,7 +26,12 @@ _st: Any = None
 
 
 def _get_storage() -> Any:
-    """Build storage the same way as :meth:`jvagent.core.app.App.get_file_interface`."""
+    """Build storage using the same env keys as :meth:`jvagent.core.app.App.get_file_interface`.
+
+    This subprocess cannot call :class:`jvagent.core.app.App` (separate interpreter
+    context for stdio MCP); we mirror the factory logic here so keys under
+    ``--root-prefix`` land in the same backend as the parent process.
+    """
     global _st
     if _st is not None:
         return _st
@@ -132,6 +137,20 @@ async def _list_directory(path: str) -> str:
     return "\n".join(sorted(out)) if out else "(empty)"
 
 
+async def _write_binary_file(path: str, content_b64: str) -> str:
+    """Write a binary file from base64-encoded content."""
+    import base64
+
+    st = _get_storage()
+    k = _full_key(path)
+    try:
+        data = base64.b64decode(content_b64)
+    except Exception as e:
+        return _err(f"base64 decode failed: {e}")
+    await st.save_file(k, data)
+    return f"Wrote binary {k} (size={len(data)})"
+
+
 async def _move_file(source: str, destination: str) -> str:
     st = _get_storage()
     s = _full_key(source)
@@ -170,6 +189,19 @@ async def _list_allowed_directories() -> str:
     return f"[ALLOWED] {_PREFIX or '(storage root)'}"
 
 
+async def _describe_workspace() -> str:
+    """Return sandbox root, top-level listing, and path guidance for the LLM."""
+    allowed = f"[ALLOWED] {_PREFIX or '(storage root)'}"
+    listing = await _list_directory("")
+    return (
+        f"{allowed}\n\n"
+        "All paths for write_file and other tools must be RELATIVE to this root "
+        "(e.g. 'report.md' or 'output/notes.txt'). "
+        "Do NOT pass absolute OS paths.\n\n"
+        f"Top-level contents:\n{listing}"
+    )
+
+
 # --- FastMCP wiring ---
 
 
@@ -186,7 +218,12 @@ def _run_fastmcp() -> None:
     ) -> str:
         return await _read_text_file(path, head=head, tail=tail)
 
-    @mcp.tool(description="Create or update a file with UTF-8 text content.")
+    @mcp.tool(
+        description=(
+            "Create or update a file with UTF-8 text content. "
+            "Before writing, call describe_workspace if you do not yet know the sandbox path."
+        )
+    )
     async def write_file(path: str, content: str) -> str:
         return await _write_file(path, content)
 
@@ -197,6 +234,15 @@ def _run_fastmcp() -> None:
     @mcp.tool(description="List files in a directory (prefix listing).")
     async def list_directory(path: str) -> str:
         return await _list_directory(path)
+
+    @mcp.tool(
+        description=(
+            "Write a binary file (base64-encoded content). "
+            "Pass content_b64 as a base64-encoded ASCII string."
+        )
+    )
+    async def write_binary_file(path: str, content_b64: str) -> str:
+        return await _write_binary_file(path, content_b64)
 
     @mcp.tool(description="Move or rename a file within storage.")
     async def move_file(source: str, destination: str) -> str:
@@ -218,6 +264,15 @@ def _run_fastmcp() -> None:
     @mcp.tool(description="List the logical allowed directory for this server.")
     async def list_allowed_directories() -> str:
         return await _list_allowed_directories()
+
+    @mcp.tool(
+        description=(
+            "Call this FIRST before any write_file or read_text_file call in a new task. "
+            "Returns the sandbox root path, top-level contents, and path guidance."
+        )
+    )
+    async def describe_workspace() -> str:
+        return await _describe_workspace()
 
     mcp.run()
 

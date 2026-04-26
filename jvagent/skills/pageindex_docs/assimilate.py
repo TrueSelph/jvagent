@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+import os
+from pathlib import Path
 from typing import Any, Dict
+
+logger = logging.getLogger(__name__)
 
 
 def get_tool_definition() -> Dict[str, Any]:
@@ -14,7 +19,12 @@ def get_tool_definition() -> Dict[str, Any]:
             "properties": {
                 "doc": {
                     "type": "string",
-                    "description": "File path or URL of the document to ingest",
+                    "description": (
+                        "Document to ingest: HTTPS URL, absolute host path, or path relative "
+                        "to the current user's jvspatial sandbox (preferred for user uploads). "
+                        "Relative paths are read from sandbox storage first; if missing, the "
+                        "path is resolved on the local filesystem (legacy)."
+                    ),
                 },
                 "doc_name": {
                     "type": "string",
@@ -60,9 +70,35 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Any:
     if action is None:
         return {"error": "PageIndexAction not found on this agent"}
 
+    raw_doc = arguments["doc"]
+    doc: Any = raw_doc
+    doc_name = arguments.get("doc_name")
+
+    if isinstance(raw_doc, str):
+        doc_s = raw_doc.strip()
+        low = doc_s.lower()
+        if low.startswith(("http://", "https://")):
+            doc = doc_s
+        elif os.path.isabs(doc_s):
+            doc = doc_s
+        else:
+            try:
+                from jvagent.skills.fileinterface import _core
+
+                data = await _core.read_binary_file(visitor, doc_s)
+                if data is not None:
+                    doc = data
+                    if not doc_name:
+                        doc_name = Path(doc_s.replace("\\", "/")).name
+                else:
+                    doc = doc_s
+            except Exception as e:
+                logger.debug("assimilate: sandbox read skipped for %r: %s", doc_s, e)
+                doc = doc_s
+
     return await action.assimilate(
-        doc=arguments["doc"],
-        doc_name=arguments.get("doc_name"),
+        doc=doc,
+        doc_name=doc_name,
         collection_name=arguments.get("collection_name"),
         metadata=arguments.get("metadata"),
         doc_description=arguments.get("doc_description"),

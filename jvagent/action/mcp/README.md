@@ -2,6 +2,10 @@
 
 MCPAction is a core singleton gateway action that manages **one or more named MCP servers** and exposes `fulfill(natural_language_command: str)` so other actions (e.g. InteractActions) can pass a natural language request and receive the MCP tool result.
 
+## File I/O vs MCP
+
+For **read/write/list confined to the per-user workspace** (same `<agent_id>/<user_id>/` layout as sandboxed filesystem MCP), prefer the built-in **`fileinterface` skill** (`jvagent/skills/fileinterface/`): in-process calls to `App.get_file_interface()` with no MCP subprocess or `npx` dependency. Use **MCPAction** when you need **additional** MCP servers (HTTP or stdio tools from the ecosystem) or LLM-driven tool dispatch across those servers.
+
 ## Requirements
 
 - **LanguageModelAction**: The agent must have a LanguageModelAction (e.g. `jvagent/openai`) for mapping natural language to tool name + arguments. If none is configured, `get_model_action(required=True)` will raise at runtime.
@@ -36,10 +40,11 @@ Per-server config (`servers[]`):
 | `sandbox_mode` | Confine stdio filesystem MCP to ``<files_root>/<agentId>/<userId>/`` | unset (see env) |
 | `sandbox_user_scoped` | Separate MCP subprocess per ``user_id`` when not the default user (see env) | unset (see env) |
 | `sandbox_root` | Optional override for files root (else ``JVSPATIAL_FILES_ROOT_PATH``) | unset |
+| `type` | Optional. For sandboxed stdio filesystem: ``jvspatial_fs`` (Python ``jvspatial_fs_server``), ``npx_filesystem`` (force ``npx`` + npm server). If omitted, S3 storage auto-selects ``jvspatial_fs``; local storage defaults to ``npx``. | unset |
 
 Top-level MCP action context may set ``sandbox_mode`` / ``sandbox_user_scoped`` / ``sandbox_root`` as defaults; per-server entries can override.
 
-When ``JVSPATIAL_FILE_STORAGE_PROVIDER=s3`` and ``sandbox_mode`` is true, the agent uses ``python -m jvagent.action.mcp.jvspatial_fs_server`` (stdio) instead of ``npx`` + ``@modelcontextprotocol/server-filesystem``.
+When ``JVSPATIAL_FILE_STORAGE_PROVIDER=s3`` and ``sandbox_mode`` is true, the agent uses ``python -m jvagent.action.mcp.jvspatial_fs_server`` (stdio) instead of ``npx`` + ``@modelcontextprotocol/server-filesystem``, unless ``type: npx_filesystem`` is set (not recommended for S3).
 
 Env fallbacks: ``MCP_FILESYSTEM_SANDBOX_MODE``, ``MCP_FILESYSTEM_SANDBOX_USER_SCOPED``, ``MCP_FILESYSTEM_SANDBOX_ROOT``.
 

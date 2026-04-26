@@ -28,7 +28,7 @@ tags:
 ### Ingesting Documents
 
 - Use `pageindex_docs__assimilate` to add a document to the PageIndex index.
-- Provide the file path or URL as `doc`.
+- Provide `doc` as an **HTTPS URL**, an **absolute path** on the host (e.g. bundled corpus), or a path **relative to the user’s jvspatial sandbox** (preferred for files produced or uploaded for this user). Relative paths load from sandbox storage first.
 - Set `doc_name` to give the document a recognizable name.
 - Optionally set `doc_description`, `doc_url`, or `metadata` for richer indexing.
 
@@ -47,7 +47,7 @@ tags:
 
 - Always confirm with the user before deleting documents.
 - When updating a document, you MUST successfully delete the existing document before assimilating the new version to avoid duplication.
-- For `pageindex_docs__assimilate`, the `doc` parameter is a file path (e.g., `/path/to/file.pdf`) or URL.
+- For `pageindex_docs__assimilate`, prefer sandbox-relative paths for user artifacts; use absolute paths only when reading fixed app/corpus files. URLs must use `http://` or `https://`.
 - Ingestion is an async operation that may take time for large documents.
 
 ## Scope

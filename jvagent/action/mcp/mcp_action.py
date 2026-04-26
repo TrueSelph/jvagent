@@ -4,7 +4,6 @@ import fnmatch
 import json
 import logging
 import os
-import sys
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -12,6 +11,13 @@ from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
 from jvagent.action.mcp.client import MCPClientWrapper
+from jvagent.action.mcp.fs_server_factory import (
+    build_jvfs_client,
+    build_npx_filesystem_client,
+    is_filesystem_mcp_server,
+    strip_trailing_path_arg,
+    use_jvfs_for_sandboxed_fs,
+)
 from jvagent.action.mcp.prompts import (
     TOOL_SELECTION_SYSTEM,
     build_tool_selection_prompt,
@@ -23,13 +29,10 @@ from jvagent.action.mcp.sandbox import (
     provision_sandbox_dir,
     resolve_mcp_sandbox_relpath,
     resolve_sandbox_root,
-    should_use_jvspatial_fs_server,
 )
 from jvagent.core.config import parse_env_bool
 
 logger = logging.getLogger(__name__)
-
-_JVFS_MODULE = "jvagent.action.mcp.jvspatial_fs_server"
 
 
 def _format_mcp_exception(e: BaseException) -> str:
@@ -73,16 +76,6 @@ def _coalesce_sandbox_root(action_root: Optional[str], env_key: str) -> str:
     if action_root and str(action_root).strip():
         return str(action_root).strip()
     return ""
-
-
-def _is_filesystem_mcp_server(raw: Dict[str, Any], use_jvfs: bool) -> bool:
-    if use_jvfs:
-        return True
-    args = raw.get("args") or []
-    if not isinstance(args, (list, tuple)):
-        return False
-    s = " ".join(str(x) for x in args)
-    return "server-filesystem" in s or "modelcontextprotocol/server-filesystem" in s
 
 
 @dataclass
@@ -240,7 +233,8 @@ class MCPAction(Action):
             "MCP server entries. Each item supports: "
             "name, enabled, transport, command, args, env, url, "
             "mcp_connect_timeout, mcp_call_timeout, tools, denied_tools, "
-            "sandbox_mode, sandbox_user_scoped, sandbox_root."
+            "sandbox_mode, sandbox_user_scoped, sandbox_root, "
+            "type (optional: jvspatial_fs | npx_filesystem for stdio filesystem servers)."
         ),
     )
     model_action_type: str = attribute(
@@ -274,73 +268,8 @@ class MCPAction(Action):
         self._servers_by_name: Dict[str, _ServerEntry] = {}
 
     def _strip_trailing_path_arg(self, args: List[str]) -> List[str]:
-        """Remove a trailing local filesystem root from MCP filesystem server args.
-
-        The official args end with a directory, e.g. ``.`` or an absolute path.
-        Do **not** treat ``@scope/package`` (npm specifiers) as paths: they contain
-        ``/`` but must not be stripped, or npx would see only ``-y <path>`` and
-        look for ``package.json`` in the sandbox.
-        """
-        if not args:
-            return args
-        last = str(args[-1]).strip()
-        if not last:
-            return list(args)
-        if last in (".", "..") or last.startswith(("/", "./", "../", "~")):
-            return list(args[:-1])
-        if len(last) > 1 and last[0].isalpha() and last[1] == ":":  # Windows "C:\..."
-            return list(args[:-1])
-        if last.startswith("@"):
-            return list(args)  # scoped npm package, not a filesystem root
-        if "/" in last or (os.path.sep in last and len(last) < 512):
-            return list(args[:-1])
-        return list(args)
-
-    def _args_for_jvfs(
-        self, rel_prefix: str, connect_t: float, call_t: float
-    ) -> Tuple[str, List[str], MCPClientWrapper]:
-        rel = (rel_prefix or "").replace("\\", "/").strip().strip("/")
-        cmd = sys.executable
-        args: List[str] = ["-m", _JVFS_MODULE, "--root-prefix", rel]
-        return (
-            cmd,
-            args,
-            MCPClientWrapper(
-                "stdio",
-                command=cmd,
-                args=args,
-                env=None,
-                url="",
-                connect_timeout=connect_t,
-                call_timeout=call_t,
-            ),
-        )
-
-    def _args_for_npx_filesystem(
-        self,
-        npx_cmd: str,
-        base_args: List[str],
-        absolute_root: str,
-        connect_t: float,
-        call_t: float,
-        env: Optional[Dict[str, str]],
-    ) -> Tuple[str, List[str], MCPClientWrapper]:
-        a = self._strip_trailing_path_arg(list(base_args))
-        a = list(a) + [absolute_root]
-        cmd = (npx_cmd or "npx").strip() or "npx"
-        return (
-            cmd,
-            a,
-            MCPClientWrapper(
-                "stdio",
-                command=cmd,
-                args=a,
-                env=env,
-                url="",
-                connect_timeout=connect_t,
-                call_timeout=call_t,
-            ),
-        )
+        """Delegate to :func:`strip_trailing_path_arg` (keeps e.g. ``@scope/pkg``)."""
+        return strip_trailing_path_arg(list(args))
 
     async def _build_server_entries(self) -> None:
         """Compile configured server entries into runtime objects."""
@@ -413,12 +342,12 @@ class MCPAction(Action):
                 "MCP_FILESYSTEM_SANDBOX_USER_SCOPED",
                 False,
             )
-            use_jvfs = bool(sb_mode and should_use_jvspatial_fs_server())
-            is_fs = transport == "stdio" and _is_filesystem_mcp_server(
+            use_jvfs = use_jvfs_for_sandboxed_fs(raw, sb_mode)
+            is_fs = transport == "stdio" and is_filesystem_mcp_server(
                 {"args": args}, use_jvfs
             )
 
-            npx_base = self._strip_trailing_path_arg(list(args))
+            npx_base = strip_trailing_path_arg(list(args))
             npx_cmd = (command or "npx").strip() or "npx"
             env_d = env if isinstance(env, dict) else None
             mcp_npx_cmd = npx_cmd
@@ -426,7 +355,7 @@ class MCPAction(Action):
             client: MCPClientWrapper
             if sb_mode and is_fs and use_jvfs:
                 rel = resolve_mcp_sandbox_relpath(raw_agent_id, def_user)
-                cmd, a, client = self._args_for_jvfs(rel, connect_timeout, call_timeout)
+                cmd, a, client = build_jvfs_client(rel, connect_timeout, call_timeout)
                 command, args = cmd, a
             elif sb_mode and is_fs and not use_jvfs:
                 rel = resolve_mcp_sandbox_relpath(raw_agent_id, def_user)
@@ -439,7 +368,7 @@ class MCPAction(Action):
                     logger.warning(
                         "MCPAction: could not create sandbox dir %s: %s", abs_r, exc
                     )
-                command, a, client = self._args_for_npx_filesystem(
+                command, a, client = build_npx_filesystem_client(
                     npx_cmd, npx_base, abs_r, connect_timeout, call_timeout, env_d
                 )
                 args = a
@@ -805,12 +734,12 @@ class MCPAction(Action):
                 except Exception as e:
                     logger.debug("user sandbox provision: %s", e)
             if entry.use_jvfs:
-                _c, _a, cl = self._args_for_jvfs(
+                _c, _a, cl = build_jvfs_client(
                     urel, entry.connect_timeout, entry.call_timeout
                 )
             else:
                 abs_u = absolute_under_files_root(entry.files_root, urel)
-                _c, _a, cl = self._args_for_npx_filesystem(
+                _c, _a, cl = build_npx_filesystem_client(
                     entry.mcp_npx_cmd,
                     entry.npx_base_args,
                     abs_u,

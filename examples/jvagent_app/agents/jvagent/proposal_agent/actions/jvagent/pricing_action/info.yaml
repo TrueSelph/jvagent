@@ -1,0 +1,22 @@
+package:
+  name: jvagent/pricing_action
+  author: V75 Inc.
+  archetype: PricingAction
+  version: 1.0.0
+  meta:
+    title: Pricing Rubric Management
+    description: >-
+      Manages pricing rubrics as graph nodes with CRUD API endpoints.
+      Rubrics define rate cards, effort templates, value-based adjustment
+      factors, and markup chains. The action provides an assess() method
+      that applies a rubric to extracted scope parameters to produce a
+      PricingAssessment with line items, totals, and narrative.
+      Rubrics are seedable on first run and configurable at runtime via
+      REST API or chat interface.
+    group: jvagent
+    type: action
+  config:
+    singleton: true
+  dependencies:
+    jvagent: ~0.0.1
+    pip: []

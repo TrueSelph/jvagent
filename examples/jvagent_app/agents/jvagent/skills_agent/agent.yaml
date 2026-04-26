@@ -39,26 +39,32 @@ actions:
     temperature: 0.2
     max_tokens: 16384
     timeout: 120
+# Reference MCP setup: sandboxed stdio filesystem via npx + @modelcontextprotocol/server-filesystem.
+# - sandbox_mode / sandbox_user_scoped confine reads/writes to <files_root>/<agentId>/<userId>/.
+# - With JVSPATIAL_FILE_STORAGE_PROVIDER=s3, MCPAction swaps in python -m jvagent.action.mcp.jvspatial_fs_server
+#   (see jvagent/action/mcp/README.md). For in-process user file I/O without MCP, use the fileinterface skill.
 - action: jvagent/mcp
   context:
     enabled: true
-    description: MCP gateway for filesystem and optional web search servers
+    description: >
+      Example MCP gateway with a sandboxed filesystem server (npx). Registers tools under tool_servers
+      for SkillInteractAction; fulfills multi-server patterns alongside streamable_http MCP apps.
     model_action_type: OpenAILanguageModelAction
     model: gpt-4o-mini
     sandbox_mode: true
     sandbox_user_scoped: true
     servers:
-    - name: filesystem
-      enabled: true
-      transport: stdio
-      command: npx
-      args:
-      - -y
-      - '@modelcontextprotocol/server-filesystem'
-      mcp_connect_timeout: 15
-      mcp_call_timeout: 60
-      tools: -all
-      denied_tools: []
+      - name: filesystem
+        enabled: true
+        transport: stdio
+        command: npx
+        args:
+          - -y
+          - "@modelcontextprotocol/server-filesystem"
+        mcp_connect_timeout: 15
+        mcp_call_timeout: 60
+        tools: "-all"
+        denied_tools: []
 - action: jvagent/serper_web_search
   context:
     enabled: true
@@ -114,8 +120,9 @@ actions:
     max_midcourse_corrections: 2
     task_nudge_retry_limit: 4
     final_review: true
+    # MCP filesystem server name(s) from jvagent/mcp — exposes mcp_filesystem__* tools in the loop.
     tool_servers:
-    - filesystem
+      - filesystem
     stream_tool_progress: true
     max_full_tool_results: 10
 - action: jvagent/persona

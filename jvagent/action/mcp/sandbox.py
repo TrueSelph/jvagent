@@ -1,4 +1,8 @@
-"""MCP filesystem sandbox: resolve roots and paths under jvspatial file storage."""
+"""Storage sandbox paths: resolve roots and keys under jvspatial file storage.
+
+Shared by :class:`jvagent.action.mcp.mcp_action.MCPAction` (MCP subprocess roots)
+and :mod:`jvagent.skills.fileinterface._core` (in-process file I/O).
+"""
 
 from __future__ import annotations
 
@@ -100,12 +104,6 @@ async def provision_sandbox_dir(
             await file_interface.save_file(marker, b"", metadata={"sandbox": "1"})
     except Exception as e:
         logger.debug("provision_sandbox_dir: marker for %s: %s", marker, e)
-
-
-def should_use_jvspatial_fs_server() -> bool:
-    """Use Python stdio MCP server backed by FileStorageInterface when storage is not local."""
-    prov = (env("JVSPATIAL_FILE_STORAGE_PROVIDER") or "local").strip().lower()
-    return prov == "s3"
 
 
 def absolute_under_files_root(files_root: str, relative: str) -> str:

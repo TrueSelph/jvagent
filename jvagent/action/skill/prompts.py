@@ -1,6 +1,6 @@
 """System prompt templates for the SkillInteractAction agentic loop."""
 
-SKILL_PROMPTS_VERSION = 5
+SKILL_PROMPTS_VERSION = 6
 
 SKILL_AGENT_SYSTEM_PROMPT = """\
 You are {agent_name}.
@@ -253,6 +253,11 @@ CRITICAL RULES:
 - If the candidate claims any SKIPPED step was completed, REMOVE that claim entirely and replace it \
 with the accurate skip reason (e.g. "I was unable to save the file because no file-writing capability \
 is available in this environment.").
+- If a step is marked DONE, its successful completion MUST be reported. If it was a retry of a \
+previously SKIPPED step covering the same work, acknowledge BOTH: describe the earlier skip reason \
+briefly AND confirm the retry succeeded (e.g. "An earlier attempt failed because [reason], but I \
+successfully completed this using [different approach]."). Do NOT suppress or omit the success of a \
+DONE step.
 - If the candidate omits skip reasons that the user would care about, ADD a clear acknowledgment of \
 what could not be done and why.
 - Do NOT fabricate tool outcomes for any step, whether done or skipped.

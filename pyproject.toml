@@ -107,6 +107,7 @@ version = {attr = "jvagent.version.__version__"}
 [tool.setuptools.package-data]
 "jvagent.scaffold.builtin_profiles" = ["*.yaml"]
 "jvagent.scaffold.static" = ["*.txt"]
+"jvagent.skills.pdf_generation" = ["requirements.txt"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"

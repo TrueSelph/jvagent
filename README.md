@@ -58,6 +58,8 @@ A modular, pluggable agentive platform built on jvspatial that provides a produc
 
    PageIndex (document ingestion/retrieval) lists its Python packages under `package.dependencies.pip` in [`jvagent/action/pageindex/info.yaml`](jvagent/action/pageindex/info.yaml). They are installed automatically when that action loads unless `JVAGENT_DISABLE_RUNTIME_PIP_INSTALL=true` (for air-gapped or pre-baked images, install those pip lines yourself).
 
+   PDF fallback (**WeasyPrint** for `pdf_generation__pandoc_fallback`): declare `weasyprint` under `package.dependencies.pip` on your SkillInteractAction (see the proposal example’s [`proposal_skill_interact_action/info.yaml`](examples/jvagent_app/agents/jvagent/proposal_agent/actions/jvagent/proposal_skill_interact_action/info.yaml)). **LaTeX** is not a pip package—install a system TeX distribution for `pdf_generation__latex_compile`.
+
 ### Install from Distribution
 
 If you have a built distribution:

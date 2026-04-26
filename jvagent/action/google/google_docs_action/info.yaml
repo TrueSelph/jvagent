@@ -1,0 +1,24 @@
+# Google Docs Action Package Descriptor
+# Exposes Google Docs operations (create, read, update, comment) via Docs API with OAuth 2.0.
+
+package:
+  name: jvagent/google_docs_action
+  author: jvagent
+  archetype: GoogleDocsAction
+  version: 0.0.1
+  meta:
+    title: Google Docs Action
+    description: |
+      Create and manage Google Docs documents using OAuth 2.0 authentication.
+      Supports document creation, content reading/writing, comment management,
+      and formatting operations for collaborative document authoring.
+    group: jvagent
+    type: action
+  config:
+    singleton: false
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - google-api-python-client>=2.192.0
+      - google-auth-httplib2>=0.2.0
+      - google-auth-oauthlib>=1.2.0

@@ -95,5 +95,6 @@ jvagent_logs/
 dist/
 build/
 Dockerfile
+.tectonic_*
 
 ollama_app/

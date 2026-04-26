@@ -86,6 +86,16 @@ async def execute(arguments: dict) -> Any:
 
 If `allowed-tools` is set in the frontmatter, only tools whose names appear in the whitelist are activated. Tools not in the whitelist are silently skipped.
 
+### User-scoped file I/O (required for user artifacts)
+
+Skills that read or write **user-owned files** (outputs, uploads, drafts, pipeline artifacts) must **not** use the host filesystem for relative paths. Use the **`fileinterface`** skill and/or `jvagent.skills.fileinterface._core`:
+
+- Paths are relative to `<sanitized_agent_id>/<sanitized_user_id>/` in jvspatial storage (local or S3 per app config).
+- LLM-facing tools: activate the `fileinterface` bundle and follow its SKILL protocol (`describe_write_workspace` before other fileinterface tools when starting file work in a task); then use `fileinterface__read_file`, `fileinterface__write_file`, etc.
+- Imperative Python in tool modules: import `_core` (e.g. `write_text_file`, `read_binary_file`, or `*_with_local_fallback` when App may be absent).
+
+**Fine to use raw files for:** process-local **temporary** directories (subprocesses, compilers), **absolute** paths to known app/corpus locations, **URLs**, and bundles that **manage the repo** (e.g. `skill_hub` under `agents/...`).
+
 ### Action-Bound Tools
 
 Tool modules that need to call methods on graph-persisted Actions (like `GoogleCalendarAction.list_events()`) should:
@@ -152,6 +162,11 @@ jvagent/skills/
   web_search/
     SKILL.md
     search.py
+  fileinterface/
+    SKILL.md
+    read_file.py
+    write_file.py
+    ...
   pageindex_search/
     SKILL.md
     search.py
@@ -391,7 +406,8 @@ filtered = apply_skill_selector(merged, selector=["code_*"], denied=None)
 ## See Also
 
 - [SkillInteractAction README](../action/skill/README.md) -- The agentic loop that consumes skill bundles
-- [MCPAction README](../action/mcp/README.md) -- MCP server configuration for tool providers
+- **`fileinterface` skill** (`fileinterface/`) -- In-process user-scoped file I/O (jvspatial local/S3); prefer over MCP for workspace files only
+- [MCPAction README](../action/mcp/README.md) -- MCP server configuration for external or multi-server tool providers
 
 ---
 

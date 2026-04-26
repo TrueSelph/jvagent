@@ -1,0 +1,99 @@
+\documentclass[11pt]{article}
+
+% ── Packages ──────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\usepackage{hyperref}
+\usepackage{bookmark}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{titlesec}
+\usepackage{graphicx}
+\usepackage{xcolor}
+
+% ── Page Geometry ─────────────────────────────────────
+\geometry{
+  a4paper,
+  top=2.5cm,
+  bottom=3cm,
+  left=2.5cm,
+  right=2.5cm,
+}
+
+% ── Colors ────────────────────────────────────────────
+\definecolor{primary}{HTML}{1a237e}
+\definecolor{accent}{HTML}{0d47a1}
+\definecolor{greytext}{HTML}{666666}
+
+% ── Header / Footer ──────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+{% if mark_confidential %}
+\fancyhead[R]{\textcolor{greytext}{\small CONFIDENTIAL}}
+{% else %}
+\fancyhead[R]{}
+{% endif %}
+{% if author %}
+\fancyhead[L]{\textcolor{greytext}{\small {{ author }}}}
+{% else %}
+\fancyhead[L]{}
+{% endif %}
+\fancyfoot[C]{\textcolor{greytext}{\thepage\ / \pageref{LastPage}}}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+% ── Section Formatting ───────────────────────────────
+\titleformat{\section}{\Large\bfseries\color{primary}}{}{0em}{}[\vspace{-0.5em}\rule{\textwidth}{0.5pt}]
+\titleformat{\subsection}{\large\bfseries\color{accent}}{}{0em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{}{0em}{}
+
+% ── Hyperlinks ───────────────────────────────────────
+\hypersetup{
+  colorlinks=true,
+  linkcolor=primary,
+  urlcolor=accent,
+}
+
+% ── Document ─────────────────────────────────────────
+\begin{document}
+
+% ── Cover Page ───────────────────────────────────────
+\begin{titlepage}
+  \centering
+  \vspace*{3cm}
+
+  {\Huge\bfseries\color{primary} {{ title }} \par}
+  \vspace{1.5cm}
+
+  {% if subtitle %}
+  {\Large {{ prepared_for_label }} \par}
+  {\Large\bfseries {{ subtitle }} \par}
+  \vspace{1cm}
+  {% endif %}
+
+  {\large {{ date }} \par}
+  \vspace{0.5cm}
+
+  {% if author %}
+  {\large {{ presented_by_label }} {{ author }} \par}
+  {% endif %}
+
+  \vfill
+
+  {% if mark_confidential %}
+  {\small\color{greytext} CONFIDENTIAL}
+  {% endif %}
+\end{titlepage}
+
+% ── Table of Contents ────────────────────────────────
+\newpage
+\tableofcontents
+\newpage
+
+% ── Content ──────────────────────────────────────────
+{{ body }}
+
+\end{document}

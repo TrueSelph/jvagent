@@ -1,0 +1,22 @@
+# Optional dependency for pdf_generation__pandoc_fallback (Markdown → HTML → PDF).
+#
+# LaTeX / pdf_generation__latex_compile — not pip-installable as xelatex.
+# The tool looks for, in order: xelatex, pdflatex, lualatex, then `tectonic`.
+#
+# Lightweight option (single binary, often enough for our bundled template):
+#   macOS:    brew install tectonic
+#   Debian/Ubuntu:  sudo apt install tectonic
+#   conda:    conda install -c conda-forge tectonic
+#
+# Full distributions (traditional engines): TeX Live, MacTeX, MiKTeX — add xelatex to PATH.
+#
+# Tectonic caches downloads under TECTONIC_CACHE_DIR (or the OS user cache). jvagent sets
+# TECTONIC_CACHE_DIR to a per-build temp folder so compilation works when the default cache is not writable.
+#
+# Install via either:
+#   Declare weasyprint under package.dependencies.pip on your SkillInteractAction info.yaml
+#   pip install -r jvagent/skills/pdf_generation/requirements.txt
+#
+# Proposal example: proposal_skill_interact_action/info.yaml lists weasyprint so it installs
+# when that action loads (unless JVAGENT_DISABLE_RUNTIME_PIP_INSTALL is set).
+weasyprint>=52.5
