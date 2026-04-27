@@ -338,6 +338,21 @@ def _import_staging_filename(url: str, content_type: Optional[str]) -> str:
 
 def _coerce_import_payload_to_dict(data: Any) -> Dict[str, Any]:
     if isinstance(data, str):
+        s = data.strip()
+        # Prefer JSON for strings that look like JSON. yaml.safe_load can yield a list for
+        # valid graph JSON in edge cases; json.loads matches PageIndex export shape reliably.
+        if s and s[0] in "{[":
+            try:
+                parsed_json = json.loads(s)
+            except json.JSONDecodeError:
+                pass
+            else:
+                if isinstance(parsed_json, dict):
+                    return parsed_json
+                raise ValidationError(
+                    "PageIndex import payload must be a single JSON object with graph keys "
+                    "(e.g. roots, nodes, edges), not a top-level array or scalar."
+                )
         try:
             import yaml
 

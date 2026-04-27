@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import logging
 import os
 import threading
@@ -120,6 +121,43 @@ def _recompute_google_drive_node_idle_status(node: Any) -> None:
         node.status = "completed"
 
 
+def _sync_drive_node_status_from_queues(node: Any) -> None:
+    """Set folder sync status from ingesting vs failed queue depth (not during active_document)."""
+    if getattr(node, "active_document", None):
+        return
+    ing = node.ingesting_documents
+    fd = node.failed_documents
+    pending_ingest = bool(ing.get("added") or ing.get("modified") or ing.get("removed"))
+    pending_fail = bool(fd.get("added") or fd.get("modified") or fd.get("removed"))
+    if not pending_ingest and not pending_fail:
+        node.status = "completed"
+    elif pending_ingest:
+        node.status = "pending"
+    elif pending_fail:
+        node.status = "failed"
+
+
+_GOOGLE_DRIVE_DOCUMENTS_STATUS_ALLOW = frozenset(
+    {"pending", "processing", "completed", "failed"}
+)
+
+
+def _validate_doc_queues_payload(data: Dict[str, Any], *, label: str) -> Dict[str, List[Any]]:
+    """Ensure dict has added/modified/removed list keys."""
+    for key in ("added", "modified", "removed"):
+        if key not in data or not isinstance(data[key], list):
+            raise ValidationError(
+                message=f"{label} must be an object with list keys "
+                f"added, modified, removed",
+                details={"label": label, "missing_or_invalid": key},
+            )
+    return {
+        "added": copy.deepcopy(data["added"]),
+        "modified": copy.deepcopy(data["modified"]),
+        "removed": copy.deepcopy(data["removed"]),
+    }
+
+
 async def _if_add_node_summary_for_jvforge(
     agent_id: str,
     node_summary: Optional[Any],
@@ -200,16 +238,7 @@ async def _pop_skip_unsupported_head(
         if docs["modified"]:
             docs["modified"].pop(0)
     node.active_document = ""
-    ingesting = node.ingesting_documents
-    node.status = (
-        "completed"
-        if (
-            not ingesting["added"]
-            and not ingesting["modified"]
-            and not ingesting["removed"]
-        )
-        else "pending"
-    )
+    _sync_drive_node_status_from_queues(node)
     await node.save()
     return {
         "success": True,
@@ -315,16 +344,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                         file_info
                     )
                 google_drive_documents_node.active_document = ""
-                ingesting = google_drive_documents_node.ingesting_documents
-                google_drive_documents_node.status = (
-                    "failed"
-                    if (
-                        not ingesting["added"]
-                        and not ingesting["modified"]
-                        and not ingesting["removed"]
-                    )
-                    else "pending"
-                )
+                _sync_drive_node_status_from_queues(google_drive_documents_node)
                 await google_drive_documents_node.save()
 
             async def _do_ingest() -> Dict[str, Any]:
@@ -449,16 +469,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                             collection_name=collection_name,
                         )
                 google_drive_documents_node.active_document = ""
-                ingesting = google_drive_documents_node.ingesting_documents
-                google_drive_documents_node.status = (
-                    "completed"
-                    if (
-                        not ingesting["added"]
-                        and not ingesting["modified"]
-                        and not ingesting["removed"]
-                    )
-                    else "pending"
-                )
+                _sync_drive_node_status_from_queues(google_drive_documents_node)
                 await google_drive_documents_node.save()
             except Exception:
                 logger.exception(
@@ -706,15 +717,18 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             if not google_drive_documents_node:
                 continue
 
-            if google_drive_documents_node.status == "completed":
-                continue
-            elif google_drive_documents_node.status == "failed":
-                if retry_failed_documents:
-                    ingesting_documents = google_drive_documents_node.failed_documents
-                else:
-                    continue
+            ing = google_drive_documents_node.ingesting_documents
+            fd = google_drive_documents_node.failed_documents
+            has_ingest = bool(ing["added"] or ing["modified"] or ing["removed"])
+            has_failed = bool(fd["added"] or fd["modified"] or fd["removed"])
+            if has_ingest:
+                ingesting_documents = ing
+                ingest_source = "ingesting_documents"
+            elif retry_failed_documents and has_failed:
+                ingesting_documents = fd
+                ingest_source = "failed_documents"
             else:
-                ingesting_documents = google_drive_documents_node.ingesting_documents
+                continue
 
             await _pop_disabled_head_queues(
                 google_drive_documents_node, ingesting_documents
@@ -736,11 +750,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     node_summary=node_summary,
                     agent_id=agent_id,
                     page_index_action=page_index_action,
-                    source=(
-                        "failed_documents"
-                        if google_drive_documents_node.status == "failed"
-                        else "ingesting_documents"
-                    ),
+                    source=ingest_source,
                     convert_to_markdown=convert_to_markdown,
                     ocr=ocr,
                 )
@@ -773,11 +783,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     agent_id=agent_id,
                     page_index_action=page_index_action,
                     old_file=old_file,
-                    source=(
-                        "failed_documents"
-                        if google_drive_documents_node.status == "failed"
-                        else "ingesting_documents"
-                    ),
+                    source=ingest_source,
                     convert_to_markdown=convert_to_markdown,
                     ocr=ocr,
                 )
@@ -808,15 +814,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                                 "removed"
                             ].append(removed_doc)
                             ingesting_documents["removed"].remove(removed_doc)
-                            ingesting = google_drive_documents_node.ingesting_documents
-                            google_drive_documents_node.status = (
-                                "failed"
-                                if (
-                                    not ingesting["added"]
-                                    and not ingesting["modified"]
-                                    and not ingesting["removed"]
-                                )
-                                else "pending"
+                            _sync_drive_node_status_from_queues(
+                                google_drive_documents_node
                             )
                             await google_drive_documents_node.save()
                             logger.error(f"Error deleting document: {e}")
@@ -832,16 +831,11 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     ingesting_documents["removed"] = []
                     remove_docs_names = []
 
-                google_drive_documents_node.ingesting_documents = ingesting_documents
-                google_drive_documents_node.status = (
-                    "completed"
-                    if (
-                        not ingesting_documents["added"]
-                        and not ingesting_documents["modified"]
-                        and not ingesting_documents["removed"]
+                if ingest_source == "ingesting_documents":
+                    google_drive_documents_node.ingesting_documents = (
+                        ingesting_documents
                     )
-                    else "pending"
-                )
+                _sync_drive_node_status_from_queues(google_drive_documents_node)
                 await google_drive_documents_node.save()
                 ingestion_message = (
                     f"Deleted {', '.join(remove_docs_names)}"
@@ -859,7 +853,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 and not ingesting_documents["modified"]
                 and not ingesting_documents["removed"]
             ):
-                google_drive_documents_node.status = "completed"
+                _sync_drive_node_status_from_queues(google_drive_documents_node)
                 await google_drive_documents_node.save()
                 break
 
@@ -868,6 +862,82 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             "status": "completed",
             "message": "No pending documents to ingest",
             "documents_ingested": document_ingested,
+        }
+
+    async def update_google_drive_documents(
+        self,
+        folder_id: str,
+        *,
+        folder_name: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        status: Optional[str] = None,
+        ingesting_documents: Optional[Dict[str, Any]] = None,
+        failed_documents: Optional[Dict[str, Any]] = None,
+        active_document: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Update a connected ``GoogleDriveDocuments`` node (lookup by Drive ``folder_id``)."""
+        node = await self.node(node="GoogleDriveDocuments", folder_id=folder_id)
+        if not node:
+            raise ValidationError(
+                message=f"No GoogleDriveDocuments node for folder_id={folder_id}",
+                details={"folder_id": folder_id},
+            )
+
+        if folder_name is not None:
+            node.folder_name = folder_name
+        if metadata is not None:
+            base = dict(node.metadata) if node.metadata else {}
+            base.update(metadata)
+            node.metadata = base
+
+        queues_touched = False
+        if ingesting_documents is not None:
+            node.ingesting_documents = _validate_doc_queues_payload(
+                ingesting_documents, label="ingesting_documents"
+            )
+            queues_touched = True
+        if failed_documents is not None:
+            node.failed_documents = _validate_doc_queues_payload(
+                failed_documents, label="failed_documents"
+            )
+            queues_touched = True
+        if active_document is not None:
+            node.active_document = active_document
+
+        if status is not None:
+            s = str(status).strip()
+            if s not in _GOOGLE_DRIVE_DOCUMENTS_STATUS_ALLOW:
+                raise ValidationError(
+                    message="Invalid status for GoogleDriveDocuments node",
+                    details={
+                        "status": s,
+                        "allowed": sorted(_GOOGLE_DRIVE_DOCUMENTS_STATUS_ALLOW),
+                    },
+                )
+            node.status = s
+        elif queues_touched:
+            _sync_drive_node_status_from_queues(node)
+
+        await node.save()
+
+        ing = node.ingesting_documents
+        fd = node.failed_documents
+        return {
+            "folder_id": node.folder_id,
+            "folder_name": node.folder_name or "",
+            "metadata": dict(node.metadata) if node.metadata else {},
+            "status": node.status,
+            "active_document": node.active_document or "",
+            "ingesting_documents": {
+                "added": list(ing.get("added") or []),
+                "modified": list(ing.get("modified") or []),
+                "removed": list(ing.get("removed") or []),
+            },
+            "failed_documents": {
+                "added": list(fd.get("added") or []),
+                "modified": list(fd.get("modified") or []),
+                "removed": list(fd.get("removed") or []),
+            },
         }
 
     async def delete_google_drive_documents(

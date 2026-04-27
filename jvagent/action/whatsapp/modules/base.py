@@ -320,20 +320,20 @@ class BaseWhatsAppAPI(ABC):
                             "error": f"HTTP {status}: {err_text}",
                             "status_code": status,
                         }
-                    if resp.content_length and resp.content_length > 0:
-                        try:
-                            return await resp.json()
-                        except (
-                            json.JSONDecodeError,
-                            aiohttp.ContentTypeError,
-                            ValueError,
-                        ) as e:
-                            self.logger.debug(
-                                "Response body is not JSON, returning raw bytes: %s",
-                                e,
-                            )
-                            return {"ok": True, "raw": await resp.read()}
-                    return {"ok": True, "no_content": True}
+                    body = await resp.read()
+                    if not body:
+                        return {"ok": True, "no_content": True}
+                    try:
+                        text = body.decode("utf-8")
+                    except UnicodeDecodeError:
+                        return {"ok": True, "raw": body}
+                    try:
+                        return json.loads(text)
+                    except json.JSONDecodeError:
+                        self.logger.debug(
+                            "Response body is not JSON, returning raw bytes (chunked or non-JSON)"
+                        )
+                        return {"ok": True, "raw": body}
             except BaseException as e:
                 # Catch ALL exceptions including TypeError from aiohttp bugs
                 exc_str = str(e) if e else "None"

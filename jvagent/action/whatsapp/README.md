@@ -172,6 +172,7 @@ This document outlines the security improvements and coding standards compliance
 2. **Manual registration endpoint**:
    - `POST /api/actions/{action_id}/session/register` endpoint for explicit registration
    - Requires authentication (same as other action endpoints)
+   - **Browser link (no auth)**: `GET {JVAGENT_PUBLIC_BASE_URL}/api/whatsapp/{action_id}` shows a QR code or a “connected” page (public URL; `action_id` should be unguessable, like Google OAuth’s `/api/google/{action_id}`).
    - Returns registration result with status, ok flag, and message
    - **Use cases**:
      - Startup registration timed out or failed

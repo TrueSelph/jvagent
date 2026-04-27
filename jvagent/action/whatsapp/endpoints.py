@@ -1,13 +1,20 @@
 """WhatsApp Action Endpoints."""
 
 import asyncio
+import base64
+import binascii
+import html
 import logging
+import re
 import time
 from typing import Any, Dict, List, Optional
 
+import aiohttp
 from fastapi import HTTPException, Request
+from fastapi.responses import HTMLResponse, Response
 from jvspatial import create_task
 from jvspatial.api import endpoint
+from jvspatial.api.constants import APIRoutes
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.exceptions import DatabaseError, ValidationError
@@ -28,6 +35,361 @@ from .utils.endpoint_helpers import (
 )
 
 logger = logging.getLogger(__name__)
+
+# --- Browser connection / QR page (public link, unguessable action_id) ---
+
+_WA_LINK_THEMES = {
+    "qr": {
+        "primary": "#25D366",
+        "icon_bg": "rgba(37, 211, 102, 0.12)",
+        "badge_bg": "rgba(37, 211, 102, 0.15)",
+    },
+    "success": {
+        "primary": "#4CAF50",
+        "icon_bg": "rgba(76, 175, 80, 0.1)",
+        "badge_bg": "rgba(76, 175, 80, 0.15)",
+    },
+}
+
+
+def _wa_link_page_html(
+    *,
+    theme: str,
+    title: str,
+    icon_svg: str,
+    body_inner: str,
+    head_extra: str = "",
+) -> str:
+    t = _WA_LINK_THEMES[theme]
+    primary = t["primary"]
+    icon_bg = t["icon_bg"]
+    badge_bg = t["badge_bg"]
+    return f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        {head_extra}
+        <title>{title}</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+        <style>
+            :root {{
+                --primary: {primary};
+                --bg: #0f172a;
+                --card-bg: rgba(30, 41, 59, 0.7);
+                --text: #f8fafc;
+                --text-muted: #94a3b8;
+            }}
+            body {{
+                font-family: 'Outfit', sans-serif;
+                background-color: var(--bg);
+                color: var(--text);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 100vh;
+                margin: 0;
+            }}
+            .container {{
+                background: var(--card-bg);
+                backdrop-filter: blur(12px);
+                -webkit-backdrop-filter: blur(12px);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 24px;
+                padding: 3rem;
+                max-width: 480px;
+                width: 90%;
+                text-align: center;
+                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+            }}
+            @keyframes slideUp {{
+                from {{ opacity: 0; transform: translateY(20px); }}
+                to {{ opacity: 1; transform: translateY(0); }}
+            }}
+            .icon-circle {{
+                width: 80px;
+                height: 80px;
+                background: {icon_bg};
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto 1.5rem;
+                border: 2px solid var(--primary);
+            }}
+            h2 {{
+                color: var(--primary);
+                font-weight: 600;
+                margin-top: 0;
+                font-size: 1.75rem;
+            }}
+            .action-badge {{
+                display: inline-block;
+                padding: 4px 12px;
+                background: {badge_bg};
+                color: var(--primary);
+                border-radius: 8px;
+                font-size: 0.85rem;
+                font-weight: 600;
+                letter-spacing: 0.05em;
+                text-transform: uppercase;
+                margin-bottom: 1rem;
+            }}
+            .agent-info {{
+                margin: 1.5rem 0 2rem;
+                padding: 1.5rem;
+                background: rgba(255, 255, 255, 0.03);
+                border-radius: 16px;
+                border: 1px solid rgba(255, 255, 255, 0.05);
+            }}
+            .agent-name {{
+                font-size: 1.25rem;
+                font-weight: 600;
+                display: block;
+                margin-bottom: 0.5rem;
+            }}
+            .agent-desc {{
+                font-size: 0.95rem;
+                color: var(--text-muted);
+                line-height: 1.5;
+            }}
+            .close-text {{
+                margin-top: 1rem;
+                font-size: 0.9rem;
+                opacity: 0.8;
+            }}
+            .qr-image {{
+                max-width: 280px;
+                width: 100%;
+                height: auto;
+                border-radius: 12px;
+                margin: 0.5rem 0 1rem;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="icon-circle">
+                {icon_svg}
+            </div>
+            {body_inner}
+        </div>
+    </body>
+    </html>
+    """
+
+
+def _wa_error_html(message: str, status_code: int = 400) -> HTMLResponse:
+    body = f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Error</title></head>
+<body style="font-family:system-ui,sans-serif;padding:2rem;max-width:40rem">
+<h1>Error</h1><p>{html.escape(message)}</p>
+</body></html>"""
+    return HTMLResponse(content=body, status_code=status_code)
+
+
+def _is_whatsapp_session_connected(st: Any) -> bool:
+    if not isinstance(st, dict):
+        return False
+    s = st.get("status")
+    if s is None or s == "":
+        return False
+    return str(s).upper() == "CONNECTED"
+
+
+_WA_QR_IMAGE_HEADERS = {
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
+
+async def _qr_result_to_png_bytes(qr: Any) -> Optional[bytes]:
+    """Derive PNG bytes from provider ``qrcode()`` result (raw, base64, data URI, or image URL)."""
+    if not isinstance(qr, dict):
+        return None
+    raw = qr.get("raw")
+    if isinstance(raw, (bytes, bytearray)) and raw:
+        return bytes(raw)
+    for key in ("qrcode_base64", "qrcode"):
+        val = qr.get(key)
+        if not isinstance(val, str):
+            continue
+        v = val.strip()
+        if not v:
+            continue
+        if v.startswith("http://") or v.startswith("https://"):
+            try:
+                timeout = aiohttp.ClientTimeout(total=15)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(v) as resp:
+                        if resp.status >= 400:
+                            return None
+                        data = await resp.read()
+                        return data if data else None
+            except Exception as e:
+                logger.debug("QR image URL fetch failed: %s", e)
+                return None
+        if v.startswith("data:"):
+            m = re.match(r"data:image/[^;]+;base64,(.+)", v, re.IGNORECASE | re.DOTALL)
+            if m:
+                try:
+                    return base64.b64decode(m.group(1).strip())
+                except (ValueError, binascii.Error):
+                    return None
+        try:
+            return base64.b64decode(v)
+        except (ValueError, binascii.Error):
+            continue
+    return None
+
+
+@endpoint(
+    "/whatsapp/{action_id}/qr",
+    methods=["GET"],
+    auth=False,
+    tags=["WhatsApp"],
+    summary="WhatsApp QR code image (PNG)",
+)
+async def whatsapp_connection_qr(action_id: str) -> Response:
+    """Return the current session QR as PNG (proxied from the configured provider)."""
+    try:
+        wa_action = await get_whatsapp_action(action_id)
+    except ResourceNotFoundError:
+        raise HTTPException(status_code=404, detail="WhatsApp action not found")
+
+    if not wa_action.is_configured():
+        raise HTTPException(status_code=400, detail="WhatsApp is not configured for this action")
+
+    try:
+        wa = await wa_action.api()
+    except ValidationError:
+        raise HTTPException(status_code=400, detail="WhatsApp is not available for this action")
+
+    try:
+        qr = await wa.qrcode()
+    except Exception as e:
+        logger.warning("WhatsApp qrcode failed for action_id=%s: %s", action_id, e)
+        raise HTTPException(status_code=404, detail="No QR code available")
+
+    png = await _qr_result_to_png_bytes(qr)
+    if not png:
+        raise HTTPException(status_code=404, detail="No QR code available")
+
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers=dict(_WA_QR_IMAGE_HEADERS),
+    )
+
+
+@endpoint(
+    "/whatsapp/{action_id}",
+    methods=["GET"],
+    auth=False,
+    tags=["WhatsApp"],
+    summary="WhatsApp connection / QR (browser)",
+)
+async def whatsapp_connection_page(action_id: str) -> HTMLResponse:
+    """Show a human-readable page: connected state, or a QR to scan, or a clear error.
+
+    Public link (no auth) — the ``action_id`` should be unguessable (UUID), same as
+    ``/api/google/{action_id}`` for OAuth.
+    """
+    try:
+        wa_action = await get_whatsapp_action(action_id)
+    except ResourceNotFoundError:
+        return _wa_error_html(f"WhatsApp action not found: {action_id}", status_code=404)
+
+    if not wa_action.is_configured():
+        err = (
+            "WhatsApp is not configured for this action. "
+            + "; ".join(wa_action._config_issues())
+        )
+        return _wa_error_html(err, status_code=400)
+
+    try:
+        wa = await wa_action.api()
+    except ValidationError as e:
+        logger.debug("WhatsApp API unavailable for action_id=%s: %s", action_id, e)
+        return _wa_error_html("WhatsApp is not available for this action yet.", 400)
+
+    try:
+        st = await wa.status()
+    except Exception as e:
+        logger.warning("WhatsApp status failed for action_id=%s: %s", action_id, e)
+        st = {}
+
+    agent = await wa_action.get_agent()
+    agent_name = "Agent"
+    agent_description = ""
+    if agent:
+        agent_name = getattr(agent, "alias", None) or getattr(agent, "name", "Agent")
+        agent_description = getattr(agent, "description", "")
+    safe_name = html.escape(str(agent_name))
+    desc_html = (
+        f'<p class="agent-desc">{html.escape(str(agent_description))}</p>'
+        if agent_description
+        else ""
+    )
+
+    if _is_whatsapp_session_connected(st):
+        icon_svg = """
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary)">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+        """
+        body_inner = f"""
+            <div class="action-badge">WhatsApp is connected</div>
+            <h2>All set</h2>
+            <p style="color: var(--text-muted)">This agent can send and receive WhatsApp messages.</p>
+            <div class="agent-info">
+                <span class="agent-name">{safe_name}</span>
+                {desc_html}
+            </div>
+            <p class="close-text" style="color: var(--text-muted)">You can close this window.</p>
+        """
+        content = _wa_link_page_html(
+            theme="success",
+            title="WhatsApp connected",
+            icon_svg=icon_svg,
+            body_inner=body_inner,
+        )
+        return HTMLResponse(content=content, status_code=200)
+
+    prefix = str(APIRoutes.PREFIX).rstrip("/")
+    qr_src = f"{prefix}/whatsapp/{action_id}/qr"
+    src_escaped = html.escape(qr_src, quote=True)
+    icon_svg = """
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary)">
+                    <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+                    <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+                    <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+                    <path d="M14 14h1v1h-1v-1z M17 14h1v1h-1v-1z M14 17h1v1h-1v-1z M17 17h1v1h-1v-1z M14 20h1v1h-1v-1z M17 20h1v1h-1v-1z"></path>
+                </svg>
+    """
+    body_inner = f"""
+        <h2>Scan to connect</h2>
+        <p style="color: var(--text-muted)">Open WhatsApp on your phone → Linked devices → Link a device, then scan this code.</p>
+        <div class="agent-info">
+            <span class="agent-name">{safe_name}</span>
+            {desc_html}
+        </div>
+        <img class="qr-image" src="{src_escaped}" width="280" height="280" alt="WhatsApp QR code" />
+        <p class="close-text" style="color: var(--text-muted)">If the code does not appear, refresh or ensure the WhatsApp bridge is running. This page reloads every 15 seconds; after you scan, you should see a connected message.</p>
+    """
+    content = _wa_link_page_html(
+        theme="qr",
+        title="WhatsApp QR",
+        icon_svg=icon_svg,
+        body_inner=body_inner,
+        head_extra='<meta http-equiv="refresh" content="15">',
+    )
+    return HTMLResponse(content=content, status_code=200)
 
 
 @endpoint(

@@ -239,6 +239,92 @@ async def delete_google_documents_endpoint(
 
 
 @endpoint(
+    "/actions/{action_id}/update_google_documents",
+    methods=["PATCH"],
+    auth=True,
+    roles=["admin"],
+    tags=["PageIndex Google Drive Sync"],
+    summary="Update GoogleDriveDocuments node for a folder",
+    response=success_response(
+        data={
+            "message": ResponseField(
+                field_type=str,
+                description="Update result message",
+            ),
+            "result": ResponseField(
+                field_type=dict,
+                description="Updated GoogleDriveDocuments fields",
+            ),
+        }
+    ),
+)
+async def update_google_documents_endpoint(
+    action_id: str,
+    folder_id: str = Field(..., description="Google Drive folder id (GoogleDriveDocuments.folder_id)"),
+    folder_name: Optional[str] = Field(
+        default=None,
+        description="Folder display name stored on the node",
+    ),
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Merged into existing node metadata",
+    ),
+    status: Optional[str] = Field(
+        default=None,
+        description="Optional explicit status (pending, processing, completed, failed)",
+    ),
+    ingesting_documents: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Replace ingesting queues (added, modified, removed lists)",
+    ),
+    failed_documents: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Replace failed queues (added, modified, removed lists)",
+    ),
+    active_document: Optional[str] = Field(
+        default=None,
+        description="Current processing label; use empty string to clear",
+    ),
+) -> Dict[str, Any]:
+    """Patch fields on the ``GoogleDriveDocuments`` node for one synced folder."""
+    action = await require_typed_action(
+        action_id,
+        PageIndexGoogleDriveSyncAction,
+        not_found_message=(
+            f"PageIndexGoogleDriveSyncAction with ID '{action_id}' not found"
+        ),
+        wrong_type_message=(
+            f"Action '{action_id}' is not a PageIndexGoogleDriveSyncAction"
+        ),
+    )
+    try:
+        result = await action.update_google_drive_documents(
+            folder_id,
+            folder_name=folder_name,
+            metadata=metadata,
+            status=status,
+            ingesting_documents=ingesting_documents,
+            failed_documents=failed_documents,
+            active_document=active_document,
+        )
+        return {
+            "message": "Google Drive documents node updated",
+            "result": result,
+        }
+    except SpatialValidationError as e:
+        raise ValidationError(
+            message=str(e),
+            details=e.details or {},
+        )
+    except Exception as e:
+        logger.error("Error updating Google Drive documents node: %s", e, exc_info=True)
+        raise ValidationError(
+            message=f"Update failed: {str(e)}",
+            details={"error": str(e)},
+        )
+
+
+@endpoint(
     "/actions/{action_id}/set_google_drive_file_ingestion",
     methods=["POST"],
     auth=True,

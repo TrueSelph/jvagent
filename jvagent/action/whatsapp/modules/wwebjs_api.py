@@ -257,7 +257,9 @@ class WWebJSAPI(BaseWhatsAppAPI):
         """GET /session/qr/{sessionId}/image - Returns QR code as base64 image"""
         try:
             response = await self.send_rest_request(
-                f"session/qr/{self.session}/image", method="GET"
+                f"session/qr/{self.session}/image",
+                method="GET",
+                headers={"Accept": "image/png, application/json, */*"},
             )
 
             if "raw" in response:
