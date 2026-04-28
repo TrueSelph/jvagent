@@ -12,7 +12,7 @@ package:
       Proposal-generation pipeline hub that orchestrates draft creation, pricing
       assessment, document authoring, and PDF generation. Extends
       SkillInteractAction with proposal-specific configuration: specimen corpus
-      path, output directory, and LaTeX command.
+      path, output directory, branding knobs, Google Docs template ID, and LaTeX command.
     group: jvagent
     type: action
   config:

@@ -2,42 +2,50 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 
 def get_tool_definition() -> Dict[str, Any]:
     return {
         "name": "authoring__google_docs_write",
         "description": (
-            "Create or update a Google Doc with proposal content. "
-            "Insert revision markers as comments for items needing review. "
-            "Returns the document URL and ID."
+            "Create or update a Google Doc with proposal content using template-aware "
+            "rendering, placeholder replacement, and revision comments."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "title": {
-                    "type": "string",
-                    "description": "Document title (e.g., 'Proposal: Acme Corp Platform Modernization')",
-                },
+                "title": {"type": "string"},
                 "content": {
                     "type": "string",
-                    "description": "Full proposal content in Markdown format (will be formatted as rich text)",
+                    "description": "Proposal markdown to render into Google Docs.",
                 },
                 "revision_markers": {
                     "type": "array",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "text": {"type": "string", "description": "The comment or suggestion text"},
-                            "location": {"type": "string", "description": "Section or paragraph identifier"},
+                            "text": {"type": "string"},
+                            "location": {"type": "string"},
                         },
                     },
-                    "description": "List of revision markers to insert as comments",
                 },
-                "doc_id": {
+                "doc_id": {"type": "string"},
+                "template_document_id": {
                     "type": "string",
-                    "description": "If updating an existing doc, provide its document ID. Omit to create new.",
+                    "description": "Optional explicit Google Docs template ID.",
+                },
+                "folder_id": {
+                    "type": "string",
+                    "description": "Optional destination Drive folder ID.",
+                },
+                "placeholders": {
+                    "type": "object",
+                    "description": "Template placeholders to replace, e.g. {client_name: 'Acme'}.",
+                },
+                "replace_body": {
+                    "type": "boolean",
+                    "description": "Replace entire body before rendering (default true).",
                 },
             },
             "required": ["title", "content"],
@@ -46,7 +54,6 @@ def get_tool_definition() -> Dict[str, Any]:
 
 
 async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Dict[str, Any]:
-    """Create or update a Google Doc with proposal content and revision markers."""
     resolver = getattr(visitor, "action_resolver", None)
     if resolver is None:
         return {"error": "ActionResolver not available"}
@@ -58,30 +65,45 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Dict[str, Any]:
     title = arguments.get("title", "Untitled Proposal")
     content = arguments.get("content", "")
     revision_markers = arguments.get("revision_markers", [])
+    placeholders = arguments.get("placeholders", {}) or {}
+    replace_body = arguments.get("replace_body", True)
     doc_id = arguments.get("doc_id")
+    action_config = getattr(visitor, "_current_action", None)
+    configured_template_id = getattr(action_config, "google_docs_template_id", None) if action_config else None
+    configured_folder_id = getattr(action_config, "drive_output_folder_id", None) if action_config else None
+    template_document_id = arguments.get("template_document_id") or configured_template_id
+    folder_id = arguments.get("folder_id") or configured_folder_id
 
+    created_from_template = False
     if doc_id:
-        # Update existing document
-        await action.append_text(document_id=doc_id, text=f"\n\n{content}")
         doc_info = {"document_id": doc_id, "title": title}
+    elif template_document_id:
+        doc_info = await action.copy_template_document(
+            template_document_id=template_document_id,
+            title=title,
+            folder_id=folder_id,
+        )
+        doc_id = doc_info.get("document_id")
+        created_from_template = True
     else:
-        # Create new document
         doc_info = await action.create_document(title=title)
         doc_id = doc_info.get("document_id")
 
-        # Write content in batches (Docs API limitations)
-        # For simplicity, append the full content
-        if content:
-            await action.append_text(document_id=doc_id, text=content)
+    if placeholders:
+        await action.replace_named_placeholders(document_id=doc_id, values=placeholders)
 
-    # Insert revision markers as comments
+    if replace_body:
+        await action.render_markdown_blocks(document_id=doc_id, markdown=content)
+    else:
+        await action.append_text(document_id=doc_id, text=f"\n\n{content}")
+
     comments = []
     for marker in revision_markers:
         try:
             comment = await action.insert_comment(
                 document_id=doc_id,
                 text=marker.get("text", "Review needed"),
-                content=marker.get("location", ""),
+                content=marker.get("location", "proposal"),
             )
             comments.append(comment)
         except Exception as e:
@@ -91,7 +113,10 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Dict[str, Any]:
         "document_id": doc_id,
         "title": title,
         "url": f"https://docs.google.com/document/d/{doc_id}/edit",
-        "comments_inserted": len(comments),
+        "created_from_template": created_from_template,
+        "template_document_id": template_document_id,
+        "comments_inserted": len([c for c in comments if "error" not in c]),
+        "comment_errors": [c for c in comments if "error" in c],
         "revision_markers": revision_markers,
-        "note": "Review the document and resolve comments. Call authoring__handle_feedback when ready.",
+        "note": "Document is ready for review. Use authoring feedback tools for revision tracking.",
     }

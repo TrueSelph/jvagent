@@ -260,7 +260,9 @@ async def delete_google_documents_endpoint(
 )
 async def update_google_documents_endpoint(
     action_id: str,
-    folder_id: str = Field(..., description="Google Drive folder id (GoogleDriveDocuments.folder_id)"),
+    folder_id: str = Field(
+        ..., description="Google Drive folder id (GoogleDriveDocuments.folder_id)"
+    ),
     folder_name: Optional[str] = Field(
         default=None,
         description="Folder display name stored on the node",

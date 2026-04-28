@@ -8,6 +8,7 @@ description: >
 allowed-tools:
   - pdf_generation__latex_compile
   - pdf_generation__pandoc_fallback
+  - pdf_generation__export_google_doc_pdf
 version: 2
 tags:
   - pdf
@@ -19,10 +20,11 @@ tags:
 ## Workflow
 
 1. Gather the final document: `title` and main `content` (Markdown-like headings, lists, paragraphs). All editorial decisions are upstream; this skill only renders.
-2. Prefer `pdf_generation__latex_compile` when a TeX engine is available (LaTeX or Tectonic).
-3. If LaTeX is missing or the build fails with a fatal error, use `pdf_generation__pandoc_fallback` (requires WeasyPrint).
-4. Optionally pass `drive_output_folder_id` to upload the PDF if `GoogleDriveAction` is enabled in the app.
-5. Return the local `pdf_path` and, if applicable, the Drive `drive_upload` result.
+2. If the approved source is a Google Doc, prefer `pdf_generation__export_google_doc_pdf`.
+3. Otherwise prefer `pdf_generation__latex_compile` when a TeX engine is available (LaTeX or Tectonic).
+4. If LaTeX is missing or the build fails with a fatal error, use `pdf_generation__pandoc_fallback` (requires WeasyPrint).
+5. Optionally pass `drive_output_folder_id` to upload the PDF if `GoogleDriveAction` is enabled in the app.
+6. Return the local `pdf_path` and, if applicable, the Drive `drive_upload` result.
 
 ### Inputs (generic)
 
@@ -33,6 +35,7 @@ tags:
 - **date**, **prepared_for_label**, **presented_by_label**: Optional copy and locale tweaks for the cover.
 - **mark_confidential** (default: true): Include “CONFIDENTIAL” in LaTeX headers and on the cover where applicable.
 - **output_basename** (optional): Filename stem for Google Drive upload (e.g. `Q1_Security_Review` → `Q1_Security_Review.pdf`).
+- **brand_primary_color**, **brand_accent_color**, **brand_logo_path**, **company_letterhead**: Optional branding values for rendered PDF paths.
 
 ### Constraints
 

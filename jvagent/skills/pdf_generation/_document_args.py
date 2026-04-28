@@ -28,6 +28,10 @@ class DocumentPdfParams:
     output_basename: Optional[str]
     prepared_for_label: str
     presented_by_label: str
+    brand_primary_color: str
+    brand_accent_color: str
+    brand_logo_path: str
+    company_letterhead: str
 
 
 def parse_document_pdf_arguments(raw: Dict[str, Any]) -> DocumentPdfParams:
@@ -65,6 +69,10 @@ def parse_document_pdf_arguments(raw: Dict[str, Any]) -> DocumentPdfParams:
 
     pfl = (raw.get("prepared_for_label") or "Prepared for").strip() or "Prepared for"
     prbl = (raw.get("presented_by_label") or "Presented by").strip() or "Presented by"
+    primary = (raw.get("brand_primary_color") or "#1a237e").strip() or "#1a237e"
+    accent = (raw.get("brand_accent_color") or "#0d47a1").strip() or "#0d47a1"
+    logo = (raw.get("brand_logo_path") or "").strip()
+    letterhead = (raw.get("company_letterhead") or "").strip()
 
     drive = raw.get("drive_output_folder_id")
     if drive is not None and str(drive).strip():
@@ -83,6 +91,10 @@ def parse_document_pdf_arguments(raw: Dict[str, Any]) -> DocumentPdfParams:
         output_basename=output_basename,
         prepared_for_label=pfl,
         presented_by_label=prbl,
+        brand_primary_color=primary,
+        brand_accent_color=accent,
+        brand_logo_path=logo,
+        company_letterhead=letterhead,
     )
 
 

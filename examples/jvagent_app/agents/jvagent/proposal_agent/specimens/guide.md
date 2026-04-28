@@ -2,22 +2,24 @@
 
 ## Tone
 
-- Confident but not arrogant. Use "we recommend" not "you must."
-- Specific over generic. Prefer "We will deploy three Kubernetes clusters across us-east-1, us-west-2, and eu-west-1" over "We will deploy a cloud infrastructure."
-- Forward-looking. Frame everything around client outcomes.
+- Confident, executive, and specific. Use "we will" for committed scope.
+- Commercially precise. Explain what is included, what is optional, and what is assumed.
+- Forward-looking. Frame each section around measurable client outcomes.
 
 ## Content Rules
 
 - Every claim must be traceable to the transcript/RFP.
 - If uncertain, use `[REVIEW: ...]` markers (never guess).
-- Quantify wherever possible: hours, cost, timeline, team size.
-- Include at least one relevant differentiator per proposal.
+- Quantify wherever possible: hours, cost, timeline, team composition, operational run-rate.
+- Include at least one relevant differentiator with evidence.
+- Always include proposal metadata: prepared-for, prepared-by, version, validity window.
 
 ## Structure
 
-- Follow the template section order strictly.
-- Each section should be 2-5 paragraphs.
-- No section should exceed one page in rendered form.
+- Follow the template section order strictly (I-X).
+- Include tables for core deliverables and operational costs.
+- Include a requirements annex that maps needs to solutions.
+- Keep sections concise; avoid walls of text.
 
 ## What to Avoid
 
@@ -25,9 +27,19 @@
 - Negative mentions of competitors by name
 - Vague timelines ("as soon as possible")
 - Overpromising delivery dates — always use `[REVIEW: ...]` for dates
+- Contradictions between pricing assumptions and scope wording.
 
 ## Win Themes
 
 - Reliability: "We have delivered 200+ similar engagements."
 - Speed: "Our methodology reduces time-to-market."
 - Partnership: "We assign a dedicated engagement manager."
+
+## Quality Gate
+
+Before authoring, the draft must pass:
+
+- Required sections present (Executive Summary through Investment).
+- `[PRICING PLACEHOLDER]` exists and is untouched pre-pricing.
+- At least one deliverables table and one operational-cost table exist.
+- All unresolved `[REVIEW: ...]` items are intentional and explicitly listed.

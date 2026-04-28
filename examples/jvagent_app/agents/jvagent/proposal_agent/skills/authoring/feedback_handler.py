@@ -1,41 +1,58 @@
-"""Handle user feedback on the proposal document — detect changes, apply revisions."""
+"""Handle user feedback on proposal documents."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+import hashlib
+from typing import Any, Dict
+
+
+def _state(visitor: Any) -> Dict[str, Any]:
+    state = getattr(visitor, "_skill_state", None)
+    if state is None:
+        state = {}
+        setattr(visitor, "_skill_state", state)
+    return state
+
+
+def _hash_text(value: str) -> str:
+    return hashlib.sha256((value or "").encode("utf-8")).hexdigest()
 
 
 def get_tool_definition() -> Dict[str, Any]:
     return {
         "name": "authoring__handle_feedback",
         "description": (
-            "Check for user feedback on the proposal document, apply revisions, "
-            "and report what changed. Call this during the revision loop to "
-            "detect resolved comments, user edits, or explicit approval signals."
+            "Poll review artifacts, detect baseline deltas, and mark approval for the "
+            "proposal revision loop."
         ),
         "parameters": {
             "type": "object",
-            "parameters": {
+            "properties": {
                 "doc_type": {
                     "type": "string",
                     "enum": ["google_doc", "markdown"],
-                    "description": "Type of document being reviewed",
+                    "description": "Review artifact type.",
                 },
                 "document_id": {
                     "type": "string",
-                    "description": "Google Doc ID (for google_doc type)",
+                    "description": "Google Docs document ID.",
                 },
                 "file_path": {
                     "type": "string",
-                    "description": (
-                        "Sandbox-relative path to the Markdown file (for markdown type), "
-                        "e.g. output/20260101_Proposal.md"
-                    ),
+                    "description": "Sandbox-relative Markdown path (e.g. output/proposal.md).",
                 },
                 "mode": {
                     "type": "string",
                     "enum": ["poll", "apply", "approve"],
-                    "description": "'poll' to check status, 'apply' to apply changes, 'approve' to finalize",
+                    "description": "poll status, apply revision request, or approve.",
+                },
+                "revision_request": {
+                    "type": "string",
+                    "description": "Plain-language request to apply in mode=apply.",
+                },
+                "current_content": {
+                    "type": "string",
+                    "description": "Current markdown content for apply mode.",
                 },
             },
             "required": ["mode"],
@@ -44,110 +61,103 @@ def get_tool_definition() -> Dict[str, Any]:
 
 
 async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Dict[str, Any]:
-    """Poll for feedback, apply revisions, or mark as approved."""
     mode = arguments.get("mode", "poll")
     doc_type = arguments.get("doc_type", "google_doc")
     document_id = arguments.get("document_id", "")
     file_path = arguments.get("file_path", "")
-
     if mode == "poll":
-        # Check document status by reading it and comparing with tracked revisions
         if doc_type == "google_doc" and document_id:
             return await _poll_google_doc(document_id, visitor)
-        elif doc_type == "markdown" and file_path:
+        if doc_type == "markdown" and file_path:
             return await _poll_markdown(file_path, visitor)
-        else:
-            return {
-                "mode": "poll",
-                "status": "unknown",
-                "message": "Provide document_id (google_doc) or file_path (markdown) to poll.",
-            }
+        return {
+            "mode": "poll",
+            "status": "unknown",
+            "message": "Provide document_id (google_doc) or file_path (markdown) to poll.",
+        }
 
-    elif mode == "apply":
-        # Apply user changes back to the DraftProposal
-        # (The LLM reads the current doc content and updates the draft)
+    if mode == "apply":
+        revision_request = arguments.get("revision_request", "").strip()
+        current_content = arguments.get("current_content", "")
+        if not revision_request:
+            return {
+                "mode": "apply",
+                "status": "needs_input",
+                "message": "revision_request is required for apply mode.",
+            }
         return {
             "mode": "apply",
             "status": "ready",
+            "revision_request": revision_request,
+            "current_content_hash": _hash_text(current_content),
             "message": (
-                "Read the current document content and compare with the draft. "
-                "Apply any user edits back to the proposal data."
+                "Apply revision_request to current_content, update proposal_state, "
+                "then rewrite the current review artifact."
             ),
         }
 
-    elif mode == "approve":
-        # Mark the document as approved for PDF generation
+    if mode == "approve":
+        st = _state(visitor)
+        st["proposal_approved"] = True
         return {
             "mode": "approve",
             "status": "approved",
-            "message": "Document approved. Pass to pdf_generation (content + title + subtitle) for final PDF.",
+            "message": "Document approved. Continue to source-aware PDF generation.",
         }
 
     return {"mode": mode, "status": "unknown"}
 
 
 async def _poll_google_doc(document_id: str, visitor: Any) -> Dict[str, Any]:
-    """Poll a Google Doc for resolved comments and content changes."""
     resolver = getattr(visitor, "action_resolver", None)
     if resolver is None:
-        return {
-            "mode": "poll",
-            "status": "unavailable",
-            "message": "ActionResolver not available",
-        }
+        return {"mode": "poll", "status": "unavailable", "message": "ActionResolver not available"}
 
     action = await resolver.resolve("GoogleDocsAction")
     if action is None:
-        return {
-            "mode": "poll",
-            "status": "unavailable",
-            "message": "GoogleDocsAction not available",
-        }
+        return {"mode": "poll", "status": "unavailable", "message": "GoogleDocsAction not available"}
 
     try:
         doc = await action.read_document(document_id=document_id)
+        comments = await action.list_comments(document_id=document_id)
+        plain_text = doc.get("plain_text", "")
+        doc_hash = _hash_text(plain_text)
+        st = _state(visitor)
+        key = f"doc_hash:{document_id}"
+        baseline_hash = st.get(key)
+        changed = bool(baseline_hash and baseline_hash != doc_hash)
+        st[key] = doc_hash
         return {
             "mode": "poll",
             "status": "reviewing",
             "document_title": doc.get("title"),
             "paragraph_count": len(doc.get("paragraphs", [])),
-            "message": (
-                "Document reviewed. Check if revision markers in comments "
-                "have been resolved. If the user has edited the doc, note the changes "
-                "and apply them to the draft."
-            ),
+            "plain_text": plain_text,
+            "baseline_hash": baseline_hash,
+            "current_hash": doc_hash,
+            "changed_since_baseline": changed,
+            "comments": comments,
+            "resolved_comment_count": len([c for c in comments if c.get("resolved")]),
+            "open_comment_count": len([c for c in comments if not c.get("resolved")]),
+            "message": "Diff against baseline and apply requested changes to draft source.",
         }
     except Exception as e:
-        return {
-            "mode": "poll",
-            "status": "error",
-            "message": f"Could not read document: {e}",
-        }
+        return {"mode": "poll", "status": "error", "message": f"Could not read document: {e}"}
 
 
 async def _poll_markdown(file_path: str, visitor: Any) -> Dict[str, Any]:
-    """Poll a Markdown file in the user sandbox; sidecar is ``<path>.review``."""
     from jvagent.skills.fileinterface import _core
 
     try:
         path = _core.validate_relative_write_path(file_path.strip())
     except ValueError as e:
-        return {
-            "mode": "poll",
-            "status": "invalid_path",
-            "message": f"{e}",
-        }
+        return {"mode": "poll", "status": "invalid_path", "message": f"{e}"}
 
     review_path = f"{path}.review"
-
     try:
-        await _core.read_text_file(visitor, path)
+        content = await _core.read_text_file(visitor, path)
     except FileNotFoundError:
-        return {
-            "mode": "poll",
-            "status": "not_found",
-            "message": f"File not found in sandbox: {path}",
-        }
+        return {"mode": "poll", "status": "not_found", "message": f"File not found in sandbox: {path}"}
 
     review_content = ""
     try:
@@ -155,16 +165,21 @@ async def _poll_markdown(file_path: str, visitor: Any) -> Dict[str, Any]:
     except FileNotFoundError:
         pass
 
-    review_modified = bool(review_content.strip())
+    doc_hash = _hash_text(content)
+    st = _state(visitor)
+    key = f"md_hash:{path}"
+    baseline_hash = st.get(key)
+    changed = bool(baseline_hash and baseline_hash != doc_hash)
+    st[key] = doc_hash
 
     return {
         "mode": "poll",
         "status": "reviewing",
         "file_path": path,
-        "review_sidecar_present": review_modified or bool(review_content),
+        "plain_text": content,
         "review_sidecar_content": review_content,
-        "message": (
-            "Content is in the user sandbox. Read via fileinterface if needed and compare "
-            "with the draft. If the user has made edits, update the proposal accordingly."
-        ),
+        "baseline_hash": baseline_hash,
+        "current_hash": doc_hash,
+        "changed_since_baseline": changed,
+        "message": "Diff against baseline and apply revisions to the draft source.",
     }

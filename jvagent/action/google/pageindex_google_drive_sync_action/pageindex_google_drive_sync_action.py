@@ -142,7 +142,9 @@ _GOOGLE_DRIVE_DOCUMENTS_STATUS_ALLOW = frozenset(
 )
 
 
-def _validate_doc_queues_payload(data: Dict[str, Any], *, label: str) -> Dict[str, List[Any]]:
+def _validate_doc_queues_payload(
+    data: Dict[str, Any], *, label: str
+) -> Dict[str, List[Any]]:
     """Ensure dict has added/modified/removed list keys."""
     for key in ("added", "modified", "removed"):
         if key not in data or not isinstance(data[key], list):

@@ -9,6 +9,7 @@ requires-actions:
 allowed-tools:
   - pricing__extract_parameters
   - pricing__apply_pricing
+  - pricing__build_investment_section
 version: 1
 tags:
   - pricing
@@ -21,8 +22,8 @@ tags:
 1. Read the draft proposal to understand scope, timeline, team needs.
 2. Use `pricing__extract_parameters` to extract structured scope parameters from the transcript and draft.
 3. Use `pricing__apply_pricing` with the extracted parameters and the configured rubric name (default: "standard").
-4. Review the returned PricingAssessment: line items, total, assumptions.
-5. Attach the assessment narrative and table to the draft proposal's Investment section.
+4. Review the returned PricingAssessment: line items, total, assumptions, validity.
+5. Call `pricing__build_investment_section` to deterministically replace `[PRICING PLACEHOLDER]`.
 6. Flag any assumptions or estimates that need client review with `[REVIEW: ...]` markers.
 
 ### Constraints
@@ -31,10 +32,11 @@ tags:
 - If no rubric name is specified, use the PricingAction's active rubric.
 - Do not fabricate hours or rates — the rubric's rate card drives all calculations.
 - If scope parameters are unclear, note assumptions explicitly in the assessment.
+- Keep currency consistent with rubric output and investment table display.
 
 ## Scope
 
-This skill handles all pricing-related work within a proposal. It does NOT write the final pricing section into a document; it produces a structured assessment that the authoring skill inserts.
+This skill handles all pricing-related work within a proposal, including deterministic construction of the Investment section markdown from assessment output.
 
 ## Grounding
 

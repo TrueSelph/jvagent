@@ -24,8 +24,8 @@
 }
 
 % ── Colors ────────────────────────────────────────────
-\definecolor{primary}{HTML}{1a237e}
-\definecolor{accent}{HTML}{0d47a1}
+\definecolor{primary}{HTML}{ {{ brand_primary_color }} }
+\definecolor{accent}{HTML}{ {{ brand_accent_color }} }
 \definecolor{greytext}{HTML}{666666}
 
 % ── Header / Footer ──────────────────────────────────
@@ -63,6 +63,16 @@
 % ── Cover Page ───────────────────────────────────────
 \begin{titlepage}
   \centering
+  {% if brand_logo_path %}
+  \includegraphics[width=0.35\textwidth]{ {{ brand_logo_path }} }
+  \vspace{1cm}
+  {% endif %}
+
+  {% if company_letterhead %}
+  {\small\color{greytext} {{ company_letterhead }} \par}
+  \vspace{0.75cm}
+  {% endif %}
+
   \vspace*{3cm}
 
   {\Huge\bfseries\color{primary} {{ title }} \par}

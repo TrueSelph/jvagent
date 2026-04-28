@@ -263,12 +263,16 @@ async def whatsapp_connection_qr(action_id: str) -> Response:
         raise HTTPException(status_code=404, detail="WhatsApp action not found")
 
     if not wa_action.is_configured():
-        raise HTTPException(status_code=400, detail="WhatsApp is not configured for this action")
+        raise HTTPException(
+            status_code=400, detail="WhatsApp is not configured for this action"
+        )
 
     try:
         wa = await wa_action.api()
     except ValidationError:
-        raise HTTPException(status_code=400, detail="WhatsApp is not available for this action")
+        raise HTTPException(
+            status_code=400, detail="WhatsApp is not available for this action"
+        )
 
     try:
         qr = await wa.qrcode()
@@ -303,12 +307,13 @@ async def whatsapp_connection_page(action_id: str) -> HTMLResponse:
     try:
         wa_action = await get_whatsapp_action(action_id)
     except ResourceNotFoundError:
-        return _wa_error_html(f"WhatsApp action not found: {action_id}", status_code=404)
+        return _wa_error_html(
+            f"WhatsApp action not found: {action_id}", status_code=404
+        )
 
     if not wa_action.is_configured():
-        err = (
-            "WhatsApp is not configured for this action. "
-            + "; ".join(wa_action._config_issues())
+        err = "WhatsApp is not configured for this action. " + "; ".join(
+            wa_action._config_issues()
         )
         return _wa_error_html(err, status_code=400)
 

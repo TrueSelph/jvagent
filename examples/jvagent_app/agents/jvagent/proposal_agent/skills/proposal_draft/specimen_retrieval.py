@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def _read_file(path: Path) -> Optional[str]:
@@ -17,24 +16,25 @@ def _read_file(path: Path) -> Optional[str]:
 
 def _discover_specimens(corpus_dir: Path) -> List[Dict[str, Any]]:
     """Discover specimen proposal files in the corpus directory."""
-    specimens = []
+    specimens: List[Dict[str, Any]] = []
     if not corpus_dir.exists():
         return specimens
 
-    # Walk all .md files excluding template.md and guide.md
     for fpath in corpus_dir.rglob("*.md"):
         rel = fpath.relative_to(corpus_dir)
         if rel.name in ("template.md", "guide.md", "README.md"):
             continue
+        text = _read_file(fpath) or ""
         specimens.append(
             {
                 "path": str(fpath),
                 "filename": fpath.name,
                 "relative_path": str(rel),
                 "parent_dir": str(rel.parent) if rel.parent != "." else "",
+                "content": text,
+                "char_count": len(text),
             }
         )
-
     return specimens
 
 
@@ -45,6 +45,36 @@ def _read_corpus_index(corpus_dir: Path) -> str:
     if content:
         return content
     return "# Specimen Corpus\n\n(No README.md index found. Discovered files are listed below.)"
+
+
+def _rank_specimens(
+    specimens: List[Dict[str, Any]],
+    client_tags: List[str],
+    max_specimens: int,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    tags = [t.lower().strip() for t in client_tags if str(t).strip()]
+
+    scored: List[Tuple[int, Dict[str, Any]]] = []
+    for sp in specimens:
+        haystack = " ".join(
+            [
+                str(sp.get("filename", "")).lower(),
+                str(sp.get("relative_path", "")).lower(),
+                str(sp.get("parent_dir", "")).lower(),
+            ]
+        )
+        score = 0
+        for tag in tags:
+            if tag in haystack:
+                score += 2
+            if tag in str(sp.get("content", "")).lower():
+                score += 1
+        scored.append((score, sp))
+
+    scored.sort(key=lambda item: (item[0], item[1].get("char_count", 0)), reverse=True)
+    selected = [sp for _, sp in scored[:max_specimens]]
+    remainder = [sp for _, sp in scored[max_specimens:]]
+    return selected, remainder
 
 
 def get_tool_definition() -> Dict[str, Any]:
@@ -119,24 +149,27 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Dict[str, Any]:
 
     # Discover specimens (all .md files except template, guide, README)
     all_specimens = _discover_specimens(corpus_dir)
+    selected, remaining = _rank_specimens(all_specimens, client_tags, max_specimens)
 
-    # If the corpus has a README index, prefer it for selection context
-    # The LLM will use the index + tags to select relevant specimens
-    # For simplicity, return the discovered specimens and let the LLM
-    # select the most relevant ones based on the index and filenames
     return {
         "template": template,
         "guide": guide,
         "corpus_index": corpus_index,
-        "specimens": all_specimens[:max_specimens]
-        if len(all_specimens) <= max_specimens
-        else all_specimens,
+        "specimens": selected,
+        "selected_specimen_contents": [sp.get("content", "") for sp in selected],
+        "remaining_specimens": [
+            {
+                "filename": sp.get("filename"),
+                "relative_path": sp.get("relative_path"),
+            }
+            for sp in remaining
+        ],
         "available_count": len(all_specimens),
+        "selected_count": len(selected),
+        "selection_tags": client_tags,
         "specimens_path": str(corpus_dir),
         "instruction": (
-            "Review the template, guide, and corpus index above. "
-            "Select the most relevant specimens by filename based on client tags. "
-            "If the corpus has more specimens than returned, note which ones "
-            "you'd like to load by calling this tool again with specific tags."
+            "Use selected_specimen_contents as direct writing references. "
+            "Treat specimens as style guidance only; ground facts in the user transcript."
         ),
     }

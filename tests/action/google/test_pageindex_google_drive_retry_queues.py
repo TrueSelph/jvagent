@@ -47,7 +47,9 @@ def test_sync_drive_node_skips_while_active_document_set() -> None:
 
 
 @pytest.mark.asyncio
-async def test_success_processing_failed_queue_keeps_failed_status_when_backlog_remains() -> None:
+async def test_success_processing_failed_queue_keeps_failed_status_when_backlog_remains() -> (
+    None
+):
     file_a = {
         "name": "a.pdf",
         "id": "file-a",

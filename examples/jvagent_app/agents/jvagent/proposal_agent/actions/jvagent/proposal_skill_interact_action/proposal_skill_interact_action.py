@@ -53,6 +53,36 @@ class ProposalSkillInteractAction(SkillInteractAction):
         description="Output directory for generated artifacts (e.g. Markdown files, PDFs)",
     )
 
+    google_docs_template_id: Optional[str] = attribute(
+        default=None,
+        description="Optional Google Docs template ID used for branded proposal authoring",
+    )
+
+    drive_output_folder_id: Optional[str] = attribute(
+        default=None,
+        description="Optional Google Drive folder for proposal artifacts",
+    )
+
+    brand_logo_path: Optional[str] = attribute(
+        default=None,
+        description="Optional path/URL to brand logo for rendered outputs",
+    )
+
+    brand_primary_color: str = attribute(
+        default="#1a237e",
+        description="Primary brand color for proposal rendering",
+    )
+
+    brand_accent_color: str = attribute(
+        default="#0d47a1",
+        description="Accent brand color for proposal rendering",
+    )
+
+    company_letterhead: Optional[str] = attribute(
+        default=None,
+        description="Optional letterhead text block for cover pages",
+    )
+
     latex_command: str = attribute(
         default="xelatex",
         description=(

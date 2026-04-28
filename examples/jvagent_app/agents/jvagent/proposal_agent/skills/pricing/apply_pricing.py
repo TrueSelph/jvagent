@@ -66,11 +66,15 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Dict[str, Any]:
 
     # The LLM should generate the narrative in a subsequent step.
     # Return the computed assessment for the LLM to review and enhance.
+    rubric = await action.get_rubric(rubric_name)
+    base_rates = rubric.base_rates if rubric else {}
     return {
         "rubric_applied": rubric_name,
+        "currency": "USD",
+        "base_rates": base_rates,
         "assessment": assessment,
         "next_step": (
-            "Review the assessment above, then write the pricing narrative "
-            "and attach the assessment to the draft proposal's Investment section."
+            "Run pricing__build_investment_section to deterministically replace "
+            "[PRICING PLACEHOLDER] in the proposal markdown/state."
         ),
     }

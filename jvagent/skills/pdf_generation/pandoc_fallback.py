@@ -19,8 +19,8 @@ from jvagent.skills.pdf_generation._sandbox_output import (
 )
 
 
-def _html_styles() -> str:
-    return """
+def _html_styles(primary_color: str, accent_color: str) -> str:
+    css_template = """
 @page {
   size: A4;
   margin: 2.5cm 2.5cm 3cm 2.5cm;
@@ -47,7 +47,7 @@ body {
 
 .cover-page h1 {
   font-size: 28pt;
-  color: #1a237e;
+  color: __PRIMARY_COLOR__;
   margin-bottom: 1.5cm;
 }
 
@@ -77,8 +77,8 @@ body {
 
 h1 {
   font-size: 20pt;
-  color: #1a237e;
-  border-bottom: 1px solid #1a237e;
+  color: __PRIMARY_COLOR__;
+  border-bottom: 1px solid __PRIMARY_COLOR__;
   padding-bottom: 4pt;
   page-break-before: always;
 }
@@ -89,7 +89,7 @@ h1:first-of-type {
 
 h2 {
   font-size: 16pt;
-  color: #0d47a1;
+  color: __ACCENT_COLOR__;
   margin-top: 1.2em;
 }
 
@@ -106,7 +106,7 @@ table {
 }
 
 table th {
-  background-color: #1a237e;
+  background-color: __PRIMARY_COLOR__;
   color: white;
   padding: 8px 12px;
   text-align: left;
@@ -122,7 +122,7 @@ table tr:nth-child(even) td {
 }
 
 blockquote {
-  border-left: 3px solid #1a237e;
+  border-left: 3px solid __PRIMARY_COLOR__;
   margin: 1em 0;
   padding: 0.5em 1em;
   background: #f8f9ff;
@@ -147,6 +147,9 @@ blockquote {
   color: #856404;
 }
 """
+    return css_template.replace("__PRIMARY_COLOR__", primary_color).replace(
+        "__ACCENT_COLOR__", accent_color
+    )
 
 
 def get_tool_definition() -> Dict[str, Any]:
@@ -195,6 +198,22 @@ def get_tool_definition() -> Dict[str, Any]:
                 "output_basename": {
                     "type": "string",
                     "description": "Optional base filename for Drive upload (.pdf added if needed).",
+                },
+                "brand_primary_color": {
+                    "type": "string",
+                    "description": "Primary brand hex color for headings/tables.",
+                },
+                "brand_accent_color": {
+                    "type": "string",
+                    "description": "Accent brand hex color for subsection headings.",
+                },
+                "brand_logo_path": {
+                    "type": "string",
+                    "description": "Optional logo URL or path for cover branding.",
+                },
+                "company_letterhead": {
+                    "type": "string",
+                    "description": "Optional letterhead text for the cover page.",
                 },
                 "body": {
                     "type": "string",
@@ -248,13 +267,36 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Dict[str, Any]:
             ),
         }
 
-    params = parse_document_pdf_arguments(arguments)
+    resolved_args = dict(arguments)
+    action = getattr(visitor, "_current_action", None)
+    for key in (
+        "brand_primary_color",
+        "brand_accent_color",
+        "brand_logo_path",
+        "company_letterhead",
+    ):
+        if not resolved_args.get(key) and action is not None:
+            value = getattr(action, key, None)
+            if value:
+                resolved_args[key] = value
+
+    params = parse_document_pdf_arguments(resolved_args)
     content = params.content
 
     cover_parts: list = [
         '<div class="cover-page">',
         f"    <h1>{_html_escape(params.title)}</h1>",
     ]
+    if params.brand_logo_path:
+        cover_parts.append(
+            '    <div style="margin-bottom: 1em;"><img src="{}" style="max-height: 120px; max-width: 280px;" /></div>'.format(
+                _html_escape(params.brand_logo_path)
+            )
+        )
+    if params.company_letterhead:
+        cover_parts.append(
+            f'    <div class="author-line">{_html_escape(params.company_letterhead)}</div>'
+        )
     if params.subtitle:
         text = f"{params.prepared_for_label} {params.subtitle}"
         cover_parts.append(f'    <div class="subtitle-line">{_html_escape(text)}</div>')
@@ -276,7 +318,7 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Dict[str, Any]:
 <head>
     <meta charset="utf-8">
     <title>{_html_escape(params.title)}</title>
-    <style>{_html_styles()}</style>
+    <style>{_html_styles(params.brand_primary_color, params.brand_accent_color)}</style>
 </head>
 <body>
     {cover_html}

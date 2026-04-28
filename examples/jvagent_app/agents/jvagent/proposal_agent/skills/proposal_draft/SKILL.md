@@ -2,13 +2,14 @@
 name: proposal_draft
 description: >
   Generates a structured, persuasive, and professional proposal draft
-  from a client meeting transcript or written RFP context. Uses a
-  Markdown specimen corpus (template.md, guide.md, past proposals)
-  for structure and tone guidance. Revision markers are inserted
-  for uncertain claims and items needing client review.
+  from a client transcript or written RFP context. Uses a specimen
+  corpus (template.md, guide.md, past proposals) for structure and tone
+  guidance. Returns rendered markdown plus a structured proposal_state
+  object so downstream pricing/authoring is deterministic.
 allowed-tools:
   - proposal_draft__retrieve_specimens
   - proposal_draft__generate_draft
+  - proposal_draft__quality_review
 version: 1
 tags:
   - proposal
@@ -20,23 +21,26 @@ tags:
 
 1. Retrieve specimen documents using `proposal_draft__retrieve_specimens`.
    - Always loads `template.md` (structural skeleton) and `guide.md` (writing principles).
-   - Selects up to 3 relevant past proposals from the corpus by tag-matching client context.
+   - Selects up to 3 relevant past proposals by tag matching and returns full text content.
 2. Analyze the transcript/context to identify: client, needs, scope, timeline, decision-makers, budget.
 3. Call `proposal_draft__generate_draft` with the analysis, specimens, template, and guide.
-4. Review the generated draft for completeness. Flag uncertain items with `[REVIEW: ...]` markers.
-5. Return the structured DraftProposal summary.
+4. Call `proposal_draft__quality_review` on the generated markdown.
+5. If quality checks fail, revise and rerun before handing off to pricing.
+6. Return the structured proposal_state + rendered markdown package.
 
 ### Required Structure (from template.md)
 
-Every proposal must follow this section order:
+Every proposal should include this section order:
 1. Executive Summary
-2. Understanding of Your Needs (restate + validate from transcript)
-3. Our Approach (technical/strategic)
-4. Scope of Work (deliverables, phases, out-of-scope)
-5. Timeline
-6. Investment (placeholder — pricing skill fills this)
-7. Why Us / Differentiators
+2. Understanding of Your Needs
+3. Core Deliverables, Hours, Timeframes & Cost
+4. Recommended Operational Costs
+5. Technical Approach & Rationale
+6. Client Responsibilities
+7. Value Summary
 8. Next Steps
+9. Requirements Analysis Reference (Annex)
+10. Investment (placeholder — pricing skill fills this)
 
 ### Writing Guidelines (from guide.md)
 
@@ -45,10 +49,11 @@ Every proposal must follow this section order:
 - Quantify wherever possible.
 - For uncertain claims or dates, use `[REVIEW: ...]` markers.
 - Avoid buzzwords: no "synergy," "leverage," "best-in-breed."
+- Maintain the quality bar from the IPED specimen: explicit metadata, validity/version, detailed tables, and annex traceability.
 
 ## Scope
 
-This skill produces only the draft text. Pricing is handled by the pricing skill, document authoring by the authoring skill. This skill's output is a DraftProposal data structure, not a formatted document.
+This skill produces rendered markdown and structured `proposal_state`. Pricing is handled by the pricing skill, and document output by the authoring skill.
 
 ## Grounding
 

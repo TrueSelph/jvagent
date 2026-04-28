@@ -87,3 +87,45 @@ async def docs_batch_update(
     action = await _require_google_docs_action(action_id)
     result = await action.batch_update(document_id=document_id, requests=requests)
     return {"success": True, "updated": result}
+
+
+@endpoint(
+    "/actions/{action_id}/docs/copy-template",
+    methods=["POST"],
+    auth=True,
+    tags=["Google Docs Action"],
+    summary="Copy a Google Docs template",
+)
+async def docs_copy_template(
+    action_id: str,
+    template_document_id: str,
+    title: str,
+    folder_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    action = await _require_google_docs_action(action_id)
+    copied = await action.copy_template_document(
+        template_document_id=template_document_id,
+        title=title,
+        folder_id=folder_id,
+    )
+    return {"success": True, "document": copied}
+
+
+@endpoint(
+    "/actions/{action_id}/docs/export-pdf",
+    methods=["GET"],
+    auth=True,
+    tags=["Google Docs Action"],
+    summary="Export Google Doc as PDF bytes",
+)
+async def docs_export_pdf(
+    action_id: str,
+    document_id: str,
+) -> Dict[str, Any]:
+    action = await _require_google_docs_action(action_id)
+    pdf_bytes = await action.export_pdf(document_id=document_id)
+    return {
+        "success": True,
+        "document_id": document_id,
+        "pdf_size_bytes": len(pdf_bytes),
+    }

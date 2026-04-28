@@ -52,8 +52,11 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Dict[str, Any]:
     the skill loop's context to persist revision state."""
     action = arguments.get("action", "list")
 
-    # Access the visitor's skill state for persistence across loop iterations
-    skill_state = getattr(visitor, "skill_state", None) or {}
+    # Access the shared skill state for persistence across loop iterations
+    skill_state = getattr(visitor, "_skill_state", None)
+    if skill_state is None:
+        skill_state = {}
+        setattr(visitor, "_skill_state", skill_state)
 
     if action == "add":
         new_markers = arguments.get("markers", [])

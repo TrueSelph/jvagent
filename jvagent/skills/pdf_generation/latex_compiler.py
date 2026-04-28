@@ -179,6 +179,22 @@ def get_tool_definition() -> Dict[str, Any]:
                         "Q1_Report.pdf). If omitted, a name is derived from title or subtitle."
                     ),
                 },
+                "brand_primary_color": {
+                    "type": "string",
+                    "description": "Primary brand hex color for headings and table accents.",
+                },
+                "brand_accent_color": {
+                    "type": "string",
+                    "description": "Accent brand hex color for subsection titles and links.",
+                },
+                "brand_logo_path": {
+                    "type": "string",
+                    "description": "Optional logo image path on host for cover/header branding.",
+                },
+                "company_letterhead": {
+                    "type": "string",
+                    "description": "Optional letterhead text shown on the cover.",
+                },
                 "output_dir": {
                     "type": "string",
                     "description": (
@@ -218,7 +234,20 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Dict[str, Any]:
             "error": "Missing `content` (or legacy `body`): provide the document body text.",
         }
 
-    params = parse_document_pdf_arguments(arguments)
+    resolved_args = dict(arguments)
+    action = getattr(visitor, "_current_action", None)
+    for key in (
+        "brand_primary_color",
+        "brand_accent_color",
+        "brand_logo_path",
+        "company_letterhead",
+    ):
+        if not resolved_args.get(key) and action is not None:
+            value = getattr(action, key, None)
+            if value:
+                resolved_args[key] = value
+
+    params = parse_document_pdf_arguments(resolved_args)
 
     latex_cmd = _find_tex_engine()
     if latex_cmd is None:
@@ -244,6 +273,15 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Dict[str, Any]:
             "error": f"LaTeX template not found at {template_path}",
         }
 
+    logo_abs_path = ""
+    if params.brand_logo_path:
+        try:
+            logo_path = Path(params.brand_logo_path).expanduser()
+            if logo_path.exists():
+                logo_abs_path = str(logo_path.resolve())
+        except Exception:
+            logo_abs_path = ""
+
     variables: Dict[str, Any] = {
         "title": _tex_escape(params.title),
         "subtitle": _tex_escape(params.subtitle) if params.subtitle else "",
@@ -251,6 +289,12 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Dict[str, Any]:
         "author": _tex_escape(params.author) if params.author else "",
         "prepared_for_label": _tex_escape(params.prepared_for_label),
         "presented_by_label": _tex_escape(params.presented_by_label),
+        "brand_primary_color": params.brand_primary_color.strip().lstrip("#"),
+        "brand_accent_color": params.brand_accent_color.strip().lstrip("#"),
+        "brand_logo_path": _tex_escape(logo_abs_path) if logo_abs_path else "",
+        "company_letterhead": (
+            _tex_escape(params.company_letterhead) if params.company_letterhead else ""
+        ),
         "mark_confidential": params.mark_confidential,
         "body": latex_body,
     }
