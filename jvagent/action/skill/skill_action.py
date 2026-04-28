@@ -992,6 +992,9 @@ class SkillAction:
 
     async def _emit_task_status(self, *, ctx: SkillRunContext, message: str) -> None:
         """Emit a concise user-visible status update."""
+        if not ctx.config.stream_tool_progress:
+            return
+
         await self._emit(
             ctx=ctx,
             content=message,
