@@ -23,12 +23,13 @@ import json
 import logging
 import mimetypes
 import os
+import re
 import tempfile
 import uuid
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import httpx
 from fastapi import Query, Request
@@ -198,6 +199,107 @@ def _filename_from_url(url: str) -> str:
     path = urlparse(url).path
     name = unquote(Path(path).name)
     return name if name else "download"
+
+
+def _normalize_google_workspace_file_url(
+    url: str,
+) -> Tuple[str, Optional[str], Optional[str]]:
+    """Rewrite Docs/Sheets/Slides *viewer* URLs to an export URL.
+
+    Viewer links (e.g. ``/document/d/<id>/edit`` or ``/document/u/0/d/<id>/edit``) return HTML
+    without a useful file extension. Export links return binary office formats that match
+    ``ALLOWED_EXTENSIONS``.
+
+    **Note:** The file must be reachable without Google OAuth from the server (for example,
+    "Anyone with the link can view"). Otherwise the download may return 403 or HTML.
+
+    Returns ``(fetch_url, export_ext, doc_id)``. When no rewrite applies, returns
+    ``(original_url, None, None)``. ``export_ext`` is a dotted suffix (``.docx``, etc.).
+    ``doc_id`` is used only as a filename fallback when the download has no usable name.
+    """
+    raw = (url or "").strip()
+    if not raw.startswith(("http://", "https://")):
+        return raw, None, None
+    try:
+        parsed = urlparse(raw)
+    except ValueError:
+        return raw, None, None
+    host = (parsed.hostname or "").lower()
+    if host not in ("docs.google.com", "www.docs.google.com"):
+        return raw, None, None
+    path = parsed.path or ""
+    segments = [p for p in path.split("/") if p]
+    if segments and segments[-1] == "export":
+        return raw, None, None
+    # Signed-in users often get /document/u/0/d/<id>/... (or /u/1/, etc.); plain share links omit /u/N/.
+    m = re.search(
+        r"/(document|spreadsheets|presentation)(?:/u/\d+)?/d/([a-zA-Z0-9_-]+)",
+        path,
+    )
+    if not m:
+        return raw, None, None
+    kind, doc_id = m.group(1), m.group(2)
+    if kind == "document":
+        export_fmt, ext = "docx", ".docx"
+    elif kind == "spreadsheets":
+        export_fmt, ext = "xlsx", ".xlsx"
+    else:
+        export_fmt, ext = "pptx", ".pptx"
+    fetch_url = (
+        f"{parsed.scheme}://{parsed.netloc}/"
+        f"{kind}/d/{doc_id}/export?format={quote(export_fmt)}"
+    )
+    return fetch_url, ext, doc_id
+
+
+def _normalize_google_drive_file_url(url: str) -> Optional[str]:
+    """Rewrite ``drive.google.com`` file links to the direct download endpoint.
+
+    Paths like ``/file/d/<id>/view`` return HTML. ``/uc?export=download&id=<id>`` returns file
+    bytes when the item is shared such that the server can read it without Google sign-in.
+
+    Returns the download URL, or ``None`` when no rewrite applies (including when the URL is
+    already a ``/uc`` download request).
+    """
+    raw = (url or "").strip()
+    if not raw.startswith(("http://", "https://")):
+        return None
+    try:
+        parsed = urlparse(raw)
+    except ValueError:
+        return None
+    host = (parsed.hostname or "").lower()
+    if host not in ("drive.google.com", "www.drive.google.com"):
+        return None
+    path_noslash = (parsed.path or "").rstrip("/")
+    qs = parse_qs(parsed.query)
+    if path_noslash == "/uc" or path_noslash.endswith("/uc"):
+        export = (qs.get("export") or [None])[0]
+        if export == "download" and qs.get("id"):
+            return None
+    file_id: Optional[str] = None
+    m = re.search(r"/file/d/([a-zA-Z0-9_-]+)", parsed.path or "")
+    if m:
+        file_id = m.group(1)
+    if not file_id and path_noslash == "/open":
+        ids = qs.get("id")
+        if ids:
+            file_id = ids[0]
+    if not file_id:
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}/uc?export=download&id={quote(file_id)}"
+
+
+def _safe_ingest_filename_stem(stem: str) -> str:
+    """Make a single path segment usable as the base name for an ingested file."""
+    s = (stem or "").strip()
+    for sep in ("/", "\\"):
+        s = s.replace(sep, "_")
+    s = s.replace("\x00", "")
+    s = s.strip().strip(".")
+    if not s:
+        s = "document"
+    return s[:200]
 
 
 def _is_pageindex_graph_artifact_url(url: str) -> bool:
@@ -654,8 +756,8 @@ async def ingest_document_endpoint(
     | Field | Type | Required | Description |
     |-------|------|----------|-------------|
     | file | File | One of file / file_url | `.pdf`, `.md`, `.markdown`, `.txt`, or office (`.docx`, `.doc`, `.xls`, `.xlsx`, `.ppt`, `.pptx`) |
-    | file_url | string | One of file / file_url | HTTPS/HTTP URL to a **document** (pdf, md, …), or a **jvforge** graph URL ``.../v1/artifacts/{job_id}`` (JSON export); server downloads and ingests or imports the graph |
-    | doc_name | string | No | Override document identifier (default: derived from filename) |
+    | file_url | string | One of file / file_url | HTTPS/HTTP URL to a **document** (pdf, md, …), or a **jvforge** graph URL ``.../v1/artifacts/{job_id}`` (JSON export); server downloads and ingests or imports the graph. Google **Docs / Sheets / Slides** *sharing* links (``.../document/d/<id>/edit`` etc.) are rewritten to native exports (docx/xlsx/pptx). **Drive** ``/file/d/<id>/view`` (and ``/open?id=``) links are rewritten to a direct download URL. Shared content must be fetchable without signing in from the server. |
+    | doc_name | string | No | Document identifier (default: derived from filename). For Google Docs/Sheets/Slides ``file_url`` ingests, when set, this value is also used as the downloaded file’s base name (with the correct extension) instead of the Drive id or export filename. |
     | doc_description | string | No | Human-readable document description |
     | doc_url | string | No | Source URL for reference citations (default when using file_url: the same download URL) |
     | if_add_node_summary | string | No | "yes" or "no" – generate LLM summaries per node (default: from agent's PageIndex config) |
@@ -766,7 +868,26 @@ async def ingest_document_endpoint(
             }
 
         if file_url:
-            dl_content, fname_hint, ct = await _fetch_url_bytes_capped(file_url)
+            fetch_url, google_ext, google_doc_id = _normalize_google_workspace_file_url(
+                file_url
+            )
+            if google_ext is None and google_doc_id is None:
+                drive_fetch = _normalize_google_drive_file_url(file_url)
+                if drive_fetch:
+                    fetch_url = drive_fetch
+            dl_content, fname_hint, ct = await _fetch_url_bytes_capped(fetch_url)
+            if google_ext:
+                name_from_form = (doc_name or "").strip()
+                cd_ok = Path(fname_hint).suffix.lower() in ALLOWED_EXTENSIONS
+                if name_from_form:
+                    fname_hint = (
+                        f"{_safe_ingest_filename_stem(name_from_form)}{google_ext}"
+                    )
+                elif not cd_ok:
+                    if google_doc_id:
+                        fname_hint = f"{google_doc_id}{google_ext}"
+                    else:
+                        fname_hint = f"download{google_ext}"
             resolved_name = _resolve_ingest_filename(fname_hint, ct)
             ext = Path(resolved_name).suffix.lower()
             staged_path = await _save_pageindex_staging(
