@@ -43,6 +43,20 @@ logger = logging.getLogger(__name__)
 _FOLDER_MIME = "application/vnd.google-apps.folder"
 
 
+def _drive_resolve_docling_ocr(
+    docling_ocr_engine: Optional[str],
+    ocr: bool,
+) -> tuple[bool, Optional[str]]:
+    """Match PageIndex multipart semantics for Drive ingest."""
+    raw = (docling_ocr_engine or "").strip()
+    if raw:
+        de = raw.lower()
+        if de in ("none", "off", "no", "false", "0"):
+            return False, None
+        return True, "rapidocr"
+    return bool(ocr), None
+
+
 def _merge_disable_ingestion_from_old(
     old_files: List[Dict], new_files: List[Dict]
 ) -> None:
@@ -98,6 +112,53 @@ def _queue_item_file_id(item: Any, queue_key: str) -> str:
     if "new" in item and isinstance(item.get("new"), dict):
         return str(item.get("new", {}).get("id", item.get("id", "")))
     return str(item.get("id", ""))
+
+
+def _find_file_dict_in_tree(
+    items: List[Dict[str, Any]], file_id: str
+) -> Optional[Dict[str, Any]]:
+    """Return the file dict for ``file_id`` (non-folder) in a nested Drive ``files`` tree."""
+    fid = str(file_id)
+    for it in items:
+        if str(it.get("id")) == fid:
+            if it.get("mimeType") == _FOLDER_MIME:
+                nested = it.get("files")
+                if nested:
+                    found = _find_file_dict_in_tree(nested, fid)
+                    if found is not None:
+                        return found
+                continue
+            return it
+        nested = it.get("files")
+        if nested:
+            found = _find_file_dict_in_tree(nested, fid)
+            if found is not None:
+                return found
+    return None
+
+
+def _extract_and_prepend_queue_item(doc_queues: Dict[str, Any], file_id: str) -> bool:
+    """Move the first queue entry matching ``file_id`` to the front of its bucket."""
+    fid = str(file_id)
+    for key in ("added", "modified", "removed"):
+        lst = list(doc_queues.get(key) or [])
+        for i, item in enumerate(lst):
+            if _queue_item_file_id(item, key) == fid:
+                found = lst.pop(i)
+                doc_queues[key] = [found] + lst
+                return True
+    return False
+
+
+def _strip_file_id_from_doc_queues(doc_queues: Dict[str, Any], file_id: str) -> None:
+    """Remove every queue entry whose file id matches ``file_id``."""
+    fid = str(file_id)
+    for key in ("added", "modified", "removed"):
+        doc_queues[key] = [
+            x
+            for x in (doc_queues.get(key) or [])
+            if _queue_item_file_id(x, key) != fid
+        ]
 
 
 def _filter_queue_for_disabled(
@@ -299,6 +360,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         source: str = "ingesting_documents",
         convert_to_markdown: bool = False,
         ocr: bool = False,
+        docling_ocr_engine: Optional[str] = None,
+        normalize_bold_headings: bool = False,
     ) -> Dict[str, Any]:
         """Process one document (added or modified). Sets active_document, ingests, clears on completion.
 
@@ -351,7 +414,12 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
 
             async def _do_ingest() -> Dict[str, Any]:
                 file_bytes = await google_drive_action.get_media(file_id=file_id)
-                forge_base = get_jvagent_jvforge_base_url()
+                forge_base = (get_jvagent_jvforge_base_url() or "").strip()
+                if normalize_bold_headings and not forge_base:
+                    raise ValidationError(
+                        "normalize_bold_headings requires JVAGENT_JVFORGE_BASE_URL "
+                        "(bold-line normalization runs on jvforge only)."
+                    )
                 if forge_base:
                     summary_for_forge = await _if_add_node_summary_for_jvforge(
                         agent_id, node_summary
@@ -376,6 +444,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                             doc_url=doc_url or None,
                             convert_to_markdown=convert_to_markdown,
                             ocr=ocr,
+                            docling_ocr_engine=docling_ocr_engine,
+                            normalize_bold_headings=normalize_bold_headings,
                             llm_webhook_url=llm_wh_url,
                             emergency=False,
                         )
@@ -398,6 +468,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                         doc_url=doc_url or None,
                         convert_to_markdown=convert_to_markdown,
                         ocr=ocr,
+                        docling_ocr_engine=docling_ocr_engine,
+                        normalize_bold_headings=normalize_bold_headings,
                         llm_webhook_url=llm_wh_url,
                     )
                     return {"doc_name": doc_name}
@@ -414,6 +486,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     cancel_event=cancel_event,
                     convert_to_markdown=convert_to_markdown,
                     ocr=ocr,
+                    docling_ocr_engine=docling_ocr_engine,
                 )
                 return {"doc_name": doc_name}
 
@@ -518,6 +591,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         retry_failed_documents: bool = False,
         convert_to_markdown: bool = False,
         ocr: bool = False,
+        docling_ocr_engine: Optional[str] = None,
+        normalize_bold_headings: bool = False,
     ) -> dict:
         """Recursively extract and ingest PDF documents from Google Drive folders.
 
@@ -570,6 +645,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 page_index_action=page_index_action,
                 convert_to_markdown=convert_to_markdown,
                 ocr=ocr,
+                docling_ocr_engine=docling_ocr_engine,
+                normalize_bold_headings=normalize_bold_headings,
             )
 
     async def _ingest_documents_from_google_drive_inner(
@@ -582,8 +659,11 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         page_index_action: Any,
         convert_to_markdown: bool = False,
         ocr: bool = False,
+        docling_ocr_engine: Optional[str] = None,
+        normalize_bold_headings: bool = False,
     ) -> dict:
         """Inner ingestion logic (called with ingestion lock held)."""
+        ocr_eff, docling_eff = _drive_resolve_docling_ocr(docling_ocr_engine, ocr)
         if get_jvagent_jvforge_base_url():
             initialize_pageindex_database(app_id=await _get_app_id_from_node())
         logger.info(
@@ -643,16 +723,24 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     for key in google_drive_documents_node.ingesting_documents:
                         if key in ingesting_documents:
                             existing_items = {
-                                item["id"]: idx
+                                _queue_item_file_id(item, key): idx
                                 for idx, item in enumerate(
-                                    google_drive_documents_node.ingesting_documents[key]
-                                )
-                            }
-                            for item in ingesting_documents[key]:
-                                if item["id"] in existing_items:
                                     google_drive_documents_node.ingesting_documents[
                                         key
-                                    ][existing_items[item["id"]]] = item
+                                    ]
+                                )
+                                if _queue_item_file_id(item, key)
+                            }
+                            for item in ingesting_documents[key]:
+                                fid = _queue_item_file_id(item, key)
+                                if not fid:
+                                    google_drive_documents_node.ingesting_documents[
+                                        key
+                                    ].append(item)
+                                elif fid in existing_items:
+                                    google_drive_documents_node.ingesting_documents[
+                                        key
+                                    ][existing_items[fid]] = item
                                 else:
                                     google_drive_documents_node.ingesting_documents[
                                         key
@@ -754,7 +842,9 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     page_index_action=page_index_action,
                     source=ingest_source,
                     convert_to_markdown=convert_to_markdown,
-                    ocr=ocr,
+                    ocr=ocr_eff,
+                    docling_ocr_engine=docling_eff,
+                    normalize_bold_headings=normalize_bold_headings,
                 )
                 if result["success"] and not result.get("skipped"):
                     document_ingested["added"].append(result["doc_name"])
@@ -787,7 +877,9 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     old_file=old_file,
                     source=ingest_source,
                     convert_to_markdown=convert_to_markdown,
-                    ocr=ocr,
+                    ocr=ocr_eff,
+                    docling_ocr_engine=docling_eff,
+                    normalize_bold_headings=normalize_bold_headings,
                 )
                 if result["success"] and not result.get("skipped"):
                     document_ingested["updated"].append(result["doc_name"])
@@ -962,6 +1054,105 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 await node.delete()
                 deleted.append(str(node.id))
         return deleted
+
+    async def prioritize_google_drive_file_for_ingest(
+        self, folder_id: str, file_id: str
+    ) -> Dict[str, Any]:
+        """Move a file to the front of its ingest or failed bucket, or enqueue it for re-ingest."""
+        google_drive_documents_node = await self.node(
+            node="GoogleDriveDocuments", folder_id=folder_id
+        )
+        if not google_drive_documents_node:
+            raise ValidationError(
+                message=f"No GoogleDriveDocuments node for folder_id={folder_id}",
+                details={"folder_id": folder_id},
+            )
+
+        tree_file = _find_file_dict_in_tree(
+            list(google_drive_documents_node.files or []), file_id
+        )
+        if tree_file and tree_file.get("disable_ingestion"):
+            raise ValidationError(
+                message="Cannot prioritize a file with Skip ingest enabled",
+                details={"folder_id": folder_id, "file_id": file_id},
+            )
+
+        prioritized_in: Optional[str] = None
+        if _extract_and_prepend_queue_item(
+            google_drive_documents_node.ingesting_documents, file_id
+        ):
+            prioritized_in = "ingesting"
+        elif _extract_and_prepend_queue_item(
+            google_drive_documents_node.failed_documents, file_id
+        ):
+            prioritized_in = "failed"
+        else:
+            if not tree_file:
+                raise ValidationError(
+                    message=f"File id not found under folder: {file_id}",
+                    details={"folder_id": folder_id, "file_id": file_id},
+                )
+            if not is_drive_file_pageindex_ingestible(
+                str(tree_file.get("name") or ""),
+                str(tree_file.get("mimeType") or ""),
+            ):
+                raise ValidationError(
+                    message="File type is not supported for PageIndex ingestion",
+                    details={"folder_id": folder_id, "file_id": file_id},
+                )
+            mod = list(google_drive_documents_node.ingesting_documents.get("modified") or [])
+            google_drive_documents_node.ingesting_documents["modified"] = [
+                {"new": copy.deepcopy(tree_file), "old": None},
+            ] + mod
+            prioritized_in = "enqueued"
+
+        filter_drive_doc_queues_for_ingestible(
+            google_drive_documents_node.ingesting_documents
+        )
+        filter_drive_doc_queues_for_ingestible(
+            google_drive_documents_node.failed_documents
+        )
+        disabled = _disabled_file_ids(google_drive_documents_node.files)
+        _filter_doc_queues_for_disabled(
+            google_drive_documents_node.ingesting_documents, disabled
+        )
+        _filter_doc_queues_for_disabled(
+            google_drive_documents_node.failed_documents, disabled
+        )
+        _sync_drive_node_status_from_queues(google_drive_documents_node)
+        await google_drive_documents_node.save()
+        return {
+            "folder_id": folder_id,
+            "file_id": str(file_id),
+            "prioritized_in": prioritized_in,
+        }
+
+    async def clear_google_drive_file_from_queues(
+        self, folder_id: str, file_id: str
+    ) -> Dict[str, Any]:
+        """Remove a file from ingesting and failed queues (does not change PageIndex index)."""
+        google_drive_documents_node = await self.node(
+            node="GoogleDriveDocuments", folder_id=folder_id
+        )
+        if not google_drive_documents_node:
+            raise ValidationError(
+                message=f"No GoogleDriveDocuments node for folder_id={folder_id}",
+                details={"folder_id": folder_id},
+            )
+
+        _strip_file_id_from_doc_queues(
+            google_drive_documents_node.ingesting_documents, file_id
+        )
+        _strip_file_id_from_doc_queues(
+            google_drive_documents_node.failed_documents, file_id
+        )
+        _sync_drive_node_status_from_queues(google_drive_documents_node)
+        await google_drive_documents_node.save()
+        return {
+            "folder_id": folder_id,
+            "file_id": str(file_id),
+            "cleared": True,
+        }
 
     async def set_google_drive_file_ingestion(
         self,

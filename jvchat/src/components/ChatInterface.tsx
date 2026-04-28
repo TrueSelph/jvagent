@@ -7,7 +7,11 @@ import {
 } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAgents } from "../hooks/useAgents";
-import { useStreaming } from "../hooks/useStreaming";
+import {
+  useStreaming,
+  type SendMessageOptions,
+  ATTACHMENT_ONLY_USER_PROMPT,
+} from "../hooks/useStreaming";
 import { useConversations } from "../hooks/useConversations";
 import { MessageList } from "./MessageList";
 import { MessageInput } from "./MessageInput";
@@ -277,7 +281,10 @@ export function ChatInterface() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]); // Only depend on sessionId - clearMessages and loadMessages are stable callbacks
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (
+    content: string,
+    options?: SendMessageOptions,
+  ) => {
     if (!agent) return;
 
     const userId = getUserId();
@@ -288,7 +295,11 @@ export function ChatInterface() {
       return;
     }
 
-    const receivedSessionId = await sendMessage(content);
+    const lastPreview =
+      content.trim() ||
+      (options?.files?.length ? ATTACHMENT_ONLY_USER_PROMPT : content);
+
+    const receivedSessionId = await sendMessage(content, options);
 
     // Update session ID if we received one from the server
     // This happens when:
@@ -319,7 +330,7 @@ export function ChatInterface() {
           agent_id: agent.id,
           agent_name: agent.alias || agent.name || "Agent",
           created_at: new Date().toISOString(),
-          last_message: content,
+          last_message: lastPreview,
           last_message_at: new Date().toISOString(),
         };
         // Defer conversation list update to prevent interfering with chat content
@@ -331,11 +342,11 @@ export function ChatInterface() {
         });
       } else {
         // Existing conversation - update last message
-        if (existingConv.last_message !== content) {
+        if (existingConv.last_message !== lastPreview) {
           // Defer conversation list update to prevent interfering with chat content
           startTransition(() => {
             update(receivedSessionId, {
-              last_message: content,
+              last_message: lastPreview,
               last_message_at: new Date().toISOString(),
             });
           });
@@ -348,11 +359,11 @@ export function ChatInterface() {
       const currentConv = allConversations.find(
         (c) => c.session_id === sessionId && c.agent_id === agent.id,
       );
-      if (currentConv && currentConv.last_message !== content) {
+      if (currentConv && currentConv.last_message !== lastPreview) {
         // Use startTransition to mark update as non-urgent
         startTransition(() => {
           update(sessionId, {
-            last_message: content,
+            last_message: lastPreview,
             last_message_at: new Date().toISOString(),
           });
         });

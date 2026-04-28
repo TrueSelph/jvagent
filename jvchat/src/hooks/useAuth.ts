@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiClient } from '../config/api'
-import { setToken, removeToken, getToken, removeUserId, setUserId, setRefreshToken, removeRefreshToken, getRefreshToken } from '../utils/storage'
+import { setToken, getToken, setUserId, setRefreshToken, getRefreshToken, clearAllStorage } from '../utils/storage'
 import { saveConfig } from '../config/config'
 import type { LoginRequest } from '../types/api'
 
@@ -182,10 +182,8 @@ export function useAuth() {
       console.warn('Logout: Server logout failed, continuing with local logout:', error)
     }
 
-    // Always clear local storage and state, regardless of server response
-    removeToken()
-    removeRefreshToken() // Clear refresh token on logout
-    removeUserId() // Clear user_id on logout
+    // Clear tokens, conversations, persisted messages (incl. embedded attachment previews).
+    clearAllStorage()
     if (refreshTimeoutRef.current) {
       clearTimeout(refreshTimeoutRef.current)
     }

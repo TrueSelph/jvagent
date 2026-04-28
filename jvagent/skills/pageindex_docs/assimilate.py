@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,18 @@ def get_tool_definition() -> Dict[str, Any]:
                 },
                 "ocr": {
                     "type": "boolean",
-                    "description": "Enable OCR for scanned PDF pages when using Docling (default: false)",
+                    "description": (
+                        "Legacy: when true and docling_ocr_engine is omitted, enables OCR with "
+                        "RapidOCR. Prefer docling_ocr_engine."
+                    ),
+                },
+                "docling_ocr_engine": {
+                    "type": "string",
+                    "enum": ["none", "rapidocr"],
+                    "description": (
+                        "Docling OCR for scanned PDFs: none or rapidocr "
+                        "(default: none; takes precedence over ocr when set)"
+                    ),
                 },
             },
             "required": ["doc"],
@@ -96,6 +107,16 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Any:
                 logger.debug("assimilate: sandbox read skipped for %r: %s", doc_s, e)
                 doc = doc_s
 
+    from jvagent.action.pageindex.endpoints import _resolve_docling_ocr_for_ingest
+
+    engine_raw: Optional[str] = arguments.get("docling_ocr_engine")
+    if isinstance(engine_raw, str) and engine_raw.strip():
+        ocr_flag, docling_eff = _resolve_docling_ocr_for_ingest(engine_raw.strip(), None)
+    else:
+        ocr_flag, docling_eff = _resolve_docling_ocr_for_ingest(
+            None, str(bool(arguments.get("ocr", False)))
+        )
+
     return await action.assimilate(
         doc=doc,
         doc_name=doc_name,
@@ -104,5 +125,6 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Any:
         doc_description=arguments.get("doc_description"),
         doc_url=arguments.get("doc_url"),
         convert_to_markdown=arguments.get("convert_to_markdown", False),
-        ocr=arguments.get("ocr", False),
+        ocr=ocr_flag,
+        docling_ocr_engine=docling_eff,
     )

@@ -25,6 +25,9 @@ export interface TokenRefreshRequest {
 
 export type TokenRefreshResponse = LoginResponse
 
+/** Docling PDF OCR backend for PageIndex / jvforge ingest (RapidOCR only). */
+export type DoclingOcrEngine = 'none' | 'rapidocr'
+
 export interface Agent {
   id: string
   namespace: string
@@ -47,12 +50,31 @@ export interface AgentsResponse {
   next_page?: number
 }
 
+/** Single media item for `data.image_urls` or `data.whatsapp_media` (mirror of jvagent visitor.data). */
+export type InteractMediaEntry =
+  | string
+  | {
+      url?: string
+      base64?: string
+      mime_type?: string
+      detail?: 'auto' | 'low' | 'high'
+      filename?: string
+    }
+
+/** Payload for `POST .../interact` body field `data` (→ InteractWalker.data). */
+export interface InteractGuestDataPayload {
+  image_urls?: InteractMediaEntry[]
+  whatsapp_media?: InteractMediaEntry[]
+  image_interpretation?: boolean
+}
+
 export interface InteractionRequest {
   utterance: string
   channel?: string
   session_id?: string
   user_id?: string
   stream?: boolean
+  data?: InteractGuestDataPayload
 }
 
 export interface InteractionResponse {

@@ -36,7 +36,10 @@ from .config import (
     resolve_pageindex_work_dir,
 )
 from .core import page_index
-from .docling_convert import convert_document_to_markdown_sync
+from .docling_convert import (
+    convert_document_to_markdown_sync,
+    wants_ooxml_pdf_for_docling_ocr,
+)
 from .llm_bridge import (
     PageIndexCancelled,
     attach_pageindex_cancel_event,
@@ -65,10 +68,17 @@ PAGEINDEX_OFFICE_LIKE_EXTENSIONS = frozenset(
 )
 # UTF-8 text sources ingested as markdown-enriched (no Docling).
 PAGEINDEX_TEXT_LIKE_EXTENSIONS = frozenset({".md", ".markdown", ".txt"})
+# Aligned with jvforge ``pi_vendor.docling_convert.DOCLING_IMAGE_EXTENSIONS``.
+PAGEINDEX_DOCLING_IMAGE_EXTENSIONS = frozenset(
+    {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp"}
+)
 
 # Aligned with jvforge ``multipart_ingest.ALLOWED_EXTENSIONS`` (upload / jvforge POST).
 PAGEINDEX_UPLOAD_EXTENSIONS = frozenset(
-    {".pdf"} | PAGEINDEX_TEXT_LIKE_EXTENSIONS | PAGEINDEX_OFFICE_LIKE_EXTENSIONS
+    {".pdf"}
+    | PAGEINDEX_TEXT_LIKE_EXTENSIONS
+    | PAGEINDEX_OFFICE_LIKE_EXTENSIONS
+    | PAGEINDEX_DOCLING_IMAGE_EXTENSIONS
 )
 
 
@@ -250,6 +260,7 @@ async def assimilate_document(
     cancel_event: Optional[threading.Event] = None,
     convert_to_markdown: bool = False,
     ocr: bool = False,
+    docling_ocr_engine: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Assimilate a PDF, Markdown/text, or office document via PageIndex and optionally persist.
 
@@ -275,7 +286,10 @@ async def assimilate_document(
         doc_url: Source URL of the document resource (stored on DocumentRootNode for reference citations)
         convert_to_markdown: If True, convert PDF inputs with Docling to Markdown first (requires
             ``jvagent[pageindex]``). Office formats (``.docx``, etc.) always use Docling regardless.
-        ocr: When using Docling on PDF, enable OCR for scanned pages (ignored for non-PDF).
+        ocr: When using Docling on PDF or raster images, enable OCR for scanned content.
+        docling_ocr_engine: Optional ingest hint (``none`` / ``rapidocr``); jvforge uses RapidOCR only.
+            For ``.docx`` / ``.pptx`` with OCR requested, LibreOffice converts to PDF first (when ``soffice``
+            is available) so the same OCR path applies as for PDFs.
 
     Returns:
         Dict with doc_name, structure, doc_description (if requested), _root_id (if persist)
@@ -315,8 +329,15 @@ async def assimilate_document(
 
         is_pdf = ext == ".pdf"
         force_docling = ext in PAGEINDEX_OFFICE_LIKE_EXTENSIONS
+        is_docling_image = ext in PAGEINDEX_DOCLING_IMAGE_EXTENSIONS
 
-        if (is_pdf and convert_to_markdown) or force_docling:
+        wants_ocr = wants_ooxml_pdf_for_docling_ocr(
+            ocr=ocr, docling_ocr_engine=docling_ocr_engine
+        )
+
+        if (is_pdf and convert_to_markdown) or force_docling or (
+            is_docling_image and convert_to_markdown
+        ):
             if isinstance(doc, BytesIO):
                 doc.seek(0)
                 body = doc.read()
@@ -336,7 +357,10 @@ async def assimilate_document(
                 functools.partial(
                     convert_document_to_markdown_sync,
                     src_path,
-                    ocr=ocr if is_pdf else False,
+                    ocr=wants_ocr
+                    if (is_pdf or is_docling_image or force_docling)
+                    else False,
+                    docling_ocr_engine=docling_ocr_engine,
                 ),
             )
             t_md = tempfile.NamedTemporaryFile(

@@ -3,6 +3,18 @@ import { apiClient } from '../config/api'
 import { saveMessages, getMessages, getUserId } from '../utils/storage'
 import type { InteractionRequest, ResponseMessageData, SSEChunk } from '../types/api'
 import type { Message } from '../types/message'
+import {
+  prepareOutgoingAttachments,
+  validateAttachmentSize,
+} from '../utils/interactAttachments'
+
+/** Shown in the transcript and sent as `utterance` when the user attaches file(s) but types no message. */
+export const ATTACHMENT_ONLY_USER_PROMPT =
+  'What can you infer about this image?'
+
+export type SendMessageOptions = {
+  files?: File[]
+}
 
 function mergeResponseMetadata(
   existing: Record<string, unknown> | undefined,
@@ -97,8 +109,39 @@ export function useStreaming(agentId: string, sessionId?: string) {
   }, [sessionId])
 
   const sendMessage = useCallback(
-    async (utterance: string): Promise<string | undefined> => {
-      if (!utterance.trim() || isStreaming) return undefined
+    async (utterance: string, options?: SendMessageOptions): Promise<string | undefined> => {
+      const files = options?.files?.length ? options.files : undefined
+      const trimmed = utterance.trim()
+
+      if ((!trimmed && !files?.length) || isStreaming) return undefined
+
+      if (files?.length) {
+        for (const f of files) {
+          const err = validateAttachmentSize(f)
+          if (err) {
+            setError(err)
+            return undefined
+          }
+        }
+      }
+
+      let attachmentDataPayload: InteractionRequest['data'] | undefined
+      let attachmentPreviews: Message['attachments'] | undefined
+      if (files?.length) {
+        try {
+          const prepared = await prepareOutgoingAttachments(files)
+          attachmentDataPayload = prepared.data
+          attachmentPreviews = prepared.previews
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : 'Could not read attachments'
+          setError(msg)
+          return undefined
+        }
+      }
+
+      const utteranceForApi = trimmed || ATTACHMENT_ONLY_USER_PROMPT
+      const displayContent =
+        trimmed || (files?.length ? ATTACHMENT_ONLY_USER_PROMPT : '')
 
       setIsStreaming(true)
       setError(null)
@@ -107,8 +150,11 @@ export function useStreaming(agentId: string, sessionId?: string) {
       const userMessage: Message = {
         id: `user-${Date.now()}`,
         role: 'user',
-        content: utterance,
+        content: displayContent || utteranceForApi,
         timestamp: new Date().toISOString(),
+        ...(files?.length && attachmentPreviews?.length
+          ? { attachments: attachmentPreviews }
+          : {}),
       }
       streamUserMessageRef.current = userMessage
 
@@ -163,11 +209,14 @@ export function useStreaming(agentId: string, sessionId?: string) {
 
 
         const request: InteractionRequest = {
-          utterance,
+          utterance: utteranceForApi,
           channel: 'default',
           session_id: sessionIdToSend,
           user_id: userId, // Required - endpoint is anonymous (no auth token) but user_id is still required
           stream: true,
+          ...(attachmentDataPayload && Object.keys(attachmentDataPayload).length > 0
+            ? { data: attachmentDataPayload }
+            : {}),
         }
 
         await apiClient.streamInteract(
@@ -836,7 +885,9 @@ export function useStreaming(agentId: string, sessionId?: string) {
           return !currMsg ||
                  prevMsg.id !== currMsg.id ||
                  prevMsg.content !== currMsg.content ||
-                 prevMsg.streaming !== currMsg.streaming
+                 prevMsg.streaming !== currMsg.streaming ||
+                 JSON.stringify(prevMsg.attachments ?? null) !==
+                   JSON.stringify(currMsg.attachments ?? null)
         })
 
       if (messagesChanged) {

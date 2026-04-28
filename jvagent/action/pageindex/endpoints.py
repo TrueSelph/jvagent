@@ -19,6 +19,7 @@ All routes are agent-scoped (collection = agent_id from path unless noted).
   (query: ``group``).
 """
 
+import asyncio
 import json
 import logging
 import mimetypes
@@ -150,6 +151,21 @@ def _form_yes_no_optional(value: Optional[str]) -> Optional[bool]:
     if v in ("no", "false", "0"):
         return False
     return None
+
+
+def _resolve_docling_ocr_for_ingest(
+    docling_ocr_engine_raw: Optional[str],
+    ocr_raw: Optional[str],
+) -> tuple[bool, Optional[str]]:
+    """Aligned with ``jvforge.multipart_ingest.resolve_docling_ocr_for_ingest``."""
+    de = (docling_ocr_engine_raw or "").strip().lower()
+    if de:
+        if de in ("none", "off", "no", "false", "0"):
+            return False, None
+        return True, "rapidocr"
+    ocr_opt = _form_yes_no_optional(ocr_raw)
+    ocr_flag = False if ocr_opt is None else ocr_opt
+    return ocr_flag, None
 
 
 def _form_int_optional(value: Optional[str]) -> Optional[int]:
@@ -328,11 +344,13 @@ def _safe_pageindex_relative_path(*segments: str) -> str:
         raise ValidationError(f"Invalid storage path: {e}")
 
 
-async def _fetch_url_bytes_capped(url: str) -> Tuple[bytes, str, Optional[str]]:
+async def _fetch_url_bytes_capped(
+    url: str, *, read_timeout: float = 120.0
+) -> Tuple[bytes, str, Optional[str]]:
     raw = url.strip()
     if not raw.startswith(("http://", "https://")):
         raise ValidationError("URL must be http or https")
-    timeout = httpx.Timeout(120.0, connect=30.0)
+    timeout = httpx.Timeout(read_timeout, connect=30.0)
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
         async with client.stream("GET", raw) as resp:
             if resp.status_code != 200:
@@ -489,6 +507,86 @@ async def _run_import_parsed(
     await import_documents(parsed, purge=purge, collection_name=agent_id)
 
 
+async def _stage_graph_from_remote_url(
+    agent_id: str,
+    url: str,
+    *,
+    staging_subdir: str = "pageindex_import",
+    extra_staging_metadata: Optional[Dict[str, Any]] = None,
+    fetch_read_timeout: float = 120.0,
+) -> str:
+    """Download a PageIndex graph from ``url`` into app storage; return storage path.
+
+    Caller must delete the staged file after import (or on failure).
+    """
+    raw, _fname_hint, ct = await _fetch_url_bytes_capped(
+        url, read_timeout=fetch_read_timeout
+    )
+    staging_fn = _import_staging_filename(url, ct)
+    meta: Dict[str, Any] = {"source_url": url, "agent_id": agent_id}
+    if extra_staging_metadata:
+        meta = {**meta, **extra_staging_metadata}
+    return await _save_pageindex_staging(
+        staging_subdir,
+        agent_id,
+        raw,
+        staging_fn,
+        meta,
+    )
+
+
+async def _import_graph_from_staged_storage_path(
+    agent_id: str,
+    staged_path: str,
+    *,
+    purge: bool,
+) -> None:
+    """Load a staged PageIndex graph file and import it (does not delete ``staged_path``)."""
+    from jvagent.core.app import App
+
+    app = await App.get()
+    if not app:
+        raise ValidationError("File storage unavailable")
+    raw = await app.get_file(staged_path)
+    if not raw:
+        raise ValidationError("Staged import file missing or empty")
+    text = raw.decode("utf-8", errors="replace")
+    parsed = _coerce_import_payload_to_dict(text)
+    await _run_import_parsed(agent_id, parsed, purge)
+
+
+def _schedule_background_webhook_graph_import(
+    agent_id: str,
+    staged_path: str,
+    *,
+    purge: bool,
+    process_url: str,
+) -> None:
+    """Run heavy graph import off the webhook request so jvforge gets a prompt HTTP response."""
+
+    async def _job() -> None:
+        try:
+            await _import_graph_from_staged_storage_path(
+                agent_id, staged_path, purge=purge
+            )
+            logger.info(
+                "PageIndex process_document_url background import finished agent_id=%s source=%s",
+                agent_id,
+                (process_url[:160] + "…") if len(process_url) > 160 else process_url,
+            )
+        except Exception as e:
+            logger.error(
+                "PageIndex process_document_url background import failed agent_id=%s: %s",
+                agent_id,
+                e,
+                exc_info=True,
+            )
+        finally:
+            await _delete_staged_file(staged_path)
+
+    asyncio.create_task(_job())
+
+
 async def _import_graph_from_remote_url(
     agent_id: str,
     url: str,
@@ -503,21 +601,16 @@ async def _import_graph_from_remote_url(
     """
     staged_path: Optional[str] = None
     try:
-        raw, _fname_hint, ct = await _fetch_url_bytes_capped(url)
-        staging_fn = _import_staging_filename(url, ct)
-        meta: Dict[str, Any] = {"source_url": url, "agent_id": agent_id}
-        if extra_staging_metadata:
-            meta = {**meta, **extra_staging_metadata}
-        staged_path = await _save_pageindex_staging(
-            staging_subdir,
+        staged_path = await _stage_graph_from_remote_url(
             agent_id,
-            raw,
-            staging_fn,
-            meta,
+            url,
+            staging_subdir=staging_subdir,
+            extra_staging_metadata=extra_staging_metadata,
+            fetch_read_timeout=120.0,
         )
-        text = raw.decode("utf-8", errors="replace")
-        parsed = _coerce_import_payload_to_dict(text)
-        await _run_import_parsed(agent_id, parsed, purge)
+        await _import_graph_from_staged_storage_path(
+            agent_id, staged_path, purge=purge
+        )
     finally:
         await _delete_staged_file(staged_path)
 
@@ -535,12 +628,15 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
     Optional[str],
     Optional[str],
     Optional[str],
+    Optional[str],
+    Optional[str],
+    Optional[str],
 ]:
     """Parse multipart form-data from raw body without decoding file content.
 
     Returns (file_content, filename, doc_name, model, if_add_node_summary,
              collection_name, metadata, doc_description, doc_url,
-             convert_to_markdown, ocr, file_url).
+             convert_to_markdown, ocr, docling_ocr_engine, normalize_bold_headings, file_url).
     Uses latin-1 for headers to avoid UTF-8 decode errors on non-ASCII filenames or field values.
     """
     content_type_bytes = (
@@ -566,6 +662,8 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
     doc_url: Optional[str] = None
     convert_to_markdown: Optional[str] = None
     ocr: Optional[str] = None
+    docling_ocr_engine: Optional[str] = None
+    normalize_bold_headings: Optional[str] = None
     file_url: Optional[str] = None
 
     def _safe_str(b: bytes) -> str:
@@ -575,7 +673,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
             return b.decode("latin-1")
 
     def on_field(field) -> None:
-        nonlocal doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description, doc_url, convert_to_markdown, ocr, file_url
+        nonlocal doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description, doc_url, convert_to_markdown, ocr, docling_ocr_engine, normalize_bold_headings, file_url
         name = _safe_str(field.field_name) if field.field_name else ""
         val = field.value
         value = _safe_str(val) if val is not None else ""
@@ -597,6 +695,10 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
             convert_to_markdown = value or None
         elif name == "ocr":
             ocr = value or None
+        elif name == "docling_ocr_engine":
+            docling_ocr_engine = value or None
+        elif name == "normalize_bold_headings":
+            normalize_bold_headings = value or None
         elif name == "file_url":
             file_url = value or None
 
@@ -632,6 +734,8 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
         doc_url,
         convert_to_markdown,
         ocr,
+        docling_ocr_engine,
+        normalize_bold_headings,
         file_url,
     )
 
@@ -649,6 +753,7 @@ async def _do_assimilate(
     doc_url: Optional[str] = None,
     convert_to_markdown: bool = False,
     ocr: bool = False,
+    docling_ocr_engine: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run assimilate_document on content. Temps live under ``pageindex/tmp`` (file_storage root)."""
     assimilate_kw = {
@@ -661,6 +766,7 @@ async def _do_assimilate(
         "doc_url": doc_url,
         "convert_to_markdown": convert_to_markdown,
         "ocr": ocr,
+        "docling_ocr_engine": docling_ocr_engine,
     }
 
     work_dir = await _ensure_pageindex_work_dir()
@@ -756,13 +862,15 @@ async def ingest_document_endpoint(
     | Field | Type | Required | Description |
     |-------|------|----------|-------------|
     | file | File | One of file / file_url | `.pdf`, `.md`, `.markdown`, `.txt`, or office (`.docx`, `.doc`, `.xls`, `.xlsx`, `.ppt`, `.pptx`) |
-    | file_url | string | One of file / file_url | HTTPS/HTTP URL to a **document** (pdf, md, …), or a **jvforge** graph URL ``.../v1/artifacts/{job_id}`` (JSON export); server downloads and ingests or imports the graph. Google **Docs / Sheets / Slides** *sharing* links (``.../document/d/<id>/edit`` etc.) are rewritten to native exports (docx/xlsx/pptx). **Drive** ``/file/d/<id>/view`` (and ``/open?id=``) links are rewritten to a direct download URL. Shared content must be fetchable without signing in from the server. |
+    | file_url | string | One of file / file_url | HTTPS/HTTP URL to a **document** (pdf, md, …), or a **jvforge** graph URL ``.../v1/artifacts/{job_id}`` (JSON export). Without ``JVAGENT_JVFORGE_BASE_URL``, this server downloads, normalizes links, and ingests. When jvforge is configured, the URL is forwarded to jvforge (``file_url`` on ``POST /v1/process`` or ``/v1/jobs``) and **jvforge** downloads and normalizes (Google Docs → Markdown export on jvforge; Sheets/Slides → office exports; Drive ``/file/d/…`` → direct download). Shared content must be fetchable without signing in from the fetching server. |
     | doc_name | string | No | Document identifier (default: derived from filename). For Google Docs/Sheets/Slides ``file_url`` ingests, when set, this value is also used as the downloaded file’s base name (with the correct extension) instead of the Drive id or export filename. |
     | doc_description | string | No | Human-readable document description |
     | doc_url | string | No | Source URL for reference citations (default when using file_url: the same download URL) |
     | if_add_node_summary | string | No | "yes" or "no" – generate LLM summaries per node (default: from agent's PageIndex config) |
     | convert_to_markdown | string | No | "yes" or "no" – use Docling to convert PDF to Markdown first (default: no) |
-    | ocr | string | No | "yes" or "no" – enable OCR when using Docling on PDF (default: no) |
+    | ocr | string | No | "yes" or "no" – enable OCR when using Docling on PDF (default: no). Ignored when ``docling_ocr_engine`` is set. |
+    | docling_ocr_engine | string | No | ``none`` or ``rapidocr`` – RapidOCR (ONNX) on jvforge / local Docling when ``convert_to_markdown`` is on. Legacy names map to ``rapidocr``. When set, overrides ``ocr`` yes/no. |
+    | normalize_bold_headings | string | No | "yes" or "no" — sparse bold→``##`` normalization on **jvforge** only; requires ``JVAGENT_JVFORGE_BASE_URL`` (validation error if ``yes`` without it). Default: no |
     | metadata | string | No | JSON object for tagging, e.g. `{"topic": "finance", "year": 2024}` |
 
     **Response:** `doc_name`, `root_id`, `doc_description`, `chunks` (chunk count when the graph
@@ -773,8 +881,9 @@ async def ingest_document_endpoint(
     Documents are stored in the agent's collection (collection = `agent_id` from path).
 
     When ``JVAGENT_JVFORGE_BASE_URL`` is set, ingestion is delegated to that jvforge service
-    (``POST /v1/process``) with ``llm_webhook_url`` from the agent's PageIndex retrieval action;
-    set ``JVAGENT_JVFORGE_API_KEY`` if you add ingress auth in front of jvforge.
+    (``POST /v1/process`` or async ``POST /v1/jobs``) with ``llm_webhook_url`` from the agent's
+    PageIndex retrieval action. For ``file_url``, the URL is sent to jvforge as a form field (no
+    agent-side download). Set ``JVAGENT_JVFORGE_API_KEY`` if you add ingress auth in front of jvforge.
     """
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     content_type = request.headers.get("content-type", "")
@@ -799,6 +908,8 @@ async def ingest_document_endpoint(
         doc_url,
         convert_to_markdown_raw,
         ocr_raw,
+        docling_ocr_engine_raw,
+        normalize_bold_headings_raw,
         file_url_raw,
     ) = _parse_multipart_safe(body, content_type)
     collection_name = collection_name or agent_id
@@ -809,8 +920,12 @@ async def ingest_document_endpoint(
 
     convert_opt = _form_yes_no_optional(convert_to_markdown_raw)
     convert_to_markdown = False if convert_opt is None else convert_opt
-    ocr_opt = _form_yes_no_optional(ocr_raw)
-    ocr_flag = False if ocr_opt is None else ocr_opt
+    ocr_flag, docling_ocr_engine_eff = _resolve_docling_ocr_for_ingest(
+        docling_ocr_engine_raw,
+        ocr_raw,
+    )
+    bold_opt = _form_yes_no_optional(normalize_bold_headings_raw)
+    normalize_bold_flag = False if bold_opt is None else bold_opt
 
     file_url = (file_url_raw or "").strip()
     has_upload = len(content) > 0
@@ -818,6 +933,8 @@ async def ingest_document_endpoint(
         raise ValidationError("Provide either file or file_url, not both")
     if not file_url and not has_upload:
         raise ValidationError("Provide a file upload or file_url")
+
+    forge_base = (get_jvagent_jvforge_base_url() or "").strip()
 
     staged_path: Optional[str] = None
     try:
@@ -867,6 +984,89 @@ async def ingest_document_endpoint(
                 "chunks": int((pick or {}).get("chunks") or 0),
             }
 
+        if file_url and forge_base:
+            doc_url_effective = (doc_url or "").strip() or file_url
+            effective_doc_name = (doc_name or "").strip()
+            async_mode = (
+                os.environ.get("JVAGENT_JVFORGE_ASYNC", "false").lower() == "true"
+            )
+            try:
+                retrieval_action = await _get_pageindex_retrieval_action(agent_id)
+                llm_wh_url = await retrieval_action.get_webhook_url()
+                summary_for_forge = if_add_node_summary
+                if summary_for_forge is None:
+                    summary_for_forge = (
+                        "yes" if get_pageindex_node_summary() else "no"
+                    )
+
+                if async_mode:
+                    result = await assimilate_via_jvforge_async(
+                        base_url=forge_base,
+                        agent_id=agent_id,
+                        doc_name=effective_doc_name,
+                        model=model,
+                        if_add_node_summary=summary_for_forge,
+                        collection_name=collection_name,
+                        metadata=metadata,
+                        doc_description=doc_description,
+                        doc_url=doc_url_effective or None,
+                        convert_to_markdown=convert_to_markdown,
+                        ocr=ocr_flag,
+                        docling_ocr_engine=docling_ocr_engine_eff,
+                        normalize_bold_headings=normalize_bold_flag,
+                        llm_webhook_url=llm_wh_url,
+                        emergency=False,
+                        file_url=file_url,
+                        filename=None,
+                        content=None,
+                    )
+                    return {
+                        "status": result["status"],
+                        "job_id": result["job_id"],
+                        "queue_position": result["queue_position"],
+                        "doc_name": result["doc_name"],
+                        "message": result["message"],
+                        "root_id": "",
+                        "doc_description": None,
+                        "chunks": 0,
+                    }
+                result = await assimilate_via_jvforge(
+                    base_url=forge_base,
+                    agent_id=agent_id,
+                    doc_name=effective_doc_name,
+                    model=model,
+                    if_add_node_summary=summary_for_forge,
+                    collection_name=collection_name,
+                    metadata=metadata,
+                    doc_description=doc_description,
+                    doc_url=doc_url_effective or None,
+                    convert_to_markdown=convert_to_markdown,
+                    ocr=ocr_flag,
+                    docling_ocr_engine=docling_ocr_engine_eff,
+                    normalize_bold_headings=normalize_bold_flag,
+                    llm_webhook_url=llm_wh_url,
+                    file_url=file_url,
+                    filename=None,
+                    content=None,
+                )
+            except ImportError as e:
+                raise ValidationError(str(e))
+            except ValueError as e:
+                raise ValidationError(str(e))
+
+            doc_name_out = result.get("doc_name", "")
+            chunks_out = (
+                await count_document_chunks(doc_name_out, collection_name)
+                if doc_name_out
+                else 0
+            )
+            return {
+                "doc_name": doc_name_out,
+                "root_id": result.get("_root_id", ""),
+                "doc_description": result.get("doc_description"),
+                "chunks": chunks_out,
+            }
+
         if file_url:
             fetch_url, google_ext, google_doc_id = _normalize_google_workspace_file_url(
                 file_url
@@ -913,7 +1113,12 @@ async def ingest_document_endpoint(
             raise ValidationError("Empty file")
 
         effective_doc_name = doc_name or filename
-        forge_base = get_jvagent_jvforge_base_url()
+
+        if normalize_bold_flag and not forge_base:
+            raise ValidationError(
+                "normalize_bold_headings=yes requires JVAGENT_JVFORGE_BASE_URL "
+                "(bold-line normalization runs on jvforge only)."
+            )
 
         # Check if async mode is enabled
         async_mode = os.environ.get("JVAGENT_JVFORGE_ASYNC", "false").lower() == "true"
@@ -931,8 +1136,6 @@ async def ingest_document_endpoint(
                     result = await assimilate_via_jvforge_async(
                         base_url=forge_base,
                         agent_id=agent_id,
-                        filename=filename,
-                        content=content,
                         doc_name=effective_doc_name,
                         model=model,
                         if_add_node_summary=summary_for_forge,
@@ -942,8 +1145,12 @@ async def ingest_document_endpoint(
                         doc_url=doc_url_effective or None,
                         convert_to_markdown=convert_to_markdown,
                         ocr=ocr_flag,
+                        docling_ocr_engine=docling_ocr_engine_eff,
+                        normalize_bold_headings=normalize_bold_flag,
                         llm_webhook_url=llm_wh_url,
                         emergency=False,  # Can be made configurable via form field
+                        filename=filename,
+                        content=content,
                     )
 
                     # Return async response with queue position (root_id/description
@@ -963,8 +1170,6 @@ async def ingest_document_endpoint(
                     result = await assimilate_via_jvforge(
                         base_url=forge_base,
                         agent_id=agent_id,
-                        filename=filename,
-                        content=content,
                         doc_name=effective_doc_name,
                         model=model,
                         if_add_node_summary=summary_for_forge,
@@ -974,7 +1179,11 @@ async def ingest_document_endpoint(
                         doc_url=doc_url_effective or None,
                         convert_to_markdown=convert_to_markdown,
                         ocr=ocr_flag,
+                        docling_ocr_engine=docling_ocr_engine_eff,
+                        normalize_bold_headings=normalize_bold_flag,
                         llm_webhook_url=llm_wh_url,
+                        filename=filename,
+                        content=content,
                     )
             else:
                 result = await _do_assimilate(
@@ -989,6 +1198,7 @@ async def ingest_document_endpoint(
                     doc_url=doc_url_effective or None,
                     convert_to_markdown=convert_to_markdown,
                     ocr=ocr_flag,
+                    docling_ocr_engine=docling_ocr_engine_eff,
                 )
         except ImportError as e:
             raise ValidationError(str(e))
@@ -1910,27 +2120,35 @@ async def pageindex_llm_webhook(request: Request, agent_id: str) -> Dict[str, An
         purge = bool(purge_flag) if purge_flag is not None else False
         initialize_pageindex_database(app_id=await _get_app_id_from_node())
         try:
-            await _import_graph_from_remote_url(
+            staged_path = await _stage_graph_from_remote_url(
                 agent_id,
                 process_url,
-                purge=purge,
                 staging_subdir="pageindex_webhook_import",
+                fetch_read_timeout=900.0,
             )
         except ValidationError:
             raise
         except Exception as e:
             logger.error(
-                "PageIndex process_document_url import failed: %s", e, exc_info=True
+                "PageIndex process_document_url download/stage failed: %s", e, exc_info=True
             )
             raise ValidationError(
                 message=f"process_document_url import failed: {e}",
                 details={"agent_id": agent_id},
             )
+        _schedule_background_webhook_graph_import(
+            agent_id,
+            staged_path,
+            purge=purge,
+            process_url=process_url,
+        )
         return {
             "status": "received",
             "result": {
                 "imported": True,
-                "message": "Documents imported successfully",
+                "message": (
+                    "Artifact received; import is running in the background for large graphs."
+                ),
             },
         }
     else:

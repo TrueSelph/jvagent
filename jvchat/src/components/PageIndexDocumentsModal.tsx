@@ -7,6 +7,7 @@ import type {
   PageIndexChunkMergeStrategy,
   PageIndexChunkUpdatePayload,
   PageIndexDocument,
+  DoclingOcrEngine,
 } from '../types/api'
 import { useTheme } from '../context/ThemeContext'
 
@@ -24,6 +25,21 @@ const MERGE_QUEUE_MAX = 20
 const MERGE_TEXT_JOIN = '\n\n---\n\n'
 
 const GOOGLE_DRIVE_FOLDER_MIME = 'application/vnd.google-apps.folder'
+
+const GOOGLE_DRIVE_DOCUMENT_STATUSES = [
+  'pending',
+  'processing',
+  'completed',
+  'failed',
+] as const
+
+type GoogleDriveDocStatus = (typeof GOOGLE_DRIVE_DOCUMENT_STATUSES)[number]
+
+function normalizeDriveDocStatus(status: string): GoogleDriveDocStatus {
+  return GOOGLE_DRIVE_DOCUMENT_STATUSES.includes(status as GoogleDriveDocStatus)
+    ? (status as GoogleDriveDocStatus)
+    : 'pending'
+}
 
 function isPageIndexGoogleDriveSyncAction(a: Record<string, unknown>): boolean {
   const entity = String(a.entity ?? '')
@@ -233,8 +249,10 @@ export function PageIndexDocumentsModal({
   const [docUrl, setDocUrl] = useState('')
   const [metadataJson, setMetadataJson] = useState('')
   const [addNodeSummary, setAddNodeSummary] = useState(true)
-  const [convertToMarkdown, setConvertToMarkdown] = useState(false)
-  const [doclingOcr, setDoclingOcr] = useState(false)
+  const [convertToMarkdown, setConvertToMarkdown] = useState(true)
+  const [doclingOcrEngine, setDoclingOcrEngine] =
+    useState<DoclingOcrEngine>('rapidocr')
+  const [normalizeBoldHeadings, setNormalizeBoldHeadings] = useState(true)
   const [purgeOnImport, setPurgeOnImport] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importText, setImportText] = useState('')
@@ -256,9 +274,16 @@ export function PageIndexDocumentsModal({
   const [driveRetrying, setDriveRetrying] = useState(false)
   const [driveDeleting, setDriveDeleting] = useState(false)
   const [driveTogglingFileId, setDriveTogglingFileId] = useState<string | null>(null)
-  const [driveIngestConvertMd, setDriveIngestConvertMd] = useState(false)
-  const [driveIngestOcr, setDriveIngestOcr] = useState(false)
+  const [driveFileOpId, setDriveFileOpId] = useState<string | null>(null)
+  const [driveIngestConvertMd, setDriveIngestConvertMd] = useState(true)
+  const [driveIngestOcrEngine, setDriveIngestOcrEngine] =
+    useState<DoclingOcrEngine>('rapidocr')
+  const [driveIngestNormalizeBold, setDriveIngestNormalizeBold] = useState(false)
   const [driveRemoveDeleted, setDriveRemoveDeleted] = useState(false)
+  const [driveEditStatus, setDriveEditStatus] =
+    useState<GoogleDriveDocStatus>('pending')
+  const [driveEditActiveDocument, setDriveEditActiveDocument] = useState('')
+  const [driveSavingDocuments, setDriveSavingDocuments] = useState(false)
 
   const [chunksDocName, setChunksDocName] = useState('')
   const chunksDocPickerRef = useRef<HTMLDivElement>(null)
@@ -355,11 +380,6 @@ export function PageIndexDocumentsModal({
       setLoading(false)
     }
   }, [agentId])
-
-  /** Refresh jvforge processing queue and indexed documents together */
-  const refreshPageIndexData = useCallback(async () => {
-    await Promise.all([fetchQueue(), fetchDocuments()])
-  }, [fetchQueue, fetchDocuments])
 
   useEffect(() => {
     fetchDocuments()
@@ -461,8 +481,8 @@ export function PageIndexDocumentsModal({
     setChunksDocPickerOpen(false)
   }, [])
 
-  const fetchChunks = useCallback(async () => {
-    if (activeTab !== 'chunks') return
+  /** Load chunks from API (always updates React state). Call when chunks tab is visible or after ingest/mutations. */
+  const loadChunksFromApi = useCallback(async () => {
     setChunksLoading(true)
     setChunksError(null)
     try {
@@ -494,7 +514,6 @@ export function PageIndexDocumentsModal({
   }, [
     agentId,
     chunksDocName,
-    activeTab,
     chunksPage,
     chunksPerPage,
     chunkFilterQ,
@@ -502,8 +521,15 @@ export function PageIndexDocumentsModal({
   ])
 
   useEffect(() => {
-    fetchChunks()
-  }, [fetchChunks])
+    if (activeTab !== 'chunks') return
+    void loadChunksFromApi()
+  }, [activeTab, loadChunksFromApi])
+
+  /** Refresh jvforge processing queue, indexed documents, and chunk list (no stale chunks after ingest). */
+  const refreshPageIndexData = useCallback(async () => {
+    await Promise.all([fetchQueue(), fetchDocuments()])
+    await loadChunksFromApi()
+  }, [fetchQueue, fetchDocuments, loadChunksFromApi])
 
   useEffect(() => {
     if (!isEmbedded || !onClose) return
@@ -607,7 +633,9 @@ export function PageIndexDocumentsModal({
         metadata: parseMetadata(),
         ifAddNodeSummary: addNodeSummary,
         convertToMarkdown,
-        ocr: doclingOcr,
+        ocr: doclingOcrEngine !== 'none',
+        doclingOcrEngine,
+        normalizeBoldHeadings,
         emergency: emergencyMode,
       }
       if (remoteUrl) {
@@ -859,7 +887,7 @@ export function PageIndexDocumentsModal({
         await fetchDocuments()
       }
       closeEditChunk()
-      await fetchChunks()
+      await loadChunksFromApi()
     } catch (err: any) {
       console.error('Chunk update failed:', err)
       setSaveChunkError(err.message || 'Update failed')
@@ -879,7 +907,7 @@ export function PageIndexDocumentsModal({
       await apiClient.deletePageIndexChunk(agentId, c.doc_name, c.id, { cascade: true })
       if (editingChunk?.id === c.id) closeEditChunk()
       setMergeQueue((q) => q.filter((x) => x.id !== c.id))
-      await fetchChunks()
+      await loadChunksFromApi()
     } catch (err: any) {
       console.error('Chunk delete failed:', err)
       setChunksError(err.message || 'Delete failed')
@@ -935,7 +963,7 @@ export function PageIndexDocumentsModal({
     setChunksError(null)
     try {
       await apiClient.updatePageIndexChunk(agentId, c.doc_name, c.id, patch)
-      await fetchChunks()
+      await loadChunksFromApi()
     } catch (err: any) {
       console.error('Chunk quick update failed:', err)
       setChunksError(err.message || 'Update failed')
@@ -1015,12 +1043,12 @@ export function PageIndexDocumentsModal({
       setMergeQueue([])
       setApplyMergeUpdate(true)
       setApplyMergeDeleteOthers(true)
-      await fetchChunks()
+      await loadChunksFromApi()
     } catch (err: unknown) {
       console.error('Chunk merge failed:', err)
       const msg = err instanceof Error ? err.message : 'Merge failed'
       setChunksError(msg)
-      await fetchChunks()
+      await loadChunksFromApi()
     } finally {
       setMergingChunks(false)
     }
@@ -1030,6 +1058,42 @@ export function PageIndexDocumentsModal({
     () => driveFolders.find((f) => f.folder_id === driveSelectedFolderId) ?? null,
     [driveFolders, driveSelectedFolderId]
   )
+
+  const selectedDriveFlatFiles = useMemo(
+    () =>
+      selectedDriveFolder
+        ? flattenGoogleDriveFiles(selectedDriveFolder.files ?? [])
+        : [],
+    [selectedDriveFolder]
+  )
+
+  useEffect(() => {
+    if (!selectedDriveFolder) return
+    setDriveEditStatus(normalizeDriveDocStatus(selectedDriveFolder.status ?? ''))
+    setDriveEditActiveDocument(selectedDriveFolder.active_document ?? '')
+  }, [
+    selectedDriveFolder?.folder_id,
+    selectedDriveFolder?.status,
+    selectedDriveFolder?.active_document,
+  ])
+
+  const handleDriveSaveDocumentsFields = async () => {
+    if (!driveSyncActionId || !selectedDriveFolder) return
+    setDriveSavingDocuments(true)
+    setDriveError(null)
+    try {
+      await apiClient.updateGoogleDriveDocuments(driveSyncActionId, {
+        folder_id: selectedDriveFolder.folder_id,
+        status: driveEditStatus,
+        active_document: driveEditActiveDocument,
+      })
+      await refreshGoogleDriveList()
+    } catch (e: unknown) {
+      setDriveError(e instanceof Error ? e.message : 'Update failed')
+    } finally {
+      setDriveSavingDocuments(false)
+    }
+  }
 
   const handleDriveRetryFailed = async () => {
     if (!driveSyncActionId || !selectedDriveFolder) return
@@ -1046,7 +1110,9 @@ export function PageIndexDocumentsModal({
         retry_failed_documents: true,
         remove_deleted_documents: driveRemoveDeleted,
         convert_to_markdown: driveIngestConvertMd,
-        ocr: driveIngestOcr,
+        ocr: driveIngestOcrEngine !== 'none',
+        docling_ocr_engine: driveIngestOcrEngine,
+        normalize_bold_headings: driveIngestNormalizeBold,
       })
       await refreshGoogleDriveList()
     } catch (e: unknown) {
@@ -1071,7 +1137,9 @@ export function PageIndexDocumentsModal({
         retry_failed_documents: false,
         remove_deleted_documents: driveRemoveDeleted,
         convert_to_markdown: driveIngestConvertMd,
-        ocr: driveIngestOcr,
+        ocr: driveIngestOcrEngine !== 'none',
+        docling_ocr_engine: driveIngestOcrEngine,
+        normalize_bold_headings: driveIngestNormalizeBold,
       })
       await refreshGoogleDriveList()
     } catch (e: unknown) {
@@ -1123,6 +1191,70 @@ export function PageIndexDocumentsModal({
       setDriveError(e instanceof Error ? e.message : 'Update failed')
     } finally {
       setDriveTogglingFileId(null)
+    }
+  }
+
+  const handleDriveFileRowRetry = async (file: GoogleDriveFileEntry) => {
+    if (!driveSyncActionId || !selectedDriveFolder) return
+    setDriveRetrying(true)
+    setDriveFileOpId(file.id)
+    setDriveError(null)
+    try {
+      const res = await apiClient.googleDriveFileQueueOp(driveSyncActionId, {
+        folder_id: selectedDriveFolder.folder_id,
+        file_id: file.id,
+        operation: 'prioritize',
+      })
+      const prioritizedIn = (
+        res?.result as { prioritized_in?: string } | undefined
+      )?.prioritized_in
+      const retryFailed = prioritizedIn === 'failed'
+      await apiClient.ingestGoogleDocuments(driveSyncActionId, {
+        google_drive_folders: [
+          {
+            folder_id: selectedDriveFolder.folder_id,
+            metadata: selectedDriveFolder.metadata ?? {},
+          },
+        ],
+        retry_failed_documents: retryFailed,
+        remove_deleted_documents: driveRemoveDeleted,
+        convert_to_markdown: driveIngestConvertMd,
+        ocr: driveIngestOcrEngine !== 'none',
+        docling_ocr_engine: driveIngestOcrEngine,
+        normalize_bold_headings: driveIngestNormalizeBold,
+      })
+      await refreshGoogleDriveList()
+      await refreshPageIndexData()
+    } catch (e: unknown) {
+      setDriveError(e instanceof Error ? e.message : 'Retry failed')
+    } finally {
+      setDriveFileOpId(null)
+      setDriveRetrying(false)
+    }
+  }
+
+  const handleDriveFileRowClearQueues = async (file: GoogleDriveFileEntry) => {
+    if (!driveSyncActionId || !selectedDriveFolder) return
+    const label = file.name?.trim() || file.id
+    if (
+      !window.confirm(
+        `Remove "${label}" from ingest queues only?\n\nIndexed PageIndex documents are not removed.`
+      )
+    )
+      return
+    setDriveFileOpId(file.id)
+    setDriveError(null)
+    try {
+      await apiClient.googleDriveFileQueueOp(driveSyncActionId, {
+        folder_id: selectedDriveFolder.folder_id,
+        file_id: file.id,
+        operation: 'clear',
+      })
+      await refreshGoogleDriveList()
+    } catch (e: unknown) {
+      setDriveError(e instanceof Error ? e.message : 'Remove from queues failed')
+    } finally {
+      setDriveFileOpId(null)
     }
   }
 
@@ -1319,14 +1451,60 @@ export function PageIndexDocumentsModal({
                         </p>
                       </div>
                       <div>
-                        <span className={labelClass}>Status</span>
-                        <p className="font-medium">{selectedDriveFolder.status}</p>
+                        <label htmlFor="drive-edit-status" className={`block ${labelClass} mb-1`}>
+                          Status
+                        </label>
+                        <select
+                          id="drive-edit-status"
+                          value={driveEditStatus}
+                          onChange={(e) =>
+                            setDriveEditStatus(normalizeDriveDocStatus(e.target.value))
+                          }
+                          disabled={driveSavingDocuments}
+                          className={inputClass}
+                        >
+                          {GOOGLE_DRIVE_DOCUMENT_STATUSES.map((s) => (
+                            <option key={s} value={s}>
+                              {s}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div>
-                        <span className={labelClass}>Active document</span>
-                        <p className="font-medium break-all">
-                          {selectedDriveFolder.active_document || '—'}
-                        </p>
+                        <label
+                          htmlFor="drive-edit-active-doc"
+                          className={`block ${labelClass} mb-1`}
+                        >
+                          Active document
+                        </label>
+                        <input
+                          id="drive-edit-active-doc"
+                          type="text"
+                          value={driveEditActiveDocument}
+                          onChange={(e) => setDriveEditActiveDocument(e.target.value)}
+                          disabled={driveSavingDocuments}
+                          placeholder="Empty clears active document"
+                          className={inputClass}
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleDriveSaveDocumentsFields()}
+                          disabled={
+                            driveSavingDocuments ||
+                            !driveSyncActionId ||
+                            !selectedDriveFolder
+                          }
+                          className={`px-3 py-2 text-sm rounded-lg border ${
+                            dark
+                              ? 'border-indigo-500 text-indigo-200 hover:bg-indigo-950/50'
+                              : 'border-indigo-600 text-indigo-700 hover:bg-indigo-50'
+                          } disabled:opacity-50`}
+                        >
+                          {driveSavingDocuments ? 'Saving…' : 'Save status & active document'}
+                        </button>
                       </div>
                       <div className="sm:col-span-2">
                         <span className={labelClass}>Metadata</span>
@@ -1467,15 +1645,35 @@ export function PageIndexDocumentsModal({
                           Convert to Markdown
                         </span>
                       </label>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                          Docling OCR
+                        </span>
+                        <select
+                          value={driveIngestOcrEngine}
+                          onChange={(e) =>
+                            setDriveIngestOcrEngine(e.target.value as DoclingOcrEngine)
+                          }
+                          disabled={!driveIngestConvertMd}
+                          className={`rounded-md text-sm py-1.5 px-2 border disabled:opacity-50 ${
+                            dark
+                              ? 'border-slate-600 bg-slate-800 text-slate-100'
+                              : 'border-gray-300 bg-white text-gray-900'
+                          }`}
+                        >
+                          <option value="none">None</option>
+                          <option value="rapidocr">RapidOCR</option>
+                        </select>
+                      </div>
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={driveIngestOcr}
-                          onChange={(e) => setDriveIngestOcr(e.target.checked)}
+                          checked={driveIngestNormalizeBold}
+                          onChange={(e) => setDriveIngestNormalizeBold(e.target.checked)}
                           className="rounded border-gray-300 dark:border-slate-600 text-indigo-600"
                         />
                         <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
-                          OCR (Docling)
+                          Bold → headings (sparse ##)
                         </span>
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
@@ -1522,7 +1720,7 @@ export function PageIndexDocumentsModal({
                       <h3
                         className={`text-sm font-semibold ${dark ? 'text-slate-200' : 'text-gray-800'}`}
                       >
-                        Files in folder
+                        Files in folder ({selectedDriveFlatFiles.length})
                       </h3>
                       <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-slate-600">
                         <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-600">
@@ -1540,12 +1738,15 @@ export function PageIndexDocumentsModal({
                               <th className="px-3 py-2 text-left text-xs font-medium uppercase">
                                 Skip ingest
                               </th>
+                              <th className="px-3 py-2 text-left text-xs font-medium uppercase">
+                                Actions
+                              </th>
                             </tr>
                           </thead>
                           <tbody
                             className={`divide-y ${dark ? 'divide-slate-600' : 'divide-gray-200'}`}
                           >
-                            {flattenGoogleDriveFiles(selectedDriveFolder.files ?? []).map(
+                            {selectedDriveFlatFiles.map(
                               (f) => (
                                 <tr key={f.id}>
                                   <td className="px-3 py-2 text-sm max-w-[200px] truncate">
@@ -1582,14 +1783,52 @@ export function PageIndexDocumentsModal({
                                       {driveTogglingFileId === f.id ? '…' : ''}
                                     </label>
                                   </td>
+                                  <td className="px-3 py-2 text-sm whitespace-nowrap">
+                                    <div className="inline-flex flex-wrap gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleDriveFileRowRetry(f)}
+                                        disabled={
+                                          !!f.disable_ingestion ||
+                                          driveRetrying ||
+                                          driveDeleting ||
+                                          driveTogglingFileId === f.id ||
+                                          driveFileOpId === f.id
+                                        }
+                                        className={`px-2 py-1 text-xs font-medium rounded border ${
+                                          dark
+                                            ? 'border-indigo-500 text-indigo-300 hover:bg-indigo-950/50'
+                                            : 'border-indigo-600 text-indigo-700 hover:bg-indigo-50'
+                                        } disabled:opacity-50`}
+                                      >
+                                        Retry
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleDriveFileRowClearQueues(f)}
+                                        disabled={
+                                          driveRetrying ||
+                                          driveDeleting ||
+                                          driveTogglingFileId === f.id ||
+                                          driveFileOpId === f.id
+                                        }
+                                        className={`px-2 py-1 text-xs font-medium rounded border ${
+                                          dark
+                                            ? 'border-red-500 text-red-300 hover:bg-red-950/40'
+                                            : 'border-red-600 text-red-700 hover:bg-red-50'
+                                        } disabled:opacity-50`}
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </td>
                                 </tr>
                               )
                             )}
                           </tbody>
                         </table>
                       </div>
-                      {flattenGoogleDriveFiles(selectedDriveFolder.files ?? []).length ===
-                        0 && (
+                      {selectedDriveFlatFiles.length === 0 && (
                         <p className={`text-sm ${dark ? 'text-slate-500' : 'text-gray-500'}`}>
                           No files in this folder snapshot.
                         </p>
@@ -1723,6 +1962,20 @@ export function PageIndexDocumentsModal({
 
         {activeTab === 'chunks' && (
           <div className="space-y-4">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => void refreshPageIndexData()}
+                disabled={chunksLoading || loading || queueLoading}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                  dark
+                    ? 'border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700 disabled:opacity-50'
+                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50'
+                }`}
+              >
+                {chunksLoading || loading || queueLoading ? 'Refreshing…' : 'Refresh'}
+              </button>
+            </div>
             <div className="flex flex-col lg:flex-row lg:flex-wrap gap-3 lg:items-end">
               <div className="flex-1 min-w-[200px]" ref={chunksDocPickerRef}>
                 <label className={`block ${labelClass} mb-1`} htmlFor="chunks-doc-combobox">
@@ -2512,16 +2765,35 @@ export function PageIndexDocumentsModal({
                   Convert PDF with Docling to Markdown first (requires server jvagent[pageindex])
                 </span>
               </label>
+              <div className="flex items-center gap-2">
+                <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                  Docling OCR
+                </span>
+                <select
+                  value={doclingOcrEngine}
+                  onChange={(e) =>
+                    setDoclingOcrEngine(e.target.value as DoclingOcrEngine)
+                  }
+                  disabled={!convertToMarkdown}
+                  className={`rounded-md text-sm py-1.5 px-2 border disabled:opacity-50 ${
+                    dark
+                      ? 'border-slate-600 bg-slate-800 text-slate-100'
+                      : 'border-gray-300 bg-white text-gray-900'
+                  }`}
+                >
+                  <option value="none">None</option>
+                  <option value="rapidocr">RapidOCR</option>
+                </select>
+              </div>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={doclingOcr}
-                  onChange={(e) => setDoclingOcr(e.target.checked)}
-                  disabled={!convertToMarkdown}
-                  className="rounded border-gray-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
+                  checked={normalizeBoldHeadings}
+                  onChange={(e) => setNormalizeBoldHeadings(e.target.checked)}
+                  className="rounded border-gray-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500"
                 />
                 <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
-                  Enable OCR in Docling (scanned PDFs)
+                  Normalize bold lines to headings (sparse Markdown with fewer than five ##)
                 </span>
               </label>
               <div className="w-full">
@@ -2684,7 +2956,7 @@ export function PageIndexDocumentsModal({
 
             <div className="space-y-3">
               <h3 className={`text-sm font-medium ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
-                Indexed documents
+                Indexed documents ({documents.length})
               </h3>
               {loading ? (
                 <div className="flex items-center justify-center py-8">

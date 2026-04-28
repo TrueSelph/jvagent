@@ -6,9 +6,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from jvspatial.exceptions import ValidationError
 
 from jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action import (
     PageIndexGoogleDriveSyncAction,
+    _extract_and_prepend_queue_item,
+    _find_file_dict_in_tree,
+    _strip_file_id_from_doc_queues,
     _sync_drive_node_status_from_queues,
 )
 
@@ -47,9 +51,7 @@ def test_sync_drive_node_skips_while_active_document_set() -> None:
 
 
 @pytest.mark.asyncio
-async def test_success_processing_failed_queue_keeps_failed_status_when_backlog_remains() -> (
-    None
-):
+async def test_success_processing_failed_queue_keeps_failed_status_when_backlog_remains() -> None:
     file_a = {
         "name": "a.pdf",
         "id": "file-a",
@@ -107,3 +109,167 @@ async def test_success_processing_failed_queue_keeps_failed_status_when_backlog_
     assert out["success"] is True
     assert node.failed_documents["added"] == [file_b]
     assert node.status == "failed"
+
+
+def test_extract_and_prepend_queue_item_moves_match_to_front() -> None:
+    q = {
+        "added": [{"id": "a", "name": "a.pdf"}, {"id": "b", "name": "b.pdf"}],
+        "modified": [],
+        "removed": [],
+    }
+    assert _extract_and_prepend_queue_item(q, "b") is True
+    assert [x["id"] for x in q["added"]] == ["b", "a"]
+
+
+def test_extract_and_prepend_modified_bucket() -> None:
+    q = {
+        "added": [],
+        "modified": [
+            {"new": {"id": "x", "name": "x.pdf"}, "old": None},
+            {"new": {"id": "y", "name": "y.pdf"}, "old": None},
+        ],
+        "removed": [],
+    }
+    assert _extract_and_prepend_queue_item(q, "y") is True
+    assert [m["new"]["id"] for m in q["modified"]] == ["y", "x"]
+
+
+def test_strip_file_id_from_doc_queues() -> None:
+    q = {
+        "added": [{"id": "a"}, {"id": "b"}],
+        "modified": [{"new": {"id": "c"}, "old": None}],
+        "removed": [{"id": "d"}],
+    }
+    _strip_file_id_from_doc_queues(q, "b")
+    assert [x["id"] for x in q["added"]] == ["a"]
+    _strip_file_id_from_doc_queues(q, "c")
+    assert q["modified"] == []
+
+
+def test_find_file_dict_in_tree_nested() -> None:
+    tree = [
+        {
+            "id": "folder1",
+            "mimeType": "application/vnd.google-apps.folder",
+            "files": [
+                {"id": "f1", "name": "n.pdf", "mimeType": "application/pdf"},
+            ],
+        }
+    ]
+    found = _find_file_dict_in_tree(tree, "f1")
+    assert found is not None
+    assert found["name"] == "n.pdf"
+
+
+@pytest.mark.asyncio
+async def test_prioritize_moves_to_front_of_ingesting_queue() -> None:
+    node = SimpleNamespace(
+        ingesting_documents={
+            "added": [
+                {"id": "a", "name": "a.pdf", "mimeType": "application/pdf"},
+                {"id": "b", "name": "b.pdf", "mimeType": "application/pdf"},
+            ],
+            "modified": [],
+            "removed": [],
+        },
+        failed_documents={"added": [], "modified": [], "removed": []},
+        files=[],
+        save=AsyncMock(return_value=None),
+    )
+    action = PageIndexGoogleDriveSyncAction(document_timeout=600)
+    with patch.object(action, "node", new_callable=AsyncMock, return_value=node):
+        out = await action.prioritize_google_drive_file_for_ingest("folder-1", "b")
+    assert out["prioritized_in"] == "ingesting"
+    assert [x["id"] for x in node.ingesting_documents["added"]] == ["b", "a"]
+
+
+@pytest.mark.asyncio
+async def test_prioritize_moves_to_front_of_failed_queue() -> None:
+    node = SimpleNamespace(
+        ingesting_documents={"added": [], "modified": [], "removed": []},
+        failed_documents={
+            "added": [
+                {"id": "a", "name": "a.pdf", "mimeType": "application/pdf"},
+                {"id": "b", "name": "b.pdf", "mimeType": "application/pdf"},
+            ],
+            "modified": [],
+            "removed": [],
+        },
+        files=[],
+        save=AsyncMock(return_value=None),
+    )
+    action = PageIndexGoogleDriveSyncAction(document_timeout=600)
+    with patch.object(action, "node", new_callable=AsyncMock, return_value=node):
+        out = await action.prioritize_google_drive_file_for_ingest("folder-1", "b")
+    assert out["prioritized_in"] == "failed"
+    assert [x["id"] for x in node.failed_documents["added"]] == ["b", "a"]
+
+
+@pytest.mark.asyncio
+async def test_prioritize_enqueues_when_not_in_queues() -> None:
+    f = {
+        "id": "z1",
+        "name": "z.pdf",
+        "mimeType": "application/pdf",
+        "url": "https://example.com/z",
+    }
+    node = SimpleNamespace(
+        ingesting_documents={"added": [], "modified": [], "removed": []},
+        failed_documents={"added": [], "modified": [], "removed": []},
+        files=[f],
+        save=AsyncMock(return_value=None),
+    )
+    action = PageIndexGoogleDriveSyncAction(document_timeout=600)
+    with patch.object(action, "node", new_callable=AsyncMock, return_value=node):
+        out = await action.prioritize_google_drive_file_for_ingest("folder-1", "z1")
+    assert out["prioritized_in"] == "enqueued"
+    assert len(node.ingesting_documents["modified"]) == 1
+    assert node.ingesting_documents["modified"][0]["new"]["id"] == "z1"
+
+
+@pytest.mark.asyncio
+async def test_prioritize_rejects_skip_ingest_enabled() -> None:
+    f = {
+        "id": "z1",
+        "name": "z.pdf",
+        "mimeType": "application/pdf",
+        "disable_ingestion": True,
+    }
+    node = SimpleNamespace(
+        ingesting_documents={"added": [], "modified": [], "removed": []},
+        failed_documents={"added": [], "modified": [], "removed": []},
+        files=[f],
+        save=AsyncMock(return_value=None),
+    )
+    action = PageIndexGoogleDriveSyncAction(document_timeout=600)
+    with (
+        patch.object(action, "node", new_callable=AsyncMock, return_value=node),
+        pytest.raises(ValidationError, match="Skip ingest"),
+    ):
+        await action.prioritize_google_drive_file_for_ingest("folder-1", "z1")
+
+
+@pytest.mark.asyncio
+async def test_clear_google_drive_file_from_queues_strips_both() -> None:
+    node = SimpleNamespace(
+        ingesting_documents={
+            "added": [{"id": "a", "name": "a.pdf"}],
+            "modified": [],
+            "removed": [],
+        },
+        failed_documents={
+            "added": [{"id": "b", "name": "b.pdf"}],
+            "modified": [],
+            "removed": [],
+        },
+        files=[],
+        save=AsyncMock(return_value=None),
+    )
+    action = PageIndexGoogleDriveSyncAction(document_timeout=600)
+    with patch.object(action, "node", new_callable=AsyncMock, return_value=node):
+        out = await action.clear_google_drive_file_from_queues("folder-1", "a")
+    assert out["cleared"] is True
+    assert node.ingesting_documents["added"] == []
+    with patch.object(action, "node", new_callable=AsyncMock, return_value=node):
+        out = await action.clear_google_drive_file_from_queues("folder-1", "b")
+    assert node.failed_documents["added"] == []

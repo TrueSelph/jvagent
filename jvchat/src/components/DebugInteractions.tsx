@@ -71,6 +71,17 @@ export function DebugInteractions({
   const [userNamesByUserId, setUserNamesByUserId] = useState<
     Record<string, string>
   >({});
+  const [purging, setPurging] = useState(false);
+  const [deletingUser, setDeletingUser] = useState(false);
+  /** Pending destructive action shown in confirmation modal (scope snapshotted at open). */
+  const [memoryConfirm, setMemoryConfirm] = useState<
+    | null
+    | {
+        kind: "purge";
+        scope: { conversation_id?: string; user_id?: string };
+      }
+    | { kind: "delete"; userId: string }
+  >(null);
 
   useEffect(() => {
     selectedUserIdRef.current = selectedUserId;
@@ -171,12 +182,15 @@ export function DebugInteractions({
           interactionData.conversation_history || [];
         const user_id =
           log.log_data?.user_id || interactionData.user_id;
+        const conversation_id =
+          log.log_data?.conversation_id ?? interactionData.conversation_id;
         return {
           id: log.log_id,
           utterance,
           metrics,
           conversationHistory,
           user_id,
+          conversation_id,
         };
       })
       .filter((p: any) => p.metrics && p.metrics.length > 0);
@@ -306,6 +320,68 @@ export function DebugInteractions({
     return parentInteractions.filter((p) => p.user_id === selectedUserId);
   }, [parentInteractions, selectedUserId]);
 
+  const refreshInteractionLogsPage1 = useCallback(async () => {
+    const agentId = targetAgentIdRef.current ?? targetAgentId;
+    if (!agentId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const logsResponse = await apiClient.getLogs({
+        category: "INTERACTION",
+        agent_id: agentId,
+        user_id: selectedUserId ?? undefined,
+        page: 1,
+        page_size: pageSize,
+      });
+      setPagination(logsResponse.pagination);
+      const parents = mapLogsToParents(logsResponse.logs || []);
+      setParentInteractions(parents);
+      setKnownUserIds((prev) =>
+        [...new Set([...prev, ...extractUserIdsFromLogs(logsResponse.logs || [])])].sort()
+      );
+      if (parents.length > 0) {
+        selectInteraction(0, parents[0].metrics.length - 1, parents);
+      } else {
+        setSelectedParentIndex(null);
+        setSelectedMetricIndex(null);
+        setSelectedInteraction(null);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to load logs");
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    targetAgentId,
+    selectedUserId,
+    pageSize,
+    mapLogsToParents,
+    extractUserIdsFromLogs,
+    selectInteraction,
+  ]);
+
+  const purgeScopeParams = useMemo((): {
+    conversation_id?: string;
+    user_id?: string;
+  } | null => {
+    if (!targetAgentId) return null;
+    const row =
+      selectedParentIndex != null &&
+      selectedParentIndex >= 0 &&
+      effectiveParents[selectedParentIndex]
+        ? effectiveParents[selectedParentIndex]
+        : null;
+    const cid = row?.conversation_id;
+    if (cid) return { conversation_id: cid };
+    if (selectedUserId) return { user_id: selectedUserId };
+    return null;
+  }, [
+    targetAgentId,
+    selectedParentIndex,
+    effectiveParents,
+    selectedUserId,
+  ]);
+
   useEffect(() => {
     initializeDebugSession();
   }, [initializeDebugSession]);
@@ -355,50 +431,11 @@ export function DebugInteractions({
   }, [effectiveParents, selectedUserId]);
 
   useEffect(() => {
-    const agentId = targetAgentIdRef.current;
-    if (!initialLoadDone.current || !agentId) return;
-
-    const refetchInteractionLogsPage1 = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const logsResponse = await apiClient.getLogs({
-          category: "INTERACTION",
-          agent_id: agentId,
-          user_id: selectedUserId ?? undefined,
-          page: 1,
-          page_size: pageSize,
-        });
-        setPagination(logsResponse.pagination);
-        const parents = mapLogsToParents(logsResponse.logs || []);
-        setParentInteractions(parents);
-        setKnownUserIds((prev) =>
-          [...new Set([...prev, ...extractUserIdsFromLogs(logsResponse.logs || [])])].sort()
-        );
-        if (parents.length > 0) {
-          selectInteraction(0, parents[0].metrics.length - 1, parents);
-        } else {
-          setSelectedParentIndex(null);
-          setSelectedMetricIndex(null);
-          setSelectedInteraction(null);
-        }
-      } catch (err: any) {
-        setError(err.message || "Failed to load logs");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    refetchInteractionLogsPage1();
+    if (!initialLoadDone.current || !targetAgentIdRef.current) return;
+    refreshInteractionLogsPage1();
     // Intentionally omit targetAgentId: initial session load already fetches when it becomes set.
     // Refetch only when user filter or page size changes after the first load.
-  }, [
-    selectedUserId,
-    pageSize,
-    mapLogsToParents,
-    extractUserIdsFromLogs,
-    selectInteraction,
-  ]);
+  }, [selectedUserId, pageSize, refreshInteractionLogsPage1]);
 
   useEffect(() => {
     const historyData = selectedInteraction?.data?.history;
@@ -522,6 +559,67 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
       setImproving(false);
     }
   };
+
+  const formatMemoryActionError = (err: any): string => {
+    const d = err.response?.data;
+    if (typeof d?.detail === "string") return d.detail;
+    if (Array.isArray(d?.detail)) {
+      return d.detail.map((x: { msg?: string }) => x.msg ?? JSON.stringify(x)).join("; ");
+    }
+    if (d?.message && typeof d.message === "string") return d.message;
+    return err.message || "Request failed";
+  };
+
+  const requestPurgeConfirm = () => {
+    if (!targetAgentId || !purgeScopeParams) return;
+    setMemoryConfirm({ kind: "purge", scope: { ...purgeScopeParams } });
+  };
+
+  const requestDeleteUserConfirm = () => {
+    if (!targetAgentId || !selectedUserId) return;
+    setMemoryConfirm({ kind: "delete", userId: selectedUserId });
+  };
+
+  const confirmPurgeMemory = async () => {
+    if (!targetAgentId || memoryConfirm?.kind !== "purge") return;
+    const scope = memoryConfirm.scope;
+    setMemoryConfirm(null);
+    setPurging(true);
+    setError(null);
+    try {
+      await apiClient.purgeAgentMemory(targetAgentId, scope);
+      await refreshInteractionLogsPage1();
+    } catch (err: any) {
+      setError(formatMemoryActionError(err));
+    } finally {
+      setPurging(false);
+    }
+  };
+
+  const confirmDeleteUserMemory = async () => {
+    if (!targetAgentId || memoryConfirm?.kind !== "delete") return;
+    const userId = memoryConfirm.userId;
+    setMemoryConfirm(null);
+    setDeletingUser(true);
+    setError(null);
+    try {
+      await apiClient.deleteAgentMemoryUser(targetAgentId, userId);
+      await refreshInteractionLogsPage1();
+    } catch (err: any) {
+      setError(formatMemoryActionError(err));
+    } finally {
+      setDeletingUser(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!memoryConfirm) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMemoryConfirm(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [memoryConfirm]);
 
   const handleExport = () => {
     if (parentInteractions.length === 0) return;
@@ -812,7 +910,8 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
             <div
               className={`rounded-lg shadow-sm p-4 mb-6 border ${effectiveDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"}`}
             >
-              <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+              <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:flex-wrap xl:items-end xl:justify-between max-w-5xl">
+                <div className="flex flex-col sm:flex-row gap-4 flex-1 min-w-0">
                 {(knownUserIds.length > 0 || selectedUserId) && (
                   <div>
                     <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-slate-300" : ""}`}>
@@ -867,6 +966,50 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                       </option>
                     ))}
                   </select>
+                </div>
+                </div>
+                <div className="flex flex-wrap gap-2 shrink-0 items-end">
+                  <button
+                    type="button"
+                    onClick={requestPurgeConfirm}
+                    disabled={
+                      loading ||
+                      purging ||
+                      deletingUser ||
+                      !purgeScopeParams ||
+                      !targetAgentId
+                    }
+                    title={
+                      purgeScopeParams
+                        ? undefined
+                        : "Select a user or an interaction that includes conversation metadata"
+                    }
+                    className={
+                      isEmbedded
+                        ? `px-3 py-2 text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${effectiveDarkMode ? "text-red-300 bg-red-950/40 hover:bg-red-900/55 border border-red-800/80" : "text-red-800 bg-red-50 hover:bg-red-100 border border-red-200"}`
+                        : `px-3 py-1.5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed ${effectiveDarkMode ? "bg-red-950/40 hover:bg-red-900/55 border border-red-800 text-red-300" : "bg-red-50 hover:bg-red-100 border border-red-200 text-red-800"}`
+                    }
+                  >
+                    {purging ? "Purging…" : isEmbedded ? "Purge" : "🗑 Purge"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={requestDeleteUserConfirm}
+                    disabled={
+                      loading ||
+                      purging ||
+                      deletingUser ||
+                      !targetAgentId ||
+                      !selectedUserId
+                    }
+                    className={
+                      isEmbedded
+                        ? `px-3 py-2 text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${effectiveDarkMode ? "text-red-300 bg-red-950/40 hover:bg-red-900/55 border border-red-800/80" : "text-red-800 bg-red-50 hover:bg-red-100 border border-red-200"}`
+                        : `px-3 py-1.5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed ${effectiveDarkMode ? "bg-red-950/40 hover:bg-red-900/55 border border-red-800 text-red-300" : "bg-red-50 hover:bg-red-100 border border-red-200 text-red-800"}`
+                    }
+                  >
+                    {deletingUser ? "Deleting…" : isEmbedded ? "Delete user" : "🗑 Delete user"}
+                  </button>
                 </div>
               </div>
               {effectiveParents.length === 0 && selectedUserId ? (
@@ -1228,6 +1371,90 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
             )}
         </div>
       </div>
+
+      {memoryConfirm && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="memory-confirm-title"
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setMemoryConfirm(null);
+          }}
+        >
+          <div
+            className={`max-w-md w-full rounded-xl shadow-xl border p-6 ${effectiveDarkMode ? "bg-slate-800 border-slate-600 text-slate-100" : "bg-white border-gray-200 text-gray-900"}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {memoryConfirm.kind === "purge" && (
+              <>
+                <h3
+                  id="memory-confirm-title"
+                  className={`text-lg font-semibold mb-2 ${effectiveDarkMode ? "text-slate-100" : "text-gray-900"}`}
+                >
+                  Confirm purge
+                </h3>
+                <p className={`text-sm mb-6 ${effectiveDarkMode ? "text-slate-300" : "text-gray-600"}`}>
+                  {memoryConfirm.scope.conversation_id
+                    ? "Purge this conversation from agent memory? Associated interactions will be removed. This cannot be undone."
+                    : memoryConfirm.scope.user_id
+                      ? `Purge all conversations for user "${formatUserLabel(memoryConfirm.scope.user_id)}" on this agent? Associated interactions will be removed. This cannot be undone.`
+                      : "Purge conversation data? This cannot be undone."}
+                </p>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMemoryConfirm(null)}
+                    className={`px-4 py-2 text-sm rounded-lg font-medium ${effectiveDarkMode ? "text-slate-200 bg-slate-700 hover:bg-slate-600" : "text-gray-700 bg-gray-100 hover:bg-gray-200"}`}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void confirmPurgeMemory()}
+                    disabled={purging}
+                    className="px-4 py-2 text-sm rounded-lg font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {purging ? "Purging…" : "Confirm purge"}
+                  </button>
+                </div>
+              </>
+            )}
+            {memoryConfirm.kind === "delete" && (
+              <>
+                <h3
+                  id="memory-confirm-title"
+                  className={`text-lg font-semibold mb-2 ${effectiveDarkMode ? "text-slate-100" : "text-gray-900"}`}
+                >
+                  Confirm delete user
+                </h3>
+                <p className={`text-sm mb-6 ${effectiveDarkMode ? "text-slate-300" : "text-gray-600"}`}>
+                  Permanently delete memory for user &quot;
+                  {formatUserLabel(memoryConfirm.userId)}&quot; on this agent (user node
+                  and connected data)? This cannot be undone.
+                </p>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMemoryConfirm(null)}
+                    className={`px-4 py-2 text-sm rounded-lg font-medium ${effectiveDarkMode ? "text-slate-200 bg-slate-700 hover:bg-slate-600" : "text-gray-700 bg-gray-100 hover:bg-gray-200"}`}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void confirmDeleteUserMemory()}
+                    disabled={deletingUser}
+                    className="px-4 py-2 text-sm rounded-lg font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {deletingUser ? "Deleting…" : "Confirm delete"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 

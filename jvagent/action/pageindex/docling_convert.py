@@ -7,8 +7,11 @@ Optional dependency: declared in ``jvagent/action/pageindex/info.yaml`` (pip ins
 from __future__ import annotations
 
 import logging
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +20,69 @@ _DOC_NOT_INSTALLED_MSG = (
     "Use an agent with jvagent/pageindex_retrieval_interact_action (see jvagent/action/pageindex/info.yaml), "
     "or: pip install 'jvagent[pageindex]' or pip install docling tabulate"
 )
+
+# Aligned with jvforge ``pi_vendor.docling_convert.DOCLING_IMAGE_EXTENSIONS``.
+_DOCLING_IMAGE_EXTENSIONS = frozenset(
+    {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp"}
+)
+
+
+def wants_ooxml_pdf_for_docling_ocr(
+    *, ocr: bool, docling_ocr_engine: Optional[str]
+) -> bool:
+    """Aligned with jvforge ``office_convert.wants_ooxml_to_pdf_for_docling_ocr``."""
+    if ocr:
+        return True
+    raw = (docling_ocr_engine or "").strip().lower()
+    return bool(raw) and raw not in ("none", "off", "no", "false", "0")
+
+
+_OOXML_OCR_SUFFIXES = frozenset({".docx", ".pptx"})
+
+
+def _suffix_uses_standard_pdf_pipeline(suffix: str) -> bool:
+    s = suffix.lower()
+    return s == ".pdf" or s in _DOCLING_IMAGE_EXTENSIONS
+
+
+def _ooxml_to_pdf_via_libreoffice(path: Path, *, timeout: float = 120.0) -> Tuple[Path, Path]:
+    """Convert OOXML to PDF; returns ``(pdf_path, tmp_dir)`` for cleanup."""
+    soffice = shutil.which("soffice") or shutil.which("libreoffice")
+    if not soffice:
+        raise RuntimeError("LibreOffice (soffice) not on PATH")
+    tmp_root = Path(tempfile.mkdtemp(prefix="jvagent_lo_"))
+    outdir = tmp_root
+    outdir.mkdir(parents=True, exist_ok=True)
+    src = path.resolve()
+    cmd = [
+        soffice,
+        "--headless",
+        "--nologo",
+        "--nodefault",
+        "--nofirststartwizard",
+        "--invisible",
+        "--convert-to",
+        "pdf",
+        "--outdir",
+        str(outdir.resolve()),
+        str(src),
+    ]
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or "").strip() or f"exit {result.returncode}"
+        raise RuntimeError(err)
+    expected = outdir / f"{path.stem}.pdf"
+    if not expected.is_file():
+        for p in outdir.iterdir():
+            if p.suffix.lower() == ".pdf" and p.stem == path.stem:
+                return p, tmp_root
+        raise RuntimeError(f"LibreOffice did not create {expected.name}")
+    return expected, tmp_root
 
 
 def _docling_items_to_markdown(document: object) -> str:
@@ -101,12 +167,15 @@ def convert_document_to_markdown_sync(
     source_path: Union[str, Path],
     *,
     ocr: bool = False,
+    docling_ocr_engine: Optional[str] = None,
 ) -> str:
     """Convert a file to markdown using Docling (PDF pipeline uses OCR/tables per options).
 
     Args:
         source_path: Path to a PDF or other Docling-supported format.
         ocr: Enable OCR in the PDF pipeline (scanned pages).
+        docling_ocr_engine: Combined with ``wants_ooxml_pdf_for_docling_ocr`` for OOXML routing.
+            When OCR runs on PDF/images, RapidOCR (ONNX) is always used.
 
     Returns:
         Markdown string with ``--- [ Page N ] ---`` markers at page transitions.
@@ -115,33 +184,62 @@ def convert_document_to_markdown_sync(
     if not path.is_file():
         raise FileNotFoundError(f"Docling source not found: {path}")
 
+    lo_cleanup: List[Path] = []
+    if wants_ooxml_pdf_for_docling_ocr(
+        ocr=ocr, docling_ocr_engine=docling_ocr_engine
+    ) and path.suffix.lower() in _OOXML_OCR_SUFFIXES:
+        try:
+            pdf_path, tmp_root = _ooxml_to_pdf_via_libreoffice(path)
+            path = pdf_path
+            lo_cleanup.append(tmp_root)
+        except Exception as e:
+            logger.warning(
+                "OOXML→PDF for OCR failed (%s); using native Docling Word pipeline",
+                e,
+            )
+
     try:
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import (
             PdfPipelineOptions,
+            RapidOcrOptions,
             TableFormerMode,
         )
-        from docling.document_converter import DocumentConverter, PdfFormatOption
+        from docling.document_converter import (
+            DocumentConverter,
+            ImageFormatOption,
+            PdfFormatOption,
+        )
     except ImportError as e:
         raise ImportError(_DOC_NOT_INSTALLED_MSG) from e
 
-    suffix = path.suffix.lower()
-    if suffix == ".pdf":
-        pipeline_options = PdfPipelineOptions()
-        pipeline_options.do_ocr = ocr
-        pipeline_options.do_table_structure = True
-        pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
-        converter = DocumentConverter(
-            format_options={
-                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
-            }
+    try:
+        suffix = path.suffix.lower()
+        uses_std_pdf = _suffix_uses_standard_pdf_pipeline(suffix)
+        effective_ocr = wants_ooxml_pdf_for_docling_ocr(
+            ocr=ocr, docling_ocr_engine=docling_ocr_engine
         )
-    else:
-        # Office / HTML / images: default Docling routing; OCR flag N/A
-        converter = DocumentConverter()
+        if uses_std_pdf:
+            pipeline_options = PdfPipelineOptions()
+            pipeline_options.do_ocr = effective_ocr
+            pipeline_options.do_table_structure = True
+            pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
+            if effective_ocr:
+                pipeline_options.ocr_options = RapidOcrOptions()
+            converter = DocumentConverter(
+                format_options={
+                    InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
+                    InputFormat.IMAGE: ImageFormatOption(pipeline_options=pipeline_options),
+                }
+            )
+        else:
+            converter = DocumentConverter()
 
-    result = converter.convert(str(path))
-    if not result or not result.document:
-        raise RuntimeError("Docling conversion produced no document")
+        result = converter.convert(str(path))
+        if not result or not result.document:
+            raise RuntimeError("Docling conversion produced no document")
 
-    return _docling_items_to_markdown(result.document)
+        return _docling_items_to_markdown(result.document)
+    finally:
+        for d in lo_cleanup:
+            shutil.rmtree(d, ignore_errors=True)

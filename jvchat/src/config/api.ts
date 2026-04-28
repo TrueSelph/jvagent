@@ -29,6 +29,7 @@ import type {
   GraphExpandResponse,
   GraphSubgraphResponse,
   GoogleDriveListResponse,
+  DoclingOcrEngine,
 } from '../types/api'
 
 class ApiClient {
@@ -749,6 +750,62 @@ class ApiClient {
     }
   }
 
+  /**
+   * Admin: delete user memory node and cascaded edges for this agent.
+   * DELETE /api/agents/{agent_id}/memory/users/{user_id}
+   */
+  async deleteAgentMemoryUser(
+    agentId: string,
+    userId: string
+  ): Promise<{ deleted_count?: number; message?: string }> {
+    const encodedAgent = encodeURIComponent(agentId)
+    const encodedUser = encodeURIComponent(userId)
+    const path = `/api/agents/${encodedAgent}/memory/users/${encodedUser}`
+    const fallbackPath = `/agents/${encodedAgent}/memory/users/${encodedUser}`
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.delete(path, { baseURL })
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.delete(fallbackPath, { baseURL })
+        }
+        throw err
+      }
+    })
+    const data = response.data
+    if (data?.success && data?.data) return data.data as { deleted_count?: number; message?: string }
+    return data as { deleted_count?: number; message?: string }
+  }
+
+  /**
+   * Admin: purge conversations (and cascaded interactions). Uses query params only.
+   * DELETE /api/agents/{agent_id}/memory/purge?conversation_id=…|user_id=…
+   */
+  async purgeAgentMemory(
+    agentId: string,
+    params: { conversation_id?: string; user_id?: string }
+  ): Promise<{ purged_count?: number; message?: string }> {
+    const query: Record<string, string> = {}
+    if (params.conversation_id) query.conversation_id = params.conversation_id
+    if (params.user_id) query.user_id = params.user_id
+    const encodedAgent = encodeURIComponent(agentId)
+    const path = `/api/agents/${encodedAgent}/memory/purge`
+    const fallbackPath = `/agents/${encodedAgent}/memory/purge`
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.delete(path, { baseURL, params: query })
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.delete(fallbackPath, { baseURL, params: query })
+        }
+        throw err
+      }
+    })
+    const data = response.data
+    if (data?.success && data?.data) return data.data as { purged_count?: number; message?: string }
+    return data as { purged_count?: number; message?: string }
+  }
+
   async getGraph(format: string = 'dot', include_attributes: boolean = true): Promise<string> {
     // Endpoint returns plain text (DOT or Mermaid diagram syntax)
     // Try /api/graph first, fallback to /graph, with baseURL fallbacks
@@ -1042,6 +1099,45 @@ class ApiClient {
   }
 
   /**
+   * PageIndex Google Drive Sync: patch folder sync node (status, active_document, queues, metadata).
+   * Path: PATCH /api/actions/{actionId}/update_google_documents
+   */
+  async updateGoogleDriveDocuments(
+    actionId: string,
+    body: {
+      folder_id: string
+      folder_name?: string
+      metadata?: Record<string, unknown>
+      status?: string
+      ingesting_documents?: Record<string, unknown>
+      failed_documents?: Record<string, unknown>
+      active_document?: string
+    }
+  ): Promise<{ message?: string; result?: unknown }> {
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.patch(
+          `/api/actions/${encodeURIComponent(actionId)}/update_google_documents`,
+          body,
+          { baseURL }
+        )
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.patch(
+            `/actions/${encodeURIComponent(actionId)}/update_google_documents`,
+            body,
+            { baseURL }
+          )
+        }
+        throw err
+      }
+    })
+    const data = response.data
+    if (data?.success && data?.data) return data.data
+    return data
+  }
+
+  /**
    * PageIndex Google Drive Sync: ingest / retry.
    * Path: POST /api/actions/{actionId}/ingest_google_documents
    */
@@ -1053,6 +1149,8 @@ class ApiClient {
       retry_failed_documents?: boolean
       convert_to_markdown?: boolean
       ocr?: boolean
+      docling_ocr_engine?: DoclingOcrEngine
+      normalize_bold_headings?: boolean
     }
   ): Promise<{ message?: string; result?: unknown }> {
     const response = await this._withFallback(async (baseURL) => {
@@ -1140,6 +1238,49 @@ class ApiClient {
   }
 
   /**
+   * PageIndex Google Drive Sync: prioritize or clear a file in ingest/failed queues.
+   * Path: POST /api/actions/{actionId}/google_drive_file_queue
+   */
+  async googleDriveFileQueueOp(
+    actionId: string,
+    body: {
+      folder_id: string
+      file_id: string
+      operation: 'prioritize' | 'clear'
+    }
+  ): Promise<{
+    message?: string
+    result?: {
+      folder_id?: string
+      file_id?: string
+      prioritized_in?: 'ingesting' | 'failed' | 'enqueued'
+      cleared?: boolean
+    }
+  }> {
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.post(
+          `/api/actions/${encodeURIComponent(actionId)}/google_drive_file_queue`,
+          body,
+          { baseURL }
+        )
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.post(
+            `/actions/${encodeURIComponent(actionId)}/google_drive_file_queue`,
+            body,
+            { baseURL }
+          )
+        }
+        throw err
+      }
+    })
+    const data = response.data
+    if (data?.success && data?.data) return data.data
+    return data
+  }
+
+  /**
    * List documents in the agent's PageIndex collection.
    * Path: GET /api/agents/{agentId}/pageindex/documents
    */
@@ -1176,6 +1317,9 @@ class ApiClient {
       ifAddNodeSummary?: boolean
       convertToMarkdown?: boolean
       ocr?: boolean
+      /** When set, sent as ``docling_ocr_engine``; overrides plain ``ocr`` on jvforge. */
+      doclingOcrEngine?: DoclingOcrEngine
+      normalizeBoldHeadings?: boolean
       emergency?: boolean  // NEW: Mark as emergency priority
     }
   ): Promise<PageIndexUploadResponse & {
@@ -1203,8 +1347,14 @@ class ApiClient {
     if (options?.convertToMarkdown !== undefined) {
       formData.append('convert_to_markdown', options.convertToMarkdown ? 'yes' : 'no')
     }
+    if (options?.doclingOcrEngine !== undefined) {
+      formData.append('docling_ocr_engine', options.doclingOcrEngine)
+    }
     if (options?.ocr !== undefined) {
       formData.append('ocr', options.ocr ? 'yes' : 'no')
+    }
+    if (options?.normalizeBoldHeadings !== undefined) {
+      formData.append('normalize_bold_headings', options.normalizeBoldHeadings ? 'yes' : 'no')
     }
     if (options?.emergency !== undefined) {
       formData.append('emergency', options.emergency ? 'true' : 'false')
@@ -1432,7 +1582,14 @@ class ApiClient {
     if (params?.chunk_enabled != null && params.chunk_enabled !== '')
       query.chunk_enabled = params.chunk_enabled
     const response = await this._withFallback((baseURL) =>
-      this.client.get(path, { baseURL, params: query })
+      this.client.get(path, {
+        baseURL,
+        params: query,
+        headers: {
+          'Cache-Control': 'no-cache',
+          Pragma: 'no-cache',
+        },
+      })
     )
     const data = response.data
     if (data?.success && data?.data) return data.data
@@ -1456,7 +1613,14 @@ class ApiClient {
     if (params?.chunk_enabled != null && params.chunk_enabled !== '')
       query.chunk_enabled = params.chunk_enabled
     const response = await this._withFallback((baseURL) =>
-      this.client.get(path, { baseURL, params: query })
+      this.client.get(path, {
+        baseURL,
+        params: query,
+        headers: {
+          'Cache-Control': 'no-cache',
+          Pragma: 'no-cache',
+        },
+      })
     )
     const data = response.data
     if (data?.success && data?.data) return data.data

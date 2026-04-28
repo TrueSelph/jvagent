@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
-import { useStreaming } from "./useStreaming";
+import { useStreaming, ATTACHMENT_ONLY_USER_PROMPT } from "./useStreaming";
 
 vi.mock("../config/api", () => ({
   apiClient: {
@@ -303,5 +303,64 @@ describe("useStreaming thought handling", () => {
     expect(result.current.messages).toHaveLength(1);
     expect(result.current.messages[0].category).not.toBe("thought");
     expect(mockSaveMessages).toHaveBeenCalled();
+  });
+
+  it("passes data with image_urls and whatsapp_media to streamInteract when files are attached", async () => {
+    mockStreamInteract.mockImplementation(async (_agentId, _request, onChunk) => {
+      onChunk({
+        type: "start",
+        interaction_id: "int-files",
+        session_id: "sess-files",
+      });
+      onChunk({
+        type: "final",
+        interaction: {
+          id: "int-files",
+          utterance: ATTACHMENT_ONLY_USER_PROMPT,
+          actions: [],
+          directives: [],
+          parameters: [],
+          model_log: [],
+          messages: [],
+          streamed: true,
+        },
+      });
+    });
+
+    const img = new File([Uint8Array.of(137, 80, 78, 71)], "a.png", {
+      type: "image/png",
+    });
+    const pdf = new File([Uint8Array.of(37, 80, 68, 70)], "b.pdf", {
+      type: "application/pdf",
+    });
+
+    const { result } = renderHook(() =>
+      useStreaming("agent-1", "sess-files"),
+    );
+
+    await act(async () => {
+      await result.current.sendMessage("", { files: [img, pdf] });
+    });
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(false);
+    });
+
+    expect(mockStreamInteract).toHaveBeenCalled();
+    const call = mockStreamInteract.mock.calls.find(
+      (c) => (c[1] as { data?: unknown }).data,
+    );
+    expect(call).toBeDefined();
+    const request = call![1] as {
+      utterance: string;
+      stream: boolean;
+      data?: { image_urls?: unknown[]; whatsapp_media?: unknown[] };
+    };
+    expect(request.utterance).toBe(ATTACHMENT_ONLY_USER_PROMPT);
+    expect(request.data?.image_urls?.length).toBe(1);
+    expect(request.data?.whatsapp_media?.length).toBe(1);
+
+    const user = result.current.messages.find((m) => m.role === "user");
+    expect(user?.attachments).toHaveLength(2);
   });
 });

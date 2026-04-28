@@ -232,6 +232,7 @@ class PageIndexAction(Action):
         doc_url: Optional[str] = None,
         convert_to_markdown: bool = False,
         ocr: bool = False,
+        docling_ocr_engine: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Assimilate a document into the PageIndex index."""
         from ..documents import assimilate_document
@@ -258,6 +259,7 @@ class PageIndexAction(Action):
                 doc_url=doc_url,
                 convert_to_markdown=convert_to_markdown,
                 ocr=ocr,
+                docling_ocr_engine=docling_ocr_engine,
             )
         finally:
             if model_action:

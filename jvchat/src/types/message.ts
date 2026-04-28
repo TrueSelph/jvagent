@@ -1,3 +1,13 @@
+/** Local outgoing attachments: blob previews are session-only; data URLs persist in localStorage. */
+export interface UserMessageAttachmentPreview {
+  name: string
+  kind: 'image' | 'document'
+  /** Ephemeral `blob:` URL (current session); not persisted across reload when persistedDataUrl is absent. */
+  previewUrl?: string
+  /** `data:image/...;base64,...` — stored with saveMessages and survives reload for that session. */
+  persistedDataUrl?: string
+}
+
 export interface Message {
   id: string
   role: 'user' | 'assistant'
@@ -8,6 +18,8 @@ export interface Message {
   interactionId?: string // Used to prevent cross-interaction overwrites
   /** Echo of server ResponseMessage.metadata (e.g. media_url, media_type) */
   metadata?: Record<string, unknown>
+  /** Outgoing files shown inline on the user bubble (jvchat). */
+  attachments?: UserMessageAttachmentPreview[]
   /** Logical response stream category. */
   category?: 'user' | 'thought'
   /** Thought subtype when category === "thought". */

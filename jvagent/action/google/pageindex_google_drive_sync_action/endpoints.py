@@ -13,6 +13,7 @@ from jvspatial.exceptions import (
 from jvspatial.exceptions import ValidationError as SpatialValidationError
 from pydantic import Field
 
+from jvagent.action.pageindex.endpoints import _resolve_docling_ocr_for_ingest
 from jvagent.action.utils.endpoint_helpers import require_typed_action
 from jvagent.core.agent import Agent
 
@@ -78,7 +79,19 @@ async def ingest_google_documents_endpoint(
     ocr: bool = Field(
         default=False,
         examples=[False],
-        description="Enable Docling OCR when convert_to_markdown is True",
+        description="Enable Docling OCR when convert_to_markdown is True (ignored if docling_ocr_engine is set)",
+    ),
+    docling_ocr_engine: Optional[str] = Field(
+        default=None,
+        description='Docling OCR: "none" or "rapidocr" (ONNX RapidOCR). Legacy names map to rapidocr. When set, overrides ocr.',
+    ),
+    normalize_bold_headings: bool = Field(
+        default=False,
+        examples=[False],
+        description=(
+            "When True: sparse Markdown bold→## normalization runs on jvforge only "
+            "(requires JVAGENT_JVFORGE_BASE_URL)"
+        ),
     ),
 ) -> Dict[str, Any]:
     """Recursively extract and ingest PDF documents from Google Drive folders.
@@ -122,6 +135,8 @@ async def ingest_google_documents_endpoint(
             retry_failed_documents=retry_failed_documents,
             convert_to_markdown=convert_to_markdown,
             ocr=ocr,
+            docling_ocr_engine=docling_ocr_engine,
+            normalize_bold_headings=normalize_bold_headings,
         )
 
         response = result.get("message") or "No pending documents to ingest"
@@ -260,9 +275,7 @@ async def delete_google_documents_endpoint(
 )
 async def update_google_documents_endpoint(
     action_id: str,
-    folder_id: str = Field(
-        ..., description="Google Drive folder id (GoogleDriveDocuments.folder_id)"
-    ),
+    folder_id: str = Field(..., description="Google Drive folder id (GoogleDriveDocuments.folder_id)"),
     folder_name: Optional[str] = Field(
         default=None,
         description="Folder display name stored on the node",
@@ -389,7 +402,82 @@ async def set_google_drive_file_ingestion_endpoint(
 
 
 @endpoint(
-    "/page_index_google_drive_sync/interact/webhook/{agent_id}",
+    "/actions/{action_id}/google_drive_file_queue",
+    methods=["POST"],
+    auth=True,
+    roles=["admin"],
+    tags=["PageIndex Google Drive Sync"],
+    response=success_response(
+        data={
+            "message": ResponseField(
+                field_type=str,
+                description="Queue operation result message",
+            ),
+            "result": ResponseField(
+                field_type=dict,
+                description="folder_id, file_id, prioritized_in or cleared",
+            ),
+        }
+    ),
+)
+async def google_drive_file_queue_endpoint(
+    action_id: str,
+    folder_id: str = Field(..., description="Google Drive folder id"),
+    file_id: str = Field(..., description="Google Drive file id"),
+    operation: str = Field(
+        ...,
+        description='Either "prioritize" (retry next) or "clear" (remove from queues)',
+    ),
+) -> Dict[str, Any]:
+    """Prioritize a file for the next ingest pass, or remove it from ingest/failed queues."""
+    action = await require_typed_action(
+        action_id,
+        PageIndexGoogleDriveSyncAction,
+        not_found_message=(
+            f"PageIndexGoogleDriveSyncAction with ID '{action_id}' not found"
+        ),
+        wrong_type_message=(
+            f"Action '{action_id}' is not a PageIndexGoogleDriveSyncAction"
+        ),
+    )
+    op = str(operation).strip().lower()
+    if op not in ("prioritize", "clear"):
+        raise ValidationError(
+            message='operation must be "prioritize" or "clear"',
+            details={"operation": operation},
+        )
+    try:
+        if op == "prioritize":
+            result = await action.prioritize_google_drive_file_for_ingest(
+                folder_id=folder_id,
+                file_id=file_id,
+            )
+            return {
+                "message": "Google Drive file prioritized for ingest",
+                "result": result,
+            }
+        result = await action.clear_google_drive_file_from_queues(
+            folder_id=folder_id,
+            file_id=file_id,
+        )
+        return {
+            "message": "Google Drive file removed from ingest queues",
+            "result": result,
+        }
+    except SpatialValidationError as e:
+        raise ValidationError(
+            message=str(e),
+            details=e.details or {},
+        )
+    except Exception as e:
+        logger.error("Error in google_drive_file_queue: %s", e, exc_info=True)
+        raise ValidationError(
+            message=f"Queue operation failed: {str(e)}",
+            details={"error": str(e)},
+        )
+
+
+@endpoint(
     methods=["POST"],
     webhook=True,
     webhook_auth="api_key",  # Validates API key from query param or header
@@ -467,7 +555,20 @@ async def pageindex_google_drive_sync_action_interact(
         convert_to_markdown = _payload_bool(
             request_data, "convert_to_markdown", default=True
         )
-        ocr_flag = _payload_bool(request_data, "ocr", default=True)
+        docling_raw = request_data.get("docling_ocr_engine")
+        docling_str = (
+            str(docling_raw).strip()
+            if docling_raw is not None and str(docling_raw).strip()
+            else None
+        )
+        if docling_str:
+            ocr_flag, docling_ocr_eff = _resolve_docling_ocr_for_ingest(docling_str, None)
+        else:
+            ocr_flag = _payload_bool(request_data, "ocr", default=True)
+            docling_ocr_eff = None
+        normalize_bold_flag = _payload_bool(
+            request_data, "normalize_bold_headings", default=False
+        )
         drive_action = pageindex_google_drive_sync_action
 
         if is_serverless_mode():
@@ -480,6 +581,8 @@ async def pageindex_google_drive_sync_action_interact(
                 retry_failed_documents=retry_failed,
                 convert_to_markdown=convert_to_markdown,
                 ocr=ocr_flag,
+                docling_ocr_engine=docling_ocr_eff,
+                normalize_bold_headings=normalize_bold_flag,
             )
             response = result.get("message") or "No pending documents to ingest"
             t0 = getattr(request.state, "webhook_start", None)
@@ -502,6 +605,8 @@ async def pageindex_google_drive_sync_action_interact(
                 retry_failed_documents=retry_failed,
                 convert_to_markdown=convert_to_markdown,
                 ocr=ocr_flag,
+                docling_ocr_engine=docling_ocr_eff,
+                normalize_bold_headings=normalize_bold_flag,
             ),
             name=f"page_index_ingestion_{agent_id}",
         )

@@ -26,6 +26,74 @@ function contentAlreadyEmbedsMediaUrl(
   return false;
 }
 
+function UserOutboundAttachments({
+  messageId,
+  attachments,
+}: {
+  messageId: string;
+  attachments: NonNullable<Message["attachments"]>;
+}) {
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
+
+  useEffect(() => {
+    return () => {
+      for (const a of attachmentsRef.current) {
+        if (a.previewUrl?.startsWith("blob:")) {
+          URL.revokeObjectURL(a.previewUrl);
+        }
+      }
+    };
+  }, [messageId]);
+
+  return (
+    <div className="flex flex-col gap-3 mb-2 w-full max-w-full items-end">
+      {attachments.map((a, idx) => {
+        const imageSrc =
+          a.kind === "image"
+            ? a.persistedDataUrl || a.previewUrl
+            : undefined;
+
+        return (
+        <div
+          key={`${messageId}-${idx}-${a.name}`}
+          className="flex flex-col gap-1.5 items-end max-w-full"
+        >
+          {a.kind === "image" && imageSrc ? (
+            <img
+              src={imageSrc}
+              alt=""
+              className="max-h-64 max-w-[min(100%,20rem)] w-auto rounded-lg object-contain border border-white/15 shadow-sm bg-slate-800/40"
+            />
+          ) : a.kind === "image" ? (
+            <span className="text-xs italic text-slate-200/80 px-2 py-1 rounded border border-white/10">
+              Large image — preview only for this tab session
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-slate-700/50 dark:bg-indigo-950/50 px-2 py-1.5 text-xs">
+              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded bg-slate-500/40 text-[10px] font-medium uppercase">
+                file
+              </span>
+              <span className="truncate max-w-[12rem] text-left" title={a.name}>
+                {a.name}
+              </span>
+            </span>
+          )}
+          {a.kind === "image" && imageSrc ? (
+            <span
+              className="text-[11px] text-slate-200/90 dark:text-indigo-200/85 truncate max-w-full"
+              title={a.name}
+            >
+              {a.name}
+            </span>
+          ) : null}
+        </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function MetadataImage({
   src,
   role,
@@ -405,6 +473,14 @@ export function MessageList({
               }`}
             >
               <div className="break-words text-sm sm:text-base">
+                {isUser &&
+                  message.attachments &&
+                  message.attachments.length > 0 && (
+                    <UserOutboundAttachments
+                      messageId={message.id}
+                      attachments={message.attachments}
+                    />
+                  )}
                 <MessageMediaBlock message={message} />
                 {message.content?.trim() ? (
                   <div className="markdown-content">
