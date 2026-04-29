@@ -1105,7 +1105,7 @@ async def get_device_info(
     """
     whatsapp_action = await get_whatsapp_action(action_id)
     wa = await whatsapp_action.api()
-    return await wa.get_host_device()
+    return {"device": await wa.get_host_device()}
 
 
 @endpoint(
