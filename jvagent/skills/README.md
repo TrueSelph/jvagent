@@ -1,26 +1,38 @@
-# Skill Bundles
+# Skill Bundles Standard
 
-Claude-style skill bundles for `SkillInteractAction`. Each bundle is a directory containing a `SKILL.md` SOP file and optional Python tool modules.
+`jvagent` skill bundles are Claude-compatible modular capabilities consumed by `SkillInteractAction`.
+Each skill combines instruction content (`SKILL.md`) with optional executable tool modules and support assets.
 
-## Layout
+## Canonical Structure
 
-Each bundle follows this structure:
+Every skill bundle should follow this structure:
 
 ```text
 <skill_name>/
-  SKILL.md          # Required: SOP with optional YAML frontmatter
-  <tool>.py         # Optional: Python tool modules
-  __init__.py       # Optional: makes the directory a Python package
+  SKILL.md              # Required entry point (frontmatter + SOP)
+  scripts/              # Optional executable Python tool modules and helpers
+  resources/            # Optional references, schemas, policy docs, requirements
+  templates/            # Optional output templates (md/json/j2/etc)
+  examples/             # Optional input/output examples
 ```
 
-### SKILL.md Format
+`SKILL.md` is required. All other directories are optional and should be created only when needed.
+
+## SKILL.md Anatomy
+
+`SKILL.md` has two parts:
+
+1. YAML frontmatter metadata (between `---` delimiters)
+2. Markdown SOP body (`Workflow`, `Scope`, `Grounding`, constraints, etc.)
+
+Example:
 
 ```markdown
 ---
 name: code_review
 description: Review code for correctness, security, and maintainability.
 allowed-tools:
-  - my_tool
+  - prioritize_findings
 version: 1
 tags:
   - quality
@@ -28,351 +40,199 @@ tags:
 ---
 
 ## Workflow
-
-1. First step of the standard operating procedure.
-2. Second step.
-3. ...
+1. Collect context.
+2. Evaluate risk.
+3. Produce findings and next actions.
 ```
 
-### Frontmatter Keys
+## Frontmatter Keys
 
-| Key | Required | Type | Description |
-|-----|----------|------|-------------|
-| `name` | Recommended | str | Skill identifier. Defaults to directory name if omitted. |
-| `description` | Recommended | str | Shown in the skill index that the LLM sees at loop start. |
-| `allowed-tools` | Optional | list[str] or str | Whitelist of Python tool names to activate from this bundle. If omitted, all `.py` tools are activated. |
-| `requires-actions` | Optional | list[str] or str | Action entity types this skill depends on (e.g. `GoogleCalendarAction`). If any are missing or disabled at activation time, `read_skill` returns an error. |
-| `response-mode` | Optional | str | Override the action's response mode for this skill: `respond` (route through PersonaAction) or `publish` (direct bus delivery). If omitted, inherits the action's `response_mode` attribute. |
-| `version` | Optional | int/str | Version number for tracking |
-| `license` | Optional | str | License identifier |
-| `tags` | Optional | list[str] | Tags for categorization |
+| Key | Required | Type | jvagent extension | Notes |
+|-----|----------|------|-------------------|-------|
+| `name` | recommended | `str` | no | Defaults to folder name when omitted (warning emitted). |
+| `description` | recommended | `str` | no | Used in the skill index shown before activation. |
+| `version` | optional | `int` or `str` | no | Version tracking metadata. |
+| `license` | optional | `str` | no | Optional license metadata. |
+| `tags` | optional | `list[str]` or `str` | no | Used for `scope_hint` generation and discovery cues. |
+| `plan-steps` | optional | `list[str]` or `str` | yes | Suggested canonical task-tracker steps surfaced after `read_skill` to reduce planning overhead. |
+| `requires-actions` | optional | `list[str]` or `str` | yes | Action types that must resolve before skill activation. |
+| `allowed-tools` | optional | `list[str]` or `str` | yes | Tool whitelist by tool name. |
+| `response-mode` | optional | `str` | yes | `respond` or `publish`; if omitted, inherits action default. |
 
-### Tool Modules
+## Tool Module Contract (`scripts/`)
 
-Each `.py` file (excluding `__init__.py` and `_`-prefixed files) in the skill directory is a potential tool. It must export two functions:
+Each non-private `.py` file in `scripts/` (except `__init__.py` and `_`-prefixed files) is a candidate tool.
+Tool modules must export:
+
+1. `get_tool_definition() -> dict`
+2. `async def execute(...)`
+
+Standalone tool pattern:
 
 ```python
-def get_tool_definition() -> dict:
-    """Return an OpenAI-format tool definition."""
+from typing import Any, Dict, List
+
+def get_tool_definition() -> Dict[str, Any]:
     return {
         "name": "prioritize_findings",
         "description": "Sort findings by severity in descending order.",
         "parameters": {
             "type": "object",
             "properties": {
-                "findings": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "title": {"type": "string"},
-                            "severity": {"type": "integer"},
-                        },
-                        "required": ["title", "severity"],
-                    },
-                }
+                "findings": {"type": "array"},
             },
             "required": ["findings"],
         },
     }
 
-
-async def execute(arguments: dict) -> Any:
-    """Implement the tool logic."""
+async def execute(arguments: Dict[str, Any]) -> List[Dict[str, Any]]:
     findings = list(arguments.get("findings") or [])
     findings.sort(key=lambda item: int(item.get("severity", 0)), reverse=True)
     return findings
 ```
 
-If `allowed-tools` is set in the frontmatter, only tools whose names appear in the whitelist are activated. Tools not in the whitelist are silently skipped.
+Action-bound tool pattern:
 
-### User-scoped file I/O (required for user artifacts)
+```python
+from typing import Any, Dict
 
-Skills that read or write **user-owned files** (outputs, uploads, drafts, pipeline artifacts) must **not** use the host filesystem for relative paths. Use the **`fileinterface`** skill and/or `jvagent.skills.fileinterface._core`:
+async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Dict[str, Any]:
+    resolver = getattr(visitor, "action_resolver", None)
+    if resolver is None:
+        return {"error": "ActionResolver not available"}
 
-- Paths are relative to `<sanitized_agent_id>/<sanitized_user_id>/` in jvspatial storage (local or S3 per app config).
-- LLM-facing tools: activate the `fileinterface` bundle and follow its SKILL protocol (`describe_write_workspace` before other fileinterface tools when starting file work in a task); then use `fileinterface__read_file`, `fileinterface__write_file`, etc.
-- Imperative Python in tool modules: import `_core` (e.g. `write_text_file`, `read_binary_file`, or `*_with_local_fallback` when App may be absent).
+    action = await resolver.resolve("GoogleCalendarAction")
+    if action is None:
+        return {"error": "GoogleCalendarAction not found on this agent"}
 
-**Fine to use raw files for:** process-local **temporary** directories (subprocesses, compilers), **absolute** paths to known app/corpus locations, **URLs**, and bundles that **manage the repo** (e.g. `skill_hub` under `agents/...`).
+    return await action.create_event(...)
+```
 
-### Action-Bound Tools
+Rules:
 
-Tool modules that need to call methods on graph-persisted Actions (like `GoogleCalendarAction.list_events()`) should:
+- `visitor` is injected by `ToolExecutor` when detected via `inspect.signature()`.
+- Guard `action_resolver` lookup and unresolved actions explicitly.
+- Define tool `name` as bare name in `get_tool_definition()`. Runtime names are exposed as `<skill_name>__<tool_name>`.
+- Keep helper-only modules private by prefixing filenames with `_`.
 
-1. Declare the required actions in `SKILL.md` frontmatter:
+## Optional Subdirectories
 
-   ```yaml
-   requires-actions:
-     - GoogleCalendarAction
-   ```
+- `resources/`: long-form docs, policies, schemas, dependency files, reference data.
+- `templates/`: renderable templates used by tools (for example Jinja2 or markdown skeletons).
+- `examples/`: canonical examples and expected outputs for few-shot behavior shaping.
 
-2. Accept a `visitor` keyword argument in `execute()`:
+## User-Scoped File I/O
 
-   ```python
-   async def execute(arguments: dict, *, visitor: Any) -> Any:
-       action = await visitor.action_resolver.resolve("GoogleCalendarAction")
-       if action is None:
-           return {"error": "GoogleCalendarAction not available"}
-       return await action.list_events()
-   ```
+For user artifacts, do not rely on host-relative file paths. Use `fileinterface` tools and/or private helpers in `jvagent.skills.fileinterface.scripts._core`.
 
-The `visitor` kwarg is automatically injected by ToolExecutor when it detects it in the function signature via `inspect.signature()`. The `visitor.action_resolver` attribute is set by SkillInteractAction at loop startup and provides per-interaction caching of resolved Actions.
+- Relative paths resolve under `<sanitized_agent_id>/<sanitized_user_id>/` in jvspatial storage.
+- LLM-facing workflows should call `fileinterface__describe_write_workspace` before other fileinterface operations for a new write task.
+- Process-local temp files (for compilers/subprocesses) are allowed when they are ephemeral.
 
-## Sources
+## Cross-Skill Imports
 
-Skill bundles are resolved from two locations:
+When importing helpers across skills, use explicit package paths:
 
-### 1. Built-in Catalog (`jvagent/skills/*`)
+```python
+from jvagent.skills.fileinterface.scripts._core import copy_host_file_into_sandbox
+from jvagent.skills.pdf_generation.scripts._document_args import parse_document_pdf_arguments
+```
+
+Avoid relative imports that depend on runtime working directory.
+
+## Discovery and Activation Lifecycle
+
+Skills are lazily activated through progressive disclosure:
+
+1. `SkillInteractAction` resolves skill bundles from configured sources.
+2. Metadata is registered, but tool modules are hidden initially.
+3. LLM sees only `read_skill` and the skill index.
+4. LLM calls `read_skill(skill_name=...)`.
+5. `ToolExecutor.activate_skill(...)` loads tools from that bundle and returns the SOP.
+6. Newly activated tools become available on the next loop iteration.
+
+This mirrors the Claude skill model: discover first, activate only when needed.
+
+## Skill Sources and Precedence
+
+Sources:
+
+1. Built-in: `jvagent/skills/*`
+2. App-local: `agents/<namespace>/<agent_id>/skills/*`
+
+Precedence:
 
 ```text
-jvagent/skills/
-  calendar/
-    SKILL.md
-    list_events.py
-    create_event.py
-    delete_event.py
-  gmail/
-    SKILL.md
-    send_email.py
-    list_messages.py
-    get_message.py
-    mark_read.py
-    get_profile.py
-  google_sheets/
-    SKILL.md
-    read_spreadsheet.py
-    ...
-  google_drive/
-    SKILL.md
-    upload_file.py
-    ...
-  outlook_calendar/
-    SKILL.md
-    ...
-  outlook_mail/
-    SKILL.md
-    ...
-  microsoft_excel/
-    SKILL.md
-    ...
-  microsoft_onedrive/
-    SKILL.md
-    ...
-  web_search/
-    SKILL.md
-    search.py
-  fileinterface/
-    SKILL.md
-    read_file.py
-    write_file.py
-    ...
-  pageindex_search/
-    SKILL.md
-    search.py
-  pageindex_docs/
-    SKILL.md
-    list_documents.py
-    assimilate.py
-    delete_document.py
-  code_review/
-    SKILL.md
-  research/
-    SKILL.md
-  triage/
-    SKILL.md
-    prioritize_findings.py
+App-local skill > built-in skill (same name => app-local overrides)
 ```
-
-These ship with jvagent and are available to all agents.
-
-### 2. App-Local (`agents/<namespace>/<agent_id>/skills/*`)
-
-```text
-agents/jvagent/skills_agent/
-  skills/
-    local_research/
-      SKILL.md
-    custom_analysis/
-      SKILL.md
-      analyze_data.py
-```
-
-These are per-agent custom bundles. When an app-local bundle has the same `name` as a built-in, the app-local bundle **overrides** the built-in.
-
-## Resolution Precedence
-
-```
-App-local skill  >  Built-in skill  (same name = app-local wins)
-```
-
-This lets you customize or replace any built-in skill without modifying the jvagent package.
-
-## Progressive Disclosure
-
-Skills are **not** eagerly loaded. The flow is:
-
-1. `SkillInteractAction` resolves bundles from the configured source.
-2. Bundle metadata is registered on `ToolExecutor`, but Python tools are **hidden** from the LLM.
-3. A `read_skill` tool is injected, along with a skill index in the system prompt:
-
-```
-You have access to the following Claude-style skill bundles.
-If the user's request aligns with one of them, call `read_skill` with the
-exact `skill_name` before attempting the specialized workflow.
-Skill tools are only exposed after `read_skill`.
-
-- code_review: Review code for correctness, security, and maintainability.
-- triage: Rapidly triage issues by severity, impact, and next action.
-```
-
-4. When the LLM calls `read_skill(skill_name="triage")`:
-   - `ToolExecutor.activate_skill("triage")` loads the `prioritize_findings.py` module
-   - The handler returns the full SOP content and a list of newly available tools
-   - On the next loop iteration, `get_tools_list()` includes the newly activated tool
-
-This mirrors the Claude Code skill model: the LLM discovers capabilities on demand rather than seeing every tool upfront.
 
 ## Per-Agent Configuration
 
-In `agent.yaml`, control which bundles are exposed via `SkillInteractAction`:
+Configure from `agent.yaml`:
 
 ```yaml
 - action: jvagent/skill_interact_action
   context:
-    # Skill bundle selector
-    skills: -all                # Expose all discovered bundles
-    # skills:                    # Omit -> no bundles exposed (default)
-    # skills:
-    #   - "code_review"          # Specific names
-    #   - "code_*"               # Glob patterns
-
-    # Subtractive filter
+    skills: -all
     denied_skills:
-      - "triage"                # Remove from resolved set
-
-    # Source control
-    skills_source: both         # builtin | app | both | none
+      - triage
+    skills_source: both   # builtin | app | both | none
 ```
 
 | Selector | Behavior |
 |----------|----------|
-| `skills: -all` | Expose all discovered bundles |
+| `skills: -all` | Expose all resolved bundles |
 | `skills: ["name", "glob*"]` | Expose only matching bundles |
-| `skills: null` / omitted | No bundles exposed (opt-in default) |
+| `skills: null` or omitted | Expose no bundles |
 
-| `skills_source` | Bundles resolved from |
-|------------------|-----------------------|
-| `both` (default) | Built-in + app-local (app overrides built-in) |
-| `builtin` | `jvagent/skills/*` only |
-| `app` | `agents/<ns>/<id>/skills/*` only |
-| `none` | No resolution |
+| `skills_source` | Resolution scope |
+|-----------------|------------------|
+| `both` (default) | Built-in + app-local |
+| `builtin` | Built-in only |
+| `app` | App-local only |
+| `none` | Disable resolution |
 
-## CLI Commands
+## CLI Workflow
 
-### Create a Skill Bundle
+Create:
 
 ```bash
 jvagent skill add <agent_ref> <skill_name> [--description TEXT] [--force]
 ```
 
-Creates a `SKILL.md` skeleton under `agents/<ns>/<id>/skills/<skill_name>/`.
-
-### List Bundles
+List:
 
 ```bash
 jvagent skill list [--agent <agent_ref>] [--builtin]
 ```
 
-- `--agent`: Show merged bundles (built-in + app-local) for a specific agent
-- `--builtin`: Show only built-in bundles
-
-### Show Bundle Details
+Show:
 
 ```bash
 jvagent skill show <skill_name> [--agent <agent_ref>] [--builtin]
 ```
 
-Displays the full SKILL.md content and metadata.
+## Building New Skills
 
-## Built-in Skills
+Built-in:
 
-| Skill | Description | Tools | Requires Actions |
-|-------|-------------|-------|-----------------|
-| `calendar` | Manage Google Calendar events (list, create, delete) | `list_events`, `create_event`, `delete_event` | `GoogleCalendarAction` |
-| `gmail` | Send and manage Gmail messages | `send_email`, `list_messages`, `get_message`, `mark_read`, `get_profile` | `GoogleGmailAction` |
-| `google_sheets` | Read, write, and manage Google Sheets | `read_spreadsheet`, `last_filled_row`, `update_spreadsheet`, `append_spreadsheet`, `batch_clear`, `format_cells`, `merge_cells`, `unmerge_cells`, `create_spreadsheet`, `create_worksheet`, `update_worksheet`, `delete_worksheet`, `share_spreadsheet`, `delete_spreadsheet` | `GoogleSheetsAction` |
-| `google_drive` | Upload, share, and manage Google Drive files | `upload_file`, `delete_file`, `get_file_metadata`, `list_files`, `share_file`, `get_media` | `GoogleDriveAction` |
-| `outlook_calendar` | Manage Outlook Calendar events (list, create, delete) | `list_events`, `create_event`, `delete_event` | `MicrosoftOutlookCalendarAction` |
-| `outlook_mail` | Send and manage Outlook mail messages | `send_email`, `list_messages`, `list_inbox_messages`, `get_message`, `mark_read`, `get_profile` | `MicrosoftOutlookMailAction` |
-| `microsoft_excel` | Read, write, and manage Excel workbooks | `read_spreadsheet`, `update_spreadsheet`, `append_spreadsheet`, `batch_clear`, `create_spreadsheet`, `create_worksheet`, `update_worksheet`, `delete_worksheet`, `share_spreadsheet`, `delete_spreadsheet` | `MicrosoftExcelAction` |
-| `microsoft_onedrive` | Upload, share, and manage OneDrive files | `upload_file`, `delete_file`, `list_files`, `share_file` | `MicrosoftOneDriveAction` |
-| `web_search` | Search the web for current information | `search` | `SerperWebSearchAction` |
-| `pageindex_search` | Search PageIndex documents using vectorless retrieval | `search` | `PageIndexAction` |
-| `pageindex_docs` | List, ingest, and remove PageIndex documents | `list_documents`, `assimilate`, `delete_document` | `PageIndexAction` |
-| `code_review` | Review code for correctness, security, and maintainability | (SOP only) | — |
-| `research` | Investigate a topic with evidence-first synthesis and citations | (SOP only) | — |
-| `triage` | Rapidly triage issues by severity, impact, and next action | `prioritize_findings` | — |
+1. Create `jvagent/skills/<skill_name>/`.
+2. Add `SKILL.md` with frontmatter + SOP.
+3. Add tool modules to `scripts/` when needed.
+4. Add optional `resources/`, `templates/`, `examples/` as needed.
+5. Use `allowed-tools` to whitelist tool exposure when needed.
 
-## Creating a New Built-in Skill
+App-local:
 
-1. Create a directory under `jvagent/skills/`:
+1. Create `agents/<ns>/<agent_id>/skills/<skill_name>/`.
+2. Add `SKILL.md` (and `scripts/` if tooling is needed).
+3. Enable via `skills` selector in `agent.yaml`.
 
-```text
-jvagent/skills/my_skill/
-  SKILL.md
-  my_tool.py    # optional
-```
+Override built-in:
 
-2. Write SKILL.md with frontmatter and SOP content.
+Create an app-local bundle with the same `name` frontmatter value as the built-in skill.
 
-3. If the skill includes tools, add `.py` files that export `get_tool_definition()` and `execute()`.
-
-4. List the tool names in `allowed-tools` frontmatter if you want to restrict which `.py` files are activated.
-
-## Creating an App-Local Skill
-
-1. Create a directory under the agent's `skills/` folder:
-
-```text
-agents/jvagent/my_agent/skills/my_custom_skill/
-  SKILL.md
-```
-
-2. Or use the CLI:
-
-```bash
-jvagent skill add jvagent/my_agent my_custom_skill --description "Custom skill"
-```
-
-3. Reference it from `agent.yaml`:
-
-```yaml
-skills:
-  - "my_custom_skill"
-```
-
-## Overriding a Built-in Skill
-
-Place an app-local bundle with the same `name` in the frontmatter:
-
-```text
-agents/jvagent/my_agent/skills/research/
-  SKILL.md
-```
-
-```markdown
----
-name: research
-description: Custom research workflow for our domain.
-version: 2
----
-...
-```
-
-When `skills_source: both`, the app-local `research` bundle replaces the built-in one.
-
-## Skill Resolver API
+## Resolver API
 
 ```python
 from jvagent.scaffold.skill_resolve import (
@@ -384,32 +244,10 @@ from jvagent.scaffold.skill_resolve import (
     list_builtin_skill_names,
     list_agent_skill_names,
 )
-
-# Parse a single bundle
-data = parse_skill_bundle(Path("jvagent/skills/triage"), source="builtin")
-# {"name": "triage", "description": "...", "content": "...", "dir": "...", "tool_files": [...], ...}
-
-# Resolve all built-in skills
-builtin = resolve_builtin_skills()
-
-# Resolve app-local skills for an agent
-app_local = resolve_agent_skills(app_root=".", namespace="jvagent", agent_name="skills_agent")
-
-# Merge with precedence
-merged = resolve_merged_skill_bundles(".", "jvagent", "skills_agent", include_builtin=True)
-
-# Apply selector and deny filters
-filtered = apply_skill_selector(merged, selector="-all", denied=["triage"])
-filtered = apply_skill_selector(merged, selector=["code_*"], denied=None)
 ```
 
 ## See Also
 
-- [SkillInteractAction README](../action/skill/README.md) -- The agentic loop that consumes skill bundles
-- **`fileinterface` skill** (`fileinterface/`) -- In-process user-scoped file I/O (jvspatial local/S3); prefer over MCP for workspace files only
-- [MCPAction README](../action/mcp/README.md) -- MCP server configuration for external or multi-server tool providers
-
----
-
-**Last Updated**: April 19, 2026
-**Version**: 0.0.1
+- [`SkillInteractAction` README](../action/skill/README.md)
+- [`MCPAction` README](../action/mcp/README.md)
+- `fileinterface` bundle in `jvagent/skills/fileinterface/`

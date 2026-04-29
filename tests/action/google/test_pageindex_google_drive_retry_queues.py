@@ -51,7 +51,9 @@ def test_sync_drive_node_skips_while_active_document_set() -> None:
 
 
 @pytest.mark.asyncio
-async def test_success_processing_failed_queue_keeps_failed_status_when_backlog_remains() -> None:
+async def test_success_processing_failed_queue_keeps_failed_status_when_backlog_remains() -> (
+    None
+):
     file_a = {
         "name": "a.pdf",
         "id": "file-a",
@@ -177,7 +179,10 @@ async def test_prioritize_moves_to_front_of_ingesting_queue() -> None:
         save=AsyncMock(return_value=None),
     )
     action = PageIndexGoogleDriveSyncAction(document_timeout=600)
-    with patch.object(action, "node", new_callable=AsyncMock, return_value=node):
+    with patch.object(
+        PageIndexGoogleDriveSyncAction, "node", new_callable=AsyncMock
+    ) as mock_node:
+        mock_node.return_value = node
         out = await action.prioritize_google_drive_file_for_ingest("folder-1", "b")
     assert out["prioritized_in"] == "ingesting"
     assert [x["id"] for x in node.ingesting_documents["added"]] == ["b", "a"]
@@ -199,7 +204,10 @@ async def test_prioritize_moves_to_front_of_failed_queue() -> None:
         save=AsyncMock(return_value=None),
     )
     action = PageIndexGoogleDriveSyncAction(document_timeout=600)
-    with patch.object(action, "node", new_callable=AsyncMock, return_value=node):
+    with patch.object(
+        PageIndexGoogleDriveSyncAction, "node", new_callable=AsyncMock
+    ) as mock_node:
+        mock_node.return_value = node
         out = await action.prioritize_google_drive_file_for_ingest("folder-1", "b")
     assert out["prioritized_in"] == "failed"
     assert [x["id"] for x in node.failed_documents["added"]] == ["b", "a"]
@@ -220,7 +228,10 @@ async def test_prioritize_enqueues_when_not_in_queues() -> None:
         save=AsyncMock(return_value=None),
     )
     action = PageIndexGoogleDriveSyncAction(document_timeout=600)
-    with patch.object(action, "node", new_callable=AsyncMock, return_value=node):
+    with patch.object(
+        PageIndexGoogleDriveSyncAction, "node", new_callable=AsyncMock
+    ) as mock_node:
+        mock_node.return_value = node
         out = await action.prioritize_google_drive_file_for_ingest("folder-1", "z1")
     assert out["prioritized_in"] == "enqueued"
     assert len(node.ingesting_documents["modified"]) == 1
@@ -242,11 +253,12 @@ async def test_prioritize_rejects_skip_ingest_enabled() -> None:
         save=AsyncMock(return_value=None),
     )
     action = PageIndexGoogleDriveSyncAction(document_timeout=600)
-    with (
-        patch.object(action, "node", new_callable=AsyncMock, return_value=node),
-        pytest.raises(ValidationError, match="Skip ingest"),
-    ):
-        await action.prioritize_google_drive_file_for_ingest("folder-1", "z1")
+    with patch.object(
+        PageIndexGoogleDriveSyncAction, "node", new_callable=AsyncMock
+    ) as mock_node:
+        mock_node.return_value = node
+        with pytest.raises(ValidationError, match="Skip ingest"):
+            await action.prioritize_google_drive_file_for_ingest("folder-1", "z1")
 
 
 @pytest.mark.asyncio
@@ -266,10 +278,16 @@ async def test_clear_google_drive_file_from_queues_strips_both() -> None:
         save=AsyncMock(return_value=None),
     )
     action = PageIndexGoogleDriveSyncAction(document_timeout=600)
-    with patch.object(action, "node", new_callable=AsyncMock, return_value=node):
+    with patch.object(
+        PageIndexGoogleDriveSyncAction, "node", new_callable=AsyncMock
+    ) as mock_node:
+        mock_node.return_value = node
         out = await action.clear_google_drive_file_from_queues("folder-1", "a")
     assert out["cleared"] is True
     assert node.ingesting_documents["added"] == []
-    with patch.object(action, "node", new_callable=AsyncMock, return_value=node):
+    with patch.object(
+        PageIndexGoogleDriveSyncAction, "node", new_callable=AsyncMock
+    ) as mock_node:
+        mock_node.return_value = node
         out = await action.clear_google_drive_file_from_queues("folder-1", "b")
     assert node.failed_documents["added"] == []

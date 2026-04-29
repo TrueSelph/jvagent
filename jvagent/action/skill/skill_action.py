@@ -56,6 +56,7 @@ from jvagent.action.skill.prompts import (
     PENDING_STEPS_NUDGE_PROMPT_FINAL,
     PLAN_SKILLS_TOOL_DESCRIPTION,
     PROGRESS_CHECK_PROMPT_TEMPLATE,
+    READ_SKILL_PLAN_STEPS_HINT,
     READ_SKILL_RESULT_TEMPLATE,
     SKILL_AGENT_SYSTEM_PROMPT,
     SKILL_FIRST_RETRY_PROMPT,
@@ -831,19 +832,34 @@ class SkillAction:
                     if task_plan is not None and task_plan.steps
                     else 0
                 )
-                await task_handle.record_step(
-                    "final_review",
-                    iteration=iteration,
-                    details={"steps_to_verify": step_count},
-                )
-                final_response = await self._final_review_pass(
-                    messages=messages,
-                    candidate_response=final_response,
-                    ctx=ctx,
-                    base_model_kwargs=base_model_kwargs,
-                    reasoning_cfg=reasoning_cfg,
-                    task_plan=task_plan_state.get("plan"),
-                )
+                if (
+                    cfg.final_review_max_plan_steps is not None
+                    and task_plan is not None
+                    and step_count <= cfg.final_review_max_plan_steps
+                ):
+                    await task_handle.record_step(
+                        "final_review_skipped",
+                        iteration=iteration,
+                        details={
+                            "reason": "plan_step_threshold",
+                            "step_count": step_count,
+                            "max_plan_steps": cfg.final_review_max_plan_steps,
+                        },
+                    )
+                else:
+                    await task_handle.record_step(
+                        "final_review",
+                        iteration=iteration,
+                        details={"steps_to_verify": step_count},
+                    )
+                    final_response = await self._final_review_pass(
+                        messages=messages,
+                        candidate_response=final_response,
+                        ctx=ctx,
+                        base_model_kwargs=base_model_kwargs,
+                        reasoning_cfg=reasoning_cfg,
+                        task_plan=task_plan_state.get("plan"),
+                    )
 
         # Layer 3 — deterministic faithfulness backstop (5.10).
         # Catches fabricated completion claims for skipped steps that the
@@ -1763,6 +1779,13 @@ class SkillAction:
                 tools=", ".join(registered_tools) if registered_tools else "(none)",
                 content=skill_data["content"],
             )
+            plan_steps = skill_data.get("plan_steps") or []
+            if plan_steps:
+                steps_list = "\n".join(
+                    f"  {index}. {step}"
+                    for index, step in enumerate(plan_steps, start=1)
+                )
+                result_text += READ_SKILL_PLAN_STEPS_HINT.format(steps_list=steps_list)
             if cfg.strict_grounding:
                 result_text += "\n\n" + GROUNDING_INSTRUCTION_TEMPLATE.format(
                     skill_name=skill_name, scope_hint=scope_hint
@@ -1857,6 +1880,29 @@ class SkillAction:
             return {}
 
     @staticmethod
+    def _read_skill_target_names_from_batch(
+        tool_calls: List[Dict[str, Any]]
+    ) -> Set[str]:
+        names: Set[str] = set()
+        for tc in tool_calls:
+            fn = tc.get("function") or {}
+            if (fn.get("name") or "").strip() != "read_skill":
+                continue
+            args = SkillAction._function_arguments_to_dict(fn.get("arguments"))
+            raw = args.get("skill_name")
+            if raw is not None and str(raw).strip():
+                names.add(str(raw).strip())
+        return names
+
+    @staticmethod
+    def _namespaced_skill_tool_prefix(tool_name: str) -> Optional[str]:
+        name = (tool_name or "").strip()
+        if "__" not in name:
+            return None
+        prefix, _rest = name.split("__", 1)
+        return prefix.strip() if prefix.strip() else None
+
+    @staticmethod
     def _tool_calls_include_task_tracker_create(
         tool_calls: List[Dict[str, Any]]
     ) -> bool:
@@ -1910,35 +1956,6 @@ class SkillAction:
         return False
 
     @staticmethod
-    def _read_skill_target_names_from_calls(
-        tool_calls: List[Dict[str, Any]],
-    ) -> Set[str]:
-        """Skill names being loaded in this batch (``read_skill``), for plan-gate allowance."""
-        out: Set[str] = set()
-        for tc in tool_calls:
-            fn = tc.get("function") or {}
-            if (fn.get("name") or "") != "read_skill":
-                continue
-            args = SkillAction._function_arguments_to_dict(fn.get("arguments"))
-            name = str(args.get("skill_name", "")).strip()
-            if name:
-                out.add(name)
-        return out
-
-    @staticmethod
-    def _plan_first_skill_work_allowed(
-        tool_name: str, allowed_skill_prefixes: Set[str]
-    ) -> bool:
-        """True for ``skill__tool`` when *skill* is already active or in-batch via read_skill."""
-        n = (tool_name or "").strip()
-        if not allowed_skill_prefixes or n == "unknown" or "__" not in n:
-            return False
-        prefix, _, _ = n.partition("__")
-        if not prefix:
-            return False
-        return prefix in allowed_skill_prefixes
-
-    @staticmethod
     def _apply_plan_first_tool_gate(
         tool_calls: List[Dict[str, Any]],
         *,
@@ -1948,11 +1965,6 @@ class SkillAction:
         activated_skill_names: Set[str],
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Set[str]]:
         """Enforce a task plan before substantive tools when :attr:`plan_first` is on.
-
-        Namespaced tools for an **activated** or **in-batch-activating** skill
-        (e.g. ``answer__search`` with ``read_skill`` for ``answer``) are allowed
-        without task_tracker, so a skill workflow can start without a spurious
-        plan gate error.
 
         Returns:
             (calls_to_dispatch, synthetic_error_tool_results, blocked_tool_names).
@@ -1964,8 +1976,7 @@ class SkillAction:
         if SkillAction._tool_calls_include_task_tracker_create(tool_calls):
             return (list(tool_calls), [], set())
 
-        in_batch = SkillAction._read_skill_target_names_from_calls(tool_calls)
-        allowed_prefixes: Set[str] = set(activated_skill_names) | set(in_batch)
+        read_targets = SkillAction._read_skill_target_names_from_batch(tool_calls)
 
         to_dispatch: List[Dict[str, Any]] = []
         synthetic: List[Dict[str, Any]] = []
@@ -1976,7 +1987,10 @@ class SkillAction:
             if SkillAction._is_plan_exempt_helper_tool_name(name):
                 to_dispatch.append(tc)
                 continue
-            if SkillAction._plan_first_skill_work_allowed(name, allowed_prefixes):
+            skill_prefix = SkillAction._namespaced_skill_tool_prefix(name)
+            if skill_prefix and (
+                skill_prefix in activated_skill_names or skill_prefix in read_targets
+            ):
                 to_dispatch.append(tc)
                 continue
             tid = str(tc.get("id") or "")
@@ -2048,6 +2062,20 @@ class SkillAction:
             utterance, extra or None
         ):
             return False
+        # Compute relevance score and run the smalltalk/conversational check
+        # BEFORE the retries==0 shortcut so that pure greetings and small-talk
+        # are never nudged toward skill discovery, regardless of whether a
+        # skill-discovery tool has been called yet.
+        catalog = SkillCatalog(discovered_skills)
+        score = catalog.top_relevance_score(utterance or "")
+        if candidate_response and self._skill_first_utterance_suggests_smalltalk(
+            cfg, utterance, candidate_response, score
+        ):
+            return False
+        # Require at least one explicit local skill-discovery attempt before
+        # accepting a direct no-tool answer when no skill has been activated yet.
+        if retries == 0 and not self._has_attempted_skill_discovery(tools_ever_called):
+            return True
         if candidate_response and self._candidate_mentions_discovered_skills(
             candidate_response, discovered_skills
         ):
@@ -2056,13 +2084,16 @@ class SkillAction:
                 >= cfg.conversational_min_response_chars
             ):
                 return False
-        catalog = SkillCatalog(discovered_skills)
-        score = catalog.top_relevance_score(utterance or "")
-        if candidate_response and self._skill_first_utterance_suggests_smalltalk(
-            cfg, utterance, candidate_response, score
-        ):
-            return False
         return score >= cfg.skill_first_retry_min_relevance
+
+    @staticmethod
+    def _has_attempted_skill_discovery(
+        tools_ever_called: Optional[Set[str]],
+    ) -> bool:
+        if not tools_ever_called:
+            return False
+        discovery_tools = {"list_skills", "skill_search", "plan_skills", "read_skill"}
+        return any(tool in discovery_tools for tool in tools_ever_called)
 
     def _make_task_tracker_handler(
         self,

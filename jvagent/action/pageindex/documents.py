@@ -335,8 +335,10 @@ async def assimilate_document(
             ocr=ocr, docling_ocr_engine=docling_ocr_engine
         )
 
-        if (is_pdf and convert_to_markdown) or force_docling or (
-            is_docling_image and convert_to_markdown
+        if (
+            (is_pdf and convert_to_markdown)
+            or force_docling
+            or (is_docling_image and convert_to_markdown)
         ):
             if isinstance(doc, BytesIO):
                 doc.seek(0)
@@ -357,9 +359,11 @@ async def assimilate_document(
                 functools.partial(
                     convert_document_to_markdown_sync,
                     src_path,
-                    ocr=wants_ocr
-                    if (is_pdf or is_docling_image or force_docling)
-                    else False,
+                    ocr=(
+                        wants_ocr
+                        if (is_pdf or is_docling_image or force_docling)
+                        else False
+                    ),
                     docling_ocr_engine=docling_ocr_engine,
                 ),
             )

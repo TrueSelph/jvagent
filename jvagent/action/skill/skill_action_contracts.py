@@ -99,6 +99,7 @@ class SkillRunConfig:
     # meta-utterance turns skip the gate). See SkillAction._apply_plan_first_tool_gate.
     plan_first: bool = True
     final_review: bool = True
+    final_review_max_plan_steps: Optional[int] = None
 
     # ---- Task-tracker loop nudges ----
     task_nudge_retry_limit: int = 2

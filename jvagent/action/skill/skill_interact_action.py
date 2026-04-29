@@ -234,6 +234,13 @@ class SkillInteractAction(InteractAction):
         default=True,
         description="If True, run a final grounding review pass before publishing",
     )
+    final_review_max_plan_steps: Optional[int] = attribute(
+        default=None,
+        description=(
+            "If set, skip final review when the active task plan has this many "
+            "steps or fewer."
+        ),
+    )
     prioritize_skills_first: bool = attribute(
         default=True,
         description="If True, enforce skill-first retry before accepting a no-tool final answer",
@@ -608,6 +615,7 @@ class SkillInteractAction(InteractAction):
             strict_grounding=self.strict_grounding,
             plan_first=self.plan_first,
             final_review=self.final_review,
+            final_review_max_plan_steps=self.final_review_max_plan_steps,
             task_nudge_retry_limit=self.task_nudge_retry_limit,
             max_total_task_nudges=self.max_total_task_nudges,
             max_task_plan_steps=self.max_task_plan_steps,
@@ -655,11 +663,13 @@ class SkillInteractAction(InteractAction):
     def _format_persona_directive(utterance: Optional[str], final_response: str) -> str:
         uq = (utterance or "").strip() or "(no utterance)"
         return (
-            f'The skill loop produced this verified answer for the user\'s request "{uq}":\n\n'
-            f"{final_response}\n\n"
-            "Present the substantive content; preserve facts and names. You may only adjust "
-            "tone and formatting to match the persona. Do not add, remove, or invent "
-            "capabilities, tools, or skills."
+            f'A verified research result has been produced for the user\'s question: "{uq}"\n\n'
+            f"VERIFIED CONTENT:\n{final_response}\n\n"
+            "Rewrite as a natural, direct user reply.\n"
+            "- Lead with the answer; no process narration.\n"
+            "- Remove internal terms/tags (e.g. PageIndex, skill loop, retrieval, assimilate, assimilated, document index, [PageIndex], [General Knowledge]).\n"
+            "- Preserve all facts, names, quotes, and URLs exactly; do not add or invent anything.\n"
+            "- Keep citations human-friendly (title + link), and keep the tone knowledgeable and friendly."
         )
 
     async def healthcheck(self) -> bool:

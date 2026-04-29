@@ -1,18 +1,18 @@
-"""Ensure a directory exists in the user sandbox."""
+"""Check whether a path exists in the user sandbox."""
 
 from __future__ import annotations
 
 from typing import Any, Dict
 
 from jvagent.skills.fileinterface import _core
-from jvagent.skills.fileinterface._tool_protocol_ref import OTHER_TOOLS
+from jvagent.skills.fileinterface.scripts._tool_protocol_ref import OTHER_TOOLS
 
 
 def get_tool_definition() -> Dict[str, Any]:
     return {
-        "name": "create_directory",
+        "name": "file_exists",
         "description": (
-            "Create a directory (or ensure it exists) under the user sandbox."
+            "Return whether a file or marker exists at the given relative path."
             + OTHER_TOOLS
         ),
         "parameters": {
@@ -20,7 +20,7 @@ def get_tool_definition() -> Dict[str, Any]:
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Relative directory path.",
+                    "description": "Relative path.",
                 },
             },
             "required": ["path"],
@@ -31,7 +31,7 @@ def get_tool_definition() -> Dict[str, Any]:
 async def execute(arguments: dict, *, visitor: Any) -> Any:
     path = str(arguments.get("path") or "").strip()
     try:
-        await _core.create_directory(visitor, path)
-        return {"ok": True, "path": path}
+        exists = await _core.file_exists(visitor, path)
+        return {"ok": True, "path": path, "exists": exists}
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}

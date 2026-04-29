@@ -53,6 +53,11 @@ def _import_core_endpoint_modules() -> None:
     from jvagent.core import endpoints as _core_endpoints  # noqa: F401
     from jvagent.logging import endpoints as _logging_endpoints  # noqa: F401
 
+    try:
+        import jvagent.action.google.endpoints as _google_oauth  # noqa: F401
+    except ImportError:
+        pass
+
 
 def create_server_from_config(debug: bool = False, app_root: str = None) -> Server:
     """Create and configure Server instance from app.yaml and environment variables.

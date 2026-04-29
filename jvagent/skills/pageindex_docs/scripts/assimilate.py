@@ -111,20 +111,26 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Any:
 
     engine_raw: Optional[str] = arguments.get("docling_ocr_engine")
     if isinstance(engine_raw, str) and engine_raw.strip():
-        ocr_flag, docling_eff = _resolve_docling_ocr_for_ingest(engine_raw.strip(), None)
+        ocr_flag, docling_eff = _resolve_docling_ocr_for_ingest(
+            engine_raw.strip(), None
+        )
     else:
         ocr_flag, docling_eff = _resolve_docling_ocr_for_ingest(
             None, str(bool(arguments.get("ocr", False)))
         )
 
-    return await action.assimilate(
-        doc=doc,
-        doc_name=doc_name,
-        collection_name=arguments.get("collection_name"),
-        metadata=arguments.get("metadata"),
-        doc_description=arguments.get("doc_description"),
-        doc_url=arguments.get("doc_url"),
-        convert_to_markdown=arguments.get("convert_to_markdown", False),
-        ocr=ocr_flag,
-        docling_ocr_engine=docling_eff,
-    )
+    try:
+        return await action.assimilate(
+            doc=doc,
+            doc_name=doc_name,
+            collection_name=arguments.get("collection_name"),
+            metadata=arguments.get("metadata"),
+            doc_description=arguments.get("doc_description"),
+            doc_url=arguments.get("doc_url"),
+            convert_to_markdown=arguments.get("convert_to_markdown", False),
+            ocr=ocr_flag,
+            docling_ocr_engine=docling_eff,
+        )
+    except Exception as exc:
+        logger.warning("assimilate failed for %r: %s", raw_doc, exc)
+        return {"error": f"Assimilation failed: {exc}"}

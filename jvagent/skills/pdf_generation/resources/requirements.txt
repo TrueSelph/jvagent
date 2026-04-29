@@ -15,7 +15,7 @@
 #
 # Install via either:
 #   Declare weasyprint under package.dependencies.pip on your SkillInteractAction info.yaml
-#   pip install -r jvagent/skills/pdf_generation/requirements.txt
+#   pip install -r jvagent/skills/pdf_generation/resources/requirements.txt
 #
 # Proposal example: proposal_skill_interact_action/info.yaml lists weasyprint so it installs
 # when that action loads (unless JVAGENT_DISABLE_RUNTIME_PIP_INSTALL is set).

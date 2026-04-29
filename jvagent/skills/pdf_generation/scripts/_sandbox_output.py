@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from jvagent.skills.fileinterface._core import normalize_sandbox_dir_prefix
-from jvagent.skills.pdf_generation._document_args import (
+from jvagent.skills.fileinterface.scripts._core import normalize_sandbox_dir_prefix
+from jvagent.skills.pdf_generation.scripts._document_args import (
     DocumentPdfParams,
     default_drive_filename,
 )

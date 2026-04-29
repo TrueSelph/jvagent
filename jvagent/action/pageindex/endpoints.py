@@ -608,9 +608,7 @@ async def _import_graph_from_remote_url(
             extra_staging_metadata=extra_staging_metadata,
             fetch_read_timeout=120.0,
         )
-        await _import_graph_from_staged_storage_path(
-            agent_id, staged_path, purge=purge
-        )
+        await _import_graph_from_staged_storage_path(agent_id, staged_path, purge=purge)
     finally:
         await _delete_staged_file(staged_path)
 
@@ -995,9 +993,7 @@ async def ingest_document_endpoint(
                 llm_wh_url = await retrieval_action.get_webhook_url()
                 summary_for_forge = if_add_node_summary
                 if summary_for_forge is None:
-                    summary_for_forge = (
-                        "yes" if get_pageindex_node_summary() else "no"
-                    )
+                    summary_for_forge = "yes" if get_pageindex_node_summary() else "no"
 
                 if async_mode:
                     result = await assimilate_via_jvforge_async(
@@ -2130,7 +2126,9 @@ async def pageindex_llm_webhook(request: Request, agent_id: str) -> Dict[str, An
             raise
         except Exception as e:
             logger.error(
-                "PageIndex process_document_url download/stage failed: %s", e, exc_info=True
+                "PageIndex process_document_url download/stage failed: %s",
+                e,
+                exc_info=True,
             )
             raise ValidationError(
                 message=f"process_document_url import failed: {e}",

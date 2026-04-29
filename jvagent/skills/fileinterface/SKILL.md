@@ -29,7 +29,7 @@ tags:
 - Any file operation that must respect **multi-user isolation** (`<agent_id>/<user_id>/…`).
 
 **Skill authors:** imperative Python in other bundles should use
-`jvagent.skills.fileinterface._core` (strict helpers or `*_with_local_fallback` for
+`jvagent.skills.fileinterface.scripts._core` (strict helpers or `*_with_local_fallback` for
 optional tests/offline). Do not write user artifacts with raw `Path`/`open` to
 relative paths unless you are only using a **process-local temp dir** (e.g. LaTeX
 build) and then copying results into the sandbox.

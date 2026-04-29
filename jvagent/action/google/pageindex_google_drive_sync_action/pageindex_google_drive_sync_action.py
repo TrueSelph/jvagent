@@ -155,9 +155,7 @@ def _strip_file_id_from_doc_queues(doc_queues: Dict[str, Any], file_id: str) -> 
     fid = str(file_id)
     for key in ("added", "modified", "removed"):
         doc_queues[key] = [
-            x
-            for x in (doc_queues.get(key) or [])
-            if _queue_item_file_id(x, key) != fid
+            x for x in (doc_queues.get(key) or []) if _queue_item_file_id(x, key) != fid
         ]
 
 
@@ -725,9 +723,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                             existing_items = {
                                 _queue_item_file_id(item, key): idx
                                 for idx, item in enumerate(
-                                    google_drive_documents_node.ingesting_documents[
-                                        key
-                                    ]
+                                    google_drive_documents_node.ingesting_documents[key]
                                 )
                                 if _queue_item_file_id(item, key)
                             }
@@ -1100,7 +1096,9 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     message="File type is not supported for PageIndex ingestion",
                     details={"folder_id": folder_id, "file_id": file_id},
                 )
-            mod = list(google_drive_documents_node.ingesting_documents.get("modified") or [])
+            mod = list(
+                google_drive_documents_node.ingesting_documents.get("modified") or []
+            )
             google_drive_documents_node.ingesting_documents["modified"] = [
                 {"new": copy.deepcopy(tree_file), "old": None},
             ] + mod
@@ -1388,3 +1386,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 f"Error re-registering Page Index Google Drive Sync action during startup: {e}",
                 exc_info=True,
             )
+
+
+from . import (  # noqa: F401, E402  # register HTTP routes when action module loads
+    endpoints,
+)

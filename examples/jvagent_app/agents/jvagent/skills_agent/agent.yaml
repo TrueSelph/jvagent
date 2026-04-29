@@ -120,6 +120,8 @@ actions:
     max_midcourse_corrections: 2
     task_nudge_retry_limit: 4
     final_review: true
+    max_tool_result_tokens: 2000
+    tool_result_truncation_chars: 3000
     # MCP filesystem server name(s) from jvagent/mcp — exposes mcp_filesystem__* tools in the loop.
     tool_servers:
       - filesystem

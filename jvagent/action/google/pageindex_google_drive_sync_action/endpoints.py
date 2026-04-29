@@ -275,7 +275,9 @@ async def delete_google_documents_endpoint(
 )
 async def update_google_documents_endpoint(
     action_id: str,
-    folder_id: str = Field(..., description="Google Drive folder id (GoogleDriveDocuments.folder_id)"),
+    folder_id: str = Field(
+        ..., description="Google Drive folder id (GoogleDriveDocuments.folder_id)"
+    ),
     folder_name: Optional[str] = Field(
         default=None,
         description="Folder display name stored on the node",
@@ -478,6 +480,7 @@ async def google_drive_file_queue_endpoint(
 
 
 @endpoint(
+    "/page_index_google_drive_sync/interact/webhook/{agent_id}",
     methods=["POST"],
     webhook=True,
     webhook_auth="api_key",  # Validates API key from query param or header
@@ -562,7 +565,9 @@ async def pageindex_google_drive_sync_action_interact(
             else None
         )
         if docling_str:
-            ocr_flag, docling_ocr_eff = _resolve_docling_ocr_for_ingest(docling_str, None)
+            ocr_flag, docling_ocr_eff = _resolve_docling_ocr_for_ingest(
+                docling_str, None
+            )
         else:
             ocr_flag = _payload_bool(request_data, "ocr", default=True)
             docling_ocr_eff = None

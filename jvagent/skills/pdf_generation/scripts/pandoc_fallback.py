@@ -8,12 +8,14 @@ from pathlib import Path
 from typing import Any, Dict
 from uuid import uuid4
 
-from jvagent.skills.fileinterface._core import copy_host_file_into_sandbox
-from jvagent.skills.pdf_generation._document_args import parse_document_pdf_arguments
-from jvagent.skills.pdf_generation._drive_upload import (
+from jvagent.skills.fileinterface.scripts._core import copy_host_file_into_sandbox
+from jvagent.skills.pdf_generation.scripts._document_args import (
+    parse_document_pdf_arguments,
+)
+from jvagent.skills.pdf_generation.scripts._drive_upload import (
     upload_pdf_to_drive_if_configured,
 )
-from jvagent.skills.pdf_generation._sandbox_output import (
+from jvagent.skills.pdf_generation.scripts._sandbox_output import (
     resolve_sandbox_pdf_output_dir,
     sandbox_pdf_dest_relpath,
 )

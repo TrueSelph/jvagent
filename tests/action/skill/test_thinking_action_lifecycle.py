@@ -67,8 +67,7 @@ def _mock_action() -> MagicMock:
     action.degenerate_response_max_chars = 25
     action.best_candidate_shrink_ratio = 0.4
     action.allow_local_tools = False
-    action.plan_first = True
-    action.final_review = False
+    action.final_review_max_plan_steps = None
     action.progress_check_interval = 3
     action.enable_checkpoints = True
     action.enable_evidence_log = True

@@ -96,6 +96,28 @@ def _normalize_response_mode(raw_value: Any, skill_path: Path) -> Optional[str]:
     return None
 
 
+def _normalize_plan_steps(raw_value: Any, skill_path: Path) -> List[str]:
+    """Normalize plan-steps into a list of non-empty step descriptions."""
+    if raw_value is None:
+        return []
+    if isinstance(raw_value, str):
+        value = raw_value.strip()
+        return [value] if value else []
+    if isinstance(raw_value, list):
+        normalized = []
+        for item in raw_value:
+            value = str(item).strip()
+            if value:
+                normalized.append(value)
+        return normalized
+    logger.warning(
+        "Skill bundle %s has invalid plan-steps type: %s",
+        skill_path,
+        type(raw_value).__name__,
+    )
+    return []
+
+
 def parse_skill_bundle(
     skill_dir: Path,
     *,
@@ -146,6 +168,7 @@ def parse_skill_bundle(
     response_mode = _normalize_response_mode(
         frontmatter.get("response-mode"), skill_file
     )
+    plan_steps = _normalize_plan_steps(frontmatter.get("plan-steps"), skill_file)
     tags = frontmatter.get("tags") or []
     if isinstance(tags, str):
         tags = [tags]
@@ -167,6 +190,7 @@ def parse_skill_bundle(
         "allowed_tools": allowed_tools,
         "requires_actions": requires_actions,
         "response_mode": response_mode,
+        "plan_steps": plan_steps,
         "scope_hint": scope_hint,
         "source": source,
         "metadata": {

@@ -139,7 +139,7 @@ class TestRemoveSkillTool:
         from jvagent.skills.skill_hub.remove_skill import execute
 
         with patch(
-            "jvagent.skills.skill_hub.remove_skill.get_app_root",
+            "jvagent.skills.skill_hub.scripts.remove_skill.get_app_root",
             return_value=app_root_with_skill,
         ), patch(
             "jvagent.action.skill.skill_interact_action.SkillInteractAction.remove_skill",
@@ -183,7 +183,7 @@ class TestRemoveSkillTool:
         from jvagent.skills.skill_hub.remove_skill import execute
 
         with patch(
-            "jvagent.skills.skill_hub.remove_skill.get_app_root",
+            "jvagent.skills.skill_hub.scripts.remove_skill.get_app_root",
             return_value=app_root_with_skill,
         ):
             result = await execute(
@@ -212,7 +212,7 @@ class TestRemoveSkillTool:
         app_agents.mkdir(parents=True)
 
         with patch(
-            "jvagent.skills.skill_hub.remove_skill.get_app_root",
+            "jvagent.skills.skill_hub.scripts.remove_skill.get_app_root",
             return_value=str(app_root),
         ), patch(
             "jvagent.scaffold.skill_resolve._resolve_builtin_root",

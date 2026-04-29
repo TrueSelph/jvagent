@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from jvagent.skills.fileinterface import _core
-from jvagent.skills.fileinterface._tool_protocol_ref import OTHER_TOOLS
+from jvagent.skills.fileinterface.scripts._tool_protocol_ref import OTHER_TOOLS
 
 
 def get_tool_definition() -> Dict[str, Any]:

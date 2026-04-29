@@ -8,6 +8,8 @@ allowed-tools:
   - pageindex_docs__assimilate
   - pageindex_docs__delete_document
 version: 1
+plan-steps:
+  - Perform the document operation (list / ingest / delete / update)
 tags:
   - pageindex
   - documents
@@ -31,6 +33,18 @@ tags:
 - Provide `doc` as an **HTTPS URL**, an **absolute path** on the host (e.g. bundled corpus), or a path **relative to the user’s jvspatial sandbox** (preferred for files produced or uploaded for this user). Relative paths load from sandbox storage first.
 - Set `doc_name` to give the document a recognizable name.
 - Optionally set `doc_description`, `doc_url`, or `metadata` for richer indexing.
+
+### Write-then-Assimilate
+
+- When the user asks you to generate/write a file and then ingest it, treat those as separate tracked steps.
+- Before calling `pageindex_docs__assimilate`, confirm the file exists by listing the write location with `fileinterface__list_directory`.
+- Pass the sandbox-relative file path as `doc` (for example: `GGI_report.md`) and set `doc_name` explicitly (for example: `"GGI Report"`).
+
+### On Failure
+
+- If `pageindex_docs__assimilate` returns an error, call `fileinterface__list_directory` to confirm the file is present in the expected location.
+- If present, retry once using the exact path you confirmed from the directory listing.
+- If it still fails, mark the step as skipped with `task_tracker(action="skip", reason=...)` and report the specific error to the user.
 
 ### Removing Documents
 

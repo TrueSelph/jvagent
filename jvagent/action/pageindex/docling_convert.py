@@ -45,7 +45,9 @@ def _suffix_uses_standard_pdf_pipeline(suffix: str) -> bool:
     return s == ".pdf" or s in _DOCLING_IMAGE_EXTENSIONS
 
 
-def _ooxml_to_pdf_via_libreoffice(path: Path, *, timeout: float = 120.0) -> Tuple[Path, Path]:
+def _ooxml_to_pdf_via_libreoffice(
+    path: Path, *, timeout: float = 120.0
+) -> Tuple[Path, Path]:
     """Convert OOXML to PDF; returns ``(pdf_path, tmp_dir)`` for cleanup."""
     soffice = shutil.which("soffice") or shutil.which("libreoffice")
     if not soffice:
@@ -74,7 +76,9 @@ def _ooxml_to_pdf_via_libreoffice(path: Path, *, timeout: float = 120.0) -> Tupl
         timeout=timeout,
     )
     if result.returncode != 0:
-        err = (result.stderr or result.stdout or "").strip() or f"exit {result.returncode}"
+        err = (
+            result.stderr or result.stdout or ""
+        ).strip() or f"exit {result.returncode}"
         raise RuntimeError(err)
     expected = outdir / f"{path.stem}.pdf"
     if not expected.is_file():
@@ -185,9 +189,10 @@ def convert_document_to_markdown_sync(
         raise FileNotFoundError(f"Docling source not found: {path}")
 
     lo_cleanup: List[Path] = []
-    if wants_ooxml_pdf_for_docling_ocr(
-        ocr=ocr, docling_ocr_engine=docling_ocr_engine
-    ) and path.suffix.lower() in _OOXML_OCR_SUFFIXES:
+    if (
+        wants_ooxml_pdf_for_docling_ocr(ocr=ocr, docling_ocr_engine=docling_ocr_engine)
+        and path.suffix.lower() in _OOXML_OCR_SUFFIXES
+    ):
         try:
             pdf_path, tmp_root = _ooxml_to_pdf_via_libreoffice(path)
             path = pdf_path
@@ -229,7 +234,9 @@ def convert_document_to_markdown_sync(
             converter = DocumentConverter(
                 format_options={
                     InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
-                    InputFormat.IMAGE: ImageFormatOption(pipeline_options=pipeline_options),
+                    InputFormat.IMAGE: ImageFormatOption(
+                        pipeline_options=pipeline_options
+                    ),
                 }
             )
         else:

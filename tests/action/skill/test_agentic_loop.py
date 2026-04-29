@@ -301,7 +301,10 @@ class TestTaskTrackerHandler:
         task_handle.update_metadata = AsyncMock()
         task_plan_state = {"plan": None}
         publish_callback = AsyncMock()
-        ctx = SimpleNamespace(publish_callback=publish_callback)
+        ctx = SimpleNamespace(
+            publish_callback=publish_callback,
+            config=SimpleNamespace(stream_tool_progress=True),
+        )
         handler = SkillAction()._make_task_tracker_handler(
             ctx=ctx,
             cfg=SkillRunConfig(),

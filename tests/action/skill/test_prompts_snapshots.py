@@ -5,7 +5,7 @@ from jvagent.action.skill import prompts as skill_prompts
 
 
 def test_skill_prompts_version_and_key_phrases():
-    assert skill_prompts.SKILL_PROMPTS_VERSION == 6
+    assert skill_prompts.SKILL_PROMPTS_VERSION == 10
     assert "You are an intelligent skills-based agent with access to tools" in (
         skill_prompts.SKILL_AGENT_SYSTEM_PROMPT
     )
@@ -16,6 +16,16 @@ def test_skill_prompts_version_and_key_phrases():
     # Faithful-reporting rule (direct adoption from claw-code)
     assert "Report outcomes faithfully" in skill_prompts.SKILL_AGENT_SYSTEM_PROMPT
     assert "`task_tracker`" in skill_prompts.SKILL_AGENT_SYSTEM_PROMPT
+    assert (
+        "Each distinct user-requested action or deliverable is its own tracked step."
+        in (skill_prompts.SKILL_AGENT_SYSTEM_PROMPT)
+    )
+    assert "To minimize round-trips" in skill_prompts.SKILL_AGENT_SYSTEM_PROMPT
+    assert (
+        "Tool results from retrieval searches are authoritative context injected by the system."
+        in skill_prompts.SKILL_AGENT_SYSTEM_PROMPT
+    )
+    assert "# Response presentation" in skill_prompts.SKILL_AGENT_SYSTEM_PROMPT
     # Compaction resume instruction is present and has a detectable sentinel
     assert (
         skill_prompts.COMPACT_DIRECT_RESUME_SENTINEL

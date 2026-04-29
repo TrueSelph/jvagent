@@ -55,9 +55,7 @@ def _jvforge_form_data(
     return data
 
 
-def _eff_doc_name_from_graph(
-    graph: Dict[str, Any], fallback: str
-) -> str:
+def _eff_doc_name_from_graph(graph: Dict[str, Any], fallback: str) -> str:
     roots = graph.get("roots") or []
     if roots and isinstance(roots[0], dict):
         dn = roots[0].get("doc_name")
@@ -99,7 +97,9 @@ async def assimilate_via_jvforge(
     fu = (file_url or "").strip()
     has_bytes = content is not None and len(content) > 0
     if fu and has_bytes:
-        raise ValidationError("Provide either file_url or file content for jvforge, not both")
+        raise ValidationError(
+            "Provide either file_url or file content for jvforge, not both"
+        )
     if not fu and (not has_bytes or not (filename or "").strip()):
         raise ValidationError(
             "filename and file content are required when file_url is not set"
@@ -144,9 +144,7 @@ async def assimilate_via_jvforge(
             if not ctype:
                 ctype = "application/octet-stream"
             files = {"file": (fn, content or b"", ctype)}
-            r = await client.post(
-                url, data=data, files=files, headers=headers
-            )
+            r = await client.post(url, data=data, files=files, headers=headers)
 
     if r.status_code >= 400:
         detail = (r.text or "")[:2000]
@@ -227,7 +225,9 @@ async def assimilate_via_jvforge_async(
     fu = (file_url or "").strip()
     has_bytes = content is not None and len(content) > 0
     if fu and has_bytes:
-        raise ValidationError("Provide either file_url or file content for jvforge, not both")
+        raise ValidationError(
+            "Provide either file_url or file content for jvforge, not both"
+        )
     if not fu and (not has_bytes or not (filename or "").strip()):
         raise ValidationError(
             "filename and file content are required when file_url is not set"
@@ -278,9 +278,7 @@ async def assimilate_via_jvforge_async(
             if not ctype:
                 ctype = "application/octet-stream"
             files = {"file": (fn, content or b"", ctype)}
-            r = await client.post(
-                url, data=data, files=files, headers=headers
-            )
+            r = await client.post(url, data=data, files=files, headers=headers)
 
     if r.status_code >= 400:
         detail = (r.text or "")[:2000]
@@ -308,7 +306,9 @@ async def assimilate_via_jvforge_async(
             "queue_position": bdict.get(
                 "queue_position", {"overall": 0, "per_agent": 0}
             ),
-            "doc_name": queued_doc or (doc_name or "").strip() or (filename or "").strip(),
+            "doc_name": queued_doc
+            or (doc_name or "").strip()
+            or (filename or "").strip(),
             "message": bdict.get("message", "Document already in queue"),
         }
     elif r.status_code == 202:
@@ -319,7 +319,9 @@ async def assimilate_via_jvforge_async(
             "queue_position": bdict.get(
                 "queue_position", {"overall": 0, "per_agent": 0}
             ),
-            "doc_name": queued_doc or (doc_name or "").strip() or (filename or "").strip(),
+            "doc_name": queued_doc
+            or (doc_name or "").strip()
+            or (filename or "").strip(),
             "message": "Document queued for processing",
         }
     else:

@@ -12,6 +12,7 @@ A modular, pluggable agentive platform built on jvspatial that provides a produc
   - [Actions](#actions)
   - [InteractActions](#interactactions)
   - [Agents](#agents)
+  - [Skills Capability](#skills-capability)
 - [Memory System](#memory-system)
 - [Namespaces](#namespaces)
 - [Logging System](#logging-system)
@@ -466,6 +467,21 @@ See the [InteractAction API Guide](jvagent/action/interact/README.md) for comple
 - Are defined via `agent.yaml` descriptors
 - Are installed automatically from `app.yaml` when you run jvagent or bootstrap
 - **Important**: Agents can only be installed via `app.yaml` - there is no direct agent installation command
+
+### Skills Capability
+
+`jvagent` ships with Claude-compatible skill bundles that let agents load modular SOP-driven capabilities on demand. Skills can include:
+
+- Instruction-only workflows via `SKILL.md`
+- Optional Python tool modules (`scripts/`) with deterministic `execute(...)` handlers
+- Optional support assets (`resources/`, `templates/`, `examples/`)
+- Action-integrated tool calls via `visitor.action_resolver` for graph-persisted actions
+
+Skills are progressively disclosed at runtime through `read_skill`, so specialized tools are exposed only when the skill is activated.
+
+For the full standard (folder anatomy, metadata, tool contract, and action integration patterns), see:
+
+- [Skill Bundles Standard Guide](jvagent/skills/README.md)
 
 ### Memory System
 
@@ -2007,6 +2023,7 @@ For more details, see [jvagent/bundle/README.md](jvagent/bundle/README.md).
 ### Core Documentation
 
 - [Configuration reference](docs/configuration.md) — `app.yaml` ↔ env mapping, prefix rules, jvspatial alignment
+- [Skill Bundles Standard Guide](jvagent/skills/README.md) - Claude-compatible skill structure, tooling contracts, and integration patterns
 - [app.yaml migration playbook](docs/app-yaml-migration-playbook.md) - AI-agent-ready retrofit guide from legacy descriptors
 - [agent.yaml migration playbook](docs/agent-yaml-migration-playbook.md) - AI-agent-ready structural migration guide with custom-action-safe rules
 - [Integration environment variables](docs/integrations-environment.md) — Vendor and action env inventory
