@@ -25,7 +25,10 @@ class TestUnregisterSkillBundle:
             "tool_files": [],
             "allowed_tools": set(),
         }
-        executor._active_skill_bundles.add("my_skill")
+        executor._active_skill_bundles["my_skill"] = {
+            "iterations": 0,
+            "started_at": 0.0,
+        }
 
         # Manually register a namespaced tool
         executor._handlers["my_skill__search"] = ("local", lambda args: "ok")

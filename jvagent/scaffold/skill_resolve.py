@@ -79,6 +79,26 @@ def _normalize_requires_actions(raw_value: Any, skill_path: Path) -> List[str]:
     return []
 
 
+def _normalize_string_list(
+    raw_value: Any, skill_path: Path, key: str = "list"
+) -> List[str]:
+    """Normalize a YAML value into a list of non-empty strings."""
+    if raw_value is None:
+        return []
+    if isinstance(raw_value, str):
+        value = raw_value.strip()
+        return [value] if value else []
+    if isinstance(raw_value, list):
+        return [str(item).strip() for item in raw_value if str(item).strip()]
+    logger.warning(
+        "Skill bundle %s has invalid %s type: %s",
+        skill_path,
+        key,
+        type(raw_value).__name__,
+    )
+    return []
+
+
 def _normalize_response_mode(raw_value: Any, skill_path: Path) -> Optional[str]:
     """Normalize response-mode into 'publish', 'respond', or None (inherit)."""
     if raw_value is None:
@@ -172,6 +192,13 @@ def parse_skill_bundle(
     tags = frontmatter.get("tags") or []
     if isinstance(tags, str):
         tags = [tags]
+    # Skill chaining: exports and imports are lists of key names.
+    exports = _normalize_string_list(
+        frontmatter.get("exports"), skill_file, key="exports"
+    )
+    imports = _normalize_string_list(
+        frontmatter.get("imports"), skill_file, key="imports"
+    )
     scope_hint = ", ".join(str(tag) for tag in tags if str(tag).strip())
     if not scope_hint:
         scope_hint = description
@@ -191,6 +218,8 @@ def parse_skill_bundle(
         "requires_actions": requires_actions,
         "response_mode": response_mode,
         "plan_steps": plan_steps,
+        "exports": exports,
+        "imports": imports,
         "scope_hint": scope_hint,
         "source": source,
         "metadata": {

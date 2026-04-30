@@ -7,6 +7,7 @@ the Anthropic format detection bug.
 
 import json
 import logging
+import warnings
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -107,6 +108,12 @@ class LoopContext:
     def maybe_truncate(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Truncate old tool results to keep context window manageable.
 
+        .. deprecated::
+            Use ``ContextCompactor.compact()`` instead.  This method does not
+            protect paired assistant messages from being orphaned and does not
+            inject the direct-resume sentinel.  It will be removed in a future
+            release.
+
         Keeps the system message, first user message, and last N tool result
         messages in full. Older tool results are replaced with a summary.
         FIXED: Now handles both OpenAI and Anthropic message formats.
@@ -117,6 +124,12 @@ class LoopContext:
         Returns:
             Truncated message list.
         """
+        warnings.warn(
+            "LoopContext.maybe_truncate() is deprecated. "
+            "Use ContextCompactor.compact() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if len(messages) <= self._config.max_full_tool_results * 2 + 4:
             return messages
 

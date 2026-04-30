@@ -157,7 +157,7 @@ export function ChatInterface() {
       .getActions(agentId)
       .then((data) => {
         const actions = data.actions || data || [];
-        
+
         const has = actions.some(
           (a: any) =>
             a.label === "pageindex_retrieval_interact_action" ||

@@ -345,9 +345,7 @@ class PageIndexAction(Action):
         if eff_lex is not None:
             set_pageindex_enable_lexical_index(eff_lex)
 
-        eff_ck = (
-            candidate_k if candidate_k is not None else cfg.get("candidate_k")
-        )
+        eff_ck = candidate_k if candidate_k is not None else cfg.get("candidate_k")
         if eff_ck is not None:
             set_pageindex_candidate_k(eff_ck)
 

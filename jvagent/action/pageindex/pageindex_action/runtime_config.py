@@ -61,7 +61,9 @@ def push_retrieval_config(retrieval: Dict[str, Any]) -> None:
         )
 
 
-def get_ingestion_config(config: Dict[str, Any], node_summary_attr: bool) -> Dict[str, Any]:
+def get_ingestion_config(
+    config: Dict[str, Any], node_summary_attr: bool
+) -> Dict[str, Any]:
     """Resolve ingestion config from action config (with attribute fallback for node_summary)."""
     cfg = config or {}
     node_summary = (
@@ -107,9 +109,10 @@ async def ensure_ingestion_config_for_agent(agent_id: str) -> None:
     cache miss or no PageIndex action (agent-scoped routes assume PageIndex).
     The first cached ``PageIndexAction`` (including subclasses) wins.
     """
+    from jvagent.action.pageindex.pageindex_action.pageindex_action import (
+        PageIndexAction,
+    )
     from jvagent.core.cache import get_cached_actions
-
-    from jvagent.action.pageindex.pageindex_action.pageindex_action import PageIndexAction
 
     actions = await get_cached_actions(agent_id, enabled_only=True)
     for action in actions or []:

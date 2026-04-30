@@ -5,7 +5,7 @@ from jvagent.action.skill import prompts as skill_prompts
 
 
 def test_skill_prompts_version_and_key_phrases():
-    assert skill_prompts.SKILL_PROMPTS_VERSION == 10
+    assert skill_prompts.SKILL_PROMPTS_VERSION == 11
     assert "You are an intelligent skills-based agent with access to tools" in (
         skill_prompts.SKILL_AGENT_SYSTEM_PROMPT
     )

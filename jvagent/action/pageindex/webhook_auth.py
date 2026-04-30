@@ -10,9 +10,7 @@ from jvagent.action.utils.webhook_system_user import (
 
 SYSTEM_USER_EMAIL = "pageindex-retrieval-interact-action-service@system.internal"
 WEBHOOK_PERMISSION = "webhook:pageindex_retrieval_interact_action"
-PAGEINDEX_WEBHOOK_ROUTE_PREFIX = (
-    "pageindex_retrieval_interact_action/interact/webhook"
-)
+PAGEINDEX_WEBHOOK_ROUTE_PREFIX = "pageindex_retrieval_interact_action/interact/webhook"
 ALLOWED_WEBHOOK_ENDPOINT_GLOB = f"/api/{PAGEINDEX_WEBHOOK_ROUTE_PREFIX}/*"
 
 

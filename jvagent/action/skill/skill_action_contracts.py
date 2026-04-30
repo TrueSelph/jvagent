@@ -84,6 +84,9 @@ class SkillRunConfig:
     skills_source: str = "both"
     enable_skill_helper_tools: bool = True
     max_skill_activations: int = 8
+    max_iterations_per_skill: int = 0
+    max_duration_per_skill_seconds: float = 0.0
+    semantic_skill_search: bool = False
     skill_first_retry_limit: int = 1
     skill_first_retry_min_relevance: float = 0.25
     prioritize_skills_first: bool = True
@@ -113,8 +116,8 @@ class SkillRunConfig:
 
     # ---- Stuck detection ----
     stuck_detection_window: int = 3
-    # Cosine-similarity threshold for semantic intent matching in StuckDetector (3.4).
-    stuck_intent_similarity_threshold: float = 0.7
+    # Jaccard-similarity threshold for intent-based loop detection in StuckDetector (3.4).
+    stuck_intent_jaccard_threshold: float = 0.7
     max_midcourse_corrections: int = 2
 
     # ---- Progress checks ----

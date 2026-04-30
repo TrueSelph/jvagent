@@ -86,6 +86,47 @@ class ToolExecutionEnvelope:
             self.recoverable = not any(m in msg for m in _perm)
 
 
+# ---------------------------------------------------------------------------
+# Skill-level observability envelope
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SkillActivationEnvelope:
+    """Per-skill-activation record capturing lifecycle and aggregate metrics.
+
+    Opened when a skill is activated (activate_skill) and closed when it is
+    unregistered or the loop ends.  Aggregates tool-level envelopes to
+    compute success rate and latency totals.
+
+    Attributes:
+        skill_name: Name of the activated skill.
+        activated_at_iteration: Loop iteration when the skill was activated.
+        activated_at_ts: Monotonic timestamp at activation.
+        closed_at_ts: Monotonic timestamp at close (0 if not yet closed).
+        duration_ms: Rounded wall-clock duration in milliseconds.
+        tool_count: Number of tool envelopes attributed to this skill.
+        tool_success_rate: Ratio of successful tool calls (None if no calls).
+        total_tool_latency_ms: Sum of latency across attributed tool envelopes.
+        was_completed: True if the skill finished all steps (not abandoned).
+        termination_reason: Short string describing why the skill ended
+            (e.g. "completed", "unregistered", "abandoned", "budget_exhausted").
+        preflight_warnings: Count of preflight warnings at activation time.
+    """
+
+    skill_name: str
+    activated_at_iteration: int = 0
+    activated_at_ts: float = 0.0
+    closed_at_ts: float = 0.0
+    duration_ms: int = 0
+    tool_count: int = 0
+    tool_success_rate: Optional[float] = None
+    total_tool_latency_ms: int = 0
+    was_completed: bool = False
+    termination_reason: str = "abandoned"
+    preflight_warnings: int = 0
+
+
 def _input_fingerprint(arguments: str) -> str:
     """4-byte hex fingerprint of serialised arguments."""
     return hashlib.blake2b((arguments or "").encode(), digest_size=4).hexdigest()
@@ -169,7 +210,7 @@ class ToolExecutor:
         self._handlers: Dict[str, Tuple[str, Any]] = {}  # name -> (kind, handler)
         self._registry = ToolRegistry()
         self._skill_bundles: Dict[str, Dict[str, Any]] = {}
-        self._active_skill_bundles: Set[str] = set()
+        self._active_skill_bundles: Dict[str, Dict[str, Any]] = {}
         self.call_timeout = call_timeout
         self.max_concurrent_calls = max_concurrent_calls
         self.validate_calls = validate_calls
@@ -180,6 +221,9 @@ class ToolExecutor:
         self._dispatch_visitor: Optional[Any] = None
         # Observability: all envelopes produced during this executor's lifetime
         self.envelopes: List[ToolExecutionEnvelope] = []
+        self.skill_envelopes: List[SkillActivationEnvelope] = []
+        # Skill chaining: named data handoff between skills (P2-10).
+        self.skill_context: Dict[str, Any] = {}
 
     # ------------------------------------------------------------------
     # Observability helpers
@@ -203,10 +247,192 @@ class ToolExecutor:
         """Sum of latency_ms across all envelopes."""
         return sum(e.latency_ms for e in self.envelopes)
 
+    # ------------------------------------------------------------------
+    # Skill-level observability
+    # ------------------------------------------------------------------
+
+    def open_skill_envelope(
+        self, skill_name: str, *, preflight_warnings: int = 0
+    ) -> SkillActivationEnvelope:
+        """Open a skill activation envelope and return it.
+
+        The caller may update ``activated_at_iteration`` after the fact if
+        the loop iteration is known at the call site.
+        """
+        envelope = SkillActivationEnvelope(
+            skill_name=skill_name,
+            activated_at_ts=time.monotonic(),
+            preflight_warnings=preflight_warnings,
+        )
+        self.skill_envelopes.append(envelope)
+        return envelope
+
+    def close_skill_envelope(
+        self,
+        skill_name: str,
+        *,
+        was_completed: bool = False,
+        termination_reason: str = "abandoned",
+    ) -> Optional[SkillActivationEnvelope]:
+        """Close the envelope for *skill_name*, aggregating tool-level metrics.
+
+        When the skill completed successfully, declared exports are extracted
+        from the skill's tool results and placed into ``skill_context`` for
+        downstream chained skills to import.
+
+        Returns the closed envelope, or None if no open envelope was found.
+        """
+        for env in self.skill_envelopes:
+            if env.skill_name == skill_name and env.closed_at_ts == 0.0:
+                env.closed_at_ts = time.monotonic()
+                env.duration_ms = int((env.closed_at_ts - env.activated_at_ts) * 1000)
+                env.was_completed = was_completed
+                env.termination_reason = termination_reason
+
+                # Aggregate tool envelopes belonging to this skill
+                prefix = f"{skill_name.replace('-', '_')}__"
+                skill_tools = [
+                    e for e in self.envelopes if e.tool_name.startswith(prefix)
+                ]
+                env.tool_count = len(skill_tools)
+                if skill_tools:
+                    successes = sum(1 for e in skill_tools if not e.is_error)
+                    env.tool_success_rate = successes / len(skill_tools)
+                    env.total_tool_latency_ms = sum(e.latency_ms for e in skill_tools)
+
+                # Extract exports into skill_context when completed (P2-10)
+                if was_completed:
+                    self._extract_skill_exports(skill_name)
+                return env
+        return None
+
+    def _validate_skill_imports(self, skill_name: str) -> List[str]:
+        """Check declared imports against available ``skill_context``.
+
+        Returns a list of missing key names (empty list = all satisfied).
+        """
+        bundle = self._skill_bundles.get(skill_name, {})
+        imports: List[str] = bundle.get("imports", [])
+        missing: List[str] = []
+        for key in imports:
+            if key not in self.skill_context:
+                missing.append(key)
+        return missing
+
+    def _extract_skill_exports(self, skill_name: str) -> None:
+        """Scan tool results for keys matching declared exports.
+
+        Matches export names against JSON keys and content substrings from
+        tool results belonging to the skill.  Populates ``skill_context``.
+        """
+        bundle = self._skill_bundles.get(skill_name, {})
+        exports: List[str] = bundle.get("exports", [])
+        if not exports:
+            return
+        prefix = f"{skill_name.replace('-', '_')}__"
+        for name in exports:
+            for env in reversed(self.envelopes):
+                if not env.tool_name.startswith(prefix):
+                    continue
+                # The raw content was already consumed — store the name for
+                # downstream skills to reference.  The actual values are in
+                # the conversation context / evidence log.
+                if name not in self.skill_context:
+                    self.skill_context[name] = {
+                        "source_skill": skill_name,
+                        "source_tool": env.tool_name,
+                    }
+
+    def close_all_skill_envelopes(
+        self, *, was_completed: bool = False, termination_reason: str = "abandoned"
+    ) -> List[SkillActivationEnvelope]:
+        """Close every still-open skill envelope.  Called at loop end."""
+        closed: List[SkillActivationEnvelope] = []
+        for env in self.skill_envelopes:
+            if env.closed_at_ts == 0.0:
+                closed.append(
+                    self.close_skill_envelope(
+                        env.skill_name,
+                        was_completed=was_completed,
+                        termination_reason=termination_reason,
+                    )
+                    or env
+                )
+        return closed
+
+    def skill_activation_aggregates(self) -> Dict[str, Any]:
+        """Return aggregate metrics across all skill activations."""
+        if not self.skill_envelopes:
+            return {"total_activations": 0}
+        return {
+            "total_activations": len(self.skill_envelopes),
+            "completed": sum(1 for e in self.skill_envelopes if e.was_completed),
+            "abandoned": sum(1 for e in self.skill_envelopes if not e.was_completed),
+            "total_tool_calls": sum(e.tool_count for e in self.skill_envelopes),
+            "overall_success_rate": (
+                sum(
+                    (e.tool_success_rate or 0.0) * e.tool_count
+                    for e in self.skill_envelopes
+                )
+                / max(sum(e.tool_count for e in self.skill_envelopes), 1)
+            ),
+            "total_skill_duration_ms": sum(e.duration_ms for e in self.skill_envelopes),
+        }
+
     @property
     def activated_skills(self) -> Set[str]:
-        """Set of skill names that have been activated via read_skill."""
-        return self._active_skill_bundles
+        """Set of activated skill keys (hyphens normalized to underscores).
+
+        Matches the prefix segment of namespaced skill tools (e.g. ``foo_bar__tool``).
+        """
+        return set(self._active_skill_bundles.keys())
+
+    def record_skill_iteration(self, skill_name: str) -> None:
+        """Increment the iteration counter for an active skill."""
+        state = self._active_skill_bundles.get(skill_name)
+        if state is not None:
+            state["iterations"] = state.get("iterations", 0) + 1
+
+    def skill_iteration_count(self, skill_name: str) -> int:
+        """Return the number of iterations consumed by a skill."""
+        state = self._active_skill_bundles.get(skill_name)
+        return state.get("iterations", 0) if state else 0
+
+    def check_skill_budget_exhausted(
+        self,
+        skill_name: str,
+        max_iterations: int,
+        max_duration_seconds: float,
+    ) -> Optional[str]:
+        """Check if a skill has exceeded its per-skill budget.
+
+        Returns an error message if the budget is exhausted, or None if the
+        skill can continue.
+        """
+        if max_iterations <= 0 and max_duration_seconds <= 0:
+            return None
+        state = self._active_skill_bundles.get(skill_name)
+        if state is None:
+            return None
+        if max_iterations > 0:
+            used = state.get("iterations", 0)
+            if used >= max_iterations:
+                return (
+                    f"Skill '{skill_name}' has used its maximum of "
+                    f"{max_iterations} iteration(s). Complete or skip remaining "
+                    f"steps and move on."
+                )
+        if max_duration_seconds > 0:
+            started = state.get("started_at")
+            if started is not None:
+                elapsed = time.monotonic() - started
+                if elapsed >= max_duration_seconds:
+                    return (
+                        f"Skill '{skill_name}' has exceeded its time budget of "
+                        f"{max_duration_seconds:.0f}s (elapsed: {elapsed:.0f}s). "
+                        f"Complete or skip remaining steps and move on."
+                    )
+        return None
 
     async def initialize(
         self,
@@ -485,21 +711,44 @@ class ToolExecutor:
         dir_path: str,
         tool_files: Optional[List[str]] = None,
         allowed_tools: Optional[List[str]] = None,
+        exports: Optional[List[str]] = None,
+        imports: Optional[List[str]] = None,
     ) -> None:
         """Register metadata for a skill bundle without exposing its tools yet."""
         self._skill_bundles[skill_name] = {
             "dir_path": dir_path,
             "tool_files": list(tool_files or []),
             "allowed_tools": set(allowed_tools or []),
+            "exports": list(exports or []),
+            "imports": list(imports or []),
         }
 
-    async def activate_skill(self, skill_name: str) -> List[str]:
-        """Load and register tool modules for a skill bundle on demand."""
+    async def activate_skill(
+        self,
+        skill_name: str,
+        action_resolver: Optional[Any] = None,
+        visitor: Optional[Any] = None,
+    ) -> List[str]:
+        """Load and register tool modules for a skill bundle on demand.
+
+        Individual tools may declare ``requires_actions`` in their definition
+        dict (top-level key).  Tools whose requirements cannot be satisfied
+        are skipped with a warning — the rest of the skill remains available.
+
+        Args:
+            skill_name: The skill to activate.
+            action_resolver: For validating tool-level ``requires_actions``.
+            visitor: Optional interact-walker context threaded to loaded tool
+                modules via ``_jvagent_visitor`` on the module.
+        """
         bundle = self._skill_bundles.get(skill_name)
         if not bundle:
             raise ToolDispatchError(f"Skill bundle '{skill_name}' is not registered")
 
-        if skill_name in self._active_skill_bundles:
+        # Tool names use underscores in the prefix; keep active-bundle keys aligned
+        # so budget checks, unregister, and tool-prefix extraction stay consistent.
+        safe_skill_name = skill_name.replace("-", "_")
+        if safe_skill_name in self._active_skill_bundles:
             return []
 
         dir_path = str(bundle.get("dir_path") or "").strip()
@@ -508,7 +757,6 @@ class ToolExecutor:
 
         # Ensure a parent package exists in sys.modules to enable relative imports
         # e.g. "jvagent_skill_appointment_booking"
-        safe_skill_name = skill_name.replace("-", "_")
         package_name = f"jvagent_skill_{safe_skill_name}"
         if package_name not in sys.modules:
             parent_module = importlib.util.module_from_spec(
@@ -553,17 +801,31 @@ class ToolExecutor:
         for file_path in bundle.get("tool_files", []):
             stem = Path(file_path).stem
             full_mod_name = f"{package_name}.{stem}"
-            loaded_tool = self._load_dynamic_tool_from_file(
+            loaded_tool = await self._load_dynamic_tool_from_file(
                 file_path=file_path,
                 full_module_name=full_mod_name,
                 package_name=package_name,
                 allowed_tools=allowed_tools if allowed_tools else None,
                 tool_name_prefix=safe_skill_name,
+                action_resolver=action_resolver,
+                visitor=visitor,
             )
             if loaded_tool:
                 registered.append(loaded_tool)
 
-        self._active_skill_bundles.add(skill_name)
+        self._active_skill_bundles[safe_skill_name] = {
+            "iterations": 0,
+            "started_at": time.monotonic(),
+        }
+        self.open_skill_envelope(skill_name)
+        # Validate chaining imports (P2-10)
+        _import_warnings = self._validate_skill_imports(skill_name)
+        if _import_warnings:
+            logger.warning(
+                "ToolExecutor: skill '%s' missing imports: %s",
+                skill_name,
+                _import_warnings,
+            )
         return registered
 
     def _apply_pattern_filters(
@@ -859,7 +1121,8 @@ class ToolExecutor:
 
         Returns list of deregistered tool names.
         """
-        prefix = f"{skill_name}__"
+        safe_skill_name = skill_name.replace("-", "_")
+        prefix = f"{safe_skill_name}__"
         deregistered: List[str] = []
         for name in list(self._handlers.keys()):
             if name.startswith(prefix):
@@ -870,7 +1133,8 @@ class ToolExecutor:
                 deregistered.append(name)
 
         self._skill_bundles.pop(skill_name, None)
-        self._active_skill_bundles.discard(skill_name)
+        self._active_skill_bundles.pop(safe_skill_name, None)
+        self.close_skill_envelope(skill_name, termination_reason="unregistered")
         if deregistered:
             logger.info(
                 "ToolExecutor: unregistered skill '%s', removed tools: %s",
@@ -887,16 +1151,31 @@ class ToolExecutor:
         for name in list(self._registry.names()):
             self._registry.remove(name)
         self.envelopes.clear()
+        self.skill_envelopes.clear()
+        self.skill_context.clear()
 
-    def _load_dynamic_tool_from_file(
+    async def _load_dynamic_tool_from_file(
         self,
         file_path: str,
         full_module_name: str,
         package_name: Optional[str] = None,
         allowed_tools: Optional[Set[str]] = None,
         tool_name_prefix: Optional[str] = None,
+        action_resolver: Optional[Any] = None,
+        visitor: Optional[Any] = None,
     ) -> Optional[str]:
-        """Import one local tool module and register it if valid."""
+        """Import one local tool module and register it if valid.
+
+        Tools may declare ``requires_actions`` in their definition dict
+        (top-level key, outside ``function``).  If any declared action is
+        unavailable the tool is skipped individually rather than failing the
+        entire skill.
+
+        The *visitor* is stored as ``_jvagent_visitor`` on the loaded module
+        so skill tool modules can access walker context (conversation,
+        action_resolver, per-user MCP sandboxing, etc.) without separate
+        mechanisms.
+        """
         source = Path(file_path).resolve()
         if not source.is_file():
             return None
@@ -936,6 +1215,10 @@ class ToolExecutor:
         if not get_def or not handler:
             return None
 
+        # Thread visitor context to the loaded skill tool module (P2-9).
+        if visitor is not None:
+            setattr(module, "_jvagent_visitor", visitor)
+
         tool_def_dict = get_def()
         if not isinstance(tool_def_dict, dict):
             return None
@@ -945,6 +1228,26 @@ class ToolExecutor:
         )
         if not tool_name:
             return None
+
+        # ---- Tool-level requires_actions gating (P2-8) ----
+        tool_requires: List[str] = tool_def_dict.get("requires_actions", [])
+        if tool_requires and action_resolver:
+            try:
+                errors = await action_resolver.validate_requirements(tool_requires)
+                if errors:
+                    logger.warning(
+                        "ToolExecutor: skipping tool '%s' — unmet requirements: %s",
+                        tool_name,
+                        errors,
+                    )
+                    return None
+            except Exception as exc:
+                logger.warning(
+                    "ToolExecutor: skipping tool '%s' — validation error: %s",
+                    tool_name,
+                    exc,
+                )
+                return None
 
         # Check allowed_tools: match both bare and namespaced names
         if allowed_tools is not None:

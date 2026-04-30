@@ -4,12 +4,27 @@ import json
 
 import pytest
 
+from jvagent.action.skill.context_compactor import CompactorConfig, ContextCompactor
 from jvagent.action.skill.loop_context import LoopContext, LoopContextConfig
+from jvagent.memory.evidence_log import EvidenceLog
 
 
 def _make_loop_context(**kwargs):
     config = LoopContextConfig(**kwargs)
     return LoopContext(config)
+
+
+def _compact_messages(ctx: LoopContext, messages):
+    """Prefer ContextCompactor over deprecated LoopContext.maybe_truncate."""
+    cfg = ctx._config  # LoopContextConfig aligned with CompactorConfig fields
+    compactor = ContextCompactor(
+        CompactorConfig(
+            max_full_tool_results=cfg.max_full_tool_results,
+            max_tool_result_tokens=cfg.max_tool_result_tokens,
+            tool_result_truncation_chars=cfg.tool_result_truncation_chars,
+        )
+    )
+    return compactor.compact(messages, evidence_log=EvidenceLog())
 
 
 # --- build_initial_messages ---
@@ -90,10 +105,10 @@ class TestBuildInitialMessages:
         assert len(messages) == 2
 
 
-# --- maybe_truncate ---
+# --- ContextCompactor (replaces deprecated maybe_truncate) ---
 
 
-class TestMaybeTruncate:
+class TestContextCompaction:
     def test_no_truncation_when_under_limit(self):
         ctx = _make_loop_context(max_full_tool_results=10)
         messages = [
@@ -101,7 +116,7 @@ class TestMaybeTruncate:
             {"role": "user", "content": "hello"},
             {"role": "assistant", "content": "hi"},
         ]
-        result = ctx.maybe_truncate(messages)
+        result = _compact_messages(ctx, messages)
         assert result == messages
 
     def test_truncates_old_tool_results_openai_format(self):
@@ -129,12 +144,12 @@ class TestMaybeTruncate:
             },
             {"role": "tool", "tool_call_id": "3", "content": "recent result"},
         ]
-        result = ctx.maybe_truncate(messages)
+        result = _compact_messages(ctx, messages)
         summarized = [
             m
             for m in result
             if isinstance(m.get("content"), str)
-            and "summarized" in m.get("content", "")
+            and "summarised" in m.get("content", "")
         ]
         assert len(summarized) >= 1
 
@@ -175,15 +190,10 @@ class TestMaybeTruncate:
                 ],
             },
         ]
-        result = ctx.maybe_truncate(messages)
+        result = _compact_messages(ctx, messages)
         # Anthropic-format tool results in user messages get detected and summarized
-        summarized = [
-            m
-            for m in result
-            if isinstance(m.get("content"), str)
-            and "summarized" in m.get("content", "")
-        ]
-        assert len(summarized) >= 1
+        flat = json.dumps(result)
+        assert "summarised" in flat
 
     def test_truncates_individual_long_tool_results(self):
         # Individual truncation happens when a kept tool result exceeds
@@ -212,7 +222,7 @@ class TestMaybeTruncate:
                 {"role": "tool", "tool_call_id": str(i), "content": content}
             )
         # messages length = 12, threshold = 2*2+4 = 8, so truncation triggers
-        result = ctx.maybe_truncate(messages)
+        result = _compact_messages(ctx, messages)
         # The last tool result (long) should be individually truncated
         tool_msgs = [
             m

@@ -95,13 +95,14 @@ actions:
     - User requests debugging or troubleshooting with file inspection
     model_action_type: OpenAILanguageModelAction
     model: gpt-4.1
-    reasoning_enabled: false
+    reasoning_enabled: true
     model_max_tokens: 32768
     stream_thinking: true
     stream_reasoning: true
+    stream_tool_progress: true
     max_iterations: 25
     max_duration_seconds: 300
-    response_mode: respond
+    response_mode: publish
     skills:
     - code_review
     - answer
@@ -125,7 +126,6 @@ actions:
     # MCP filesystem server name(s) from jvagent/mcp — exposes mcp_filesystem__* tools in the loop.
     tool_servers:
       - filesystem
-    stream_tool_progress: true
     max_full_tool_results: 10
 - action: jvagent/persona
   context:

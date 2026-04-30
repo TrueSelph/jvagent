@@ -219,6 +219,14 @@ class SkillInteractAction(InteractAction):
         default=8,
         description="Maximum number of skill activations allowed within one loop",
     )
+    max_iterations_per_skill: int = attribute(
+        default=0,
+        description="Maximum iterations allowed per skill activation (0 = unlimited)",
+    )
+    max_duration_per_skill_seconds: float = attribute(
+        default=0.0,
+        description="Maximum wall-clock seconds allowed per skill activation (0 = unlimited)",
+    )
     stuck_detection_window: int = attribute(
         default=3, description="Consecutive identical signatures before stuck warning"
     )
@@ -240,6 +248,10 @@ class SkillInteractAction(InteractAction):
             "If set, skip final review when the active task plan has this many "
             "steps or fewer."
         ),
+    )
+    semantic_skill_search: bool = attribute(
+        default=False,
+        description="If True, use LLM re-ranker for skill_search and plan_skills instead of lexical matching",
     )
     prioritize_skills_first: bool = attribute(
         default=True,
@@ -301,10 +313,10 @@ class SkillInteractAction(InteractAction):
         default=True,
         description="Record raw tool results in an evidence log for grounding verification.",
     )
-    stuck_intent_similarity_threshold: float = attribute(
+    stuck_intent_jaccard_threshold: float = attribute(
         default=0.7,
         description=(
-            "Cosine-similarity threshold (0–1) for semantic intent matching in stuck detection. "
+            "Jaccard similarity threshold (0-1) for semantic intent matching in stuck detection. "
             "Lower values flag more repetitions; higher values are more permissive."
         ),
     )
@@ -606,6 +618,9 @@ class SkillInteractAction(InteractAction):
             skills_source=self.skills_source,
             enable_skill_helper_tools=self.enable_skill_helper_tools,
             max_skill_activations=self.max_skill_activations,
+            max_iterations_per_skill=self.max_iterations_per_skill,
+            max_duration_per_skill_seconds=self.max_duration_per_skill_seconds,
+            semantic_skill_search=self.semantic_skill_search,
             skill_first_retry_limit=self.skill_first_retry_limit,
             skill_first_retry_min_relevance=self.skill_first_retry_min_relevance,
             prioritize_skills_first=self.prioritize_skills_first,
@@ -620,7 +635,7 @@ class SkillInteractAction(InteractAction):
             max_total_task_nudges=self.max_total_task_nudges,
             max_task_plan_steps=self.max_task_plan_steps,
             stuck_detection_window=self.stuck_detection_window,
-            stuck_intent_similarity_threshold=self.stuck_intent_similarity_threshold,
+            stuck_intent_jaccard_threshold=self.stuck_intent_jaccard_threshold,
             max_midcourse_corrections=self.max_midcourse_corrections,
             progress_check_interval=self.progress_check_interval,
             enable_checkpoints=self.enable_checkpoints,

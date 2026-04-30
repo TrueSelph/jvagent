@@ -5,12 +5,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from jvagent.action.skill.context_compactor import CompactorConfig, ContextCompactor
 from jvagent.action.skill.loop_context import LoopContext, LoopContextConfig
 from jvagent.action.skill.skill_action import SkillAction
 from jvagent.action.skill.skill_action_contracts import SkillRunConfig, SkillRunContext
 from jvagent.action.skill.skill_catalog import SkillCatalog
 from jvagent.action.skill.skill_interact_action import SkillInteractAction
 from jvagent.action.skill.stuck_detector import StuckDetector
+from jvagent.memory.evidence_log import EvidenceLog
 
 
 def _agentic_call_model_side_effect(*results):
@@ -165,13 +167,14 @@ class TestSkillInteractActionMessages:
             )
 
         result = action._maybe_truncate_messages(messages)
-        # Some older results should be summarized
-        summarized = [m for m in result if "summarized" in m.get("content", "")]
+        # Some older results should be summarized (ContextCompactor: British spelling)
+        summarized = [m for m in result if "summarised" in m.get("content", "")]
+        assert len(summarized) >= 1
         # Last 2 should be kept in full
         full_results = [
             m
             for m in result
-            if m.get("role") == "tool" and "summarized" not in m.get("content", "")
+            if m.get("role") == "tool" and "summarised" not in m.get("content", "")
         ]
         assert len(full_results) <= 2
 
@@ -1074,14 +1077,13 @@ def _make_thinking_action(**kwargs):
     action._build_reasoning_model_config = lambda: SkillAction._build_reasoning_cfg(
         run_cfg
     )
-    action._maybe_truncate_messages = lambda msgs: LoopContext(
-        LoopContextConfig(
+    action._maybe_truncate_messages = lambda msgs: ContextCompactor(
+        CompactorConfig(
             max_full_tool_results=run_cfg.max_full_tool_results,
             max_tool_result_tokens=run_cfg.max_tool_result_tokens,
             tool_result_truncation_chars=run_cfg.tool_result_truncation_chars,
-            history_limit=run_cfg.history_limit,
         )
-    ).maybe_truncate(msgs)
+    ).compact(msgs, evidence_log=EvidenceLog())
     action._build_assistant_content = lambda mr: LoopContext.build_assistant_content(mr)
     action._convert_messages_for_provider = (
         lambda messages, provider: LoopContext.convert_for_provider(messages, provider)

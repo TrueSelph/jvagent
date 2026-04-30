@@ -118,7 +118,14 @@ class _ToolCallResult:
 
 # Built-in coordination / catalog navigation tools — not considered "real" tool evidence.
 _SKILL_HELPER_TOOL_NAMES: frozenset = frozenset(
-    ("list_skills", "skill_search", "plan_skills", "read_skill", "task_tracker")
+    (
+        "list_skills",
+        "skill_search",
+        "plan_skills",
+        "read_skill",
+        "preview_skill",
+        "task_tracker",
+    )
 )
 
 # Shown when plan_first is enabled, no plan exists yet, and a substantive tool is blocked.
@@ -322,6 +329,8 @@ class SkillAction:
                     dir_path=skill_data["dir"],
                     tool_files=skill_data.get("tool_files", []),
                     allowed_tools=skill_data.get("allowed_tools", []),
+                    exports=skill_data.get("exports", []),
+                    imports=skill_data.get("imports", []),
                 )
 
             # read_skill dynamic tool
@@ -350,12 +359,13 @@ class SkillAction:
                     tool_executor,
                     action_resolver,
                     cfg,
+                    visitor=_visitor_shim,
                 ),
             )
 
             if cfg.enable_skill_helper_tools:
                 self._register_skill_helper_tools(
-                    tool_executor, skill_catalog, discovered_skills
+                    tool_executor, skill_catalog, discovered_skills, ctx
                 )
 
         if not tool_executor.get_tool_names():
@@ -490,7 +500,7 @@ class SkillAction:
             StuckDetectorConfig(
                 window_size=max(1, int(cfg.stuck_detection_window or 1)),
                 max_corrections=cfg.max_midcourse_corrections,
-                intent_similarity_threshold=cfg.stuck_intent_similarity_threshold,
+                intent_jaccard_threshold=cfg.stuck_intent_jaccard_threshold,
             )
         )
 
@@ -667,15 +677,15 @@ class SkillAction:
                     error=str(model_exc),
                     recoverable=recovery_policy.is_recoverable(model_exc),
                 )
-                action = recovery_policy.decide(failure)
+                decision = recovery_policy.decide(failure)
                 logger.warning(
                     "SkillAction: model call failed at iter %d (%s): %s → %s",
                     iteration,
                     loop_phase.value,
                     model_exc,
-                    action,
+                    decision.action,
                 )
-                if action == "terminate":
+                if decision.action == "terminate":
                     termination_reason = TerminationReason.ERROR
                     final_response = await self._force_termination(
                         messages,
@@ -689,11 +699,17 @@ class SkillAction:
                         termination_cause="iter_cap",
                     )
                     break
-                # retry: continue to next iteration (messages unchanged)
+                # retry: apply backoff, then continue (messages unchanged)
+                if decision.delay_seconds > 0:
+                    await asyncio.sleep(decision.delay_seconds)
                 await task_handle.record_step(
                     "model_error",
                     iteration=iteration,
-                    details={"error": str(model_exc), "action": action},
+                    details={
+                        "error": str(model_exc),
+                        "action": decision.action,
+                        "delay_seconds": decision.delay_seconds,
+                    },
                 )
                 continue
 
@@ -921,6 +937,38 @@ class SkillAction:
             except Exception as e_err:
                 logger.warning("SkillAction: evidence log persist failed: %s", e_err)
 
+        # Close remaining open skill envelopes and persist activation log
+        _closed_envelopes = tool_executor.close_all_skill_envelopes(
+            termination_reason=(
+                termination_reason.value
+                if hasattr(termination_reason, "value")
+                else str(termination_reason)
+            )
+        )
+        if ctx.conversation:
+            try:
+                context = getattr(ctx.conversation, "context", None)
+                if isinstance(context, dict):
+                    context["_skill_activation_log"] = [
+                        {
+                            "skill_name": e.skill_name,
+                            "activated_at_iteration": e.activated_at_iteration,
+                            "duration_ms": e.duration_ms,
+                            "tool_count": e.tool_count,
+                            "tool_success_rate": e.tool_success_rate,
+                            "total_tool_latency_ms": e.total_tool_latency_ms,
+                            "was_completed": e.was_completed,
+                            "termination_reason": e.termination_reason,
+                            "preflight_warnings": e.preflight_warnings,
+                        }
+                        for e in tool_executor.skill_envelopes
+                    ]
+                    await ctx.conversation.save()
+            except Exception as e_sk:
+                logger.warning(
+                    "SkillAction: skill activation log persist failed: %s", e_sk
+                )
+
         # Clear checkpoint on clean exit
         if cfg.enable_checkpoints:
             await checkpoint_store.clear()
@@ -945,6 +993,11 @@ class SkillAction:
             activated_skills=sorted(tool_executor.activated_skills),
             task_plan_abandoned_steps=_abandoned_steps,
             task_plan_intentional_skips=_intentional_skips,
+            metadata={
+                "skill_activation": tool_executor.skill_activation_aggregates(),
+                "tool_envelope_count": len(tool_executor.envelopes),
+                "tool_success_rate": tool_executor.success_rate(),
+            },
         )
 
     # ---------------------------------------------------------------------------
@@ -1465,6 +1518,47 @@ class SkillAction:
         stuck_result = stuck_detector.record(reordered)
         loop_phase = LoopPhase.TOOL_DISPATCH
 
+        # Per-skill budget enforcement: gate tools whose skill has exceeded its
+        # iteration or time budget (P0-4). Integrates with the existing
+        # to_dispatch / synthetic pattern.
+        skill_budget_blocked_names: Set[str] = set()
+        if cfg.max_iterations_per_skill > 0 or cfg.max_duration_per_skill_seconds > 0:
+            _revised_dispatch: List[Dict[str, Any]] = []
+            _revised_synthetic: List[Dict[str, Any]] = list(synthetic_plan_blocks)
+            for tc in to_dispatch:
+                fn = tc.get("function") or {}
+                name = (fn.get("name") or "unknown") or "unknown"
+                skill_prefix = SkillAction._namespaced_skill_tool_prefix(name)
+                if skill_prefix and skill_prefix in getattr(
+                    tool_executor, "activated_skills", set()
+                ):
+                    budget_error = tool_executor.check_skill_budget_exhausted(
+                        skill_name=skill_prefix,
+                        max_iterations=cfg.max_iterations_per_skill,
+                        max_duration_seconds=cfg.max_duration_per_skill_seconds,
+                    )
+                    if budget_error:
+                        skill_budget_blocked_names.add(name)
+                        tid = str(tc.get("id") or "")
+                        _revised_synthetic.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tid,
+                                "content": f"Error: {budget_error}",
+                            }
+                        )
+                        continue
+                _revised_dispatch.append(tc)
+            to_dispatch = _revised_dispatch
+            synthetic_plan_blocks = _revised_synthetic
+
+        if skill_budget_blocked_names:
+            await task_handle.record_step(
+                "skill_budget_gated",
+                iteration=iteration,
+                details={"blocked_tools": sorted(skill_budget_blocked_names)},
+            )
+
         tool_names = [tc.get("function", {}).get("name", "unknown") for tc in reordered]
         for n in tool_names:
             if n and n != "unknown":
@@ -1538,6 +1632,16 @@ class SkillAction:
             reordered, dispatch_results, synthetic_plan_blocks
         )
         tool_duration_ms = int((time.monotonic() - tool_start) * 1000)
+
+        # Per-skill iteration tracking: increment counter for each dispatched tool
+        # belonging to an activated skill.
+        if cfg.max_iterations_per_skill > 0 or cfg.max_duration_per_skill_seconds > 0:
+            for tc in to_dispatch:
+                fn = tc.get("function") or {}
+                name = (fn.get("name") or "unknown") or "unknown"
+                skill_prefix = SkillAction._namespaced_skill_tool_prefix(name)
+                if skill_prefix:
+                    tool_executor.record_skill_iteration(skill_prefix)
 
         # Record raw evidence
         if cfg.enable_evidence_log:
@@ -1750,6 +1854,7 @@ class SkillAction:
         tool_executor: ToolExecutor,
         action_resolver: Optional[ActionResolver],
         cfg: SkillRunConfig,
+        visitor: Any = None,
     ):
         async def read_skill_handler(args):
             skill_name = args.get("skill_name")
@@ -1767,7 +1872,9 @@ class SkillAction:
             )
             if req_error:
                 return req_error
-            registered_tools = await tool_executor.activate_skill(skill_name)
+            registered_tools = await tool_executor.activate_skill(
+                skill_name, action_resolver=action_resolver, visitor=visitor
+            )
             skill_data = discovered_skills[skill_name]
             scope_hint = str(
                 skill_data.get("scope_hint")
@@ -1799,6 +1906,7 @@ class SkillAction:
         tool_executor: ToolExecutor,
         skill_catalog: SkillCatalog,
         discovered_skills: Dict[str, Any],
+        ctx: SkillRunContext,
     ) -> None:
         tool_executor.register_dynamic_tool(
             name="list_skills",
@@ -1813,7 +1921,30 @@ class SkillAction:
         async def skill_search_handler(args):
             query = str(args.get("query", "")).strip()
             top_k = max(1, int(args.get("top_k", 5)))
-            return SkillCatalog(discovered_skills).search(query, top_k=top_k)
+            mode = str(args.get("mode", "hybrid")).strip().lower()
+            if mode not in ("lexical", "semantic", "hybrid"):
+                mode = "hybrid"
+            catalog = skill_catalog
+            if mode == "lexical":
+                return catalog.search(query, top_k=top_k)
+            if mode in ("semantic", "hybrid") and ctx.config.semantic_skill_search:
+                try:
+                    return await catalog.search_semantic(
+                        query,
+                        top_k=top_k,
+                        model_action=ctx.model_action,
+                        base_model_kwargs={
+                            "model": ctx.config.model,
+                            "temperature": 0.1,
+                            "max_tokens": 500,
+                        },
+                    )
+                except Exception:
+                    logger.warning(
+                        "Semantic skill search failed, falling back to lexical",
+                        exc_info=True,
+                    )
+            return catalog.search(query, top_k=top_k)
 
         tool_executor.register_dynamic_tool(
             name="skill_search",
@@ -1825,6 +1956,15 @@ class SkillAction:
                     "properties": {
                         "query": {"type": "string"},
                         "top_k": {"type": "integer", "default": 5},
+                        "mode": {
+                            "type": "string",
+                            "enum": ["lexical", "semantic", "hybrid"],
+                            "default": "hybrid",
+                            "description": (
+                                "lexical: token overlap only; semantic: LLM re-rank "
+                                "(requires semantic_skill_search config); hybrid: default."
+                            ),
+                        },
                     },
                     "required": ["query"],
                 },
@@ -1835,7 +1975,32 @@ class SkillAction:
         async def plan_skills_handler(args):
             query = str(args.get("query", "")).strip()
             top_k = max(1, int(args.get("top_k", 5)))
-            matches = SkillCatalog(discovered_skills).search(query, top_k=top_k)
+            mode = str(args.get("mode", "hybrid")).strip().lower()
+            if mode not in ("lexical", "semantic", "hybrid"):
+                mode = "hybrid"
+            catalog = skill_catalog
+            if mode == "lexical":
+                matches = catalog.search(query, top_k=top_k)
+            elif mode in ("semantic", "hybrid") and ctx.config.semantic_skill_search:
+                try:
+                    matches = await catalog.search_semantic(
+                        query,
+                        top_k=top_k,
+                        model_action=ctx.model_action,
+                        base_model_kwargs={
+                            "model": ctx.config.model,
+                            "temperature": 0.1,
+                            "max_tokens": 500,
+                        },
+                    )
+                except Exception:
+                    logger.warning(
+                        "Semantic skill search failed, falling back to lexical",
+                        exc_info=True,
+                    )
+                    matches = catalog.search(query, top_k=top_k)
+            else:
+                matches = catalog.search(query, top_k=top_k)
             return (
                 "Recommended skill activation plan:\n"
                 + matches
@@ -1853,11 +2018,110 @@ class SkillAction:
                     "properties": {
                         "query": {"type": "string"},
                         "top_k": {"type": "integer", "default": 5},
+                        "mode": {
+                            "type": "string",
+                            "enum": ["lexical", "semantic", "hybrid"],
+                            "default": "hybrid",
+                            "description": (
+                                "Same as skill_search: lexical, semantic (if enabled), or hybrid."
+                            ),
+                        },
                     },
                     "required": ["query"],
                 },
             },
             handler=plan_skills_handler,
+        )
+
+        # preview_skill — inspect tool schemas without activating (P3-14)
+        async def preview_skill_handler(args):
+            skill_name = args.get("skill_name")
+            if skill_name not in discovered_skills:
+                return f"Error: Skill '{skill_name}' not found."
+            skill_data = discovered_skills[skill_name]
+            tool_files = skill_data.get("tool_files", [])
+            if not tool_files:
+                return (
+                    f"Skill '{skill_name}' has no tool modules.\n"
+                    f"Description: {skill_data.get('description', '')}\n"
+                    f"Content: {skill_data.get('content', '')[:500]}"
+                )
+            # Temporarily import tool files to extract schemas
+            lines = [
+                f"Skill: {skill_name}",
+                f"Description: {skill_data.get('description', '')}",
+                f"Tools ({len(tool_files)}):",
+            ]
+            import importlib.util as _iu
+            import sys as _sys
+            from pathlib import Path as _Path
+
+            safe_skill_name = skill_name.replace("-", "_")
+            package_name = f"jvagent_skill_{safe_skill_name}"
+            for tf in tool_files:
+                stem = _Path(tf).stem
+                mod_name = f"{package_name}.{stem}"
+                try:
+                    spec = _iu.spec_from_file_location(mod_name, tf)
+                    if not spec or not spec.loader:
+                        continue
+                    mod = _iu.module_from_spec(spec)
+                    mod.__package__ = package_name
+                    _sys.modules[mod_name] = mod
+                    spec.loader.exec_module(mod)
+                    get_def = getattr(mod, "get_tool_definition", None)
+                    if get_def:
+                        td = get_def()
+                        if isinstance(td, dict):
+                            tname = td.get("function", {}).get("name") or td.get(
+                                "name", stem
+                            )
+                            tdesc = td.get("function", {}).get("description") or td.get(
+                                "description", ""
+                            )
+                            tparams = td.get("function", {}).get(
+                                "parameters"
+                            ) or td.get("parameters", {})
+                            required = (
+                                tparams.get("required", [])
+                                if isinstance(tparams, dict)
+                                else []
+                            )
+                            props = (
+                                tparams.get("properties", {})
+                                if isinstance(tparams, dict)
+                                else {}
+                            )
+                            lines.append(
+                                f"\n  {tname}: {tdesc}\n"
+                                f"  Parameters: {', '.join(props.keys()) if props else '(none)'}\n"
+                                f"  Required: {', '.join(required) if required else '(none)'}"
+                            )
+                except Exception:
+                    continue
+            return "\n".join(lines)
+
+        tool_executor.register_dynamic_tool(
+            name="preview_skill",
+            tool_def_dict={
+                "name": "preview_skill",
+                "description": (
+                    "Preview a skill's tool names, descriptions, and parameter "
+                    "schemas WITHOUT activating the skill.  Use this to compare "
+                    "tool surfaces across candidate skills before committing."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "skill_name": {
+                            "type": "string",
+                            "description": "Name of the skill to preview.",
+                        }
+                    },
+                    "required": ["skill_name"],
+                },
+            },
+            handler=preview_skill_handler,
         )
 
     # ---------------------------------------------------------------------------
@@ -1977,6 +2241,7 @@ class SkillAction:
             return (list(tool_calls), [], set())
 
         read_targets = SkillAction._read_skill_target_names_from_batch(tool_calls)
+        read_targets_normalized = {t.replace("-", "_") for t in read_targets}
 
         to_dispatch: List[Dict[str, Any]] = []
         synthetic: List[Dict[str, Any]] = []
@@ -1989,7 +2254,8 @@ class SkillAction:
                 continue
             skill_prefix = SkillAction._namespaced_skill_tool_prefix(name)
             if skill_prefix and (
-                skill_prefix in activated_skill_names or skill_prefix in read_targets
+                skill_prefix in activated_skill_names
+                or skill_prefix in read_targets_normalized
             ):
                 to_dispatch.append(tc)
                 continue
@@ -2092,7 +2358,13 @@ class SkillAction:
     ) -> bool:
         if not tools_ever_called:
             return False
-        discovery_tools = {"list_skills", "skill_search", "plan_skills", "read_skill"}
+        discovery_tools = {
+            "list_skills",
+            "skill_search",
+            "plan_skills",
+            "read_skill",
+            "preview_skill",
+        }
         return any(tool in discovery_tools for tool in tools_ever_called)
 
     def _make_task_tracker_handler(
@@ -2117,6 +2389,16 @@ class SkillAction:
                 steps = [str(step).strip() for step in raw_steps if str(step).strip()]
                 if not steps:
                     return "Error: `steps` must contain at least one non-empty step."
+
+                # 5.8a — Validate step specificity: reject trivially-vague "dummy" plans
+                # that would bypass the plan-first gate without describing actual work.
+                _vague_warnings = self._check_step_specificity(steps)
+                if _vague_warnings:
+                    logger.warning(
+                        "SkillAction: task plan has %d vague step(s): %s",
+                        len(_vague_warnings),
+                        _vague_warnings,
+                    )
 
                 # 5.8 — Enforce step count ceiling and warn when plan exceeds budget.
                 if len(steps) > cfg.max_task_plan_steps:
@@ -2191,7 +2473,14 @@ class SkillAction:
                         review_suffix=" + review" if review_enabled else "",
                     ),
                 )
-                return "Task plan created:\n" + task_plan.format_for_model()
+                plan_response = "Task plan created:\n" + task_plan.format_for_model()
+                if _vague_warnings:
+                    plan_response += (
+                        "\n\nWarning: the following steps are too vague to be verifiable:\n"
+                        + "\n".join(f"  - {w}" for w in _vague_warnings)
+                        + "\nRevise these steps to name the specific tools or outcomes expected."
+                    )
+                return plan_response
 
             task_plan = task_plan_state.get("plan")
             if task_plan is None:
@@ -2515,6 +2804,40 @@ class SkillAction:
         ):
             return True
         return False
+
+    @staticmethod
+    def _check_step_specificity(steps: List[str]) -> List[str]:
+        """Flag steps that are too vague to meaningfully describe work.
+
+        Returns a list of warning messages for vague steps (empty if all steps
+        are specific).  This is a soft guard — the plan is still created, but
+        operators are warned that the model may be bypassing the plan-first gate
+        with a dummy plan.
+        """
+        _VAGUE_PATTERNS: Tuple[str, ...] = (
+            r"\bdo\s+(the\s+)?(work|task|job|thing|it|request|stuff)\b",
+            r"\bcomplete\s+(the\s+)?(task|work|request|job)\b",
+            r"\bhandle\s+(the\s+)?(request|task|work|it)\b",
+            r"\bprocess\s+(the\s+)?(request|input|task)\b",
+            r"\bfulfill\s+(the\s+)?(request|task)\b",
+            r"\bperform\s+(the\s+)?(task|work|action|request)\b",
+            r"\bexecute\s+(the\s+)?(task|plan|work)\b",
+            r"\bdo\s+what\s+(was|is|the\s+user)\s+(asked|requested|said)\b",
+            r"\banswer\s+(the\s+)?(question|user|query)\s*$",
+            r"\brespond\s+to\s+(the\s+)?(user|request|query)\s*$",
+        )
+        _compiled = [re.compile(p, re.IGNORECASE | re.UNICODE) for p in _VAGUE_PATTERNS]
+        warnings: List[str] = []
+        for step in steps:
+            for pat in _compiled:
+                if pat.search(step):
+                    warnings.append(
+                        f"Step '{step[:80]}' is trivially vague — it does not "
+                        f"describe the concrete actions or tools needed. "
+                        f"Break it into specific, verifiable sub-steps."
+                    )
+                    break
+        return warnings
 
     @staticmethod
     def _check_plan_faithfulness(

@@ -17,13 +17,13 @@ from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.model.context import get_interaction, set_interaction
 from jvagent.action.pageindex.config import initialize_pageindex_database
 from jvagent.action.pageindex.llm_bridge import set_pageindex_model_action
-from jvagent.action.pageindex.pageindex_retrieval_interact_action import (
-    PageIndexRetrievalInteractAction,
-)
 from jvagent.action.pageindex.pageindex_action.runtime_config import (
     get_ingestion_config,
     push_ingestion_config,
     push_retrieval_config,
+)
+from jvagent.action.pageindex.pageindex_retrieval_interact_action import (
+    PageIndexRetrievalInteractAction,
 )
 from jvagent.memory.long_memory_retrieval_utils import resolve_long_memory_collection
 from jvagent.memory.user import User

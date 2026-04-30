@@ -415,7 +415,9 @@ async def _prune_added_queue_skip_existing(
         item
         for item in added
         if not isinstance(item, dict)
-        or not _drive_fname_matches_indexed(item.get("name"), indexed_full, indexed_first)
+        or not _drive_fname_matches_indexed(
+            item.get("name"), indexed_full, indexed_first
+        )
     ]
     if len(kept) == len(added):
         return

@@ -1,6 +1,9 @@
 """System prompt templates for the SkillInteractAction agentic loop."""
 
-SKILL_PROMPTS_VERSION = 10
+# Test-canary version guard: referenced only in test_prompts_snapshots.py to
+# force snapshot regeneration when prompt text changes.  This is NOT a runtime
+# version — increment it whenever any prompt template in this file is modified.
+SKILL_PROMPTS_VERSION = 11
 
 SKILL_AGENT_SYSTEM_PROMPT = """\
 You are {agent_name}.
@@ -142,12 +145,15 @@ LIST_SKILLS_TOOL_DESCRIPTION = (
 
 SKILL_SEARCH_TOOL_DESCRIPTION = (
     "Search LOCAL skills already installed in this agent by name, description, and tags. "
+    "Optional `mode`: lexical (token overlap only), semantic (LLM re-rank when enabled in config), "
+    "or hybrid (default: semantic when enabled, else lexical). "
     "For discovering NEW skills from the cloud, use skill_hub__search_registry instead."
 )
 
 PLAN_SKILLS_TOOL_DESCRIPTION = (
     "Analyze the user's request and suggest which LOCAL skills to activate, in what order. "
     "Returns a prioritized list of skill names with a brief rationale for each. "
+    "Same `mode` options as skill_search (lexical / semantic / hybrid). "
     "Use this when the request may span multiple skill scopes or when you are unsure which skill to pick."
 )
 
@@ -436,3 +442,27 @@ TOOL_CALL_ANNOUNCE_TEMPLATE = "{opener} {intent} with {tool_name}."
 TOOL_RESULT_ANNOUNCE_TEMPLATE = "{result_line}"
 
 ERROR_ANNOUNCE_TEMPLATE = "{error_line}"
+
+SKILL_SEARCH_SEMANTIC_PROMPT = """\
+You are a skill-matching intelligence for an agent platform. Given a user request and
+available skills with their metadata, rank the top {top_k} most relevant skills.
+
+USER REQUEST:
+{query}
+
+AVAILABLE SKILLS (JSON — keys are skill names, values are metadata):
+{skills_json}
+
+Return a JSON object with a "matches" array. Each match must have:
+- "skill_name": exact key from AVAILABLE SKILLS
+- "relevance": float 0.0-1.0 (0.0 = irrelevant, 1.0 = perfect match)
+- "rationale": one sentence explaining why this skill matches
+
+Rules:
+- Return at most {top_k} matches. Fewer is fine if fewer skills are relevant.
+- If no skill matches the request, return empty matches list.
+- skill_name MUST be an exact key from AVAILABLE SKILLS, never a description or value.
+- Consider the user's explicit words, implied intent, and task structure.
+- Prefer the most specific matching skill over generic ones.
+- Output ONLY the JSON object, no other text.
+"""

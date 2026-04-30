@@ -1007,13 +1007,50 @@ def handle_agent_command(args: List[str], app_root: str = None) -> None:
         )
 
 
+def _handle_skill_validate_command(args: List[str], app_root: str = None) -> None:
+    """Validate a SKILL.md file without requiring agent context."""
+    from pathlib import Path as _Path
+
+    parser = argparse.ArgumentParser(prog="jvagent skill validate")
+    parser.add_argument(
+        "path",
+        help="Path to a SKILL.md file or a skill bundle directory containing one.",
+    )
+    ns = parser.parse_args(args)
+
+    target = _Path(ns.path).expanduser().resolve()
+    if target.is_dir():
+        target = target / "SKILL.md"
+    if not target.is_file():
+        parser.error(f"SKILL.md not found at {target}")
+
+    from jvagent.scaffold.skill_resolve import parse_skill_bundle
+
+    print(f"Validating: {target}")
+    bundle = parse_skill_bundle(target.parent, source="builtin")
+    if bundle is None:
+        print("FAILED: Could not parse SKILL.md")
+        return
+
+    print("PASSED")
+    print(f"  name:            {bundle['name']}")
+    print(f"  description:     {bundle.get('description', '')[:80]}")
+    print(f"  tools:           {len(bundle.get('tool_files', []))}")
+    print(f"  requires_actions: {bundle.get('requires_actions', [])}")
+    print(f"  exports:         {bundle.get('exports', [])}")
+    print(f"  imports:         {bundle.get('imports', [])}")
+    print(f"  plan_steps:      {len(bundle.get('plan_steps', []))}")
+    print(f"  allowed_tools:   {bundle.get('allowed_tools', [])}")
+    print(f"  response_mode:   {bundle.get('response_mode', 'inherit')}")
+
+
 def handle_skill_command(args: List[str], app_root: str = None) -> None:
     """Handle skill bundle commands."""
     if app_root is None:
         app_root = os.getcwd()
 
     if not args:
-        print("Usage: jvagent skill <add|list|show> ...")
+        print("Usage: jvagent skill <add|list|show|validate> ...")
         return
 
     command = args[0]
@@ -1026,9 +1063,12 @@ def handle_skill_command(args: List[str], app_root: str = None) -> None:
     if command == "show":
         _handle_skill_show_command(args[1:], app_root=app_root)
         return
+    if command == "validate":
+        _handle_skill_validate_command(args[1:], app_root=app_root)
+        return
 
     print(f"Unknown skill command: {command}")
-    print("Available commands: add, list, show")
+    print("Available commands: add, list, show, validate")
 
 
 def handle_action_command(args: List[str], app_root: str = None) -> None:

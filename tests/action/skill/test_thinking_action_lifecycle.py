@@ -71,7 +71,10 @@ def _mock_action() -> MagicMock:
     action.progress_check_interval = 3
     action.enable_checkpoints = True
     action.enable_evidence_log = True
-    action.stuck_intent_similarity_threshold = 0.7
+    action.stuck_intent_jaccard_threshold = 0.7
+    action.max_iterations_per_skill = 0
+    action.max_duration_per_skill_seconds = 0.0
+    action.semantic_skill_search = False
     action.max_total_task_nudges = 6
     action.max_task_plan_steps = 50
     action.stream_thinking = True

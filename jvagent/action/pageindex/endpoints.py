@@ -1445,9 +1445,7 @@ async def patch_document_endpoint(
     has_meta = "metadata" in updates
     has_url = "doc_url" in updates
     if not has_meta and not has_url:
-        raise ValidationError(
-            'updates must include "metadata" and/or "doc_url"'
-        )
+        raise ValidationError('updates must include "metadata" and/or "doc_url"')
     fields: Dict[str, Any] = {}
     if has_meta:
         meta = updates["metadata"]

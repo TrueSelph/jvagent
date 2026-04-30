@@ -990,9 +990,7 @@ async def update_document_metadata(
     metadata: Optional[Dict[str, Any]],
 ) -> Optional[Dict[str, Any]]:
     """Set DocumentRootNode.metadata (None clears)."""
-    return await patch_document_root(
-        doc_name, collection_name, {"metadata": metadata}
-    )
+    return await patch_document_root(doc_name, collection_name, {"metadata": metadata})
 
 
 async def get_document_chunk(

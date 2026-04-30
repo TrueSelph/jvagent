@@ -11,6 +11,15 @@ Recovery actions
                transient API errors with remaining retry budget.
 ``terminate``  Abort the loop and attempt a graceful forced-termination call.
                Used when retries are exhausted or the error is non-recoverable.
+
+Backoff
+-------
+``decide()`` returns a ``RetryDecision`` that includes an optional
+``delay_seconds`` field.  The caller should ``await asyncio.sleep(delay)``
+before re-entering the phase.  Backoff is progressive per phase:
+  - model_call:    immediate → 2s → 5s
+  - tool_dispatch: immediate → 1s
+  - default:       immediate
 """
 
 from __future__ import annotations
@@ -42,6 +51,28 @@ _PHASE_RETRY_BUDGETS: Dict[str, int] = {
     "finalize": 1,
     "default": 1,
 }
+
+# Progressive backoff schedule per phase.
+# Indexed by (used + 1) — the number of times *this* failure has been retried.
+_PHASE_BACKOFF_SCHEDULE: Dict[str, List[float]] = {
+    "model_call": [0.0, 2.0, 5.0],
+    "tool_dispatch": [0.0, 1.0],
+    "finalize": [0.0],
+    "default": [0.0],
+}
+
+
+@dataclass
+class RetryDecision:
+    """Outcome from ``RecoveryPolicy.decide()``.
+
+    Attributes:
+        action: ``"retry"`` or ``"terminate"``.
+        delay_seconds: Time the caller should sleep before retrying.
+    """
+
+    action: str
+    delay_seconds: float = 0.0
 
 
 @dataclass
@@ -90,15 +121,15 @@ class RecoveryPolicy:
         # (iteration, phase) → attempts used
         self._attempts: Dict[str, int] = {}
 
-    def decide(self, failure: FailureRecord) -> str:
-        """Return ``'retry'`` or ``'terminate'``."""
+    def decide(self, failure: FailureRecord) -> RetryDecision:
+        """Return a ``RetryDecision`` with ``action`` and optional backoff delay."""
         if not failure.recoverable:
             logger.info(
                 "RecoveryPolicy: non-recoverable failure at iter %d/%s → terminate",
                 failure.iteration,
                 failure.phase,
             )
-            return "terminate"
+            return RetryDecision(action="terminate")
 
         key = f"{failure.iteration}:{failure.phase}"
         used = self._attempts.get(key, 0)
@@ -112,17 +143,24 @@ class RecoveryPolicy:
                 failure.iteration,
                 failure.phase,
             )
-            return "terminate"
+            return RetryDecision(action="terminate")
 
         self._attempts[key] = used + 1
+        # Determine backoff delay from schedule
+        schedule = _PHASE_BACKOFF_SCHEDULE.get(
+            failure.phase, _PHASE_BACKOFF_SCHEDULE["default"]
+        )
+        delay = schedule[used] if used < len(schedule) else schedule[-1]
+
         logger.info(
-            "RecoveryPolicy: retrying iter %d/%s (attempt %d/%d)",
+            "RecoveryPolicy: retrying iter %d/%s (attempt %d/%d, delay %.1fs)",
             failure.iteration,
             failure.phase,
             used + 1,
             budget,
+            delay,
         )
-        return "retry"
+        return RetryDecision(action="retry", delay_seconds=delay)
 
     def is_recoverable(self, exc: Exception) -> bool:
         """Heuristically classify an exception as transient (retryable) or permanent."""

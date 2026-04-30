@@ -25,8 +25,8 @@ class StuckDetectorConfig:
 
     window_size: int = 3
     max_corrections: int = 2
-    # Semantic similarity threshold (0.0-1.0) for intent-based loop detection
-    intent_similarity_threshold: float = 0.7
+    # Jaccard similarity threshold (0.0-1.0) for intent-based loop detection via token-set overlap
+    intent_jaccard_threshold: float = 0.7
 
 
 class StuckDetector:
@@ -107,7 +107,7 @@ class StuckDetector:
             return False
 
         intents_list = list(self._intent_window)
-        threshold = self._config.intent_similarity_threshold
+        threshold = self._config.intent_jaccard_threshold
 
         for i in range(len(intents_list) - 1):
             set_a = intents_list[i]

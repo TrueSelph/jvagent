@@ -11,7 +11,11 @@ import pytest
 
 from jvagent.action.skill.context_compactor import CompactorConfig, ContextCompactor
 from jvagent.action.skill.loop_checkpoint import CheckpointStore, LoopCheckpoint
-from jvagent.action.skill.recovery_policy import FailureRecord, RecoveryPolicy
+from jvagent.action.skill.recovery_policy import (
+    FailureRecord,
+    RecoveryPolicy,
+    RetryDecision,
+)
 from jvagent.action.skill.skill_action import SkillAction
 from jvagent.action.skill.skill_action_contracts import (
     LoopPhase,
@@ -574,7 +578,7 @@ class TestRecoveryPolicy:
             error="permission denied",
             recoverable=False,
         )
-        assert policy.decide(failure) == "terminate"
+        assert policy.decide(failure).action == "terminate"
 
     def test_recoverable_within_budget_returns_retry(self):
         policy = RecoveryPolicy()
@@ -584,15 +588,15 @@ class TestRecoveryPolicy:
             error="temporary server error",
             recoverable=True,
         )
-        assert policy.decide(failure) == "retry"
+        assert policy.decide(failure).action == "retry"
 
     def test_budget_exhaustion_returns_terminate(self):
         policy = RecoveryPolicy(phase_retry_budgets={"model_call": 1})
         failure = FailureRecord(
             iteration=1, phase="model_call", error="timeout", recoverable=True
         )
-        assert policy.decide(failure) == "retry"  # first attempt
-        assert policy.decide(failure) == "terminate"  # budget exhausted
+        assert policy.decide(failure).action == "retry"  # first attempt
+        assert policy.decide(failure).action == "terminate"  # budget exhausted
 
     def test_different_iterations_get_own_budgets(self):
         policy = RecoveryPolicy(phase_retry_budgets={"model_call": 1})
@@ -602,9 +606,9 @@ class TestRecoveryPolicy:
         f2 = FailureRecord(
             iteration=2, phase="model_call", error="err", recoverable=True
         )
-        assert policy.decide(f1) == "retry"
-        assert policy.decide(f1) == "terminate"
-        assert policy.decide(f2) == "retry"  # iter 2 has fresh budget
+        assert policy.decide(f1).action == "retry"
+        assert policy.decide(f1).action == "terminate"
+        assert policy.decide(f2).action == "retry"  # iter 2 has fresh budget
 
     def test_is_recoverable_heuristic(self):
         policy = RecoveryPolicy()
@@ -619,7 +623,7 @@ class TestRecoveryPolicy:
         )
         policy.decide(f)
         policy.reset()
-        assert policy.decide(f) == "retry"  # budget fresh after reset
+        assert policy.decide(f).action == "retry"  # budget fresh after reset
 
 
 # ---------------------------------------------------------------------------

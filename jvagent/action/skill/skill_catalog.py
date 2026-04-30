@@ -7,9 +7,10 @@ resolution.
 """
 
 import asyncio
+import json
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from jvagent.action.skill.prompts import (
@@ -18,6 +19,7 @@ from jvagent.action.skill.prompts import (
     SKILL_ACTIVATION_LIMIT_MESSAGE,
     SKILL_INDEX_ENTRY_TEMPLATE,
     SKILL_INDEX_INTRO,
+    SKILL_SEARCH_SEMANTIC_PROMPT,
 )
 from jvagent.core.app_context import get_app_root
 from jvagent.scaffold.skill_resolve import (
@@ -153,8 +155,10 @@ class SkillCatalog:
         Returns:
             Error message if the limit is reached, None if activation is allowed.
         """
+        # ToolExecutor.activated_skills uses hyphen→underscore keys; align catalog name.
+        normalized = skill_name.replace("-", "_")
         if (
-            skill_name not in activated_skills
+            normalized not in activated_skills
             and len(activated_skills) >= max_activations
         ):
             active_text = (
@@ -262,6 +266,27 @@ class SkillCatalog:
                         }
                     )
 
+        # ---- Chaining compatibility (P2-10) ----
+        # Collect all exported keys across skills
+        all_exports: Dict[str, List[str]] = {}  # key → [skill_name, ...]
+        for skill_name, skill_data in self._skills.items():
+            for key in skill_data.get("exports", []):
+                all_exports.setdefault(key, []).append(skill_name)
+
+        for skill_name, skill_data in self._skills.items():
+            for key in skill_data.get("imports", []):
+                if key not in all_exports:
+                    failures.append(
+                        {
+                            "skill_name": skill_name,
+                            "kind": "missing_export",
+                            "detail": (
+                                f"Skill '{skill_name}' imports '{key}' but no "
+                                f"discovered skill exports it"
+                            ),
+                        }
+                    )
+
         if failures:
             logger.warning(
                 "SkillCatalog.preflight_check: %d failure(s): %s",
@@ -287,10 +312,11 @@ class SkillCatalog:
         Returns:
             Effective response mode string.
         """
-        for skill_name in activated_skills:
-            skill_data = self._skills.get(skill_name, {})
-            if skill_data.get("response_mode") == "respond":
-                return "respond"
+        activated_norm = {s.replace("-", "_") for s in activated_skills}
+        for catalog_key, skill_data in self._skills.items():
+            if catalog_key.replace("-", "_") in activated_norm:
+                if skill_data.get("response_mode") == "respond":
+                    return "respond"
         return default_mode
 
     def search(self, query: str, top_k: int = 5) -> str:
@@ -362,6 +388,146 @@ class SkillCatalog:
     def has_relevant_match(self, query: str, threshold: float) -> bool:
         """Whether any skill meets or exceeds the relevance threshold."""
         return self.top_relevance_score(query) >= threshold
+
+    def build_semantic_search_query(self, query: str, top_k: int = 5) -> str:
+        """Build the prompt for LLM-based skill ranking.
+
+        Returns a string prompt that can be sent to a language model for
+        semantic skill matching.  The caller provides the model action
+        and handles the LLM call.
+
+        Args:
+            query: User utterance or search string.
+            top_k: Maximum number of results to return.
+
+        Returns:
+            Prompt string ready for a model call.
+        """
+        skill_anchors: Dict[str, Dict[str, Any]] = {}
+        for skill_name, skill_data in self._skills.items():
+            metadata = skill_data.get("metadata", {}) or {}
+            tags = metadata.get("tags") or skill_data.get("tags") or []
+            if isinstance(tags, str):
+                tags = [tags]
+            skill_anchors[skill_name] = {
+                "description": skill_data.get("description", ""),
+                "scope_hint": skill_data.get("scope_hint", ""),
+                "tags": tags,
+                "tool_count": len(skill_data.get("tool_files", []) or []),
+            }
+        return SKILL_SEARCH_SEMANTIC_PROMPT.format(
+            query=query,
+            top_k=top_k,
+            skills_json=json.dumps(skill_anchors, indent=2),
+        )
+
+    async def search_semantic(
+        self,
+        query: str,
+        top_k: int = 5,
+        *,
+        model_action: Any,
+        base_model_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Rank skills via LLM call using the interact router anchor pattern.
+
+        Presents skill metadata as a JSON dictionary to a language model and
+        asks it to rank the top matches with relevance scores and rationales.
+
+        Falls back to lexical search on any failure (bad JSON, model error,
+        empty result).
+
+        Args:
+            query: User utterance or search string.
+            top_k: Maximum number of results to return.
+            model_action: Pre-resolved LanguageModelAction for the LLM call.
+            base_model_kwargs: Optional model kwargs (temperature, max_tokens,
+                model override).  Defaults to low temperature for deterministic
+                ranking when not provided.
+
+        Returns:
+            Formatted string with ranked skill matches, or lexical fallback.
+        """
+        try:
+            prompt = self.build_semantic_search_query(query, top_k=top_k)
+            kwargs: Dict[str, Any] = {
+                "messages": [{"role": "user", "content": prompt}],
+                "system": None,
+                "tools": None,
+                "calling_action_name": "SkillCatalog.search_semantic",
+                "prompt_for_observability": query,
+                "model": base_model_kwargs.get("model") if base_model_kwargs else None,
+                "temperature": (
+                    base_model_kwargs.get("temperature", 0.1)
+                    if base_model_kwargs
+                    else 0.1
+                ),
+                "max_tokens": (
+                    base_model_kwargs.get("max_tokens", 500)
+                    if base_model_kwargs
+                    else 500
+                ),
+            }
+
+            result = await model_action.query_messages(stream=False, **kwargs)
+            response_text = await result.get_response()
+            if not response_text and result.response:
+                response_text = result.response
+
+            if not response_text:
+                raise ValueError("Empty response from semantic search model")
+
+            return self._parse_semantic_search_response(response_text, query, top_k)
+        except Exception as exc:
+            logger.warning(
+                "SkillCatalog.search_semantic: LLM ranking failed: %s — "
+                "falling back to lexical search",
+                exc,
+            )
+            return self.search(query, top_k=top_k)
+
+    def _parse_semantic_search_response(
+        self, raw_text: str, query: str, top_k: int
+    ) -> str:
+        """Parse the LLM's JSON response into a formatted skill match string.
+
+        Validates that returned skill names exist in the catalog and
+        relevance scores are in range.  Falls back to lexical search if
+        parsing fails or no valid matches are found.
+        """
+        # Strip markdown code fences if the model wraps the JSON
+        text = raw_text.strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if len(lines) > 2:
+                text = "\n".join(lines[1:-1])
+            else:
+                text = text.strip("`")
+
+        parsed = json.loads(text)
+        matches = parsed.get("matches") or []
+
+        lines = [f"Skill matches for '{query}':"]
+        valid_count = 0
+        for m in matches[:top_k]:
+            skill_name = str(m.get("skill_name") or "").strip()
+            if skill_name not in self._skills:
+                continue
+            try:
+                relevance = float(m.get("relevance", 0.5))
+                relevance = max(0.0, min(1.0, relevance))
+            except (TypeError, ValueError):
+                relevance = 0.5
+            rationale = str(m.get("rationale") or "").strip()
+            entry = self.format_index_entry(skill_name, self._skills[skill_name])
+            lines.append(f"  {entry} [relevance={relevance:.2f}]")
+            if rationale:
+                lines.append(f"    → {rationale}")
+            valid_count += 1
+
+        if valid_count == 0:
+            return self.search(query, top_k=top_k)
+        return "\n".join(lines)
 
     @classmethod
     def is_meta_intent(
@@ -575,11 +741,13 @@ class SkillCatalog:
         if cls._cache_lock is None:
             cls._cache_lock = asyncio.Lock()
 
-        # Check cache
-        now = datetime.utcnow()
+        # Check cache (tolerate naive cached_at from tests or older entries)
+        now = datetime.now(timezone.utc)
         async with cls._cache_lock:
             if cache_key in cls._cache:
                 cached_skills, cached_at = cls._cache[cache_key]
+                if cached_at.tzinfo is None:
+                    cached_at = cached_at.replace(tzinfo=timezone.utc)
                 age = (now - cached_at).total_seconds()
                 if age < SKILL_DISCOVERY_CACHE_TTL:
                     logger.debug(
@@ -601,16 +769,18 @@ class SkillCatalog:
         # Cache miss — resolve from disk
         try:
             if source == "both":
-                discovered_skills = resolve_merged_skill_bundles(
+                discovered_skills = await asyncio.to_thread(
+                    resolve_merged_skill_bundles,
                     app_root=app_root,
                     namespace=agent.namespace,
                     agent_name=agent.name,
                     include_builtin=True,
                 )
             elif source == "builtin":
-                discovered_skills = resolve_builtin_skills()
+                discovered_skills = await asyncio.to_thread(resolve_builtin_skills)
             elif source == "app":
-                discovered_skills = resolve_agent_skills(
+                discovered_skills = await asyncio.to_thread(
+                    resolve_agent_skills,
                     app_root=app_root,
                     namespace=agent.namespace,
                     agent_name=agent.name,

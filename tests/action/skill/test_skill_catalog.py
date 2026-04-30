@@ -357,7 +357,7 @@ class TestDiscoverCaching:
 
     @pytest.mark.asyncio
     async def test_cache_expiry_triggers_re_resolution(self):
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
         from unittest.mock import MagicMock, patch
 
         visitor = MagicMock()
@@ -389,7 +389,8 @@ class TestDiscoverCaching:
             skills, _ = SkillCatalog._cache[key]
             SkillCatalog._cache[key] = (
                 skills,
-                datetime.utcnow() - timedelta(seconds=SKILL_DISCOVERY_CACHE_TTL + 1),
+                datetime.now(timezone.utc)
+                - timedelta(seconds=SKILL_DISCOVERY_CACHE_TTL + 1),
             )
 
         with patch(
