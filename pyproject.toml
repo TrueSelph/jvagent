@@ -71,7 +71,7 @@ test = [
     "litellm>=1.82.0",
     "PyPDF2>=3.0.1",
     "pypdf>=4.0.0",
-    # PageIndex Docling tests (same stack as jvagent/action/pageindex/info.yaml)
+    # PageIndex Docling tests (same stack as jvagent/action/pageindex/pageindex_action/info.yaml)
     "docling>=2.0.0",
     "tabulate>=0.9.0",
 ]
@@ -82,7 +82,7 @@ distributed-lock = [
     "boto3>=1.28.0",
 ]
 
-# Optional: same Docling stack as jvagent/action/pageindex/info.yaml (manual / pre-baked images).
+# Optional: same Docling stack as jvagent/action/pageindex/pageindex_action/info.yaml (manual / pre-baked images).
 pageindex = [
     "docling>=2.0.0",
     "tabulate>=0.9.0",

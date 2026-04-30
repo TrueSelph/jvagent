@@ -5,8 +5,26 @@ package:
   version: 0.0.1
   meta:
     title: PageIndex Action
-    description: Vectorless RAG - search, ingest, and manage PageIndex documents
+    description: Core PageIndex — ingest, search, and manage documents (use with pageindex_retrieval_interact_action for chat RAG)
     group: jvagent
     type: action
+  config:
+    node_summary: true
+    node_text: true
+    doc_description: false
+    max_token_num_each_node: 20000
+    summary_token_threshold: 200
+    limit: 10
+    strategy: tree_search
+    include_references: true
   dependencies:
     jvagent: ~0.0.1
+    actions: []
+    pip:
+      - "litellm>=1.82.0"
+      - "openai>=1.0.0"
+      - "PyPDF2>=3.0.1"
+      - "pymupdf>=1.26.0"
+      - "python-dotenv>=1.1.0"
+      - "pyyaml>=6.0"
+      - "tiktoken>=0.11.0"

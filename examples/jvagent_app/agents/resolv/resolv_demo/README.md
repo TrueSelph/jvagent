@@ -50,7 +50,7 @@ actions:
   # Core routing and model actions
   - action: jvagent/interact_router
   - action: jvagent/openai_embedding
-  - action: jvagent/pageindex_retrieval_interact_action
+  - action: jvagent/pageindex_action
   - action: jvagent/openai_lm
   - action: jvagent/persona
 

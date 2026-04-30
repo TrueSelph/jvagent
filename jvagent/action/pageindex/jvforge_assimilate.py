@@ -10,7 +10,22 @@ from typing import Any, Dict, Optional, Tuple, cast
 import httpx
 from jvspatial.api.exceptions import ValidationError
 
+from .adapter import strip_redundant_md_suffix
 from .documents import delete_document, get_document_root, import_documents
+
+
+def _rewrite_pageindex_graph_doc_names(
+    graph: Dict[str, Any], raw_name: str, normalized: str
+) -> None:
+    """Align roots/nodes doc_name with normalized value before ``import_documents``."""
+    if raw_name == normalized:
+        return
+    for root in graph.get("roots") or []:
+        if isinstance(root, dict) and root.get("doc_name") == raw_name:
+            root["doc_name"] = normalized
+    for node in graph.get("nodes") or []:
+        if isinstance(node, dict) and node.get("doc_name") == raw_name:
+            node["doc_name"] = normalized
 
 
 def _jvforge_form_data(
@@ -167,6 +182,9 @@ async def assimilate_via_jvforge(
         )
 
     eff_doc_name = _eff_doc_name_from_graph(graph, doc_name)
+    normalized = strip_redundant_md_suffix(eff_doc_name)
+    _rewrite_pageindex_graph_doc_names(graph, eff_doc_name, normalized)
+    eff_doc_name = normalized
 
     roots = graph.get("roots") or []
     root_id = ""

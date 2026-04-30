@@ -13,23 +13,18 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from jvspatial.core.annotations import attribute
 
-from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.model.context import get_interaction, set_interaction
-from jvagent.action.pageindex.config import (
-    initialize_pageindex_database,
-    set_pageindex_doc_description,
-    set_pageindex_max_token_num_each_node,
-    set_pageindex_node_summary,
-    set_pageindex_node_text,
-    set_pageindex_summary_token_threshold,
-)
+from jvagent.action.pageindex.config import initialize_pageindex_database
 from jvagent.action.pageindex.llm_bridge import set_pageindex_model_action
 from jvagent.action.pageindex.pageindex_retrieval_interact_action import (
     PageIndexRetrievalInteractAction,
-    _push_retrieval_config,
 )
-from jvagent.action.pageindex.retrieval import search_documents
+from jvagent.action.pageindex.pageindex_action.runtime_config import (
+    get_ingestion_config,
+    push_ingestion_config,
+    push_retrieval_config,
+)
 from jvagent.memory.long_memory_retrieval_utils import resolve_long_memory_collection
 from jvagent.memory.user import User
 from jvagent.memory.user_long_memory import UserLongMemory
@@ -40,72 +35,6 @@ if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction
 
 logger = logging.getLogger(__name__)
-
-
-def _bool_from_config(value: Any, default: bool) -> bool:
-    """Convert config value to bool. None -> default; yes/true/1 -> True; else False."""
-    if value is None:
-        return default
-    v = str(value).lower().strip()
-    return v in ("yes", "true", "1")
-
-
-def _push_ingestion_config(ingestion: Dict[str, Any]) -> None:
-    """Push ingestion config values to config module."""
-    set_pageindex_node_summary(ingestion.get("node_summary", False))
-    set_pageindex_node_text(ingestion.get("node_text", True))
-    set_pageindex_doc_description(ingestion.get("doc_description", False))
-    set_pageindex_max_token_num_each_node(ingestion.get("max_token_num_each_node"))
-    set_pageindex_summary_token_threshold(ingestion.get("summary_token_threshold"))
-
-
-def _get_ingestion_config(
-    config: Dict[str, Any], node_summary_attr: bool
-) -> Dict[str, Any]:
-    """Resolve ingestion config from action config (with attribute fallback for node_summary)."""
-    cfg = config or {}
-    node_summary = (
-        _bool_from_config(cfg["node_summary"], False)
-        if "node_summary" in cfg
-        else node_summary_attr
-    )
-    return {
-        "node_summary": node_summary,
-        "node_text": _bool_from_config(cfg.get("node_text"), True),
-        "doc_description": _bool_from_config(cfg.get("doc_description"), False),
-        "max_token_num_each_node": cfg.get("max_token_num_each_node"),
-        "summary_token_threshold": cfg.get("summary_token_threshold")
-        or cfg.get("max_node_tokens"),
-    }
-
-
-async def ensure_ingestion_config_for_agent(agent_id: str) -> None:
-    """Push ingestion config from agent's PageIndex action to config module.
-
-    Used when REST ingest does not receive if_add_node_summary in the form.
-    Resolves config from cached actions; falls back to node_summary=True when
-    cache miss or no PageIndex action (agent-scoped routes assume PageIndex).
-    """
-    from jvagent.core.cache import get_cached_actions
-
-    actions = await get_cached_actions(agent_id, enabled_only=True)
-    for action in actions or []:
-        if isinstance(action, PageIndexRetrievalInteractAction):
-            config = getattr(action, "config", None) or {}
-            node_summary_attr = getattr(action, "node_summary", False)
-            ingestion = _get_ingestion_config(config, node_summary_attr)
-            _push_ingestion_config(ingestion)
-            return
-    # Fallback: default to summaries for agent-scoped routes
-    _push_ingestion_config(
-        {
-            "node_summary": True,
-            "node_text": True,
-            "doc_description": False,
-            "max_token_num_each_node": None,
-            "summary_token_threshold": None,
-        }
-    )
 
 
 class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
@@ -391,19 +320,25 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
         """Execute vectorless retrieval and add directive to interaction."""
         interaction = visitor.interaction
         if not interaction:
-            logger.warning("PageIndexRetrievalInteractAction: No interaction")
+            logger.warning("UserLongMemoryRetrievalInteractAction: No interaction")
             return
 
-        ingestion = _get_ingestion_config(self.config, self.node_summary)
-        _push_ingestion_config(ingestion)
-        model_action = await self.get_model_action()
+        core = await self._get_pageindex_core()
+        if not core:
+            logger.error(
+                "UserLongMemoryRetrievalInteractAction: PageIndexAction not configured"
+            )
+            return
+
+        ingestion = get_ingestion_config(core.config, core.node_summary)
+        push_ingestion_config(ingestion)
+        model_action = await core.get_model_action()
         prev_interaction = get_interaction()
         try:
             set_interaction(interaction)
             if model_action:
                 set_pageindex_model_action(model_action)
 
-            # If SEARCH, use the query from LLM if provided, or fallback to default
             query = self._get_search_query(interaction)
             if not query:
                 logger.debug("UserLongMemoryRetrieval: No query available for SEARCH")
@@ -411,7 +346,6 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
 
             initialize_pageindex_database()
             user_id = visitor.user_id
-            # Config can override attributes (allows retrieval params in context or config)
             limit = self.config.get("limit", self.limit)
             strategy = self.config.get("strategy", self.strategy)
             model = self.config.get("model", self.model)
@@ -428,37 +362,39 @@ class UserLongMemoryRetrievalInteractAction(PageIndexRetrievalInteractAction):
             max_tree_prompt_tokens = self.config.get(
                 "max_tree_prompt_tokens", self.max_tree_prompt_tokens
             )
-            _push_retrieval_config(
+            push_retrieval_config(
                 {
                     "max_summary_chars": max_summary_chars,
                     "max_tree_prompt_tokens": max_tree_prompt_tokens,
                 }
             )
-            results = await search_documents(
-                query=query,
+            results = await core.search(
+                query,
                 doc_name=doc_name,
                 strategy=strategy,
                 limit=limit,
-                model=model,
                 collection_name=collection_name,
                 metadata_filter=metadata_filter,
                 max_summary_chars=max_summary_chars,
                 max_tree_prompt_tokens=max_tree_prompt_tokens,
+                model=model,
             )
 
             if results:
                 directive = self._format_directive(results)
                 await visitor.add_directive(directive)
                 logger.debug(
-                    f"PageIndexRetrievalInteractAction: Added directive with "
-                    f"{len(results)} results"
+                    "UserLongMemoryRetrievalInteractAction: Added directive with "
+                    "%s results",
+                    len(results),
                 )
             if self.parameters:
                 await visitor.add_parameters(self.parameters)
 
         except Exception as e:
             logger.error(
-                f"PageIndexRetrievalInteractAction: Error: {e}",
+                "UserLongMemoryRetrievalInteractAction: Error: %s",
+                e,
                 exc_info=True,
             )
         finally:

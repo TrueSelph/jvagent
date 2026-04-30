@@ -45,8 +45,8 @@ __all__ = [
     "get_document_root",
     "search_documents",
     "DocumentWalker",
-    "PageIndexRetrievalInteractAction",
     "PageIndexAction",
+    "PageIndexRetrievalInteractAction",
     "export_documents",
     "import_documents",
 ]

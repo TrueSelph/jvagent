@@ -157,6 +157,7 @@ export function ChatInterface() {
       .getActions(agentId)
       .then((data) => {
         const actions = data.actions || data || [];
+        
         const has = actions.some(
           (a: any) =>
             a.label === "pageindex_retrieval_interact_action" ||
@@ -165,7 +166,19 @@ export function ChatInterface() {
             (a.archetype && String(a.archetype).includes("PageIndexRetrievalInteractAction")) ||
             (a.action === "jvagent/pageindex_retrieval_interact_action")
         );
-        setHasPageIndexAction(has);
+
+        // If not found, check for PageIndexAction
+        const hasFallback = !has && actions.some(
+          (a: any) =>
+            a.label === "pageindex_action" ||
+            a.context?.label === "pageindex_action" ||
+            (a.entity && String(a.entity).includes("PageIndexAction")) ||
+            (a.archetype && String(a.archetype).includes("PageIndexAction")) ||
+            (a.action === "jvagent/pageindex_action")
+        );
+
+        const finalHas = has || hasFallback;
+        setHasPageIndexAction(finalHas);
       })
       .catch(() => setHasPageIndexAction(false));
   }, [agentId]);

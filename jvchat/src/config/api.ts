@@ -25,6 +25,7 @@ import type {
   PageIndexChunkUpdatePayload,
   PageIndexChunkDeleteResponse,
   PageIndexDocumentMetadataResponse,
+  PageIndexDocumentPatchUpdates,
   UserMemoryResponse,
   GraphExpandResponse,
   GraphSubgraphResponse,
@@ -1151,6 +1152,7 @@ class ApiClient {
       ocr?: boolean
       docling_ocr_engine?: DoclingOcrEngine
       normalize_bold_headings?: boolean
+      skip_existing_documents?: boolean
     }
   ): Promise<{ message?: string; result?: unknown }> {
     const response = await this._withFallback(async (baseURL) => {
@@ -1683,17 +1685,20 @@ class ApiClient {
   }
 
   /**
-   * Update document root metadata (applies to all chunks in that document).
+   * Update document root metadata and/or source URL (applies to all chunks).
    * Path: PATCH /api/agents/{agentId}/pageindex/documents/{docName}
    */
   async patchPageIndexDocumentMetadata(
     agentId: string,
     docName: string,
-    metadata: Record<string, unknown> | null
+    partial: PageIndexDocumentPatchUpdates
   ): Promise<PageIndexDocumentMetadataResponse> {
     const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents/${encodeURIComponent(docName)}`
+    const updates: Record<string, unknown> = {}
+    if ('metadata' in partial) updates.metadata = partial.metadata
+    if ('doc_url' in partial) updates.doc_url = partial.doc_url
     const response = await this._withFallback((baseURL) =>
-      this.client.patch(path, { updates: { metadata } }, { baseURL })
+      this.client.patch(path, { updates }, { baseURL })
     )
     const data = response.data
     if (data?.success && data?.data) return data.data

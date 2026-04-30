@@ -16,7 +16,7 @@ Automatically sync and ingest documents from Google Drive folders into PageIndex
 
 - **Google Drive API** enabled and configured
 - **GoogleDriveAction** available in the agent
-- **PageIndexRetrievalInteractAction** available for document indexing
+- **PageIndexAction** available for document indexing
 - **OAuth 2.0 credentials** for Google Drive access
 
 ## Configuration
@@ -49,7 +49,7 @@ Automatically sync and ingest documents from Google Drive folders into PageIndex
 ## Setup Instructions
 
 1. Ensure **GoogleDriveAction** is configured with OAuth 2.0 credentials
-2. Ensure **PageIndexRetrievalInteractAction** is configured with a model and collection
+2. Ensure **PageIndexAction** is configured with a model and collection
 3. Identify Google Drive folder IDs to monitor:
    - Open folder in Google Drive
    - Copy the folder ID from the URL: `https://drive.google.com/drive/folders/{FOLDER_ID}`
@@ -174,17 +174,17 @@ Metadata is queryable in PageIndex for filtering and context enrichment.
 | Issue                    | Cause                           | Solution                                           |
 | ------------------------ | ------------------------------- | -------------------------------------------------- |
 | No documents ingested    | Folder is empty or inaccessible | Verify folder ID and permissions                   |
-| Documents not searchable | PageIndex not configured        | Ensure PageIndexRetrievalInteractAction is enabled |
+| Documents not searchable | PageIndex not configured        | Ensure PageIndexAction is enabled |
 | Duplicate documents      | Re-running ingestion            | Check change detection logic                       |
 | Memory issues            | Large files or many documents   | Process folders in batches                         |
 | Slow ingestion           | Large documents or slow network | Consider splitting large files                     |
 
 ## Integration with PageIndex Retrieval
 
-Once documents are ingested, use PageIndexRetrievalInteractAction to search:
+Once documents are ingested, use PageIndexAction to search:
 
 ```yaml
-- action: jvagent/pageindex_retrieval_interact_action
+- action: jvagent/pageindex_action
   context:
     enabled: true
     collection: "agent_name"

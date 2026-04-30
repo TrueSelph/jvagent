@@ -32,13 +32,26 @@ actions:
       embedding_dimensions: 1536
       timeout: 30
 
-  # PageIndexRetrievalInteractAction - Vectorless RAG from indexed documents
+  # Core PageIndex + interact retrieval (chat RAG calls core ``search``).
   # Documents must be ingested first via POST /pageindex/documents
+  - action: jvagent/pageindex_action
+    context:
+      enabled: true
+      description: "Core PageIndex — ingest and search APIs"
+    config:
+      limit: 10
+      strategy: "tree_search"
+      node_summary: true
+      node_text: true
+      doc_description: false
+      max_token_num_each_node: 20000
+      summary_token_threshold: 200
+
   - action: jvagent/pageindex_retrieval_interact_action
     context:
       enabled: true
       description: "Vectorless RAG - retrieves context from indexed documents via PageIndex graph"
-      weight: -75 # Runs after InteractRouter, before Persona
+      weight: -75
       anchors:
         - "User asks a question about indexed documents"
         - "User requests information from document index"
@@ -46,14 +59,6 @@ actions:
     config:
       limit: 10
       strategy: "tree_search"
-      node_summary: true # Required for tree_search; generates summaries during ingestion
-      node_text: true
-      doc_description: false
-      max_token_num_each_node: 20000
-      summary_token_threshold: 200
-      # model: gpt-4o-mini  # Optional: override LLM for tree search
-      # max_summary_chars: 300  # Optional: max chars per node summary in tree prompt
-      # max_tree_prompt_tokens: 16000  # Optional: max tokens; over budget triggers direct search
 
   - action: jvagent/openai_lm
     context:

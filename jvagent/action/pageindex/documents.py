@@ -23,7 +23,7 @@ from jvspatial.core.context import (
 )
 from jvspatial.db import get_database_manager
 
-from .adapter import _count_structure_nodes, tree_to_graph
+from .adapter import _count_structure_nodes, strip_redundant_md_suffix, tree_to_graph
 from .config import (
     PAGEINDEX_DB_NAME,
     get_pageindex_doc_description,
@@ -486,6 +486,11 @@ async def assimilate_document(
             result["doc_name"] = doc_name
             name = doc_name
 
+        if result.get("doc_name"):
+            norm = strip_redundant_md_suffix(str(result["doc_name"]))
+            result["doc_name"] = norm
+            name = norm
+
         if result.get("structure"):
             logger.info(
                 "pageindex ingest complete ingest_kind=%s doc_name=%s "
@@ -941,12 +946,15 @@ async def list_collection_chunks(
     }
 
 
-async def update_document_metadata(
+async def patch_document_root(
     doc_name: str,
     collection_name: str,
-    metadata: Optional[Dict[str, Any]],
+    fields: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
-    """Set DocumentRootNode.metadata (None clears)."""
+    """Apply partial updates to DocumentRootNode. ``fields`` keys may include
+    ``metadata`` (dict or None) and/or ``doc_url`` (str or None). Must be non-empty."""
+    if not fields:
+        return None
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     root = await get_document_root(doc_name, collection_name=collection_name)
     if not root:
@@ -956,15 +964,35 @@ async def update_document_metadata(
     prev = _safe_get_prev_context()
     try:
         set_default_context(context)
-        root.metadata = metadata
+        if "metadata" in fields:
+            root.metadata = fields["metadata"]
+        if "doc_url" in fields:
+            u = fields["doc_url"]
+            if u is None:
+                root.doc_url = None
+            else:
+                s = str(u).strip()
+                root.doc_url = s or None
         await root.save()
         return {
             "doc_name": root.doc_name,
             "root_id": root.id,
             "metadata": root.metadata,
+            "doc_url": root.doc_url,
         }
     finally:
         _safe_restore_context(prev)
+
+
+async def update_document_metadata(
+    doc_name: str,
+    collection_name: str,
+    metadata: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Set DocumentRootNode.metadata (None clears)."""
+    return await patch_document_root(
+        doc_name, collection_name, {"metadata": metadata}
+    )
 
 
 async def get_document_chunk(

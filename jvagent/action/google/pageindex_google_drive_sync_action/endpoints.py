@@ -93,6 +93,14 @@ async def ingest_google_documents_endpoint(
             "(requires JVAGENT_JVFORGE_BASE_URL)"
         ),
     ),
+    skip_existing_documents: bool = Field(
+        default=True,
+        examples=[True],
+        description=(
+            "When True: skip added-queue files already in PageIndex (exact doc_name, "
+            "redundant .md strip, or same leading name segment before the first dot)"
+        ),
+    ),
 ) -> Dict[str, Any]:
     """Recursively extract and ingest PDF documents from Google Drive folders.
 
@@ -137,6 +145,7 @@ async def ingest_google_documents_endpoint(
             ocr=ocr,
             docling_ocr_engine=docling_ocr_engine,
             normalize_bold_headings=normalize_bold_headings,
+            skip_existing_documents=skip_existing_documents,
         )
 
         response = result.get("message") or "No pending documents to ingest"
@@ -574,6 +583,9 @@ async def pageindex_google_drive_sync_action_interact(
         normalize_bold_flag = _payload_bool(
             request_data, "normalize_bold_headings", default=False
         )
+        skip_existing_flag = _payload_bool(
+            request_data, "skip_existing_documents", default=True
+        )
         drive_action = pageindex_google_drive_sync_action
 
         if is_serverless_mode():
@@ -588,6 +600,7 @@ async def pageindex_google_drive_sync_action_interact(
                 ocr=ocr_flag,
                 docling_ocr_engine=docling_ocr_eff,
                 normalize_bold_headings=normalize_bold_flag,
+                skip_existing_documents=skip_existing_flag,
             )
             response = result.get("message") or "No pending documents to ingest"
             t0 = getattr(request.state, "webhook_start", None)
@@ -612,6 +625,7 @@ async def pageindex_google_drive_sync_action_interact(
                 ocr=ocr_flag,
                 docling_ocr_engine=docling_ocr_eff,
                 normalize_bold_headings=normalize_bold_flag,
+                skip_existing_documents=skip_existing_flag,
             ),
             name=f"page_index_ingestion_{agent_id}",
         )

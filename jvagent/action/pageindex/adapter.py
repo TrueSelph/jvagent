@@ -20,6 +20,45 @@ from .models import DocumentContentEdge, DocumentNode, DocumentRootNode
 logger = logging.getLogger(__name__)
 
 
+def strip_redundant_md_suffix(doc_name: str) -> str:
+    """Strip trailing ``.md`` when the stem already contains a dot (``a.doc.md`` → ``a.doc``).
+
+    Repeats while applicable so ``a.doc.md.md`` → ``a.doc``. Ordinary markdown files like
+    ``readme.md`` are unchanged (no ``.`` in the stem after removing ``.md``).
+
+    Args:
+        doc_name: Input string to process
+
+    Returns:
+        Stripped string or empty string for invalid input
+
+    Examples:
+        >>> strip_redundant_md_suffix("a.doc.md")
+        'a.doc'
+        >>> strip_redundant_md_suffix("a.doc.md.md")
+        'a.doc'
+        >>> strip_redundant_md_suffix("readme.md")
+        'readme.md'
+        >>> strip_redundant_md_suffix("")
+        ''
+    """
+    if not isinstance(doc_name, str):
+        return ""
+    s = doc_name.strip()
+    if not s:
+        return ""
+    while True:
+        if len(s) < 4 or not s.lower().endswith(".md"):
+            break
+        base = s[:-3]
+        if "." not in base:
+            break
+        s = base
+    if s.endswith("."):
+        s = s[:-1]
+    return s
+
+
 def _count_structure_nodes(structure: Any) -> int:
     if isinstance(structure, dict):
         return 1 + sum(
@@ -221,6 +260,10 @@ async def tree_to_graph(
         raise ValueError("pageindex_output must contain 'doc_name'")
     if not structure:
         raise ValueError("pageindex_output must contain non-empty 'structure'")
+
+    normalized = strip_redundant_md_suffix(str(doc_name))
+    pageindex_output["doc_name"] = normalized
+    doc_name = normalized
 
     return await persist_structure(
         doc_name=doc_name,

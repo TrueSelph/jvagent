@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 _DOC_NOT_INSTALLED_MSG = (
     "Docling is required for convert_to_markdown=True. "
-    "Use an agent with jvagent/pageindex_retrieval_interact_action (see jvagent/action/pageindex/info.yaml), "
+    "Use an agent with jvagent/pageindex_action and jvagent/pageindex_retrieval_interact_action (see jvagent/action/pageindex/pageindex_action/info.yaml), "
     "or: pip install 'jvagent[pageindex]' or pip install docling tabulate"
 )
 

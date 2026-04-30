@@ -22,3 +22,5 @@ package:
     strategy: tree_search
   dependencies:
     jvagent: ~0.0.1
+    actions:
+      - "jvagent/pageindex_action"

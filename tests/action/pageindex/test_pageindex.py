@@ -44,8 +44,8 @@ from jvagent.action.pageindex.md_tree_enriched import (
     assign_hierarchy_breadcrumbs,
 )
 from jvagent.action.pageindex.models import DocumentNode, node_to_result
-from jvagent.action.pageindex.pageindex_retrieval_interact_action import (
-    PageIndexRetrievalInteractAction,
+from jvagent.action.pageindex.pageindex_action import (
+    PageIndexAction,
     ensure_ingestion_config_for_agent,
 )
 from jvagent.action.pageindex.retrieval import (
@@ -493,23 +493,19 @@ async def test_ensure_ingestion_config_for_agent_from_action():
         "MockAction", (), {"config": {"node_summary": "yes"}, "node_summary": True}
     )()
 
+    real_isinstance = isinstance
+
     def mock_isinstance(obj, cls):
-        if (
-            cls == PageIndexRetrievalInteractAction
-            and getattr(obj, "config", None) is not None
-        ):
+        if cls == PageIndexAction and getattr(obj, "config", None) is not None:
             return True
-        return isinstance(obj, cls)
+        return real_isinstance(obj, cls)
 
     with patch(
         "jvagent.core.cache.get_cached_actions",
         new_callable=AsyncMock,
     ) as m:
         m.return_value = [mock_action]
-        with patch(
-            "jvagent.action.pageindex.pageindex_retrieval_interact_action.isinstance",
-            mock_isinstance,
-        ):
+        with patch("builtins.isinstance", mock_isinstance):
             await ensure_ingestion_config_for_agent("agent_123")
     assert get_pageindex_node_summary() is True
 

@@ -1100,7 +1100,7 @@ actions:
 OpenAI actions read credentials from environment (`OPENAI_API_KEY`).
 
 **Available Core Actions:**
-- **Interact Actions**: `jvagent/interact_router`, `jvagent/retrieval_interact_action`, `jvagent/intro_interact_action`, `jvagent/interview_interact_action`, `jvagent/converse_interact_action`, `jvagent/pageindex_retrieval_interact_action` (pip deps in `jvagent/action/pageindex/info.yaml`, auto-installed at action load by default)
+- **Interact Actions**: `jvagent/interact_router`, `jvagent/retrieval_interact_action`, `jvagent/intro_interact_action`, `jvagent/interview_interact_action`, `jvagent/converse_interact_action`, `jvagent/pageindex_retrieval_interact_action` (requires `jvagent/pageindex_action` on the same agent; pip deps in `jvagent/action/pageindex/pageindex_action/info.yaml` and `pageindex_retrieval_interact_action/info.yaml`, auto-installed at action load by default)
 - **Language Models**: `jvagent/openai_lm`, `jvagent/openrouter_lm`
 - **Embedding Models**: `jvagent/openai_embedding`, `jvagent/openrouter_embedding`, `jvagent/huggingface_embedding`, `jvagent/generic_embedding`
 - **Vector Stores**: `jvagent/typesense_vectorstore`

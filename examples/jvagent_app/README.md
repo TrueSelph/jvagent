@@ -34,7 +34,7 @@ jvagent_app/
 
 After installing jvagent, you can run this example application:
 
-> **PageIndex document retrieval**: The example agent includes `jvagent/pageindex_retrieval_interact_action`. Install jvagent with the pageindex extra: `pip install jvagent[pageindex]` or `pip install -e ".[pageindex]"` from the jvagent repo. Documents must be ingested via `POST /pageindex/documents` before retrieval works. Ingestion options (`node_summary`, `node_text`, etc.) are configured under the action's `config` block in `agent.yaml`—see [PageIndex README](../jvagent/action/pageindex/README.md).
+> **PageIndex document retrieval**: The example agent includes `jvagent/pageindex_action`. Install jvagent with the pageindex extra: `pip install jvagent[pageindex]` or `pip install -e ".[pageindex]"` from the jvagent repo. Documents must be ingested via `POST /pageindex/documents` before retrieval works. Ingestion options (`node_summary`, `node_text`, etc.) are configured under the action's `config` block in `agent.yaml`—see [PageIndex README](../jvagent/action/pageindex/README.md).
 
 1. **Navigate to the jvagent repository root** (where you installed jvagent)
 
@@ -224,7 +224,7 @@ agents/
   - `jvagent/openai_lm` — OpenAI language model
   - `jvagent/openai_embedding` — Embeddings
   - `jvagent/intro_interact_action` — First-time user intro
-  - `jvagent/pageindex_retrieval_interact_action` — PageIndex RAG (install `jvagent[pageindex]`)
+  - `jvagent/pageindex_action` — PageIndex RAG (install `jvagent[pageindex]`)
   - `jvagent/persona` — Persona
   - `jvagent/converse_interact_action` — Smalltalk fallback
 - **Local action**: `jvagent/signup_interview_interact_action` (under `agents/jvagent/example_agent/actions/`)

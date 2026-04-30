@@ -38,17 +38,26 @@ This scales to large document bases without full-corpus scans. When the lexical 
 
 - `assimilate_document()` – ingestion (programmatic); builds lexical index during persist
 - `search_documents()` – retrieval (programmatic)
-- `PageIndexRetrievalInteractAction` – InteractAction for agent workflows
+- `PageIndexAction` – core graph action: ingest, `search`, list, delete, **jvforge LLM webhook URL** (`get_webhook_url` / `handle_webhook_payload`; same public path as before)
+- `PageIndexRetrievalInteractAction` – interact action: directives, `user_groups`; calls `PageIndexAction.search`
 - `lexical_index` – inverted index (tokenizer, ranking, index CRUD)
 - REST endpoints under `/pageindex/`
 
 ## Configuration
 
-### PageIndexRetrievalInteractAction (agent config)
+### PageIndexAction (core) and PageIndexRetrievalInteractAction (interact)
 
-**Context** (attributes): `doc_name`, `limit`, `weight`, `strategy`, `model`, `directive`, `parameters`, etc. Retrieval params can also be in `config`; both take effect (config overrides attributes when present).
+Agents should include **`jvagent/pageindex_action`** (ingestion defaults, `search`, **jvforge callback webhook**) and **`jvagent/pageindex_retrieval_interact_action`** (chat RAG: anchors, directive, `user_groups`). The interact action resolves the core action via `get_action("PageIndexAction")` and delegates retrieval.
 
-**Config block** (ingestion + retrieval): Use the `config` section in agent.yaml. Ingestion settings apply when documents are assimilated. Retrieval params (`limit`, `strategy`, `model`, `doc_name`) can be in `config` or `context` (attributes).
+**Context** on `PageIndexRetrievalInteractAction`: `doc_name`, `limit`, `weight`, `strategy`, `model`, `directive`, `parameters`, `user_groups`, etc.
+
+**Config** on `PageIndexAction`: ingestion (`node_summary`, `node_text`, …) and default search params. **Config** on `PageIndexRetrievalInteractAction`: interact-time overrides (`limit`, `strategy`, …).
+
+### PageIndexAction (agent config)
+
+**Context** (attributes): on the **core** action, use `enabled`, `description`. Ingestion and search defaults live in **`config`** below.
+
+**Config block** (ingestion + retrieval defaults): Use the `config` section on **`jvagent/pageindex_action`**. Retrieval-only overrides can also live on **`jvagent/pageindex_retrieval_interact_action`**.
 
 | Config key | Type | Default | Description |
 |------------|------|---------|-------------|
@@ -166,7 +175,7 @@ When `include_references` is true (default), retrieval results include page numb
 ## Example Agent Configuration
 
 ```yaml
-- action: jvagent/pageindex_retrieval_interact_action
+- action: jvagent/pageindex_action
   context:
     enabled: true
     weight: -75

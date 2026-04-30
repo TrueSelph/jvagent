@@ -64,14 +64,15 @@ from .documents import (
     list_collection_chunks,
     list_document_chunks,
     list_documents,
+    patch_document_root,
     update_document_chunk,
-    update_document_metadata,
 )
 from .jvforge_assimilate import assimilate_via_jvforge, assimilate_via_jvforge_async
-from .pageindex_retrieval_interact_action import (
-    PageIndexRetrievalInteractAction,
+from .pageindex_action import (
+    PageIndexAction,
     ensure_ingestion_config_for_agent,
 )
+from .pageindex_retrieval_interact_action import PageIndexRetrievalInteractAction
 from .retrieval import search_documents
 
 logger = logging.getLogger(__name__)
@@ -98,10 +99,27 @@ def _copy_user_groups_map(
     return {str(k): list(v) for k, v in raw.items()}
 
 
+async def _get_pageindex_action(agent_id: str) -> PageIndexAction:
+    """Load the agent's PageIndexAction or raise."""
+    agent = await Agent.get(agent_id)
+    if not agent:
+        raise ResourceNotFoundError(
+            message=f"Agent with ID '{agent_id}' not found",
+            details={"agent_id": agent_id},
+        )
+    action = await agent.get_action_by_type("PageIndexAction")
+    if not action or not isinstance(action, PageIndexAction):
+        raise ResourceNotFoundError(
+            message=f"No PageIndexAction found for agent '{agent_id}'",
+            details={"agent_id": agent_id},
+        )
+    return action
+
+
 async def _get_pageindex_retrieval_action(
     agent_id: str,
 ) -> PageIndexRetrievalInteractAction:
-    """Load the agent's PageIndexRetrievalInteractAction or raise."""
+    """Load the agent's PageIndexRetrievalInteractAction or raise (``user_groups``)."""
     agent = await Agent.get(agent_id)
     if not agent:
         raise ResourceNotFoundError(
@@ -117,6 +135,12 @@ async def _get_pageindex_retrieval_action(
             details={"agent_id": agent_id},
         )
     return action
+
+
+async def _pageindex_llm_webhook_url_for_jvforge(agent_id: str) -> str:
+    """LLM callback URL for jvforge (persisted on ``PageIndexAction``)."""
+    core = await _get_pageindex_action(agent_id)
+    return await core.get_webhook_url()
 
 
 async def _get_app_id_from_node() -> Optional[str]:
@@ -879,9 +903,10 @@ async def ingest_document_endpoint(
     Documents are stored in the agent's collection (collection = `agent_id` from path).
 
     When ``JVAGENT_JVFORGE_BASE_URL`` is set, ingestion is delegated to that jvforge service
-    (``POST /v1/process`` or async ``POST /v1/jobs``) with ``llm_webhook_url`` from the agent's
-    PageIndex retrieval action. For ``file_url``, the URL is sent to jvforge as a form field (no
-    agent-side download). Set ``JVAGENT_JVFORGE_API_KEY`` if you add ingress auth in front of jvforge.
+    (``POST /v1/process`` or async ``POST /v1/jobs``). ``llm_webhook_url`` is taken from
+    ``PageIndexAction`` (jvforge calls back for node-summary LLMs). For ``file_url``, the URL is
+    sent to jvforge as a form field (no agent-side download). Set ``JVAGENT_JVFORGE_API_KEY`` if you
+    add ingress auth in front of jvforge.
     """
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     content_type = request.headers.get("content-type", "")
@@ -989,8 +1014,7 @@ async def ingest_document_endpoint(
                 os.environ.get("JVAGENT_JVFORGE_ASYNC", "false").lower() == "true"
             )
             try:
-                retrieval_action = await _get_pageindex_retrieval_action(agent_id)
-                llm_wh_url = await retrieval_action.get_webhook_url()
+                llm_wh_url = await _pageindex_llm_webhook_url_for_jvforge(agent_id)
                 summary_for_forge = if_add_node_summary
                 if summary_for_forge is None:
                     summary_for_forge = "yes" if get_pageindex_node_summary() else "no"
@@ -1121,8 +1145,7 @@ async def ingest_document_endpoint(
 
         try:
             if forge_base:
-                retrieval_action = await _get_pageindex_retrieval_action(agent_id)
-                llm_wh_url = await retrieval_action.get_webhook_url()
+                llm_wh_url = await _pageindex_llm_webhook_url_for_jvforge(agent_id)
                 summary_for_forge = if_add_node_summary
                 if summary_for_forge is None:
                     summary_for_forge = "yes" if get_pageindex_node_summary() else "no"
@@ -1401,6 +1424,10 @@ async def get_document_endpoint(agent_id: str, doc_name: str) -> Dict[str, Any]:
                 field_type=Optional[Dict[str, Any]],
                 description="Updated metadata",
             ),
+            "doc_url": ResponseField(
+                field_type=Optional[str],
+                description="Source URL for citations (document root)",
+            ),
         }
     ),
 )
@@ -1408,20 +1435,32 @@ async def patch_document_endpoint(
     agent_id: str,
     doc_name: str,
     updates: Dict[str, Any] = EndpointField(
-        description='Must include "metadata": object or null to set document root metadata'
+        description='Include "metadata" (object or null) and/or "doc_url" (string or null)'
     ),
 ) -> Dict[str, Any]:
-    """Update document root fields (currently metadata only)."""
+    """Update document root metadata and/or source URL (doc_url)."""
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     if not isinstance(updates, dict):
         raise ValidationError("Request body must be a JSON object")
-    if "metadata" not in updates:
-        raise ValidationError('updates must include "metadata"')
-    meta = updates["metadata"]
-    if meta is not None and not isinstance(meta, dict):
-        raise ValidationError("metadata must be a JSON object or null")
-    result = await update_document_metadata(
-        doc_name, collection_name=agent_id, metadata=meta
+    has_meta = "metadata" in updates
+    has_url = "doc_url" in updates
+    if not has_meta and not has_url:
+        raise ValidationError(
+            'updates must include "metadata" and/or "doc_url"'
+        )
+    fields: Dict[str, Any] = {}
+    if has_meta:
+        meta = updates["metadata"]
+        if meta is not None and not isinstance(meta, dict):
+            raise ValidationError("metadata must be a JSON object or null")
+        fields["metadata"] = meta
+    if has_url:
+        u = updates["doc_url"]
+        if u is not None and not isinstance(u, str):
+            raise ValidationError("doc_url must be a string or null")
+        fields["doc_url"] = u
+    result = await patch_document_root(
+        doc_name, collection_name=agent_id, fields=fields
     )
     if not result:
         raise ResourceNotFoundError(
@@ -2088,17 +2127,17 @@ async def delete_user_group_endpoint(
     ),
 )
 async def pageindex_llm_webhook(request: Request, agent_id: str) -> Dict[str, Any]:
-    """Inbound webhook: LLM call or process-document URL import for PageIndex retrieval."""
+    """Inbound webhook: jvforge LLM completion or process-document graph import."""
     agent = await Agent.get(agent_id)
     if not agent:
         raise ResourceNotFoundError(
             message=f"Agent with ID '{agent_id}' not found",
             details={"agent_id": agent_id},
         )
-    action = await agent.get_action_by_type("PageIndexRetrievalInteractAction")
-    if not action or not isinstance(action, PageIndexRetrievalInteractAction):
+    core_action = await agent.get_action_by_type("PageIndexAction")
+    if not core_action or not isinstance(core_action, PageIndexAction):
         raise ResourceNotFoundError(
-            message="PageIndexRetrievalInteractAction not found for this agent",
+            message="PageIndexAction not found for this agent",
             details={"agent_id": agent_id},
         )
     data = await request.json()
@@ -2151,7 +2190,7 @@ async def pageindex_llm_webhook(request: Request, agent_id: str) -> Dict[str, An
         }
     else:
         try:
-            result = await action.handle_webhook_payload(data)
+            result = await core_action.handle_webhook_payload(data)
             return {"status": "received", "result": result}
         except ValidationError:
             raise
@@ -2202,7 +2241,7 @@ async def get_documents_queue_endpoint(
         The documents queue for the agent.
 
     Raises:
-        ResourceNotFoundError: If the agent or PageIndex retrieval action is missing.
+        ValidationError: If jvforge base URL is not configured.
     """
     forge_base = (get_jvagent_jvforge_base_url() or "").strip().rstrip("/")
     if not forge_base:

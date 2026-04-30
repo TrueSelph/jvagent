@@ -12,6 +12,7 @@ from jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_d
     PageIndexGoogleDriveSyncAction,
     _extract_and_prepend_queue_item,
     _find_file_dict_in_tree,
+    _prune_added_queue_skip_existing,
     _strip_file_id_from_doc_queues,
     _sync_drive_node_status_from_queues,
 )
@@ -85,6 +86,11 @@ async def test_success_processing_failed_queue_keeps_failed_status_when_backlog_
         patch(
             "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.get_jvagent_jvforge_base_url",
             return_value="",
+        ),
+        patch(
+            "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
+            new_callable=AsyncMock,
+            return_value=[],
         ),
         patch(
             "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.assimilate_document",
@@ -291,3 +297,178 @@ async def test_clear_google_drive_file_from_queues_strips_both() -> None:
         mock_node.return_value = node
         out = await action.clear_google_drive_file_from_queues("folder-1", "b")
     assert node.failed_documents["added"] == []
+
+
+@pytest.mark.asyncio
+async def test_skip_existing_added_pops_queue_without_ingest() -> None:
+    file_a = {
+        "name": "ChargeReportForm.doc.md",
+        "id": "file-a",
+        "url": "https://example.com/a.pdf",
+        "mimeType": "application/pdf",
+    }
+    node = SimpleNamespace(
+        ingesting_documents={"added": [file_a], "modified": [], "removed": []},
+        failed_documents={"added": [], "modified": [], "removed": []},
+        active_document="",
+        status="pending",
+        save=AsyncMock(return_value=None),
+    )
+    google_drive_action = SimpleNamespace(
+        get_media=AsyncMock(return_value=b"%PDF-1.4 minimal"),
+    )
+    page_index_action = SimpleNamespace(get_webhook_url=AsyncMock(return_value=""))
+
+    action = PageIndexGoogleDriveSyncAction(document_timeout=600)
+    with (
+        patch(
+            "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.get_jvagent_jvforge_base_url",
+            return_value="",
+        ),
+        patch(
+            "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
+            new_callable=AsyncMock,
+            return_value=[{"doc_name": "ChargeReportForm.doc"}],
+        ),
+        patch(
+            "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.assimilate_document",
+            new_callable=AsyncMock,
+        ) as mock_assimilate,
+    ):
+        out = await action._process_single_document(
+            google_drive_documents_node=node,
+            google_drive_action=google_drive_action,
+            file_info=file_a,
+            doc_type="added",
+            collection_name="agent-1",
+            metadata={},
+            model=None,
+            model_action=None,
+            node_summary="no",
+            agent_id="agent-1",
+            page_index_action=page_index_action,
+            old_file=None,
+            source="ingesting_documents",
+            skip_existing_documents=True,
+        )
+
+    assert out["success"] is True
+    assert out.get("skipped") is True
+    assert "already in index" in out["ingestion_message"]
+    assert node.ingesting_documents["added"] == []
+    mock_assimilate.assert_not_called()
+    google_drive_action.get_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_prune_added_skip_existing_removes_all_matches() -> None:
+    """All added entries already in PageIndex are dropped in one pass (not one per ingest)."""
+    node = SimpleNamespace(
+        ingesting_documents={
+            "added": [
+                {"id": "1", "name": "a.pdf"},
+                {"id": "2", "name": "b.pdf"},
+                {"id": "3", "name": "legacy.doc.md"},
+            ],
+            "modified": [],
+            "removed": [],
+        },
+        failed_documents={"added": [], "modified": [], "removed": []},
+        active_document="",
+        status="pending",
+        save=AsyncMock(return_value=None),
+    )
+    with patch(
+        "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
+        new_callable=AsyncMock,
+        return_value=[
+            {"doc_name": "a.pdf"},
+            {"doc_name": "legacy.doc"},
+        ],
+    ):
+        await _prune_added_queue_skip_existing(
+            node, "agent-1", skip_existing_documents=True
+        )
+    assert [x["name"] for x in node.ingesting_documents["added"]] == ["b.pdf"]
+    node.save.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_prune_skip_existing_first_segment_charge_report_vs_md() -> None:
+    """Indexed ``ChargeReportForm.doc`` prunes queued ``ChargeReportForm.doc.md`` (first segment)."""
+    node = SimpleNamespace(
+        ingesting_documents={
+            "added": [
+                {"id": "1", "name": "ChargeReportForm.doc.md"},
+                {"id": "2", "name": "Other.pdf"},
+            ],
+            "modified": [],
+            "removed": [],
+        },
+        failed_documents={"added": [], "modified": [], "removed": []},
+        active_document="",
+        status="pending",
+        save=AsyncMock(return_value=None),
+    )
+    with patch(
+        "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
+        new_callable=AsyncMock,
+        return_value=[{"doc_name": "ChargeReportForm.doc"}],
+    ):
+        await _prune_added_queue_skip_existing(
+            node, "agent-1", skip_existing_documents=True
+        )
+    assert [x["name"] for x in node.ingesting_documents["added"]] == ["Other.pdf"]
+
+
+@pytest.mark.asyncio
+async def test_prune_skip_existing_first_segment_no_false_positive() -> None:
+    """Different first segments are not pruned when only another doc is indexed."""
+    node = SimpleNamespace(
+        ingesting_documents={
+            "added": [{"id": "1", "name": "ChargeReportForm.doc.md"}],
+            "modified": [],
+            "removed": [],
+        },
+        failed_documents={"added": [], "modified": [], "removed": []},
+        active_document="",
+        status="pending",
+        save=AsyncMock(return_value=None),
+    )
+    with patch(
+        "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
+        new_callable=AsyncMock,
+        return_value=[{"doc_name": "Other.pdf"}],
+    ):
+        await _prune_added_queue_skip_existing(
+            node, "agent-1", skip_existing_documents=True
+        )
+    assert [x["name"] for x in node.ingesting_documents["added"]] == [
+        "ChargeReportForm.doc.md"
+    ]
+    node.save.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_prune_added_skip_existing_noop_when_flag_off() -> None:
+    node = SimpleNamespace(
+        ingesting_documents={
+            "added": [{"id": "1", "name": "a.pdf"}],
+            "modified": [],
+            "removed": [],
+        },
+        failed_documents={"added": [], "modified": [], "removed": []},
+        active_document="",
+        status="pending",
+        save=AsyncMock(return_value=None),
+    )
+    with patch(
+        "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
+        new_callable=AsyncMock,
+    ) as mock_list:
+        await _prune_added_queue_skip_existing(
+            node, "agent-1", skip_existing_documents=False
+        )
+    mock_list.assert_not_called()
+    assert len(node.ingesting_documents["added"]) == 1
+    node.save.assert_not_called()

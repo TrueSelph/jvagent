@@ -77,7 +77,7 @@ This example app uses core actions from the jvagent library. All configuration i
 - **`jvagent/interact_router`** - Unified posture classification + intent-based routing for InteractActions
 - **`jvagent/openai_lm`** - OpenAI language model (multimodal support)
 - **`jvagent/openai_embedding`** - OpenAI embedding model
-- **`jvagent/pageindex_retrieval_interact_action`** - PageIndex vectorless RAG (requires `jvagent[pageindex]`)
+- **`jvagent/pageindex_action`** - PageIndex vectorless RAG (requires `jvagent[pageindex]`)
 - **`jvagent/typesense_vectorstore`** - Typesense vector store
 - **`jvagent/retrieval_interact_action`** - Context retrieval from vector stores
 

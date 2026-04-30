@@ -27,12 +27,12 @@ Retrieval: query -> tree_search/direct/walker -> directive -> PersonaAction
 
 - `assimilate_document()` – ingestion (programmatic)
 - `search_documents()` – retrieval (programmatic)
-- `PageIndexRetrievalInteractAction` – InteractAction for agent workflows
+- `PageIndexAction` – InteractAction for agent workflows
 - REST endpoints under `/pageindex/`
 
 ## Configuration
 
-### PageIndexRetrievalInteractAction (agent config)
+### PageIndexAction (agent config)
 
 **Context** (attributes): `doc_name`, `limit`, `weight`, `strategy`, `model`, `directive`, `parameters`, etc. Retrieval params can also be in `config`; both take effect (config overrides attributes when present).
 
@@ -148,7 +148,7 @@ Documents can have key-value metadata at ingestion; filter at query time.
 ## Example Agent Configuration
 
 ```yaml
-- action: jvagent/pageindex_retrieval_interact_action
+- action: jvagent/pageindex_action
   context:
     enabled: true
     weight: -75

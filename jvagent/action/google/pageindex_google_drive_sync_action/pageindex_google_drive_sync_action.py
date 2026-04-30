@@ -11,6 +11,7 @@ from jvspatial.core.context import GraphContext
 from jvspatial.db import get_prime_database
 from jvspatial.exceptions import DatabaseError, ValidationError
 
+from jvagent.action.pageindex.adapter import strip_redundant_md_suffix
 from jvagent.action.pageindex.config import (
     get_pageindex_node_summary,
     initialize_pageindex_database,
@@ -19,12 +20,13 @@ from jvagent.action.pageindex.documents import (
     _get_app_id_from_node,
     assimilate_document,
     delete_document,
+    list_documents,
 )
 from jvagent.action.pageindex.jvforge_assimilate import (
     assimilate_via_jvforge,
     assimilate_via_jvforge_async,
 )
-from jvagent.action.pageindex.pageindex_retrieval_interact_action import (
+from jvagent.action.pageindex.pageindex_action import (
     ensure_ingestion_config_for_agent,
 )
 from jvagent.core.public_url import get_public_base_url
@@ -309,6 +311,119 @@ async def _pop_skip_unsupported_head(
     }
 
 
+async def _pop_skip_existing_head(
+    node: Any,
+    *,
+    source: str,
+    doc_type: str,
+    doc_name: str,
+) -> Dict[str, Any]:
+    """Remove head item from added queue when doc_name already exists in PageIndex."""
+    docs = getattr(node, source)
+    if doc_type == "added":
+        if docs["added"]:
+            docs["added"].pop(0)
+    node.active_document = ""
+    _sync_drive_node_status_from_queues(node)
+    await node.save()
+    return {
+        "success": True,
+        "skipped": True,
+        "doc_name": doc_name,
+        "ingestion_message": f"Skipped (already in index): {doc_name}",
+    }
+
+
+def _drive_name_first_segment(name: str) -> str:
+    """Characters before the first ``.`` in a filename (e.g. ``a.b.c`` → ``a``)."""
+    return (name or "").strip().split(".", 1)[0]
+
+
+def _build_skip_existing_indexes(
+    docs: List[Dict[str, Any]],
+) -> tuple[Set[str], Set[str]]:
+    """Full indexed names plus first-segment keys for skip-existing matching."""
+    indexed_full: Set[str] = set()
+    indexed_first: Set[str] = set()
+    for d in docs:
+        raw = str(d.get("doc_name") or "").strip()
+        if not raw:
+            continue
+        indexed_full.add(raw)
+        for variant in (raw, strip_redundant_md_suffix(raw)):
+            if not variant:
+                continue
+            seg = _drive_name_first_segment(variant)
+            if seg:
+                indexed_first.add(seg)
+    return indexed_full, indexed_first
+
+
+def _drive_fname_matches_indexed(
+    fname: Optional[str],
+    indexed_full: Set[str],
+    indexed_first: Set[str],
+) -> bool:
+    """True if Drive ``fname`` is duplicate of an indexed doc (full, md-strip, or first segment)."""
+    fn = (fname or "").strip()
+    if not fn:
+        return False
+    if fn in indexed_full:
+        return True
+    norm = strip_redundant_md_suffix(fn)
+    if norm and norm in indexed_full:
+        return True
+    seg = _drive_name_first_segment(fn)
+    if seg and seg in indexed_first:
+        return True
+    if norm:
+        seg2 = _drive_name_first_segment(norm)
+        if seg2 and seg2 in indexed_first:
+            return True
+    return False
+
+
+async def _drive_added_fname_matches_indexed(fname: str, collection_name: str) -> bool:
+    """True if ``fname`` should be skipped as already present in PageIndex (same rules as prune)."""
+    if not (fname or "").strip():
+        return False
+    docs = await list_documents(collection_name=collection_name)
+    full, first = _build_skip_existing_indexes(docs)
+    return _drive_fname_matches_indexed(fname, full, first)
+
+
+async def _prune_added_queue_skip_existing(
+    node: Any,
+    collection_name: str,
+    *,
+    skip_existing_documents: bool,
+) -> None:
+    """Remove every ``added`` item already represented in PageIndex.
+
+    Matches exact ``doc_name``, ``strip_redundant_md_suffix``, or same leading segment
+    before the first dot (e.g. ``ChargeReportForm.doc.md`` vs indexed ``ChargeReportForm.doc``).
+    """
+    if not skip_existing_documents:
+        return
+    added = list(node.ingesting_documents.get("added") or [])
+    if not added:
+        return
+    docs = await list_documents(collection_name=collection_name)
+    indexed_full, indexed_first = _build_skip_existing_indexes(docs)
+
+    kept = [
+        item
+        for item in added
+        if not isinstance(item, dict)
+        or not _drive_fname_matches_indexed(item.get("name"), indexed_full, indexed_first)
+    ]
+    if len(kept) == len(added):
+        return
+    node.ingesting_documents["added"] = kept
+    _recompute_google_drive_node_idle_status(node)
+    await node.save()
+
+
 class PageIndexGoogleDriveSyncAction(GoogleAction):
     """Sync Google Drive folders into PageIndex using OAuth2 (inherits GoogleAction)."""
 
@@ -318,7 +433,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
     )
 
     page_index_action: str = attribute(
-        default="PageIndexRetrievalInteractAction",
+        default="PageIndexAction",
         description="The action to use for ingesting documents.",
     )
 
@@ -360,6 +475,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         ocr: bool = False,
         docling_ocr_engine: Optional[str] = None,
         normalize_bold_headings: bool = False,
+        skip_existing_documents: bool = True,
     ) -> Dict[str, Any]:
         """Process one document (added or modified). Sets active_document, ingests, clears on completion.
 
@@ -388,6 +504,19 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     doc_name,
                 )
                 return await _pop_skip_unsupported_head(
+                    google_drive_documents_node,
+                    source=source,
+                    doc_type=doc_type,
+                    doc_name=doc_name,
+                )
+
+            if (
+                skip_existing_documents
+                and doc_type == "added"
+                and doc_name
+                and await _drive_added_fname_matches_indexed(doc_name, collection_name)
+            ):
+                return await _pop_skip_existing_head(
                     google_drive_documents_node,
                     source=source,
                     doc_type=doc_type,
@@ -591,6 +720,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         ocr: bool = False,
         docling_ocr_engine: Optional[str] = None,
         normalize_bold_headings: bool = False,
+        skip_existing_documents: bool = True,
     ) -> dict:
         """Recursively extract and ingest PDF documents from Google Drive folders.
 
@@ -645,6 +775,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 ocr=ocr,
                 docling_ocr_engine=docling_ocr_engine,
                 normalize_bold_headings=normalize_bold_headings,
+                skip_existing_documents=skip_existing_documents,
             )
 
     async def _ingest_documents_from_google_drive_inner(
@@ -659,6 +790,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         ocr: bool = False,
         docling_ocr_engine: Optional[str] = None,
         normalize_bold_headings: bool = False,
+        skip_existing_documents: bool = True,
     ) -> dict:
         """Inner ingestion logic (called with ingestion lock held)."""
         ocr_eff, docling_eff = _drive_resolve_docling_ocr(docling_ocr_engine, ocr)
@@ -756,6 +888,11 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     _filter_doc_queues_for_disabled(
                         google_drive_documents_node.failed_documents, disabled
                     )
+                    await _prune_added_queue_skip_existing(
+                        google_drive_documents_node,
+                        collection_name,
+                        skip_existing_documents=skip_existing_documents,
+                    )
                     _recompute_google_drive_node_idle_status(
                         google_drive_documents_node
                     )
@@ -774,6 +911,11 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                         files=files,
                         metadata=metadata,
                         ingesting_documents=ingesting_documents,
+                    )
+                    await _prune_added_queue_skip_existing(
+                        google_drive_documents_node,
+                        collection_name,
+                        skip_existing_documents=skip_existing_documents,
                     )
                     await self.connect(google_drive_documents_node)
 
@@ -841,6 +983,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     ocr=ocr_eff,
                     docling_ocr_engine=docling_eff,
                     normalize_bold_headings=normalize_bold_headings,
+                    skip_existing_documents=skip_existing_documents,
                 )
                 if result["success"] and not result.get("skipped"):
                     document_ingested["added"].append(result["doc_name"])
@@ -876,6 +1019,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     ocr=ocr_eff,
                     docling_ocr_engine=docling_eff,
                     normalize_bold_headings=normalize_bold_headings,
+                    skip_existing_documents=skip_existing_documents,
                 )
                 if result["success"] and not result.get("skipped"):
                     document_ingested["updated"].append(result["doc_name"])

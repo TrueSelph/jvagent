@@ -21,6 +21,7 @@ package:
     actions:
       [
         "jvagent/google_drive_action",
+        "jvagent/pageindex_action",
         "jvagent/pageindex_retrieval_interact_action",
       ]
     pip:

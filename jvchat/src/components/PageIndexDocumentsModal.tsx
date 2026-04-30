@@ -7,6 +7,7 @@ import type {
   PageIndexChunkMergeStrategy,
   PageIndexChunkUpdatePayload,
   PageIndexDocument,
+  PageIndexDocumentPatchUpdates,
   DoclingOcrEngine,
 } from '../types/api'
 import { useTheme } from '../context/ThemeContext'
@@ -280,6 +281,7 @@ export function PageIndexDocumentsModal({
     useState<DoclingOcrEngine>('rapidocr')
   const [driveIngestNormalizeBold, setDriveIngestNormalizeBold] = useState(false)
   const [driveRemoveDeleted, setDriveRemoveDeleted] = useState(false)
+  const [driveSkipExistingDocuments, setDriveSkipExistingDocuments] = useState(true)
   const [driveEditStatus, setDriveEditStatus] =
     useState<GoogleDriveDocStatus>('pending')
   const [driveEditActiveDocument, setDriveEditActiveDocument] = useState('')
@@ -304,6 +306,8 @@ export function PageIndexDocumentsModal({
   const [editSummary, setEditSummary] = useState('')
   const [editRootMetadataJson, setEditRootMetadataJson] = useState('')
   const [initialRootMetadataJson, setInitialRootMetadataJson] = useState('')
+  const [editDocUrl, setEditDocUrl] = useState('')
+  const [initialDocUrl, setInitialDocUrl] = useState('')
   const [savingChunk, setSavingChunk] = useState(false)
   const [saveChunkError, setSaveChunkError] = useState<string | null>(null)
   const [deletingChunkId, setDeletingChunkId] = useState<string | null>(null)
@@ -832,6 +836,9 @@ export function PageIndexDocumentsModal({
         : '{}'
     setEditRootMetadataJson(metaStr)
     setInitialRootMetadataJson(metaStr)
+    const docUrl = docRow?.doc_url != null ? String(docRow.doc_url) : ''
+    setEditDocUrl(docUrl)
+    setInitialDocUrl(docUrl)
     setSaveChunkError(null)
   }
 
@@ -882,8 +889,13 @@ export function PageIndexDocumentsModal({
       const metaChanged =
         normalizeJsonForCompare(editRootMetadataJson) !==
         normalizeJsonForCompare(initialRootMetadataJson)
-      if (metaChanged) {
-        await apiClient.patchPageIndexDocumentMetadata(agentId, chunkDocName, parsedMeta)
+      const docUrlTrim = editDocUrl.trim()
+      const docUrlChanged = docUrlTrim !== (initialDocUrl || '').trim()
+      if (metaChanged || docUrlChanged) {
+        const patch: PageIndexDocumentPatchUpdates = {}
+        if (metaChanged) patch.metadata = parsedMeta
+        if (docUrlChanged) patch.doc_url = docUrlTrim || null
+        await apiClient.patchPageIndexDocumentMetadata(agentId, chunkDocName, patch)
         await fetchDocuments()
       }
       closeEditChunk()
@@ -1113,6 +1125,7 @@ export function PageIndexDocumentsModal({
         ocr: driveIngestOcrEngine !== 'none',
         docling_ocr_engine: driveIngestOcrEngine,
         normalize_bold_headings: driveIngestNormalizeBold,
+        skip_existing_documents: driveSkipExistingDocuments,
       })
       await refreshGoogleDriveList()
     } catch (e: unknown) {
@@ -1140,6 +1153,7 @@ export function PageIndexDocumentsModal({
         ocr: driveIngestOcrEngine !== 'none',
         docling_ocr_engine: driveIngestOcrEngine,
         normalize_bold_headings: driveIngestNormalizeBold,
+        skip_existing_documents: driveSkipExistingDocuments,
       })
       await refreshGoogleDriveList()
     } catch (e: unknown) {
@@ -1222,6 +1236,7 @@ export function PageIndexDocumentsModal({
         ocr: driveIngestOcrEngine !== 'none',
         docling_ocr_engine: driveIngestOcrEngine,
         normalize_bold_headings: driveIngestNormalizeBold,
+        skip_existing_documents: driveSkipExistingDocuments,
       })
       await refreshGoogleDriveList()
       await refreshPageIndexData()
@@ -1685,6 +1700,19 @@ export function PageIndexDocumentsModal({
                         />
                         <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
                           Remove deleted from index
+                        </span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={driveSkipExistingDocuments}
+                          onChange={(e) =>
+                            setDriveSkipExistingDocuments(e.target.checked)
+                          }
+                          className="rounded border-gray-300 dark:border-slate-600 text-indigo-600"
+                        />
+                        <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                          Skip existing documents
                         </span>
                       </label>
                     </div>
@@ -2660,7 +2688,7 @@ export function PageIndexDocumentsModal({
                   <span className="sr-only">Choose file</span>
                   <input
                     type="file"
-                    accept=".pdf,.md,.markdown,.txt,.docx,.doc,.xls,.xlsx,.ppt,.pptx"
+                    accept=".png,.jpg,.jpeg,.gif,.pdf,.md,.markdown,.txt,.docx,.doc,.xls,.xlsx,.ppt,.pptx"
                     className={`block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium ${
                       dark
                         ? 'text-slate-400 file:bg-indigo-900/40 file:text-indigo-300 hover:file:bg-indigo-800/40'
@@ -3184,6 +3212,20 @@ export function PageIndexDocumentsModal({
                   onChange={(e) => setEditText(e.target.value)}
                   rows={8}
                   className={`${inputClass} resize-y font-mono text-xs`}
+                />
+              </div>
+              <div>
+                <label className={`block ${labelClass} mb-1`}>Source URL (document root)</label>
+                <p className={`text-xs mb-1 ${dark ? 'text-amber-400/90' : 'text-amber-800'}`}>
+                  Updating this URL applies to the whole document (all chunks); used for reference
+                  citations.
+                </p>
+                <input
+                  type="url"
+                  placeholder="https://…"
+                  value={editDocUrl}
+                  onChange={(e) => setEditDocUrl(e.target.value)}
+                  className={inputClass}
                 />
               </div>
               <div>

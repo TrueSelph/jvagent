@@ -47,6 +47,11 @@ async def test_post_ingest_save_failure_single_pop_success_returned():
             return_value="",
         ),
         patch(
+            "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
             "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.assimilate_document",
             new_callable=AsyncMock,
             return_value={"doc_name": "doc.pdf", "_root_id": "n.DocumentRootNode.x"},

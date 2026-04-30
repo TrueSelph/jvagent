@@ -182,6 +182,13 @@ export interface PageIndexDocumentMetadataResponse {
   doc_name: string
   root_id: string
   metadata?: Record<string, unknown> | null
+  doc_url?: string | null
+}
+
+/** Partial updates for PATCH …/pageindex/documents/{docName} */
+export interface PageIndexDocumentPatchUpdates {
+  metadata?: Record<string, unknown> | null
+  doc_url?: string | null
 }
 
 export interface PageIndexSearchResult {
