@@ -1,5 +1,7 @@
-import { useState, useEffect, useMemo, memo, useCallback, useRef } from 'react'
+import { useState, useMemo, memo, useCallback, useRef } from 'react'
+import { LogOut } from 'lucide-react'
 import type { Conversation } from '../types/conversation'
+import { useAuth } from '../hooks/useAuth'
 
 interface ConversationListProps {
   conversations: Conversation[]
@@ -9,6 +11,8 @@ interface ConversationListProps {
   onDeleteConversation?: (sessionId: string) => void
   isMobileMenuOpen?: boolean
   onMobileMenuClose?: () => void
+  /** Desktop (md+): when false the rail is collapsed */
+  desktopSidebarOpen: boolean
 }
 
 export const ConversationList = memo(function ConversationList({
@@ -19,37 +23,22 @@ export const ConversationList = memo(function ConversationList({
   onDeleteConversation,
   isMobileMenuOpen,
   onMobileMenuClose,
+  desktopSidebarOpen,
 }: ConversationListProps) {
-  const [isOpen, setIsOpen] = useState(true)
+  const { logout } = useAuth()
   const [sessionIdToDelete, setSessionIdToDelete] = useState<string | null>(null)
 
-  // On mobile, start with sidebar closed
-  useEffect(() => {
-    const checkMobile = () => {
-      if (window.innerWidth < 768) {
-        setIsOpen(false)
-      } else {
-        setIsOpen(true)
-      }
-    }
-    checkMobile()
-    window.addEventListener('resize', checkMobile)
-    return () => window.removeEventListener('resize', checkMobile)
-  }, [])
-
-  // Handle mobile menu state
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768
-  const shouldShow = isMobile ? isMobileMenuOpen : isOpen
+  const shouldShow = isMobile ? isMobileMenuOpen : desktopSidebarOpen
 
-  const handleClose = () => {
+  const handleCloseOverlay = () => {
     if (isMobile && onMobileMenuClose) {
       onMobileMenuClose()
-    } else {
-      setIsOpen(false)
     }
   }
 
-  const handleDeleteClick = useCallback((sessionId: string) => {
+  const handleDeleteClick = useCallback((e: React.MouseEvent, sessionId: string) => {
+    e.stopPropagation()
     setSessionIdToDelete(sessionId)
   }, [])
 
@@ -68,35 +57,25 @@ export const ConversationList = memo(function ConversationList({
   }, [])
 
   const handleSelect = useCallback((sessionId: string) => {
-    // Prevent selecting the same conversation
-    if (sessionId === currentSessionId) {
-      return
-    }
+    if (sessionId === currentSessionId) return
     onSelectConversation(sessionId)
-    // Close mobile menu after selection
     if (isMobile && onMobileMenuClose) {
       onMobileMenuClose()
     }
   }, [currentSessionId, onSelectConversation, isMobile, onMobileMenuClose])
 
-  // Track previous conversations to detect actual changes
   const prevConversationsRef = useRef<Conversation[]>([])
   const prevConversationsHashRef = useRef<string>('')
 
-  // Create a stable hash for conversations comparison
   const createConversationsHash = useCallback((convs: Conversation[]) => {
     return convs.map(c => `${c.session_id}:${c.last_message_at || c.created_at}:${c.last_message || ''}`).join('|')
   }, [])
 
-  // Memoize sorted conversations with deep comparison to prevent unnecessary re-renders
   const sortedConversations = useMemo(() => {
     const currentHash = createConversationsHash(conversations)
-
-    // Only re-sort if conversations actually changed
     if (currentHash === prevConversationsHashRef.current &&
         prevConversationsRef.current.length === conversations.length &&
         conversations.length > 0) {
-      // Verify the arrays are actually the same
       const isSame = conversations.every((conv, idx) => {
         const prevConv = prevConversationsRef.current[idx]
         return prevConv && prevConv.session_id === conv.session_id
@@ -105,31 +84,24 @@ export const ConversationList = memo(function ConversationList({
         return prevConversationsRef.current
       }
     }
-
     prevConversationsHashRef.current = currentHash
-
     if (conversations.length === 0) {
       prevConversationsRef.current = []
       return []
     }
-
-    // Create a stable sorted array
     const sorted = [...conversations].sort((a, b) => {
       const aTime = a.last_message_at || a.created_at
       const bTime = b.last_message_at || b.created_at
       const timeDiff = new Date(bTime).getTime() - new Date(aTime).getTime()
-      // If times are equal, use session_id for stable sorting
       if (timeDiff === 0) {
         return a.session_id.localeCompare(b.session_id)
       }
       return timeDiff
     })
-
     prevConversationsRef.current = sorted
     return sorted
   }, [conversations, createConversationsHash])
 
-  // Create a stable map of active states to prevent unnecessary re-renders
   const activeSessionIdMap = useMemo(() => {
     const map = new Map<string, boolean>()
     sortedConversations.forEach(conv => {
@@ -140,114 +112,100 @@ export const ConversationList = memo(function ConversationList({
 
   return (
     <>
-      {/* Mobile overlay */}
       {isMobile && shouldShow && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
-          onClick={handleClose}
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={handleCloseOverlay}
         />
-      )}
-
-      {/* Collapsed sidebar button - desktop only */}
-      {!isMobile && !isOpen && (
-        <button
-          onClick={() => setIsOpen(true)}
-          className="fixed left-0 top-1/2 -translate-y-1/2 z-10 bg-white dark:bg-slate-900 border-r border-y border-gray-200 dark:border-slate-700 rounded-r-lg px-2 py-4 text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors hidden md:block"
-          aria-label="Show sidebar"
-        >
-          →
-        </button>
       )}
 
       <div
         className={`${
           shouldShow
             ? isMobile
-              ? 'fixed inset-y-0 left-0 w-80 z-50 md:relative md:z-auto'
-              : 'w-64 md:w-80'
+              ? 'fixed inset-y-0 left-0 z-50 flex w-80 flex-col md:relative md:z-auto'
+              : 'flex h-full min-h-0 w-64 shrink-0 flex-col md:w-72'
             : isMobile
             ? 'hidden'
-            : 'w-0'
-        } border-r border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 transition-all duration-300 overflow-hidden flex flex-col shadow-lg md:shadow-none`}
+            : 'w-0 shrink-0 overflow-hidden'
+        } border-r border-zinc-200 bg-white transition-all duration-300 dark:border-white/10 dark:bg-zinc-900`}
       >
-        <div className="px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between flex-shrink-0">
-          <h2 className="font-semibold text-gray-900 dark:text-gray-100">Conversations</h2>
-          <button
-            onClick={handleClose}
-            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 p-2 -mr-2 touch-manipulation"
-            aria-label="Close sidebar"
-          >
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
+        <div className="flex h-[4.75rem] shrink-0 flex-col items-center justify-center border-b border-zinc-200 px-4 text-center dark:border-white/10">
+          <div className="text-sm font-semibold leading-tight text-zinc-900 dark:text-zinc-50">jvchat</div>
+          <div className="text-[10px] font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+            Agent testing
+          </div>
         </div>
 
-      <div className="flex-1 overflow-y-auto">
-        <button
-          onClick={() => {
-            onNewConversation()
-            if (isMobile && onMobileMenuClose) {
-              onMobileMenuClose()
-            }
-          }}
-          className="w-full px-4 sm:px-6 py-3 text-left text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 font-medium border-b border-gray-200 dark:border-slate-700 flex-shrink-0 touch-manipulation flex items-center gap-2"
-        >
-          <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          New Conversation
-        </button>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <button
+            onClick={() => {
+              onNewConversation()
+              if (isMobile && onMobileMenuClose) {
+                onMobileMenuClose()
+              }
+            }}
+            className="w-full px-4 py-2.5 text-left text-sm text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 font-medium border-b border-zinc-200 dark:border-white/10 flex-shrink-0 touch-manipulation flex items-center gap-2 transition-colors duration-150"
+          >
+            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            New Conversation
+          </button>
 
-        <div className="divide-y divide-gray-200 dark:divide-slate-700">
-          {sortedConversations.length === 0 ? (
-            <div className="px-4 sm:px-6 py-8 text-center text-gray-500 dark:text-gray-400 text-sm">
-              No conversations yet. Start a new conversation to begin.
-            </div>
-          ) : (
-            <>
-              <div className="px-4 sm:px-6 py-2 text-xs text-gray-500 dark:text-slate-400 border-b border-gray-200 dark:border-slate-700">
-                {sortedConversations.length} conversation{sortedConversations.length !== 1 ? 's' : ''}
+          <div className="flex flex-col gap-0.5 px-2 py-2">
+            {sortedConversations.length === 0 ? (
+              <div className="px-4 py-8 text-center text-zinc-400 dark:text-zinc-500 text-xs">
+                No conversations yet.
               </div>
-              {sortedConversations.map((conv) => (
-                <ConversationItem
-                  key={conv.session_id}
-                  conversation={conv}
-                  isActive={activeSessionIdMap.get(conv.session_id) || false}
-                  onSelect={handleSelect}
-                  onDelete={onDeleteConversation ? handleDeleteClick : undefined}
-                />
-              ))}
-            </>
-          )}
+            ) : (
+              <>
+                <div className="px-3 py-1.5 text-xs text-zinc-400 dark:text-zinc-500">
+                  {sortedConversations.length} conversation{sortedConversations.length !== 1 ? 's' : ''}
+                </div>
+                {sortedConversations.map((conv) => (
+                  <ConversationItem
+                    key={conv.session_id}
+                    conversation={conv}
+                    isActive={activeSessionIdMap.get(conv.session_id) || false}
+                    onSelect={handleSelect}
+                    onDelete={onDeleteConversation ? handleDeleteClick : undefined}
+                  />
+                ))}
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="flex shrink-0 border-t border-zinc-200 px-4 py-4 dark:border-white/10">
+          <button
+            type="button"
+            onClick={() => {
+              logout()
+            }}
+            className="flex w-full items-center justify-center gap-2 rounded-lg px-2 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800/80"
+          >
+            <LogOut className="size-4 shrink-0" strokeWidth={1.75} />
+            Logout
+          </button>
         </div>
       </div>
 
       {sessionIdToDelete && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 dark:bg-black/70">
-          <div className="bg-white dark:bg-slate-900 rounded-lg shadow-xl max-w-sm w-full p-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Delete conversation?</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">This cannot be undone.</p>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-white/10 max-w-sm w-full p-5">
+            <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50 mb-2">Delete conversation?</h3>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">This cannot be undone.</p>
             <div className="flex gap-2 justify-end">
               <button
                 onClick={handleDeleteCancel}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+                className="px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors duration-150"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDeleteConfirm}
-                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600"
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600 transition-colors duration-150"
               >
                 Delete
               </button>
@@ -255,42 +213,19 @@ export const ConversationList = memo(function ConversationList({
           </div>
         </div>
       )}
-    </div>
     </>
   )
 }, (prevProps, nextProps) => {
-  // Custom comparison function for ConversationList memo
-  // Return true if props are equal (should NOT re-render)
-
-  // Quick checks first
-  if (prevProps.currentSessionId !== nextProps.currentSessionId) {
-    return false
-  }
-
-  if (prevProps.isMobileMenuOpen !== nextProps.isMobileMenuOpen) {
-    return false
-  }
-
-  if (prevProps.conversations.length !== nextProps.conversations.length) {
-    return false
-  }
-
-  // Create maps for efficient comparison
+  if (prevProps.currentSessionId !== nextProps.currentSessionId) return false
+  if (prevProps.isMobileMenuOpen !== nextProps.isMobileMenuOpen) return false
+  if (prevProps.desktopSidebarOpen !== nextProps.desktopSidebarOpen) return false
+  if (prevProps.conversations.length !== nextProps.conversations.length) return false
   const prevMap = new Map(prevProps.conversations.map(c => [c.session_id, c]))
   const nextMap = new Map(nextProps.conversations.map(c => [c.session_id, c]))
-
-  // Check if all conversations are the same
-  if (prevMap.size !== nextMap.size) {
-    return false
-  }
-
-  // Compare each conversation
+  if (prevMap.size !== nextMap.size) return false
   for (const [sessionId, prevConv] of prevMap) {
     const nextConv = nextMap.get(sessionId)
-    if (!nextConv) {
-      return false
-    }
-    // Only compare fields that affect rendering
+    if (!nextConv) return false
     if (
       prevConv.last_message !== nextConv.last_message ||
       prevConv.last_message_at !== nextConv.last_message_at ||
@@ -299,19 +234,14 @@ export const ConversationList = memo(function ConversationList({
       return false
     }
   }
-
-  // Callbacks should be stable, but check them anyway
   const callbacksEqual =
     prevProps.onSelectConversation === nextProps.onSelectConversation &&
     prevProps.onNewConversation === nextProps.onNewConversation &&
     prevProps.onDeleteConversation === nextProps.onDeleteConversation &&
     prevProps.onMobileMenuClose === nextProps.onMobileMenuClose
-
-  // Return true if all props are equal (no re-render needed)
   return callbacksEqual
 })
 
-// Memoized conversation item to prevent unnecessary re-renders
 const ConversationItem = memo(({
   conversation,
   isActive,
@@ -321,51 +251,44 @@ const ConversationItem = memo(({
   conversation: Conversation
   isActive: boolean
   onSelect: (sessionId: string) => void
-  onDelete?: (sessionId: string) => void
+  onDelete?: (e: React.MouseEvent, sessionId: string) => void
 }) => {
   const handleClick = useCallback(() => {
     onSelect(conversation.session_id)
   }, [onSelect, conversation.session_id])
 
   const handleDelete = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
-    onDelete?.(conversation.session_id)
+    onDelete?.(e, conversation.session_id)
   }, [onDelete, conversation.session_id])
 
   return (
     <div
-      className={`px-4 sm:px-6 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 border-l-4 transition-colors duration-150 ${
+      className={`group flex h-9 items-center gap-2 rounded-lg px-3 transition-colors cursor-pointer ${
         isActive
-          ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-600 dark:border-indigo-500'
-          : 'border-transparent'
+          ? 'bg-zinc-100 dark:bg-zinc-800'
+          : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
       }`}
       onClick={handleClick}
     >
-      <div className="flex items-start justify-between">
-        <div className="flex-1 min-w-0 pr-2">
-          <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-            {conversation.last_message || 'New conversation'}
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            {conversation.last_message_at
-              ? new Date(conversation.last_message_at).toLocaleDateString()
-              : new Date(conversation.created_at).toLocaleDateString()}
-          </p>
-        </div>
-        {onDelete && (
-          <button
-            onClick={handleDelete}
-            className="ml-2 text-gray-400 hover:text-red-600 dark:text-gray-500 dark:hover:text-red-400 flex-shrink-0 p-1 touch-manipulation"
-            aria-label="Delete conversation"
-          >
-            ×
-          </button>
-        )}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-zinc-700 dark:text-zinc-300 truncate">
+          {conversation.last_message || 'New conversation'}
+        </p>
       </div>
+      {onDelete && (
+        <button
+          onClick={handleDelete}
+          className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-red-500 dark:text-zinc-500 dark:hover:text-red-400 flex-shrink-0 p-1 touch-manipulation transition-all duration-150"
+          aria-label="Delete conversation"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      )}
     </div>
   )
 }, (prevProps, nextProps) => {
-  // Custom comparison function for memo - return true if props are equal (should NOT re-render)
   const conversationEqual =
     prevProps.conversation.session_id === nextProps.conversation.session_id &&
     prevProps.conversation.last_message === nextProps.conversation.last_message &&
@@ -373,13 +296,9 @@ const ConversationItem = memo(({
     prevProps.conversation.created_at === nextProps.conversation.created_at &&
     prevProps.conversation.agent_id === nextProps.conversation.agent_id &&
     prevProps.conversation.agent_name === nextProps.conversation.agent_name
-
   const activeEqual = prevProps.isActive === nextProps.isActive
   const callbacksEqual = prevProps.onSelect === nextProps.onSelect && prevProps.onDelete === nextProps.onDelete
-
-  // Return true if all props are equal (no re-render needed)
   return conversationEqual && activeEqual && callbacksEqual
 })
 
 ConversationItem.displayName = 'ConversationItem'
-

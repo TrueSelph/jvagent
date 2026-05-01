@@ -8,6 +8,7 @@ description: >-
 requires-actions:
   - PageIndexAction
   - SerperWebSearchAction
+requires-jvagent: ">=0.0.1"
 allowed-tools:
   - search
 response-mode: respond

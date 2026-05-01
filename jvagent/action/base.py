@@ -148,6 +148,23 @@ class Action(Node):
         default_factory=dict,
         description="Package metadata from info.yaml (name, version, config, etc.)",
     )
+    module_path: str = attribute(
+        indexed=True,
+        default="",
+        description=(
+            "Canonical Python import path for this package (core_module_path or "
+            "package module); used for indexed staleness checks vs filesystem."
+        ),
+    )
+
+    @staticmethod
+    def canonical_import_module_path(metadata: Dict[str, Any]) -> str:
+        """Derive persisted module_path from loader metadata (matches find_spec target)."""
+        if not metadata:
+            return ""
+        if metadata.get("is_core_action"):
+            return (metadata.get("core_module_path") or "").strip()
+        return (metadata.get("module") or "").strip()
 
     def get_class_name(self) -> str:
         """Get the class name of this action.
@@ -683,82 +700,85 @@ class Action(Node):
         action_class: Union[Type[T], str],
         enabled_only: bool = True,
     ) -> Optional[T]:
-        """Get an action by class type or class name.
+        """Get an action by exact class type or class name string (cached index lookup).
 
-        This is a convenience method for actions to retrieve other actions as tools.
-        Supports both class type and class name string lookup. When a class type is
-        provided, it will first try to find an action by entity type name, then
-        fall back to searching all actions using isinstance() check (useful for
-        finding any instance of a base class like LanguageModelAction).
+        For exact-type lookups this is O(1): it consults a cached
+        ``class_name -> action_id`` index maintained at register/deregister time.
+
+        **To search by base class** (e.g. "any LanguageModelAction"), use
+        :meth:`get_action_by_base_class` — that method does an isinstance scan
+        whose cost scales with the number of actions.
 
         Args:
-            action_class: Either a class type (e.g., PersonaAction) or class name string
-                (e.g., "OpenAILanguageModelAction"). When a class type is provided,
-                the method will search for any instance of that class (including subclasses).
-            enabled_only: If True, only return enabled actions (default: True)
+            action_class: A class type or class-name string.
+            enabled_only: If True, only return enabled actions (default: True).
 
         Returns:
-            Action instance if found, None otherwise
-
-        Examples:
-            # Get PersonaAction by class type
-            from jvagent.action.persona.persona_action import PersonaAction
-            persona = await self.get_action(PersonaAction)
-            if persona:
-                response = await persona.respond(interaction, visitor=visitor)
-
-            # Get action by class name string (uses agent.get_action_by_type)
-            llm = await self.get_action("OpenAILanguageModelAction")
-
-            # Get LanguageModelAction (recommended for actions that need models)
-            # Define model_action_type attribute to specify a particular model
-            llm = await self.get_model_action()  # Returns None if not found
-            llm = await self.get_model_action(required=True)  # Raises error if not found
-
-            # Get any VectorStore action
-            from jvagent.action.vectorstore.base import VectorStore
-            vectorstore = await self.get_action(VectorStore)
-
-            # Include disabled actions in search
-            action = await self.get_action(MyAction, enabled_only=False)
+            Action instance if found, None otherwise.
         """
         agent = await self.get_agent()
         if not agent:
-            import logging
-
-            logger = logging.getLogger(__name__)
-            logger.debug(
-                f"{self.get_class_name()}: Agent not found, cannot retrieve action"
-            )
             return None
 
-        # Handle string class name - use agent.get_action_by_type
-        if isinstance(action_class, str):
-            action = await agent.get_action_by_type(action_class)
-            if action:
-                # Check enabled status if required
-                if enabled_only and not action.enabled:
-                    return None
-                return action
-            return None
+        class_name: str = (
+            action_class if isinstance(action_class, str) else action_class.__name__
+        )
 
-        # Handle class type - try by entity type name first (for specific classes)
-        class_name = action_class.__name__
+        from jvagent.core.cache import get_cached_action_id_by_type
+
+        action_id = await get_cached_action_id_by_type(agent.id, class_name)
+        if action_id:
+            action = await Action.get(action_id)
+            if action and isinstance(
+                action, action_class if not isinstance(action_class, str) else Action
+            ):
+                if not enabled_only or action.enabled:
+                    return action  # type: ignore[return-value]
+
         action = await agent.get_action_by_type(class_name)
-        if action and isinstance(action, action_class):
-            if not enabled_only or action.enabled:
-                return action
+        if action:
+            if isinstance(
+                action, action_class if not isinstance(action_class, str) else Action
+            ):
+                if not enabled_only or action.enabled:
+                    # Repopulate type index on cache miss so subsequent lookups are O(1).
+                    from jvagent.core.cache import cache_action_type_index
 
-        # Fallback: search all actions by isinstance (for base classes or when
-        # entity type lookup doesn't find a match)
-        # This is useful when you want any LanguageModelAction, not a specific one
+                    await cache_action_type_index(
+                        agent.id, action.get_class_name(), action.id
+                    )
+                    return action  # type: ignore[return-value]
+
+        return None
+
+    async def get_action_by_base_class(
+        self,
+        base_class: Type[T],
+        enabled_only: bool = True,
+    ) -> Optional[T]:
+        """Find any action that is an instance of *base_class* (isinstance scan).
+
+        Unlike :meth:`get_action` this loads all actions and scans by type.
+        The cost is O(n) in the number of actions. Use for base-class queries
+        such as "any LanguageModelAction" or "any VectorStore".
+
+        Args:
+            base_class: Base class to match (subclasses included).
+            enabled_only: If True, only return enabled actions.
+
+        Returns:
+            Action instance if found, None otherwise.
+        """
+        agent = await self.get_agent()
+        if not agent:
+            return None
+
         actions_manager = await agent.get_actions_manager()
         if actions_manager:
             all_actions = await actions_manager.get_actions(enabled_only=enabled_only)
             for action in all_actions:
-                if isinstance(action, action_class):
-                    return action
-
+                if isinstance(action, base_class):
+                    return action  # type: ignore[return-value]
         return None
 
     async def get_model_action(

@@ -1003,6 +1003,7 @@ class TestTaskRecord:
         assert "timed_out" in TERMINAL_STATUSES
         assert "max_iterations" in TERMINAL_STATUSES
         assert "superseded" in TERMINAL_STATUSES
+        assert "stuck_forced" in TERMINAL_STATUSES
 
     def test_active_statuses_complete(self):
         assert "active" in ACTIVE_STATUSES

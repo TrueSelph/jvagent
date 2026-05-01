@@ -4,8 +4,10 @@ import {
   useRef,
   useCallback,
   startTransition,
+  useMemo,
 } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Navigate } from "react-router-dom";
+import { PanelLeft, PanelRight, Sun, Moon, Clipboard } from "lucide-react";
 import { useAgents } from "../hooks/useAgents";
 import {
   useStreaming,
@@ -13,9 +15,7 @@ import {
   ATTACHMENT_ONLY_USER_PROMPT,
 } from "../hooks/useStreaming";
 import { useConversations } from "../hooks/useConversations";
-import { MessageList } from "./MessageList";
-import { MessageInput } from "./MessageInput";
-import { WelcomeScreen } from "./WelcomeScreen";
+import { Thread } from "./Thread";
 import { ConversationList } from "./ConversationList";
 import { DebugInteractions } from "./DebugInteractions";
 import { PageIndexDocumentsModal } from "./PageIndexDocumentsModal";
@@ -25,20 +25,25 @@ import {
   getMessages,
   deleteMessages,
   getConversations,
-  getUserId,
+  getEffectiveUserId,
   getToken,
 } from "../utils/storage";
 import { apiClient } from "../config/api";
 import type { Conversation } from "../types/conversation";
+import { useOpenAppGraph } from "../context/AppGraphContext";
+import { useTheme } from "../context/ThemeContext";
+import { ComposerToolsMenu } from "./ComposerToolsMenu";
+import { AgentSwitcher } from "./AgentSwitcher";
 
 export function ChatInterface() {
   const { agentId } = useParams<{ agentId: string }>();
   const navigate = useNavigate();
-  const { agents } = useAgents();
+  const openAppGraph = useOpenAppGraph();
+  const { theme, toggleTheme } = useTheme();
+  const { agents, loading: agentsLoading } = useAgents();
   const agent = agents.find((a) => a.id === agentId);
   const [sessionId, setSessionId] = useState<string | undefined>();
 
-  // Debug: Log agent data to help diagnose alias issue
   useEffect(() => {
     if (agent) {
       console.log("Current agent data:", agent);
@@ -51,69 +56,65 @@ export function ChatInterface() {
   const {
     messages,
     sendMessage,
+    stopStreaming,
     clearMessages,
     loadMessages,
     isStreaming,
     error,
     sessionId: streamSessionId,
+    editAndResend,
+    selectBranchVersion,
+    branchSnapshots,
+    branchVersionIndex,
   } = useStreaming(agentId || "", sessionId);
+
+  const viewingOldBranch = useMemo(() => {
+    for (const rootId of Object.keys(branchSnapshots)) {
+      const snaps = branchSnapshots[rootId];
+      if (!snaps || snaps.length < 2) continue;
+      const idx = branchVersionIndex[rootId] ?? snaps.length - 1;
+      if (idx < snaps.length - 1) return true;
+    }
+    return false;
+  }, [branchSnapshots, branchVersionIndex]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const [isMdUp, setIsMdUp] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth >= 768 : true,
+  );
   const [isDebugModalOpen, setIsDebugModalOpen] = useState(false);
   const [isPageIndexModalOpen, setIsPageIndexModalOpen] = useState(false);
   const [isActionsModalOpen, setIsActionsModalOpen] = useState(false);
   const [isMemoryModalOpen, setIsMemoryModalOpen] = useState(false);
   const [hasPageIndexAction, setHasPageIndexAction] = useState(false);
-  const [agentIdCopied, setAgentIdCopied] = useState(false);
-
-  const copyAgentId = useCallback(async () => {
-    if (!agentId) return;
-    try {
-      await navigator.clipboard.writeText(agentId);
-    } catch {
-      try {
-        const ta = document.createElement("textarea");
-        ta.value = agentId;
-        ta.style.position = "fixed";
-        ta.style.left = "-9999px";
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
-      } catch {
-        return;
-      }
-    }
-    setAgentIdCopied(true);
-    window.setTimeout(() => setAgentIdCopied(false), 2000);
-  }, [agentId]);
-
-  const copyAccessTokenHidden = useCallback(async () => {
-    const token = getToken();
-    if (!token) return;
-    try {
-      await navigator.clipboard.writeText(token);
-    } catch {
-      try {
-        const ta = document.createElement("textarea");
-        ta.value = token;
-        ta.style.position = "fixed";
-        ta.style.left = "-9999px";
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
-      } catch {
-        /* silent */
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    setAgentIdCopied(false);
-  }, [agentId]);
 
   const handleMobileMenuClose = useCallback(() => {
     setIsMobileMenuOpen(false);
+  }, []);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const sync = () => {
+      const up = mq.matches;
+      setIsMdUp(up);
+      if (up) setDesktopSidebarOpen(true);
+    };
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  const handleNavRailToggle = useCallback(() => {
+    if (isMdUp) {
+      setDesktopSidebarOpen((v) => !v);
+    } else {
+      setIsMobileMenuOpen(true);
+    }
+  }, [isMdUp]);
+
+  const handleCopyToken = useCallback(() => {
+    const token = getToken();
+    if (token) void navigator.clipboard.writeText(token);
   }, []);
 
   const handleToggleDebugModal = useCallback(() => {
@@ -157,7 +158,6 @@ export function ChatInterface() {
       .getActions(agentId)
       .then((data) => {
         const actions = data.actions || data || [];
-
         const has = actions.some(
           (a: any) =>
             a.label === "pageindex_retrieval_interact_action" ||
@@ -166,8 +166,6 @@ export function ChatInterface() {
             (a.archetype && String(a.archetype).includes("PageIndexRetrievalInteractAction")) ||
             (a.action === "jvagent/pageindex_retrieval_interact_action")
         );
-
-        // If not found, check for PageIndexAction
         const hasFallback = !has && actions.some(
           (a: any) =>
             a.label === "pageindex_action" ||
@@ -176,95 +174,89 @@ export function ChatInterface() {
             (a.archetype && String(a.archetype).includes("PageIndexAction")) ||
             (a.action === "jvagent/pageindex_action")
         );
-
         const finalHas = has || hasFallback;
         setHasPageIndexAction(finalHas);
       })
       .catch(() => setHasPageIndexAction(false));
   }, [agentId]);
 
-  // Refresh conversations when agent changes or on mount
   useEffect(() => {
     refresh();
   }, [agentId, refresh]);
 
-  // Also refresh after sending a message to pick up any new conversations
-  // This is handled in handleSendMessage, but we can also add a periodic refresh
-  // that's less aggressive - only when the window is focused
   useEffect(() => {
     const handleFocus = () => {
       refresh();
     };
-
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
   }, [refresh]);
 
   useEffect(() => {
     if (!agentId) {
-      navigate("/agents");
+      navigate("/chat");
       return;
     }
     if (agents.length > 0 && !agent) {
-      navigate("/agents");
+      navigate("/chat");
     }
   }, [agentId, agents, agent, navigate]);
 
-  // Load messages when sessionId changes (from stream or selection)
-  // Use a ref to track previous streamSessionId to prevent loops
-  const prevStreamSessionIdRef = useRef<string | undefined>(streamSessionId);
   useEffect(() => {
-    // Only update if streamSessionId actually changed
+    setSessionId(undefined);
+  }, [agentId]);
+
+  const prevStreamSessionIdRef = useRef<string | undefined>(streamSessionId);
+  // Tracks whether the pending setSessionId call was triggered by the SSE stream
+  // (server assigned a session id) vs. by the user selecting/navigating to a session.
+  // Only stream-triggered bindings should skip the clear+load sequence.
+  const sessionSetByStreamRef = useRef(false);
+  useEffect(() => {
     if (
       streamSessionId &&
       streamSessionId !== prevStreamSessionIdRef.current &&
       streamSessionId !== sessionId
     ) {
       prevStreamSessionIdRef.current = streamSessionId;
+      sessionSetByStreamRef.current = true;
       setSessionId(streamSessionId);
     } else if (streamSessionId) {
       prevStreamSessionIdRef.current = streamSessionId;
     }
   }, [streamSessionId, sessionId]);
 
-  // Track previous sessionId to detect changes
   const prevSessionIdRef = useRef<string | undefined>(sessionId);
 
-  // Load messages when sessionId changes
   useEffect(() => {
-    // Only load if sessionId actually changed
     if (sessionId !== prevSessionIdRef.current) {
       const newSessionId = sessionId;
       const oldSessionId = prevSessionIdRef.current;
-
       console.log(
         `Switching conversation: ${oldSessionId || "none"} -> ${newSessionId || "none"}`,
       );
-
       prevSessionIdRef.current = sessionId;
 
-      if (newSessionId) {
-        // CRITICAL: Clear messages first to prevent showing old messages from previous session
-        // This ensures no message duplication or cross-contamination
-        clearMessages();
+      // Server assigned first session id while messages are already live — avoid clear + reload flicker.
+      // This only applies when the stream itself triggered the session id change; if the user
+      // selected or navigated to an existing session we must still load from localStorage.
+      const sessionSetByStream = sessionSetByStreamRef.current;
+      sessionSetByStreamRef.current = false;
+      const isInitialSessionBinding =
+        oldSessionId === undefined && newSessionId !== undefined && sessionSetByStream;
 
-        // Load messages for the NEW session after a brief delay
-        // This ensures clearMessages has completed and prevents cross-session contamination
+      if (newSessionId) {
+        if (isInitialSessionBinding) {
+          return;
+        }
+        clearMessages();
         const timer = setTimeout(() => {
-          // Double-check sessionId hasn't changed during the delay
-          // This prevents loading messages for a session that's no longer active
           if (prevSessionIdRef.current === newSessionId) {
-            // CRITICAL: Get messages ONLY for the new session_id
-            // This ensures messages are isolated by session_id and prevents duplication
             const savedMessages = getMessages(newSessionId);
             console.log(
               `Loading ${savedMessages.length} messages for session ${newSessionId}`,
             );
-
             if (savedMessages && savedMessages.length > 0) {
-              // Verify we're still on the same session before loading
               if (prevSessionIdRef.current === newSessionId) {
-                // loadMessages will create a deep copy to prevent reference issues
                 loadMessages(savedMessages);
               } else {
                 console.warn(
@@ -281,63 +273,42 @@ export function ChatInterface() {
               `Session changed during load delay - skipping load for ${newSessionId}`,
             );
           }
-        }, 50); // Slightly longer delay to ensure clearMessages completes
-
+        }, 50);
         return () => clearTimeout(timer);
       } else {
-        // If sessionId is undefined (new conversation), clear messages
-        // This ensures the WelcomeScreen is shown and no old messages leak through
         console.log("Starting new conversation - clearing messages");
         clearMessages();
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]); // Only depend on sessionId - clearMessages and loadMessages are stable callbacks
+  }, [sessionId]);
 
   const handleSendMessage = async (
     content: string,
     options?: SendMessageOptions,
   ) => {
     if (!agent) return;
-
-    const userId = getUserId();
+    const userId = getEffectiveUserId();
     if (!userId) {
       console.error(
         "Cannot send message: no user_id available. User should be logged in.",
       );
       return;
     }
-
     const lastPreview =
       content.trim() ||
       (options?.files?.length ? ATTACHMENT_ONLY_USER_PROMPT : content);
-
     const receivedSessionId = await sendMessage(content, options);
-
-    // Update session ID if we received one from the server
-    // This happens when:
-    // 1. First interaction (no user_id, no session_id) → backend returns both
-    // 2. New conversation (user_id only) → backend returns new session_id
-    // 3. Continue conversation (both provided) → backend returns same session_id
     if (receivedSessionId) {
-      // Check storage directly to see if conversation already exists
-      // This ensures we don't miss conversations that were just added
       const allConversations = getConversations(userId);
       const existingConv = allConversations.find(
         (c) => c.session_id === receivedSessionId && c.agent_id === agent.id,
       );
-
-      // Update session ID synchronously if it changed (urgent - affects chat content)
-      // This must happen before any conversation list updates to prevent content flash
       const sessionIdChanged = receivedSessionId !== sessionId;
       if (sessionIdChanged) {
         setSessionId(receivedSessionId);
       }
-
-      // Use startTransition to mark conversation list updates as non-urgent
-      // This ensures chat content rendering is not blocked by sidebar updates
       if (!existingConv) {
-        // New conversation - create entry with user_id
         const newConv: Conversation = {
           session_id: receivedSessionId,
           agent_id: agent.id,
@@ -346,7 +317,6 @@ export function ChatInterface() {
           last_message: lastPreview,
           last_message_at: new Date().toISOString(),
         };
-        // Defer conversation list update to prevent interfering with chat content
         startTransition(() => {
           add(newConv);
           console.log(
@@ -354,9 +324,7 @@ export function ChatInterface() {
           );
         });
       } else {
-        // Existing conversation - update last message
         if (existingConv.last_message !== lastPreview) {
-          // Defer conversation list update to prevent interfering with chat content
           startTransition(() => {
             update(receivedSessionId, {
               last_message: lastPreview,
@@ -366,14 +334,11 @@ export function ChatInterface() {
         }
       }
     } else if (sessionId) {
-      // Same session - just update last message if changed
-      // Check storage directly to ensure we have the latest
       const allConversations = getConversations(userId);
       const currentConv = allConversations.find(
         (c) => c.session_id === sessionId && c.agent_id === agent.id,
       );
       if (currentConv && currentConv.last_message !== lastPreview) {
-        // Use startTransition to mark update as non-urgent
         startTransition(() => {
           update(sessionId, {
             last_message: lastPreview,
@@ -386,49 +351,27 @@ export function ChatInterface() {
 
   const handleNewConversation = useCallback(() => {
     if (!agent) return;
-
     console.log("Starting new conversation");
-
-    // For new conversations, clear the session ID and messages
-    // When the first message is sent with user_id but no session_id,
-    // the backend will create a new conversation and return the session_id
-
-    // Clear session ID to undefined - this indicates we want a new conversation
-    // The useEffect will handle clearing messages when sessionId changes
     setSessionId(undefined);
-
-    // Refresh conversations to ensure list is up to date
     refresh();
   }, [agent, refresh]);
 
   const handleSelectConversation = useCallback(
     (selectedSessionId: string) => {
-      // Only switch if it's a different conversation
-      if (selectedSessionId === sessionId) {
-        return;
-      }
-
+      if (selectedSessionId === sessionId) return;
       console.log(
         `Switching conversation from ${sessionId || "none"} to ${selectedSessionId}`,
       );
-
-      // Set the new session ID first - the useEffect will handle clearing and loading messages
       setSessionId(selectedSessionId);
-
-      // Refresh conversations to ensure we have the latest data
-      refresh();
     },
-    [sessionId, refresh],
+    [sessionId],
   );
 
   const handleDeleteConversation = async (sessionIdToDelete: string) => {
     if (!agent) return;
-
-    // Get user_id from storage
-    const userId = getUserId();
+    const userId = getEffectiveUserId();
     if (!userId) {
       console.error("Cannot delete conversation: user_id not found");
-      // Still remove from local storage for UI consistency
       remove(sessionIdToDelete);
       deleteMessages(sessionIdToDelete);
       if (sessionId === sessionIdToDelete) {
@@ -436,24 +379,15 @@ export function ChatInterface() {
       }
       return;
     }
-
     try {
-      // Delete conversation on server (all sessions are real, no temp sessions)
-      // Parameters: agentId, userId, sessionId
       await apiClient.deleteConversation(agent.id, userId, sessionIdToDelete);
-
-      // Remove from local storage
       remove(sessionIdToDelete);
       deleteMessages(sessionIdToDelete);
-
-      // If we're currently viewing the deleted conversation, reset the chat area
       if (sessionId === sessionIdToDelete) {
         handleNewConversation();
       }
     } catch (error: any) {
       console.error("Failed to delete conversation on server:", error);
-      // Still remove from local storage even if server deletion fails
-      // This ensures UI consistency
       remove(sessionIdToDelete);
       deleteMessages(sessionIdToDelete);
       if (sessionId === sessionIdToDelete) {
@@ -463,19 +397,40 @@ export function ChatInterface() {
   };
 
   if (!agent) {
-    return (
-          <div className="flex-1 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400 mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading agent...</p>
+    if (agentsLoading) {
+      return (
+        <div className="flex flex-1 items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-zinc-400 mx-auto"></div>
+            <p className="mt-4 text-zinc-500 dark:text-zinc-400">Loading agent...</p>
+          </div>
         </div>
-      </div>
-    );
+      );
+    }
+    // getAgents finished without this agent: either session was cleared (401) or unknown id
+    if (!getToken()) {
+      return <Navigate to="/login" replace />;
+    }
+    return <Navigate to="/chat" replace />;
   }
 
+  const composerTools = (
+    <ComposerToolsMenu
+      disabled={isStreaming || viewingOldBranch}
+      hasDocuments={hasPageIndexAction}
+      onDocuments={handleTogglePageIndexModal}
+      onInteractionDebug={handleToggleDebugModal}
+      onActionConfig={handleToggleActionsModal}
+      onLongMemory={handleToggleMemoryModal}
+      onAppGraph={openAppGraph}
+    />
+  );
+
+  const storedToken = getToken();
+
   return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-      <div className="flex flex-1 min-h-0 overflow-hidden relative">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <ConversationList
           conversations={conversations}
           currentSessionId={sessionId}
@@ -484,264 +439,120 @@ export function ChatInterface() {
           onDeleteConversation={handleDeleteConversation}
           isMobileMenuOpen={isMobileMenuOpen}
           onMobileMenuClose={handleMobileMenuClose}
+          desktopSidebarOpen={desktopSidebarOpen}
         />
 
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden min-w-0">
-          <div className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-700 px-4 sm:px-6 py-3 sm:py-4 flex-shrink-0">
-            <div className="flex items-center gap-2 sm:gap-4">
-              {/* Mobile menu button */}
-              <button
-                onClick={() => setIsMobileMenuOpen(true)}
-                className="md:hidden flex-shrink-0 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 touch-manipulation"
-                aria-label="Open menu"
-                title="Open menu"
-              >
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 6h16M4 12h16M4 18h16"
-                  />
-                </svg>
-              </button>
-
-              {/* Back to agents button - desktop only */}
-              <button
-                onClick={() => navigate("/agents")}
-                className="hidden md:flex flex-shrink-0 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-                aria-label="Back to agents"
-                title="Back to agents"
-              >
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M10 19l-7-7m0 0l7-7m-7 7h18"
-                  />
-                </svg>
-              </button>
-
-              <div className="flex-1 min-w-0">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="relative z-20 shrink-0 overflow-visible border-b border-zinc-200 bg-white dark:border-white/10 dark:bg-zinc-900">
+            <div className="flex h-[4.75rem] w-full shrink-0 items-center justify-between gap-2 overflow-visible px-4 sm:gap-3 sm:px-5">
+              <div className="flex min-w-0 flex-1 items-center gap-2 overflow-visible">
                 <button
                   type="button"
-                  onClick={copyAgentId}
-                  disabled={!agentId}
-                  title={
-                    agentIdCopied
-                      ? "Agent ID copied"
-                      : agentId
-                        ? "Click to copy agent ID"
-                        : undefined
-                  }
+                  onClick={handleNavRailToggle}
+                  className="inline-flex size-10 shrink-0 touch-manipulation items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
                   aria-label={
-                    agentIdCopied
-                      ? "Agent ID copied to clipboard"
-                      : "Copy agent ID"
+                    isMdUp
+                      ? desktopSidebarOpen
+                        ? "Collapse sidebar"
+                        : "Expand sidebar"
+                      : "Open sidebar"
                   }
-                  className={`flex items-center gap-2 min-w-0 max-w-full text-left rounded-lg -mx-1 px-1 py-0.5 transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
-                    agentId
-                      ? "cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-800"
-                      : ""
-                  }`}
                 >
-                  <span className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-gray-100 truncate">
-                    {agent.alias || agent.name || "Agent"}
-                  </span>
-                  {agentIdCopied ? (
-                    <svg
-                      className="w-4 h-4 flex-shrink-0 text-green-600 dark:text-green-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      aria-hidden
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M5 13l4 4L19 7"
-                      />
-                    </svg>
+                  {isMdUp ? (
+                    desktopSidebarOpen ? (
+                      <PanelLeft className="h-5 w-5" aria-hidden strokeWidth={2} />
+                    ) : (
+                      <PanelRight className="h-5 w-5" aria-hidden strokeWidth={2} />
+                    )
                   ) : (
-                    <svg
-                      className="w-4 h-4 flex-shrink-0 text-gray-400 dark:text-gray-500 opacity-80"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      aria-hidden
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                      />
+                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                     </svg>
                   )}
                 </button>
-                {sessionId && (
+                <div className="flex w-[17rem] shrink-0 flex-col justify-center sm:w-[17.5rem]">
+                  <div className="my-2.5 min-w-0 w-full">
+                    <AgentSwitcher variant="full" />
+                  </div>
+                </div>
+                <div className="ml-1 flex min-w-[5.75rem] shrink-0 flex-col items-start justify-center gap-0.5 border-l border-zinc-200 pl-2 dark:border-white/10 sm:ml-2 sm:min-w-[6rem] sm:pl-3">
                   <button
-                    onClick={() => navigator.clipboard.writeText(sessionId)}
-                    className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 mt-0.5"
-                    title="Copy session ID"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                    Copy session ID
-                  </button>
-                )}
-                {agent.description && (
-                  <p
-                    className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 line-clamp-1 cursor-default"
-                    title={agent.description}
+                    type="button"
+                    disabled={!sessionId}
                     onClick={() => {
-                      const sel = window.getSelection()?.toString() ?? "";
-                      if (sel.length > 0) return;
-                      void copyAccessTokenHidden();
+                      if (!sessionId) return;
+                      void navigator.clipboard.writeText(sessionId);
                     }}
+                    aria-label="Copy session ID"
+                    title={sessionId ? "Copy session ID" : "No active session"}
+                    className="flex w-full items-center gap-1.5 text-left text-xs text-zinc-500 transition-colors hover:text-zinc-700 disabled:pointer-events-none disabled:opacity-35 dark:text-zinc-400 dark:hover:text-zinc-200"
                   >
-                    {agent.description}
-                  </p>
-                )}
+                    <Clipboard className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden strokeWidth={1.75} />
+                    <span>session ID</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyToken()}
+                    disabled={!storedToken}
+                    aria-label="Copy token"
+                    title={storedToken ? "Copy access token" : "No token stored"}
+                    className="flex w-full items-center gap-1.5 text-left text-xs text-zinc-500 transition-colors hover:text-zinc-700 disabled:pointer-events-none disabled:opacity-35 dark:text-zinc-400 dark:hover:text-zinc-200"
+                  >
+                    <Clipboard className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden strokeWidth={1.75} />
+                    <span>token</span>
+                  </button>
+                </div>
               </div>
-
-               {/* Memory viewer button */}
-               <button
-                 onClick={handleToggleMemoryModal}
-                 className="flex-shrink-0 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-                 aria-label="Memory"
-                 title="Long-Term Memory"
-               >
-                 <svg
-                   className="w-6 h-6"
-                   fill="none"
-                   stroke="currentColor"
-                   viewBox="0 0 24 24"
-                 >
-                   <path
-                     strokeLinecap="round"
-                     strokeLinejoin="round"
-                     strokeWidth={2}
-                     d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
-                   />
-                 </svg>
-               </button>
-
-               {/* Agent actions button */}
-               <button
-                 onClick={handleToggleActionsModal}
-                className="flex-shrink-0 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-                aria-label="Actions"
-                title="Agent Actions"
-              >
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-                  />
-                </svg>
-              </button>
-
-              {/* Debug interactions button */}
               <button
-                onClick={handleToggleDebugModal}
-                className="flex-shrink-0 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-                aria-label="Debug"
-                title="Debug"
+                type="button"
+                onClick={toggleTheme}
+                className="inline-flex size-10 shrink-0 touch-manipulation items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
               >
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4"
-                  />
-                </svg>
+                {theme === "dark" ? (
+                  <Sun className="size-5" strokeWidth={1.75} aria-hidden />
+                ) : (
+                  <Moon className="size-5" strokeWidth={1.75} aria-hidden />
+                )}
               </button>
-
-              {/* PageIndex document index button - only when agent has pageindex action */}
-              {hasPageIndexAction && (
-                <button
-                  onClick={handleTogglePageIndexModal}
-                  className="flex-shrink-0 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 transition-colors p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-                  aria-label="Document index"
-                  title="Document index"
-                >
-                  <svg
-                    className="w-6 h-6"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                    />
-                  </svg>
-                </button>
-              )}
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-            {messages.length === 0 ? (
-              <WelcomeScreen agentName={agent.alias || agent.name || "Agent"} />
-            ) : (
-              <MessageList
-                messages={messages}
-                showThinking={
-                  isStreaming &&
-                  !messages.some(
-                    (m) => m.role === "assistant" && m.category !== "thought" && m.streaming,
-                  )
-                }
-              />
-            )}
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+            <Thread
+              messages={messages}
+              isStreaming={isStreaming}
+              showThinking={
+                isStreaming &&
+                !messages.some(
+                  (m) =>
+                    m.role === "assistant" &&
+                    m.category !== "thought" &&
+                    m.streaming,
+                )
+              }
+              onEditMessage={(id, text) => editAndResend(id, text)}
+              branchSnapshots={branchSnapshots}
+              branchVersionIndex={branchVersionIndex}
+              onBranchVersionChange={selectBranchVersion}
+              onSend={handleSendMessage}
+              onStop={stopStreaming}
+              composerDisabled={isStreaming || viewingOldBranch}
+              composerMenu={composerTools}
+              placeholder={`Message ${agent.alias || agent.name || "Agent"}...`}
+              welcomeAgentName={agent.alias || agent.name || "Agent"}
+              welcomeAgentAvatar={agent.avatar_url}
+              welcomeDescription={agent.description}
+            />
           </div>
 
           {error && (
-            <div className="flex-shrink-0 px-4 py-2 bg-red-50 dark:bg-red-900/30 border-t border-red-200 dark:border-red-800">
-              <p className="text-sm text-red-800 dark:text-red-300">{error}</p>
+            <div className="flex-shrink-0 px-4 py-2.5 bg-red-50 dark:bg-red-900/20 border-t border-red-200 dark:border-red-800">
+              <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
             </div>
           )}
-
-          <div className="flex-shrink-0">
-            <MessageInput
-            onSend={handleSendMessage}
-            disabled={isStreaming}
-            placeholder={`Message ${agent.alias || agent.name || "Agent"}...`}
-          />
-          </div>
         </div>
 
-        {/* Debug Interactions Modal Dialog */}
         {isDebugModalOpen && (
           <DebugInteractions
             onClose={handleCloseDebugModal}
@@ -749,7 +560,6 @@ export function ChatInterface() {
           />
         )}
 
-        {/* PageIndex Documents Modal Dialog */}
         {isPageIndexModalOpen && agentId && (
           <PageIndexDocumentsModal
             agentId={agentId}
@@ -758,7 +568,6 @@ export function ChatInterface() {
           />
         )}
 
-        {/* Agent Actions Modal Dialog */}
         {isActionsModalOpen && agentId && (
           <ActionsModal
             agentId={agentId}
@@ -767,7 +576,6 @@ export function ChatInterface() {
           />
         )}
 
-        {/* Memory Viewer Modal Dialog */}
         {isMemoryModalOpen && agentId && (
           <MemoryViewer
             agentId={agentId}

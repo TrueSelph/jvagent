@@ -120,10 +120,8 @@ class User(Node):
 
         memory = await self.node(direction="in", node=Memory)
         if memory:
-            # Atomic increment keeps the hot path O(1) regardless of graph size.
             ctx = await memory.get_context()
             await ctx.atomic_increment(memory.id, "total_conversations", 1)
-            memory.total_conversations = (memory.total_conversations or 0) + 1
 
         return conv
 

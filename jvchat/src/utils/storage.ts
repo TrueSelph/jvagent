@@ -232,18 +232,96 @@ export function removeUserId(): void {
   localStorage.removeItem(USER_ID_KEY)
 }
 
+/** Decode `sub` / common id claims from the jvchat access token (JWT). */
+function parseAccessTokenUserId(token: string | null): string | null {
+  if (!token) return null
+  try {
+    const base64Url = token.split('.')[1]
+    if (!base64Url) return null
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join(''),
+    )
+    const payload = JSON.parse(jsonPayload) as Record<string, unknown>
+    const raw = payload.sub ?? payload.user_id ?? payload.userId ?? payload.id
+    if (raw == null || raw === '') return null
+    return String(raw)
+  } catch {
+    return null
+  }
+}
+
+/** Read user id from JWT without persisting (used before sync). */
+export function getUserIdFromAccessToken(): string | null {
+  return parseAccessTokenUserId(getToken())
+}
+
+/**
+ * Persist `jvchat_user_id` from the access token when login omitted `user.id`.
+ * Ensures conversation/message keys match the account used for API calls.
+ */
+export function syncUserIdFromAccessToken(): string | null {
+  const existing = getUserId()
+  if (existing) return existing
+  const fromJwt = getUserIdFromAccessToken()
+  if (fromJwt) {
+    setUserId(fromJwt)
+    console.log('[jvchat] Restored user_id from access token for local persistence')
+    return fromJwt
+  }
+  return null
+}
+
+export function getEffectiveUserId(): string | null {
+  return getUserId() ?? syncUserIdFromAccessToken()
+}
+
+/** Migrate `{ conversations: [...] }` into `{ [userId]: { [sessionId]: conv } }`. */
+function migrateLegacyConversationsRaw(parsed: Record<string, unknown>): Record<string, unknown> {
+  const legacy = parsed.conversations
+  if (!Array.isArray(legacy) || legacy.length === 0) return parsed
+
+  const uid = getEffectiveUserId()
+  if (!uid) return parsed
+
+  let bucket = parsed[uid]
+  if (!bucket || typeof bucket !== 'object' || Array.isArray(bucket)) {
+    bucket = {}
+    parsed[uid] = bucket
+  }
+  const b = bucket as Record<string, unknown>
+  for (const conv of legacy) {
+    if (conv && typeof conv === 'object' && conv !== null && 'session_id' in conv) {
+      const sid = String((conv as { session_id: string }).session_id)
+      if (sid) b[sid] = conv
+    }
+  }
+  delete parsed.conversations
+  try {
+    localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(parsed))
+  } catch (e) {
+    console.warn('[jvchat] Failed to persist migrated conversations', e)
+  }
+  return parsed
+}
+
 // Storage structure: { [user_id]: { [session_id]: Conversation } }
 // This allows us to track all session_ids per user_id
 export function getConversations(userId?: string | null): any[] {
   if (typeof window === 'undefined') return []
   try {
+    syncUserIdFromAccessToken()
     const data = localStorage.getItem(CONVERSATIONS_KEY)
     if (!data) return []
-    const parsed = JSON.parse(data)
+    let parsed = JSON.parse(data) as Record<string, unknown>
+    parsed = migrateLegacyConversationsRaw(parsed)
 
-    // If no user_id provided, try to get it from storage
+    // If no user_id provided, try to get it from storage or JWT
     if (!userId) {
-      userId = getUserId()
+      userId = getEffectiveUserId()
     }
 
     // If still no user_id, return all conversations (for backward compatibility)
@@ -314,7 +392,7 @@ export function saveConversations(conversations: any[], userId?: string | null):
 
 export function addConversation(conversation: any, userId?: string | null): void {
   if (!userId) {
-    userId = getUserId()
+    userId = getEffectiveUserId()
   }
 
   if (!userId) {
@@ -361,7 +439,7 @@ export function updateConversation(
   userId?: string | null
 ): void {
   if (!userId) {
-    userId = getUserId()
+    userId = getEffectiveUserId()
   }
 
   if (!userId) {
@@ -373,11 +451,14 @@ export function updateConversation(
     const data = localStorage.getItem(CONVERSATIONS_KEY)
     if (!data) return
 
-    const parsed = JSON.parse(data)
-    const userConversations = parsed[userId]
+    const parsed = JSON.parse(data) as Record<string, unknown>
+    const userConversations = parsed[userId] as Record<string, unknown> | undefined
 
     if (userConversations && userConversations[sessionId]) {
-      userConversations[sessionId] = { ...userConversations[sessionId], ...updates }
+      userConversations[sessionId] = {
+        ...(userConversations[sessionId] as Record<string, unknown>),
+        ...updates,
+      }
       parsed[userId] = userConversations
       localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(parsed))
     }
@@ -388,7 +469,7 @@ export function updateConversation(
 
 export function removeConversation(sessionId: string, userId?: string | null): void {
   if (!userId) {
-    userId = getUserId()
+    userId = getEffectiveUserId()
   }
 
   if (!userId) {
@@ -416,7 +497,7 @@ export function removeConversation(sessionId: string, userId?: string | null): v
 // Get all session_ids for a specific user_id
 export function getUserSessionIds(userId?: string | null): string[] {
   if (!userId) {
-    userId = getUserId()
+    userId = getEffectiveUserId()
   }
 
   if (!userId) {
@@ -506,12 +587,23 @@ export function deleteMessages(sessionId: string): void {
   }
 }
 
-export function clearAllStorage(): void {
+/** Tokens and user identity only — keeps persisted conversations/messages/local preferences. */
+export function clearAuthSession(): void {
   if (typeof window === 'undefined') return
   try {
     removeToken()
     removeRefreshToken()
     removeUserId()
+  } catch (error) {
+    console.error('Failed to clear auth session:', error)
+  }
+}
+
+/** Nuclear option: auth + conversations + cached messages for all users in this browser. */
+export function clearAllStorage(): void {
+  if (typeof window === 'undefined') return
+  try {
+    clearAuthSession()
     localStorage.removeItem(CONVERSATIONS_KEY)
     localStorage.removeItem(MESSAGES_KEY)
   } catch (error) {

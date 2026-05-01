@@ -4,7 +4,6 @@ import asyncio
 import hashlib
 import json
 import logging
-import os
 import random
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -25,9 +24,6 @@ async def _get_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-# ============================================================================
-# Performance Configuration Loader
-# ============================================================================
 def _load_perf_config() -> Dict[str, Any]:
     """Load app config from app.yaml for performance section."""
     try:
@@ -53,308 +49,384 @@ def _perf_config_value(
     return get_performance_config_value(config, key, env_var, default, config_type)
 
 
-# Load config - initially empty, populated when reload_performance_config() is called
-_perf_config: Dict[str, Any] = {}
+class CacheManager:
+    """Encapsulated cache state and TTL-based expiration for agent, action, and router caches.
+
+    Instantiated once as a module-level singleton. Config is reloaded from
+    app.yaml via :meth:`reload_config`.
+    """
+
+    def __init__(self) -> None:
+        self._agent_cache: Dict[str, Tuple[Any, datetime]] = {}
+        self._agent_lock = asyncio.Lock()
+
+        self._action_cache: Dict[str, Tuple[List[Any], datetime]] = {}
+        self._action_lock = asyncio.Lock()
+
+        self._router_cache: Dict[str, Tuple[Dict[str, Any], datetime]] = {}
+        self._router_lock = asyncio.Lock()
+
+        # Action type index: {agent_id: {class_name: action_id}}
+        self._action_type_index: Dict[str, Dict[str, str]] = {}
+        self._action_type_lock = asyncio.Lock()
+
+        self._config: Dict[str, Any] = {}
+        self._load_defaults()
+
+    def _load_defaults(self) -> None:
+        self.agent_cache_enabled: bool = True
+        self.agent_cache_ttl: int = 300
+        self.action_cache_enabled: bool = True
+        self.action_cache_ttl: int = 60
+        self.router_cache_enabled: bool = False
+        self.router_cache_ttl: int = 45
+        self.cleanup_probability: float = 0.1
+
+    def reload_config(self) -> None:
+        """Reload performance configuration from app.yaml."""
+        self._config = _load_perf_config()
+        self.agent_cache_enabled = _perf_config_value(
+            self._config, "enable_agent_cache", "JVAGENT_ENABLE_AGENT_CACHE", True, bool
+        )
+        self.agent_cache_ttl = _perf_config_value(
+            self._config, "agent_cache_ttl", "JVAGENT_AGENT_CACHE_TTL", 300, int
+        )
+        self.action_cache_enabled = _perf_config_value(
+            self._config,
+            "enable_action_cache",
+            "JVAGENT_ENABLE_ACTION_CACHE",
+            True,
+            bool,
+        )
+        self.action_cache_ttl = _perf_config_value(
+            self._config, "action_cache_ttl", "JVAGENT_ACTION_CACHE_TTL", 60, int
+        )
+        self.cleanup_probability = _perf_config_value(
+            self._config,
+            "cache_cleanup_probability",
+            "JVAGENT_CACHE_CLEANUP_PROBABILITY",
+            0.1,
+            float,
+        )
+        self.router_cache_enabled = _perf_config_value(
+            self._config,
+            "enable_interact_router_cache",
+            "JVAGENT_ENABLE_INTERACT_ROUTER_CACHE",
+            False,
+            bool,
+        )
+        self.router_cache_ttl = _perf_config_value(
+            self._config,
+            "interact_router_cache_ttl",
+            "JVAGENT_INTERACT_ROUTER_CACHE_TTL",
+            45,
+            int,
+        )
+        logger.debug(
+            "Performance config reloaded: agent=%s action=%s router=%s",
+            self.agent_cache_enabled,
+            self.action_cache_enabled,
+            self.router_cache_enabled,
+        )
+
+    # -- Agent cache ----------------------------------------------------------
+
+    async def _fetch_agent_uncached(self, agent_id: str) -> Optional[Any]:
+        """Direct DB fetch bypassing Agent.get() caching (avoids recursion)."""
+        from jvspatial.core import Node
+
+        return await Node.get(agent_id)
+
+    async def get_agent(self, agent_id: str) -> Optional[Any]:
+        if not self.agent_cache_enabled:
+            return await self._fetch_agent_uncached(agent_id)
+
+        async with self._agent_lock:
+            entry = self._agent_cache.get(agent_id)
+            if entry:
+                agent, cached_at = entry
+                now = await _get_now()
+                if (now - cached_at).total_seconds() < self.agent_cache_ttl:
+                    return agent
+                del self._agent_cache[agent_id]
+
+        agent = await self._fetch_agent_uncached(agent_id)
+        if agent:
+            async with self._agent_lock:
+                self._agent_cache[agent_id] = (agent, await _get_now())
+        return agent
+
+    async def invalidate_agent(self, agent_id: Optional[str] = None) -> None:
+        async with self._agent_lock:
+            if agent_id:
+                self._agent_cache.pop(agent_id, None)
+            else:
+                self._agent_cache.clear()
+
+    async def get_memory(self, agent_id: str) -> Optional[Any]:
+        agent = await self.get_agent(agent_id)
+        if not agent:
+            return None
+        return await agent.get_memory()
+
+    # -- Action cache ---------------------------------------------------------
+
+    def _action_key(self, agent_id: str, enabled_only: bool) -> str:
+        return f"{agent_id}:{'enabled' if enabled_only else 'all'}"
+
+    async def get_actions(
+        self, agent_id: str, enabled_only: bool = True
+    ) -> Optional[List[Any]]:
+        if not self.action_cache_enabled:
+            return None
+        key = self._action_key(agent_id, enabled_only)
+        async with self._action_lock:
+            entry = self._action_cache.get(key)
+            if entry:
+                actions, cached_at = entry
+                now = await _get_now()
+                if (now - cached_at).total_seconds() < self.action_cache_ttl:
+                    return actions
+                del self._action_cache[key]
+        return None
+
+    async def set_actions(
+        self, agent_id: str, actions: List[Any], enabled_only: bool = True
+    ) -> None:
+        if not self.action_cache_enabled:
+            return
+        key = self._action_key(agent_id, enabled_only)
+        async with self._action_lock:
+            self._action_cache[key] = (actions, await _get_now())
+
+    async def invalidate_actions(self, agent_id: Optional[str] = None) -> None:
+        async with self._action_lock:
+            if agent_id:
+                keys = [k for k in self._action_cache if k.startswith(f"{agent_id}:")]
+                for k in keys:
+                    del self._action_cache[k]
+            else:
+                self._action_cache.clear()
+
+    # -- Action type index ----------------------------------------------------
+
+    async def get_action_by_type(self, agent_id: str, class_name: str) -> Optional[str]:
+        """Return action_id for the given *class_name* under *agent_id*, or None."""
+        async with self._action_type_lock:
+            return self._action_type_index.get(agent_id, {}).get(class_name)
+
+    async def set_action_type_index(
+        self, agent_id: str, class_name: str, action_id: str
+    ) -> None:
+        async with self._action_type_lock:
+            self._action_type_index.setdefault(agent_id, {})[class_name] = action_id
+
+    async def invalidate_action_type_index(
+        self, agent_id: Optional[str] = None
+    ) -> None:
+        async with self._action_type_lock:
+            if agent_id:
+                self._action_type_index.pop(agent_id, None)
+            else:
+                self._action_type_index.clear()
+
+    # -- Router cache ---------------------------------------------------------
+
+    @staticmethod
+    def router_cache_key(
+        conversation_id: str,
+        utterance: str,
+        last_interaction_ids: Tuple[str, ...],
+        buffer_fingerprint: str,
+        active_task_fingerprint: str,
+        proactive_tasks_fingerprint: str = "",
+    ) -> str:
+        payload = json.dumps(
+            {
+                "conversation_id": conversation_id,
+                "utterance": utterance,
+                "last_ids": last_interaction_ids,
+                "buffer": buffer_fingerprint,
+                "active_tasks": active_task_fingerprint,
+                "proactive_tasks": proactive_tasks_fingerprint,
+            },
+            sort_keys=True,
+        )
+        return hashlib.sha256(payload.encode()).hexdigest()
+
+    async def get_router(
+        self, cache_key: str, caller_enabled: bool = True
+    ) -> Optional[Dict[str, Any]]:
+        if not caller_enabled or not self.router_cache_enabled:
+            return None
+        async with self._router_lock:
+            entry = self._router_cache.get(cache_key)
+            if entry:
+                data, cached_at = entry
+                now = await _get_now()
+                if (now - cached_at).total_seconds() < self.router_cache_ttl:
+                    return data
+                del self._router_cache[cache_key]
+        return None
+
+    async def set_router(
+        self, cache_key: str, result: Dict[str, Any], caller_enabled: bool = True
+    ) -> None:
+        if not caller_enabled or not self.router_cache_enabled:
+            return
+        payload = {k: v for k, v in result.items() if k != "reasoning"}
+        async with self._router_lock:
+            self._router_cache[cache_key] = (payload, await _get_now())
+
+    # -- Cleanup --------------------------------------------------------------
+
+    async def cleanup_expired(self) -> bool:
+        now = await _get_now()
+        cleaned = 0
+
+        async with self._agent_lock:
+            expired = [
+                aid
+                for aid, (_, ts) in self._agent_cache.items()
+                if (now - ts).total_seconds() >= self.agent_cache_ttl
+            ]
+            for aid in expired:
+                del self._agent_cache[aid]
+            cleaned += len(expired)
+
+        async with self._action_lock:
+            expired = [
+                k
+                for k, (_, ts) in self._action_cache.items()
+                if (now - ts).total_seconds() >= self.action_cache_ttl
+            ]
+            for k in expired:
+                del self._action_cache[k]
+            cleaned += len(expired)
+
+        async with self._router_lock:
+            expired = [
+                k
+                for k, (_, ts) in self._router_cache.items()
+                if (now - ts).total_seconds() >= self.router_cache_ttl
+            ]
+            for k in expired:
+                del self._router_cache[k]
+            cleaned += len(expired)
+
+        try:
+            from jvagent.core.profiling import cleanup_stale_profiles
+
+            cleaned += await cleanup_stale_profiles()
+        except Exception:
+            pass
+
+        if cleaned:
+            logger.debug("Cache cleanup: removed %d expired entries", cleaned)
+        return cleaned > 0
+
+    async def maybe_cleanup_on_request(self) -> bool:
+        if self.cleanup_probability <= 0 or random.random() > self.cleanup_probability:
+            return False
+        try:
+            return await self.cleanup_expired()
+        except Exception as e:
+            logger.debug("Request-scoped cache cleanup error (non-fatal): %s", e)
+            return False
+
+    async def get_stats(self) -> Dict[str, Any]:
+        now = await _get_now()
+
+        async with self._agent_lock:
+            agent_expired = sum(
+                1
+                for _, (_, ts) in self._agent_cache.items()
+                if (now - ts).total_seconds() >= self.agent_cache_ttl
+            )
+        async with self._action_lock:
+            action_expired = sum(
+                1
+                for _, (_, ts) in self._action_cache.items()
+                if (now - ts).total_seconds() >= self.action_cache_ttl
+            )
+        async with self._router_lock:
+            router_size = len(self._router_cache)
+
+        return {
+            "agent_cache": {
+                "enabled": self.agent_cache_enabled,
+                "size": len(self._agent_cache),
+                "expired": agent_expired,
+                "ttl_seconds": self.agent_cache_ttl,
+            },
+            "action_cache": {
+                "enabled": self.action_cache_enabled,
+                "size": len(self._action_cache),
+                "expired": action_expired,
+                "ttl_seconds": self.action_cache_ttl,
+            },
+            "interact_router_cache": {
+                "enabled": self.router_cache_enabled,
+                "size": router_size,
+                "ttl_seconds": self.router_cache_ttl,
+            },
+        }
+
+
+# Module-level singleton
+cache_manager = CacheManager()
+
+
+# ============================================================================
+# Public API — delegates to the singleton CacheManager
+# ============================================================================
 
 
 def reload_performance_config() -> None:
-    """Reload performance configuration from app.yaml.
-
-    This should be called after set_app_root() to ensure the config
-    is loaded from the correct app.yaml location.
-    """
-    global _perf_config, ENABLE_AGENT_CACHE, AGENT_CACHE_TTL
-    global ENABLE_ACTION_CACHE, ACTION_CACHE_TTL, CACHE_CLEANUP_PROBABILITY
-    global ENABLE_INTERACT_ROUTER_CACHE, INTERACT_ROUTER_CACHE_TTL
-
-    _perf_config = _load_perf_config()
-
-    # Reload all config values
-    ENABLE_AGENT_CACHE = _perf_config_value(
-        _perf_config, "enable_agent_cache", "JVAGENT_ENABLE_AGENT_CACHE", True, bool
-    )
-    AGENT_CACHE_TTL = _perf_config_value(
-        _perf_config, "agent_cache_ttl", "JVAGENT_AGENT_CACHE_TTL", 300, int
-    )
-    ENABLE_ACTION_CACHE = _perf_config_value(
-        _perf_config, "enable_action_cache", "JVAGENT_ENABLE_ACTION_CACHE", True, bool
-    )
-    ACTION_CACHE_TTL = _perf_config_value(
-        _perf_config, "action_cache_ttl", "JVAGENT_ACTION_CACHE_TTL", 60, int
-    )
-    CACHE_CLEANUP_PROBABILITY = _perf_config_value(
-        _perf_config,
-        "cache_cleanup_probability",
-        "JVAGENT_CACHE_CLEANUP_PROBABILITY",
-        0.1,
-        float,
-    )
-    ENABLE_INTERACT_ROUTER_CACHE = _perf_config_value(
-        _perf_config,
-        "enable_interact_router_cache",
-        "JVAGENT_ENABLE_INTERACT_ROUTER_CACHE",
-        False,
-        bool,
-    )
-    INTERACT_ROUTER_CACHE_TTL = _perf_config_value(
-        _perf_config,
-        "interact_router_cache_ttl",
-        "JVAGENT_INTERACT_ROUTER_CACHE_TTL",
-        45,
-        int,
-    )
-
-    logger.debug(
-        "Performance config reloaded: agent_caching=%s, action_caching=%s",
-        ENABLE_AGENT_CACHE,
-        ENABLE_ACTION_CACHE,
-    )
-
-
-# ============================================================================
-# Agent Cache Configuration
-# ============================================================================
-ENABLE_AGENT_CACHE = True
-AGENT_CACHE_TTL = 300
-
-# In-memory cache: {agent_id: (agent_node, cached_at)}
-_agent_cache: Dict[str, Tuple[Any, datetime]] = {}
-_cache_lock = asyncio.Lock()
-
-# ============================================================================
-# Action Cache Configuration
-# ============================================================================
-ENABLE_ACTION_CACHE = True
-ACTION_CACHE_TTL = 60
-
-# Action cache: {cache_key: (actions_list, cached_at)}
-# cache_key format: "{agent_id}:enabled" or "{agent_id}:all"
-_action_cache: Dict[str, Tuple[List[Any], datetime]] = {}
-_action_cache_lock = asyncio.Lock()
-
-# Interact router cache (unified posture + routing)
-ENABLE_INTERACT_ROUTER_CACHE = False
-INTERACT_ROUTER_CACHE_TTL = 45
-_interact_router_cache: Dict[str, Tuple[Dict[str, Any], datetime]] = {}
-_interact_router_cache_lock = asyncio.Lock()
+    """Reload performance configuration from app.yaml."""
+    cache_manager.reload_config()
 
 
 async def get_cached_agent(agent_id: str) -> Optional[Any]:
-    """Get an agent from cache or database.
-
-    If caching is enabled, checks the in-memory cache first. If the agent
-    is found in cache and hasn't expired, returns it. Otherwise, fetches
-    from database and updates the cache.
-
-    Args:
-        agent_id: The ID of the agent to retrieve
-
-    Returns:
-        Agent node if found, None otherwise
-    """
-    if not ENABLE_AGENT_CACHE:
-        # Caching disabled, fetch directly from database
-        from jvagent.core.agent import Agent
-
-        return await Agent.get(agent_id)
-
-    async with _cache_lock:
-        # Check cache
-        if agent_id in _agent_cache:
-            agent, cached_at = _agent_cache[agent_id]
-            now = await _get_now()
-            age = (now - cached_at).total_seconds()
-
-            if age < AGENT_CACHE_TTL:
-                # Cache hit and still valid
-                logger.debug(f"Agent cache hit for {agent_id} (age: {age:.1f}s)")
-                return agent
-            else:
-                # Cache expired, remove it
-                logger.debug(f"Agent cache expired for {agent_id} (age: {age:.1f}s)")
-                del _agent_cache[agent_id]
-
-    # Cache miss or expired, fetch from database
-    from jvagent.core.agent import Agent
-
-    agent = await Agent.get(agent_id)
-
-    if agent:
-        # Update cache
-        async with _cache_lock:
-            now = await _get_now()
-            _agent_cache[agent_id] = (agent, now)
-            logger.debug(f"Agent cached for {agent_id}")
-
-    return agent
+    return await cache_manager.get_agent(agent_id)
 
 
 async def invalidate_agent_cache(agent_id: Optional[str] = None) -> None:
-    """Invalidate agent cache entry(s).
-
-    Args:
-        agent_id: Specific agent ID to invalidate, or None to clear all cache
-    """
-    async with _cache_lock:
-        if agent_id:
-            if agent_id in _agent_cache:
-                del _agent_cache[agent_id]
-                logger.debug(f"Agent cache invalidated for {agent_id}")
-        else:
-            _agent_cache.clear()
-            logger.debug("Agent cache cleared")
+    await cache_manager.invalidate_agent(agent_id)
 
 
 async def get_cached_memory(agent_id: str) -> Optional[Any]:
-    """Get memory node for an agent from cache or database.
-
-    This is a convenience method that gets the agent (from cache if available)
-    and then retrieves its memory node.
-
-    Args:
-        agent_id: The ID of the agent
-
-    Returns:
-        Memory node if found, None otherwise
-    """
-    agent = await get_cached_agent(agent_id)
-    if not agent:
-        return None
-    return await agent.get_memory()
-
-
-async def get_cache_stats() -> Dict[str, Any]:
-    """Get cache statistics for both agent and action caches.
-
-    Returns:
-        Dictionary with cache statistics including size, TTL, and enabled status
-    """
-    now = await _get_now()
-
-    async with _cache_lock:
-        agent_cache_size = len(_agent_cache)
-        agent_expired_count = 0
-
-        for agent_id, (agent, cached_at) in _agent_cache.items():
-            age = (now - cached_at).total_seconds()
-            if age >= AGENT_CACHE_TTL:
-                agent_expired_count += 1
-
-    async with _action_cache_lock:
-        action_cache_size = len(_action_cache)
-        action_expired_count = 0
-
-        for cache_key, (actions, cached_at) in _action_cache.items():
-            age = (now - cached_at).total_seconds()
-            if age >= ACTION_CACHE_TTL:
-                action_expired_count += 1
-
-    async with _interact_router_cache_lock:
-        interact_router_cache_size = len(_interact_router_cache)
-
-    return {
-        "agent_cache": {
-            "enabled": ENABLE_AGENT_CACHE,
-            "size": agent_cache_size,
-            "expired": agent_expired_count,
-            "ttl_seconds": AGENT_CACHE_TTL,
-        },
-        "action_cache": {
-            "enabled": ENABLE_ACTION_CACHE,
-            "size": action_cache_size,
-            "expired": action_expired_count,
-            "ttl_seconds": ACTION_CACHE_TTL,
-        },
-        "interact_router_cache": {
-            "enabled": ENABLE_INTERACT_ROUTER_CACHE,
-            "size": interact_router_cache_size,
-            "ttl_seconds": INTERACT_ROUTER_CACHE_TTL,
-        },
-    }
-
-
-# ============================================================================
-# Action Cache Functions
-# ============================================================================
+    return await cache_manager.get_memory(agent_id)
 
 
 async def get_cached_actions(
     agent_id: str, enabled_only: bool = True
 ) -> Optional[List[Any]]:
-    """Get actions from cache if valid.
-
-    Args:
-        agent_id: The agent ID to get actions for
-        enabled_only: If True, return only enabled actions
-
-    Returns:
-        List of action instances if cached and valid, None otherwise
-    """
-    if not ENABLE_ACTION_CACHE:
-        return None
-
-    cache_key = f"{agent_id}:{'enabled' if enabled_only else 'all'}"
-
-    async with _action_cache_lock:
-        if cache_key in _action_cache:
-            actions, cached_at = _action_cache[cache_key]
-            now = await _get_now()
-            age = (now - cached_at).total_seconds()
-
-            if age < ACTION_CACHE_TTL:
-                logger.debug(f"Action cache hit for {cache_key} (age: {age:.1f}s)")
-                return actions
-            else:
-                # Cache expired, remove it
-                logger.debug(f"Action cache expired for {cache_key} (age: {age:.1f}s)")
-                del _action_cache[cache_key]
-
-    return None
+    return await cache_manager.get_actions(agent_id, enabled_only)
 
 
 async def cache_actions(
     agent_id: str, actions: List[Any], enabled_only: bool = True
 ) -> None:
-    """Store actions in cache.
-
-    Args:
-        agent_id: The agent ID these actions belong to
-        actions: List of action instances to cache
-        enabled_only: Whether this is the enabled-only action list
-    """
-    if not ENABLE_ACTION_CACHE:
-        return
-
-    cache_key = f"{agent_id}:{'enabled' if enabled_only else 'all'}"
-
-    async with _action_cache_lock:
-        now = await _get_now()
-        _action_cache[cache_key] = (actions, now)
-        logger.debug(f"Actions cached for {cache_key} ({len(actions)} actions)")
+    await cache_manager.set_actions(agent_id, actions, enabled_only)
 
 
 async def invalidate_action_cache(agent_id: Optional[str] = None) -> None:
-    """Invalidate action cache entries.
-
-    Args:
-        agent_id: Specific agent ID to invalidate, or None to clear all
-    """
-    async with _action_cache_lock:
-        if agent_id:
-            # Remove all cache entries for this agent
-            keys_to_remove = [k for k in _action_cache if k.startswith(f"{agent_id}:")]
-            for key in keys_to_remove:
-                del _action_cache[key]
-            if keys_to_remove:
-                logger.debug(f"Action cache invalidated for agent {agent_id}")
-        else:
-            _action_cache.clear()
-            logger.debug("Action cache cleared")
+    await cache_manager.invalidate_actions(agent_id)
 
 
-# ============================================================================
-# Interact Router Cache (unified posture + routing)
-# ============================================================================
+async def get_cached_action_id_by_type(agent_id: str, class_name: str) -> Optional[str]:
+    return await cache_manager.get_action_by_type(agent_id, class_name)
+
+
+async def cache_action_type_index(
+    agent_id: str, class_name: str, action_id: str
+) -> None:
+    await cache_manager.set_action_type_index(agent_id, class_name, action_id)
+
+
+async def invalidate_action_type_index(agent_id: Optional[str] = None) -> None:
+    await cache_manager.invalidate_action_type_index(agent_id)
 
 
 def interact_router_cache_key(
@@ -365,184 +437,35 @@ def interact_router_cache_key(
     active_task_fingerprint: str,
     proactive_tasks_fingerprint: str = "",
 ) -> str:
-    """Build cache key for interact router result."""
-    payload = json.dumps(
-        {
-            "conversation_id": conversation_id,
-            "utterance": utterance,
-            "last_ids": last_interaction_ids,
-            "buffer": buffer_fingerprint,
-            "active_tasks": active_task_fingerprint,
-            "proactive_tasks": proactive_tasks_fingerprint,
-        },
-        sort_keys=True,
+    return cache_manager.router_cache_key(
+        conversation_id,
+        utterance,
+        last_interaction_ids,
+        buffer_fingerprint,
+        active_task_fingerprint,
+        proactive_tasks_fingerprint,
     )
-    return hashlib.sha256(payload.encode()).hexdigest()
 
 
 async def get_interact_router_cache(
     cache_key: str, caller_enabled: bool = True
 ) -> Optional[Dict[str, Any]]:
-    """Get cached interact router result if valid.
-
-    Args:
-        cache_key: Key from interact_router_cache_key()
-        caller_enabled: Per-action override; cache used only when both global and caller allow
-
-    Returns:
-        Cached result dict (posture, interpretation, intent_type, actions, etc.) or None
-    """
-    if not caller_enabled:
-        return None
-    if not ENABLE_INTERACT_ROUTER_CACHE:
-        return None
-
-    async with _interact_router_cache_lock:
-        if cache_key in _interact_router_cache:
-            data, cached_at = _interact_router_cache[cache_key]
-            now = await _get_now()
-            age = (now - cached_at).total_seconds()
-            if age < INTERACT_ROUTER_CACHE_TTL:
-                logger.debug(f"Interact router cache hit (age: {age:.1f}s)")
-                return data
-            del _interact_router_cache[cache_key]
-    return None
+    return await cache_manager.get_router(cache_key, caller_enabled)
 
 
 async def set_interact_router_cache(
     cache_key: str, result: Dict[str, Any], caller_enabled: bool = True
 ) -> None:
-    """Store interact router result in cache.
-
-    Args:
-        cache_key: Key from interact_router_cache_key()
-        result: Result dict (posture, interpretation, intent_type, actions, etc.)
-        caller_enabled: Per-action override; cache used only when both global and caller allow
-    """
-    if not caller_enabled:
-        return
-    if not ENABLE_INTERACT_ROUTER_CACHE:
-        return
-
-    # Omit reasoning (deprecated); use interpretation only
-    payload = {k: v for k, v in result.items() if k != "reasoning"}
-
-    async with _interact_router_cache_lock:
-        now = await _get_now()
-        _interact_router_cache[cache_key] = (payload, now)
-        logger.debug("Interact router cached")
+    await cache_manager.set_router(cache_key, result, caller_enabled)
 
 
-# ============================================================================
-# Request-Scoped Cache Cleanup
-# ============================================================================
-
-# Probability of cleanup running per request (0.0-1.0, default 0.1 = 10%)
-# This approach is serverless-friendly (works in Lambda, Cloud Functions, etc.)
-CACHE_CLEANUP_PROBABILITY = 0.1
+async def get_cache_stats() -> Dict[str, Any]:
+    return await cache_manager.get_stats()
 
 
 async def cleanup_expired_entries() -> bool:
-    """Clean up expired cache entries (agent, action, profiles).
-
-    This function removes expired entries from the agent cache, action cache,
-    and profiling context. It can be called directly or via maybe_cleanup_on_request()
-    for probabilistic cleanup at request boundaries.
-
-    Returns:
-        True if any entries were cleaned, False otherwise
-    """
-    now = await _get_now()
-    agent_cleaned = 0
-    action_cleaned = 0
-    profiles_cleaned = 0
-
-    # Clean agent cache
-    async with _cache_lock:
-        expired_agents = [
-            agent_id
-            for agent_id, (_, cached_at) in _agent_cache.items()
-            if (now - cached_at).total_seconds() >= AGENT_CACHE_TTL
-        ]
-        for agent_id in expired_agents:
-            del _agent_cache[agent_id]
-        agent_cleaned = len(expired_agents)
-
-    # Clean action cache
-    async with _action_cache_lock:
-        expired_actions = [
-            cache_key
-            for cache_key, (_, cached_at) in _action_cache.items()
-            if (now - cached_at).total_seconds() >= ACTION_CACHE_TTL
-        ]
-        for cache_key in expired_actions:
-            del _action_cache[cache_key]
-        action_cleaned = len(expired_actions)
-
-    # Clean interact router cache
-    interact_router_cleaned = 0
-    async with _interact_router_cache_lock:
-        expired_interact_router = [
-            cache_key
-            for cache_key, (_, cached_at) in _interact_router_cache.items()
-            if (now - cached_at).total_seconds() >= INTERACT_ROUTER_CACHE_TTL
-        ]
-        for cache_key in expired_interact_router:
-            del _interact_router_cache[cache_key]
-        interact_router_cleaned = len(expired_interact_router)
-
-    # Clean stale profiling contexts
-    try:
-        from jvagent.core.profiling import cleanup_stale_profiles
-
-        profiles_cleaned = await cleanup_stale_profiles()
-    except ImportError:
-        pass  # Profiling module not available
-    except Exception as e:
-        logger.debug(f"Profile cleanup error (non-fatal): {e}")
-
-    cleaned_any = (
-        agent_cleaned > 0
-        or action_cleaned > 0
-        or interact_router_cleaned > 0
-        or profiles_cleaned > 0
-    )
-
-    if cleaned_any:
-        logger.debug(
-            f"Cache cleanup: removed {agent_cleaned} expired agents, "
-            f"{action_cleaned} expired action entries, "
-            f"{interact_router_cleaned} interact router entries, "
-            f"{profiles_cleaned} stale profiles"
-        )
-
-    return cleaned_any
+    return await cache_manager.cleanup_expired()
 
 
 async def maybe_cleanup_on_request() -> bool:
-    """Probabilistically run cache cleanup at request boundary.
-
-    This function should be called at the end of each request (e.g., in a finally block).
-    It will only actually perform cleanup based on CACHE_CLEANUP_PROBABILITY, making it
-    efficient for high-traffic scenarios while still preventing memory accumulation.
-
-    This approach is serverless-friendly and works in both traditional servers
-    and environments like AWS Lambda where background tasks are not reliable.
-
-    Returns:
-        True if cleanup was performed, False if skipped
-    """
-    # Skip if cleanup is disabled
-    if CACHE_CLEANUP_PROBABILITY <= 0:
-        return False
-
-    # Probabilistic check - only run cleanup on a fraction of requests
-    if random.random() > CACHE_CLEANUP_PROBABILITY:
-        return False
-
-    # Perform cleanup
-    try:
-        return await cleanup_expired_entries()
-    except Exception as e:
-        logger.debug(f"Request-scoped cache cleanup error (non-fatal): {e}")
-        return False
+    return await cache_manager.maybe_cleanup_on_request()

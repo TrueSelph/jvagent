@@ -585,3 +585,58 @@ async def check_action_health(action_id: str) -> Dict[str, Any]:
         health = {"healthy": True, "result": health}
 
     return {"health": health}
+
+
+@endpoint(
+    "/agents/{agent_id}/skills/reload",
+    methods=["POST"],
+    auth=True,
+    roles=["admin"],
+    tags=["Skills"],
+    response=success_response(
+        data={
+            "message": ResponseField(field_type=str, description="Success message"),
+            "agent_id": ResponseField(field_type=str, description="Agent ID"),
+        }
+    ),
+)
+async def reload_skills_endpoint(agent_id: str) -> Dict[str, Any]:
+    """Hot-reload skills for an agent without restarting.
+
+    Invalidates the SkillCatalog cache so the next discovery picks up
+    changes to SKILL.md files and tool scripts on disk.
+
+    **Args:**
+
+    - agent_id: ID of the agent whose skills should be reloaded
+
+    **Returns:**
+
+    Dictionary with success message and agent_id
+    """
+    agent = await Agent.get(agent_id)
+    if not agent:
+        raise ResourceNotFoundError(
+            message=f"Agent with ID '{agent_id}' not found",
+            details={"agent_id": agent_id},
+        )
+
+    try:
+        from jvagent.action.skill.skill_catalog import SkillCatalog
+
+        await SkillCatalog.invalidate_cache(
+            namespace=agent.namespace,
+            agent_name=agent.name,
+        )
+        logger.info(
+            "Skills cache invalidated for agent %s/%s", agent.namespace, agent.name
+        )
+    except Exception as e:
+        logger.warning(
+            "Could not invalidate skills cache for agent %s: %s", agent_id, e
+        )
+
+    return {
+        "message": f"Skills reloaded for agent {agent.namespace}/{agent.name}",
+        "agent_id": agent_id,
+    }

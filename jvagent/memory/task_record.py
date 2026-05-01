@@ -14,6 +14,7 @@ State machine
                 │                    └─► timed_out
                 │                    └─► max_iterations
                 │                    └─► superseded
+                │                    └─► stuck_forced
                 └──────────────────────────────────► (any terminal directly)
 
 Transitions FROM a terminal state are not allowed (idempotent by default).
@@ -39,6 +40,7 @@ TERMINAL_STATUSES = frozenset(
         "timed_out",
         "max_iterations",
         "superseded",
+        "stuck_forced",
     }
 )
 ALLOWED_STATUSES = ACTIVE_STATUSES | TERMINAL_STATUSES

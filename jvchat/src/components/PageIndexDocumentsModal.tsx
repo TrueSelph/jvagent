@@ -11,6 +11,7 @@ import type {
   DoclingOcrEngine,
 } from '../types/api'
 import { useTheme } from '../context/ThemeContext'
+import { JsonCodeEditor } from './JsonCodeEditor'
 
 interface PageIndexDocumentsModalProps {
   agentId: string
@@ -955,11 +956,11 @@ export function PageIndexDocumentsModal({
     return docNames.size === 1
   }, [mergeQueue])
 
-  const mergeFieldsLabelClass = dark ? 'text-xs text-slate-400' : 'text-xs text-gray-600'
+  const mergeFieldsLabelClass = dark ? 'text-xs text-zinc-400' : 'text-xs text-zinc-600'
 
   const mergeTextareaClass = dark
-    ? 'w-full mt-0.5 px-2 py-1.5 text-sm rounded border border-slate-600 bg-slate-800 text-slate-100 resize-y min-h-[4rem] max-h-48'
-    : 'w-full mt-0.5 px-2 py-1.5 text-sm rounded border border-gray-300 bg-white text-gray-900 resize-y min-h-[4rem] max-h-48'
+    ? 'w-full mt-0.5 px-2 py-1.5 text-sm rounded border border-zinc-600 bg-zinc-800 text-zinc-100 resize-y min-h-[4rem] max-h-48'
+    : 'w-full mt-0.5 px-2 py-1.5 text-sm rounded border border-zinc-300 bg-white text-zinc-900 resize-y min-h-[4rem] max-h-48'
 
   const toggleChunkSort = (key: ChunkSortKey) => {
     setChunkSort((prev) =>
@@ -1274,17 +1275,17 @@ export function PageIndexDocumentsModal({
   }
 
   const inputClass = dark
-    ? 'w-full px-3 py-2 border border-slate-600 rounded-lg text-sm bg-slate-800 text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500'
-    : 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900 placeholder-gray-500 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500'
+    ? 'w-full px-3 py-2 border border-zinc-600 rounded-lg text-sm bg-zinc-800 text-zinc-100 placeholder-zinc-400 focus:ring-2 focus:ring-zinc-500 focus:border-zinc-500'
+    : 'w-full px-3 py-2 border border-zinc-300 rounded-lg text-sm bg-white text-zinc-900 placeholder-zinc-500 focus:ring-2 focus:ring-zinc-500 focus:border-zinc-500'
 
-  const labelClass = dark ? 'text-xs text-slate-400' : 'text-xs text-gray-600'
+  const labelClass = dark ? 'text-xs text-zinc-400' : 'text-xs text-zinc-600'
 
   const chunkSortBtnClass = `inline-flex items-center gap-1 w-full text-left uppercase font-medium ${
-    dark ? 'text-slate-400 hover:text-slate-200' : 'text-gray-500 hover:text-gray-800'
+    dark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-500 hover:text-zinc-800'
   }`
 
   const chunkThClass = (extra = '') =>
-    `px-3 py-2 text-left text-xs ${dark ? 'text-slate-400' : 'text-gray-500'} ${extra}`
+    `px-3 py-2 text-left text-xs ${dark ? 'text-zinc-400' : 'text-zinc-500'} ${extra}`
 
   const chunkSortCaret = (key: ChunkSortKey) =>
     chunkSort.key === key ? (chunkSort.dir === 'asc' ? ' ▲' : ' ▼') : ''
@@ -1292,24 +1293,24 @@ export function PageIndexDocumentsModal({
   const content = (
     <div
       className={`rounded-lg shadow-xl w-full h-full max-w-[95vw] max-h-[95vh] flex flex-col border ${
-        dark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-gray-200 text-gray-900'
+        dark ? 'bg-zinc-900 border-zinc-700 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-900'
       }`}
       onClick={(e) => isEmbedded && e.stopPropagation()}
     >
       <div
         className={`flex-shrink-0 border-b px-4 sm:px-6 py-4 flex items-center justify-between ${
-          dark ? 'border-slate-700' : 'border-gray-200'
+          dark ? 'border-zinc-700' : 'border-zinc-200'
         }`}
       >
-        <h2 className={`text-xl sm:text-2xl font-semibold ${dark ? 'text-slate-100' : 'text-gray-900'}`}>
+        <h2 className={`text-xl sm:text-2xl font-semibold ${dark ? 'text-zinc-100' : 'text-zinc-900'}`}>
           Documents
         </h2>
         <button
           onClick={onClose}
           className={`p-2 rounded-lg transition-colors ${
             dark
-              ? 'text-gray-400 hover:text-gray-100 hover:bg-gray-700'
-              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+              ? 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700'
+              : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
           }`}
           aria-label="Close"
         >
@@ -1319,18 +1320,18 @@ export function PageIndexDocumentsModal({
         </button>
       </div>
 
-      <div className={`flex-shrink-0 border-b ${dark ? 'border-slate-700' : 'border-gray-200'}`}>
+      <div className={`flex-shrink-0 border-b ${dark ? 'border-zinc-700' : 'border-zinc-200'}`}>
         <nav className="flex flex-wrap gap-1 px-4 sm:px-6" aria-label="Tabs">
           <button
             type="button"
             onClick={() => setActiveTab('documents')}
             className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors -mb-px ${
               activeTab === 'documents'
-                ? 'border-indigo-600 dark:border-indigo-400 text-indigo-600 dark:text-indigo-400'
+                ? 'border-zinc-600 dark:border-zinc-400 text-zinc-600 dark:text-zinc-400'
                 : `border-transparent ${
                     dark
-                      ? 'text-slate-400 hover:text-slate-300 hover:border-slate-600'
-                      : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'text-zinc-400 hover:text-zinc-300 hover:border-zinc-600'
+                      : 'text-zinc-500 hover:text-zinc-700 hover:border-zinc-300'
                   }`
             }`}
           >
@@ -1341,11 +1342,11 @@ export function PageIndexDocumentsModal({
             onClick={() => setActiveTab('chunks')}
             className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors -mb-px ${
               activeTab === 'chunks'
-                ? 'border-indigo-600 dark:border-indigo-400 text-indigo-600 dark:text-indigo-400'
+                ? 'border-zinc-600 dark:border-zinc-400 text-zinc-600 dark:text-zinc-400'
                 : `border-transparent ${
                     dark
-                      ? 'text-slate-400 hover:text-slate-300 hover:border-slate-600'
-                      : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'text-zinc-400 hover:text-zinc-300 hover:border-zinc-600'
+                      : 'text-zinc-500 hover:text-zinc-700 hover:border-zinc-300'
                   }`
             }`}
           >
@@ -1356,11 +1357,11 @@ export function PageIndexDocumentsModal({
             onClick={() => setActiveTab('import-export')}
             className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors -mb-px ${
               activeTab === 'import-export'
-                ? 'border-indigo-600 dark:border-indigo-400 text-indigo-600 dark:text-indigo-400'
+                ? 'border-zinc-600 dark:border-zinc-400 text-zinc-600 dark:text-zinc-400'
                 : `border-transparent ${
                     dark
-                      ? 'text-slate-400 hover:text-slate-300 hover:border-slate-600'
-                      : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'text-zinc-400 hover:text-zinc-300 hover:border-zinc-600'
+                      : 'text-zinc-500 hover:text-zinc-700 hover:border-zinc-300'
                   }`
             }`}
           >
@@ -1371,11 +1372,11 @@ export function PageIndexDocumentsModal({
             onClick={() => setActiveTab('google-sync')}
             className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors -mb-px ${
               activeTab === 'google-sync'
-                ? 'border-indigo-600 dark:border-indigo-400 text-indigo-600 dark:text-indigo-400'
+                ? 'border-zinc-600 dark:border-zinc-400 text-zinc-600 dark:text-zinc-400'
                 : `border-transparent ${
                     dark
-                      ? 'text-slate-400 hover:text-slate-300 hover:border-slate-600'
-                      : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'text-zinc-400 hover:text-zinc-300 hover:border-zinc-600'
+                      : 'text-zinc-500 hover:text-zinc-700 hover:border-zinc-300'
                   }`
             }`}
           >
@@ -1388,7 +1389,7 @@ export function PageIndexDocumentsModal({
         {activeTab === 'google-sync' && (
           <div className="space-y-6">
             {driveLoading && driveFolders.length === 0 && !driveError && (
-              <p className={`text-sm ${dark ? 'text-slate-400' : 'text-gray-600'}`}>
+              <p className={`text-sm ${dark ? 'text-zinc-400' : 'text-zinc-600'}`}>
                 Loading Google Drive sync…
               </p>
             )}
@@ -1396,7 +1397,7 @@ export function PageIndexDocumentsModal({
               <p className="text-sm text-red-600 dark:text-red-400">{driveError}</p>
             )}
             {!driveLoading && !driveSyncActionId && (
-              <p className={`text-sm ${dark ? 'text-slate-400' : 'text-gray-600'}`}>
+              <p className={`text-sm ${dark ? 'text-zinc-400' : 'text-zinc-600'}`}>
                 No PageIndex Google Drive Sync action is attached to this agent.
               </p>
             )}
@@ -1435,8 +1436,8 @@ export function PageIndexDocumentsModal({
                     disabled={driveLoading}
                     className={`px-3 py-2 text-sm rounded-lg border ${
                       dark
-                        ? 'border-slate-600 text-slate-200 hover:bg-slate-800'
-                        : 'border-gray-300 text-gray-800 hover:bg-gray-50'
+                        ? 'border-zinc-600 text-zinc-200 hover:bg-zinc-800'
+                        : 'border-zinc-300 text-zinc-800 hover:bg-zinc-50'
                     } disabled:opacity-50`}
                   >
                     Refresh
@@ -1447,7 +1448,7 @@ export function PageIndexDocumentsModal({
                   <>
                     <div
                       className={`grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm rounded-lg border p-3 ${
-                        dark ? 'border-slate-600 bg-slate-800/50' : 'border-gray-200 bg-gray-50'
+                        dark ? 'border-zinc-600 bg-zinc-800/50' : 'border-zinc-200 bg-zinc-50'
                       }`}
                     >
                       <div className="sm:col-span-2">
@@ -1458,7 +1459,7 @@ export function PageIndexDocumentsModal({
                             '—'}
                           {selectedDriveFolder.folder_id ? (
                             <span
-                              className={`block text-xs font-normal mt-0.5 ${dark ? 'text-slate-400' : 'text-gray-600'}`}
+                              className={`block text-xs font-normal mt-0.5 ${dark ? 'text-zinc-400' : 'text-zinc-600'}`}
                             >
                               {selectedDriveFolder.folder_id}
                             </span>
@@ -1514,8 +1515,8 @@ export function PageIndexDocumentsModal({
                           }
                           className={`px-3 py-2 text-sm rounded-lg border ${
                             dark
-                              ? 'border-indigo-500 text-indigo-200 hover:bg-indigo-950/50'
-                              : 'border-indigo-600 text-indigo-700 hover:bg-indigo-50'
+                              ? 'border-zinc-500 text-zinc-200 hover:bg-zinc-950/50'
+                              : 'border-zinc-600 text-zinc-700 hover:bg-zinc-50'
                           } disabled:opacity-50`}
                         >
                           {driveSavingDocuments ? 'Saving…' : 'Save status & active document'}
@@ -1525,7 +1526,7 @@ export function PageIndexDocumentsModal({
                         <span className={labelClass}>Metadata</span>
                         <pre
                           className={`mt-1 text-xs overflow-x-auto p-2 rounded ${
-                            dark ? 'bg-slate-900 text-slate-300' : 'bg-white text-gray-800'
+                            dark ? 'bg-zinc-900 text-zinc-300' : 'bg-white text-zinc-800'
                           }`}
                         >
                           {JSON.stringify(selectedDriveFolder.metadata ?? {}, null, 2)}
@@ -1536,7 +1537,7 @@ export function PageIndexDocumentsModal({
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                       <div className="space-y-4">
                         <h3
-                          className={`text-sm font-semibold ${dark ? 'text-slate-200' : 'text-gray-800'}`}
+                          className={`text-sm font-semibold ${dark ? 'text-zinc-200' : 'text-zinc-800'}`}
                         >
                           Ingesting
                         </h3>
@@ -1548,7 +1549,7 @@ export function PageIndexDocumentsModal({
                             {(selectedDriveFolder.ingesting_documents[key] ?? []).length ===
                             0 ? (
                               <p
-                                className={`text-sm ${dark ? 'text-slate-500' : 'text-gray-500'}`}
+                                className={`text-sm ${dark ? 'text-zinc-500' : 'text-zinc-500'}`}
                               >
                                 —
                               </p>
@@ -1563,12 +1564,12 @@ export function PageIndexDocumentsModal({
                                     <li
                                       key={`ing-${key}-${i}-${title}`}
                                       className={`text-sm rounded border px-2 py-1.5 ${
-                                        dark ? 'border-slate-600' : 'border-gray-200'
+                                        dark ? 'border-zinc-600' : 'border-zinc-200'
                                       }`}
                                     >
                                       <div className="font-medium break-all">{title}</div>
                                       <div
-                                        className={`text-xs break-all ${dark ? 'text-slate-400' : 'text-gray-600'}`}
+                                        className={`text-xs break-all ${dark ? 'text-zinc-400' : 'text-zinc-600'}`}
                                       >
                                         {subtitle}
                                       </div>
@@ -1577,7 +1578,7 @@ export function PageIndexDocumentsModal({
                                           href={url}
                                           target="_blank"
                                           rel="noreferrer"
-                                          className="text-xs text-indigo-500 hover:underline"
+                                          className="text-xs text-zinc-500 hover:underline"
                                         >
                                           Open in Drive
                                         </a>
@@ -1592,7 +1593,7 @@ export function PageIndexDocumentsModal({
                       </div>
                       <div className="space-y-4">
                         <h3
-                          className={`text-sm font-semibold ${dark ? 'text-slate-200' : 'text-gray-800'}`}
+                          className={`text-sm font-semibold ${dark ? 'text-zinc-200' : 'text-zinc-800'}`}
                         >
                           Failed
                         </h3>
@@ -1604,7 +1605,7 @@ export function PageIndexDocumentsModal({
                             {(selectedDriveFolder.failed_documents[key] ?? []).length ===
                             0 ? (
                               <p
-                                className={`text-sm ${dark ? 'text-slate-500' : 'text-gray-500'}`}
+                                className={`text-sm ${dark ? 'text-zinc-500' : 'text-zinc-500'}`}
                               >
                                 —
                               </p>
@@ -1618,12 +1619,12 @@ export function PageIndexDocumentsModal({
                                       <li
                                         key={`fd-${key}-${i}-${title}`}
                                         className={`text-sm rounded border px-2 py-1.5 ${
-                                          dark ? 'border-slate-600' : 'border-gray-200'
+                                          dark ? 'border-zinc-600' : 'border-zinc-200'
                                         }`}
                                       >
                                         <div className="font-medium break-all">{title}</div>
                                         <div
-                                          className={`text-xs break-all ${dark ? 'text-slate-400' : 'text-gray-600'}`}
+                                          className={`text-xs break-all ${dark ? 'text-zinc-400' : 'text-zinc-600'}`}
                                         >
                                           {subtitle}
                                         </div>
@@ -1632,7 +1633,7 @@ export function PageIndexDocumentsModal({
                                             href={url}
                                             target="_blank"
                                             rel="noreferrer"
-                                            className="text-xs text-indigo-500 hover:underline"
+                                            className="text-xs text-zinc-500 hover:underline"
                                           >
                                             Open in Drive
                                           </a>
@@ -1654,14 +1655,14 @@ export function PageIndexDocumentsModal({
                           type="checkbox"
                           checked={driveIngestConvertMd}
                           onChange={(e) => setDriveIngestConvertMd(e.target.checked)}
-                          className="rounded border-gray-300 dark:border-slate-600 text-indigo-600"
+                          className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600"
                         />
-                        <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                        <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                           Convert to Markdown
                         </span>
                       </label>
                       <div className="flex items-center gap-2">
-                        <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                        <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                           Docling OCR
                         </span>
                         <select
@@ -1672,8 +1673,8 @@ export function PageIndexDocumentsModal({
                           disabled={!driveIngestConvertMd}
                           className={`rounded-md text-sm py-1.5 px-2 border disabled:opacity-50 ${
                             dark
-                              ? 'border-slate-600 bg-slate-800 text-slate-100'
-                              : 'border-gray-300 bg-white text-gray-900'
+                              ? 'border-zinc-600 bg-zinc-800 text-zinc-100'
+                              : 'border-zinc-300 bg-white text-zinc-900'
                           }`}
                         >
                           <option value="none">None</option>
@@ -1685,9 +1686,9 @@ export function PageIndexDocumentsModal({
                           type="checkbox"
                           checked={driveIngestNormalizeBold}
                           onChange={(e) => setDriveIngestNormalizeBold(e.target.checked)}
-                          className="rounded border-gray-300 dark:border-slate-600 text-indigo-600"
+                          className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600"
                         />
-                        <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                        <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                           Bold → headings (sparse ##)
                         </span>
                       </label>
@@ -1696,9 +1697,9 @@ export function PageIndexDocumentsModal({
                           type="checkbox"
                           checked={driveRemoveDeleted}
                           onChange={(e) => setDriveRemoveDeleted(e.target.checked)}
-                          className="rounded border-gray-300 dark:border-slate-600 text-indigo-600"
+                          className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600"
                         />
-                        <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                        <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                           Remove deleted from index
                         </span>
                       </label>
@@ -1709,9 +1710,9 @@ export function PageIndexDocumentsModal({
                           onChange={(e) =>
                             setDriveSkipExistingDocuments(e.target.checked)
                           }
-                          className="rounded border-gray-300 dark:border-slate-600 text-indigo-600"
+                          className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600"
                         />
-                        <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                        <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                           Skip existing documents
                         </span>
                       </label>
@@ -1722,7 +1723,7 @@ export function PageIndexDocumentsModal({
                         type="button"
                         onClick={() => void handleDriveIngestOnce()}
                         disabled={driveRetrying || driveDeleting}
-                        className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                        className="px-4 py-2 bg-zinc-600 text-white text-sm font-medium rounded-lg hover:bg-zinc-700 disabled:opacity-50"
                       >
                         {driveRetrying ? 'Running…' : 'Run ingest (once)'}
                       </button>
@@ -1746,13 +1747,13 @@ export function PageIndexDocumentsModal({
 
                     <div className="space-y-2">
                       <h3
-                        className={`text-sm font-semibold ${dark ? 'text-slate-200' : 'text-gray-800'}`}
+                        className={`text-sm font-semibold ${dark ? 'text-zinc-200' : 'text-zinc-800'}`}
                       >
                         Files in folder ({selectedDriveFlatFiles.length})
                       </h3>
-                      <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-slate-600">
-                        <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-600">
-                          <thead className={dark ? 'bg-slate-800' : 'bg-gray-50'}>
+                      <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-600">
+                        <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-600">
+                          <thead className={dark ? 'bg-zinc-800' : 'bg-zinc-50'}>
                             <tr>
                               <th className="px-3 py-2 text-left text-xs font-medium uppercase">
                                 Name
@@ -1772,7 +1773,7 @@ export function PageIndexDocumentsModal({
                             </tr>
                           </thead>
                           <tbody
-                            className={`divide-y ${dark ? 'divide-slate-600' : 'divide-gray-200'}`}
+                            className={`divide-y ${dark ? 'divide-zinc-600' : 'divide-zinc-200'}`}
                           >
                             {selectedDriveFlatFiles.map(
                               (f) => (
@@ -1789,7 +1790,7 @@ export function PageIndexDocumentsModal({
                                         href={f.url}
                                         target="_blank"
                                         rel="noreferrer"
-                                        className="text-indigo-500 hover:underline text-xs"
+                                        className="text-zinc-500 hover:underline text-xs"
                                       >
                                         Drive
                                       </a>
@@ -1806,7 +1807,7 @@ export function PageIndexDocumentsModal({
                                         onChange={(e) =>
                                           void handleDriveToggleDisable(f, e.target.checked)
                                         }
-                                        className="rounded border-gray-300 dark:border-slate-600 text-indigo-600"
+                                        className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600"
                                       />
                                       {driveTogglingFileId === f.id ? '…' : ''}
                                     </label>
@@ -1825,8 +1826,8 @@ export function PageIndexDocumentsModal({
                                         }
                                         className={`px-2 py-1 text-xs font-medium rounded border ${
                                           dark
-                                            ? 'border-indigo-500 text-indigo-300 hover:bg-indigo-950/50'
-                                            : 'border-indigo-600 text-indigo-700 hover:bg-indigo-50'
+                                            ? 'border-zinc-500 text-zinc-300 hover:bg-zinc-950/50'
+                                            : 'border-zinc-600 text-zinc-700 hover:bg-zinc-50'
                                         } disabled:opacity-50`}
                                       >
                                         Retry
@@ -1857,7 +1858,7 @@ export function PageIndexDocumentsModal({
                         </table>
                       </div>
                       {selectedDriveFlatFiles.length === 0 && (
-                        <p className={`text-sm ${dark ? 'text-slate-500' : 'text-gray-500'}`}>
+                        <p className={`text-sm ${dark ? 'text-zinc-500' : 'text-zinc-500'}`}>
                           No files in this folder snapshot.
                         </p>
                       )}
@@ -1913,8 +1914,8 @@ export function PageIndexDocumentsModal({
                 accept=".json"
                 className={`block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium ${
                   dark
-                    ? 'text-slate-400 file:bg-green-900/40 file:text-green-300 hover:file:bg-green-800/40'
-                    : 'text-gray-600 file:bg-green-50 file:text-green-700 hover:file:bg-green-100'
+                    ? 'text-zinc-400 file:bg-green-900/40 file:text-green-300 hover:file:bg-green-800/40'
+                    : 'text-zinc-600 file:bg-green-50 file:text-green-700 hover:file:bg-green-100'
                 }`}
                 onChange={(e) => {
                   setImportFile(e.target.files?.[0] || null)
@@ -1937,26 +1938,23 @@ export function PageIndexDocumentsModal({
                 }}
                 className={`block w-full px-3 py-2 border rounded-lg text-sm ${
                   dark
-                    ? 'border-slate-600 bg-slate-800 text-slate-100 placeholder-slate-400 focus:ring-green-500'
-                    : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-green-500'
+                    ? 'border-zinc-600 bg-zinc-800 text-zinc-100 placeholder-zinc-400 focus:ring-green-500'
+                    : 'border-zinc-300 bg-white text-zinc-900 placeholder-zinc-500 focus:ring-green-500'
                 }`}
               />
-              <textarea
+              <JsonCodeEditor
                 value={importText}
-                onChange={(e) => {
-                  setImportText(e.target.value)
-                  if (e.target.value.trim()) {
+                onChange={(v) => {
+                  setImportText(v)
+                  if (v.trim()) {
                     setImportFile(null)
                     setImportUrl('')
                   }
                 }}
                 placeholder='{\n  "roots": [ ... ],\n  "nodes": [ ... ],\n  "edges": [ ... ]\n}'
-                rows={4}
-                className={`block w-full px-3 py-2 border rounded-lg text-sm font-mono resize-y ${
-                  dark
-                    ? 'border-slate-600 bg-slate-800 text-slate-100 placeholder-slate-400 focus:ring-green-500 focus:border-green-500'
-                    : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-green-500 focus:border-green-500'
-                }`}
+                dark={dark}
+                height="min(200px, 30vh)"
+                className="block w-full"
               />
               <div className="flex gap-3 items-center">
                 <label className="flex items-center gap-2 cursor-pointer">
@@ -1964,9 +1962,9 @@ export function PageIndexDocumentsModal({
                     type="checkbox"
                     checked={purgeOnImport}
                     onChange={(e) => setPurgeOnImport(e.target.checked)}
-                    className="rounded border-gray-300 dark:border-slate-600 text-green-600 focus:ring-green-500"
+                    className="rounded border-zinc-300 dark:border-zinc-600 text-green-600 focus:ring-green-500"
                   />
-                  <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                  <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                     Purge existing
                   </span>
                 </label>
@@ -1997,8 +1995,8 @@ export function PageIndexDocumentsModal({
                 disabled={chunksLoading || loading || queueLoading}
                 className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
                   dark
-                    ? 'border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700 disabled:opacity-50'
-                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50'
+                    ? 'border-zinc-600 bg-zinc-800 text-zinc-200 hover:bg-zinc-700 disabled:opacity-50'
+                    : 'border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-50'
                 }`}
               >
                 {chunksLoading || loading || queueLoading ? 'Refreshing…' : 'Refresh'}
@@ -2031,10 +2029,10 @@ export function PageIndexDocumentsModal({
                     type="button"
                     tabIndex={-1}
                     aria-label={chunksDocPickerOpen ? 'Close document list' : 'Open document list'}
-                    className={`absolute right-1 top-1/2 -translate-y-1/2 p-1.5 rounded-md ${
+                    className={`absolute right-1 top-1/2 -tranzinc-y-1/2 p-1.5 rounded-md ${
                       dark
-                        ? 'text-slate-400 hover:bg-slate-700 hover:text-slate-200'
-                        : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+                        ? 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
+                        : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800'
                     }`}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={toggleChunksDocPicker}
@@ -2052,8 +2050,8 @@ export function PageIndexDocumentsModal({
                       role="listbox"
                       className={
                         dark
-                          ? 'absolute z-50 mt-1 w-full max-h-60 overflow-auto rounded-lg border border-slate-600 bg-slate-800 shadow-lg py-1'
-                          : 'absolute z-50 mt-1 w-full max-h-60 overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg py-1'
+                          ? 'absolute z-50 mt-1 w-full max-h-60 overflow-auto rounded-lg border border-zinc-600 bg-zinc-800 shadow-lg py-1'
+                          : 'absolute z-50 mt-1 w-full max-h-60 overflow-auto rounded-lg border border-zinc-200 bg-white shadow-lg py-1'
                       }
                     >
                       <li role="presentation">
@@ -2065,16 +2063,16 @@ export function PageIndexDocumentsModal({
                           onClick={() => selectChunksDocument('')}
                           className={`w-full text-left px-3 py-2 text-sm border-b ${
                             dark
-                              ? 'border-slate-600 text-slate-200 hover:bg-slate-700'
-                              : 'border-gray-100 text-gray-900 hover:bg-gray-100'
-                          } ${chunksDocName === '' ? (dark ? 'bg-slate-700/80' : 'bg-indigo-50') : ''}`}
+                              ? 'border-zinc-600 text-zinc-200 hover:bg-zinc-700'
+                              : 'border-zinc-100 text-zinc-900 hover:bg-zinc-100'
+                          } ${chunksDocName === '' ? (dark ? 'bg-zinc-700/80' : 'bg-zinc-50') : ''}`}
                         >
                           Whole collection (all documents)
                         </button>
                       </li>
                       {chunksDocFiltered.length === 0 ? (
                         <li
-                          className={`px-3 py-2 text-sm ${dark ? 'text-slate-500' : 'text-gray-500'}`}
+                          className={`px-3 py-2 text-sm ${dark ? 'text-zinc-500' : 'text-zinc-500'}`}
                         >
                           No documents match your search.
                         </li>
@@ -2088,12 +2086,12 @@ export function PageIndexDocumentsModal({
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => selectChunksDocument(d.doc_name)}
                               className={`w-full text-left px-3 py-2 text-sm truncate ${
-                                dark ? 'text-slate-100 hover:bg-slate-700' : 'text-gray-900 hover:bg-gray-100'
+                                dark ? 'text-zinc-100 hover:bg-zinc-700' : 'text-zinc-900 hover:bg-zinc-100'
                               } ${
                                 chunksDocName === d.doc_name
                                   ? dark
-                                    ? 'bg-slate-700/80'
-                                    : 'bg-indigo-50'
+                                    ? 'bg-zinc-700/80'
+                                    : 'bg-zinc-50'
                                   : ''
                               }`}
                               title={d.doc_name}
@@ -2147,7 +2145,7 @@ export function PageIndexDocumentsModal({
               </div>
             </div>
 
-            <p className={`text-sm ${dark ? 'text-slate-400' : 'text-gray-600'}`}>
+            <p className={`text-sm ${dark ? 'text-zinc-400' : 'text-zinc-600'}`}>
               {chunksDocName ? (
                 <>
                   Total chunks for <strong>{chunksDocName}</strong> (matching filter):{' '}
@@ -2164,7 +2162,7 @@ export function PageIndexDocumentsModal({
                 </span>
               )}
               {chunksPerPage > 0 && (
-                <span className={`block sm:inline sm:ml-2 mt-1 sm:mt-0 ${dark ? 'text-slate-500' : 'text-gray-500'}`}>
+                <span className={`block sm:inline sm:ml-2 mt-1 sm:mt-0 ${dark ? 'text-zinc-500' : 'text-zinc-500'}`}>
                   Sorting applies to this page only; choose &quot;All&quot; or a larger page size to sort the full
                   filtered list.
                 </span>
@@ -2173,7 +2171,7 @@ export function PageIndexDocumentsModal({
 
             {chunksLoading ? (
               <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400" />
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-zinc-600 dark:border-zinc-400" />
               </div>
             ) : (
               <>
@@ -2183,7 +2181,7 @@ export function PageIndexDocumentsModal({
                   </p>
                 ) : null}
                 {chunks.length === 0 && mergeQueue.length === 0 ? (
-                  <p className={`text-sm py-4 ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                  <p className={`text-sm py-4 ${dark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                     No chunks match the current filter.
                   </p>
                 ) : (
@@ -2191,23 +2189,23 @@ export function PageIndexDocumentsModal({
                 {mergeQueue.length > 0 && (
                   <div
                     className={`rounded-lg border p-3 sm:p-4 space-y-3 ${
-                      dark ? 'border-indigo-500/40 bg-slate-800/80' : 'border-indigo-200 bg-indigo-50/60'
+                      dark ? 'border-zinc-500/40 bg-zinc-800/80' : 'border-zinc-200 bg-zinc-50/60'
                     }`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                       <div>
                         <h4
-                          className={`text-sm font-semibold ${dark ? 'text-indigo-200' : 'text-indigo-900'}`}
+                          className={`text-sm font-semibold ${dark ? 'text-zinc-200' : 'text-zinc-900'}`}
                         >
                           Merge queue
                         </h4>
-                        <p className={`text-xs mt-0.5 ${dark ? 'text-slate-400' : 'text-gray-600'}`}>
+                        <p className={`text-xs mt-0.5 ${dark ? 'text-zinc-400' : 'text-zinc-600'}`}>
                           First row is the kept chunk. Reorder with arrows, pick strategy, edit fields
                           if updating, choose actions, then apply.
                         </p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <label className={`text-xs ${dark ? 'text-slate-400' : 'text-gray-600'}`}>
+                        <label className={`text-xs ${dark ? 'text-zinc-400' : 'text-zinc-600'}`}>
                           Strategy
                           <select
                             value={mergeStrategy}
@@ -2231,7 +2229,7 @@ export function PageIndexDocumentsModal({
                             (!applyMergeUpdate && !applyMergeDeleteOthers) ||
                             (applyMergeUpdate && mergeDraft == null)
                           }
-                          className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="px-3 py-1.5 text-sm font-medium rounded-lg bg-zinc-600 text-white hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {mergingChunks ? 'Applying…' : 'Apply merge'}
                         </button>
@@ -2241,8 +2239,8 @@ export function PageIndexDocumentsModal({
                           disabled={mergingChunks}
                           className={`px-3 py-1.5 text-sm font-medium rounded-lg border ${
                             dark
-                              ? 'border-slate-600 text-slate-200 hover:bg-slate-700'
-                              : 'border-gray-300 text-gray-800 hover:bg-gray-100'
+                              ? 'border-zinc-600 text-zinc-200 hover:bg-zinc-700'
+                              : 'border-zinc-300 text-zinc-800 hover:bg-zinc-100'
                           } disabled:opacity-50`}
                         >
                           Clear
@@ -2251,7 +2249,7 @@ export function PageIndexDocumentsModal({
                     </div>
 
                     <div
-                      className={`space-y-2 text-xs ${dark ? 'text-slate-300' : 'text-gray-800'}`}
+                      className={`space-y-2 text-xs ${dark ? 'text-zinc-300' : 'text-zinc-800'}`}
                     >
                       <label className="flex items-start gap-2 cursor-pointer">
                         <input
@@ -2259,11 +2257,11 @@ export function PageIndexDocumentsModal({
                           checked={applyMergeUpdate}
                           onChange={(e) => setApplyMergeUpdate(e.target.checked)}
                           disabled={mergingChunks}
-                          className="mt-0.5 rounded border-gray-300 dark:border-slate-600 text-indigo-600"
+                          className="mt-0.5 rounded border-zinc-300 dark:border-zinc-600 text-zinc-600"
                         />
                         <span>
                           Update kept chunk (first in list) with the merged fields below{' '}
-                          <span className={dark ? 'text-slate-500' : 'text-gray-500'}>
+                          <span className={dark ? 'text-zinc-500' : 'text-zinc-500'}>
                             (PATCH)
                           </span>
                         </span>
@@ -2274,11 +2272,11 @@ export function PageIndexDocumentsModal({
                           checked={applyMergeDeleteOthers}
                           onChange={(e) => setApplyMergeDeleteOthers(e.target.checked)}
                           disabled={mergingChunks}
-                          className="mt-0.5 rounded border-gray-300 dark:border-slate-600 text-indigo-600"
+                          className="mt-0.5 rounded border-zinc-300 dark:border-zinc-600 text-zinc-600"
                         />
                         <span>
                           Delete other chunks in this list{' '}
-                          <span className={dark ? 'text-slate-500' : 'text-gray-500'}>
+                          <span className={dark ? 'text-zinc-500' : 'text-zinc-500'}>
                             (no subtree). Sections with children may fail or leave an inconsistent
                             tree; use row <strong>Delete</strong> with subtree for parents when needed.
                           </span>
@@ -2287,7 +2285,7 @@ export function PageIndexDocumentsModal({
                     </div>
 
                     <ol
-                      className={`list-decimal list-outside ml-5 space-y-2 text-sm ${dark ? 'text-slate-200' : 'text-gray-900'}`}
+                      className={`list-decimal list-outside ml-5 space-y-2 text-sm ${dark ? 'text-zinc-200' : 'text-zinc-900'}`}
                     >
                       {mergeQueue.map((c, index) => (
                         <li key={c.id} className="pl-1">
@@ -2295,7 +2293,7 @@ export function PageIndexDocumentsModal({
                             <span className="line-clamp-2 min-w-0 flex-1">
                               <span className="font-medium">{c.title || 'Untitled'}</span>
                               <span
-                                className={`text-xs ml-2 ${dark ? 'text-slate-500' : 'text-gray-500'}`}
+                                className={`text-xs ml-2 ${dark ? 'text-zinc-500' : 'text-zinc-500'}`}
                               >
                                 ({c.doc_name || '—'})
                               </span>
@@ -2305,7 +2303,7 @@ export function PageIndexDocumentsModal({
                                 type="button"
                                 onClick={() => moveMergeQueueItem(index, -1)}
                                 disabled={mergingChunks || index === 0}
-                                className="px-1.5 py-0.5 text-xs rounded border border-slate-500/50 dark:border-slate-600 disabled:opacity-40"
+                                className="px-1.5 py-0.5 text-xs rounded border border-zinc-500/50 dark:border-zinc-600 disabled:opacity-40"
                                 aria-label="Move up"
                               >
                                 Up
@@ -2314,7 +2312,7 @@ export function PageIndexDocumentsModal({
                                 type="button"
                                 onClick={() => moveMergeQueueItem(index, 1)}
                                 disabled={mergingChunks || index === mergeQueue.length - 1}
-                                className="px-1.5 py-0.5 text-xs rounded border border-slate-500/50 dark:border-slate-600 disabled:opacity-40"
+                                className="px-1.5 py-0.5 text-xs rounded border border-zinc-500/50 dark:border-zinc-600 disabled:opacity-40"
                                 aria-label="Move down"
                               >
                                 Down
@@ -2334,7 +2332,7 @@ export function PageIndexDocumentsModal({
                     </ol>
 
                     {mergeQueue.length === 1 ? (
-                      <p className={`text-xs ${dark ? 'text-slate-500' : 'text-gray-500'}`}>
+                      <p className={`text-xs ${dark ? 'text-zinc-500' : 'text-zinc-500'}`}>
                         Add another chunk to compute merged fields.
                       </p>
                     ) : null}
@@ -2343,13 +2341,13 @@ export function PageIndexDocumentsModal({
                       <div
                         className={`rounded-md border p-3 space-y-3 ${
                           dark
-                            ? 'border-slate-500/60 bg-slate-900/50'
-                            : 'border-gray-300 bg-white/80'
+                            ? 'border-zinc-500/60 bg-zinc-900/50'
+                            : 'border-zinc-300 bg-white/80'
                         }`}
                       >
                         <h5
                           className={`text-xs font-semibold uppercase tracking-wide ${
-                            dark ? 'text-slate-300' : 'text-gray-700'
+                            dark ? 'text-zinc-300' : 'text-zinc-700'
                           }`}
                         >
                           Merged fields (editable if updating)
@@ -2359,7 +2357,7 @@ export function PageIndexDocumentsModal({
                             Chunks must belong to the same document before you can apply.
                           </p>
                         ) : null}
-                        <p className={`text-xs ${dark ? 'text-slate-500' : 'text-gray-500'}`}>
+                        <p className={`text-xs ${dark ? 'text-zinc-500' : 'text-zinc-500'}`}>
                           Baseline refreshes when order or strategy changes. Clear fields to omit
                           summary or type when saving.
                         </p>
@@ -2386,9 +2384,9 @@ export function PageIndexDocumentsModal({
                               )
                             }
                             disabled={mergingChunks || !applyMergeUpdate}
-                            className="rounded border-gray-300 dark:border-slate-600 text-indigo-600"
+                            className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600"
                           />
-                          <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-800'}`}>
+                          <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-800'}`}>
                             Include chunk in RAG (enabled)
                           </span>
                         </label>
@@ -2404,8 +2402,8 @@ export function PageIndexDocumentsModal({
                             disabled={mergingChunks || !applyMergeUpdate}
                             className={`w-full max-w-xs mt-0.5 text-sm rounded-md border py-1.5 pl-2 pr-1 ${
                               dark
-                                ? 'border-slate-600 bg-slate-800 text-slate-100'
-                                : 'border-gray-300 bg-white text-gray-900'
+                                ? 'border-zinc-600 bg-zinc-800 text-zinc-100'
+                                : 'border-zinc-300 bg-white text-zinc-900'
                             } disabled:opacity-50`}
                             aria-label="Merged content type"
                           >
@@ -2473,18 +2471,18 @@ export function PageIndexDocumentsModal({
                 )}
 
                 {chunks.length === 0 ? (
-                  <p className={`text-sm py-2 ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                  <p className={`text-sm py-2 ${dark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                     No further rows match the filter; adjust filters or clear the merge queue.
                   </p>
                 ) : (
               <div
                 className={`border rounded-lg overflow-hidden ${
-                  dark ? 'border-slate-600' : 'border-gray-200'
+                  dark ? 'border-zinc-600' : 'border-zinc-200'
                 }`}
               >
                 <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-600">
-                    <thead className={dark ? 'bg-slate-800' : 'bg-gray-50'}>
+                  <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-600">
+                    <thead className={dark ? 'bg-zinc-800' : 'bg-zinc-50'}>
                       <tr>
                         <th className={chunkThClass('max-w-[200px]')}>
                           <button
@@ -2517,7 +2515,7 @@ export function PageIndexDocumentsModal({
                         <th className={chunkThClass('text-right')}>Actions</th>
                       </tr>
                     </thead>
-                    <tbody className={`divide-y ${dark ? 'divide-slate-700 bg-slate-900' : 'divide-gray-200 bg-white'}`}>
+                    <tbody className={`divide-y ${dark ? 'divide-zinc-700 bg-zinc-900' : 'divide-zinc-200 bg-white'}`}>
                       {tableChunks.map((c) => {
                         const busy = quickSavingChunkId === c.id
                         const ctVal = c.content_type ?? ''
@@ -2527,7 +2525,7 @@ export function PageIndexDocumentsModal({
                               <span className="line-clamp-2">{c.title || '—'}</span>
                               {!chunksDocName && c.doc_name ? (
                                 <div
-                                  className={`text-xs mt-0.5 truncate ${dark ? 'text-slate-500' : 'text-gray-500'}`}
+                                  className={`text-xs mt-0.5 truncate ${dark ? 'text-zinc-500' : 'text-zinc-500'}`}
                                   title={c.doc_name}
                                 >
                                   {c.doc_name}
@@ -2546,8 +2544,8 @@ export function PageIndexDocumentsModal({
                                 disabled={busy}
                                 className={`w-full max-w-[180px] text-xs rounded-md border py-1 pl-2 pr-1 ${
                                   dark
-                                    ? 'border-slate-600 bg-slate-800 text-slate-100'
-                                    : 'border-gray-300 bg-white text-gray-900'
+                                    ? 'border-zinc-600 bg-zinc-800 text-zinc-100'
+                                    : 'border-zinc-300 bg-white text-zinc-900'
                                 } disabled:opacity-50`}
                               >
                                 {CHUNK_CONTENT_TYPE_OPTIONS.map((o) => (
@@ -2570,7 +2568,7 @@ export function PageIndexDocumentsModal({
                                   onChange={(e) =>
                                     handleChunkQuickPatch(c, { enabled: e.target.checked })
                                   }
-                                  className="rounded border-gray-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
+                                  className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600 focus:ring-zinc-500 disabled:opacity-50"
                                 />
                                 <span
                                   className={`text-xs font-medium ${
@@ -2588,7 +2586,7 @@ export function PageIndexDocumentsModal({
                               </label>
                             </td>
                             <td className="px-3 py-2 text-sm max-w-md hidden md:table-cell">
-                              <span className={`line-clamp-3 ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                              <span className={`line-clamp-3 ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                                 {truncate(c.text || c.summary || '', 240)}
                               </span>
                             </td>
@@ -2610,7 +2608,7 @@ export function PageIndexDocumentsModal({
                                 <button
                                   type="button"
                                   onClick={() => openEditChunk(c)}
-                                  className="text-indigo-600 dark:text-indigo-400 hover:underline text-sm font-medium whitespace-nowrap"
+                                  className="text-zinc-600 dark:text-zinc-400 hover:underline text-sm font-medium whitespace-nowrap"
                                 >
                                   Edit
                                 </button>
@@ -2643,18 +2641,18 @@ export function PageIndexDocumentsModal({
                   type="button"
                   disabled={chunksPage <= 1 || chunksLoading}
                   onClick={() => setChunksPage((p) => Math.max(1, p - 1))}
-                  className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-slate-600 disabled:opacity-50"
+                  className="px-3 py-1.5 text-sm rounded-lg border border-zinc-300 dark:border-zinc-600 disabled:opacity-50"
                 >
                   Previous
                 </button>
-                <span className={`text-sm ${dark ? 'text-slate-400' : 'text-gray-600'}`}>
+                <span className={`text-sm ${dark ? 'text-zinc-400' : 'text-zinc-600'}`}>
                   Page {chunksPage} of {totalChunkPages}
                 </span>
                 <button
                   type="button"
                   disabled={chunksPage >= totalChunkPages || chunksLoading}
                   onClick={() => setChunksPage((p) => p + 1)}
-                  className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-slate-600 disabled:opacity-50"
+                  className="px-3 py-1.5 text-sm rounded-lg border border-zinc-300 dark:border-zinc-600 disabled:opacity-50"
                 >
                   Next
                 </button>
@@ -2672,15 +2670,15 @@ export function PageIndexDocumentsModal({
                 disabled={loading || queueLoading}
                 className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
                   dark
-                    ? 'border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700 disabled:opacity-50'
-                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50'
+                    ? 'border-zinc-600 bg-zinc-800 text-zinc-200 hover:bg-zinc-700 disabled:opacity-50'
+                    : 'border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-50'
                 }`}
               >
                 {loading || queueLoading ? 'Refreshing…' : 'Refresh'}
               </button>
             </div>
             <div className="space-y-3">
-              <h3 className={`text-sm font-medium ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+              <h3 className={`text-sm font-medium ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                 Upload document
               </h3>
               <div className="flex flex-col sm:flex-row gap-3">
@@ -2691,8 +2689,8 @@ export function PageIndexDocumentsModal({
                     accept=".png,.jpg,.jpeg,.gif,.pdf,.md,.markdown,.txt,.docx,.doc,.xls,.xlsx,.ppt,.pptx"
                     className={`block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium ${
                       dark
-                        ? 'text-slate-400 file:bg-indigo-900/40 file:text-indigo-300 hover:file:bg-indigo-800/40'
-                        : 'text-gray-600 file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100'
+                        ? 'text-zinc-400 file:bg-zinc-900/40 file:text-zinc-300 hover:file:bg-zinc-800/40'
+                        : 'text-zinc-600 file:bg-zinc-50 file:text-zinc-700 hover:file:bg-zinc-100'
                     }`}
                     onChange={(e) => {
                       const file = e.target.files?.[0] || null
@@ -2706,7 +2704,7 @@ export function PageIndexDocumentsModal({
                     }}
                   />
                   {selectedFile && (
-                    <p className={`mt-1 text-xs ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                    <p className={`mt-1 text-xs ${dark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                       {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
                     </p>
                   )}
@@ -2718,13 +2716,13 @@ export function PageIndexDocumentsModal({
                   onChange={(e) => setDocName(e.target.value)}
                   className={`flex-1 min-w-0 px-3 py-2 border rounded-lg text-sm ${
                     dark
-                      ? 'border-slate-600 bg-slate-800 text-slate-100 placeholder-slate-400 focus:ring-indigo-500'
-                      : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-indigo-500'
+                      ? 'border-zinc-600 bg-zinc-800 text-zinc-100 placeholder-zinc-400 focus:ring-zinc-500'
+                      : 'border-zinc-300 bg-white text-zinc-900 placeholder-zinc-500 focus:ring-zinc-500'
                   }`}
                 />
               </div>
               <div className="w-full">
-                <label className={`block text-xs mb-1 ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                <label className={`block text-xs mb-1 ${dark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                   Or paste a document URL (server downloads and ingests)
                 </label>
                 <input
@@ -2740,8 +2738,8 @@ export function PageIndexDocumentsModal({
                   }}
                   className={`block w-full px-3 py-2 border rounded-lg text-sm ${
                     dark
-                      ? 'border-slate-600 bg-slate-800 text-slate-100 placeholder-slate-400 focus:ring-indigo-500'
-                      : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-indigo-500'
+                      ? 'border-zinc-600 bg-zinc-800 text-zinc-100 placeholder-zinc-400 focus:ring-zinc-500'
+                      : 'border-zinc-300 bg-white text-zinc-900 placeholder-zinc-500 focus:ring-zinc-500'
                   }`}
                 />
               </div>
@@ -2753,8 +2751,8 @@ export function PageIndexDocumentsModal({
                   rows={2}
                   className={`block w-full px-3 py-2 border rounded-lg text-sm resize-y min-h-[60px] ${
                     dark
-                      ? 'border-slate-600 bg-slate-800 text-slate-100 placeholder-slate-400 focus:ring-indigo-500'
-                      : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-indigo-500'
+                      ? 'border-zinc-600 bg-zinc-800 text-zinc-100 placeholder-zinc-400 focus:ring-zinc-500'
+                      : 'border-zinc-300 bg-white text-zinc-900 placeholder-zinc-500 focus:ring-zinc-500'
                   }`}
                 />
               </div>
@@ -2766,8 +2764,8 @@ export function PageIndexDocumentsModal({
                   onChange={(e) => setDocUrl(e.target.value)}
                   className={`block w-full px-3 py-2 border rounded-lg text-sm ${
                     dark
-                      ? 'border-slate-600 bg-slate-800 text-slate-100 placeholder-slate-400 focus:ring-indigo-500'
-                      : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-indigo-500'
+                      ? 'border-zinc-600 bg-zinc-800 text-zinc-100 placeholder-zinc-400 focus:ring-zinc-500'
+                      : 'border-zinc-300 bg-white text-zinc-900 placeholder-zinc-500 focus:ring-zinc-500'
                   }`}
                 />
               </div>
@@ -2776,9 +2774,9 @@ export function PageIndexDocumentsModal({
                   type="checkbox"
                   checked={addNodeSummary}
                   onChange={(e) => setAddNodeSummary(e.target.checked)}
-                  className="rounded border-gray-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500"
+                  className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600 focus:ring-zinc-500"
                 />
-                <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                   Generate node summaries (recommended for tree search)
                 </span>
               </label>
@@ -2787,14 +2785,14 @@ export function PageIndexDocumentsModal({
                   type="checkbox"
                   checked={convertToMarkdown}
                   onChange={(e) => setConvertToMarkdown(e.target.checked)}
-                  className="rounded border-gray-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500"
+                  className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600 focus:ring-zinc-500"
                 />
-                <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                   Convert PDF with Docling to Markdown first (requires server jvagent[pageindex])
                 </span>
               </label>
               <div className="flex items-center gap-2">
-                <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                   Docling OCR
                 </span>
                 <select
@@ -2805,8 +2803,8 @@ export function PageIndexDocumentsModal({
                   disabled={!convertToMarkdown}
                   className={`rounded-md text-sm py-1.5 px-2 border disabled:opacity-50 ${
                     dark
-                      ? 'border-slate-600 bg-slate-800 text-slate-100'
-                      : 'border-gray-300 bg-white text-gray-900'
+                      ? 'border-zinc-600 bg-zinc-800 text-zinc-100'
+                      : 'border-zinc-300 bg-white text-zinc-900'
                   }`}
                 >
                   <option value="none">None</option>
@@ -2818,23 +2816,21 @@ export function PageIndexDocumentsModal({
                   type="checkbox"
                   checked={normalizeBoldHeadings}
                   onChange={(e) => setNormalizeBoldHeadings(e.target.checked)}
-                  className="rounded border-gray-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500"
+                  className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600 focus:ring-zinc-500"
                 />
-                <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                   Normalize bold lines to headings (sparse Markdown with fewer than five ##)
                 </span>
               </label>
               <div className="w-full">
-                <input
-                  type="text"
-                  placeholder='Metadata (optional JSON, e.g. {"doc_name":"","doc_url":"","access":"public"})'
+                <JsonCodeEditor
                   value={metadataJson}
-                  onChange={(e) => setMetadataJson(e.target.value)}
-                  className={`block w-full px-3 py-2 border rounded-lg text-sm ${
-                    dark
-                      ? 'border-slate-600 bg-slate-800 text-slate-100 placeholder-slate-400 focus:ring-indigo-500'
-                      : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500 focus:ring-indigo-500'
-                  }`}
+                  onChange={setMetadataJson}
+                  placeholder='{"doc_name":"","doc_url":"","access":"public"}'
+                  dark={dark}
+                  height="88px"
+                  basicSetup={false}
+                  className="block w-full"
                 />
                 {metadataJson.trim() && !parseMetadata() && (
                   <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
@@ -2846,7 +2842,7 @@ export function PageIndexDocumentsModal({
                 <button
                   onClick={handleUpload}
                   disabled={(!selectedFile && !ingestFileUrl.trim()) || uploading}
-                  className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+                  className="px-4 py-2 bg-zinc-600 text-white text-sm font-medium rounded-lg hover:bg-zinc-700 dark:bg-zinc-500 dark:hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
                 >
                   {uploading ? 'Uploading...' : 'Upload'}
                 </button>
@@ -2861,9 +2857,9 @@ export function PageIndexDocumentsModal({
                   type="checkbox"
                   checked={emergencyMode}
                   onChange={(e) => setEmergencyMode(e.target.checked)}
-                  className="rounded border-gray-300 dark:border-slate-600 text-red-600 focus:ring-red-500"
+                  className="rounded border-zinc-300 dark:border-zinc-600 text-red-600 focus:ring-red-500"
                 />
-                <span className={`text-sm font-medium ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                <span className={`text-sm font-medium ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                   ⚡ Emergency (priority processing - moves to front of queue)
                 </span>
               </label>
@@ -2871,51 +2867,51 @@ export function PageIndexDocumentsModal({
 
             {/* Processing Queue — use Refresh above (queue + indexed documents) */}
             <div className="space-y-3">
-              <h3 className={`text-sm font-medium ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+              <h3 className={`text-sm font-medium ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                 📋 Processing Queue
               </h3>
               {queueLoading && queueJobs.length === 0 && (
-                <p className={`text-sm ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                <p className={`text-sm ${dark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                   Loading queue…
                 </p>
               )}
               {!queueLoading && queueJobs.length === 0 && (
-                <p className={`text-sm ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                <p className={`text-sm ${dark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                   No jobs in the processing queue.
                 </p>
               )}
               {queueJobs.length > 0 && (
-                <div className={`border rounded-lg overflow-hidden ${dark ? 'border-slate-600' : 'border-gray-200'}`}>
+                <div className={`border rounded-lg overflow-hidden ${dark ? 'border-zinc-600' : 'border-zinc-200'}`}>
                   <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-600">
-                      <thead className={dark ? 'bg-slate-800' : 'bg-gray-50'}>
+                    <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-600">
+                      <thead className={dark ? 'bg-zinc-800' : 'bg-zinc-50'}>
                         <tr>
-                          <th className={`px-4 py-2 text-left text-xs font-medium uppercase ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                          <th className={`px-4 py-2 text-left text-xs font-medium uppercase ${dark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                             Document
                           </th>
-                          <th className={`px-4 py-2 text-left text-xs font-medium uppercase ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                          <th className={`px-4 py-2 text-left text-xs font-medium uppercase ${dark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                             Status
                           </th>
-                          <th className={`px-4 py-2 text-left text-xs font-medium uppercase ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                          <th className={`px-4 py-2 text-left text-xs font-medium uppercase ${dark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                             Position
                           </th>
-                          <th className={`px-4 py-2 text-left text-xs font-medium uppercase ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                          <th className={`px-4 py-2 text-left text-xs font-medium uppercase ${dark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                             Queued At
                           </th>
-                          <th className={`px-4 py-2 text-right text-xs font-medium uppercase ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                          <th className={`px-4 py-2 text-right text-xs font-medium uppercase ${dark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                             Actions
                           </th>
                         </tr>
                       </thead>
-                      <tbody className={`divide-y ${dark ? 'divide-slate-700 bg-slate-900' : 'divide-gray-200 bg-white'}`}>
+                      <tbody className={`divide-y ${dark ? 'divide-zinc-700 bg-zinc-900' : 'divide-zinc-200 bg-white'}`}>
                         {queueJobs.map((job) => (
                           <tr key={job.job_id}>
-                            <td className={`px-4 py-3 text-sm ${dark ? 'text-slate-100' : 'text-gray-900'}`}>
+                            <td className={`px-4 py-3 text-sm ${dark ? 'text-zinc-100' : 'text-zinc-900'}`}>
                               {job.doc_name}
                             </td>
                             <td className="px-4 py-3 text-sm">
                               {job.status === 'processing' ? (
-                                <span className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400">
+                                <span className="inline-flex items-center gap-1 text-zinc-600 dark:text-zinc-400">
                                   <span className="animate-spin h-3 w-3 border-b-2 border-current rounded-full" />
                                   Processing...
                                 </span>
@@ -2929,7 +2925,7 @@ export function PageIndexDocumentsModal({
                                 <span className="text-red-600 dark:text-red-400">Failed</span>
                               )}
                             </td>
-                            <td className={`px-4 py-3 text-sm ${dark ? 'text-slate-300' : 'text-gray-600'}`}>
+                            <td className={`px-4 py-3 text-sm ${dark ? 'text-zinc-300' : 'text-zinc-600'}`}>
                               {job.queue_position ? (
                                 <div>
                                   <div># {job.queue_position.overall} overall</div>
@@ -2939,7 +2935,7 @@ export function PageIndexDocumentsModal({
                                 '—'
                               )}
                             </td>
-                            <td className={`px-4 py-3 text-sm ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                            <td className={`px-4 py-3 text-sm ${dark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                               {new Date(job.enqueued_at).toLocaleString()}
                             </td>
                             <td className="px-4 py-3 text-right space-x-2">
@@ -2983,67 +2979,67 @@ export function PageIndexDocumentsModal({
             </div>
 
             <div className="space-y-3">
-              <h3 className={`text-sm font-medium ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+              <h3 className={`text-sm font-medium ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                 Indexed documents ({documents.length})
               </h3>
               {loading ? (
                 <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 dark:border-indigo-400" />
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-zinc-600 dark:border-zinc-400" />
                 </div>
               ) : error ? (
                 <p className="text-sm text-red-600 dark:text-red-400 py-4">{error}</p>
               ) : documents.length === 0 ? (
-                <p className={`text-sm py-4 ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+                <p className={`text-sm py-4 ${dark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                   No documents indexed yet.
                 </p>
               ) : (
                 <div
                   className={`border rounded-lg overflow-hidden ${
-                    dark ? 'border-slate-600' : 'border-gray-200'
+                    dark ? 'border-zinc-600' : 'border-zinc-200'
                   }`}
                 >
                   <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-600">
-                      <thead className={dark ? 'bg-slate-800' : 'bg-gray-50'}>
+                    <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-600">
+                      <thead className={dark ? 'bg-zinc-800' : 'bg-zinc-50'}>
                         <tr>
                           <th
                             className={`px-4 py-2 text-left text-xs font-medium uppercase ${
-                              dark ? 'text-slate-400' : 'text-gray-500'
+                              dark ? 'text-zinc-400' : 'text-zinc-500'
                             }`}
                           >
                             Name
                           </th>
                           <th
                             className={`px-4 py-2 text-left text-xs font-medium uppercase hidden sm:table-cell ${
-                              dark ? 'text-slate-400' : 'text-gray-500'
+                              dark ? 'text-zinc-400' : 'text-zinc-500'
                             }`}
                           >
                             Chunks
                           </th>
                           <th
                             className={`px-4 py-2 text-left text-xs font-medium uppercase hidden sm:table-cell ${
-                              dark ? 'text-slate-400' : 'text-gray-500'
+                              dark ? 'text-zinc-400' : 'text-zinc-500'
                             }`}
                           >
                             Description
                           </th>
                           <th
                             className={`px-4 py-2 text-left text-xs font-medium uppercase hidden md:table-cell ${
-                              dark ? 'text-slate-400' : 'text-gray-500'
+                              dark ? 'text-zinc-400' : 'text-zinc-500'
                             }`}
                           >
                             Source URL
                           </th>
                           <th
                             className={`px-4 py-2 text-left text-xs font-medium uppercase hidden lg:table-cell ${
-                              dark ? 'text-slate-400' : 'text-gray-500'
+                              dark ? 'text-zinc-400' : 'text-zinc-500'
                             }`}
                           >
                             Metadata
                           </th>
                           <th
                             className={`px-4 py-2 text-right text-xs font-medium uppercase ${
-                              dark ? 'text-slate-400' : 'text-gray-500'
+                              dark ? 'text-zinc-400' : 'text-zinc-500'
                             }`}
                           >
                             Actions
@@ -3051,23 +3047,23 @@ export function PageIndexDocumentsModal({
                         </tr>
                       </thead>
                       <tbody
-                        className={`divide-y ${dark ? 'divide-slate-700 bg-slate-900' : 'divide-gray-200 bg-white'}`}
+                        className={`divide-y ${dark ? 'divide-zinc-700 bg-zinc-900' : 'divide-zinc-200 bg-white'}`}
                       >
                         {documents.map((doc) => (
                           <tr key={doc.doc_name}>
-                            <td className={`px-4 py-3 text-sm ${dark ? 'text-slate-100' : 'text-gray-900'}`}>
+                            <td className={`px-4 py-3 text-sm ${dark ? 'text-zinc-100' : 'text-zinc-900'}`}>
                               {doc.doc_name}
                             </td>
                             <td
                               className={`px-4 py-3 text-sm hidden sm:table-cell tabular-nums ${
-                                dark ? 'text-slate-300' : 'text-gray-600'
+                                dark ? 'text-zinc-300' : 'text-zinc-600'
                               }`}
                             >
                               {doc.chunks !== undefined && doc.chunks !== null ? doc.chunks : '—'}
                             </td>
                             <td
                               className={`px-4 py-3 text-sm hidden sm:table-cell max-w-[200px] truncate ${
-                                dark ? 'text-slate-300' : 'text-gray-600'
+                                dark ? 'text-zinc-300' : 'text-zinc-600'
                               }`}
                             >
                               {doc.doc_description || '—'}
@@ -3078,18 +3074,18 @@ export function PageIndexDocumentsModal({
                                   href={doc.doc_url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="text-indigo-600 dark:text-indigo-400 hover:underline truncate block max-w-[180px]"
+                                  className="text-zinc-600 dark:text-zinc-400 hover:underline truncate block max-w-[180px]"
                                   title={doc.doc_url}
                                 >
                                   {doc.doc_url}
                                 </a>
                               ) : (
-                                <span className={dark ? 'text-slate-400' : 'text-gray-500'}>—</span>
+                                <span className={dark ? 'text-zinc-400' : 'text-zinc-500'}>—</span>
                               )}
                             </td>
                             <td
                               className={`px-4 py-3 text-sm hidden lg:table-cell max-w-[150px] truncate ${
-                                dark ? 'text-slate-400' : 'text-gray-500'
+                                dark ? 'text-zinc-400' : 'text-zinc-500'
                               }`}
                               title={doc.metadata ? JSON.stringify(doc.metadata) : undefined}
                             >
@@ -3123,16 +3119,16 @@ export function PageIndexDocumentsModal({
         >
           <div
             className={`w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-lg shadow-xl border p-4 sm:p-6 ${
-              dark ? 'bg-slate-900 border-slate-600' : 'bg-white border-gray-200'
+              dark ? 'bg-zinc-900 border-zinc-600' : 'bg-white border-zinc-200'
             }`}
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className={`text-lg font-semibold mb-3 ${dark ? 'text-slate-100' : 'text-gray-900'}`}>
+            <h3 className={`text-lg font-semibold mb-3 ${dark ? 'text-zinc-100' : 'text-zinc-900'}`}>
               Edit chunk
             </h3>
-            <div className={`space-y-2 mb-4 text-xs ${dark ? 'text-slate-400' : 'text-gray-600'}`}>
+            <div className={`space-y-2 mb-4 text-xs ${dark ? 'text-zinc-400' : 'text-zinc-600'}`}>
               <div>
-                <span className="font-medium text-slate-500 dark:text-slate-500">Graph node id</span>
+                <span className="font-medium text-zinc-500 dark:text-zinc-500">Graph node id</span>
                 <p className="font-mono break-all mt-0.5">{editingChunk.id}</p>
               </div>
               <div>
@@ -3165,9 +3161,9 @@ export function PageIndexDocumentsModal({
                   type="checkbox"
                   checked={editEnabled}
                   onChange={(e) => setEditEnabled(e.target.checked)}
-                  className="rounded border-gray-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500"
+                  className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600 focus:ring-zinc-500"
                 />
-                <span className={`text-sm ${dark ? 'text-slate-300' : 'text-gray-700'}`}>
+                <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                   Include chunk in RAG (enabled)
                 </span>
               </label>
@@ -3234,16 +3230,12 @@ export function PageIndexDocumentsModal({
                   If you change this metadata, you update the document root node; it applies to all chunks in
                   this document.
                 </p>
-                <textarea
+                <JsonCodeEditor
                   value={editRootMetadataJson}
-                  onChange={(e) => setEditRootMetadataJson(e.target.value)}
-                  rows={6}
-                  spellCheck={false}
-                  className={`w-full pl-8 pr-3 py-2 border rounded-lg text-xs font-mono leading-relaxed resize-y whitespace-pre ${
-                    dark
-                      ? 'border-slate-600 bg-slate-950 text-slate-100'
-                      : 'border-gray-300 bg-gray-50 text-gray-900'
-                  } focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500`}
+                  onChange={setEditRootMetadataJson}
+                  dark={dark}
+                  height="min(220px, 35vh)"
+                  className="w-full"
                 />
               </div>
             </div>
@@ -3255,7 +3247,7 @@ export function PageIndexDocumentsModal({
                 type="button"
                 onClick={closeEditChunk}
                 className={`px-4 py-2 text-sm rounded-lg border ${
-                  dark ? 'border-slate-600 text-slate-200 hover:bg-slate-800' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                  dark ? 'border-zinc-600 text-zinc-200 hover:bg-zinc-800' : 'border-zinc-300 text-zinc-700 hover:bg-zinc-50'
                 }`}
               >
                 Cancel
@@ -3264,7 +3256,7 @@ export function PageIndexDocumentsModal({
                 type="button"
                 onClick={handleSaveChunk}
                 disabled={savingChunk}
-                className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                className="px-4 py-2 bg-zinc-600 text-white text-sm font-medium rounded-lg hover:bg-zinc-700 disabled:opacity-50"
               >
                 {savingChunk ? 'Saving…' : 'Save'}
               </button>

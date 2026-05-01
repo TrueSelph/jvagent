@@ -30,6 +30,8 @@ export interface Message {
   iteration?: number
   /** Stable insertion order for deterministic grouping/rendering. */
   order?: number
+  /** When this user message continues an edited branch, matches the root user message id. */
+  branchRootId?: string
 }
 
 export interface StreamingMessage {

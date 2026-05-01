@@ -56,6 +56,8 @@ tags:
 | `tags` | optional | `list[str]` or `str` | no | Used for `scope_hint` generation and discovery cues. |
 | `plan-steps` | optional | `list[str]` or `str` | yes | Suggested canonical task-tracker steps surfaced after `read_skill` to reduce planning overhead. |
 | `requires-actions` | optional | `list[str]` or `str` | yes | Action types that must resolve before skill activation. |
+| `requires-jvagent` | optional | `str` | yes | Framework version constraint (same operators as semver-like deps, e.g. `>=0.0.1`). Checked at preflight. |
+| `requires-action-versions` | optional | `dict` | yes | Maps `namespace/label` package refs to version constraints (uses each action package ``metadata.version`` from ``info.yaml``). |
 | `allowed-tools` | optional | `list[str]` or `str` | yes | Tool whitelist by tool name. |
 | `response-mode` | optional | `str` | yes | `respond` or `publish`; if omitted, inherits action default. |
 

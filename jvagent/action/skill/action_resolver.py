@@ -13,6 +13,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+from jvagent.action.skill.version_utils import version_satisfies
+
 logger = logging.getLogger(__name__)
 
 
@@ -84,4 +86,50 @@ class ActionResolver:
                 await self.require(entity_type)
             except ValueError as exc:
                 errors.append(str(exc))
+        return errors
+
+    async def validate_action_ref_versions(
+        self, ref_constraints: Dict[str, str]
+    ) -> List[str]:
+        """Validate ``namespace/label`` package refs against installed action package versions.
+
+        Compares each registered action's ``metadata.version`` (from info.yaml) to the
+        constraint (same syntax as :func:`~jvagent.action.skill.version_utils.version_satisfies`).
+        """
+        from jvagent.action.base import Action
+
+        errors: List[str] = []
+        agent_id = getattr(self._agent, "id", None)
+        if not agent_id:
+            return ["No agent id for action version validation"]
+
+        for ref, constraint in ref_constraints.items():
+            ref_key = str(ref).strip()
+            cons = str(constraint).strip()
+            if not ref_key or not cons:
+                continue
+            if "/" not in ref_key:
+                errors.append(
+                    f"Invalid action ref '{ref_key}' (expected namespace/label)"
+                )
+                continue
+            ns, lbl = ref_key.split("/", 1)
+            action = await Action.find_one(
+                {
+                    "context.agent_id": agent_id,
+                    "context.namespace": ns,
+                    "context.label": lbl,
+                }
+            )
+            if not action:
+                errors.append(
+                    f"Action '{ref_key}' is not registered — cannot verify {cons}"
+                )
+                continue
+            meta = action.metadata or {}
+            ver = str(meta.get("version", "0.0.0")).strip() or "0.0.0"
+            if not version_satisfies(ver, cons):
+                errors.append(
+                    f"Action '{ref_key}' version {ver} does not satisfy {cons}"
+                )
         return errors

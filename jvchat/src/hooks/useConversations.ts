@@ -4,7 +4,8 @@ import {
   addConversation,
   updateConversation,
   removeConversation,
-  getUserId,
+  syncUserIdFromAccessToken,
+  getEffectiveUserId,
 } from '../utils/storage'
 import type { Conversation } from '../types/conversation'
 
@@ -14,7 +15,8 @@ export function useConversations(agentId?: string) {
 
   // Function to refresh conversations from storage
   const refreshConversations = useCallback(() => {
-    const userId = getUserId()
+    syncUserIdFromAccessToken()
+    const userId = getEffectiveUserId()
 
     if (!userId) {
       console.warn('No user_id available - cannot load conversations')
@@ -86,7 +88,7 @@ export function useConversations(agentId?: string) {
   }, [agentId, refreshConversations])
 
   const add = useCallback((conversation: Conversation) => {
-    const userId = getUserId()
+    const userId = getEffectiveUserId()
 
     if (!userId) {
       console.error('Cannot add conversation: no user_id available')
@@ -140,7 +142,7 @@ export function useConversations(agentId?: string) {
 
   const update = useCallback(
     (sessionId: string, updates: Partial<Conversation>) => {
-      const userId = getUserId()
+      const userId = getEffectiveUserId()
 
       if (!userId) {
         console.error('Cannot update conversation: no user_id available')
@@ -180,7 +182,7 @@ export function useConversations(agentId?: string) {
   )
 
   const remove = useCallback((sessionId: string) => {
-    const userId = getUserId()
+    const userId = getEffectiveUserId()
 
     if (!userId) {
       console.error('Cannot remove conversation: no user_id available')

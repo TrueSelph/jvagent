@@ -5,7 +5,15 @@ import {
   getConfigAsync,
   getJvforgeUrl,
 } from './config'
-import { getToken, removeToken, getUserId, getRefreshToken, setToken as setStorageToken, setRefreshToken, removeRefreshToken, isTokenExpired } from '../utils/storage'
+import {
+  getToken,
+  getEffectiveUserId,
+  getRefreshToken,
+  setToken as setStorageToken,
+  setRefreshToken,
+  isTokenExpired,
+  clearAuthSession,
+} from '../utils/storage'
 import type {
   LoginRequest,
   LoginResponse,
@@ -40,6 +48,8 @@ class ApiClient {
   private jvforgeBaseUrls: string[]
   private resolvedLoginPath?: string
   private isRefreshing = false
+  /** Avoid multiple full-page redirects when several requests fail at once */
+  private authFailureRedirectScheduled = false
   private failedQueue: Array<{
     resolve: (value?: unknown) => void
     reject: (error?: unknown) => void
@@ -135,34 +145,64 @@ class ApiClient {
     this.client.interceptors.response.use(
       (response) => response,
       async (error: AxiosError) => {
-        const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
+        const originalRequest = error.config as
+          | (InternalAxiosRequestConfig & { _retry?: boolean })
+          | undefined
+        const status = error.response?.status
+        const reqUrl = originalRequest?.url ?? String((error as AxiosError).config?.url ?? '')
 
-        // Handle 401 errors with token refresh (fallback if proactive check missed it)
-        if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
-          originalRequest._retry = true
+        const isAuthEndpoint = this._isNoSessionRecoveryPath(reqUrl)
+        const isHttpUnauthorized = status === 401 || status === 403
+        // Browsers hide 401 bodies when error responses omit CORS headers → axios reports no `response`.
+        const isLikelyCorsMaskedUnauthorized =
+          !isAuthEndpoint &&
+          !error.response &&
+          !!originalRequest &&
+          !!getToken() &&
+          this._requestHadBearerAuth(originalRequest) &&
+          this._axiosLooksLikeOpaqueNetworkFailure(error)
 
-          try {
-            console.log('Received 401, entering retry refresh flow...')
-            const token = await this._refreshAuth()
-            if (token) {
-              originalRequest.headers.set('Authorization', `Bearer ${token}`)
+        // 401/403 (or opaque CORS-masked equiv.) on application APIs: refresh once, then logout.
+        if (!isAuthEndpoint && (isHttpUnauthorized || isLikelyCorsMaskedUnauthorized)) {
+          if (!originalRequest) {
+            if (isHttpUnauthorized) {
+              console.warn(`${status} with missing request config; redirecting to login`)
+              this.redirectToLoginAfterAuthFailure()
             }
-            console.log('Retry refresh successful, retrying original request')
-            return this.client(originalRequest)
-          } catch (refreshErr) {
-            return Promise.reject(refreshErr)
+            return Promise.reject(error)
           }
-        }
 
-        // Check for "Network Error" which might be a CORS-blocked 401
-        // If we have a token and it's a network error, it's highly suspicious
-        if (!error.response && getToken()) {
-          console.warn('Network Error detected with an existing token. This might be a CORS-blocked 401.', {
-            url: error.config?.url,
-            baseURL: error.config?.baseURL
-          })
-          // We don't automatically retry here to avoid loops,
-          // but the proactive check in the request interceptor should prevent this mostly.
+          if (isLikelyCorsMaskedUnauthorized) {
+            console.warn(
+              'Opaque network failure on authenticated request (often CORS-blocked 401 from validate_token); attempting refresh once then logout',
+              { url: error.config?.url, baseURL: error.config?.baseURL },
+            )
+          }
+
+          if (!originalRequest._retry) {
+            originalRequest._retry = true
+
+            try {
+              console.log(`Received ${isHttpUnauthorized ? status : 'opaque-auth failure'}, entering retry refresh flow...`)
+              const token = await this._refreshAuth()
+              if (token) {
+                originalRequest.headers.set('Authorization', `Bearer ${token}`)
+              }
+              console.log('Retry refresh successful, retrying original request')
+              return this.client(originalRequest)
+            } catch (refreshErr) {
+              // _refreshAuth already calls redirectToLoginAfterAuthFailure() before throwing.
+              // Belt-and-suspenders: ensure logout even if that path is somehow bypassed.
+              this.redirectToLoginAfterAuthFailure()
+              return Promise.reject(refreshErr)
+            }
+          }
+
+          console.warn(
+            `${isHttpUnauthorized ? `${status}` : 'Opaque auth'} after token refresh (or unrecoverable auth); redirecting to login`,
+          )
+          this.redirectToLoginAfterAuthFailure()
+          return Promise.reject(error)
         }
 
         console.error('API Error:', {
@@ -188,6 +228,26 @@ class ApiClient {
     )
   }
 
+  /** Full-page redirect: clear session and open login. Safe to call from hooks on any auth failure. */
+  invalidateSessionAndRedirectToLogin(): void {
+    this.redirectToLoginAfterAuthFailure()
+  }
+
+  /** True once a logout redirect has been triggered; hooks can check this to suppress stale error UI. */
+  get authFailureScheduled(): boolean {
+    return this.authFailureRedirectScheduled
+  }
+
+  /** Clear local session and send user to login (full navigation so routes reset). */
+  private redirectToLoginAfterAuthFailure(): void {
+    if (typeof window === 'undefined') return
+    if (this.authFailureRedirectScheduled) return
+    if (window.location.pathname === '/login') return
+    this.authFailureRedirectScheduled = true
+    clearAuthSession()
+    window.location.replace('/login')
+  }
+
   /**
    * Internal flow to refresh auth tokens either via refresh token or auto-login.
    * Consolidates logic to avoid duplication in interceptors.
@@ -210,11 +270,7 @@ class ApiClient {
       this.failedQueue.forEach(({ reject }) => reject(error))
       this.failedQueue = []
       this.isRefreshing = false
-      removeToken()
-      removeRefreshToken()
-      if (window.location.pathname !== '/login') {
-        window.location.replace('/login')
-      }
+      this.redirectToLoginAfterAuthFailure()
       throw error
     }
 
@@ -301,6 +357,76 @@ class ApiClient {
     return null
   }
 
+  /** True when the outgoing request carried a Bearer access token (set by our request interceptor). */
+  private _requestHadBearerAuth(config?: InternalAxiosRequestConfig): boolean {
+    if (!config?.headers) return false
+    try {
+      const h = config.headers
+      const v =
+        typeof (h as { get?: (k: string) => unknown }).get === 'function'
+          ? (h as { get: (k: string) => unknown }).get('Authorization')
+          : (h as { Authorization?: unknown }).Authorization
+      return typeof v === 'string' && v.startsWith('Bearer ')
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Axios often surfaces “no response” as ERR_NETWORK / "Network Error" when the browser blocks
+   * reading a 403/401 due to missing CORS on the error payload.
+   */
+  private _axiosLooksLikeOpaqueNetworkFailure(error: AxiosError): boolean {
+    const code = (error as AxiosError & { code?: string }).code
+    if (code === 'ERR_NETWORK') return true
+    const m = error.message ?? ''
+    return /network error/i.test(m)
+  }
+
+  /** Paths where 401 is expected (wrong password, invalid refresh) — must not trigger refresh or block host fallback. */
+  private _isNoSessionRecoveryPath(url: string): boolean {
+    return [
+      '/auth/login',
+      '/api/auth/login',
+      '/auth/refresh',
+      '/api/auth/refresh',
+      '/auth/revoke-all',
+      '/api/auth/revoke-all',
+    ].some((p) => url.includes(p))
+  }
+
+  private _requestUrlFromAxiosError(error: unknown): string {
+    const cfg = (error as AxiosError)?.config
+    const base = cfg?.baseURL != null ? String(cfg.baseURL) : ''
+    const path = cfg?.url != null ? String(cfg.url) : ''
+    return `${base}${path}`
+  }
+
+  /**
+   * True when this failure must not fall through to the next jvagent baseURL
+   * (e.g. localhost vs 127.0.0.1), which would hide invalid/expired sessions and 401 from validate_token.
+   */
+  private _isSessionAuthFailureStopFallback(error: unknown): boolean {
+    if (this.authFailureRedirectScheduled) return true
+    const ax = error as AxiosError
+    const url = this._requestUrlFromAxiosError(error)
+    if (this._isNoSessionRecoveryPath(url)) return false
+    const status = ax.response?.status
+    if (status === 401 || status === 403) return true
+    const cfg = ax.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined
+    if (
+      ax &&
+      !ax.response &&
+      getToken() &&
+      cfg &&
+      this._requestHadBearerAuth(cfg) &&
+      this._axiosLooksLikeOpaqueNetworkFailure(ax)
+    ) {
+      return true
+    }
+    return false
+  }
+
   /** True when the request targets the jvforge host (per-request baseURL), not jvagent. */
   private _isJvforgeRequest(config: InternalAxiosRequestConfig): boolean {
     const base = (config.baseURL || '').replace(/\/$/, '')
@@ -315,6 +441,9 @@ class ApiClient {
         return await fn(baseURL)
       } catch (error: unknown) {
         lastError = error
+        if (this._isSessionAuthFailureStopFallback(error)) {
+          throw error
+        }
         console.warn('Request failed for baseURL', baseURL, 'error:', (error as Error)?.message || error)
         // Try next baseURL
       }
@@ -339,6 +468,9 @@ class ApiClient {
         return await fn(baseURL)
       } catch (error: unknown) {
         lastError = error
+        if (this._isSessionAuthFailureStopFallback(error)) {
+          throw error
+        }
         console.warn(
           'jvforge request failed for baseURL',
           baseURL,
@@ -577,6 +709,10 @@ class ApiClient {
         })
 
         if (!fetchResponse.ok) {
+          if (fetchResponse.status === 401 || fetchResponse.status === 403) {
+            this.redirectToLoginAfterAuthFailure()
+            throw new Error('Unauthorized')
+          }
           if (fetchResponse.status === 404) {
             // Try without /api prefix
             const fallbackUrl = `${baseURL}/agents/${agentId}/interact`
@@ -589,6 +725,10 @@ class ApiClient {
             })
 
             if (!fallbackResponse.ok) {
+              if (fallbackResponse.status === 401 || fallbackResponse.status === 403) {
+                this.redirectToLoginAfterAuthFailure()
+                throw new Error('Unauthorized')
+              }
               const errorText = await fallbackResponse.text()
               let errorMessage = `HTTP error! status: ${fallbackResponse.status}`
               try {
@@ -630,7 +770,8 @@ class ApiClient {
     agentId: string,
     request: InteractionRequest,
     onChunk: (chunk: any) => void,
-    onError?: (error: Error) => void
+    onError?: (error: Error) => void,
+    signal?: AbortSignal
   ): Promise<void> {
     // Interact endpoint is anonymous - do not send auth headers
     // Try baseURL fallbacks and /api / non-/api paths
@@ -639,6 +780,9 @@ class ApiClient {
 
     for (const base of bases) {
       for (const prefix of ['/api', '']) {
+        if (signal?.aborted) {
+          throw new DOMException('Aborted', 'AbortError')
+        }
         const url = `${base}${prefix}/agents/${agentId}/interact`
         try {
           let response = await fetch(url, {
@@ -648,9 +792,14 @@ class ApiClient {
               // No Authorization header - endpoint is anonymous
             },
             body: JSON.stringify({ ...request, stream: true }),
+            signal,
           })
 
           if (!response.ok) {
+            if (response.status === 401 || response.status === 403) {
+              this.redirectToLoginAfterAuthFailure()
+              throw new Error('Unauthorized')
+            }
             if (response.status === 404 && prefix === '/api') {
               // try next prefix in same base
               continue
@@ -705,7 +854,19 @@ class ApiClient {
           // Successful stream; exit both loops
           return
         }
-        catch (error) {
+        catch (error: unknown) {
+          // User cancelled: always propagate without retry/onError. Do not rely on
+          // instanceof Error — browsers often throw DOMException for abort.
+          if (signal?.aborted) {
+            if (error instanceof Error) throw error
+            throw new DOMException('Aborted', 'AbortError')
+          }
+          if (
+            error instanceof Error &&
+            (error.message === 'Unauthorized' || this.authFailureRedirectScheduled)
+          ) {
+            return
+          }
           lastError = error
           const errorMessage =
             error instanceof Error
@@ -727,7 +888,7 @@ class ApiClient {
 
   async deleteConversation(agentId: string, userId: string, sessionId: string): Promise<void> {
     // Get user_id from localStorage if not provided
-    const finalUserId = userId || getUserId()
+    const finalUserId = userId || getEffectiveUserId()
     if (!finalUserId) {
       throw new Error('User ID is required to delete conversation')
     }
@@ -1031,7 +1192,7 @@ class ApiClient {
   }
 
   async getMyMemory(agentId: string): Promise<UserMemoryResponse> {
-    const userId = getUserId()
+    const userId = getEffectiveUserId()
     const url = `/api/agents/${agentId}/memory/me${userId ? `?user_id=${encodeURIComponent(userId)}` : ''}`
     const fallbackUrl = `/agents/${agentId}/memory/me${userId ? `?user_id=${encodeURIComponent(userId)}` : ''}`
 

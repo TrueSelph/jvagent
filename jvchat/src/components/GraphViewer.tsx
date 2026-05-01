@@ -294,6 +294,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
       setNodeById(nMap)
       setEdgeById(eMap)
     } catch (err: unknown) {
+      if (apiClient.authFailureScheduled) return
       if (isAxios404(err)) {
         try {
           const dot = await apiClient.getGraph('dot', true)
@@ -302,6 +303,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
           setProgressiveNodes([])
           setProgressiveEdges([])
         } catch (dotErr: unknown) {
+          if (apiClient.authFailureScheduled) return
           console.error('Failed to fetch graph (DOT fallback):', dotErr)
           setError(dotErr instanceof Error ? dotErr.message : 'Failed to load graph data')
         }
@@ -380,6 +382,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
           setExpandPagination(null)
         }
       } catch (e: unknown) {
+        if (apiClient.authFailureScheduled) return
         console.error('Expand node failed:', e)
         setError(e instanceof Error ? e.message : 'Failed to expand node')
       } finally {
@@ -647,7 +650,9 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
       setRepairMessage(formatRepairResult(result))
       await fetchGraph()
     } catch (err: unknown) {
-      setRepairError(err instanceof Error ? err.message : 'Graph repair failed.')
+      if (!apiClient.authFailureScheduled) {
+        setRepairError(err instanceof Error ? err.message : 'Graph repair failed.')
+      }
     } finally {
       setRepairing(false)
     }
@@ -657,7 +662,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
     if (onClose) {
       onClose()
     } else {
-      navigate('/agents')
+      navigate('/chat')
     }
   }
 
@@ -735,11 +740,11 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
 
   const inspectorBody = (() => {
     if (graphMode !== 'progressive') {
-      return <p className="text-sm text-gray-500 dark:text-gray-400">Inspector is for progressive graph mode.</p>
+      return <p className="text-sm text-zinc-400 dark:text-zinc-500">Inspector is for progressive graph mode.</p>
     }
     if (!selectedElement) {
       return (
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+        <p className="text-sm text-zinc-400 dark:text-zinc-500">
           Tap a node or edge to inspect. Use <strong>Full</strong> detail for context fields.
         </p>
       )
@@ -757,48 +762,48 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
         <div className="flex flex-col flex-1 min-h-0 gap-2 text-sm">
           <div className="flex-shrink-0 space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <span className="font-semibold text-gray-900 dark:text-gray-100">Node</span>
+              <span className="font-semibold text-zinc-900 dark:text-zinc-100">Node</span>
               <button
                 type="button"
                 onClick={() => void copyText(n.id)}
-                className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                className="text-xs text-zinc-600 dark:text-zinc-400 hover:underline"
               >
                 Copy id
               </button>
             </div>
-            <dl className="space-y-0.5 text-gray-700 dark:text-gray-300">
-              <div><dt className="text-xs text-gray-500 dark:text-gray-400">id</dt><dd className="font-mono text-xs break-all">{n.id}</dd></div>
-              <div><dt className="text-xs text-gray-500 dark:text-gray-400">entity</dt><dd>{n.entity}</dd></div>
-              <div><dt className="text-xs text-gray-500 dark:text-gray-400">label</dt><dd>{n.label}</dd></div>
-              <div><dt className="text-xs text-gray-500 dark:text-gray-400">degree</dt><dd>{n.degree}</dd></div>
+            <dl className="space-y-0.5 text-zinc-600 dark:text-zinc-300">
+              <div><dt className="text-xs text-zinc-400 dark:text-zinc-500">id</dt><dd className="font-mono text-xs break-all">{n.id}</dd></div>
+              <div><dt className="text-xs text-zinc-400 dark:text-zinc-500">entity</dt><dd>{n.entity}</dd></div>
+              <div><dt className="text-xs text-zinc-400 dark:text-zinc-500">label</dt><dd>{n.label}</dd></div>
+              <div><dt className="text-xs text-zinc-400 dark:text-zinc-500">degree</dt><dd>{n.degree}</dd></div>
               {n.missing && <div className="text-amber-600 dark:text-amber-400">Missing record</div>}
             </dl>
             {detailLevel === 'summary' && (
-              <p className="text-xs text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-slate-600 pt-2">
+              <p className="text-xs text-zinc-400 dark:text-zinc-500 border-t border-zinc-200 dark:border-zinc-600 pt-2">
                 Switch to <strong>Full</strong> and refresh to load <code className="text-[11px]">context</code> from the API.
               </p>
             )}
           </div>
           {detailLevel === 'full' && (
-            <div className="flex flex-col flex-1 min-h-0 border-t border-gray-200 dark:border-slate-600 pt-2 overflow-hidden">
+            <div className="flex flex-col flex-1 min-h-0 border-t border-zinc-200 dark:border-zinc-600 pt-2 overflow-hidden">
               <div className="flex-shrink-0 flex items-center justify-between gap-2 mb-1">
-                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">context</span>
+                <span className="text-xs font-medium text-zinc-400 dark:text-zinc-500">context</span>
                 {ctxJson && (
                   <button
                     type="button"
                     onClick={() => void copyText(ctxJson)}
-                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                    className="text-xs text-zinc-600 dark:text-zinc-400 hover:underline"
                   >
                     Copy JSON
                   </button>
                 )}
               </div>
               {ctxJson ? (
-                <pre className="flex-1 min-h-0 text-xs sm:text-[13px] leading-snug font-mono bg-slate-100 dark:bg-slate-800 p-2 sm:p-3 rounded overflow-auto whitespace-pre-wrap break-all">
+                <pre className="flex-1 min-h-0 text-xs sm:text-[13px] leading-snug font-mono bg-zinc-100 dark:bg-zinc-800 p-2 sm:p-3 rounded overflow-auto whitespace-pre-wrap break-all">
                   {ctxJson}
                 </pre>
               ) : (
-                <p className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">Empty context</p>
+                <p className="text-xs text-zinc-400 dark:text-zinc-500 flex-shrink-0">Empty context</p>
               )}
             </div>
           )}
@@ -817,50 +822,50 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
       <div className="flex flex-col flex-1 min-h-0 gap-2 text-sm">
         <div className="flex-shrink-0 space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <span className="font-semibold text-gray-900 dark:text-gray-100">Edge</span>
+            <span className="font-semibold text-zinc-900 dark:text-zinc-100">Edge</span>
             <button
               type="button"
               onClick={() => void copyText(e.id)}
-              className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+              className="text-xs text-zinc-600 dark:text-zinc-400 hover:underline"
             >
               Copy id
             </button>
           </div>
-          <dl className="space-y-0.5 text-gray-700 dark:text-gray-300">
-            <div><dt className="text-xs text-gray-500 dark:text-gray-400">id</dt><dd className="font-mono text-xs break-all">{e.id}</dd></div>
-            <div><dt className="text-xs text-gray-500 dark:text-gray-400">entity / label</dt><dd>{e.entity} / {e.label}</dd></div>
-            <div><dt className="text-xs text-gray-500 dark:text-gray-400">source → target</dt><dd className="font-mono text-[11px] break-all">{e.source} → {e.target}</dd></div>
-            <div><dt className="text-xs text-gray-500 dark:text-gray-400">bidirectional</dt><dd>{String(e.bidirectional)}</dd></div>
+          <dl className="space-y-0.5 text-zinc-600 dark:text-zinc-300">
+            <div><dt className="text-xs text-zinc-400 dark:text-zinc-500">id</dt><dd className="font-mono text-xs break-all">{e.id}</dd></div>
+            <div><dt className="text-xs text-zinc-400 dark:text-zinc-500">entity / label</dt><dd>{e.entity} / {e.label}</dd></div>
+            <div><dt className="text-xs text-zinc-400 dark:text-zinc-500">source → target</dt><dd className="font-mono text-[11px] break-all">{e.source} → {e.target}</dd></div>
+            <div><dt className="text-xs text-zinc-400 dark:text-zinc-500">bidirectional</dt><dd>{String(e.bidirectional)}</dd></div>
             {e.direction != null && (
-              <div><dt className="text-xs text-gray-500 dark:text-gray-400">direction (expand)</dt><dd>{e.direction}</dd></div>
+              <div><dt className="text-xs text-zinc-400 dark:text-zinc-500">direction (expand)</dt><dd>{e.direction}</dd></div>
             )}
           </dl>
           {detailLevel === 'summary' && (
-            <p className="text-xs text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-slate-600 pt-2">
+            <p className="text-xs text-zinc-400 dark:text-zinc-500 border-t border-zinc-200 dark:border-zinc-600 pt-2">
               Switch to <strong>Full</strong> and refresh for edge <code className="text-[11px]">context</code>.
             </p>
           )}
         </div>
         {detailLevel === 'full' && (
-          <div className="flex flex-col flex-1 min-h-0 border-t border-gray-200 dark:border-slate-600 pt-2 overflow-hidden">
+          <div className="flex flex-col flex-1 min-h-0 border-t border-zinc-200 dark:border-zinc-600 pt-2 overflow-hidden">
             <div className="flex-shrink-0 flex items-center justify-between gap-2 mb-1">
-              <span className="text-xs font-medium text-gray-500 dark:text-gray-400">context</span>
+              <span className="text-xs font-medium text-zinc-400 dark:text-zinc-500">context</span>
               {ctxJson && (
                 <button
                   type="button"
                   onClick={() => void copyText(ctxJson)}
-                  className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                  className="text-xs text-zinc-600 dark:text-zinc-400 hover:underline"
                 >
                   Copy JSON
                 </button>
               )}
             </div>
             {ctxJson ? (
-              <pre className="flex-1 min-h-0 text-xs sm:text-[13px] leading-snug font-mono bg-slate-100 dark:bg-slate-800 p-2 sm:p-3 rounded overflow-auto whitespace-pre-wrap break-all">
+              <pre className="flex-1 min-h-0 text-xs sm:text-[13px] leading-snug font-mono bg-zinc-100 dark:bg-zinc-800 p-2 sm:p-3 rounded overflow-auto whitespace-pre-wrap break-all">
                 {ctxJson}
               </pre>
             ) : (
-              <p className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">Empty context</p>
+              <p className="text-xs text-zinc-400 dark:text-zinc-500 flex-shrink-0">Empty context</p>
             )}
           </div>
         )}
@@ -876,24 +881,24 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
             <button
               type="button"
               onClick={() => setInspectorOpen(true)}
-              className="hidden lg:inline-flex items-center px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-700"
+              className="hidden lg:inline-flex items-center px-2.5 py-1.5 text-xs rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-700"
               title="Show inspector panel"
             >
               Inspector
             </button>
           )}
-          <div className="flex rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden text-xs">
+          <div className="flex rounded-lg border border-zinc-200 dark:border-zinc-600 overflow-hidden text-xs">
             <button
               type="button"
               onClick={() => setDetailLevel('summary')}
-              className={`px-2 py-1.5 sm:px-3 ${detailLevel === 'summary' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-200'}`}
+              className={`px-2 py-1.5 sm:px-3 ${detailLevel === 'summary' ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-200'}`}
             >
               Summary
             </button>
             <button
               type="button"
               onClick={() => setDetailLevel('full')}
-              className={`px-2 py-1.5 sm:px-3 border-l border-gray-200 dark:border-slate-600 ${detailLevel === 'full' ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-200'}`}
+              className={`px-2 py-1.5 sm:px-3 border-l border-zinc-200 dark:border-zinc-600 ${detailLevel === 'full' ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-200'}`}
             >
               Full
             </button>
@@ -901,7 +906,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
           <select
             value={layoutPreset}
             onChange={(e) => setLayoutPreset(e.target.value as GraphLayoutPreset)}
-            className="text-xs sm:text-sm rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200 px-2 py-1.5 max-w-[9rem] sm:max-w-none"
+            className="text-xs sm:text-sm rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 px-2 py-1.5 max-w-[9rem] sm:max-w-none"
             title="Layout"
             aria-label="Graph layout"
           >
@@ -916,11 +921,11 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
 
   const zoomControls = (vertical = true) => (
     <div
-      className={`flex gap-2 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-600 p-2 ${vertical ? 'flex-col' : 'flex-row'}`}
+      className={`flex gap-2 bg-white dark:bg-zinc-800 rounded-lg shadow-lg border border-zinc-200 dark:border-zinc-600 p-2 ${vertical ? 'flex-col' : 'flex-row'}`}
     >
       <button
         onClick={handleZoomIn}
-        className="p-2 text-gray-700 dark:text-slate-300 hover:text-gray-900 dark:hover:text-slate-100 hover:bg-gray-100 dark:hover:bg-slate-700 rounded transition-colors"
+        className="p-2 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded transition-colors"
         title="Zoom in"
         aria-label="Zoom in"
       >
@@ -930,7 +935,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
       </button>
       <button
         onClick={handleZoomOut}
-        className="p-2 text-gray-700 dark:text-slate-300 hover:text-gray-900 dark:hover:text-slate-100 hover:bg-gray-100 dark:hover:bg-slate-700 rounded transition-colors"
+        className="p-2 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded transition-colors"
         title="Zoom out"
         aria-label="Zoom out"
       >
@@ -940,7 +945,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
       </button>
       <button
         onClick={handleResetZoom}
-        className="p-2 text-gray-700 dark:text-slate-300 hover:text-gray-900 dark:hover:text-slate-100 hover:bg-gray-100 dark:hover:bg-slate-700 rounded transition-colors"
+        className="p-2 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded transition-colors"
         title="Reset zoom"
         aria-label="Reset zoom"
       >
@@ -967,7 +972,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
       <button
         onClick={handleRefresh}
         disabled={loading}
-        className="px-3 py-2 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+        className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-700 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
         title="Refresh graph"
       >
         <svg
@@ -989,7 +994,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
         <button
           onClick={handleLoadMoreNeighbors}
           disabled={expandBusy}
-          className="px-3 py-2 text-sm text-gray-700 dark:text-gray-300 bg-amber-100 dark:bg-amber-900/40 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/60 disabled:opacity-50 transition-colors"
+          className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-300 bg-amber-100 dark:bg-amber-900/40 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/60 disabled:opacity-50 transition-colors"
           title="Load next page of edges for the last expanded node"
         >
           {expandBusy ? 'Loading…' : 'Load more neighbors'}
@@ -998,7 +1003,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
       <button
         onClick={handleRepairGraph}
         disabled={repairing || loading}
-        className="px-3 py-2 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+        className="px-3 py-2 text-sm text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-700 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
         title="Repair graph"
       >
         <svg
@@ -1022,7 +1027,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
   const inspectorAside =
     graphMode === 'progressive' && inspectorOpen ? (
       <aside
-        className="flex flex-col min-h-0 w-full border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden border-t lg:border-t-0 max-h-[min(68vh,32rem)] flex-1 min-h-[12rem] lg:max-h-none lg:flex-none lg:min-h-0"
+        className="flex flex-col min-h-0 w-full border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden border-t lg:border-t-0 max-h-[min(68vh,32rem)] flex-1 min-h-[12rem] lg:max-h-none lg:flex-none lg:min-h-0"
         style={
           isLargeSplitLayout
             ? {
@@ -1034,12 +1039,12 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
             : undefined
         }
       >
-        <div className="flex-shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-b border-gray-200 dark:border-slate-700">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Inspector</h3>
+        <div className="flex-shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
+          <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Inspector</h3>
           <button
             type="button"
             onClick={() => setInspectorOpen(false)}
-            className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-slate-700 flex items-center gap-1"
+            className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700 flex items-center gap-1"
             title="Collapse inspector"
             aria-label="Collapse inspector"
           >
@@ -1063,7 +1068,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
         onMouseDown={handleInspectorResizeMouseDown}
       >
         <span
-          className="pointer-events-none w-px min-w-px self-stretch bg-gray-200 group-hover:bg-indigo-400 dark:bg-slate-600 dark:group-hover:bg-indigo-500"
+          className="pointer-events-none w-px min-w-px self-stretch bg-zinc-200 group-hover:bg-zinc-400 dark:bg-zinc-600 dark:group-hover:bg-zinc-500"
           aria-hidden
         />
       </div>
@@ -1080,7 +1085,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
           <button
             type="button"
             onClick={() => setInspectorOpen((o) => !o)}
-            className="lg:hidden text-xs px-2 py-1 rounded-md bg-white/90 dark:bg-slate-800/90 border border-gray-200 dark:border-slate-600 shadow"
+            className="lg:hidden text-xs px-2 py-1 rounded-md bg-white/90 dark:bg-zinc-800/90 border border-zinc-200 dark:border-zinc-600 shadow"
           >
             {inspectorOpen ? 'Hide details' : 'Details'}
           </button>
@@ -1089,7 +1094,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
           <button
             type="button"
             onClick={() => setInspectorOpen(true)}
-            className="hidden lg:flex absolute right-0 top-1/2 -translate-y-1/2 z-20 flex-row items-center gap-1.5 rounded-l-lg border border-r-0 border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-md px-2.5 py-2 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-700"
+            className="hidden lg:flex absolute right-0 top-1/2 -tranzinc-y-1/2 z-20 flex-row items-center gap-1.5 rounded-l-lg border border-r-0 border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 shadow-md px-2.5 py-2 text-xs font-medium text-zinc-600 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-700"
             aria-label="Show inspector"
           >
             <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
@@ -1100,7 +1105,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
         )}
         <div
           ref={containerRef}
-          className="w-full h-full graph-container bg-slate-50 dark:bg-slate-950"
+          className="w-full h-full graph-container bg-zinc-50 dark:bg-zinc-950"
           style={{ minHeight: '400px' }}
         />
       </div>
@@ -1120,20 +1125,20 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
         }}
       >
         <div
-          className="bg-white dark:bg-slate-900 rounded-lg shadow-xl w-full h-full max-w-[95vw] max-h-[95vh] flex flex-col"
+          className="bg-white dark:bg-zinc-900 rounded-lg shadow-xl w-full h-full max-w-[95vw] max-h-[95vh] flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex-shrink-0 border-b border-gray-200 dark:border-slate-700 px-4 sm:px-6 py-4 flex items-center justify-between">
+          <div className="flex-shrink-0 border-b border-zinc-200 dark:border-zinc-700 px-4 sm:px-6 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3 min-w-0">
-              <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100 truncate">App Graph</h2>
-              <span className="hidden md:inline text-xs text-gray-500 dark:text-gray-400 line-clamp-2">{graphHint}</span>
+              <h2 className="text-xl sm:text-2xl font-semibold text-zinc-900 dark:text-zinc-100 truncate">App Graph</h2>
+              <span className="hidden md:inline text-xs text-zinc-400 dark:text-zinc-500 line-clamp-2">{graphHint}</span>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
               {headerActions}
               {onClose && (
                 <button
                   onClick={handleClose}
-                  className="p-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  className="p-2 text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded-lg transition-colors"
                   title="Close"
                   aria-label="Close graph viewer"
                 >
@@ -1162,16 +1167,16 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
 
           <div className="flex-1 overflow-hidden relative min-h-0 flex flex-col">
             {loading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-slate-900 z-20">
+              <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-zinc-900 z-20">
                 <div className="text-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400 mx-auto"></div>
-                  <p className="mt-4 text-gray-600 dark:text-gray-400">Loading graph...</p>
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-zinc-400 dark:border-zinc-400 mx-auto"></div>
+                  <p className="mt-4 text-zinc-500 dark:text-zinc-400">Loading graph...</p>
                 </div>
               </div>
             )}
 
             {error && (
-              <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-slate-900 p-4 z-20">
+              <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-zinc-900 p-4 z-20">
                 <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-6 max-w-md w-full">
                   <h3 className="text-lg font-semibold text-red-800 dark:text-red-300 mb-2">Error Loading Graph</h3>
                   <p className="text-red-700 dark:text-red-300 mb-4">{error}</p>
@@ -1192,7 +1197,7 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
                 <div className="absolute top-4 right-4 z-10">{zoomControls(true)}</div>
                 <div
                   ref={containerRef}
-                  className="w-full h-full graph-container bg-slate-50 dark:bg-slate-950"
+                  className="w-full h-full graph-container bg-zinc-50 dark:bg-zinc-950"
                   style={{ minHeight: '400px' }}
                 />
               </div>
@@ -1205,11 +1210,11 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <div className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-700 px-4 sm:px-6 py-4">
+      <div className="bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-700 px-4 sm:px-6 py-4">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">App Graph</h1>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-xl">{graphHint}</p>
+            <h1 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-zinc-100">App Graph</h1>
+            <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-1 max-w-xl">{graphHint}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">{headerActions}</div>
         </div>
@@ -1234,8 +1239,8 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
         {loading && (
           <div className="flex items-center justify-center min-h-[400px]">
             <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400 mx-auto"></div>
-              <p className="mt-4 text-gray-600 dark:text-gray-400">Loading graph...</p>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-zinc-400 dark:border-zinc-400 mx-auto"></div>
+              <p className="mt-4 text-zinc-500 dark:text-zinc-400">Loading graph...</p>
             </div>
           </div>
         )}
@@ -1256,17 +1261,17 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
         )}
 
         {!loading && !error && graphMode === 'progressive' && (
-          <div className="bg-white dark:bg-slate-900 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 flex-1 min-h-[500px] flex flex-col overflow-hidden">
+          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-sm border border-zinc-200 dark:border-zinc-700 flex-1 min-h-[500px] flex flex-col overflow-hidden">
             {progressiveGraphRow}
           </div>
         )}
 
         {!loading && !error && graphMode === 'dot' && (
-          <div className="bg-white dark:bg-slate-900 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-4 sm:p-6 h-full min-h-[500px] flex flex-col">
+          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-sm border border-zinc-200 dark:border-zinc-700 p-4 sm:p-6 h-full min-h-[500px] flex flex-col">
             <div className="mb-4 flex justify-end gap-2">{zoomControls(false)}</div>
             <div
               ref={containerRef}
-              className="flex-1 min-h-[400px] graph-container bg-slate-50 dark:bg-slate-950 rounded-md border border-gray-100 dark:border-slate-800"
+              className="flex-1 min-h-[400px] graph-container bg-zinc-50 dark:bg-zinc-950 rounded-md border border-zinc-100 dark:border-zinc-800"
             />
           </div>
         )}

@@ -921,6 +921,22 @@ class Conversation(DeferredSaveMixin, Node):
         """
         return [t["description"] for t in self.get_active_tasks(status="active")]
 
+    async def get_task_nodes(self, status: Optional[str] = None) -> List[Any]:
+        """Get tasks as first-class TaskNode entities via graph traversal.
+
+        Args:
+            status: Optional status filter.
+
+        Returns:
+            List of TaskNode instances connected to this conversation.
+        """
+        from jvagent.memory.task_node import TaskNode
+
+        nodes = await self.nodes(node=TaskNode, direction="out")
+        if status:
+            nodes = [n for n in nodes if getattr(n, "status", None) == status]
+        return nodes
+
     async def archive(self) -> None:
         """Archive the conversation."""
         self.status = "archived"

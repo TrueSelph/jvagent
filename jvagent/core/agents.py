@@ -1,11 +1,14 @@
 """Agents node - Structural branchpoint for agent collection and aggregation."""
 
+import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
 
 from jvagent.core.app import App
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from jvagent.core.agent import Agent
@@ -61,26 +64,37 @@ class Agents(Node):
     async def sync_counters(self) -> Dict[str, int]:
         """Recalculate and sync counters from actual agent data.
 
-        This method queries all connected agents and updates the counters
-        to match the actual state. Useful for ensuring counters stay accurate
-        if agents are modified outside of standard CRUD operations.
+        Queries all connected agents and updates the counters to match the actual
+        state. Logs discrepancies when drift is detected.
 
         Returns:
-            Dictionary with updated counter values:
-            {
-                "total_agents": int,
-                "active_agents": int
-            }
+            Dictionary with ``total_agents``, ``active_agents``, ``drift_total``,
+            ``drift_active`` (both 0 when consistent).
         """
         agents = await self.get_connected_agents()
         total = len(agents)
         active = len([a for a in agents if a.enabled])
 
+        drift_total = total - self.total_agents
+        drift_active = active - self.active_agents
+        if drift_total != 0 or drift_active != 0:
+            logger.debug(
+                "Agents counters drifted for %s: total=%+d active=%+d",
+                self.id,
+                drift_total,
+                drift_active,
+            )
+
         self.total_agents = total
         self.active_agents = active
         await self.save()
 
-        return {"total_agents": total, "active_agents": active}
+        return {
+            "total_agents": total,
+            "active_agents": active,
+            "drift_total": drift_total,
+            "drift_active": drift_active,
+        }
 
     async def get_enabled_breakdown(self) -> Dict[str, int]:
         """Get breakdown of agents by enabled status.

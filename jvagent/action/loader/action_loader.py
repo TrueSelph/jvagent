@@ -98,6 +98,43 @@ class ActionLoader:
         self._core_action_path = None
         self._core_action_cache = None
 
+    def expected_import_paths_from_descriptor_actions(
+        self, actions_configs: Optional[List[Any]]
+    ) -> Set[str]:
+        """Build set of canonical import module paths for actions listed in agent.yaml.
+
+        Used with persisted ``Action.module_path`` for fast staleness detection
+        (set-diff vs filesystem) during reconcile.
+        """
+        paths: Set[str] = set()
+        if not actions_configs:
+            return paths
+        core_cache = self._build_core_action_cache()
+        for action_config in actions_configs:
+            if not isinstance(action_config, dict):
+                continue
+            ref = action_config.get("action", "")
+            if "/" not in ref:
+                continue
+            namespace, action_name = ref.split("/", 1)
+            if namespace == "jvagent":
+                info = core_cache.get(action_name)
+                if not info:
+                    continue
+                action_dir = info["dir"]
+                module_file = info["module_file"]
+                category_module = info["relative_path"].replace("/", ".")
+                init_file = action_dir / "__init__.py"
+                if init_file.exists():
+                    paths.add(f"jvagent.action.{category_module}")
+                else:
+                    paths.add(f"jvagent.action.{category_module}.{module_file}")
+                continue
+            meta = self._load_action_metadata_for_deps(ref, core_cache)
+            if meta and getattr(meta, "module", None):
+                paths.add(str(meta.module).strip())
+        return paths
+
     def _load_action_metadata_for_deps(
         self, action_ref: str, core_cache: Dict[str, Dict[str, Any]]
     ) -> Optional[ActionMetadata]:

@@ -11,7 +11,8 @@ vi.mock("../config/api", () => ({
 vi.mock("../utils/storage", () => ({
   saveMessages: vi.fn(),
   getMessages: vi.fn(() => []),
-  getUserId: vi.fn(() => "user-1"),
+  syncUserIdFromAccessToken: vi.fn(() => "user-1"),
+  getEffectiveUserId: vi.fn(() => "user-1"),
 }));
 
 import { apiClient } from "../config/api";

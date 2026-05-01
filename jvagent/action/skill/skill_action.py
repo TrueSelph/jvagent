@@ -240,7 +240,7 @@ class SkillAction:
                     stuck_corrections=result.stuck_corrections,
                 )
                 await task_handle.complete(
-                    status=result.termination_reason,
+                    status=result.termination_reason.value,
                     summary=(
                         result.final_response[:200] if result.final_response else None
                     ),

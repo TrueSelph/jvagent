@@ -4,6 +4,7 @@ export interface Agent {
   namespace: string
   name: string
   alias?: string
+  avatar_url?: string
   enabled: boolean
   description?: string
   interaction_limit?: number

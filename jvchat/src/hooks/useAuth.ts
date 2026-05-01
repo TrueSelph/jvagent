@@ -1,7 +1,14 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiClient } from '../config/api'
-import { setToken, getToken, setUserId, setRefreshToken, getRefreshToken, clearAllStorage } from '../utils/storage'
+import {
+  setToken,
+  getToken,
+  setUserId,
+  setRefreshToken,
+  getRefreshToken,
+  clearAuthSession,
+} from '../utils/storage'
 import { saveConfig } from '../config/config'
 import type { LoginRequest } from '../types/api'
 
@@ -157,7 +164,7 @@ export function useAuth() {
           loading: false,
           error: null,
         })
-        navigate('/agents')
+        navigate('/chat')
       } catch (error: any) {
         const errorMessage =
           error.response?.data?.detail || error.message || 'Login failed'
@@ -182,8 +189,8 @@ export function useAuth() {
       console.warn('Logout: Server logout failed, continuing with local logout:', error)
     }
 
-    // Clear tokens, conversations, persisted messages (incl. embedded attachment previews).
-    clearAllStorage()
+    // Clear credentials only — conversations/messages stay in localStorage for the same login.
+    clearAuthSession()
     if (refreshTimeoutRef.current) {
       clearTimeout(refreshTimeoutRef.current)
     }

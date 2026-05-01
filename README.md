@@ -1,6 +1,6 @@
 # jvagent
 
-A modular, pluggable agentive platform built on jvspatial that provides a production-ready framework for AI agent development with enterprise-grade observability and scalability.
+Modular AI agent platform built on jvspatial's graph primitives. Declarative `app.yaml` and `agent.yaml` define topology; persistent state is stored as **Nodes** and **Edges**. **Actions** extend agents as load-on-demand plugins; **Memory** holds users, conversations, and a bidirectional interaction chain; **Skills** add Markdown-first procedures and optional Python tool scripts. The runtime favors real deployments: merge/source/run updates, namespace isolation for plugins, deep action lifecycle hooks, distributed conversation locking, capped work per pruning pass for predictable latency, and probabilistic cache cleanup suited to serverless-style workers, alongside a separate logging database for interaction and error trails.
 
 ## Table of Contents
 
@@ -17,6 +17,9 @@ A modular, pluggable agentive platform built on jvspatial that provides a produc
 - [Namespaces](#namespaces)
 - [Logging System](#logging-system)
 - [Architecture](#architecture)
+  - [Graph Hierarchy](#graph-hierarchy)
+  - [Configuration resolution](#configuration-resolution)
+  - [Request-oriented caches](#request-oriented-caches)
 - [Directory Structure](#directory-structure)
 - [Configuration Files](#configuration-files)
 - [Creating Actions](#creating-actions)
@@ -437,10 +440,14 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
 
 **Actions** are plugins that extend agent functionality. They:
 - Follow a standard interface defined by the `Action` base class
-- Are organized in standardized directories under namespaces
-- Have their own lifecycle hooks for initialization and cleanup
+- Use a consistent package layout: `{action_name}.py` (implementation), `endpoints.py` (REST handlers with `@endpoint`), `info.yaml` (metadata and dependencies), and `__init__.py` (exports the class and imports endpoints for discovery)
+- Are organized in namespaces; only actions listed in `agent.yaml` are imported, with transitive `info.yaml` dependencies
+- Optionally declare `singleton: true` in `info.yaml` to enforce one instance per agent
+- Expose lifecycle hooks including `on_register`, `on_reload`, `post_register`, `on_startup`, `on_enable`, `on_disable`, `on_deregister`, and `pulse`
+- Discover peer actions via `get_action()` and related helpers (for example `get_model_action()` for language models)
+- Can contribute capability strings to the persona via `get_capabilities()`
 - Can be enabled/disabled dynamically
-- Support type-safe property configuration
+- Support type-safe property configuration (Pydantic defaults merged with `agent.yaml` context)
 
 ### InteractActions
 
@@ -472,10 +479,12 @@ See the [InteractAction API Guide](jvagent/action/interact/README.md) for comple
 
 `jvagent` ships with Claude-compatible skill bundles that let agents load modular SOP-driven capabilities on demand. Skills can include:
 
-- Instruction-only workflows via `SKILL.md`
+- Instruction-only workflows via `SKILL.md` (YAML frontmatter plus Markdown body)
 - Optional Python tool modules (`scripts/`) with deterministic `execute(...)` handlers
 - Optional support assets (`resources/`, `templates/`, `examples/`)
 - Action-integrated tool calls via `visitor.action_resolver` for graph-persisted actions
+
+**Resolution:** app-local skill directories override built-in skills with the same name. Selection uses `fnmatch` patterns and an `-all` sentinel. Bundles can declare `exports` / `imports` for multi-skill pipelines, plus `allowed-tools` and action requirements. Skill metadata is merged when the agent is installed or updated; filesystem changes typically require `jvagent ... --update` (or bootstrap) to take effect.
 
 Skills are progressively disclosed at runtime through `read_skill`, so specialized tools are exposed only when the skill is activated.
 
@@ -500,12 +509,14 @@ For the full standard (folder anatomy, metadata, tool contract, and action integ
 - Maintains conversation continuity while managing memory usage
 - Ideal for long-running conversations with memory constraints
 
-**Performance Optimizations:**
+**Performance & concurrency:**
 - Uses database-level `count()` for efficient record counting
 - Uses `find_one()` for optimized single-record retrieval
 - Uses `node()` for direct single-node graph traversal
 - Automatic database indexes on frequently queried fields
-- Cached reference to last interaction for O(1) access
+- **Tail cache:** `last_interaction_id` on the conversation points at the newest interaction for O(1) append; if the pointer is stale, the implementation reconciles by walking the chain
+- **Mutation lock:** appends run under a per-conversation lock that can use Redis, DynamoDB, or in-process storage to avoid forked chains under concurrent writers
+- **Bounded pruning:** each call prunes at most a capped number of old interactions (see env `JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL`), so latency stays bounded when history is far over limit
 
 **Task Tracking:**
 - Conversations maintain an `active_tasks` list for ongoing activities requiring user input
@@ -542,7 +553,7 @@ jvagent includes a comprehensive logging system that maintains complete interact
 
 ## Architecture
 
-jvagent is built on jvspatial's graph-based primitives. The system follows a server-based, plugin-first design with YAML-driven agent configuration.
+jvagent is built on jvspatial's graph-based primitives. The system follows a server-based, plugin-first design with YAML-driven agent configuration and singleton-style accessors (`App.get()`, `Agents.get()`, etc.) anchored from known graph entry points.
 
 ### Graph Hierarchy
 
@@ -550,16 +561,25 @@ The application graph is rooted at `Root` and follows this structure:
 
 ```
 Root -> App -> Agents -> Agent
-                Agent -> Memory -> User -> Conversation -> Interaction (chained)
-                Agent -> Actions -> Action (registered)
+                          |-> Memory -> User -> Conversation -> Interaction
+                          |            (Interactions form a bidirectional chain)
+                          |-> Actions -> Action (registered plugins; optional sub-actions via edges)
 ```
 
 - **App**: Root application node; connects to Root. Manages file storage, logging config, and app-level datetime via `timezone` and `now()`.
 - **Agents**: Structural branchpoint; connects to App. Aggregates all Agent nodes.
 - **Agent**: Individual agent; connects to Agents. Has one Memory and one Actions child.
 - **Memory**: Connects to Agent. Manages User nodes (User -> Conversation -> Interaction chain).
-- **Actions**: Connects to Agent. Registers Action nodes (plugins) discovered from `info.yaml`.
-- **Interaction chain**: Conversation connects to first Interaction; Interactions are bidirectionally chained (Interaction1 <-> Interaction2 <-> Interaction3).
+- **Actions**: Connects to Agent. Registers Action nodes discovered from YAML and `info.yaml`; an action may attach related nodes via outgoing edges where the model requires it.
+- **Interaction chain**: Conversation connects to the first Interaction; successive Interactions use bidirectional edges (Interaction1 <-> Interaction2 <-> Interaction3) so history can be walked oldest-to-newest or newest-to-oldest.
+
+### Configuration resolution
+
+Layered precedence is **environment variable → `app.yaml` (and related YAML) → code defaults**, centralized in `jvagent.core.config` (`load_app_config`, `get_config_value`, typed env parsing, `${ENV}` placeholder expansion in YAML). Some performance-related settings can be reloaded at runtime (`reload_performance_config`) without restarting the whole process.
+
+### Request-oriented caches
+
+Short-lived in-memory caches (for example agent node resolution, enabled-action lists, and optionally the interact router keyed by request hash) use TTL expiry and **probabilistic cleanup** so idle workers do not rely on timer tasks, which aligns better with serverless and multi-worker deployments.
 
 ### High-Level Architecture
 
@@ -647,10 +667,10 @@ graph LR
 
 ### Technology Stack
 
-- **Core**: Python 3.12+, jvspatial (graph primitives), Pydantic v2, FastAPI
+- **Core**: Python 3.8+, jvspatial (graph primitives), Pydantic v2, FastAPI
 - **Storage**: jvspatial database (JSON, MongoDB, or DynamoDB backends)
 - **AI/ML**: OpenAI SDK, Anthropic SDK, Sentence Transformers (embeddings)
-- **Observability**: structlog, separate logging database for audit trails
+- **Logging & usage**: structlog, separate logging database for interaction and error trails; usage and cost are computed on memory and interaction paths
 
 ## Directory Structure
 

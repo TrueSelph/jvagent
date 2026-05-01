@@ -1,6 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { apiClient } from '../config/api'
-import { saveMessages, getMessages, getUserId } from '../utils/storage'
+import {
+  saveMessages,
+  getMessages,
+  syncUserIdFromAccessToken,
+  getEffectiveUserId,
+} from '../utils/storage'
 import type { InteractionRequest, ResponseMessageData, SSEChunk } from '../types/api'
 import type { Message } from '../types/message'
 import {
@@ -14,6 +19,37 @@ export const ATTACHMENT_ONLY_USER_PROMPT =
 
 export type SendMessageOptions = {
   files?: File[]
+  /** When resending after edit, tie new user row to the same branch root id. */
+  branchRootId?: string
+}
+
+function cloneMessages(msgs: Message[]): Message[] {
+  return msgs.map((m) => ({
+    ...m,
+    attachments: m.attachments?.map((a) => ({ ...a })),
+    metadata: m.metadata ? { ...m.metadata } : undefined,
+  }))
+}
+
+function findTurnEnd(msgs: Message[], startIdx: number): number {
+  for (let i = startIdx + 1; i < msgs.length; i++) {
+    if (msgs[i].role === 'user') return i
+  }
+  return msgs.length
+}
+
+/** Last user message index belonging to this branch (same chain as root). */
+export function findLastTurnUserIndex(msgs: Message[], rootId: string): number {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i]
+    if (
+      m.role === 'user' &&
+      (m.branchRootId === rootId || m.id === rootId)
+    ) {
+      return i
+    }
+  }
+  return -1
 }
 
 function mergeResponseMetadata(
@@ -53,6 +89,29 @@ function isThoughtMessage(msg: ResponseMessageData): boolean {
   return hasThoughtMetadata
 }
 
+/** Remove reasoning/thought rows for an interaction the user stopped mid-stream. */
+function removeReasoningForStoppedInteraction(
+  messages: Message[],
+  interactionId: string | null,
+): Message[] {
+  if (interactionId) {
+    return messages.filter(
+      (m) => !(m.category === 'thought' && m.interactionId === interactionId),
+    )
+  }
+  let lastUserIdx = -1
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'user') {
+      lastUserIdx = i
+      break
+    }
+  }
+  if (lastUserIdx < 0) return messages
+  return messages.filter(
+    (m, idx) => idx <= lastUserIdx || m.category !== 'thought',
+  )
+}
+
 export function useStreaming(agentId: string, sessionId?: string) {
   const [messages, setMessages] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
@@ -63,6 +122,20 @@ export function useStreaming(agentId: string, sessionId?: string) {
   const streamSessionIdRef = useRef<string | undefined>(undefined)
   const streamUserMessageRef = useRef<Message | null>(null)
   const messageOrderRef = useRef<number>(0)
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const stoppedByUserRef = useRef<boolean>(false)
+  /** When false, ignore stream chunks (prevents late SSE callbacks from re-enabling streaming after stop). */
+  const acceptStreamChunksRef = useRef(true)
+
+  /** Full-message snapshots per branch root (user message id); pairs with edit/resend and completed turns. */
+  const [branchSnapshots, setBranchSnapshots] = useState<Record<string, Message[][]>>({})
+  /** Selected snapshot index per root; defaults to latest in UI when unset. */
+  const [branchVersionIndex, setBranchVersionIndex] = useState<
+    Record<string, number>
+  >({})
+  /** After edit, freeze completed turn when stream ends. */
+  const pendingBranchRootRef = useRef<string | null>(null)
+  const prevIsStreamingRef = useRef(false)
 
   const sessionIdRef = useRef<string | undefined>(sessionId)
   const messagesRef = useRef<Message[]>(messages)
@@ -96,13 +169,16 @@ export function useStreaming(agentId: string, sessionId?: string) {
       sessionIdRef.current = sessionId
       prevSessionIdRef.current = sessionId
 
-      // Clear messages when switching sessions to prevent cross-contamination
-      // Always clear when session changes (including when setting to undefined for new conversation)
-      // This ensures messages from different sessions don't mix
-      setMessages([])
-      prevMessagesRef.current = []
+      // First session id after "new chat" (undefined → id): keep in-flight messages; do not clear.
+      const isInitialSessionBinding =
+        oldSessionId === undefined && sessionId !== undefined
 
-      // Update state after clearing messages
+      if (!isInitialSessionBinding) {
+        // Clear messages when switching between real sessions or resetting to new chat
+        setMessages([])
+        prevMessagesRef.current = []
+      }
+
       setCurrentSessionId(sessionId)
 
     }
@@ -146,12 +222,16 @@ export function useStreaming(agentId: string, sessionId?: string) {
       setIsStreaming(true)
       setError(null)
       streamSessionIdRef.current = sessionIdRef.current
+      stoppedByUserRef.current = false
+      acceptStreamChunksRef.current = true
+      abortControllerRef.current = new AbortController()
 
       const userMessage: Message = {
         id: `user-${Date.now()}`,
         role: 'user',
         content: displayContent || utteranceForApi,
         timestamp: new Date().toISOString(),
+        ...(options?.branchRootId ? { branchRootId: options.branchRootId } : {}),
         ...(files?.length && attachmentPreviews?.length
           ? { attachments: attachmentPreviews }
           : {}),
@@ -182,10 +262,10 @@ export function useStreaming(agentId: string, sessionId?: string) {
       let receivedSessionId: string | undefined = sessionIdRef.current
 
       try {
-        // Get user_id from storage (set from login response)
-        // This is the logged-in user's account ID, not a system-generated ID
-        // NOTE: The interact endpoint is anonymous (no bearer token required), but user_id is still required in the request body
-        const userId = getUserId()
+        // Resolve user_id from storage or JWT (`sub`) so chats persist after refresh even when
+        // login omitted `user.id`.
+        syncUserIdFromAccessToken()
+        const userId = getEffectiveUserId()
 
         if (!userId) {
           console.error('No user_id available - user_id is required for the interact endpoint (even though it is anonymous).')
@@ -223,6 +303,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
           agentId,
           request,
           (chunk: SSEChunk) => {
+            if (!acceptStreamChunksRef.current) return
             // Note: We no longer capture user_id from chunks since we use the logged-in user's ID
             // The user_id is set from the login response and used from the first chat
             // If chunk provides a different user_id, log it for debugging but don't overwrite
@@ -775,15 +856,40 @@ export function useStreaming(agentId: string, sessionId?: string) {
                 .filter((m) => m.id !== assistantMessageId || m.content !== '')
                 .map((msg) => (msg.streaming ? { ...msg, streaming: false } : msg))
             )
-          }
+          },
+          abortControllerRef.current?.signal
         )
       } catch (err: any) {
-        setError(err.message || 'Failed to send message')
-        setIsStreaming(false)
-        setMessages((prev) => {
-          // Remove placeholder bubbles
-          return prev.filter((m) => m.id !== assistantMessageId || m.content !== '')
-        })
+        const aborted =
+          stoppedByUserRef.current ||
+          err?.name === 'AbortError' ||
+          (typeof err?.message === 'string' && err.message.toLowerCase().includes('abort'))
+        if (aborted) {
+          // User stopped generation: drop reasoning for this turn; keep partial assistant text if any.
+          setIsStreaming(false)
+          setMessages((prev) => {
+            const filtered = prev.filter((m) => m.id !== assistantMessageId || m.content !== '')
+            const ix = interactionIdRef.current
+            let updated = filtered.map((msg) =>
+              msg.streaming ? { ...msg, streaming: false } : msg,
+            )
+            updated = removeReasoningForStoppedInteraction(updated, ix)
+            interactionIdRef.current = null
+            const activeSessionId = sessionIdRef.current
+            if (activeSessionId) saveMessages(activeSessionId, updated)
+            return updated
+          })
+        } else {
+          setError(err.message || 'Failed to send message')
+          setIsStreaming(false)
+          setMessages((prev) => {
+            return prev.filter((m) => m.id !== assistantMessageId || m.content !== '')
+          })
+        }
+      } finally {
+        abortControllerRef.current = null
+        stoppedByUserRef.current = false
+        acceptStreamChunksRef.current = true
       }
 
       return receivedSessionId
@@ -791,9 +897,110 @@ export function useStreaming(agentId: string, sessionId?: string) {
     [agentId, isStreaming]
   )
 
+  useEffect(() => {
+    const wasStreaming = prevIsStreamingRef.current
+    prevIsStreamingRef.current = isStreaming
+    if (!wasStreaming || isStreaming) return
+    const rootId = pendingBranchRootRef.current
+    if (!rootId) return
+    pendingBranchRootRef.current = null
+    const start = findLastTurnUserIndex(messagesRef.current, rootId)
+    if (start < 0) return
+    const end = findTurnEnd(messagesRef.current, start)
+    const newTurn = cloneMessages(messagesRef.current.slice(start, end))
+    setBranchSnapshots((prev) => {
+      const cur = prev[rootId] ?? []
+      const merged = [...cur, newTurn]
+      setBranchVersionIndex((vi) => ({
+        ...vi,
+        [rootId]: merged.length - 1,
+      }))
+      return { ...prev, [rootId]: merged }
+    })
+  }, [isStreaming])
+
+  const editAndResend = useCallback(
+    async (messageId: string, newContent: string) => {
+      const trimmed = newContent.trim()
+      if (!trimmed || isStreaming) return
+
+      const msgs = messagesRef.current
+      const startIdx = msgs.findIndex(
+        (m) => m.id === messageId && m.role === 'user',
+      )
+      if (startIdx < 0) return
+
+      const userMsg = msgs[startIdx]
+      if (userMsg.attachments?.length) {
+        setError('Editing messages with attachments is not supported.')
+        return
+      }
+
+      const rootId = userMsg.branchRootId ?? userMsg.id
+      const endIdx = findTurnEnd(msgs, startIdx)
+      const oldTurn = cloneMessages(msgs.slice(startIdx, endIdx))
+
+      setBranchSnapshots((prev) => ({
+        ...prev,
+        [rootId]: [...(prev[rootId] ?? []), oldTurn],
+      }))
+
+      pendingBranchRootRef.current = rootId
+      setMessages(msgs.slice(0, startIdx))
+      setError(null)
+
+      await sendMessage(trimmed, { branchRootId: rootId })
+    },
+    [isStreaming, sendMessage],
+  )
+
+  const selectBranchVersion = useCallback(
+    (rootId: string, index: number) => {
+      const snaps = branchSnapshots[rootId]
+      if (!snaps?.length) return
+      const clamped = Math.max(0, Math.min(index, snaps.length - 1))
+      setBranchVersionIndex((prev) => ({ ...prev, [rootId]: clamped }))
+
+      const msgs = messagesRef.current
+      const start = findLastTurnUserIndex(msgs, rootId)
+      if (start < 0) return
+      const end = findTurnEnd(msgs, start)
+      const prefix = msgs.slice(0, start)
+      const suffix = msgs.slice(end)
+      const chosen = snaps[clamped]
+      if (!chosen?.length) return
+      setMessages([...prefix, ...chosen, ...suffix])
+    },
+    [branchSnapshots],
+  )
+
+  const stopStreaming = useCallback(() => {
+    acceptStreamChunksRef.current = false
+    if (abortControllerRef.current) {
+      stoppedByUserRef.current = true
+      abortControllerRef.current.abort()
+    }
+    // Always reset UI — if the fetch already finished, ref may be null but
+    // isStreaming / thought.streaming can still be stuck (e.g. no final chunk).
+    setIsStreaming(false)
+    setMessages((prev) => {
+      const ix = interactionIdRef.current
+      let updated = prev.map((msg) =>
+        msg.streaming ? { ...msg, streaming: false } : msg,
+      )
+      updated = removeReasoningForStoppedInteraction(updated, ix)
+      interactionIdRef.current = null
+      const activeSessionId = sessionIdRef.current
+      if (activeSessionId) saveMessages(activeSessionId, updated)
+      return updated
+    })
+  }, [])
+
   const clearMessages = useCallback(() => {
     isLoadingRef.current = true // Prevent auto-save during clear
     setMessages([])
+    setBranchSnapshots({})
+    setBranchVersionIndex({})
     messageOrderRef.current = 0
     streamingMessageRef.current = ''
     interactionIdRef.current = null
@@ -832,6 +1039,8 @@ export function useStreaming(agentId: string, sessionId?: string) {
       }))
 
     setMessages(messagesToLoad)
+    setBranchSnapshots({})
+    setBranchVersionIndex({})
     messageOrderRef.current = messagesToLoad.length
     // Update prevMessagesRef to match loaded messages
     prevMessagesRef.current = [...messagesToLoad]
@@ -922,11 +1131,16 @@ export function useStreaming(agentId: string, sessionId?: string) {
   return {
     messages,
     sendMessage,
+    stopStreaming,
     clearMessages,
     loadMessages,
     isStreaming,
     error,
     sessionId: currentSessionId,
+    editAndResend,
+    selectBranchVersion,
+    branchSnapshots,
+    branchVersionIndex,
   }
 }
 

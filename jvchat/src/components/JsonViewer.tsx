@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import { JsonCodeEditor } from "./JsonCodeEditor";
 
 type JsonValue =
   | string
@@ -13,7 +14,10 @@ interface JsonViewerProps {
   data: unknown;
   /** Levels expanded on first render. Defaults to 2. */
   defaultExpandDepth?: number;
-  /** When true, renders inside a dark background. Defaults to true. */
+  /**
+   * Panel chrome: `true` = black debug panel (dark app theme); `false` = off-grey panel (light theme).
+   * Controls backgrounds only; tree syntax colors follow this flag.
+   */
   dark?: boolean;
   /** Show toolbar (expand/collapse all, raw toggle, search, copy). Defaults to true. */
   showToolbar?: boolean;
@@ -70,7 +74,7 @@ function valueLabel(value: unknown, kind: NodeKind, dark: boolean): JSX.Element 
       );
     case "null":
       return (
-        <span className={dark ? "text-slate-400 italic" : "text-slate-500 italic"}>
+        <span className={dark ? "text-zinc-400 italic" : "text-zinc-500 italic"}>
           {value === undefined ? "undefined" : "null"}
         </span>
       );
@@ -185,7 +189,7 @@ function Node({
 
   const keyEl =
     name !== undefined ? (
-      <span className={dark ? "text-sky-300" : "text-sky-700"}>
+      <span className={dark ? "text-zinc-300" : "text-zinc-700"}>
         {typeof name === "number" ? (
           <>{name}</>
         ) : (
@@ -225,8 +229,8 @@ function Node({
     const bracketClose = kind === "array" ? "]" : "}";
 
     const rowHoverCls = dark
-      ? "hover:bg-slate-800/60"
-      : "hover:bg-slate-100";
+      ? "hover:bg-zinc-800/60"
+      : "hover:bg-zinc-100";
 
     return (
       <div className="leading-snug">
@@ -240,8 +244,8 @@ function Node({
             onClick={() => setOpen((p) => !p)}
             className={`mt-0.5 inline-flex items-center justify-center w-4 h-4 select-none ${
               dark
-                ? "text-slate-400 hover:text-slate-200"
-                : "text-slate-500 hover:text-slate-800"
+                ? "text-zinc-400 hover:text-zinc-200"
+                : "text-zinc-500 hover:text-zinc-800"
             }`}
           >
             <svg
@@ -256,22 +260,22 @@ function Node({
             {keyEl && (
               <>
                 {keyEl}
-                <span className={dark ? "text-slate-500" : "text-slate-500"}>
+                <span className={dark ? "text-zinc-500" : "text-zinc-500"}>
                   :
                 </span>{" "}
               </>
             )}
-            <span className={dark ? "text-slate-300" : "text-slate-700"}>
+            <span className={dark ? "text-zinc-300" : "text-zinc-700"}>
               {bracketOpen}
             </span>
             {!open_ && (
               <>
                 <span
-                  className={`mx-1 ${dark ? "text-slate-500" : "text-slate-400"}`}
+                  className={`mx-1 ${dark ? "text-zinc-500" : "text-zinc-400"}`}
                 >
                   {summary(value)}
                 </span>
-                <span className={dark ? "text-slate-300" : "text-slate-700"}>
+                <span className={dark ? "text-zinc-300" : "text-zinc-700"}>
                   {bracketClose}
                   {!isLast && ","}
                 </span>
@@ -306,7 +310,7 @@ function Node({
               ))}
             </div>
             <div
-              className={dark ? "text-slate-300" : "text-slate-700"}
+              className={dark ? "text-zinc-300" : "text-zinc-700"}
               style={indentStyle}
             >
               <span className="inline-block w-4" />
@@ -322,8 +326,8 @@ function Node({
   const isLongString = kind === "string" && (value as string).length > 120;
 
   const leafHoverCls = dark
-    ? "hover:bg-slate-800/60"
-    : "hover:bg-slate-100";
+    ? "hover:bg-zinc-800/60"
+    : "hover:bg-zinc-100";
 
   return (
     <div
@@ -335,7 +339,7 @@ function Node({
         {keyEl && (
           <>
             {keyEl}
-            <span className={dark ? "text-slate-500" : "text-slate-500"}>:</span>{" "}
+            <span className={dark ? "text-zinc-500" : "text-zinc-500"}>:</span>{" "}
           </>
         )}
         {kind === "string" ? (
@@ -355,7 +359,7 @@ function Node({
           <>
             {valueLabel(value, kind, dark)}
             {!isLast && (
-              <span className={dark ? "text-slate-500" : "text-slate-500"}>
+              <span className={dark ? "text-zinc-500" : "text-zinc-500"}>
                 ,
               </span>
             )}
@@ -369,12 +373,12 @@ function Node({
         {decoded && embedded !== null && (
           <div
             className={`mt-1 ml-2 border-l-2 pl-2 ${
-              dark ? "border-slate-600" : "border-slate-300"
+              dark ? "border-zinc-600" : "border-zinc-300"
             }`}
           >
             <div
               className={`text-[10px] uppercase tracking-wide mb-1 ${
-                dark ? "text-slate-400" : "text-slate-500"
+                dark ? "text-zinc-400" : "text-zinc-500"
               }`}
             >
               Decoded JSON
@@ -439,7 +443,7 @@ function StringLeaf({
         "
       </span>
       {!isLast && (
-        <span className={dark ? "text-slate-500" : "text-slate-500"}>,</span>
+        <span className={dark ? "text-zinc-500" : "text-zinc-500"}>,</span>
       )}
       {isLong && (
         <button
@@ -447,8 +451,8 @@ function StringLeaf({
           onClick={onToggle}
           className={`ml-2 text-[10px] uppercase tracking-wide ${
             dark
-              ? "text-slate-400 hover:text-slate-200"
-              : "text-slate-500 hover:text-slate-800"
+              ? "text-zinc-400 hover:text-zinc-200"
+              : "text-zinc-500 hover:text-zinc-800"
           }`}
         >
           {expanded ? "show less" : `show all (${value.length})`}
@@ -460,8 +464,8 @@ function StringLeaf({
           onClick={onDecodeToggle}
           className={`ml-2 text-[10px] uppercase tracking-wide ${
             dark
-              ? "text-indigo-300 hover:text-indigo-100"
-              : "text-indigo-600 hover:text-indigo-800"
+              ? "text-zinc-300 hover:text-zinc-100"
+              : "text-zinc-600 hover:text-zinc-800"
           }`}
           title="This string contains JSON. Toggle to view it as a tree."
         >
@@ -482,7 +486,7 @@ function NodeActions({
   onCopyPath: () => void;
 }) {
   const cls = `opacity-0 group-hover:opacity-100 ml-2 text-[10px] uppercase tracking-wide ${
-    dark ? "text-slate-400 hover:text-slate-100" : "text-slate-500 hover:text-slate-800"
+    dark ? "text-zinc-400 hover:text-zinc-100" : "text-zinc-500 hover:text-zinc-800"
   }`;
   return (
     <span className="inline-flex gap-2 align-middle">
@@ -499,7 +503,7 @@ function NodeActions({
 export function JsonViewer({
   data,
   defaultExpandDepth = 2,
-  dark = true,
+  dark = false,
   showToolbar = true,
   maxHeight,
   className,
@@ -541,20 +545,22 @@ export function JsonViewer({
     setExpandKey((k) => k + 1);
   };
 
+  const panelDark = dark;
+
   const containerCls = [
     "rounded border font-mono text-xs",
-    dark
-      ? "bg-slate-900 border-slate-700 text-slate-100"
-      : "bg-slate-50 border-slate-200 text-slate-800",
+    panelDark
+      ? "bg-black border-zinc-800 text-zinc-100"
+      : "bg-zinc-100 border-zinc-300 text-zinc-900",
     className ?? "",
   ].join(" ");
 
   const toolbarBtn = (extra = "") =>
     [
       "px-2 py-1 rounded text-[11px] font-sans transition-colors",
-      dark
-        ? "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
-        : "bg-white hover:bg-slate-100 text-slate-700 border border-slate-300",
+      panelDark
+        ? "bg-black hover:bg-zinc-950 text-zinc-200 border border-zinc-700"
+        : "bg-white hover:bg-zinc-50 text-zinc-800 border border-zinc-300",
       extra,
     ].join(" ");
 
@@ -563,7 +569,7 @@ export function JsonViewer({
       {showToolbar && (
         <div
           className={`flex flex-wrap items-center gap-2 px-2 py-2 border-b ${
-            dark ? "border-slate-700" : "border-slate-200"
+            panelDark ? "border-zinc-800" : "border-zinc-300"
           }`}
         >
           <input
@@ -572,9 +578,9 @@ export function JsonViewer({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className={`flex-1 min-w-[140px] px-2 py-1 rounded text-[12px] font-sans ${
-              dark
-                ? "bg-slate-800 border border-slate-700 text-slate-100 placeholder-slate-400"
-                : "bg-white border border-slate-300 text-slate-800 placeholder-slate-400"
+              panelDark
+                ? "bg-black border border-zinc-700 text-zinc-100 placeholder-zinc-500"
+                : "bg-white border border-zinc-300 text-zinc-900 placeholder-zinc-500"
             }`}
           />
           <button type="button" onClick={expandAll} className={toolbarBtn()}>
@@ -598,7 +604,9 @@ export function JsonViewer({
             type="button"
             onClick={handleCopyAll}
             className={toolbarBtn(
-              dark ? "!bg-indigo-600 !border-indigo-500 !text-white hover:!bg-indigo-500" : "!bg-indigo-600 !border-indigo-600 !text-white hover:!bg-indigo-700",
+              panelDark
+                ? "!bg-zinc-100 !border-zinc-300 !text-zinc-900 hover:!bg-zinc-200"
+                : "!bg-zinc-900 !border-zinc-800 !text-white hover:!bg-zinc-800",
             )}
           >
             {copied ? "Copied!" : "Copy JSON"}
@@ -610,13 +618,14 @@ export function JsonViewer({
         style={maxHeight ? { maxHeight } : undefined}
       >
         {raw ? (
-          <pre
-            className={`whitespace-pre-wrap break-all ${
-              dark ? "text-emerald-300" : "text-slate-800"
-            }`}
-          >
-            {rawText}
-          </pre>
+          <JsonCodeEditor
+            value={rawText}
+            readOnly
+            dark={panelDark}
+            height={maxHeight ? "min(480px, 70vh)" : "320px"}
+            basicSetup={false}
+            className="border-0 shadow-none"
+          />
         ) : (
           <Node
             key={expandKey}
@@ -624,7 +633,7 @@ export function JsonViewer({
             depth={0}
             path=""
             defaultExpandDepth={forcedDepth}
-            dark={dark}
+            dark={panelDark}
             search={search}
             isLast
           />

@@ -1,7 +1,7 @@
 """Agent node and CRUD operations."""
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Type, TypeVar
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
@@ -11,6 +11,8 @@ if TYPE_CHECKING:
     from jvagent.action.response.response_bus import ResponseBus
 
 logger = logging.getLogger(__name__)
+
+TAgent = TypeVar("TAgent", bound="Agent")
 
 
 class Agent(Node):
@@ -45,6 +47,29 @@ class Agent(Node):
 
     # Runtime instances (private, transient)
     _response_bus: Any = attribute(private=True, default=None)
+
+    @classmethod
+    async def get(
+        cls: Type[TAgent], agent_id: Optional[str] = None, **kwargs: Any
+    ) -> Optional[TAgent]:
+        """Get an Agent node by ID, with caching.
+
+        When *agent_id* is provided, delegates through the cache layer for
+        reduced database I/O. Falls back to the parent ``Node.get()`` for
+        any additional keyword arguments.
+
+        Args:
+            agent_id: Node ID to fetch (cached).
+            **kwargs: Passed to ``Node.get()``.
+
+        Returns:
+            Agent instance if found, None otherwise.
+        """
+        if agent_id is not None and not kwargs:
+            from jvagent.core.cache import cache_manager
+
+            return await cache_manager.get_agent(agent_id)  # type: ignore[return-value]
+        return await super().get(agent_id, **kwargs)  # type: ignore[return-value]
 
     # =========================================================================
     # Graph Navigation Helpers

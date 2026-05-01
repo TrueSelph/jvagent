@@ -1,6 +1,115 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* tschat-style viewport: hide scrollbar where .scrollbar-hidden is applied */
+.scrollbar-hidden {
+  scrollbar-width: none;
+}
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+/* User-message streaming: thin caret inside the last paragraph (parity with early jvchat) */
+@keyframes streaming-text-caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Assistant streaming: pulsing ● — same rules as @assistant-ui/react-markdown/styles/dot.css (tschat) */
+@keyframes aui-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+:where(.aui-md[data-status="running"]):empty::after,
+:where(.aui-md[data-status="running"])
+  > :where(:not(ol):not(ul):not(pre)):last-child::after,
+:where(.aui-md[data-status="running"]) > pre:last-child code::after,
+:where(.aui-md[data-status="running"])
+  > :where(:is(ol, ul):last-child)
+  > :where(li:last-child:not(:has(* > li)))::after,
+:where(.aui-md[data-status="running"])
+  > :where(:is(ol, ul):last-child)
+  > :where(li:last-child)
+  > :where(:is(ol, ul):last-child)
+  > :where(li:last-child:not(:has(* > li)))::after,
+:where(.aui-md[data-status="running"])
+  > :where(:is(ol, ul):last-child)
+  > :where(li:last-child)
+  > :where(:is(ol, ul):last-child)
+  > :where(li:last-child)
+  > :where(:is(ol, ul):last-child)
+  > :where(li:last-child)::after {
+  animation: aui-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  font-family:
+    ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+    "Segoe UI Symbol", "Noto Color Emoji";
+  --aui-content: "\25cf";
+  content: var(--aui-content);
+  margin-left: 0.25rem;
+  margin-right: 0.25rem;
+}
+
+.dark :where(.aui-md[data-status="running"]):empty::after,
+.dark :where(.aui-md[data-status="running"])
+  > :where(:not(ol):not(ul):not(pre)):last-child::after,
+.dark :where(.aui-md[data-status="running"]) > pre:last-child code::after,
+.dark :where(.aui-md[data-status="running"])
+  > :where(:is(ol, ul):last-child)
+  > :where(li:last-child:not(:has(* > li)))::after,
+.dark :where(.aui-md[data-status="running"])
+  > :where(:is(ol, ul):last-child)
+  > :where(li:last-child)
+  > :where(:is(ol, ul):last-child)
+  > :where(li:last-child:not(:has(* > li)))::after,
+.dark :where(.aui-md[data-status="running"])
+  > :where(:is(ol, ul):last-child)
+  > :where(li:last-child)
+  > :where(:is(ol, ul):last-child)
+  > :where(li:last-child)
+  > :where(:is(ol, ul):last-child)
+  > :where(li:last-child)::after {
+  color: rgb(250 250 250);
+}
+
+/* Inline pulsing dot (reasoning tails, etc.) */
+.aui-streaming-dot-pulse {
+  animation: aui-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  margin-left: 0.25rem;
+  font-family:
+    ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+    "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: #ffffff;
+  --foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #a1a1aa;
+}
+
+.dark {
+  --background: #18181b;
+  --foreground: #fafafa;
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.15);
+  --ring: #71717a;
+}
 
 html,
 body,
@@ -15,68 +124,71 @@ body,
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+  font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto',
+    'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: var(--background);
+  color: var(--foreground);
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto',
+    sans-serif;
 }
 
-/* Custom scrollbar */
+code, pre {
+  font-family: 'Geist Mono', Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
+
+/* Custom Slim Scrollbar (tschat style) */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
-}
-
-.dark ::-webkit-scrollbar-track {
-  background: #1f2937;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 4px;
-}
-
-.dark ::-webkit-scrollbar-thumb {
-  background: #4b5563;
+  background: rgba(113, 113, 122, 0.2);
+  border-radius: 9999px;
+  transition: background-color 150ms;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: rgba(113, 113, 122, 0.4);
 }
 
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: #6b7280;
+/* Shimmer overlay for reasoning */
+.shimmer {
+  background: linear-gradient(
+    110deg,
+    transparent 35%,
+    rgba(161, 161, 170, 0.15) 45%,
+    rgba(161, 161, 170, 0.25) 50%,
+    rgba(161, 161, 170, 0.15) 55%,
+    transparent 65%
+  );
+  background-size: 250% 100%;
+  animation: shimmer-sweep 1000ms linear infinite both;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
 }
 
-/* Mermaid graph dark mode - ensure edges and lines are visible */
+/* Mermaid graph dark mode */
 .dark .mermaid-graph line,
 .dark .mermaid-graph path[stroke],
 .dark .mermaid-graph polyline,
 .dark .mermaid-graph .edgePath path {
-  stroke: #94a3b8 !important;
+  stroke: #a1a1aa !important;
 }
 
 .dark .mermaid-graph .node rect,
 .dark .mermaid-graph .node circle,
 .dark .mermaid-graph .node polygon {
-  stroke: #94a3b8 !important;
+  stroke: #a1a1aa !important;
 }
-
-/* Line clamp utility */
-.line-clamp-2 {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-

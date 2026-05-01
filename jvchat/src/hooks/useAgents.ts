@@ -1,11 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiClient } from '../config/api'
-import { useAuth } from './useAuth'
-import { clearAllStorage } from '../utils/storage'
+import { getToken } from '../utils/storage'
 import type { Agent } from '../types/agent'
 
 export function useAgents(enabled?: boolean) {
-  const { logout } = useAuth()
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -35,18 +33,33 @@ export function useAgents(enabled?: boolean) {
       })
       setAgents(transformedAgents)
     } catch (err: any) {
+      // If a logout redirect is already in flight (e.g. triggered by the interceptor after a
+      // failed token refresh), suppress any error UI — the page is about to navigate to /login.
+      if (apiClient.authFailureScheduled) return
+
+      // CORS can hide 401 from axios (no response) → "Network Error"; still clear session.
+      const code = err?.code as string | undefined
+      const msg = typeof err?.message === 'string' ? err.message : ''
+      if (
+        getToken() &&
+        (code === 'ERR_NETWORK' || /network error/i.test(msg)) &&
+        !err?.response
+      ) {
+        apiClient.invalidateSessionAndRedirectToLogin()
+        return
+      }
+
       console.error('Error fetching agents:', err)
-      // Clear all local storage and invalidate session
-      clearAllStorage()
-      // logout() will also navigate to login screen
-      // Note: logout is async but we don't need to await it here
-      logout().catch((logoutErr) => {
-        console.warn('Logout error:', logoutErr)
-      })
+      const status = err.response?.status
+      if (status === 401 || status === 403) {
+        apiClient.invalidateSessionAndRedirectToLogin()
+        return
+      }
+      setError(err?.message || 'Failed to load agents')
     } finally {
       setLoading(false)
     }
-  }, [enabled, logout])
+  }, [enabled])
 
   useEffect(() => {
     fetchAgents()

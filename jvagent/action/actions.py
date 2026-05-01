@@ -131,6 +131,9 @@ class Actions(Node):
                 if action.enabled:
                     self.enabled_count += 1
 
+                action.module_path = Action.canonical_import_module_path(
+                    action.metadata
+                )
                 await action.save()
 
                 if not await self.is_connected_to(action):
@@ -165,9 +168,15 @@ class Actions(Node):
 
                 await self.save()
 
-                from jvagent.core.cache import invalidate_action_cache
+                from jvagent.core.cache import (
+                    cache_action_type_index,
+                    invalidate_action_cache,
+                )
 
                 await invalidate_action_cache(action.agent_id)
+                await cache_action_type_index(
+                    action.agent_id, action.get_class_name(), action.id
+                )
 
                 return True
 
@@ -199,6 +208,9 @@ class Actions(Node):
         """
         try:
             existing_action.metadata = source_action.metadata
+            existing_action.module_path = Action.canonical_import_module_path(
+                source_action.metadata
+            )
 
             await existing_action.save()
 
@@ -269,6 +281,10 @@ class Actions(Node):
             results[action.label] = success
             if success:
                 registered_actions.append(action)
+
+        # Validate dependency graph before calling post_register
+        if registered_actions:
+            await self.validate_dependencies(registered_actions)
 
         # Call post_register for every successfully registered action
         for action in registered_actions:
@@ -371,9 +387,13 @@ class Actions(Node):
                     self.enabled_count = max(0, self.enabled_count - 1)
                 await self.save()
 
-                from jvagent.core.cache import invalidate_action_cache
+                from jvagent.core.cache import (
+                    invalidate_action_cache,
+                    invalidate_action_type_index,
+                )
 
                 await invalidate_action_cache(agent_id)
+                await invalidate_action_type_index(agent_id)
 
                 return True
 
@@ -382,6 +402,74 @@ class Actions(Node):
                     f"Error deregistering action {action_id}: {e}", exc_info=True
                 )
                 return False
+
+    async def validate_dependencies(self, actions: List[Action]) -> List[str]:
+        """Pre-flight check that all action dependencies are satisfiable.
+
+        Examines each action's ``info.yaml`` dependencies and verifies that every
+        required action is present among the registered actions. Returns a list
+        of human-readable gap descriptions; an empty list means all dependencies
+        are satisfied.
+
+        Args:
+            actions: Successfully registered action instances to validate.
+
+        Returns:
+            List of error strings describing unsatisfied dependencies.
+        """
+        gaps: List[str] = []
+
+        # Build {namespace/label: action} index from this batch, then merge
+        # actions already persisted for the same agent (cross-session / partial installs).
+        registered_map: Dict[str, Action] = {}
+        for a in actions:
+            ns = a.metadata.get("namespace", "")
+            label = getattr(a, "label", "")
+            if ns and label:
+                registered_map[f"{ns}/{label}"] = a
+
+        agent_id = ""
+        if actions:
+            agent_id = getattr(actions[0], "agent_id", "") or ""
+        if agent_id:
+            try:
+                existing = await Action.find({"context.agent_id": agent_id})
+                for node in existing:
+                    ns = (node.metadata or {}).get("namespace", "")
+                    label = getattr(node, "label", "")
+                    if ns and label:
+                        ref = f"{ns}/{label}"
+                        if ref not in registered_map:
+                            registered_map[ref] = node
+            except Exception as e:
+                logger.debug(
+                    "Could not load existing actions for dependency validation: %s", e
+                )
+
+        for action in actions:
+            meta = action.metadata or {}
+            deps = meta.get("dependencies", {}) or {}
+            action_deps = deps.get("actions") or []
+            action_label = getattr(action, "label", "?")
+            action_ns = meta.get("namespace", "?")
+
+            for dep_ref in action_deps:
+                if not dep_ref or "/" not in dep_ref:
+                    continue
+                if dep_ref not in registered_map:
+                    gaps.append(
+                        f"Action {action_ns}/{action_label} requires "
+                        f"'{dep_ref}' which is not registered"
+                    )
+
+        if gaps:
+            logger.warning(
+                "Dependency validation found %d gap(s): %s",
+                len(gaps),
+                "; ".join(gaps),
+            )
+
+        return gaps
 
     # ============================================================================
     # Action Query - Entity-Centric
@@ -392,31 +480,50 @@ class Actions(Node):
         enabled_only: bool = False,
         entity: Optional[Union[Type[Action], str]] = None,
     ) -> List[Action]:
-        """Get all actions for this agent using node traversal.
+        """Get all actions for this agent using node traversal with caching.
 
-        Uses self.nodes() to get all connected Action nodes (including subclasses).
+        Uses ``self.nodes()`` to get all connected Action nodes (including subclasses).
         Optionally filters by enabled status and/or specific action entity type.
+
+        Results are cached when *entity* is None (the common "all actions" query).
+        The cache is invalidated on action register/deregister.
 
         Args:
             enabled_only: If True, only return enabled actions
-            entity: Optional action type to filter by (e.g., InteractAction, "InteractAction").
-                   If None, returns all Action types. If specified, returns only that type
-                   and its subclasses.
+            entity: Optional action type to filter by. Results NOT cached when set.
 
         Returns:
             List of action instances
         """
         try:
-            # Determine node filter - use entity if provided, otherwise default to Action
-            node_filter: Union[Type[Action], str] = (
-                entity if entity is not None else Action
-            )
+            if entity is None:
+                agent_id = None
+                for node in await self.nodes():
+                    from jvagent.core.agent import Agent
 
-            # Build kwargs for property filtering
+                    if isinstance(node, Agent):
+                        agent_id = node.id
+                        break
+
+                if agent_id:
+                    from jvagent.core.cache import cache_actions, get_cached_actions
+
+                    cached = await get_cached_actions(agent_id, enabled_only)
+                    if cached is not None:
+                        return cached
+
+                    node_filter: Union[Type[Action], str] = Action
+                    kwargs: Dict[str, Any] = {}
+                    if enabled_only:
+                        kwargs["enabled"] = True
+                    result = await self.nodes(node=node_filter, **kwargs)
+                    await cache_actions(agent_id, result, enabled_only)
+                    return result
+
+            node_filter = entity if entity is not None else Action
             kwargs = {}
             if enabled_only:
                 kwargs["enabled"] = True
-
             return await self.nodes(node=node_filter, **kwargs)
 
         except Exception as e:

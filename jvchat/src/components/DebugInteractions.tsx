@@ -17,6 +17,53 @@ import {
   type DebugInteractionsPageSize,
 } from "../utils/storage";
 import { useTheme } from "../context/ThemeContext";
+import { JsonViewer } from "./JsonViewer";
+import { JsonCodeEditor } from "./JsonCodeEditor";
+import { tryParseJsonDisplay } from "../utils/tryParseJsonDisplay";
+
+/** Code / text fields: black in dark theme, off-grey in light theme */
+function debugCodePanelClass(isDark: boolean) {
+  return isDark
+    ? "bg-black border border-zinc-700 text-zinc-200 placeholder-zinc-500"
+    : "bg-zinc-100 border border-zinc-300 text-zinc-900 placeholder-zinc-600";
+}
+
+function ResponseJsonOrText({
+  value,
+  isDark,
+  maxHeight = "min(55vh, 520px)",
+}: {
+  value: string;
+  isDark: boolean;
+  maxHeight?: string;
+}) {
+  const parsed = tryParseJsonDisplay(value);
+  if (parsed != null) {
+    return (
+      <JsonViewer
+        data={parsed}
+        dark={isDark}
+        defaultExpandDepth={2}
+        maxHeight={maxHeight}
+      />
+    );
+  }
+  return (
+    <div
+      className={`rounded-lg border p-4 text-sm ${
+        isDark ? "bg-black border-zinc-700" : "bg-zinc-100 border-zinc-300"
+      }`}
+    >
+      <pre
+        className={`whitespace-pre-wrap font-mono text-xs ${
+          isDark ? "text-zinc-300" : "text-zinc-800"
+        }`}
+      >
+        {value}
+      </pre>
+    </div>
+  );
+}
 
 interface DebugInteractionsProps {
   onClose?: () => void;
@@ -89,7 +136,6 @@ export function DebugInteractions({
 
   const userRef = useRef<HTMLTextAreaElement>(null);
   const systemRef = useRef<HTMLTextAreaElement>(null);
-  const historyRef = useRef<HTMLTextAreaElement>(null);
   const improveInstructionRef = useRef<HTMLTextAreaElement>(null);
   const improveResultRef = useRef<HTMLTextAreaElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -468,12 +514,6 @@ export function DebugInteractions({
   }, [selectedInteraction?.data.system_prompt, loading]);
 
   useLayoutEffect(() => {
-    if (showHistory) {
-      adjustHeight(historyRef.current);
-    }
-  }, [historyText, showHistory, loading]);
-
-  useLayoutEffect(() => {
     adjustHeight(improveInstructionRef.current);
   }, [improveInstruction, loading]);
 
@@ -731,7 +771,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
       {!isEmbedded && (
         <button
           onClick={() => setDarkMode(!effectiveDarkMode)}
-          className={`px-3 py-1.5 rounded text-sm ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`}
+          className={`px-3 py-1.5 rounded text-sm ${effectiveDarkMode ? "bg-zinc-700 hover:bg-zinc-600" : "bg-white hover:bg-zinc-100"} border ${effectiveDarkMode ? "border-zinc-600" : "border-zinc-300"}`}
         >
           {effectiveDarkMode ? "☀️ Light" : "🌙 Dark"}
         </button>
@@ -741,8 +781,8 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
         disabled={loading}
         className={
           isEmbedded
-            ? `px-3 py-2 text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 ${effectiveDarkMode ? "text-slate-300 bg-slate-700 hover:bg-slate-600" : "text-gray-700 bg-gray-100 hover:bg-gray-200"}`
-            : `px-3 py-1.5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`
+            ? `px-3 py-2 text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 ${effectiveDarkMode ? "text-zinc-300 bg-zinc-700 hover:bg-zinc-600" : "text-zinc-700 bg-zinc-100 hover:bg-zinc-200"}`
+            : `px-3 py-1.5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed ${effectiveDarkMode ? "bg-zinc-700 hover:bg-zinc-600" : "bg-white hover:bg-zinc-100"} border ${effectiveDarkMode ? "border-zinc-600" : "border-zinc-300"}`
         }
         title="Refresh"
       >
@@ -772,8 +812,8 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
         disabled={!selectedInteraction}
         className={
           isEmbedded
-            ? `px-3 py-2 text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${effectiveDarkMode ? "text-slate-300 bg-slate-700 hover:bg-slate-600" : "text-gray-700 bg-gray-100 hover:bg-gray-200"}`
-            : `px-3 py-1.5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`
+            ? `px-3 py-2 text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${effectiveDarkMode ? "text-zinc-300 bg-zinc-700 hover:bg-zinc-600" : "text-zinc-700 bg-zinc-100 hover:bg-zinc-200"}`
+            : `px-3 py-1.5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed ${effectiveDarkMode ? "bg-zinc-700 hover:bg-zinc-600" : "bg-white hover:bg-zinc-100"} border ${effectiveDarkMode ? "border-zinc-600" : "border-zinc-300"}`
         }
         title="Export"
       >
@@ -782,8 +822,8 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
       <label
         className={
           isEmbedded
-            ? `px-3 py-2 text-sm rounded-lg cursor-pointer transition-colors ${effectiveDarkMode ? "text-slate-300 bg-slate-700 hover:bg-slate-600" : "text-gray-700 bg-gray-100 hover:bg-gray-200"}`
-            : `px-3 py-1.5 rounded text-sm cursor-pointer ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-white hover:bg-gray-100"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`
+            ? `px-3 py-2 text-sm rounded-lg cursor-pointer transition-colors ${effectiveDarkMode ? "text-zinc-300 bg-zinc-700 hover:bg-zinc-600" : "text-zinc-700 bg-zinc-100 hover:bg-zinc-200"}`
+            : `px-3 py-1.5 rounded text-sm cursor-pointer ${effectiveDarkMode ? "bg-zinc-700 hover:bg-zinc-600" : "bg-white hover:bg-zinc-100"} border ${effectiveDarkMode ? "border-zinc-600" : "border-zinc-300"}`
         }
       >
         {isEmbedded ? "Import" : "📥 Import"}
@@ -797,7 +837,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
       {isEmbedded && onClose && (
         <button
           onClick={onClose}
-          className={`p-2 rounded-lg transition-colors ${effectiveDarkMode ? "text-slate-400 hover:text-slate-100 hover:bg-slate-700" : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"}`}
+          className={`p-2 rounded-lg transition-colors ${effectiveDarkMode ? "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700" : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"}`}
           title="Close"
           aria-label="Close debug interactions"
         >
@@ -821,21 +861,21 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
 
   const content = (
     <div
-      className={`${isEmbedded ? `rounded-lg shadow-xl w-full h-full max-w-[95vw] max-h-[95vh] flex flex-col ${effectiveDarkMode ? "bg-slate-900 text-slate-100" : "bg-white"}` : `min-h-screen p-6 ${effectiveDarkMode ? "bg-gray-900 text-gray-100" : "bg-gray-50 text-gray-900"}`}`}
+      className={`${isEmbedded ? `rounded-lg shadow-xl w-full h-full max-w-[95vw] max-h-[95vh] flex flex-col ${effectiveDarkMode ? "bg-zinc-900 text-zinc-100" : "bg-white"}` : `min-h-screen p-6 ${effectiveDarkMode ? "bg-zinc-900 text-zinc-100" : "bg-zinc-50 text-zinc-900"}`}`}
       onClick={(e) => isEmbedded && e.stopPropagation()}
     >
       {/* Header - matches GraphViewer when embedded */}
       <div
         className={
           isEmbedded
-            ? `flex-shrink-0 border-b px-4 sm:px-6 py-4 flex items-center justify-between ${effectiveDarkMode ? "border-slate-700" : "border-gray-200"}`
+            ? `flex-shrink-0 border-b px-4 sm:px-6 py-4 flex items-center justify-between ${effectiveDarkMode ? "border-zinc-700" : "border-zinc-200"}`
             : "flex justify-between items-center mb-6"
         }
       >
         <h2
           className={
             isEmbedded
-              ? `text-xl sm:text-2xl font-semibold ${effectiveDarkMode ? "text-slate-100" : "text-gray-900"}`
+              ? `text-xl sm:text-2xl font-semibold ${effectiveDarkMode ? "text-zinc-100" : "text-zinc-900"}`
               : "text-2xl font-bold"
           }
         >
@@ -851,16 +891,16 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
         }
       >
         {isEmbedded && loading && (
-          <div className={`absolute inset-0 flex items-center justify-center ${effectiveDarkMode ? "bg-slate-900" : "bg-white"}`}>
+          <div className={`absolute inset-0 flex items-center justify-center ${effectiveDarkMode ? "bg-zinc-900" : "bg-white"}`}>
             <div className="text-center">
-              <div className={`animate-spin rounded-full h-12 w-12 border-b-2 mx-auto ${effectiveDarkMode ? "border-indigo-400" : "border-indigo-600"}`} />
-              <p className={`mt-4 ${effectiveDarkMode ? "text-slate-400" : "text-gray-600"}`}>Loading interactions...</p>
+              <div className={`animate-spin rounded-full h-12 w-12 border-b-2 mx-auto ${effectiveDarkMode ? "border-zinc-400" : "border-zinc-600"}`} />
+              <p className={`mt-4 ${effectiveDarkMode ? "text-zinc-400" : "text-zinc-600"}`}>Loading interactions...</p>
             </div>
           </div>
         )}
 
         {isEmbedded && error && !loading && parentInteractions.length === 0 && (
-          <div className={`absolute inset-0 flex items-center justify-center p-4 ${effectiveDarkMode ? "bg-slate-900" : "bg-white"}`}>
+          <div className={`absolute inset-0 flex items-center justify-center p-4 ${effectiveDarkMode ? "bg-zinc-900" : "bg-white"}`}>
             <div className={`rounded-lg p-6 max-w-md w-full ${effectiveDarkMode ? "bg-red-900/30 border border-red-800" : "bg-red-50 border border-red-200"}`}>
               <h3 className={`text-lg font-semibold mb-2 ${effectiveDarkMode ? "text-red-300" : "text-red-800"}`}>
                 Error Loading Interactions
@@ -908,17 +948,17 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
             (parentInteractions.length > 0 ||
               (selectedUserId && initialLoadDone.current)) && (
             <div
-              className={`rounded-lg shadow-sm p-4 mb-6 border ${effectiveDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"}`}
+              className={`rounded-lg shadow-sm p-4 mb-6 border ${effectiveDarkMode ? "bg-zinc-800 border-zinc-700" : "bg-white border-zinc-200"}`}
             >
               <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:flex-wrap xl:items-end xl:justify-between max-w-5xl">
                 <div className="flex flex-col sm:flex-row gap-4 flex-1 min-w-0">
                 {(knownUserIds.length > 0 || selectedUserId) && (
                   <div>
-                    <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-slate-300" : ""}`}>
+                    <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}>
                       User
                     </label>
                     <select
-                      className={`w-full max-w-xs p-2 border rounded text-sm ${effectiveDarkMode ? "bg-slate-700 border-slate-600 text-slate-100" : "bg-white border-gray-300"}`}
+                      className={`w-full max-w-xs p-2 rounded text-sm ${debugCodePanelClass(effectiveDarkMode)}`}
                       value={selectedUserId ?? ""}
                       onChange={(e) => {
                         const v = e.target.value || null;
@@ -942,11 +982,11 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                   </div>
                 )}
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-slate-300" : ""}`}>
+                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}>
                     Interactions per page
                   </label>
                   <select
-                    className={`w-full max-w-xs p-2 border rounded text-sm ${effectiveDarkMode ? "bg-slate-700 border-slate-600 text-slate-100" : "bg-white border-gray-300"}`}
+                    className={`w-full max-w-xs p-2 rounded text-sm ${debugCodePanelClass(effectiveDarkMode)}`}
                     value={pageSize}
                     onChange={(e) => {
                       const n = Number(e.target.value);
@@ -1013,17 +1053,17 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                 </div>
               </div>
               {effectiveParents.length === 0 && selectedUserId ? (
-                <p className={`text-sm ${effectiveDarkMode ? "text-slate-400" : "text-gray-500"}`}>
+                <p className={`text-sm ${effectiveDarkMode ? "text-zinc-400" : "text-zinc-500"}`}>
                   No interactions for this user in the current view.
                 </p>
               ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-slate-300" : ""}`}>
+                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}>
                     Interaction
                   </label>
                   <select
-                    className={`w-full p-2 border rounded text-sm ${effectiveDarkMode ? "bg-slate-700 border-slate-600 text-slate-100" : "bg-white border-gray-300"}`}
+                    className={`w-full p-2 rounded text-sm ${debugCodePanelClass(effectiveDarkMode)}`}
                     value={selectedParentIndex ?? ""}
                     onChange={(e) =>
                       selectInteraction(
@@ -1049,11 +1089,11 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                 </div>
 
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-slate-300" : ""}`}>
+                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}>
                     Response
                   </label>
                   <select
-                    className={`w-full p-2 border rounded text-sm ${effectiveDarkMode ? "bg-slate-700 border-slate-600 text-slate-100" : "bg-white border-gray-300"}`}
+                    className={`w-full p-2 rounded text-sm ${debugCodePanelClass(effectiveDarkMode)}`}
                     value={selectedMetricIndex ?? ""}
                     onChange={(e) =>
                       selectInteraction(
@@ -1087,7 +1127,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                   <button
                     onClick={loadMore}
                     disabled={loadingMore}
-                    className={`px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${isEmbedded ? (effectiveDarkMode ? "text-slate-300 bg-slate-700 rounded-lg hover:bg-slate-600" : "text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200") : `rounded ${effectiveDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-gray-100 hover:bg-gray-200"} border ${effectiveDarkMode ? "border-gray-600" : "border-gray-300"}`}`}
+                    className={`px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${isEmbedded ? (effectiveDarkMode ? "text-zinc-300 bg-zinc-700 rounded-lg hover:bg-zinc-600" : "text-zinc-700 bg-zinc-100 rounded-lg hover:bg-zinc-200") : `rounded ${effectiveDarkMode ? "bg-zinc-700 hover:bg-zinc-600" : "bg-zinc-100 hover:bg-zinc-200"} border ${effectiveDarkMode ? "border-zinc-600" : "border-zinc-300"}`}`}
                   >
                     {loadingMore ? "Loading..." : "Load more"}
                   </button>
@@ -1099,7 +1139,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
           {/* Loading State - non-embedded only; embedded uses overlay */}
           {!isEmbedded && loading && (
             <div
-              className={`${effectiveDarkMode ? "bg-gray-800" : "bg-white"} rounded-lg shadow-sm p-12 text-center border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"}`}
+              className={`${effectiveDarkMode ? "bg-zinc-800" : "bg-white"} rounded-lg shadow-sm p-12 text-center border ${effectiveDarkMode ? "border-zinc-700" : "border-zinc-200"}`}
             >
               <div className="text-lg">Loading interactions...</div>
             </div>
@@ -1108,7 +1148,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
           {/* Main Content */}
           {!loading && selectedInteraction && (
             <div
-              className={`rounded-lg shadow-sm p-6 border ${effectiveDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"}`}
+              className={`rounded-lg shadow-sm p-6 border ${effectiveDarkMode ? "bg-zinc-800 border-zinc-700" : "bg-white border-zinc-200"}`}
             >
               <div className="space-y-6">
                 {/* Original Response */}
@@ -1117,18 +1157,15 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     <label className="block text-sm font-medium mb-2">
                       Original Response
                     </label>
-                    <div
-                      className={`p-4 rounded text-sm border ${effectiveDarkMode ? "bg-gray-900 border-gray-700" : "bg-red-50 border-red-200"}`}
-                    >
-                      <pre className="whitespace-pre-wrap font-mono text-xs">
-                        {selectedInteraction.data.response}
-                      </pre>
-                    </div>
+                    <ResponseJsonOrText
+                      value={selectedInteraction.data.response}
+                      isDark={effectiveDarkMode}
+                    />
                   </div>
                 )}
                 {/* User Prompt */}
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-slate-300" : ""}`}>
+                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}>
                     User Prompt
                   </label>
                   <textarea
@@ -1143,13 +1180,13 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                         },
                       });
                     }}
-                    className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-slate-800 border-slate-600 text-slate-100" : "bg-blue-50 border-blue-200 text-gray-900"}`}
+                    className={`w-full p-3 rounded text-sm font-mono ${debugCodePanelClass(effectiveDarkMode)}`}
                     style={{ overflow: "hidden" }}
                   />
                 </div>
                 {/* System Prompt */}
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-slate-300" : ""}`}>
+                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}>
                     System Prompt
                   </label>
                   <textarea
@@ -1164,21 +1201,21 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                         },
                       });
                     }}
-                    className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-slate-800 border-slate-600 text-slate-100" : "bg-yellow-50 border-yellow-200 text-gray-900"}`}
+                    className={`w-full p-3 rounded text-sm font-mono ${debugCodePanelClass(effectiveDarkMode)}`}
                     style={{ overflow: "hidden" }}
                   />
                 </div>
                 {/* History - Only show if exists */}
                 {showHistory && (
                   <div>
-                    <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-slate-300" : ""}`}>
+                    <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}>
                       History (JSON)
                     </label>
-                    <textarea
-                      ref={historyRef}
-                      value={historyText}
-                      onChange={(e) => setHistoryText(e.target.value)}
-                      onBlur={() => {
+                    <div
+                      className="w-full"
+                      onBlur={(e) => {
+                        if (e.currentTarget.contains(e.relatedTarget as Node))
+                          return;
                         try {
                           const parsed = historyText
                             ? JSON.parse(historyText)
@@ -1192,14 +1229,20 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                           console.error("Invalid JSON for history:", err);
                         }
                       }}
-                      className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-slate-900 border-slate-700 text-slate-100" : "bg-gray-100 border-gray-200 text-gray-900"}`}
-                      style={{ overflow: "hidden" }}
-                    />
+                    >
+                      <JsonCodeEditor
+                        value={historyText}
+                        onChange={setHistoryText}
+                        dark={effectiveDarkMode}
+                        height="min(320px, 42vh)"
+                        className="rounded-md"
+                      />
+                    </div>
                   </div>
                 )}
                 {/* Model */}
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-slate-300" : ""}`}>
+                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}>
                     Model
                   </label>
                   <input
@@ -1214,7 +1257,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                         },
                       })
                     }
-                    className={`w-full p-2 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-slate-700 border-slate-600 text-slate-100" : "bg-white border-gray-300"}`}
+                    className={`w-full p-2 rounded text-sm font-mono ${debugCodePanelClass(effectiveDarkMode)}`}
                   />
                 </div>
                 {/* Test Button */}
@@ -1222,7 +1265,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                   <button
                     onClick={handleTest}
                     disabled={testing || !modelAction}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="px-6 py-2 bg-zinc-600 text-white rounded-lg font-medium hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {testing ? "Testing..." : "🧪 Run Test"}
                   </button>
@@ -1234,18 +1277,41 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                       Test Result
                     </label>
                     <div
-                      className={`p-4 rounded text-sm border ${testResult.success ? (effectiveDarkMode ? "bg-green-900 border-green-700" : "bg-green-50 border-green-200") : effectiveDarkMode ? "bg-red-900 border-red-700" : "bg-red-50 border-red-200"}`}
+                      className={`rounded-lg border p-4 text-sm ${
+                        effectiveDarkMode
+                          ? "bg-black border-zinc-700"
+                          : "bg-zinc-100 border-zinc-300"
+                      }`}
                     >
                       {testResult.success ? (
-                        <pre
-                          className={`whitespace-pre-wrap font-mono text-xs ${effectiveDarkMode ? "text-green-100" : "text-green-700"}`}
-                        >
-                          {testResult.response}
-                        </pre>
+                        (() => {
+                          const tr = testResult.response ?? "";
+                          const tp = tryParseJsonDisplay(tr);
+                          if (tp != null) {
+                            return (
+                              <JsonViewer
+                                data={tp}
+                                dark={effectiveDarkMode}
+                                maxHeight="min(55vh, 520px)"
+                              />
+                            );
+                          }
+                          return (
+                            <pre
+                              className={`whitespace-pre-wrap font-mono text-xs ${
+                                effectiveDarkMode
+                                  ? "text-green-400"
+                                  : "text-green-800"
+                              }`}
+                            >
+                              {tr}
+                            </pre>
+                          );
+                        })()
                       ) : (
                         <div
                           className={
-                            effectiveDarkMode ? "text-red-100" : "text-red-700"
+                            effectiveDarkMode ? "text-red-400" : "text-red-700"
                           }
                         >
                           <div className="font-medium mb-2">Error</div>
@@ -1261,13 +1327,10 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     <label className="block text-sm font-medium mb-2">
                       Original Response
                     </label>
-                    <div
-                      className={`p-4 rounded text-sm border ${effectiveDarkMode ? "bg-gray-900 border-gray-700" : "bg-red-50 border-red-200"}`}
-                    >
-                      <pre className="whitespace-pre-wrap font-mono text-xs">
-                        {selectedInteraction.data.response}
-                      </pre>
-                    </div>
+                    <ResponseJsonOrText
+                      value={selectedInteraction.data.response}
+                      isDark={effectiveDarkMode}
+                    />
                   </div>
                 )}
               </div>
@@ -1277,9 +1340,9 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
           {/* Improve Prompt Section */}
           {!loading && selectedInteraction && (
             <div
-              className={`rounded-lg shadow-sm p-6 border mt-6 ${effectiveDarkMode ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"}`}
+              className={`rounded-lg shadow-sm p-6 border mt-6 ${effectiveDarkMode ? "bg-zinc-800 border-zinc-700" : "bg-white border-zinc-200"}`}
             >
-              <h2 className={`text-xl font-semibold mb-4 ${effectiveDarkMode ? "text-slate-100" : ""}`}>Improve Prompt</h2>
+              <h2 className={`text-xl font-semibold mb-4 ${effectiveDarkMode ? "text-zinc-100" : ""}`}>Improve Prompt</h2>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-2">
@@ -1290,7 +1353,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     value={improveInstruction}
                     onChange={(e) => setImproveInstruction(e.target.value)}
                     placeholder="Describe how you want to improve the prompts..."
-                    className={`w-full p-3 border rounded text-sm ${effectiveDarkMode ? "bg-slate-700 border-slate-600 text-slate-100" : "bg-white border-gray-300"}`}
+                    className={`w-full p-3 rounded text-sm ${debugCodePanelClass(effectiveDarkMode)}`}
                     style={{ overflow: "hidden" }}
                   />
                 </div>
@@ -1302,7 +1365,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     type="text"
                     value={improveModel}
                     onChange={(e) => setImproveModel(e.target.value)}
-                    className={`w-full p-2 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-slate-700 border-slate-600 text-slate-100" : "bg-white border-gray-300"}`}
+                    className={`w-full p-2 rounded text-sm font-mono ${debugCodePanelClass(effectiveDarkMode)}`}
                   />
                 </div>
                 <div className="flex justify-end gap-2">
@@ -1328,7 +1391,7 @@ ${improveInstruction}
 Provide improvement instruction on how to improve the prompt. Return a raw markdown.`;
                       navigator.clipboard.writeText(promptToCopy);
                     }}
-                    className="px-6 py-2 bg-gray-600 text-white rounded-lg font-medium hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="px-6 py-2 bg-zinc-600 text-white rounded-lg font-medium hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     📋 Copy Prompt
                   </button>
@@ -1349,7 +1412,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                       ref={improveResultRef}
                       value={improveResult}
                       onChange={(e) => setImproveResult(e.target.value)}
-                      className={`w-full p-3 border rounded text-sm font-mono ${effectiveDarkMode ? "bg-slate-800 border-slate-600 text-slate-100" : "bg-purple-50 border-purple-200 text-gray-900"}`}
+                      className={`w-full p-3 rounded text-sm font-mono ${debugCodePanelClass(effectiveDarkMode)}`}
                       style={{ overflow: "hidden" }}
                     />
                   </div>
@@ -1363,7 +1426,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
             !selectedInteraction &&
             parentInteractions.length === 0 && (
               <div
-                className={`${effectiveDarkMode ? "bg-gray-800 text-gray-400" : "bg-white text-gray-500"} rounded-lg shadow-sm p-12 text-center border ${effectiveDarkMode ? "border-gray-700" : "border-gray-200"}`}
+                className={`${effectiveDarkMode ? "bg-zinc-800 text-zinc-400" : "bg-white text-zinc-500"} rounded-lg shadow-sm p-12 text-center border ${effectiveDarkMode ? "border-zinc-700" : "border-zinc-200"}`}
               >
                 No interaction logs available. Ensure database logging is
                 enabled with INTERACTION level, then try refreshing.
@@ -1383,18 +1446,18 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
           }}
         >
           <div
-            className={`max-w-md w-full rounded-xl shadow-xl border p-6 ${effectiveDarkMode ? "bg-slate-800 border-slate-600 text-slate-100" : "bg-white border-gray-200 text-gray-900"}`}
+            className={`max-w-md w-full rounded-xl shadow-xl border p-6 ${effectiveDarkMode ? "bg-zinc-800 border-zinc-600 text-zinc-100" : "bg-white border-zinc-200 text-zinc-900"}`}
             onClick={(e) => e.stopPropagation()}
           >
             {memoryConfirm.kind === "purge" && (
               <>
                 <h3
                   id="memory-confirm-title"
-                  className={`text-lg font-semibold mb-2 ${effectiveDarkMode ? "text-slate-100" : "text-gray-900"}`}
+                  className={`text-lg font-semibold mb-2 ${effectiveDarkMode ? "text-zinc-100" : "text-zinc-900"}`}
                 >
                   Confirm purge
                 </h3>
-                <p className={`text-sm mb-6 ${effectiveDarkMode ? "text-slate-300" : "text-gray-600"}`}>
+                <p className={`text-sm mb-6 ${effectiveDarkMode ? "text-zinc-300" : "text-zinc-600"}`}>
                   {memoryConfirm.scope.conversation_id
                     ? "Purge this conversation from agent memory? Associated interactions will be removed. This cannot be undone."
                     : memoryConfirm.scope.user_id
@@ -1405,7 +1468,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                   <button
                     type="button"
                     onClick={() => setMemoryConfirm(null)}
-                    className={`px-4 py-2 text-sm rounded-lg font-medium ${effectiveDarkMode ? "text-slate-200 bg-slate-700 hover:bg-slate-600" : "text-gray-700 bg-gray-100 hover:bg-gray-200"}`}
+                    className={`px-4 py-2 text-sm rounded-lg font-medium ${effectiveDarkMode ? "text-zinc-200 bg-zinc-700 hover:bg-zinc-600" : "text-zinc-700 bg-zinc-100 hover:bg-zinc-200"}`}
                   >
                     Cancel
                   </button>
@@ -1424,11 +1487,11 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
               <>
                 <h3
                   id="memory-confirm-title"
-                  className={`text-lg font-semibold mb-2 ${effectiveDarkMode ? "text-slate-100" : "text-gray-900"}`}
+                  className={`text-lg font-semibold mb-2 ${effectiveDarkMode ? "text-zinc-100" : "text-zinc-900"}`}
                 >
                   Confirm delete user
                 </h3>
-                <p className={`text-sm mb-6 ${effectiveDarkMode ? "text-slate-300" : "text-gray-600"}`}>
+                <p className={`text-sm mb-6 ${effectiveDarkMode ? "text-zinc-300" : "text-zinc-600"}`}>
                   Permanently delete memory for user &quot;
                   {formatUserLabel(memoryConfirm.userId)}&quot; on this agent (user node
                   and connected data)? This cannot be undone.
@@ -1437,7 +1500,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                   <button
                     type="button"
                     onClick={() => setMemoryConfirm(null)}
-                    className={`px-4 py-2 text-sm rounded-lg font-medium ${effectiveDarkMode ? "text-slate-200 bg-slate-700 hover:bg-slate-600" : "text-gray-700 bg-gray-100 hover:bg-gray-200"}`}
+                    className={`px-4 py-2 text-sm rounded-lg font-medium ${effectiveDarkMode ? "text-zinc-200 bg-zinc-700 hover:bg-zinc-600" : "text-zinc-700 bg-zinc-100 hover:bg-zinc-200"}`}
                   >
                     Cancel
                   </button>

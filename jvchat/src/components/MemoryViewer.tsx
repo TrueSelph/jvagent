@@ -54,29 +54,29 @@ export function MemoryViewer({ agentId, onClose }: MemoryViewerProps) {
   const content = (
     <div
       className={`rounded-lg shadow-xl w-full h-full max-w-[95vw] max-h-[95vh] flex flex-col border ${
-        dark ? "bg-slate-900 border-slate-700 text-slate-100" : "bg-white border-gray-200"
+        dark ? "bg-zinc-900 border-zinc-700 text-zinc-100" : "bg-white border-zinc-200"
       }`}
       onClick={(e) => e.stopPropagation()}
     >
       <div
         className={`flex-shrink-0 border-b px-4 sm:px-6 py-4 flex items-center justify-between ${
-          dark ? "border-slate-700" : "border-gray-200"
+          dark ? "border-zinc-700" : "border-zinc-200"
         }`}
       >
         <div className="flex items-center gap-3">
-          <div className={`p-2 rounded-lg ${dark ? "bg-indigo-500/20 text-indigo-400" : "bg-indigo-100 text-indigo-600"}`}>
+          <div className={`p-2 rounded-lg ${dark ? "bg-zinc-500/20 text-zinc-400" : "bg-zinc-100 text-zinc-600"}`}>
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
             </svg>
           </div>
-          <h2 className={`text-xl sm:text-2xl font-semibold ${dark ? "text-slate-100" : "text-gray-900"}`}>
+          <h2 className={`text-xl sm:text-2xl font-semibold ${dark ? "text-zinc-100" : "text-zinc-900"}`}>
             Long-Term Memory
           </h2>
         </div>
         <button
           onClick={onClose}
           className={`p-2 rounded-lg transition-colors ${
-            dark ? "text-slate-400 hover:text-slate-100 hover:bg-slate-700" : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+            dark ? "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700" : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
           }`}
           aria-label="Close"
         >
@@ -89,16 +89,16 @@ export function MemoryViewer({ agentId, onClose }: MemoryViewerProps) {
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Left: Categories sidebar */}
         <div className={`flex-shrink-0 w-64 sm:w-72 border-r overflow-y-auto ${
-          dark ? "border-slate-700 bg-slate-800/50" : "border-gray-200 bg-gray-50"
+          dark ? "border-zinc-700 bg-zinc-800/50" : "border-zinc-200 bg-zinc-50"
         }`}>
           {loading && !memoryData ? (
             <div className="flex items-center justify-center py-8">
-              <div className={`animate-spin rounded-full h-8 w-8 border-b-2 ${dark ? "border-indigo-400" : "border-indigo-600"}`} />
+              <div className={`animate-spin rounded-full h-8 w-8 border-b-2 ${dark ? "border-zinc-400" : "border-zinc-600"}`} />
             </div>
           ) : error ? (
             <p className={`px-4 py-4 text-sm ${dark ? "text-red-400" : "text-red-600"}`}>{error}</p>
           ) : categories.length === 0 ? (
-            <p className={`px-4 py-4 text-sm ${dark ? "text-slate-400" : "text-gray-500"}`}>No memory data yet.</p>
+            <p className={`px-4 py-4 text-sm ${dark ? "text-zinc-400" : "text-zinc-500"}`}>No memory data yet.</p>
           ) : (
             <div className="py-2">
               {categories.map((catKey) => {
@@ -110,11 +110,11 @@ export function MemoryViewer({ agentId, onClose }: MemoryViewerProps) {
                     className={`w-full text-left px-4 py-3 text-sm transition-all border-l-4 ${
                       selectedCategory === catKey
                         ? dark
-                          ? "bg-indigo-600/20 text-indigo-300 border-indigo-500"
-                          : "bg-indigo-50 text-indigo-700 border-indigo-600"
+                          ? "bg-zinc-600/20 text-zinc-300 border-zinc-500"
+                          : "bg-zinc-50 text-zinc-700 border-zinc-600"
                         : dark
-                        ? "hover:bg-slate-700/80 text-slate-400 border-transparent hover:text-slate-200"
-                        : "hover:bg-gray-100 text-gray-600 border-transparent hover:text-gray-900"
+                        ? "hover:bg-zinc-700/80 text-zinc-400 border-transparent hover:text-zinc-200"
+                        : "hover:bg-zinc-100 text-zinc-600 border-transparent hover:text-zinc-900"
                     }`}
                   >
                     <div className="font-medium truncate">{cat?.title}</div>
@@ -131,26 +131,26 @@ export function MemoryViewer({ agentId, onClose }: MemoryViewerProps) {
         </div>
 
         {/* Right: Content area */}
-        <div className={`flex-1 overflow-y-auto p-6 sm:p-8 ${dark ? "bg-slate-900" : "bg-white"}`}>
+        <div className={`flex-1 overflow-y-auto p-6 sm:p-8 ${dark ? "bg-zinc-900" : "bg-white"}`}>
           {!selectedCategory ? (
             <div className="h-full flex flex-col items-center justify-center text-center">
-              <div className={`mb-4 p-4 rounded-full ${dark ? "bg-slate-800" : "bg-gray-50"}`}>
-                <svg className={`w-12 h-12 ${dark ? "text-slate-600" : "text-gray-300"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className={`mb-4 p-4 rounded-full ${dark ? "bg-zinc-800" : "bg-zinc-50"}`}>
+                <svg className={`w-12 h-12 ${dark ? "text-zinc-600" : "text-zinc-300"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                 </svg>
               </div>
-              <p className={`text-lg font-medium ${dark ? "text-slate-400" : "text-gray-500"}`}>
+              <p className={`text-lg font-medium ${dark ? "text-zinc-400" : "text-zinc-500"}`}>
                 Select a category to view details.
               </p>
             </div>
           ) : (
             <div className="max-w-3xl mx-auto animate-fadeIn">
-              <div className="mb-6 flex items-center justify-between pb-4 border-b border-gray-200 dark:border-slate-800">
-                <h1 className={`text-2xl font-bold ${dark ? "text-white" : "text-gray-900"}`}>
+              <div className="mb-6 flex items-center justify-between pb-4 border-b border-zinc-200 dark:border-zinc-800">
+                <h1 className={`text-2xl font-bold ${dark ? "text-white" : "text-zinc-900"}`}>
                   {memoryData?.memory[selectedCategory]?.title}
                 </h1>
                 {memoryData?.memory[selectedCategory]?.updated_at && (
-                  <span className={`text-xs ${dark ? "text-slate-500" : "text-gray-400"}`}>
+                  <span className={`text-xs ${dark ? "text-zinc-500" : "text-zinc-400"}`}>
                     Last updated: {new Date(memoryData.memory[selectedCategory].updated_at!).toLocaleString()}
                   </span>
                 )}
@@ -165,7 +165,7 @@ export function MemoryViewer({ agentId, onClose }: MemoryViewerProps) {
                     ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-4 space-y-1" {...props} />,
                     li: ({node, ...props}) => <li className="opacity-90" {...props} />,
                     code: ({node, ...props}) => (
-                      <code className={`px-1.5 py-0.5 rounded text-sm ${dark ? "bg-slate-800 text-indigo-300" : "bg-gray-100 text-indigo-600"}`} {...props} />
+                      <code className={`px-1.5 py-0.5 rounded text-sm ${dark ? "bg-zinc-800 text-zinc-300" : "bg-zinc-100 text-zinc-600"}`} {...props} />
                     ),
                   }}
                 >

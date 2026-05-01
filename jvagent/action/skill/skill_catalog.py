@@ -21,6 +21,7 @@ from jvagent.action.skill.prompts import (
     SKILL_INDEX_INTRO,
     SKILL_SEARCH_SEMANTIC_PROMPT,
 )
+from jvagent.action.skill.version_utils import version_satisfies as _version_satisfies
 from jvagent.core.app_context import get_app_root
 from jvagent.scaffold.skill_resolve import (
     apply_skill_selector,
@@ -254,6 +255,41 @@ class SkillCatalog:
                         exc,
                     )
 
+            requires_jvagent = str(skill_data.get("requires_jvagent") or "").strip()
+            if requires_jvagent:
+                from jvagent.version import __version__ as jvagent_version
+
+                if not _version_satisfies(jvagent_version, requires_jvagent):
+                    failures.append(
+                        {
+                            "skill_name": skill_name,
+                            "kind": "jvagent_version",
+                            "detail": (
+                                f"Skill requires jvagent {requires_jvagent} but "
+                                f"runtime is {jvagent_version}"
+                            ),
+                        }
+                    )
+
+            rav = skill_data.get("requires_action_versions") or {}
+            if rav and action_resolver:
+                try:
+                    ver_errs = await action_resolver.validate_action_ref_versions(rav)
+                    for detail in ver_errs or []:
+                        failures.append(
+                            {
+                                "skill_name": skill_name,
+                                "kind": "action_version",
+                                "detail": detail,
+                            }
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "SkillCatalog.preflight_check: action version error for '%s': %s",
+                        skill_name,
+                        exc,
+                    )
+
             # Check required_tools (optional frontmatter key)
             required_tools: List[str] = skill_data.get("required_tools", [])
             for tool in required_tools:
@@ -283,6 +319,41 @@ class SkillCatalog:
                             "detail": (
                                 f"Skill '{skill_name}' imports '{key}' but no "
                                 f"discovered skill exports it"
+                            ),
+                        }
+                    )
+
+        # ---- Version constraint validation ----
+        # Build a version map for all discovered skills
+        skill_versions: Dict[str, str] = {}
+        for skill_name, skill_data in self._skills.items():
+            ver = (skill_data.get("metadata") or {}).get("version")
+            if ver is not None:
+                skill_versions[skill_name] = str(ver)
+
+        for skill_name, skill_data in self._skills.items():
+            deps = (skill_data.get("metadata") or {}).get("dependencies") or {}
+            for dep_name, constraint in deps.items():
+                dep_version = skill_versions.get(dep_name)
+                if dep_version is None:
+                    failures.append(
+                        {
+                            "skill_name": skill_name,
+                            "kind": "unsatisfied_dependency",
+                            "detail": (
+                                f"Skill '{skill_name}' depends on '{dep_name}' "
+                                f"({constraint}) which is not discovered"
+                            ),
+                        }
+                    )
+                elif not _version_satisfies(dep_version, str(constraint)):
+                    failures.append(
+                        {
+                            "skill_name": skill_name,
+                            "kind": "version_mismatch",
+                            "detail": (
+                                f"Skill '{skill_name}' requires '{dep_name}' "
+                                f"{constraint} but version {dep_version} is installed"
                             ),
                         }
                     )

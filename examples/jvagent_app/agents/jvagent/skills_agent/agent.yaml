@@ -93,8 +93,10 @@ actions:
     - User wants the agent to search files and synthesize information
     - User asks the agent to read files and provide feedback
     - User requests debugging or troubleshooting with file inspection
-    model_action_type: OpenAILanguageModelAction
-    model: gpt-4.1
+    # model_action_type: OpenAILanguageModelAction
+    # model: gpt-4.1
+    model_action_type: OllamaLanguageModelAction
+    model: kimi-k2.6:cloud
     reasoning_enabled: true
     model_max_tokens: 32768
     stream_thinking: true
@@ -102,7 +104,7 @@ actions:
     stream_tool_progress: true
     max_iterations: 25
     max_duration_seconds: 300
-    response_mode: publish
+    response_mode: respond
     skills:
     - code_review
     - answer

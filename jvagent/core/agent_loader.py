@@ -9,7 +9,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import yaml
 
@@ -334,26 +334,100 @@ class AgentLoader:
             and r.get("context", {}).get("label")
         ]
 
+    @staticmethod
+    def _is_ghost_record(
+        record: Dict[str, Any],
+        *,
+        expected_import_paths: Optional[Set[str]] = None,
+        expected_actions: Optional[Set[Tuple[str, str]]] = None,
+    ) -> bool:
+        """Check if a DB record's Python module is importable.
+
+        Uses ``importlib.util.find_spec`` to directly test whether the module
+        referenced by the record can be found. This replaces the indirect
+        approach of relying on ``Action.get()`` returning None.
+
+        When *expected_import_paths* and *expected_actions* are provided, a row
+        whose ``(namespace, label)`` is still declared in agent.yaml but whose
+        persisted ``module_path`` is not among the filesystem-derived expected
+        paths is treated as stale (layout/code moved) without calling
+        ``find_spec``.
+
+        For core actions, the ``core_module_path`` metadata field is the
+        fully-qualified module path. For non-core actions, the importable path
+        is derived from ``module_root`` and ``module``.
+
+        Args:
+            record: Raw DB record with context.metadata fields.
+
+        Returns:
+            True if the module is NOT importable (ghost), False otherwise.
+        """
+        from importlib.util import find_spec
+
+        ctx = record.get("context") or {}
+        ns = ctx.get("namespace")
+        lbl = ctx.get("label")
+        key = (ns, lbl) if ns and lbl else None
+        mp = (ctx.get("module_path") or "").strip()
+
+        if (
+            expected_import_paths is not None
+            and expected_actions is not None
+            and key is not None
+            and key in expected_actions
+            and mp
+            and mp not in expected_import_paths
+        ):
+            return True
+
+        meta = ctx.get("metadata") or {}
+        if not meta:
+            return True
+
+        if meta.get("is_core_action"):
+            module_path = meta.get("core_module_path")
+            if not module_path:
+                return True
+            return find_spec(module_path) is None
+
+        module_root = meta.get("module_root")
+        module = meta.get("module")
+        if not module_root or not module:
+            return True
+
+        # Ensure the module root is on sys.path so find_spec can locate it
+        module_path = module
+        if os.path.isdir(module_root) and module_root not in sys.path:
+            try:
+                sys.path.insert(0, module_root)
+                result = find_spec(module_path) is None
+                return result
+            finally:
+                sys.path.remove(module_root)
+
+        return find_spec(module_path) is None
+
     async def _reconcile_actions(
         self,
         agent: Agent,
         actions_manager: Actions,
         expected_actions: set[Tuple[str, str]],
         all_records: List[Dict[str, Any]],
+        *,
+        expected_import_paths: Optional[Set[str]] = None,
     ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Remove stale action nodes and deduplicate, using raw DB records as truth.
 
-        Handles both live actions (whose modules are imported) and ghost nodes
-        (whose entity type is absent from _collect_class_names() because their
-        modules are no longer pre-imported).
+        Ghost detection is explicit via :meth:`_is_ghost_record` which tests
+        module importability directly, rather than relying on ``Action.get()``
+        returning None as a proxy signal.
 
-        For live actions, deregister_action() is used so lifecycle hooks,
+        For live actions, ``deregister_action()`` is used so lifecycle hooks,
         endpoint unregistration and module unloading all run correctly.
 
-        For ghost actions, Action.get() returns None (entity class not imported),
-        but Node.get() now falls back to the Node base class for unknown entity
-        types (jvspatial context.get() ghost-node fallback).  node.delete(cascade=True)
-        then cleans up all edges and the node record through the standard interface.
+        For ghost actions (module not importable), the node is fetched via
+        ``Node.get()`` and deleted with ``cascade=True``.
 
         Args:
             agent: Agent instance
@@ -393,29 +467,26 @@ class AgentLoader:
             label = ctx.get("label", "?")
 
             try:
-                # Live path: action class is imported — use full deregister flow
-                # (triggers lifecycle hooks, endpoint unregister, module unload)
-                action = await Action.get(record_id)
-                if action:
+                if self._is_ghost_record(
+                    record,
+                    expected_import_paths=expected_import_paths,
+                    expected_actions=expected_actions,
+                ):
+                    # Ghost: module not importable — delete directly via Node
+                    node = await Node.get(record_id)
+                    if node:
+                        await node.delete(cascade=True)
+                        removed += 1
+                        removed_logged.append(f"{ns}/{label} (ghost)")
+                    else:
+                        logger.warning(
+                            f"Could not retrieve ghost node {ns}/{label} ({record_id}); skipping"
+                        )
+                else:
+                    # Live: module is importable — use full deregister flow
                     await actions_manager.deregister_action(record_id)
                     removed += 1
                     removed_logged.append(f"{ns}/{label}")
-                    continue
-
-                # Ghost path: class not imported, Action.get() returned None.
-                # Node.get() falls back to the Node base class for unknown entity
-                # types, so we get a proper instance and call delete(cascade=True)
-                # through the standard jvspatial interface — no raw DB calls.
-                node = await Node.get(record_id)
-                if node:
-                    await node.delete(cascade=True)
-                    removed += 1
-                    removed_logged.append(f"{ns}/{label} (ghost)")
-                else:
-                    logger.warning(
-                        f"Could not retrieve node {ns}/{label} ({record_id}) "
-                        "for removal; skipping"
-                    )
 
             except Exception as e:
                 logger.warning(
@@ -471,34 +542,52 @@ class AgentLoader:
         kept_map: Dict[Tuple[str, str], Dict[str, Any]] = {}
 
         if update_mode is not None:
+            expected_paths = (
+                self.action_loader.expected_import_paths_from_descriptor_actions(
+                    descriptor.actions
+                )
+            )
             all_records = await self._get_all_action_records(agent)
             kept_map = await self._reconcile_actions(
-                agent, actions_manager, expected_actions, all_records
+                agent,
+                actions_manager,
+                expected_actions,
+                all_records,
+                expected_import_paths=expected_paths,
             )
 
             # Reload modules for surviving actions so code changes take effect.
             # Use raw DB records for metadata — avoid Action.get() here so we do not
             # deserialize before action classes are loaded (subclass cache poisoning).
+            #
+            # Unified strategy: collect all loaded module paths across kept actions,
+            # deduplicate, and reload each once via importlib.reload. This replaces
+            # the previous core/non-core split which used different reload mechanisms.
+            modules_to_reload: Dict[str, str] = {}  # module_name -> action label
             for (ns, label), record in kept_map.items():
                 try:
                     metadata_dict = (record.get("context") or {}).get("metadata") or {}
-                    is_core = metadata_dict.get("is_core_action", False)
-                    core_module_path = metadata_dict.get("core_module_path")
+                    loaded_modules = metadata_dict.get("loaded_modules") or []
+                    for mod_name in loaded_modules:
+                        if (
+                            mod_name
+                            and mod_name in sys.modules
+                            and mod_name not in modules_to_reload
+                        ):
+                            modules_to_reload[mod_name] = f"{ns}/{label}"
+                except Exception:
+                    pass
 
-                    if is_core and core_module_path:
-                        if core_module_path in sys.modules:
-                            importlib.reload(sys.modules[core_module_path])
-                    else:
-                        record_id = record.get("id") or record.get("_id")
-                        if not record_id:
-                            continue
-                        node = await Action.get(record_id)
-                        if node:
-                            await node._unload_action_modules()
+            for mod_name, action_label in modules_to_reload.items():
+                try:
+                    importlib.reload(sys.modules[mod_name])
+                    logger.debug("Reloaded module %s (from %s)", mod_name, action_label)
                 except Exception as e:
                     logger.warning(
-                        f"Error reloading modules for action {ns}/{label}: {e}",
-                        exc_info=True,
+                        "Error reloading module %s for action %s: %s",
+                        mod_name,
+                        action_label,
+                        e,
                     )
 
         # Load actions from filesystem and register / update

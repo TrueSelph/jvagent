@@ -5,28 +5,55 @@ import {
   useRef,
   useEffect,
   ChangeEvent,
+  DragEvent,
+  type ReactNode,
 } from "react";
+import { Plus } from "lucide-react";
 import type { SendMessageOptions } from "../hooks/useStreaming";
+import { cn } from "../lib/utils";
 
 interface MessageInputProps {
   onSend: (message: string, options?: SendMessageOptions) => void;
   disabled?: boolean;
   placeholder?: string;
+  /** Inside Thread sticky footer — omit top border */
+  variant?: "default" | "thread";
+  /** Shown left of send (e.g. composer tools flyout menu) */
+  composerMenu?: ReactNode;
+  /** Invoked when the user clicks the stop button while disabled (e.g. while streaming). */
+  onStop?: () => void;
 }
 
 function filePickKey(file: File, idx: number) {
   return `${file.name}-${file.size}-${file.lastModified}-${idx}`;
 }
 
+const ArrowUpIcon = () => (
+  <svg className="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+  </svg>
+);
+
+const SquareIcon = () => (
+  <svg className="size-3" fill="currentColor" stroke="none" viewBox="0 0 24 24" aria-hidden>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+  </svg>
+);
+
 export function MessageInput({
   onSend,
   disabled = false,
-  placeholder = "Type your message...",
+  placeholder = "Send a message...",
+  variant = "default",
+  composerMenu,
+  onStop,
 }: MessageInputProps) {
   const [value, setValue] = useState("");
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragDepthRef = useRef(0);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -87,10 +114,54 @@ export function MessageInput({
     setAttachedFiles((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  const addDroppedFiles = (files: FileList | File[]) => {
+    const list = Array.from(files);
+    if (list.length === 0) return;
+    setAttachedFiles((prev) => [...prev, ...list]);
+  };
+
+  const handleDragEnter = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (disabled) return;
+    dragDepthRef.current += 1;
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current -= 1;
+    if (dragDepthRef.current <= 0) {
+      dragDepthRef.current = 0;
+      setIsDragging(false);
+    }
+  };
+
+  const handleDragOver = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!disabled) e.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleDrop = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = 0;
+    setIsDragging(false);
+    if (disabled) return;
+    const dropped = e.dataTransfer.files;
+    if (dropped?.length) addDroppedFiles(dropped);
+  };
+
   return (
     <form
       onSubmit={handleSubmit}
-      className="border-t border-gray-200 dark:border-slate-700 p-3 sm:p-4 bg-white dark:bg-slate-900"
+      className={cn(
+        variant === "thread"
+          ? "bg-background py-3 sm:py-4"
+          : "p-3 sm:p-4 border-t border-zinc-200 bg-white dark:border-white/10 dark:bg-zinc-900",
+      )}
     >
       <input
         ref={fileInputRef}
@@ -108,40 +179,24 @@ export function MessageInput({
               key={filePickKey(file, idx)}
               onClick={() => removeChip(idx)}
               title="Remove"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 dark:border-slate-600 bg-gray-50 dark:bg-slate-800 px-2 py-1 text-xs text-gray-800 dark:text-slate-200 max-w-[min(100%,16rem)]"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-zinc-800 px-2 py-1 text-xs text-zinc-700 dark:text-zinc-300 max-w-[min(100%,16rem)]"
             >
               <span className="truncate">{file.name}</span>
-              <span className="text-gray-400 dark:text-slate-500" aria-hidden>
+              <span className="text-zinc-400 dark:text-zinc-500" aria-hidden>
                 ×
               </span>
             </button>
           ))}
         </div>
       )}
-      <div className="flex items-end gap-2 sm:gap-3">
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => fileInputRef.current?.click()}
-          className="flex-shrink-0 p-2.5 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-50"
-          aria-label="Attach files"
-          title="Attach images or documents"
-        >
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            aria-hidden
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
-            />
-          </svg>
-        </button>
+      <div
+        data-dragging={isDragging ? "true" : undefined}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        className="flex flex-col rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-900 px-1 pt-2 transition-shadow data-[dragging=true]:border-dashed data-[dragging=true]:border-zinc-400 dark:data-[dragging=true]:border-zinc-500 data-[dragging=true]:bg-zinc-50 dark:data-[dragging=true]:bg-zinc-800/50 has-[textarea:focus-visible]:border-zinc-400 has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-zinc-400/20"
+      >
         <textarea
           ref={textareaRef}
           value={value}
@@ -149,20 +204,57 @@ export function MessageInput({
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           rows={1}
-          className="flex-1 resize-none rounded-lg border border-gray-300 dark:border-slate-600 px-3 sm:px-4 py-2 sm:py-3 text-sm sm:text-base bg-white dark:bg-slate-800 dark:[color-scheme:dark] text-gray-900 dark:text-slate-100 placeholder-gray-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{ minHeight: "44px", maxHeight: "200px" }}
+          className="mb-1 max-h-32 min-h-14 w-full resize-none bg-transparent px-4 pt-2 pb-3 text-sm outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-500 text-zinc-900 dark:text-zinc-50 focus-visible:ring-0"
+          style={{ minHeight: "3.5rem" }}
+          autoFocus
+          aria-label="Message input"
         />
-        <button
-          type="submit"
-          disabled={!canSend}
-          className="px-4 sm:px-6 py-2 sm:py-3 bg-indigo-600 dark:bg-indigo-500 text-white rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors touch-manipulation text-sm sm:text-base font-medium"
-        >
-          {disabled ? "Sending..." : "Send"}
-        </button>
+        <div className="mx-2 mb-2 flex items-center justify-between gap-2">
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => fileInputRef.current?.click()}
+              className="flex size-[34px] shrink-0 items-center justify-center rounded-full p-1 font-semibold text-xs text-zinc-500 transition-colors duration-150 hover:bg-zinc-100 hover:text-zinc-700 dark:border-white/10 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 disabled:opacity-50"
+              aria-label="Attach files"
+            >
+              <Plus className="size-5 stroke-[1.5px]" strokeWidth={1.5} aria-hidden />
+            </button>
+            {!disabled ? composerMenu : null}
+          </div>
+
+          {disabled ? (
+            <button
+              type="button"
+              onClick={onStop}
+              disabled={!onStop}
+              className={cn(
+                "size-8 shrink-0 rounded-full flex items-center justify-center transition-colors",
+                onStop
+                  ? "bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  : "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 cursor-not-allowed",
+              )}
+              aria-label="Stop generating"
+            >
+              <SquareIcon />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!canSend}
+              className={cn(
+                "size-8 shrink-0 rounded-full flex items-center justify-center transition-colors",
+                canSend
+                  ? "bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  : "cursor-not-allowed bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-200",
+              )}
+              aria-label="Send message"
+            >
+              <ArrowUpIcon />
+            </button>
+          )}
+        </div>
       </div>
-      <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 hidden sm:block">
-        Press Enter to send, Shift+Enter for newline. Attach files with the paperclip.
-      </p>
     </form>
   );
 }

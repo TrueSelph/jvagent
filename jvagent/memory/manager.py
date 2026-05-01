@@ -1,5 +1,6 @@
 """Memory manager node for agent memory, user, and conversation management."""
 
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
@@ -10,6 +11,8 @@ from jvspatial.core.annotations import attribute
 if TYPE_CHECKING:
     from jvagent.memory.conversation import Conversation
     from jvagent.memory.user import User
+
+logger = logging.getLogger(__name__)
 
 
 class Memory(Node):
@@ -112,43 +115,50 @@ class Memory(Node):
                 last_seen=now,
             )
             await self.connect(user)
-            # Atomic increment keeps the hot path O(1) regardless of graph size.
-            # refresh_memory_counters_from_graph is only called during repair.
             ctx = await self.get_context()
             await ctx.atomic_increment(self.id, "total_users", 1)
-            self.total_users = (self.total_users or 0) + 1
             return user
         return None
 
-    async def refresh_memory_counters_from_graph(self) -> None:
-        """Persist ``total_users`` and ``total_conversations`` from graph neighbor counts.
+    async def refresh_memory_counters_from_graph(self) -> Dict[str, int]:
+        """Recount ``total_users`` and ``total_conversations`` from the live graph.
 
-        Users: ``count_neighbors(node=User)`` from this Memory. Conversations: sum of
-        ``count_neighbors(node=Conversation)`` over those same Users.
+        Counters are maintained in hot paths via ``atomic_increment`` for O(1)
+        performance. This method serves as a consistency check — it walks the
+        full graph, corrects any drift, and logs discrepancies.
+
+        Returns:
+            Dict with ``drift_users`` and ``drift_conversations`` (0 = no drift).
         """
         from jvagent.memory.conversation import Conversation
         from jvagent.memory.user import User
 
         target = await Memory.get(self.id)
         if target is None:
-            return
+            return {"drift_users": 0, "drift_conversations": 0}
         users = await target.nodes(node=User)
         n_users = len(users)
         n_convs = 0
         for user in users:
             n_convs += await user.count_neighbors(node=Conversation)
 
-        changed = False
-        if target.total_users != n_users:
+        drift_users = n_users - (target.total_users or 0)
+        drift_convs = n_convs - (target.total_conversations or 0)
+
+        if drift_users != 0 or drift_convs != 0:
+            logger.warning(
+                "Memory counter drift detected for %s: users=%+d convs=%+d",
+                self.id,
+                drift_users,
+                drift_convs,
+            )
             target.total_users = n_users
-            changed = True
-        if target.total_conversations != n_convs:
             target.total_conversations = n_convs
-            changed = True
-        if changed:
             await target.save()
+
         self.total_users = n_users
         self.total_conversations = n_convs
+        return {"drift_users": drift_users, "drift_conversations": drift_convs}
 
     async def users_scoped_to_this_memory(self) -> List["User"]:
         """Connected users that belong to this Memory root.
@@ -301,6 +311,85 @@ class Memory(Node):
             return None
         return await conversation.node(direction="in", node=User)
 
+    async def _check_is_new_user(self, user_id: str) -> bool:
+        """Return True if no User with *user_id* is scoped to this Memory."""
+        from jvagent.memory.user import User
+
+        existing_user = await self.node(node=User, user_id=user_id)
+        if (
+            existing_user
+            and existing_user.memory_id
+            and existing_user.memory_id != self.id
+        ):
+            return True
+        return existing_user is None
+
+    async def _resolve_user(self, user_id: str, *, create: bool = True) -> "User":
+        """Get or create a User, raising RuntimeError on failure."""
+        from jvagent.memory.user import User
+
+        user = await self.get_user(user_id, create_if_missing=create)
+        if not user:
+            raise RuntimeError(
+                f"Failed to get/create user '{user_id}'"
+                if create
+                else f"User for session '{user_id}' not found"
+            )
+        return user
+
+    @staticmethod
+    def _should_set_name(user: "User", user_name: Optional[str], is_new: bool) -> bool:
+        """True when *user_name* should be applied to *user*."""
+        if not user_name:
+            return False
+        if is_new:
+            return True
+        return not user.name or user.name == "user"
+
+    async def _maybe_set_user_name(
+        self, user: "User", user_name: Optional[str], is_new: bool
+    ) -> None:
+        """Set *user_name* on *user* when conditions warrant it."""
+        if self._should_set_name(user, user_name, is_new):
+            await user.set_name(user_name)
+
+    async def _create_anonymous_user_and_conversation(
+        self, session_id: Optional[str], user_name: Optional[str], channel: str
+    ) -> Tuple["User", "Conversation", str, str]:
+        """Create anonymous User + Conversation; return (user, conv, user_id, session_id)."""
+        new_user_id = f"user_{uuid.uuid4().hex[:16]}"
+        user = await self._resolve_user(new_user_id)
+        if user_name:
+            await user.set_name(user_name)
+        conversation = await user.create_conversation(
+            session_id=session_id, channel=channel
+        )
+        return user, conversation, new_user_id, conversation.session_id
+
+    async def _resume_or_create_conversation(
+        self,
+        user: "User",
+        session_id: str,
+        channel: str,
+        is_new_user: bool,
+        user_name: Optional[str],
+    ) -> Tuple["Conversation", str, bool]:
+        """Resume existing Conversation or create a new one under *user*.
+
+        Returns (conversation, session_id, resumed) where *resumed* is True when
+        the Conversation already existed.
+        """
+        conversation = await self._resolve_conversation_for_session_or_raise_foreign(
+            session_id
+        )
+        if not conversation:
+            await self._maybe_set_user_name(user, user_name, is_new_user)
+            conversation = await user.create_conversation(
+                session_id=session_id, channel=channel
+            )
+            return conversation, conversation.session_id, False
+        return conversation, session_id, True
+
     async def get_session(
         self,
         user_id: Optional[str] = None,
@@ -310,55 +399,40 @@ class Memory(Node):
     ) -> Tuple["User", "Conversation", str, str, bool]:
         """Resolve or create User and Conversation based on provided IDs.
 
-        Interaction-limit pruning is **not** run on session resume paths inside
-        ``get_session`` (cases 2 and 4) so latency stays predictable as history
-        grows. Limits are enforced when appending interactions and via
+        Interaction-limit pruning is NOT run on session resume paths so latency
+        stays predictable as history grows. Limits are enforced when appending
+        interactions and via
         :meth:`apply_interaction_limit_pruning_for_connected_users` for bulk
         maintenance.
 
-        Handles four scenarios for user/session resolution:
-        1. No user_id, no session_id → Create new User + Conversation (new_user=True)
-        2. session_id only → Resume if Conversation exists under this Memory; otherwise create anonymous User + Conversation with that session_id (new_user=True).
-           If the session_id exists only under another Memory, raises ValueError.
-        3. user_id only → Get/Create User, create new Conversation (new_user=True if User was created)
-        4. Both provided → Get/Create User; resume or create Conversation with that
-           session_id under this Memory. new_user reflects whether User was created.
-           Validates ownership when the Conversation already exists. Foreign session_id
-           raises ValueError (same as case 2).
-
-        First-time users are determined by whether a User node is newly created,
-        regardless of whether a user_id is provided.
+        Handles four scenarios:
+        1. No IDs → Create new User + Conversation (new_user=True)
+        2. session_id only → Resume or create anonymous User + Conversation
+        3. user_id only → Get/Create User, create new Conversation
+        4. Both → Get/Create User; resume or create Conversation. Validates
+           ownership; foreign session_id raises ValueError.
 
         Args:
             user_id: Optional user identifier
             session_id: Optional session identifier
-            channel: Communication channel (e.g., 'default', 'whatsapp', 'email')
+            user_name: Optional display name for the user
+            channel: Communication channel (default: "default")
 
         Returns:
             Tuple of (User, Conversation, resolved_user_id, resolved_session_id, new_user)
-            where new_user is True if a new User node was created, False otherwise
 
         Raises:
             RuntimeError: If user creation/lookup fails
-            ValueError: If session is foreign to this Memory, or validation fails
+            ValueError: If session is foreign to this Memory, or ownership validation fails
         """
-        from jvagent.memory.user import User
-
-        # Case 1: No IDs - create new user and conversation
+        # Case 1: No IDs — create anonymous session
         if not user_id and not session_id:
-            new_user_id = f"user_{uuid.uuid4().hex[:16]}"
-            user = await self.get_user(new_user_id, create_if_missing=True)
-            if not user:
-                raise RuntimeError("Failed to create user")
+            user, conv, uid, sid = await self._create_anonymous_user_and_conversation(
+                None, user_name, channel
+            )
+            return user, conv, uid, sid, True
 
-            # Set name if provided
-            if user_name:
-                await user.set_name(user_name)
-
-            conversation = await user.create_conversation(channel=channel)
-            return user, conversation, new_user_id, conversation.session_id, True
-
-        # Case 2: session_id only - resume or create under this Memory
+        # Case 2: session_id only — resume or create anonymous
         if session_id and not user_id:
             conversation = (
                 await self._resolve_conversation_for_session_or_raise_foreign(
@@ -366,93 +440,39 @@ class Memory(Node):
                 )
             )
             if not conversation:
-                new_user_id = f"user_{uuid.uuid4().hex[:16]}"
-                user = await self.get_user(new_user_id, create_if_missing=True)
-                if not user:
-                    raise RuntimeError("Failed to create user")
-                if user_name:
-                    await user.set_name(user_name)
-                conversation = await user.create_conversation(
-                    session_id=session_id, channel=channel
+                user, conv, uid, sid = (
+                    await self._create_anonymous_user_and_conversation(
+                        session_id, user_name, channel
+                    )
                 )
-                return user, conversation, new_user_id, session_id, True
+                return user, conv, uid, sid, True
 
-            user = await self.get_user(conversation.user_id, create_if_missing=False)
-            if not user:
-                raise RuntimeError(f"User for session '{session_id}' not found")
-
-            # Update name if provided and not set
-            if user_name and (not user.name or user.name == "user"):
-                await user.set_name(user_name)
-
-            # Rolling interaction-limit pruning is not done here (keeps session resume
-            # latency bounded). Prune on new interaction append and via
-            # :meth:`apply_interaction_limit_pruning_for_connected_users` for maintenance.
+            user = await self._resolve_user(conversation.user_id, create=False)
+            await self._maybe_set_user_name(user, user_name, is_new=False)
             return user, conversation, conversation.user_id, session_id, False
 
-        # Case 3: user_id only - get/create user, create conversation
-        # Check if user exists to determine if it's a new user
-        if user_id and not session_id:
-            # Check if user already exists before creating
-            existing_user = await self.node(node=User, user_id=user_id)
-            if (
-                existing_user
-                and existing_user.memory_id
-                and existing_user.memory_id != self.id
-            ):
-                existing_user = None
-            is_new_user = existing_user is None
+        # Cases 3 & 4 share user-resolution
+        is_new = await self._check_is_new_user(user_id)  # type: ignore[arg-type]
+        user = await self._resolve_user(user_id)  # type: ignore[arg-type]
 
-            user = await self.get_user(user_id, create_if_missing=True)
-            if not user:
-                raise RuntimeError(f"Failed to get/create user '{user_id}'")
-
-            # Update name if provided (especially if new user)
-            if user_name and (is_new_user or not user.name or user.name == "user"):
-                await user.set_name(user_name)
-
+        # Case 3: user_id only — new conversation
+        if not session_id:
+            await self._maybe_set_user_name(user, user_name, is_new)
             conversation = await user.create_conversation(channel=channel)
-            return user, conversation, user_id, conversation.session_id, is_new_user
+            return user, conversation, user_id, conversation.session_id, is_new  # type: ignore[arg-type]
 
-        # Case 4: Both provided - get/create user; resume or create conversation
-        if user_id and session_id:
-            existing_user = await self.node(node=User, user_id=user_id)
-            if (
-                existing_user
-                and existing_user.memory_id
-                and existing_user.memory_id != self.id
-            ):
-                existing_user = None
-            is_new_user = existing_user is None
-
-            user = await self.get_user(user_id, create_if_missing=True)
-            if not user:
-                raise RuntimeError(f"Failed to get/create user '{user_id}'")
-
-            conversation = (
-                await self._resolve_conversation_for_session_or_raise_foreign(
-                    session_id
-                )
-            )
-            if not conversation:
-                if user_name and (is_new_user or not user.name or user.name == "user"):
-                    await user.set_name(user_name)
-                conversation = await user.create_conversation(
-                    session_id=session_id, channel=channel
-                )
-                return user, conversation, user_id, session_id, is_new_user
-
+        # Case 4: Both provided — resume or create, validate ownership
+        conversation, resolved_sid, resumed = await self._resume_or_create_conversation(
+            user, session_id, channel, is_new, user_name
+        )
+        if resumed:
             if conversation.user_id != user_id:
                 raise ValueError(
                     f"Session '{session_id}' does not belong to user '{user_id}'"
                 )
+            await self._maybe_set_user_name(user, user_name, is_new=False)
 
-            if user_name and (not user.name or user.name == "user"):
-                await user.set_name(user_name)
-
-            return user, conversation, user_id, session_id, False
-
-        raise ValueError("Invalid user_id/session_id combination")
+        return user, conversation, user_id, resolved_sid, is_new  # type: ignore[arg-type]
 
     async def memory_healthcheck(self, user_id: str = "") -> Dict[str, int]:
         """Get memory health statistics.
@@ -602,10 +622,16 @@ class Memory(Node):
                 N minutes. None = all orphans.
 
         Returns:
-            Dict with orphaned_interactions_deleted, orphaned_users_reconnected,
-            dual_edges_removed, conversation_first_edges_restored,
-            conversation_branch_edges_removed
+            Dict with validation, orphaned_interactions_deleted,
+            orphaned_users_reconnected, dual_edges_removed,
+            conversation_first_edges_restored, conversation_branch_edges_removed
         """
+        validation = await self.validate_interaction_chain()
+        if not validation["healthy"]:
+            logger.warning(
+                "Chain violations detected before repair: %s", validation["violations"]
+            )
+
         deleted = await self._cleanup_orphaned_interactions(recent_minutes)
         dual_removed, first_restored, conv_branch_removed = (
             await self._repair_interaction_chain_invariants()
@@ -620,12 +646,82 @@ class Memory(Node):
         await self.save()
 
         return {
+            "validation": validation,
             "orphaned_interactions_deleted": deleted,
             "orphaned_users_reconnected": reconnected,
             "dual_edges_removed": dual_removed,
             "conversation_first_edges_restored": first_restored,
             "conversation_branch_edges_removed": conv_branch_removed,
             "counters_fixed": counters_fixed,
+        }
+
+    async def validate_interaction_chain(self) -> Dict[str, Any]:
+        """Read-only diagnostic: detect chain invariant violations without mutating state.
+
+        Returns a structured report:
+        {
+            "conversations_checked": int,
+            "violations": {
+                "conversation_branches": [(conv_id, branch_count), ...],
+                "missing_first_edges": [(conv_id, first_interaction_id), ...],
+                "interaction_forks": [(interaction_id, fork_count), ...],
+            },
+            "healthy": bool,
+        }
+        """
+        from jvagent.memory.conversation import Conversation
+        from jvagent.memory.interaction import Interaction, interaction_sort_key
+
+        users = await self.users_scoped_to_this_memory()
+        conversations: list = []
+        for user in users:
+            conversations.extend(await user.nodes(node=Conversation))
+
+        branches: list = []
+        missing_first: list = []
+        forks: list = []
+
+        for conv in conversations:
+            if conv.interaction_count <= 0:
+                continue
+
+            conv_out = await conv.nodes(node=Interaction, direction="out")
+            if len(conv_out) > 1:
+                branches.append((conv.id, len(conv_out)))
+
+            first = await conv.get_first_interaction()
+            if first and not await conv.is_connected_to(first):
+                missing_first.append((conv.id, first.id))
+
+            if not first:
+                continue
+
+            current = first
+            seen = {first.id}
+            while current:
+                next_nodes = await current.nodes(node=Interaction, direction="out")
+                if len(next_nodes) > 1:
+                    forks.append((current.id, len(next_nodes)))
+                    break
+                if len(next_nodes) == 1:
+                    current = next_nodes[0]
+                    if current.id in seen:
+                        break
+                    seen.add(current.id)
+                else:
+                    break
+
+        violations = {
+            "conversation_branches": branches,
+            "missing_first_edges": missing_first,
+            "interaction_forks": forks,
+        }
+        healthy = not any(violations.values())
+
+        return {
+            "conversations_checked": len(conversations),
+            "violations": violations,
+            "healthy": healthy,
         }
 
     async def _repair_interaction_chain_invariants(self) -> Tuple[int, int, int]:
@@ -771,10 +867,11 @@ class Memory(Node):
         return reconnected
 
     async def _recalculate_counters(self) -> int:
-        """Recalculate total_users, total_conversations, and interaction_count from the graph.
+        """Recalculate counters from the graph and correct any drift.
 
-        Fixes counter drift caused by non-atomic increments under concurrency or
-        interactions deleted outside the normal prune path (e.g. orphan cleanup).
+        Hot paths maintain counters via ``atomic_increment`` for O(1) performance.
+        This method walks the full graph, re-derives ground truth, and fixes any
+        drift from concurrent mutations or orphan cleanup.
 
         Returns:
             Number of counters that were corrected.
@@ -786,6 +883,12 @@ class Memory(Node):
         users = await self.nodes(node=User)
         actual_users = await self.count_neighbors(node=User)
         if self.total_users != actual_users:
+            logger.debug(
+                "Memory %s: total_users drift %d -> %d",
+                self.id,
+                self.total_users,
+                actual_users,
+            )
             self.total_users = actual_users
             fixed += 1
 
@@ -796,6 +899,12 @@ class Memory(Node):
             actual_conversations += await user.count_neighbors(node=Conversation)
             all_convs.extend(convs)
         if self.total_conversations != actual_conversations:
+            logger.debug(
+                "Memory %s: total_conversations drift %d -> %d",
+                self.id,
+                self.total_conversations,
+                actual_conversations,
+            )
             self.total_conversations = actual_conversations
             fixed += 1
 

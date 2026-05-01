@@ -590,7 +590,7 @@ async def interact_endpoint(
                 # Streaming mode: return SSE response
                 # Note: Profiling for streaming is handled in _stream_interaction
                 return create_sse_response(
-                    _stream_interaction(walker, agent),
+                    _stream_interaction(walker, agent, request),
                     headers={"X-Session-ID": walker.session_id or ""},
                 )
             else:
@@ -733,13 +733,15 @@ async def interact_endpoint(
 
 
 async def _stream_interaction(
-    walker: InteractWalker, agent: Agent
+    walker: InteractWalker, agent: Agent, request: Optional[Request] = None
 ) -> AsyncGenerator[str, None]:
     """Stream interaction as SSE chunks.
 
     Args:
         walker: InteractWalker instance
         agent: Agent node
+        request: Optional FastAPI Request used to detect client disconnection so
+            the in-flight walker can be cancelled when the user stops generation.
 
     Yields:
         SSE-formatted string chunks
@@ -760,6 +762,7 @@ async def _stream_interaction(
     # Set profile in context for LM calls to record their timing
     set_current_profile(profile)
 
+    walk_task: Optional[asyncio.Task] = None
     try:
         # Start walker in background (concurrent with early interaction polling).
         walker_start = time.time()
@@ -776,6 +779,9 @@ async def _stream_interaction(
         max_wait = 5.0  # Maximum seconds to wait for interaction
         waited = 0.0
         while not walker.interaction and waited < max_wait:
+            if request is not None and await request.is_disconnected():
+                walk_task.cancel()
+                return
             await asyncio.sleep(0.1)
             waited += 0.1
 
@@ -886,6 +892,19 @@ async def _stream_interaction(
                             )
                             yield format_sse_chunk(_sse_error_event(profile.request_id))
                         break
+
+                    # Client-disconnect detection: stop the walker if the user
+                    # cancelled generation (closed the SSE connection).
+                    if request is not None and await request.is_disconnected():
+                        logger.info(
+                            "Client disconnected; cancelling interact walker: "
+                            "interaction_id=%s session_id=%s request_id=%s",
+                            getattr(interaction, "id", None),
+                            walker.session_id,
+                            profile.request_id,
+                        )
+                        walk_task.cancel()
+                        return
 
                     try:
                         message = await asyncio.wait_for(
@@ -1066,6 +1085,15 @@ async def _stream_interaction(
         await finalize_profile(profile.request_id, log=True)
         yield format_sse_chunk(_sse_error_event(profile.request_id))
     finally:
+        # If the generator exits while the walker is still running (e.g. client
+        # disconnect propagated as GeneratorExit, or an unexpected error), cancel
+        # the walker so it does not keep working on a dropped request.
+        if walk_task is not None and not walk_task.done():
+            walk_task.cancel()
+            try:
+                await walk_task
+            except (asyncio.CancelledError, Exception):
+                pass
         # Clear profile context
         set_current_profile(None)
         # Request-scoped cache cleanup (probabilistic, serverless-friendly)

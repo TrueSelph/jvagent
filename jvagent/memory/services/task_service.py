@@ -4,9 +4,13 @@ Internally operates on typed ``TaskRecord`` objects with validated state
 machine transitions.  External API surfaces (``list``, ``get``, ``start``,
 etc.) still return plain dicts for backward compatibility with existing
 callers; use ``get_record`` for typed access.
+
+Tasks are dual-written: the authoritative ``TaskNode`` entity in the spatial
+graph and the denormalized ``active_tasks`` list on Conversation for fast
+context-window access.
 """
 
-import uuid
+import logging
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union
@@ -20,6 +24,8 @@ from jvagent.memory.task_record import (
     StepRecord,
     TaskRecord,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
@@ -139,6 +145,89 @@ class TaskService:
 
     def __init__(self, conversation: Conversation) -> None:
         self.conversation = conversation
+        self._agent_id: Optional[str] = None
+
+    async def _get_agent_id(self) -> str:
+        if self._agent_id is None:
+            agent = await self.conversation.get_agent()
+            self._agent_id = agent.id if agent else ""
+        return self._agent_id
+
+    async def _sync_task_node(
+        self, task_dict: Dict[str, Any], *, node_id: Optional[str] = None
+    ) -> Optional[str]:
+        """Create or update a TaskNode from a legacy task dict.
+
+        Stores the TaskNode's ID back into ``task_dict["metadata"]["_task_node_id"]``
+        so subsequent updates can find the node without a separate query.
+
+        Args:
+            task_dict: The legacy dict from active_tasks (mutated in-place).
+            node_id: Existing TaskNode ID to update, or None to create.
+
+        Returns:
+            The TaskNode ID if successful, None if sync failed (non-fatal).
+        """
+        try:
+            from jvagent.memory.task_node import TaskNode
+
+            agent_id = await self._get_agent_id()
+            if not agent_id:
+                return None
+
+            if node_id:
+                node = await TaskNode.get(node_id)
+                if node:
+                    node.task_id = task_dict.get("task_id", node.task_id)
+                    node.task_type = task_dict.get("task_type", node.task_type)
+                    node.description = task_dict.get("description", node.description)
+                    node.action_name = task_dict.get("action_name", node.action_name)
+                    node.status = task_dict.get("status", node.status)
+                    node.next_trigger_at = task_dict.get(
+                        "next_trigger_at", node.next_trigger_at
+                    )
+                    node.trigger_condition = task_dict.get(
+                        "trigger_condition", node.trigger_condition
+                    )
+                    node.metadata = dict(task_dict.get("metadata") or {})
+                    node.updated_at = task_dict.get("updated_at", node.updated_at)
+                    node.last_heartbeat_at = task_dict.get(
+                        "last_heartbeat_at", node.last_heartbeat_at
+                    )
+                    node.terminal_at = task_dict.get("terminal_at", node.terminal_at)
+                    await node.save()
+                    return node.id
+
+            node = TaskNode.from_legacy_dict(
+                task_dict,
+                conversation_id=self.conversation.id,
+                agent_id=agent_id,
+            )
+            await node.save()
+            if not await self.conversation.is_connected_to(node):
+                await self.conversation.connect(node, direction="out")
+            # Store node id in the dict metadata for future sync calls
+            meta = task_dict.setdefault("metadata", {})
+            meta["_task_node_id"] = node.id
+            return node.id
+        except Exception:
+            logger.debug(
+                "Failed to sync TaskNode for task %s",
+                task_dict.get("task_id"),
+                exc_info=True,
+            )
+            return None
+
+    async def _delete_task_node(self, node_id: str) -> None:
+        """Cascade-delete a TaskNode."""
+        try:
+            from jvagent.memory.task_node import TaskNode
+
+            node = await TaskNode.get(node_id)
+            if node:
+                await node.delete(cascade=True)
+        except Exception:
+            logger.debug("Failed to delete TaskNode %s", node_id, exc_info=True)
 
     @classmethod
     async def for_conversation(
@@ -291,11 +380,14 @@ class TaskService:
             entry["created_at"] = current.get("created_at", record.created_at)
             self.conversation.active_tasks[existing_idx] = entry
             await self.conversation.save()
+            await self._sync_task_node(entry)
             await self._emit_updated(entry)
             return TaskHandle(self, entry["task_id"])
 
         self.conversation.active_tasks.append(entry)
         await self.conversation.save()
+        # Dual-write: create TaskNode in the spatial graph
+        await self._sync_task_node(entry)
         await self._emit_created(entry)
         return TaskHandle(self, record.task_id)
 
@@ -389,6 +481,9 @@ class TaskService:
         self.conversation.active_tasks[idx] = task
         await self.conversation.save()
         await self._emit_updated(task)
+        await self._sync_task_node(
+            task, node_id=task.get("metadata", {}).get("_task_node_id")
+        )
         return True
 
     async def reserve(self, task_id: str) -> bool:
@@ -403,6 +498,9 @@ class TaskService:
         self.conversation.active_tasks[idx] = task
         await self.conversation.save()
         await self._emit_updated(task)
+        await self._sync_task_node(
+            task, node_id=task.get("metadata", {}).get("_task_node_id")
+        )
         return True
 
     async def complete(
@@ -428,9 +526,7 @@ class TaskService:
             record = TaskRecord.from_dict(task)
             record.transition(status)
         except InvalidTaskTransition as ite:
-            import logging
-
-            logging.getLogger(__name__).warning("TaskService.complete: %s", ite)
+            logger.warning("TaskService.complete: %s", ite)
             return False
         now = _now_iso()
         metadata = dict(task.get("metadata") or {})
@@ -451,6 +547,7 @@ class TaskService:
         self.conversation.active_tasks[idx] = task
         await self.conversation.save()
         await self._emit_terminal(task)
+        await self._sync_task_node(task, node_id=metadata.get("_task_node_id"))
         return True
 
     async def fail(self, task_id: str, *, error: str, status: str = "failed") -> bool:
@@ -506,6 +603,9 @@ class TaskService:
             await self._emit_terminal(task)
         else:
             await self._emit_updated(task)
+        await self._sync_task_node(
+            task, node_id=task.get("metadata", {}).get("_task_node_id")
+        )
         return True
 
     async def sweep_stale(self, ttl_seconds: int = 3600) -> int:
@@ -543,6 +643,9 @@ class TaskService:
         await self.conversation.save()
         for task in completed_tasks:
             await self._emit_terminal(task)
+            await self._sync_task_node(
+                task, node_id=task.get("metadata", {}).get("_task_node_id")
+            )
         return len(completed_tasks)
 
     def _find_task_index(

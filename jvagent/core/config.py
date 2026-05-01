@@ -2,12 +2,16 @@
 
 Single source for app.yaml loading, config value resolution (env > config > default),
 empty string normalization, and database path resolution.
+
+Declarative ``ConfigSchema`` / ``ConfigKey`` pattern for subsystem configuration
+replaces ad-hoc resolver functions with a consistent, self-documenting interface.
 """
 
 import logging
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Callable, Generic, Literal, Optional, TypeVar
 
 from jvagent.core.app_yaml_validator import warn_app_yaml_config
 from jvagent.core.env_resolver import resolve_env_placeholders
@@ -15,6 +19,7 @@ from jvagent.core.env_resolver import resolve_env_placeholders
 logger = logging.getLogger(__name__)
 
 EnvironmentMode = Literal["development", "production"]
+T = TypeVar("T")
 
 
 def get_environment_mode() -> EnvironmentMode:
@@ -44,6 +49,129 @@ def is_development_mode() -> bool:
 def is_production_mode() -> bool:
     """Check if running in production mode."""
     return get_environment_mode() == "production"
+
+
+# =============================================================================
+# Declarative Config Schema
+# =============================================================================
+
+
+@dataclass
+class ConfigKey(Generic[T]):
+    """A single configuration key with env > config > default precedence.
+
+    Type coercion is applied based on *type_hint* or inferred from *default*.
+    An optional *coerce* callable overrides automatic coercion.
+
+    Example::
+
+        ConfigKey("pageindex.db_type", env="JVAGENT_PAGEINDEX_DB_TYPE", default="json")
+        ConfigKey("server.port", env="JVAGENT_PORT", default=8080)
+    """
+
+    path: str
+    env: Optional[str] = None
+    default: T = None  # type: ignore[assignment]
+    doc: str = ""
+    coerce: Optional[Callable[[Any], T]] = None
+
+    def resolve(self, app_config: dict, *, _app_root: Optional[str] = None) -> T:
+        """Resolve this key against *app_config*."""
+        # 1. Environment variable
+        if self.env:
+            raw = os.getenv(self.env)
+            if raw is not None and str(raw).strip() != "":
+                return self._coerce_env(str(raw).strip())
+        # 2. Config path
+        if app_config:
+            current: Any = app_config
+            for key in self.path.split("."):
+                if isinstance(current, dict) and key in current:
+                    current = current[key]
+                else:
+                    current = None
+                    break
+            if current is not None:
+                if (
+                    isinstance(current, str)
+                    and not current.strip()
+                    and self.default is None
+                ):
+                    return None  # type: ignore[return-value]
+                return self._coerce_value(current)
+        # 3. Default
+        return self.default
+
+    def _coerce_env(self, raw: str) -> T:
+        """Coerce an env var string to the target type."""
+        if self.coerce:
+            return self.coerce(raw)
+        if isinstance(self.default, bool):
+            pb = parse_env_bool(raw)
+            return self.default if pb is None else pb  # type: ignore[return-value]
+        if isinstance(self.default, int):
+            try:
+                return int(raw)  # type: ignore[return-value]
+            except ValueError:
+                return self.default
+        if isinstance(self.default, float):
+            try:
+                return float(raw)  # type: ignore[return-value]
+            except ValueError:
+                return self.default
+        pb = parse_env_bool(raw)
+        if pb is not None:
+            return pb  # type: ignore[return-value]
+        return raw  # type: ignore[return-value]
+
+    def _coerce_value(self, value: Any) -> T:
+        """Coerce a YAML value to the target type."""
+        if self.coerce:
+            return self.coerce(value)
+        if isinstance(self.default, bool):
+            if isinstance(value, bool):
+                return value  # type: ignore[return-value]
+            if isinstance(value, str):
+                pb = parse_env_bool(value)
+                return self.default if pb is None else pb  # type: ignore[return-value]
+            return bool(value)  # type: ignore[return-value]
+        if isinstance(self.default, (int, float)):
+            try:
+                return type(self.default)(value)  # type: ignore[return-value]
+            except (TypeError, ValueError):
+                return self.default
+        return value  # type: ignore[return-value]
+
+
+class ConfigSchema:
+    """Declarative configuration schema for a subsystem.
+
+    Define keys as class-level ``ConfigKey`` instances and call ``resolve()``
+    to produce a namespace with all values resolved.
+
+    Example::
+
+        class PageIndexConfig(ConfigSchema):
+            db_type = ConfigKey("pageindex.db_type", env="JVAGENT_PAGEINDEX_DB_TYPE", default="json")
+            db_name = ConfigKey("pageindex.db_name")
+
+        cfg = PageIndexConfig.resolve(app_config)
+        print(cfg.db_type)  # "json"
+    """
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        cls._keys: dict[str, ConfigKey[Any]] = {
+            k: v for k, v in vars(cls).items() if isinstance(v, ConfigKey)
+        }
+
+    @classmethod
+    def resolve(cls, app_config: dict, *, app_root: Optional[str] = None) -> Any:
+        """Resolve all keys against *app_config* and return a namespace."""
+        ns: dict[str, Any] = {}
+        for name, key in cls._keys.items():
+            ns[name] = key.resolve(app_config, _app_root=app_root)
+        return type(f"{cls.__name__}Resolved", (), ns)()
 
 
 def normalize_empty(value: Optional[str]) -> Optional[str]:
@@ -271,8 +399,66 @@ def _resolve_path_under_app_root(app_root: str, path_str: str) -> str:
     return str(app_root_path / path_str)
 
 
+class PageIndexConfig(ConfigSchema):
+    """PageIndex subsystem configuration."""
+
+    db_type = ConfigKey[str](
+        "pageindex.db_type",
+        env="JVAGENT_PAGEINDEX_DB_TYPE",
+        default="json",
+        doc="PageIndex database type (json, sqlite, mongodb, dynamodb)",
+    )
+    db_name = ConfigKey[str](
+        "pageindex.db_name",
+        env="JVAGENT_PAGEINDEX_DB_NAME",
+        default="pageindex_db",
+        doc="PageIndex database name",
+    )
+    db_root = ConfigKey[str](
+        "pageindex.db_root",
+        env="JVAGENT_PAGEINDEX_DB_ROOT",
+        default=".",
+        doc="PageIndex database root directory",
+    )
+
+
+# YAML-only fallback for db_name (explicit env and app-id naming handled in resolver).
+_PAGEINDEX_DB_NAME_YAML = ConfigKey[str](
+    "pageindex.db_name",
+    env=None,
+    default="pageindex_db",
+    doc="pageindex.db_name from yaml only",
+)
+
+
+class LoggingDatabaseConfig(ConfigSchema):
+    """logging.database.* keys."""
+
+    database_type = ConfigKey[str](
+        "logging.database.type",
+        env="JVSPATIAL_LOG_DB_TYPE",
+        default=None,
+        doc="Optional override for log DB type",
+    )
+
+
+class AppDatabaseConfig(ConfigSchema):
+    """Main application database.type."""
+
+    database_type = ConfigKey[str](
+        "database.type",
+        env="JVSPATIAL_DB_TYPE",
+        default="json",
+        doc="Primary graph database type",
+    )
+
+
 def resolve_pageindex_db_name(app_root: str, app_config: dict) -> str:
-    """Resolve PageIndex database name (mirrors jvagent.action.pageindex.config logic)."""
+    """Resolve PageIndex database name.
+
+    Explicit env var takes precedence. Falls back to app-id-based naming,
+    then yaml config, then default.
+    """
     explicit = normalize_empty(os.getenv("JVAGENT_PAGEINDEX_DB_NAME"))
     if explicit:
         return explicit
@@ -284,29 +470,16 @@ def resolve_pageindex_db_name(app_root: str, app_config: dict) -> str:
         sanitized = "".join(c for c in app_id if c.isalnum() or c == "_") or "app"
         return f"{sanitized}_pageindex_db"
 
-    yaml_name = normalize_empty(
-        get_config_value(app_config, "pageindex.db_name", None, None)
-    )
-    return yaml_name or "pageindex_db"
+    return _PAGEINDEX_DB_NAME_YAML.resolve(app_config)
 
 
 def resolve_pageindex_purge_path(app_root: str, app_config: dict) -> Optional[str]:
     """Absolute filesystem path to purge for PageIndex when using json or sqlite.
 
     Returns None for mongodb, dynamodb, or unknown types (no local tree to remove).
-
-    Relative ``config.pageindex.db_root`` / ``JVAGENT_PAGEINDEX_DB_ROOT`` are resolved
-    against ``app_root`` (consistent with other jvagent app data paths).
     """
-    db_type = (
-        normalize_empty(
-            get_config_value(
-                app_config, "pageindex.db_type", "JVAGENT_PAGEINDEX_DB_TYPE", "json"
-            )
-        )
-        or "json"
-    )
-    if db_type not in ("json", "sqlite"):
+    cfg = PageIndexConfig.resolve(app_config)
+    if cfg.db_type not in ("json", "sqlite"):
         return None
 
     explicit = normalize_empty(os.getenv("JVAGENT_PAGEINDEX_DB_PATH"))
@@ -314,45 +487,62 @@ def resolve_pageindex_purge_path(app_root: str, app_config: dict) -> Optional[st
         return _resolve_path_under_app_root(app_root, explicit)
 
     db_name = resolve_pageindex_db_name(app_root, app_config)
-    root_raw = (
-        normalize_empty(
-            get_config_value(
-                app_config, "pageindex.db_root", "JVAGENT_PAGEINDEX_DB_ROOT", "."
-            )
-        )
-        or "."
-    )
-    root_resolved = _resolve_path_under_app_root(app_root, root_raw)
+    root_resolved = _resolve_path_under_app_root(app_root, cfg.db_root)
 
-    if db_type == "json":
+    if cfg.db_type == "json":
         return str(Path(root_resolved) / db_name)
     return str(Path(root_resolved) / db_name / "sqlite" / "pageindex.db")
 
 
 def effective_log_db_type(app_config: dict) -> str:
     """Effective logging DB type: explicit log type, else main app database.type."""
-    log_t = normalize_empty(
-        get_config_value(
-            app_config, "logging.database.type", "JVSPATIAL_LOG_DB_TYPE", None
-        )
-    )
+    log_cfg = LoggingDatabaseConfig.resolve(app_config)
+    log_t = normalize_empty(log_cfg.database_type)
     if log_t:
         return log_t
-    return (
-        normalize_empty(
-            get_config_value(app_config, "database.type", "JVSPATIAL_DB_TYPE", "json")
-        )
-        or "json"
+    main_cfg = AppDatabaseConfig.resolve(app_config)
+    return normalize_empty(main_cfg.database_type) or "json"
+
+
+class FileStorageConfig(ConfigSchema):
+    """File storage subsystem configuration."""
+
+    provider = ConfigKey[str](
+        "file_storage.provider",
+        env="JVSPATIAL_FILE_STORAGE_PROVIDER",
+        default="local",
+        doc="Storage backend provider (local, s3, gcs)",
+    )
+    root_dir = ConfigKey[str](
+        "file_storage.root_dir",
+        env="JVSPATIAL_FILES_ROOT_PATH",
+        default="./.files",
+        doc="Root directory for local file storage",
+    )
+    enabled = ConfigKey[bool](
+        "file_storage.enabled",
+        env="JVSPATIAL_FILE_STORAGE_ENABLED",
+        default=False,
+        doc="Whether file storage is enabled",
+    )
+    base_url = ConfigKey[str](
+        "file_storage.base_url",
+        env="JVSPATIAL_FILE_STORAGE_BASE_URL",
+        default="http://localhost:8000",
+        doc="Base URL for file access",
+    )
+    max_size = ConfigKey[int](
+        "file_storage.max_size",
+        env="JVSPATIAL_FILE_STORAGE_MAX_SIZE",
+        default=100 * 1024 * 1024,
+        doc="Maximum file size in bytes",
     )
 
 
 def get_file_storage_config(app_root: str, config: dict) -> dict:
     """Get file storage configuration with unified fallback precedence.
 
-    Precedence for provider: ``JVSPATIAL_FILE_STORAGE_PROVIDER`` >
-    ``config.file_storage.provider`` > default ``local``.
-    Precedence for root_dir: ``JVSPATIAL_FILES_ROOT_PATH`` >
-    ``config.file_storage.root_dir`` > default ``./.files``.
+    Delegates to :class:`FileStorageConfig` schema.
 
     Args:
         app_root: Path to app root directory (unused but kept for API consistency)
@@ -361,41 +551,13 @@ def get_file_storage_config(app_root: str, config: dict) -> dict:
     Returns:
         Dict with provider, root_dir, enabled, base_url, max_size
     """
-    provider = (
-        normalize_empty(os.getenv("JVSPATIAL_FILE_STORAGE_PROVIDER"))
-        or get_config_value(
-            config,
-            "file_storage.provider",
-            "JVSPATIAL_FILE_STORAGE_PROVIDER",
-            "local",
-        )
-        or "local"
-    )
-    root_dir = (
-        normalize_empty(os.getenv("JVSPATIAL_FILES_ROOT_PATH"))
-        or get_config_value(
-            config, "file_storage.root_dir", "JVSPATIAL_FILES_ROOT_PATH", "./.files"
-        )
-        or "./.files"
-    )
+    cfg = FileStorageConfig.resolve(config)
     return {
-        "provider": provider if provider else "local",
-        "root_dir": root_dir if root_dir else "./.files",
-        "enabled": get_config_value(
-            config, "file_storage.enabled", "JVSPATIAL_FILE_STORAGE_ENABLED", False
-        ),
-        "base_url": get_config_value(
-            config,
-            "file_storage.base_url",
-            "JVSPATIAL_FILE_STORAGE_BASE_URL",
-            "http://localhost:8000",
-        ),
-        "max_size": get_config_value(
-            config,
-            "file_storage.max_size",
-            "JVSPATIAL_FILE_STORAGE_MAX_SIZE",
-            100 * 1024 * 1024,
-        ),
+        "provider": cfg.provider or "local",
+        "root_dir": cfg.root_dir or "./.files",
+        "enabled": cfg.enabled,
+        "base_url": cfg.base_url,
+        "max_size": cfg.max_size,
     }
 
 
