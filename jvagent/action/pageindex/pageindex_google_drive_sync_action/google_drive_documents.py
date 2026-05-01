@@ -4,8 +4,12 @@ from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
 
 
+def _empty_doc_queues() -> Dict[str, Any]:
+    return {"added": [], "modified": [], "removed": []}
+
+
 class GoogleDriveDocuments(Node):
-    """Rank profile node."""
+    """Graph node holding sync state for one Google Drive folder (queues, files tree)."""
 
     folder_id: str = attribute(
         default="",
@@ -33,16 +37,16 @@ class GoogleDriveDocuments(Node):
     )
 
     ingesting_documents: Dict[str, Any] = attribute(
-        default={"added": [], "modified": [], "removed": []},
+        default_factory=_empty_doc_queues,
         description="contain a list of added, modified and deleted documents",
     )
 
     failed_documents: Dict[str, Any] = attribute(
-        default={"added": [], "modified": [], "removed": []},
+        default_factory=_empty_doc_queues,
         description="contain a list of failed documents",
     )
 
     active_document: str = attribute(
-        default_factory=str,
+        default="",
         description="Document which is currently being processed",
     )

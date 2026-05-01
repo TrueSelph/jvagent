@@ -1,4 +1,9 @@
-"""PageIndex Google Drive sync action package."""
+"""PageIndex Google Drive sync action package.
+
+Lazy-export ``PageIndexGoogleDriveSyncAction`` so importing helpers (e.g.
+``drive_ingest_filter``) does not load Google OAuth deps or register endpoints.
+Endpoints register when ``pageindex_google_drive_sync_action`` module loads.
+"""
 
 from typing import TYPE_CHECKING
 

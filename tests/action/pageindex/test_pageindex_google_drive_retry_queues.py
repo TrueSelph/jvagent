@@ -8,7 +8,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from jvspatial.exceptions import ValidationError
 
-from jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action import (
+from jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action import (
+    DriveIngestConfig,
     PageIndexGoogleDriveSyncAction,
     _extract_and_prepend_queue_item,
     _find_file_dict_in_tree,
@@ -81,19 +82,28 @@ async def test_success_processing_failed_queue_keeps_failed_status_when_backlog_
     page_index_action = SimpleNamespace(get_webhook_url=AsyncMock(return_value=""))
 
     action = PageIndexGoogleDriveSyncAction(document_timeout=600)
+    cfg = DriveIngestConfig(
+        collection_name="agent-1",
+        metadata={},
+        model=None,
+        model_action=None,
+        node_summary="no",
+        agent_id="agent-1",
+        page_index_action=page_index_action,
+    )
 
     with (
         patch(
-            "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.get_jvagent_jvforge_base_url",
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.get_jvagent_jvforge_base_url",
             return_value="",
         ),
         patch(
-            "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
             new_callable=AsyncMock,
             return_value=[],
         ),
         patch(
-            "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.assimilate_document",
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.assimilate_document",
             new_callable=AsyncMock,
             return_value={"doc_name": "a.pdf", "_root_id": "n.DocumentRootNode.x"},
         ),
@@ -103,13 +113,7 @@ async def test_success_processing_failed_queue_keeps_failed_status_when_backlog_
             google_drive_action=google_drive_action,
             file_info=file_a,
             doc_type="added",
-            collection_name="agent-1",
-            metadata={},
-            model=None,
-            model_action=None,
-            node_summary="no",
-            agent_id="agent-1",
-            page_index_action=page_index_action,
+            cfg=cfg,
             old_file=None,
             source="failed_documents",
         )
@@ -320,18 +324,28 @@ async def test_skip_existing_added_pops_queue_without_ingest() -> None:
     page_index_action = SimpleNamespace(get_webhook_url=AsyncMock(return_value=""))
 
     action = PageIndexGoogleDriveSyncAction(document_timeout=600)
+    cfg = DriveIngestConfig(
+        collection_name="agent-1",
+        metadata={},
+        model=None,
+        model_action=None,
+        node_summary="no",
+        agent_id="agent-1",
+        page_index_action=page_index_action,
+        skip_existing_documents=True,
+    )
     with (
         patch(
-            "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.get_jvagent_jvforge_base_url",
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.get_jvagent_jvforge_base_url",
             return_value="",
         ),
         patch(
-            "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
             new_callable=AsyncMock,
             return_value=[{"doc_name": "ChargeReportForm.doc"}],
         ),
         patch(
-            "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.assimilate_document",
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.assimilate_document",
             new_callable=AsyncMock,
         ) as mock_assimilate,
     ):
@@ -340,16 +354,9 @@ async def test_skip_existing_added_pops_queue_without_ingest() -> None:
             google_drive_action=google_drive_action,
             file_info=file_a,
             doc_type="added",
-            collection_name="agent-1",
-            metadata={},
-            model=None,
-            model_action=None,
-            node_summary="no",
-            agent_id="agent-1",
-            page_index_action=page_index_action,
+            cfg=cfg,
             old_file=None,
             source="ingesting_documents",
-            skip_existing_documents=True,
         )
 
     assert out["success"] is True
@@ -379,7 +386,7 @@ async def test_prune_added_skip_existing_removes_all_matches() -> None:
         save=AsyncMock(return_value=None),
     )
     with patch(
-        "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
+        "jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
         new_callable=AsyncMock,
         return_value=[
             {"doc_name": "a.pdf"},
@@ -411,7 +418,7 @@ async def test_prune_skip_existing_first_segment_charge_report_vs_md() -> None:
         save=AsyncMock(return_value=None),
     )
     with patch(
-        "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
+        "jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
         new_callable=AsyncMock,
         return_value=[{"doc_name": "ChargeReportForm.doc"}],
     ):
@@ -436,7 +443,7 @@ async def test_prune_skip_existing_first_segment_no_false_positive() -> None:
         save=AsyncMock(return_value=None),
     )
     with patch(
-        "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
+        "jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
         new_callable=AsyncMock,
         return_value=[{"doc_name": "Other.pdf"}],
     ):
@@ -463,7 +470,7 @@ async def test_prune_added_skip_existing_noop_when_flag_off() -> None:
         save=AsyncMock(return_value=None),
     )
     with patch(
-        "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
+        "jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
         new_callable=AsyncMock,
     ) as mock_list:
         await _prune_added_queue_skip_existing(

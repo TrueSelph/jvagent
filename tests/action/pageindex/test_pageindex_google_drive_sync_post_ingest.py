@@ -7,7 +7,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action import (
+from jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action import (
+    DriveIngestConfig,
     PageIndexGoogleDriveSyncAction,
 )
 
@@ -40,19 +41,28 @@ async def test_post_ingest_save_failure_single_pop_success_returned():
     page_index_action = SimpleNamespace(get_webhook_url=AsyncMock(return_value=""))
 
     action = PageIndexGoogleDriveSyncAction(document_timeout=600)
+    cfg = DriveIngestConfig(
+        collection_name="agent-1",
+        metadata={},
+        model=None,
+        model_action=None,
+        node_summary="no",
+        agent_id="agent-1",
+        page_index_action=page_index_action,
+    )
 
     with (
         patch(
-            "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.get_jvagent_jvforge_base_url",
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.get_jvagent_jvforge_base_url",
             return_value="",
         ),
         patch(
-            "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.list_documents",
             new_callable=AsyncMock,
             return_value=[],
         ),
         patch(
-            "jvagent.action.google.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.assimilate_document",
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action.assimilate_document",
             new_callable=AsyncMock,
             return_value={"doc_name": "doc.pdf", "_root_id": "n.DocumentRootNode.x"},
         ),
@@ -62,13 +72,7 @@ async def test_post_ingest_save_failure_single_pop_success_returned():
             google_drive_action=google_drive_action,
             file_info=file_info,
             doc_type="added",
-            collection_name="agent-1",
-            metadata={},
-            model=None,
-            model_action=None,
-            node_summary="no",
-            agent_id="agent-1",
-            page_index_action=page_index_action,
+            cfg=cfg,
             old_file=None,
         )
 

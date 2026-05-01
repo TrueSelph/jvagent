@@ -3,6 +3,7 @@ import copy
 import logging
 import os
 import threading
+from dataclasses import dataclass, replace
 from typing import Any, Dict, List, Optional, Set
 
 from jvspatial.api.auth.api_key_service import APIKeyService
@@ -11,6 +12,7 @@ from jvspatial.core.context import GraphContext
 from jvspatial.db import get_prime_database
 from jvspatial.exceptions import DatabaseError, ValidationError
 
+from jvagent.action.google.google_action import GoogleAction
 from jvagent.action.pageindex.adapter import strip_redundant_md_suffix
 from jvagent.action.pageindex.config import (
     get_pageindex_node_summary,
@@ -32,7 +34,6 @@ from jvagent.action.pageindex.pageindex_action import (
 from jvagent.core.public_url import get_public_base_url
 from jvagent.env import get_jvagent_jvforge_base_url
 
-from ..google_action import GoogleAction
 from .drive_ingest_filter import (
     filter_drive_doc_queues_for_ingestible,
     is_drive_file_pageindex_ingestible,
@@ -172,16 +173,6 @@ def _filter_doc_queues_for_disabled(docs: Dict[str, Any], disabled: Set[str]) ->
         docs[key] = _filter_queue_for_disabled(list(docs.get(key) or []), disabled, key)
 
 
-def _recompute_google_drive_node_idle_status(node: Any) -> None:
-    """If no work remains in ingesting or failed queues, mark folder sync completed."""
-    ing = node.ingesting_documents
-    fd = node.failed_documents
-    pending_ingest = bool(ing["added"] or ing["modified"] or ing["removed"])
-    pending_fail = bool(fd["added"] or fd["modified"] or fd["removed"])
-    if not pending_ingest and not pending_fail:
-        node.status = "completed"
-
-
 def _sync_drive_node_status_from_queues(node: Any) -> None:
     """Set folder sync status from ingesting vs failed queue depth (not during active_document)."""
     if getattr(node, "active_document", None):
@@ -240,6 +231,24 @@ async def _if_add_node_summary_for_jvforge(
     return "yes" if node_summary else "no"
 
 
+@dataclass
+class DriveIngestConfig:
+    """Shared ingest settings for one Drive document (from PageIndex + flags)."""
+
+    collection_name: str
+    metadata: Dict[str, Any]
+    model: Optional[str]
+    model_action: Optional[Any]
+    node_summary: Optional[Any]
+    agent_id: str
+    page_index_action: Any
+    convert_to_markdown: bool = False
+    ocr: bool = False
+    docling_ocr_engine: Optional[str] = None
+    normalize_bold_headings: bool = False
+    skip_existing_documents: bool = True
+
+
 # Per-folder locks to prevent duplicate GoogleDriveDocuments on concurrent requests
 _sync_locks: Dict[str, asyncio.Lock] = {}
 _sync_locks_guard = asyncio.Lock()
@@ -280,19 +289,20 @@ async def _pop_disabled_head_queues(node: Any, queues: Dict[str, Any]) -> bool:
             else:
                 break
     if changed:
-        _recompute_google_drive_node_idle_status(node)
+        _sync_drive_node_status_from_queues(node)
         await node.save()
     return changed
 
 
-async def _pop_skip_unsupported_head(
+async def _pop_skip_head(
     node: Any,
     *,
     source: str,
     doc_type: str,
     doc_name: str,
+    ingestion_message: str,
 ) -> Dict[str, Any]:
-    """Remove head item from ingest queue without marking failed; used for unsupported types."""
+    """Remove head item from ingest queue without marking failed (unsupported or duplicate)."""
     docs = getattr(node, source)
     if doc_type == "added":
         if docs["added"]:
@@ -307,30 +317,7 @@ async def _pop_skip_unsupported_head(
         "success": True,
         "skipped": True,
         "doc_name": doc_name,
-        "ingestion_message": f"Skipped unsupported file type: {doc_name}",
-    }
-
-
-async def _pop_skip_existing_head(
-    node: Any,
-    *,
-    source: str,
-    doc_type: str,
-    doc_name: str,
-) -> Dict[str, Any]:
-    """Remove head item from added queue when doc_name already exists in PageIndex."""
-    docs = getattr(node, source)
-    if doc_type == "added":
-        if docs["added"]:
-            docs["added"].pop(0)
-    node.active_document = ""
-    _sync_drive_node_status_from_queues(node)
-    await node.save()
-    return {
-        "success": True,
-        "skipped": True,
-        "doc_name": doc_name,
-        "ingestion_message": f"Skipped (already in index): {doc_name}",
+        "ingestion_message": ingestion_message,
     }
 
 
@@ -422,7 +409,7 @@ async def _prune_added_queue_skip_existing(
     if len(kept) == len(added):
         return
     node.ingesting_documents["added"] = kept
-    _recompute_google_drive_node_idle_status(node)
+    _sync_drive_node_status_from_queues(node)
     await node.save()
 
 
@@ -458,26 +445,121 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         description="Document timeout",
     )
 
+    async def _mark_drive_ingest_failed(
+        self,
+        google_drive_documents_node: Any,
+        *,
+        source: str,
+        doc_type: str,
+        file_info: Dict[str, Any],
+    ) -> None:
+        docs = getattr(google_drive_documents_node, source)
+        if doc_type == "added":
+            docs["added"].pop(0)
+            google_drive_documents_node.failed_documents["added"].append(file_info)
+        else:
+            docs["modified"].pop(0)
+            google_drive_documents_node.failed_documents["modified"].append(file_info)
+        google_drive_documents_node.active_document = ""
+        _sync_drive_node_status_from_queues(google_drive_documents_node)
+        await google_drive_documents_node.save()
+
+    async def _execute_drive_document_ingest(
+        self,
+        *,
+        google_drive_action: Any,
+        doc_name: str,
+        file_id: str,
+        doc_url: str,
+        cfg: DriveIngestConfig,
+        cancel_event: threading.Event,
+    ) -> Dict[str, Any]:
+        file_bytes = await google_drive_action.get_media(file_id=file_id)
+        forge_base = (get_jvagent_jvforge_base_url() or "").strip()
+        if cfg.normalize_bold_headings and not forge_base:
+            raise ValidationError(
+                "normalize_bold_headings requires JVAGENT_JVFORGE_BASE_URL "
+                "(bold-line normalization runs on jvforge only)."
+            )
+        if forge_base:
+            summary_for_forge = await _if_add_node_summary_for_jvforge(
+                cfg.agent_id, cfg.node_summary
+            )
+            llm_wh_url = await cfg.page_index_action.get_webhook_url()
+            async_mode = (
+                os.environ.get("JVAGENT_JVFORGE_ASYNC", "false").lower() == "true"
+            )
+            if async_mode:
+                q = await assimilate_via_jvforge_async(
+                    base_url=forge_base,
+                    agent_id=cfg.agent_id,
+                    filename=doc_name,
+                    content=file_bytes,
+                    doc_name=doc_name,
+                    model=cfg.model,
+                    if_add_node_summary=summary_for_forge,
+                    collection_name=cfg.collection_name,
+                    metadata=cfg.metadata or None,
+                    doc_description=None,
+                    doc_url=doc_url or None,
+                    convert_to_markdown=cfg.convert_to_markdown,
+                    ocr=cfg.ocr,
+                    docling_ocr_engine=cfg.docling_ocr_engine,
+                    normalize_bold_headings=cfg.normalize_bold_headings,
+                    llm_webhook_url=llm_wh_url,
+                    emergency=False,
+                )
+                return {
+                    "doc_name": doc_name,
+                    "jvforge_job_id": q.get("job_id"),
+                    "jvforge_queue_status": q.get("status"),
+                }
+            await assimilate_via_jvforge(
+                base_url=forge_base,
+                agent_id=cfg.agent_id,
+                filename=doc_name,
+                content=file_bytes,
+                doc_name=doc_name,
+                model=cfg.model,
+                if_add_node_summary=summary_for_forge,
+                collection_name=cfg.collection_name,
+                metadata=cfg.metadata or None,
+                doc_description=None,
+                doc_url=doc_url or None,
+                convert_to_markdown=cfg.convert_to_markdown,
+                ocr=cfg.ocr,
+                docling_ocr_engine=cfg.docling_ocr_engine,
+                normalize_bold_headings=cfg.normalize_bold_headings,
+                llm_webhook_url=llm_wh_url,
+            )
+            return {"doc_name": doc_name}
+        # assimilate_document expects threading.Event (worker-thread cancel); not asyncio.Event.
+        await assimilate_document(
+            file_bytes,
+            doc_name=doc_name,
+            model=cfg.model,
+            model_action=cfg.model_action,
+            if_add_node_summary=cfg.node_summary,
+            persist=True,
+            collection_name=cfg.collection_name,
+            doc_url=doc_url,
+            metadata=cfg.metadata,
+            cancel_event=cancel_event,
+            convert_to_markdown=cfg.convert_to_markdown,
+            ocr=cfg.ocr,
+            docling_ocr_engine=cfg.docling_ocr_engine,
+        )
+        return {"doc_name": doc_name}
+
     async def _process_single_document(
         self,
         google_drive_documents_node: Any,
         google_drive_action: Any,
         file_info: Dict[str, Any],
         doc_type: str,
-        collection_name: str,
-        metadata: Dict[str, Any],
-        model: Optional[str],
-        model_action: Optional[Any],
-        node_summary: Optional[Any],
-        agent_id: str,
-        page_index_action: Any,
+        cfg: DriveIngestConfig,
         old_file: Optional[Dict[str, Any]] = None,
         source: str = "ingesting_documents",
-        convert_to_markdown: bool = False,
-        ocr: bool = False,
-        docling_ocr_engine: Optional[str] = None,
-        normalize_bold_headings: bool = False,
-        skip_existing_documents: bool = True,
     ) -> Dict[str, Any]:
         """Process one document (added or modified). Sets active_document, ingests, clears on completion.
 
@@ -505,125 +587,50 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     "Skipping unsupported Google Drive file for PageIndex: %s",
                     doc_name,
                 )
-                return await _pop_skip_unsupported_head(
+                return await _pop_skip_head(
                     google_drive_documents_node,
                     source=source,
                     doc_type=doc_type,
                     doc_name=doc_name,
+                    ingestion_message=f"Skipped unsupported file type: {doc_name}",
                 )
 
             if (
-                skip_existing_documents
+                cfg.skip_existing_documents
                 and doc_type == "added"
                 and doc_name
-                and await _drive_added_fname_matches_indexed(doc_name, collection_name)
+                and await _drive_added_fname_matches_indexed(
+                    doc_name, cfg.collection_name
+                )
             ):
-                return await _pop_skip_existing_head(
+                return await _pop_skip_head(
                     google_drive_documents_node,
                     source=source,
                     doc_type=doc_type,
                     doc_name=doc_name,
+                    ingestion_message=f"Skipped (already in index): {doc_name}",
                 )
-
-            async def _mark_ingest_failed() -> None:
-                docs = getattr(google_drive_documents_node, source)
-                if doc_type == "added":
-                    docs["added"].pop(0)
-                    google_drive_documents_node.failed_documents["added"].append(
-                        file_info
-                    )
-                else:
-                    docs["modified"].pop(0)
-                    google_drive_documents_node.failed_documents["modified"].append(
-                        file_info
-                    )
-                google_drive_documents_node.active_document = ""
-                _sync_drive_node_status_from_queues(google_drive_documents_node)
-                await google_drive_documents_node.save()
-
-            async def _do_ingest() -> Dict[str, Any]:
-                file_bytes = await google_drive_action.get_media(file_id=file_id)
-                forge_base = (get_jvagent_jvforge_base_url() or "").strip()
-                if normalize_bold_headings and not forge_base:
-                    raise ValidationError(
-                        "normalize_bold_headings requires JVAGENT_JVFORGE_BASE_URL "
-                        "(bold-line normalization runs on jvforge only)."
-                    )
-                if forge_base:
-                    summary_for_forge = await _if_add_node_summary_for_jvforge(
-                        agent_id, node_summary
-                    )
-                    llm_wh_url = await page_index_action.get_webhook_url()
-                    async_mode = (
-                        os.environ.get("JVAGENT_JVFORGE_ASYNC", "false").lower()
-                        == "true"
-                    )
-                    if async_mode:
-                        q = await assimilate_via_jvforge_async(
-                            base_url=forge_base,
-                            agent_id=agent_id,
-                            filename=doc_name,
-                            content=file_bytes,
-                            doc_name=doc_name,
-                            model=model,
-                            if_add_node_summary=summary_for_forge,
-                            collection_name=collection_name,
-                            metadata=metadata or None,
-                            doc_description=None,
-                            doc_url=doc_url or None,
-                            convert_to_markdown=convert_to_markdown,
-                            ocr=ocr,
-                            docling_ocr_engine=docling_ocr_engine,
-                            normalize_bold_headings=normalize_bold_headings,
-                            llm_webhook_url=llm_wh_url,
-                            emergency=False,
-                        )
-                        return {
-                            "doc_name": doc_name,
-                            "jvforge_job_id": q.get("job_id"),
-                            "jvforge_queue_status": q.get("status"),
-                        }
-                    await assimilate_via_jvforge(
-                        base_url=forge_base,
-                        agent_id=agent_id,
-                        filename=doc_name,
-                        content=file_bytes,
-                        doc_name=doc_name,
-                        model=model,
-                        if_add_node_summary=summary_for_forge,
-                        collection_name=collection_name,
-                        metadata=metadata or None,
-                        doc_description=None,
-                        doc_url=doc_url or None,
-                        convert_to_markdown=convert_to_markdown,
-                        ocr=ocr,
-                        docling_ocr_engine=docling_ocr_engine,
-                        normalize_bold_headings=normalize_bold_headings,
-                        llm_webhook_url=llm_wh_url,
-                    )
-                    return {"doc_name": doc_name}
-                await assimilate_document(
-                    file_bytes,
-                    doc_name=doc_name,
-                    model=model,
-                    model_action=model_action,
-                    if_add_node_summary=node_summary,
-                    persist=True,
-                    collection_name=collection_name,
-                    doc_url=doc_url,
-                    metadata=metadata,
-                    cancel_event=cancel_event,
-                    convert_to_markdown=convert_to_markdown,
-                    ocr=ocr,
-                    docling_ocr_engine=docling_ocr_engine,
-                )
-                return {"doc_name": doc_name}
 
             try:
-                result = await asyncio.wait_for(_do_ingest(), timeout=timeout_seconds)
+                result = await asyncio.wait_for(
+                    self._execute_drive_document_ingest(
+                        google_drive_action=google_drive_action,
+                        doc_name=doc_name,
+                        file_id=file_id,
+                        doc_url=doc_url,
+                        cfg=cfg,
+                        cancel_event=cancel_event,
+                    ),
+                    timeout=timeout_seconds,
+                )
             except asyncio.TimeoutError:
                 cancel_event.set()
-                await _mark_ingest_failed()
+                await self._mark_drive_ingest_failed(
+                    google_drive_documents_node,
+                    source=source,
+                    doc_type=doc_type,
+                    file_info=file_info,
+                )
                 logger.warning(
                     "Document %s timed out after %ss", doc_name, timeout_seconds
                 )
@@ -634,7 +641,12 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     "ingestion_message": f"Timed out ingesting {doc_name}",
                 }
             except Exception:
-                await _mark_ingest_failed()
+                await self._mark_drive_ingest_failed(
+                    google_drive_documents_node,
+                    source=source,
+                    doc_type=doc_type,
+                    file_info=file_info,
+                )
                 logger.exception("Error ingesting document %s", doc_name)
                 return {
                     "success": False,
@@ -648,7 +660,12 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 }
 
             if not result.get("doc_name"):
-                await _mark_ingest_failed()
+                await self._mark_drive_ingest_failed(
+                    google_drive_documents_node,
+                    source=source,
+                    doc_type=doc_type,
+                    file_info=file_info,
+                )
                 logger.error("Ingestion returned no doc_name for %s", doc_name)
                 return {
                     "success": False,
@@ -670,7 +687,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     if old_file:
                         await delete_document(
                             old_file.get("name", ""),
-                            collection_name=collection_name,
+                            collection_name=cfg.collection_name,
                         )
                 google_drive_documents_node.active_document = ""
                 _sync_drive_node_status_from_queues(google_drive_documents_node)
@@ -715,7 +732,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
 
     async def ingest_documents_from_google_drive(
         self,
-        google_drive_folders: list = [],
+        google_drive_folders: Optional[List[dict]] = None,
         remove_deleted_documents: bool = False,
         retry_failed_documents: bool = False,
         convert_to_markdown: bool = False,
@@ -734,12 +751,20 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 [{"folder_id": "<folder_id>", "metadata": {"key": "value"}}]
 
         Returns:
-            Dict with status and list of ingested document names.
+            Dict with status and ``documents_ingested``:
+            ``added``, ``updated``, ``removed`` (deleted from index when
+            ``remove_deleted_documents``), ``to_be_removed`` (names cleared from
+            queue when auto-delete is off).
         """
         empty_result: Dict[str, Any] = {
             "status": "error",
             "message": "",
-            "documents_ingested": {"added": [], "updated": [], "to_be_removed": []},
+            "documents_ingested": {
+                "added": [],
+                "updated": [],
+                "removed": [],
+                "to_be_removed": [],
+            },
         }
         google_drive_action: Optional[Any] = await self.get_action("GoogleDriveAction")
         page_index_action: Optional[Any] = await self.get_action(self.page_index_action)
@@ -751,14 +776,15 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             return empty_result
         if not page_index_action:
             logger.warning(
-                f"No {self.page_index_action} found! Unable to ingest documents from Google Drive"
+                "No %s found! Unable to ingest documents from Google Drive",
+                self.page_index_action,
             )
             empty_result["message"] = f"No {self.page_index_action} found"
             return empty_result
 
         if not google_drive_folders:
             google_drive_folders = self.google_drive_folders
-        if not self.google_drive_folders and not google_drive_folders:
+        if not google_drive_folders:
             empty_result["message"] = "No folders to ingest"
             return empty_result
 
@@ -780,40 +806,14 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 skip_existing_documents=skip_existing_documents,
             )
 
-    async def _ingest_documents_from_google_drive_inner(
+    async def _phase_sync_google_drive_folders(
         self,
-        agent_id: str,
         google_drive_folders: list,
-        remove_deleted_documents: bool,
-        retry_failed_documents: bool,
         google_drive_action: Any,
-        page_index_action: Any,
-        convert_to_markdown: bool = False,
-        ocr: bool = False,
-        docling_ocr_engine: Optional[str] = None,
-        normalize_bold_headings: bool = False,
-        skip_existing_documents: bool = True,
-    ) -> dict:
-        """Inner ingestion logic (called with ingestion lock held)."""
-        ocr_eff, docling_eff = _drive_resolve_docling_ocr(docling_ocr_engine, ocr)
-        if get_jvagent_jvforge_base_url():
-            initialize_pageindex_database(app_id=await _get_app_id_from_node())
-        logger.info(
-            "PageIndex Google Drive Sync: starting ingestion for %d folder(s)",
-            len(google_drive_folders),
-        )
-        document_ingested: Dict[str, List[str]] = {
-            "added": [],
-            "updated": [],
-            "to_be_removed": [],
-        }
-
-        collection_name = page_index_action._resolve_collection()
-        model_action = await page_index_action.get_model_action()
-        node_summary = page_index_action.config.get("node_summary")
-        model = page_index_action.config.get("model")
-
-        # Phase A: Sync files for all folders
+        collection_name: str,
+        skip_existing_documents: bool,
+    ) -> None:
+        """Phase A: list Drive trees, merge queues, persist ``GoogleDriveDocuments`` nodes."""
         for google_drive_folder in google_drive_folders:
             google_drive_folder_id = google_drive_folder.get("folder_id")
 
@@ -895,9 +895,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                         collection_name,
                         skip_existing_documents=skip_existing_documents,
                     )
-                    _recompute_google_drive_node_idle_status(
-                        google_drive_documents_node
-                    )
+                    _sync_drive_node_status_from_queues(google_drive_documents_node)
                     await google_drive_documents_node.save()
                 else:
                     _merge_disable_ingestion_from_old([], files)
@@ -921,7 +919,12 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     )
                     await self.connect(google_drive_documents_node)
 
-        # Phase B: Check for active document across all folders first
+    async def _check_active_google_drive_document(
+        self,
+        google_drive_folders: list,
+        document_ingested: Dict[str, List[str]],
+    ) -> Optional[dict]:
+        """Phase B: if any folder has ``active_document``, return early response."""
         for google_drive_folder in google_drive_folders:
             google_drive_folder_id = google_drive_folder.get("folder_id")
             google_drive_documents_node = await self.node(
@@ -933,11 +936,25 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             ):
                 return {
                     "status": "completed",
-                    "message": f"Document {google_drive_documents_node.active_document} is currently being processed. Please try again later.",
+                    "message": (
+                        f"Document {google_drive_documents_node.active_document} "
+                        "is currently being processed. Please try again later."
+                    ),
                     "documents_ingested": document_ingested,
                 }
+        return None
 
-        # Phase C: Pick and process one document
+    async def _phase_pick_and_process_google_drive_document(
+        self,
+        google_drive_folders: list,
+        remove_deleted_documents: bool,
+        retry_failed_documents: bool,
+        google_drive_action: Any,
+        cfg_template: DriveIngestConfig,
+        document_ingested: Dict[str, List[str]],
+    ) -> dict:
+        """Phase C: pick one queued document (or removals batch) and process."""
+        collection_name = cfg_template.collection_name
         for google_drive_folder in google_drive_folders:
             google_drive_folder_id = google_drive_folder.get("folder_id")
             google_drive_documents_node = await self.node(
@@ -965,6 +982,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             )
 
             metadata = google_drive_folder.get("metadata", {})
+            cfg = replace(cfg_template, metadata=dict(metadata or {}))
 
             if ingesting_documents["added"]:
                 new_file = ingesting_documents["added"][0]
@@ -973,19 +991,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     google_drive_action=google_drive_action,
                     file_info=new_file,
                     doc_type="added",
-                    collection_name=collection_name,
-                    metadata=metadata,
-                    model=model,
-                    model_action=model_action,
-                    node_summary=node_summary,
-                    agent_id=agent_id,
-                    page_index_action=page_index_action,
+                    cfg=cfg,
                     source=ingest_source,
-                    convert_to_markdown=convert_to_markdown,
-                    ocr=ocr_eff,
-                    docling_ocr_engine=docling_eff,
-                    normalize_bold_headings=normalize_bold_headings,
-                    skip_existing_documents=skip_existing_documents,
                 )
                 if result["success"] and not result.get("skipped"):
                     document_ingested["added"].append(result["doc_name"])
@@ -995,7 +1002,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     "documents_ingested": document_ingested,
                 }
 
-            elif ingesting_documents["modified"]:
+            if ingesting_documents["modified"]:
                 modified_result = ingesting_documents["modified"][0]
                 if isinstance(modified_result, dict) and "new" in modified_result:
                     new_file = modified_result["new"]
@@ -1008,20 +1015,9 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     google_drive_action=google_drive_action,
                     file_info=new_file,
                     doc_type="modified",
-                    collection_name=collection_name,
-                    metadata=metadata,
-                    model=model,
-                    model_action=model_action,
-                    node_summary=node_summary,
-                    agent_id=agent_id,
-                    page_index_action=page_index_action,
+                    cfg=cfg,
                     old_file=old_file,
                     source=ingest_source,
-                    convert_to_markdown=convert_to_markdown,
-                    ocr=ocr_eff,
-                    docling_ocr_engine=docling_eff,
-                    normalize_bold_headings=normalize_bold_headings,
-                    skip_existing_documents=skip_existing_documents,
                 )
                 if result["success"] and not result.get("skipped"):
                     document_ingested["updated"].append(result["doc_name"])
@@ -1031,7 +1027,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     "documents_ingested": document_ingested,
                 }
 
-            elif ingesting_documents["removed"]:
+            if ingesting_documents["removed"]:
                 if remove_deleted_documents:
                     remove_docs_names = []
                     for removed_doc in list(ingesting_documents["removed"]):
@@ -1054,7 +1050,9 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                                 google_drive_documents_node
                             )
                             await google_drive_documents_node.save()
-                            logger.error(f"Error deleting document: {e}")
+                            logger.error(
+                                "Error deleting document: %s", e, exc_info=True
+                            )
                             return {
                                 "status": "completed",
                                 "message": f"Failed to delete {removed_doc.get('name', '')}",
@@ -1099,6 +1097,77 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             "message": "No pending documents to ingest",
             "documents_ingested": document_ingested,
         }
+
+    async def _ingest_documents_from_google_drive_inner(
+        self,
+        agent_id: str,
+        google_drive_folders: list,
+        remove_deleted_documents: bool,
+        retry_failed_documents: bool,
+        google_drive_action: Any,
+        page_index_action: Any,
+        convert_to_markdown: bool = False,
+        ocr: bool = False,
+        docling_ocr_engine: Optional[str] = None,
+        normalize_bold_headings: bool = False,
+        skip_existing_documents: bool = True,
+    ) -> dict:
+        """Inner ingestion logic (called with ingestion lock held)."""
+        ocr_eff, docling_eff = _drive_resolve_docling_ocr(docling_ocr_engine, ocr)
+        if get_jvagent_jvforge_base_url():
+            initialize_pageindex_database(app_id=await _get_app_id_from_node())
+        logger.info(
+            "PageIndex Google Drive Sync: starting ingestion for %d folder(s)",
+            len(google_drive_folders),
+        )
+        document_ingested: Dict[str, List[str]] = {
+            "added": [],
+            "updated": [],
+            "removed": [],
+            "to_be_removed": [],
+        }
+
+        collection_name = page_index_action.resolve_collection()
+        model_action = await page_index_action.get_model_action()
+        node_summary = page_index_action.config.get("node_summary")
+        model = page_index_action.config.get("model")
+
+        cfg_template = DriveIngestConfig(
+            collection_name=collection_name,
+            metadata={},
+            model=model,
+            model_action=model_action,
+            node_summary=node_summary,
+            agent_id=agent_id,
+            page_index_action=page_index_action,
+            convert_to_markdown=convert_to_markdown,
+            ocr=ocr_eff,
+            docling_ocr_engine=docling_eff,
+            normalize_bold_headings=normalize_bold_headings,
+            skip_existing_documents=skip_existing_documents,
+        )
+
+        await self._phase_sync_google_drive_folders(
+            google_drive_folders,
+            google_drive_action,
+            collection_name,
+            skip_existing_documents,
+        )
+
+        busy = await self._check_active_google_drive_document(
+            google_drive_folders, document_ingested
+        )
+        if busy is not None:
+            return busy
+
+        return await self._phase_pick_and_process_google_drive_document(
+            google_drive_folders=google_drive_folders,
+            remove_deleted_documents=remove_deleted_documents,
+            retry_failed_documents=retry_failed_documents,
+            google_drive_action=google_drive_action,
+            cfg_template=cfg_template,
+            document_ingested=document_ingested,
+        )
 
     async def update_google_drive_documents(
         self,
@@ -1345,7 +1414,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                         if _queue_item_file_id(x, key) != str(file_id)
                     ]
 
-        _recompute_google_drive_node_idle_status(google_drive_documents_node)
+        _sync_drive_node_status_from_queues(google_drive_documents_node)
         await google_drive_documents_node.save()
         return {
             "folder_id": folder_id,
@@ -1354,7 +1423,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         }
 
     async def get_google_drive_documents(self) -> List[Dict[str, Any]]:
-        """get google drive documents"""
+        """Return all connected ``GoogleDriveDocuments`` folder sync nodes for this action."""
         google_drive_documents_nodes = await self.nodes(node=GoogleDriveDocuments)
         google_drive_documents = []
         for google_drive_documents_node in google_drive_documents_nodes:
@@ -1394,14 +1463,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 await self.save()
 
     def is_configured(self) -> bool:
-        """Check if the WhatsApp action has required configuration.
-
-        Required configuration:
-        - base_url: Application base URL for webhook generation
-
-        Returns:
-            True if required configuration is present and valid, False otherwise.
-        """
+        """Return True if this action has a valid ``base_url`` for webhook generation."""
         # Check for required fields - must be non-empty strings
         if not self.base_url:
             return False
@@ -1488,7 +1550,30 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         except DatabaseError:
             raise
         except Exception as e:
-            raise ValidationError(f"Webhook URL generation failed: {e}")
+            raise ValidationError("Webhook URL generation failed: %s" % (e,))
+
+    async def _ensure_webhook_url_if_configured(
+        self, *, require_enabled: bool, skip_log_context: Optional[str]
+    ) -> None:
+        await self._apply_env_defaults()
+        if not self.is_configured():
+            if skip_log_context:
+                logger.debug(
+                    "Page Index Google Drive Sync action not configured, skipping %s",
+                    skip_log_context,
+                )
+            return
+        if require_enabled and not self.enabled:
+            return
+        try:
+            if not self.webhook_url:
+                await self.get_webhook_url()
+        except Exception as e:
+            logger.error(
+                "Error ensuring Page Index Google Drive Sync webhook URL: %s",
+                e,
+                exc_info=True,
+            )
 
     async def on_register(self) -> None:
         """Called when action is registered. Validates configuration."""
@@ -1500,40 +1585,28 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
 
     async def on_reload(self) -> None:
         """Called when action is reloaded. Re-registers session with current webhook URL."""
-        await self._apply_env_defaults()
-        if not self.is_configured():
-            logger.debug(
-                "Page Index Google Drive Sync action not configured, skipping reload"
-            )
-            return
-
-        try:
-            if not self.webhook_url:
-                await self.get_webhook_url()
-
-        except Exception as e:
-            logger.error(
-                f"Error re-registering Page Index Google Drive Sync action during reload: {e}",
-                exc_info=True,
-            )
+        await self._ensure_webhook_url_if_configured(
+            require_enabled=False, skip_log_context="reload"
+        )
 
     async def on_startup(self) -> None:
-        """Initialize filter and adapter, attempt session registration with configurable timeout."""
-        await self._apply_env_defaults()
-        if not self.is_configured() or not self.enabled:
-            return
+        """Initialize webhook URL when the action is enabled at app startup."""
+        await self._ensure_webhook_url_if_configured(
+            require_enabled=True, skip_log_context=None
+        )
 
-        try:
-            if not self.webhook_url:
-                await self.get_webhook_url()
+    async def on_deregister(self) -> None:
+        await super().on_deregister()
+        aid = str(self.id)
+        prefix = f"{aid}:"
+        async with _sync_locks_guard:
+            for k in list(_sync_locks.keys()):
+                if k.startswith(prefix):
+                    del _sync_locks[k]
+        agid = self.agent_id
+        if agid:
+            async with _ingestion_locks_guard:
+                _ingestion_locks.pop(agid, None)
 
-        except Exception as e:
-            logger.error(
-                f"Error re-registering Page Index Google Drive Sync action during startup: {e}",
-                exc_info=True,
-            )
 
-
-from . import (  # noqa: F401, E402  # register HTTP routes when action module loads
-    endpoints,
-)
+from . import endpoints  # noqa: F401  # register HTTP routes when action module loads

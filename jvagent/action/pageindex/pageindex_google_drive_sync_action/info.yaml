@@ -22,7 +22,6 @@ package:
       [
         "jvagent/google_drive_action",
         "jvagent/pageindex_action",
-        "jvagent/pageindex_retrieval_interact_action",
       ]
     pip:
       - google-api-python-client>=2.192.0

@@ -759,6 +759,17 @@ class ActionLoader:
                             f"Error importing core package {package_path}: {e}"
                         )
 
+            # Trigger lazy class loading via __getattr__ so the action class
+            # enters Python's __subclasses__() chain for jvspatial discovery.
+            archetype = data.get("package", {}).get("archetype") if data else None
+            if archetype:
+                try:
+                    pkg = sys.modules.get(package_path)
+                    if pkg is not None:
+                        getattr(pkg, archetype)  # fires __getattr__ → imports module
+                except Exception:
+                    pass
+
             # Mark as imported
             registry.mark_imported(action_ref)
             logger.debug(f"Successfully imported core action module: {action_ref}")

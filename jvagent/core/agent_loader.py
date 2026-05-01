@@ -209,9 +209,6 @@ class AgentLoader:
             )
 
             if existing_agent:
-                if update_mode is None:
-                    return existing_agent
-
                 agent = existing_agent
                 if update_mode == "source":
                     agent.enabled = descriptor.enabled
@@ -479,13 +476,12 @@ class AgentLoader:
                 agent, actions_manager, expected_actions, all_records
             )
 
-            # Reload modules for surviving actions so code changes take effect
+            # Reload modules for surviving actions so code changes take effect.
+            # Use raw DB records for metadata — avoid Action.get() here so we do not
+            # deserialize before action classes are loaded (subclass cache poisoning).
             for (ns, label), record in kept_map.items():
                 try:
-                    node = await Action.get(record["id"])
-                    if not node:
-                        continue
-                    metadata_dict = node.metadata
+                    metadata_dict = (record.get("context") or {}).get("metadata") or {}
                     is_core = metadata_dict.get("is_core_action", False)
                     core_module_path = metadata_dict.get("core_module_path")
 
@@ -493,7 +489,12 @@ class AgentLoader:
                         if core_module_path in sys.modules:
                             importlib.reload(sys.modules[core_module_path])
                     else:
-                        await node._unload_action_modules()
+                        record_id = record.get("id") or record.get("_id")
+                        if not record_id:
+                            continue
+                        node = await Action.get(record_id)
+                        if node:
+                            await node._unload_action_modules()
                 except Exception as e:
                     logger.warning(
                         f"Error reloading modules for action {ns}/{label}: {e}",

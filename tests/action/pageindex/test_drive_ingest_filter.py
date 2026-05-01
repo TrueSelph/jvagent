@@ -1,6 +1,6 @@
 """Tests for Google Drive PageIndex ingest filtering."""
 
-from jvagent.action.google.pageindex_google_drive_sync_action.drive_ingest_filter import (
+from jvagent.action.pageindex.pageindex_google_drive_sync_action.drive_ingest_filter import (
     filter_drive_doc_queues_for_ingestible,
     is_drive_file_pageindex_ingestible,
 )

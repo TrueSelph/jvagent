@@ -586,29 +586,32 @@ async def pageindex_google_drive_sync_action_interact(
         skip_existing_flag = _payload_bool(
             request_data, "skip_existing_documents", default=True
         )
-        drive_action = pageindex_google_drive_sync_action
+
+        ingest_kw: Dict[str, Any] = {
+            "google_drive_folders": folders,
+            "remove_deleted_documents": remove_deleted,
+            "retry_failed_documents": retry_failed,
+            "convert_to_markdown": convert_to_markdown,
+            "ocr": ocr_flag,
+            "docling_ocr_engine": docling_ocr_eff,
+            "normalize_bold_headings": normalize_bold_flag,
+            "skip_existing_documents": skip_existing_flag,
+        }
 
         if is_serverless_mode():
             logger.info(
-                f"Processing ingestion inline (serverless) for agent {agent_id}"
+                "Processing ingestion inline (serverless) for agent %s", agent_id
             )
-            result = await drive_action.ingest_documents_from_google_drive(
-                google_drive_folders=folders,
-                remove_deleted_documents=remove_deleted,
-                retry_failed_documents=retry_failed,
-                convert_to_markdown=convert_to_markdown,
-                ocr=ocr_flag,
-                docling_ocr_engine=docling_ocr_eff,
-                normalize_bold_headings=normalize_bold_flag,
-                skip_existing_documents=skip_existing_flag,
+            result = await pageindex_google_drive_sync_action.ingest_documents_from_google_drive(
+                **ingest_kw
             )
             response = result.get("message") or "No pending documents to ingest"
             t0 = getattr(request.state, "webhook_start", None)
             if t0 is not None:
                 elapsed_ms = int((time.perf_counter() - t0) * 1000)
                 logger.debug(
-                    f"PageIndex Drive webhook: ingestion done in {elapsed_ms}ms "
-                    f"(serverless)"
+                    "PageIndex Drive webhook: ingestion done in %sms (serverless)",
+                    elapsed_ms,
                 )
             return {
                 "status": "received",
@@ -617,32 +620,27 @@ async def pageindex_google_drive_sync_action_interact(
             }
 
         task = await create_task(
-            drive_action.ingest_documents_from_google_drive(
-                google_drive_folders=folders,
-                remove_deleted_documents=remove_deleted,
-                retry_failed_documents=retry_failed,
-                convert_to_markdown=convert_to_markdown,
-                ocr=ocr_flag,
-                docling_ocr_engine=docling_ocr_eff,
-                normalize_bold_headings=normalize_bold_flag,
-                skip_existing_documents=skip_existing_flag,
+            pageindex_google_drive_sync_action.ingest_documents_from_google_drive(
+                **ingest_kw
             ),
             name=f"page_index_ingestion_{agent_id}",
         )
         if task is None:
-            logger.info(f"Processing ingestion synchronously for agent {agent_id}")
+            logger.info("Processing ingestion synchronously for agent %s", agent_id)
         else:
-            logger.info(f"Processing ingestion in background for agent {agent_id}")
+            logger.info("Processing ingestion in background for agent %s", agent_id)
         t0 = getattr(request.state, "webhook_start", None)
         if t0 is not None:
             elapsed_ms = int((time.perf_counter() - t0) * 1000)
             if task is None:
                 logger.debug(
-                    f"PageIndex Drive webhook: ingestion done in {elapsed_ms}ms"
+                    "PageIndex Drive webhook: ingestion done in %sms",
+                    elapsed_ms,
                 )
             else:
                 logger.debug(
-                    f"PageIndex Drive webhook: queued for async in {elapsed_ms}ms"
+                    "PageIndex Drive webhook: queued for async in %sms",
+                    elapsed_ms,
                 )
         return {
             "status": "received",
@@ -653,13 +651,15 @@ async def pageindex_google_drive_sync_action_interact(
         raise
     except DatabaseError as e:
         logger.error(
-            f"Database error in PageIndex Google Drive Sync Action Interact Webhook: {e}",
+            "Database error in PageIndex Google Drive Sync Action Interact Webhook: %s",
+            e,
             exc_info=True,
         )
         raise HTTPException(status_code=500, detail="Database error")
     except Exception as e:
         logger.error(
-            f"Unexpected error in PageIndex Google Drive Sync Action Interact Webhook: {e}",
+            "Unexpected error in PageIndex Google Drive Sync Action Interact Webhook: %s",
+            e,
             exc_info=True,
         )
         raise HTTPException(status_code=500, detail="Internal server error")

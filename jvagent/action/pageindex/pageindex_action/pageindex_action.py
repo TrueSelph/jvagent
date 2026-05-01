@@ -251,6 +251,10 @@ class PageIndexAction(Action):
         initialize_pageindex_database(app_id=app_id)
         await self.get_webhook_url()
 
+    def resolve_collection(self) -> str:
+        """Resolve the PageIndex collection name (public API for sibling actions)."""
+        return self._resolve_collection()
+
     def _resolve_collection(self) -> str:
         cfg = self.config or {}
         return (
