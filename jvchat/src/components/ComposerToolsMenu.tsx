@@ -20,13 +20,20 @@ export interface ComposerToolsMenuProps {
   onAppGraph: () => void;
 }
 
+function menuModifierPrefix(): string {
+  if (typeof navigator === "undefined") return "Ctrl";
+  return /Mac|iPhone|iPad|iPod/i.test(navigator.userAgent) ? "⌘" : "Ctrl";
+}
+
 function MenuButton({
   icon: Icon,
   label,
+  shortcut,
   onClick,
 }: {
   icon: LucideIcon;
   label: string;
+  shortcut?: string;
   onClick: () => void;
 }) {
   return (
@@ -44,6 +51,11 @@ function MenuButton({
     >
       <Icon className="h-4 w-4 flex-shrink-0 text-zinc-500 dark:text-zinc-400" aria-hidden strokeWidth={1.75} />
       <span className="min-w-0 flex-1 font-medium">{label}</span>
+      {shortcut ? (
+        <span className="flex-shrink-0 text-xs font-medium tabular-nums text-zinc-400 dark:text-zinc-500">
+          {shortcut}
+        </span>
+      ) : null}
     </button>
   );
 }
@@ -60,6 +72,7 @@ export function ComposerToolsMenu({
 }: ComposerToolsMenuProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const mod = menuModifierPrefix();
 
   useEffect(() => {
     if (!open) return;
@@ -92,7 +105,11 @@ export function ComposerToolsMenu({
         aria-haspopup="menu"
         disabled={disabled}
         aria-label="Composer tools"
-        title="Documents, interaction debug, config, memory, graph…"
+        title={
+          hasDocuments
+            ? `Composer tools — ${mod}D Documents, ${mod}I Interaction debug, ${mod}A Action config, ${mod}L Long memory, ${mod}G App graph`
+            : `Composer tools — ${mod}I Interaction debug, ${mod}A Action config, ${mod}L Long memory, ${mod}G App graph`
+        }
         onClick={() => setOpen((o) => !o)}
         className={cn(
           "flex size-[34px] items-center justify-center rounded-full border border-transparent text-xs font-semibold text-zinc-500 transition-colors disabled:opacity-50",
@@ -116,21 +133,34 @@ export function ComposerToolsMenu({
             <MenuButton
               icon={BookOpenCheck}
               label="Documents"
+              shortcut={`${mod}D`}
               onClick={wrapAction(onDocuments)}
             />
           ) : null}
           <MenuButton
             icon={BookMarked}
             label="Interaction debug"
+            shortcut={`${mod}I`}
             onClick={wrapAction(onInteractionDebug)}
           />
           <MenuButton
             icon={SlidersHorizontal}
             label="Action config"
+            shortcut={`${mod}A`}
             onClick={wrapAction(onActionConfig)}
           />
-          <MenuButton icon={Database} label="Long memory" onClick={wrapAction(onLongMemory)} />
-          <MenuButton icon={Network} label="App graph" onClick={wrapAction(onAppGraph)} />
+          <MenuButton
+            icon={Database}
+            label="Long memory"
+            shortcut={`${mod}L`}
+            onClick={wrapAction(onLongMemory)}
+          />
+          <MenuButton
+            icon={Network}
+            label="App graph"
+            shortcut={`${mod}G`}
+            onClick={wrapAction(onAppGraph)}
+          />
         </div>
       ) : null}
     </div>

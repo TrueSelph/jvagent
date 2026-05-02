@@ -1026,6 +1026,67 @@ class ApiClient {
   }
 
   /**
+   * GET /api/actions/{actionId} — full action export (includes webhook_url when present).
+   */
+  async getAction(actionId: string): Promise<Record<string, unknown> | null> {
+    const encoded = encodeURIComponent(actionId)
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.get(`/api/actions/${encoded}`, { baseURL })
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.get(`/actions/${encoded}`, { baseURL })
+        }
+        throw err
+      }
+    })
+    const data = response.data
+    const inner = data?.success && data?.data ? data.data : data
+    const action = inner?.action ?? inner
+    if (action && typeof action === 'object' && !Array.isArray(action)) {
+      return action as Record<string, unknown>
+    }
+    return null
+  }
+
+  /**
+   * POST PageIndex Google Drive Sync interact webhook (API key in URL query).
+   * Uses fetch without JWT — matches serverless/cron triggers.
+   */
+  async postPageIndexGoogleDriveSyncWebhook(
+    webhookUrl: string,
+    body?: Record<string, unknown>
+  ): Promise<unknown> {
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
+      body: JSON.stringify(body ?? {}),
+    })
+    const text = await res.text()
+    let parsed: unknown
+    try {
+      parsed = text ? JSON.parse(text) : {}
+    } catch {
+      parsed = { raw: text }
+    }
+    if (!res.ok) {
+      const detail =
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        'detail' in parsed &&
+        typeof (parsed as { detail: unknown }).detail === 'string'
+          ? (parsed as { detail: string }).detail
+          : text || res.statusText
+      throw new Error(`Webhook ${res.status}: ${detail}`)
+    }
+    return parsed
+  }
+
+  /**
    * Update an action. Only pass fields you want to update.
    * Path: PUT /api/actions/{actionId}
    */
@@ -1602,14 +1663,7 @@ class ApiClient {
     if (params?.chunk_enabled != null && params.chunk_enabled !== '')
       query.chunk_enabled = params.chunk_enabled
     const response = await this._withFallback((baseURL) =>
-      this.client.get(path, {
-        baseURL,
-        params: query,
-        headers: {
-          'Cache-Control': 'no-cache',
-          Pragma: 'no-cache',
-        },
-      })
+      this.client.get(path, { baseURL, params: query })
     )
     const data = response.data
     if (data?.success && data?.data) return data.data
@@ -1633,14 +1687,7 @@ class ApiClient {
     if (params?.chunk_enabled != null && params.chunk_enabled !== '')
       query.chunk_enabled = params.chunk_enabled
     const response = await this._withFallback((baseURL) =>
-      this.client.get(path, {
-        baseURL,
-        params: query,
-        headers: {
-          'Cache-Control': 'no-cache',
-          Pragma: 'no-cache',
-        },
-      })
+      this.client.get(path, { baseURL, params: query })
     )
     const data = response.data
     if (data?.success && data?.data) return data.data

@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { apiClient } from "../config/api";
 import { useTheme } from "../context/ThemeContext";
 import { JsonCodeEditor } from "./JsonCodeEditor";
+import { JsonViewer } from "./JsonViewer";
 
 interface ActionItem {
   id: string;
@@ -42,7 +43,17 @@ export function ActionsModal({
   const [updating, setUpdating] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [idCopied, setIdCopied] = useState(false);
+  const [useRawJsonEditor, setUseRawJsonEditor] = useState(false);
 
+  const parsedContextObj = useMemo(() => {
+    try {
+      const p = JSON.parse(editedContextJson.trim() || "{}");
+      if (typeof p !== "object" || p === null || Array.isArray(p)) return null;
+      return p as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }, [editedContextJson]);
 
   const fetchActions = useCallback(async (): Promise<ActionItem[]> => {
     setLoading(true);
@@ -57,9 +68,13 @@ export function ActionsModal({
       const arr = Array.isArray(list) ? list : [];
       setActions(arr);
       return arr;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to fetch actions:", err);
-      setError(err.message || "Failed to load actions");
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Failed to load actions",
+      );
       setActions([]);
       return [];
     } finally {
@@ -97,6 +112,7 @@ export function ActionsModal({
     setEditedContextJson(
       Object.keys(ctx).length > 0 ? JSON.stringify(ctx, null, 2) : "{}"
     );
+    setUseRawJsonEditor(false);
     setUpdateError(null);
   }, [selectedAction]);
 
@@ -210,9 +226,11 @@ export function ActionsModal({
       const freshList = await fetchActions();
       const updated = freshList.find((a) => a.id === selectedAction.id);
       if (updated) setSelectedAction(updated);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Update failed:", err);
-      setUpdateError(err.message || "Update failed");
+      setUpdateError(
+        err instanceof Error && err.message ? err.message : "Update failed",
+      );
     } finally {
       setUpdating(false);
     }
@@ -361,26 +379,73 @@ export function ActionsModal({
                 </div>
               </div>
 
-              <div className="flex-1 min-h-0 flex flex-col">
-                <label
-                  className={`block text-sm font-medium mb-2 flex-shrink-0 ${dark ? "text-zinc-300" : "text-zinc-600"}`}
-                >
-                  Context (JSON)
-                </label>
-                <JsonCodeEditor
-                  value={editedContextJson}
-                  onChange={setEditedContextJson}
-                  placeholder="{}"
-                  dark={dark}
-                  fillHeight
-                  className="flex-1 min-h-0"
-                />
-                <p
-                  className={`mt-1 text-xs flex-shrink-0 ${dark ? "text-zinc-400" : "text-zinc-500"}`}
-                >
-                  Edit context. Update sends only changed fields. Invalid JSON
-                  will be ignored.
-                </p>
+              <div className="flex-1 min-h-0 flex flex-col gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
+                  <label
+                    className={`block text-sm font-medium ${dark ? "text-zinc-300" : "text-zinc-600"}`}
+                  >
+                    Context (JSON)
+                  </label>
+                  {parsedContextObj !== null && (
+                    <div className="flex flex-wrap gap-2">
+                      {!useRawJsonEditor ? (
+                        <button
+                          type="button"
+                          onClick={() => setUseRawJsonEditor(true)}
+                          className={`text-xs font-medium px-2 py-1 rounded-md border transition-colors ${dark ? "border-zinc-600 text-zinc-200 hover:bg-zinc-800" : "border-zinc-300 text-zinc-800 hover:bg-zinc-50"}`}
+                        >
+                          Edit raw JSON
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setUseRawJsonEditor(false)}
+                          className={`text-xs font-medium px-2 py-1 rounded-md border transition-colors ${dark ? "border-zinc-600 text-zinc-200 hover:bg-zinc-800" : "border-zinc-300 text-zinc-800 hover:bg-zinc-50"}`}
+                        >
+                          Formatted view
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {parsedContextObj !== null && !useRawJsonEditor ? (
+                  <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                    <JsonViewer
+                      data={parsedContextObj}
+                      defaultCollapsedPaths={["metadata"]}
+                      defaultExpandDepth={2}
+                      dark={dark}
+                      maxHeight="min(520px, calc(88vh - 320px))"
+                      className="min-h-0 flex-1 overflow-hidden flex flex-col"
+                    />
+                    <p
+                      className={`mt-1 text-xs flex-shrink-0 ${dark ? "text-zinc-400" : "text-zinc-500"}`}
+                    >
+                      Tree view: <code className="text-[11px]">metadata</code>{" "}
+                      starts collapsed. Use Edit raw JSON to change values. Update
+                      sends only changed fields.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <JsonCodeEditor
+                      value={editedContextJson}
+                      onChange={setEditedContextJson}
+                      placeholder="{}"
+                      dark={dark}
+                      fillHeight
+                      className="flex-1 min-h-0"
+                    />
+                    <p
+                      className={`text-xs flex-shrink-0 ${dark ? "text-zinc-400" : "text-zinc-500"}`}
+                    >
+                      {parsedContextObj === null
+                        ? "Fix invalid JSON here, or restore a valid object to use formatted view."
+                        : "Edit context. Update sends only changed fields. Invalid JSON will be ignored."}
+                    </p>
+                  </>
+                )}
               </div>
 
               {updateError && (

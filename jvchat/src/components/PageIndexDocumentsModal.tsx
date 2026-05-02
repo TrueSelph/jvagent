@@ -58,6 +58,42 @@ function isPageIndexGoogleDriveSyncAction(a: Record<string, unknown>): boolean {
   )
 }
 
+/** Bash/zsh-safe single-quoted literal for pasting into curl. */
+function shellSingleQuoted(arg: string): string {
+  return `'${arg.replace(/'/g, `'\\''`)}'`
+}
+
+/** Multi-line curl with JSON body (matches server PageIndex Google Drive sync webhook). */
+function buildGoogleDriveSyncWebhookCurl(
+  url: string,
+  body: Record<string, unknown>
+): string {
+  const jsonPretty = JSON.stringify(body, null, 2)
+  return [
+    "curl -X 'POST' \\",
+    `  ${shellSingleQuoted(url)} \\`,
+    "  -H 'accept: application/json' \\",
+    `  -H ${shellSingleQuoted('Content-Type: application/json')} \\`,
+    '-d ' + shellSingleQuoted(jsonPretty),
+  ].join('\n')
+}
+
+function buildGoogleDriveSyncDefaultBody(
+  googleDriveFolders: unknown
+): Record<string, unknown> {
+  const folders = Array.isArray(googleDriveFolders) ? googleDriveFolders : []
+  return {
+    convert_to_markdown: true,
+    normalize_bold_headings: false,
+    skip_existing_documents: true,
+    remove_deleted_documents: false,
+    retry_failed_documents: false,
+    ocr: true,
+    docling_ocr_engine: 'rapidocr',
+    google_drive_folders: folders,
+  }
+}
+
 function flattenGoogleDriveFiles(files: GoogleDriveFileEntry[]): GoogleDriveFileEntry[] {
   const out: GoogleDriveFileEntry[] = []
   const walk = (items: GoogleDriveFileEntry[]) => {
@@ -287,6 +323,11 @@ export function PageIndexDocumentsModal({
     useState<GoogleDriveDocStatus>('pending')
   const [driveEditActiveDocument, setDriveEditActiveDocument] = useState('')
   const [driveSavingDocuments, setDriveSavingDocuments] = useState(false)
+  const [driveWebhookCurlDraft, setDriveWebhookCurlDraft] = useState('')
+  const [driveWebhookCurlError, setDriveWebhookCurlError] = useState<
+    string | null
+  >(null)
+  const [driveCurlCopied, setDriveCurlCopied] = useState(false)
 
   const [chunksDocName, setChunksDocName] = useState('')
   const chunksDocPickerRef = useRef<HTMLDivElement>(null)
@@ -548,6 +589,8 @@ export function PageIndexDocumentsModal({
   useEffect(() => {
     setExportCollectionName(agentId)
     setExportRootId('')
+    setDriveWebhookCurlDraft('')
+    setDriveWebhookCurlError(null)
   }, [agentId])
 
   const refreshGoogleDriveList = useCallback(async () => {
@@ -559,6 +602,22 @@ export function PageIndexDocumentsModal({
       setDriveError(e instanceof Error ? e.message : 'Failed to refresh Google Sync')
     }
   }, [driveSyncActionId])
+
+  const copyDriveWebhookCurl = useCallback(async () => {
+    const text = driveWebhookCurlDraft.trim()
+    if (!text) {
+      setDriveWebhookCurlError('Nothing to copy.')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      setDriveWebhookCurlError(null)
+      setDriveCurlCopied(true)
+      window.setTimeout(() => setDriveCurlCopied(false), 2000)
+    } catch {
+      setDriveWebhookCurlError('Could not copy to clipboard.')
+    }
+  }, [driveWebhookCurlDraft])
 
   useEffect(() => {
     if (activeTab !== 'google-sync') return
@@ -579,9 +638,23 @@ export function PageIndexDocumentsModal({
         if (!aid) {
           setDriveFolders([])
           setDriveSelectedFolderId('')
+          setDriveWebhookCurlDraft('')
           setDriveLoading(false)
           return
         }
+        const fullAction = await apiClient.getAction(aid)
+        if (cancelled) return
+        const webhookUrl =
+          fullAction &&
+          typeof fullAction.webhook_url === 'string' &&
+          fullAction.webhook_url.trim()
+            ? fullAction.webhook_url.trim()
+            : ''
+        const body = buildGoogleDriveSyncDefaultBody(fullAction?.google_drive_folders)
+        const urlForCurl =
+          webhookUrl ||
+          `https://YOUR-HOST/api/page_index_google_drive_sync/interact/webhook/${agentId}?api_key=YOUR_KEY`
+        setDriveWebhookCurlDraft(buildGoogleDriveSyncWebhookCurl(urlForCurl, body))
         const docRes = await apiClient.listGoogleDriveDocuments(aid)
         if (cancelled) return
         setDriveFolders(docRes.documents)
@@ -1443,6 +1516,63 @@ export function PageIndexDocumentsModal({
                     Refresh
                   </button>
                 </div>
+
+                {!driveLoading && driveFolders.length === 0 && (
+                  <div
+                    className={`rounded-lg border p-4 space-y-3 ${
+                      dark ? 'border-zinc-600 bg-zinc-800/40' : 'border-zinc-200 bg-zinc-50'
+                    }`}
+                  >
+                    <div>
+                      <h3
+                        className={`text-sm font-semibold ${dark ? 'text-zinc-200' : 'text-zinc-800'}`}
+                      >
+                        Ingest webhook (curl)
+                      </h3>
+                      <p
+                        className={`mt-1 text-sm ${dark ? 'text-zinc-400' : 'text-zinc-600'}`}
+                      >
+                        Edit if needed, then copy and run in your terminal.
+                      </p>
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className={labelClass}>curl</span>
+                        <button
+                          type="button"
+                          onClick={() => void copyDriveWebhookCurl()}
+                          className={`text-xs px-2 py-1 rounded border ${
+                            dark
+                              ? 'border-zinc-600 text-zinc-200 hover:bg-zinc-950/50'
+                              : 'border-zinc-300 text-zinc-700 hover:bg-zinc-100'
+                          }`}
+                        >
+                          {driveCurlCopied ? 'Copied' : 'Copy'}
+                        </button>
+                      </div>
+                      <textarea
+                        value={driveWebhookCurlDraft}
+                        onChange={(e) => {
+                          setDriveWebhookCurlDraft(e.target.value)
+                          setDriveWebhookCurlError(null)
+                        }}
+                        rows={36}
+                        spellCheck={false}
+                        autoComplete="off"
+                        className={`w-full text-xs font-mono p-3 rounded border min-h-[200px] ${
+                          dark
+                            ? 'border-zinc-600 bg-zinc-900 text-zinc-200'
+                            : 'border-zinc-200 bg-white text-zinc-900'
+                        }`}
+                      />
+                    </div>
+                    {driveWebhookCurlError ? (
+                      <p className="text-sm text-red-600 dark:text-red-400">
+                        {driveWebhookCurlError}
+                      </p>
+                    ) : null}
+                  </div>
+                )}
 
                 {selectedDriveFolder && (
                   <>

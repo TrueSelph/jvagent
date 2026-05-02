@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useAgents } from "../hooks/useAgents";
 import { useNavigate, useLocation } from "react-router-dom";
 import { ChevronDown, Loader2 } from "lucide-react";
@@ -20,11 +20,16 @@ function AgentRow({
   onPick: () => void;
 }) {
   const title = displayName(agent);
+  const copyId = (e: ReactMouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (agent.id) void navigator.clipboard.writeText(agent.id);
+  };
+
   return (
-    <button
-      type="button"
-      data-close-agent-switch="1"
-      onClick={onPick}
+    <div
+      role="option"
+      aria-selected={selected}
       className={cn(
         "flex w-full gap-3 rounded-xl px-3 py-3 text-left transition-colors",
         selected
@@ -32,7 +37,14 @@ function AgentRow({
           : "hover:bg-zinc-50 dark:hover:bg-zinc-800/60",
       )}
     >
-      <div className="flex-shrink-0">
+      <button
+        type="button"
+        title="Copy agent ID"
+        aria-label="Copy agent ID"
+        disabled={!agent.id}
+        onClick={copyId}
+        className="flex-shrink-0 rounded-lg outline-none ring-offset-2 hover:opacity-90 focus-visible:ring-2 focus-visible:ring-zinc-400 disabled:opacity-40 dark:ring-offset-zinc-900"
+      >
         {agent.avatar_url ? (
           <img
             src={agent.avatar_url}
@@ -44,8 +56,13 @@ function AgentRow({
             {title.slice(0, 2)}
           </div>
         )}
-      </div>
-      <div className="min-w-0 flex-1">
+      </button>
+      <button
+        type="button"
+        data-close-agent-switch="1"
+        onClick={onPick}
+        className="min-w-0 flex-1 text-left outline-none"
+      >
         <div className="font-semibold leading-tight text-zinc-900 dark:text-zinc-50">{title}</div>
         {agent.description ? (
           <p className="mt-1 line-clamp-2 text-xs leading-snug text-zinc-500 dark:text-zinc-400">
@@ -56,8 +73,8 @@ function AgentRow({
             Agent
           </div>
         )}
-      </div>
-    </button>
+      </button>
+    </div>
   );
 }
 
@@ -94,6 +111,15 @@ export function AgentSwitcher({ variant = "inline" }: AgentSwitcherProps) {
     saveSelectedAgent(agent.name || agent.id);
     navigate(`/chat/${encodeURIComponent(agent.id)}`);
     setOpen(false);
+  };
+
+  const triggerDisabled = loading || agents.length === 0;
+  const idToCopy = current?.id || decodedId || "";
+
+  const copyCurrentAgentId = (e: ReactMouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (idToCopy) void navigator.clipboard.writeText(idToCopy);
   };
 
   useEffect(() => {
@@ -136,58 +162,71 @@ export function AgentSwitcher({ variant = "inline" }: AgentSwitcherProps) {
         isFull ? "w-full" : "inline-block max-w-[min(21rem,calc(100vw-8rem))] align-middle my-2.5 sm:max-w-[min(22rem,calc(100vw-12rem))]",
       )}
     >
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        disabled={loading || agents.length === 0}
-        onClick={() => setOpen((o) => !o)}
+      <div
         className={cn(
-          "flex min-h-[3.25rem] items-center gap-3 rounded-xl border px-4 py-2 text-left outline-none transition-colors disabled:opacity-70",
+          "flex min-h-[3.25rem] items-stretch rounded-xl border text-left outline-none transition-colors",
           isFull ? "w-full max-w-full" : "w-full min-w-[12rem]",
-          "border-zinc-200 bg-zinc-50 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-800/70 dark:hover:bg-zinc-800",
-          open &&
-            "ring-2 ring-zinc-400/25 dark:ring-white/15",
+          "border-zinc-200 bg-zinc-50 dark:border-white/10 dark:bg-zinc-800/70",
+          open && "ring-2 ring-zinc-400/25 dark:ring-white/15",
+          triggerDisabled && "pointer-events-none opacity-70",
         )}
       >
-        {current?.avatar_url ? (
-          <img
-            src={current.avatar_url}
-            alt=""
-            className="h-8 w-8 flex-shrink-0 rounded-full border border-white/10 object-cover"
-          />
-        ) : (
-          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-zinc-200 text-[10px] font-bold uppercase text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
-            {(current ? displayName(current) : "?").slice(0, 2)}
-          </div>
-        )}
-        <div className="min-w-0 flex-1 overflow-hidden">
-          <div className="truncate font-semibold text-zinc-900 dark:text-zinc-50">
-            {triggerLabel}
-          </div>
-          {current?.description ? (
-            <p className="line-clamp-1 text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">
-              {current.description}
-            </p>
+        <button
+          type="button"
+          title="Copy agent ID"
+          aria-label="Copy agent ID"
+          disabled={triggerDisabled || !idToCopy}
+          onClick={copyCurrentAgentId}
+          className="flex shrink-0 items-center justify-center pl-3 pr-1 py-2 outline-none hover:bg-zinc-100/80 dark:hover:bg-zinc-800 disabled:opacity-50 sm:pl-4"
+        >
+          {current?.avatar_url ? (
+            <img
+              src={current.avatar_url}
+              alt=""
+              className="h-8 w-8 rounded-full border border-white/10 object-cover"
+            />
           ) : (
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              Agent
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-200 text-[10px] font-bold uppercase text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
+              {(current ? displayName(current) : "?").slice(0, 2)}
             </div>
           )}
-        </div>
-        {loading ? (
-          <Loader2 className="h-5 w-5 flex-shrink-0 animate-spin text-zinc-400" aria-hidden />
-        ) : showChevron ? (
-          <ChevronDown
-            className={cn(
-              "h-5 w-5 flex-shrink-0 text-zinc-400 transition-transform duration-150",
-              open && "rotate-180",
+        </button>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-haspopup="listbox"
+          disabled={triggerDisabled}
+          onClick={() => setOpen((o) => !o)}
+          className="flex min-w-0 flex-1 items-center gap-2 py-2 pr-3 pl-1 text-left outline-none hover:bg-zinc-100 dark:hover:bg-zinc-800 sm:pr-4"
+        >
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <div className="truncate font-semibold text-zinc-900 dark:text-zinc-50">
+              {triggerLabel}
+            </div>
+            {current?.description ? (
+              <p className="line-clamp-1 text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">
+                {current.description}
+              </p>
+            ) : (
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                Agent
+              </div>
             )}
-            aria-hidden
-            strokeWidth={2}
-          />
-        ) : null}
-      </button>
+          </div>
+          {loading ? (
+            <Loader2 className="h-5 w-5 flex-shrink-0 animate-spin text-zinc-400" aria-hidden />
+          ) : showChevron ? (
+            <ChevronDown
+              className={cn(
+                "h-5 w-5 flex-shrink-0 text-zinc-400 transition-transform duration-150",
+                open && "rotate-180",
+              )}
+              aria-hidden
+              strokeWidth={2}
+            />
+          ) : null}
+        </button>
+      </div>
 
       {open ? (
         <div

@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { JsonCodeEditor } from "./JsonCodeEditor";
+import { computeInitiallyExpanded } from "./jsonViewerCollapse";
 
 type JsonValue =
   | string
@@ -14,6 +15,10 @@ interface JsonViewerProps {
   data: unknown;
   /** Levels expanded on first render. Defaults to 2. */
   defaultExpandDepth?: number;
+  /**
+   * Dot-separated paths (e.g. `"metadata"` for a top-level key) whose object/array nodes start collapsed when expansion matches Reset (`forcedDepth <= defaultExpandDepth`). Expand all clears this gate so those paths open too.
+   */
+  defaultCollapsedPaths?: readonly string[];
   /**
    * Panel chrome: `true` = black debug panel (dark app theme); `false` = off-grey panel (light theme).
    * Controls backgrounds only; tree syntax colors follow this flag.
@@ -103,7 +108,11 @@ interface NodeProps {
   value: unknown;
   depth: number;
   path: string;
-  defaultExpandDepth: number;
+  /** Current expansion threshold from toolbar (expand/collapse all / reset). */
+  forcedExpandDepth: number;
+  /** Original `defaultExpandDepth` from JsonViewer — gates path-based collapse vs expand-all. */
+  collapseGateDepth: number;
+  collapsedPaths: ReadonlySet<string>;
   dark: boolean;
   search: string;
   isLast: boolean;
@@ -156,7 +165,9 @@ function Node({
   value,
   depth,
   path,
-  defaultExpandDepth,
+  forcedExpandDepth,
+  collapseGateDepth,
+  collapsedPaths,
   dark,
   search,
   isLast,
@@ -164,7 +175,13 @@ function Node({
   const kind = kindOf(value);
   const isContainer = kind === "object" || kind === "array";
 
-  const initiallyExpanded = depth < defaultExpandDepth;
+  const initiallyExpanded = computeInitiallyExpanded(
+    depth,
+    forcedExpandDepth,
+    path,
+    collapsedPaths,
+    collapseGateDepth,
+  );
   const [open, setOpen] = useState<boolean>(initiallyExpanded);
   const [decoded, setDecoded] = useState<boolean>(false);
   const [expandedString, setExpandedString] = useState(false);
@@ -184,6 +201,23 @@ function Node({
     return name !== undefined && String(name).toLowerCase().includes(q);
   }, [name, search]);
 
+  const copyValue = useCallback(() => {
+    let text: string;
+    try {
+      text =
+        typeof value === "string"
+          ? (value as string)
+          : JSON.stringify(value, null, 2);
+    } catch {
+      text = String(value);
+    }
+    navigator.clipboard?.writeText(text);
+  }, [value]);
+
+  const copyPath = useCallback(() => {
+    navigator.clipboard?.writeText(path || "$");
+  }, [path]);
+
   const shouldShow = !search || matches || nameMatches;
   if (!shouldShow) return null;
 
@@ -201,23 +235,6 @@ function Node({
   const indentStyle = { paddingLeft: `${depth * 12}px` };
 
   const toggleAria = open ? "Collapse" : "Expand";
-
-  const copyValue = useCallback(() => {
-    let text: string;
-    try {
-      text =
-        typeof value === "string"
-          ? (value as string)
-          : JSON.stringify(value, null, 2);
-    } catch {
-      text = String(value);
-    }
-    navigator.clipboard?.writeText(text);
-  }, [value]);
-
-  const copyPath = useCallback(() => {
-    navigator.clipboard?.writeText(path || "$");
-  }, [path]);
 
   if (isContainer) {
     const entries =
@@ -302,7 +319,9 @@ function Node({
                       ? `${path}[${k}]`
                       : `${path}${path ? "." : ""}${String(k)}`
                   }
-                  defaultExpandDepth={defaultExpandDepth}
+                  forcedExpandDepth={forcedExpandDepth}
+                  collapseGateDepth={collapseGateDepth}
+                  collapsedPaths={collapsedPaths}
                   dark={dark}
                   search={search}
                   isLast={idx === entries.length - 1}
@@ -387,7 +406,9 @@ function Node({
               value={embedded}
               depth={0}
               path={`${path}#decoded`}
-              defaultExpandDepth={defaultExpandDepth}
+              forcedExpandDepth={forcedExpandDepth}
+              collapseGateDepth={collapseGateDepth}
+              collapsedPaths={collapsedPaths}
               dark={dark}
               search={search}
               isLast
@@ -503,6 +524,7 @@ function NodeActions({
 export function JsonViewer({
   data,
   defaultExpandDepth = 2,
+  defaultCollapsedPaths,
   dark = false,
   showToolbar = true,
   maxHeight,
@@ -513,6 +535,14 @@ export function JsonViewer({
   const [expandKey, setExpandKey] = useState(0);
   const [forcedDepth, setForcedDepth] = useState(defaultExpandDepth);
   const [copied, setCopied] = useState(false);
+
+  const collapsedPaths = useMemo(
+    () =>
+      defaultCollapsedPaths?.length
+        ? new Set(defaultCollapsedPaths)
+        : new Set<string>(),
+    [defaultCollapsedPaths],
+  );
 
   const rawText = useMemo(() => {
     try {
@@ -632,7 +662,9 @@ export function JsonViewer({
             value={data as JsonValue}
             depth={0}
             path=""
-            defaultExpandDepth={forcedDepth}
+            forcedExpandDepth={forcedDepth}
+            collapseGateDepth={defaultExpandDepth}
+            collapsedPaths={collapsedPaths}
             dark={panelDark}
             search={search}
             isLast

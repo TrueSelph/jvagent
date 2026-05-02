@@ -185,21 +185,6 @@ class GoogleAction(Action):
         else:
             client_config = raw
 
-        # Check for redirect_uris in the config (Google web secrets)
-        if "web" in client_config and "redirect_uris" in client_config["web"]:
-            if self.redirect_uri not in client_config["web"]["redirect_uris"]:
-                raise ValueError(
-                    f"redirect_uri is not in the client config\nclient_config:\n{client_config['web']['redirect_uris']}\n\nredirect_uri:\n{self.redirect_uri}\n\nUPDATE IN GOOGLE CONSOLE: https://console.cloud.google.com/apis/credentials"
-                )
-        elif (
-            "installed" in client_config
-            and "redirect_uris" in client_config["installed"]
-        ):
-            if self.redirect_uri not in client_config["installed"]["redirect_uris"]:
-                raise ValueError(
-                    f"redirect_uri is not in the client config\nclient_config:\n{client_config['installed']['redirect_uris']}\n\nredirect_uri:\n{self.redirect_uri}\n\nUPDATE IN GOOGLE CONSOLE: https://console.cloud.google.com/apis/credentials"
-                )
-
         return Flow.from_client_config(
             client_config, scopes=self.SCOPES, redirect_uri=self.redirect_uri
         )

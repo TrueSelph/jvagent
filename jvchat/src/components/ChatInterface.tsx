@@ -143,6 +143,61 @@ export function ChatInterface() {
   }, []);
 
   useEffect(() => {
+    const typingTarget = (t: EventTarget | null) => {
+      if (!(t instanceof HTMLElement)) return false;
+      const tag = t.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      if (t.isContentEditable) return true;
+      return Boolean(t.closest?.("[contenteditable='true']"));
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!e.metaKey && !e.ctrlKey) return;
+      if (e.altKey || e.shiftKey) return;
+      if (typingTarget(e.target)) return;
+      if (isStreaming || viewingOldBranch) return;
+
+      const k = e.key.toLowerCase();
+      if (k === "d" && hasPageIndexAction) {
+        e.preventDefault();
+        handleTogglePageIndexModal();
+        return;
+      }
+      if (k === "i") {
+        e.preventDefault();
+        handleToggleDebugModal();
+        return;
+      }
+      if (k === "a") {
+        e.preventDefault();
+        handleToggleActionsModal();
+        return;
+      }
+      if (k === "l") {
+        e.preventDefault();
+        handleToggleMemoryModal();
+        return;
+      }
+      if (k === "g") {
+        e.preventDefault();
+        openAppGraph();
+        return;
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    hasPageIndexAction,
+    isStreaming,
+    viewingOldBranch,
+    handleTogglePageIndexModal,
+    handleToggleDebugModal,
+    handleToggleActionsModal,
+    handleToggleMemoryModal,
+    openAppGraph,
+  ]);
+
+  useEffect(() => {
     if (!agentId) {
       setHasPageIndexAction(false);
       return;
