@@ -25,6 +25,13 @@ function menuModifierPrefix(): string {
   return /Mac|iPhone|iPad|iPod/i.test(navigator.userAgent) ? "⌘" : "Ctrl";
 }
 
+/** Shortcut label for modifier+Shift+letter (matches ChatInterface global shortcuts). */
+function shiftModifierShortcut(letter: string): string {
+  const mod = menuModifierPrefix();
+  const u = letter.toUpperCase();
+  return mod === "⌘" ? `${mod}⇧${u}` : `${mod}+Shift+${u}`;
+}
+
 function MenuButton({
   icon: Icon,
   label,
@@ -72,7 +79,6 @@ export function ComposerToolsMenu({
 }: ComposerToolsMenuProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const mod = menuModifierPrefix();
 
   useEffect(() => {
     if (!open) return;
@@ -107,8 +113,8 @@ export function ComposerToolsMenu({
         aria-label="Composer tools"
         title={
           hasDocuments
-            ? `Composer tools — ${mod}D Documents, ${mod}I Interaction debug, ${mod}A Action config, ${mod}L Long memory, ${mod}G App graph`
-            : `Composer tools — ${mod}I Interaction debug, ${mod}A Action config, ${mod}L Long memory, ${mod}G App graph`
+            ? `Composer tools — ${shiftModifierShortcut("d")} Documents, ${shiftModifierShortcut("i")} Interaction debug, ${shiftModifierShortcut("a")} Action config, ${shiftModifierShortcut("l")} Long memory, ${shiftModifierShortcut("g")} App graph`
+            : `Composer tools — ${shiftModifierShortcut("i")} Interaction debug, ${shiftModifierShortcut("a")} Action config, ${shiftModifierShortcut("l")} Long memory, ${shiftModifierShortcut("g")} App graph`
         }
         onClick={() => setOpen((o) => !o)}
         className={cn(
@@ -133,32 +139,32 @@ export function ComposerToolsMenu({
             <MenuButton
               icon={BookOpenCheck}
               label="Documents"
-              shortcut={`${mod}D`}
+              shortcut={shiftModifierShortcut("d")}
               onClick={wrapAction(onDocuments)}
             />
           ) : null}
           <MenuButton
             icon={BookMarked}
             label="Interaction debug"
-            shortcut={`${mod}I`}
+            shortcut={shiftModifierShortcut("i")}
             onClick={wrapAction(onInteractionDebug)}
           />
           <MenuButton
             icon={SlidersHorizontal}
             label="Action config"
-            shortcut={`${mod}A`}
+            shortcut={shiftModifierShortcut("a")}
             onClick={wrapAction(onActionConfig)}
           />
           <MenuButton
             icon={Database}
             label="Long memory"
-            shortcut={`${mod}L`}
+            shortcut={shiftModifierShortcut("l")}
             onClick={wrapAction(onLongMemory)}
           />
           <MenuButton
             icon={Network}
             label="App graph"
-            shortcut={`${mod}G`}
+            shortcut={shiftModifierShortcut("g")}
             onClick={wrapAction(onAppGraph)}
           />
         </div>

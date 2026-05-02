@@ -651,9 +651,13 @@ export function PageIndexDocumentsModal({
             ? fullAction.webhook_url.trim()
             : ''
         const body = buildGoogleDriveSyncDefaultBody(fullAction?.google_drive_folders)
+        const apiBase = apiClient.getJvagentBaseUrl().replace(/\/+$/, '')
+        const pathWebhook = `/api/page_index_google_drive_sync/interact/webhook/${encodeURIComponent(agentId)}?api_key=YOUR_KEY`
         const urlForCurl =
           webhookUrl ||
-          `https://YOUR-HOST/api/page_index_google_drive_sync/interact/webhook/${agentId}?api_key=YOUR_KEY`
+          (apiBase
+            ? `${apiBase}${pathWebhook}`
+            : `https://YOUR-HOST${pathWebhook}`)
         setDriveWebhookCurlDraft(buildGoogleDriveSyncWebhookCurl(urlForCurl, body))
         const docRes = await apiClient.listGoogleDriveDocuments(aid)
         if (cancelled) return

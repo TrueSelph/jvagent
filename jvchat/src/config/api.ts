@@ -1026,7 +1026,17 @@ class ApiClient {
   }
 
   /**
+   * First configured jvagent base URL with no trailing slash. Use to build absolute URLs
+   * (e.g. webhooks) when the API returns a nested `{ id, entity, context }` node shape.
+   */
+  getJvagentBaseUrl(): string {
+    return String(this.client.defaults.baseURL ?? '').replace(/\/$/, '')
+  }
+
+  /**
    * GET /api/actions/{actionId} — full action export (includes webhook_url when present).
+   * Unwraps persisted node shape `{ id, entity, context }` into a flat `{ id, entity, ...context }`
+   * so callers can read webhook_url and google_drive_folders at the top level.
    */
   async getAction(actionId: string): Promise<Record<string, unknown> | null> {
     const encoded = encodeURIComponent(actionId)
@@ -1044,7 +1054,18 @@ class ApiClient {
     const inner = data?.success && data?.data ? data.data : data
     const action = inner?.action ?? inner
     if (action && typeof action === 'object' && !Array.isArray(action)) {
-      return action as Record<string, unknown>
+      const raw = action as Record<string, unknown>
+      const ctx = raw.context
+      if (
+        ctx !== undefined &&
+        ctx !== null &&
+        typeof ctx === 'object' &&
+        !Array.isArray(ctx)
+      ) {
+        const { context: _, ...rest } = raw
+        return { ...rest, ...(ctx as Record<string, unknown>) }
+      }
+      return raw
     }
     return null
   }

@@ -153,7 +153,7 @@ export function ChatInterface() {
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (!e.metaKey && !e.ctrlKey) return;
-      if (e.altKey || e.shiftKey) return;
+      if (e.altKey || !e.shiftKey) return;
       if (typingTarget(e.target)) return;
       if (isStreaming || viewingOldBranch) return;
 
