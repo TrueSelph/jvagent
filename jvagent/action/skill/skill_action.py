@@ -221,9 +221,28 @@ class SkillAction:
 
                 skill_index_section = None
                 if discovered_skills:
-                    skill_index_section = SkillCatalog(
-                        discovered_skills
-                    ).render_system_prompt_section()
+                    _cat = SkillCatalog(discovered_skills)
+                    _n = len(discovered_skills)
+                    _max_inline = int(
+                        getattr(ctx.config, "skill_index_inline_max_skills", 5) or 0
+                    )
+                    _helpers = bool(
+                        getattr(ctx.config, "enable_skill_helper_tools", True)
+                    )
+                    if _n > _max_inline and _helpers:
+                        skill_index_section = (
+                            _cat.render_search_mode_system_prompt_section()
+                        )
+                    else:
+                        if _n > _max_inline and not _helpers:
+                            logger.info(
+                                "SkillAction: %d skills exceed skill_index_inline_max_skills "
+                                "(%d) but enable_skill_helper_tools is False; embedding full "
+                                "inline skill index in the system prompt.",
+                                _n,
+                                _max_inline,
+                            )
+                        skill_index_section = _cat.render_system_prompt_section()
 
                 # 4. Run the agentic loop
                 result = await self._run_loop(

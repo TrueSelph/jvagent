@@ -215,6 +215,15 @@ class SkillInteractAction(InteractAction):
         default=True,
         description="If True, register list_skills and skill_search helper tools",
     )
+    skill_index_inline_max_skills: int = attribute(
+        default=5,
+        description=(
+            "When the number of loaded skills is greater than this, omit per-skill "
+            "frontmatter lines from the system prompt and instruct use of skill_search "
+            "/ list_skills (requires enable_skill_helper_tools; otherwise the full index "
+            "is still embedded)."
+        ),
+    )
     max_skill_activations: int = attribute(
         default=8,
         description="Maximum number of skill activations allowed within one loop",
@@ -617,6 +626,7 @@ class SkillInteractAction(InteractAction):
             denied_skills=list(getattr(self, "denied_skills", None) or []),
             skills_source=self.skills_source,
             enable_skill_helper_tools=self.enable_skill_helper_tools,
+            skill_index_inline_max_skills=self.skill_index_inline_max_skills,
             max_skill_activations=self.max_skill_activations,
             max_iterations_per_skill=self.max_iterations_per_skill,
             max_duration_per_skill_seconds=self.max_duration_per_skill_seconds,

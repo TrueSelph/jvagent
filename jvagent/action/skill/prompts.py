@@ -3,7 +3,7 @@
 # Test-canary version guard: referenced only in test_prompts_snapshots.py to
 # force snapshot regeneration when prompt text changes.  This is NOT a runtime
 # version — increment it whenever any prompt template in this file is modified.
-SKILL_PROMPTS_VERSION = 11
+SKILL_PROMPTS_VERSION = 12
 
 SKILL_AGENT_SYSTEM_PROMPT = """\
 You are {agent_name}.
@@ -133,6 +133,24 @@ Disambiguation:
 - Prefer activating only one skill per interaction unless multiple are clearly needed.
 
 Available skills:"""
+
+# Shown when many skills are loaded: avoid embedding every skill’s frontmatter index
+# in the system prompt; the model is steered to skill_search / list_skills first.
+SKILL_INDEX_SEARCH_MODE_INTRO = """You have access to {n_skills} Claude-style skill bundles
+(specialized workflows with dedicated tools and an SOP each).
+
+The full per-skill index (name, description, tags) is not listed here to keep the system
+prompt small. Before choosing a skill:
+
+- Call `skill_search` with a short query derived from the user’s request (and optional
+  `plan_skills` if the task may span multiple skills), or `list_skills` to see the whole
+  local catalog.
+- Then call `read_skill` with the exact `skill_name` for the SOP and tool rules.
+
+When NOT to use a skill: general conversation, or requests that do not match any
+skill’s scope—answer directly without `read_skill`. Do not activate a skill "just in case."
+For multi-skill work, activate skills ONE AT A TIME and complete each workflow before
+the next."""
 
 SKILL_INDEX_ENTRY_TEMPLATE = (
     "- {name}: {description}{tag_suffix}{requires_suffix}{tools_suffix}"

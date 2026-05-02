@@ -83,6 +83,9 @@ class SkillRunConfig:
     denied_skills: List[str] = field(default_factory=list)
     skills_source: str = "both"
     enable_skill_helper_tools: bool = True
+    # When len(discovered skills) > this, omit the inline per-skill index from the system
+    # prompt and use SKILL_INDEX_SEARCH_MODE_INTRO instead (if helper tools are enabled).
+    skill_index_inline_max_skills: int = 5
     max_skill_activations: int = 8
     max_iterations_per_skill: int = 0
     max_duration_per_skill_seconds: float = 0.0

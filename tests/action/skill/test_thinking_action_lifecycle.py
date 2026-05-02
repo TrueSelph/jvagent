@@ -35,6 +35,7 @@ def _mock_action() -> MagicMock:
     action.stuck_detection_window = 3
     action.max_midcourse_corrections = 2
     action.enable_skill_helper_tools = True
+    action.skill_index_inline_max_skills = 5
     action.response_mode = "publish"
     action.model = "claude-sonnet-4-20250514"
     action.model_temperature = 0.3

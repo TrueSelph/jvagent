@@ -19,6 +19,7 @@ from jvagent.action.skill.prompts import (
     SKILL_ACTIVATION_LIMIT_MESSAGE,
     SKILL_INDEX_ENTRY_TEMPLATE,
     SKILL_INDEX_INTRO,
+    SKILL_INDEX_SEARCH_MODE_INTRO,
     SKILL_SEARCH_SEMANTIC_PROMPT,
 )
 from jvagent.action.skill.version_utils import version_satisfies as _version_satisfies
@@ -139,6 +140,14 @@ class SkillCatalog:
         for s_name, s_data in self._skills.items():
             skill_index.append(self.format_index_entry(s_name, s_data))
         return "\n".join(skill_index)
+
+    def render_search_mode_system_prompt_section(self) -> str:
+        """Compact system prompt section when the catalog is large.
+
+        Omits per-skill frontmatter lines; instructs the model to use ``skill_search`` /
+        ``list_skills`` first, then ``read_skill``.
+        """
+        return SKILL_INDEX_SEARCH_MODE_INTRO.format(n_skills=len(self._skills))
 
     def check_activation_limit(
         self,

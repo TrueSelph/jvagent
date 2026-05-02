@@ -102,6 +102,13 @@ class TestRenderSystemPromptSection:
         result = catalog.render_system_prompt_section()
         assert len(result) > 0
 
+    def test_search_mode_section_mentions_count_and_tools(self):
+        catalog = SkillCatalog(_sample_skills())
+        result = catalog.render_search_mode_system_prompt_section()
+        assert "You have access to 4 Claude-style" in result
+        assert "skill_search" in result
+        assert "read_skill" in result
+
 
 # --- Activation validation ---
 
