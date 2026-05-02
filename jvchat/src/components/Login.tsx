@@ -174,8 +174,8 @@ export function Login() {
 
   const sortedSavedCreds = useMemo(() => {
     return [...savedCreds].sort((a, b) => {
-      const localA = isLocalhostServerUrl(a.serverUrl) ? 1 : 0;
-      const localB = isLocalhostServerUrl(b.serverUrl) ? 1 : 0;
+      const localA = isLocalhostServerUrl(a.serverUrl) ? 0 : 1;
+      const localB = isLocalhostServerUrl(b.serverUrl) ? 0 : 1;
       if (localA !== localB) return localA - localB;
       const cmp = accountSortLabel(a).localeCompare(accountSortLabel(b), undefined, {
         sensitivity: "base",
