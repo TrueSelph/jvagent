@@ -43,7 +43,6 @@ export function ActionsModal({
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [idCopied, setIdCopied] = useState(false);
 
-  console.log("editedEnabled", editedContextJson);
 
   const fetchActions = useCallback(async (): Promise<ActionItem[]> => {
     setLoading(true);
@@ -93,7 +92,7 @@ export function ActionsModal({
       return;
     }
     const ctx = selectedAction.context ?? {};
-    console.log("ctx", ctx);
+
     setEditedEnabled(ctx.enabled ?? true);
     setEditedContextJson(
       Object.keys(ctx).length > 0 ? JSON.stringify(ctx, null, 2) : "{}"

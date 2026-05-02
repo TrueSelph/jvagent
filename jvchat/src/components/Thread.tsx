@@ -365,6 +365,98 @@ function ReasoningPanel({
   );
 }
 
+const SHARED_MD_COMPONENTS = {
+  blockquote: ({ children, ...props }: any) => (
+    <blockquote className="border-l-2 border-zinc-300 dark:border-zinc-600 pl-3 my-2 text-zinc-600 dark:text-zinc-400" {...props}>
+      {children}
+    </blockquote>
+  ),
+  a: ({ children, ...props }: any) => (
+    <a className="underline text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100" {...props}>
+      {children}
+    </a>
+  ),
+  ul: ({ children, ...props }: any) => (
+    <ul className="list-disc pl-4 sm:pl-6 my-2" {...props}>{children}</ul>
+  ),
+  ol: ({ children, ...props }: any) => (
+    <ol className="list-decimal pl-4 sm:pl-6 my-2" {...props}>{children}</ol>
+  ),
+  h1: ({ children, ...props }: any) => (
+    <h1 className="text-lg sm:text-xl font-bold my-2" {...props}>{children}</h1>
+  ),
+  h2: ({ children, ...props }: any) => (
+    <h2 className="text-base sm:text-lg font-bold my-2" {...props}>{children}</h2>
+  ),
+  h3: ({ children, ...props }: any) => (
+    <h3 className="text-sm sm:text-base font-semibold my-2" {...props}>{children}</h3>
+  ),
+  table: ({ children, ...props }: any) => (
+    <div className="overflow-x-auto my-2">
+      <table className="border-collapse border border-zinc-300 dark:border-zinc-600" {...props}>{children}</table>
+    </div>
+  ),
+  td: ({ children, ...props }: any) => (
+    <td className="border border-zinc-300 dark:border-zinc-600 px-2 sm:px-4 py-1 sm:py-2" {...props}>{children}</td>
+  ),
+}
+
+function buildMdComponents(isUser: boolean, streamingMessage?: Message) {
+  const codeBg = isUser
+    ? "bg-zinc-200/50 dark:bg-zinc-700/50"
+    : "bg-zinc-100 dark:bg-zinc-800"
+  const inlineCodeBg = isUser
+    ? "bg-zinc-200 dark:bg-zinc-700"
+    : "bg-zinc-100 dark:bg-zinc-800"
+  const thBg = isUser
+    ? "bg-zinc-200 dark:bg-zinc-700"
+    : "bg-zinc-100 dark:bg-zinc-800"
+
+  return {
+    ...SHARED_MD_COMPONENTS,
+    code: ({ inline, className, children, ...props }: any) =>
+      !inline ? (
+        <pre className={`overflow-x-auto rounded-lg p-2 sm:p-3 my-2 text-zinc-800 dark:text-zinc-200 ${codeBg}`} {...props}>
+          <code className={className} {...props}>{children}</code>
+        </pre>
+      ) : (
+        <code className={`px-1 py-0.5 rounded text-zinc-800 dark:text-zinc-200 ${inlineCodeBg}`} {...props}>
+          {children}
+        </code>
+      ),
+    th: ({ children, ...props }: any) => (
+      <th className={`border border-zinc-300 dark:border-zinc-600 px-2 sm:px-4 py-1 sm:py-2 ${thBg}`} {...props}>{children}</th>
+    ),
+    p: isUser && streamingMessage?.streaming
+      ? ({ children, ...props }: any) => {
+          const extractText = (n: any): string => {
+            if (typeof n === "string") return n
+            if (typeof n === "number") return String(n)
+            if (React.isValidElement(n) && (n.props as any)?.children) {
+              return extractText((n.props as any).children)
+            }
+            if (Array.isArray(n)) return n.map(extractText).join("")
+            return ""
+          }
+          const childrenText = extractText(children)
+          const isLastParagraph =
+            childrenText.trim() &&
+            (streamingMessage!.content.trim().endsWith(childrenText.trim()))
+          return (
+            <p className="my-1 sm:my-2" {...props}>
+              {children}
+              {isLastParagraph && (
+                <span className="inline-block w-[1.5px] h-[1em] ml-0.5 bg-zinc-900 dark:bg-zinc-50 animate-pulse align-text-bottom rounded-sm" />
+              )}
+            </p>
+          )
+        }
+      : ({ children, ...props }: any) => (
+          <p className="my-1 sm:my-2" {...props}>{children}</p>
+        ),
+  }
+}
+
 export function Thread({
   messages,
   showThinking = false,
@@ -705,84 +797,7 @@ export function Thread({
                             <div className="markdown-content">
                             <ReactMarkdown
                               remarkPlugins={[remarkGfm]}
-                              components={{
-                                code: ({
-                                  inline,
-                                  className,
-                                  children,
-                                  ...props
-                                }: any) => {
-                                  return !inline ? (
-                                    <pre className="overflow-x-auto rounded-lg p-2 sm:p-3 my-2 bg-zinc-200/50 dark:bg-zinc-700/50 text-zinc-800 dark:text-zinc-200" {...props}>
-                                      <code className={className} {...props}>{children}</code>
-                                    </pre>
-                                  ) : (
-                                    <code className="px-1 py-0.5 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200" {...props}>
-                                      {children}
-                                    </code>
-                                  );
-                                },
-                                blockquote: ({ children, ...props }: any) => (
-                                  <blockquote className="border-l-2 border-zinc-300 dark:border-zinc-600 pl-3 my-2 text-zinc-600 dark:text-zinc-400" {...props}>
-                                    {children}
-                                  </blockquote>
-                                ),
-                                a: ({ children, ...props }: any) => (
-                                  <a className="underline text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100" {...props}>
-                                    {children}
-                                  </a>
-                                ),
-                                ul: ({ children, ...props }: any) => (
-                                  <ul className="list-disc pl-4 sm:pl-6 my-2" {...props}>{children}</ul>
-                                ),
-                                ol: ({ children, ...props }: any) => (
-                                  <ol className="list-decimal pl-4 sm:pl-6 my-2" {...props}>{children}</ol>
-                                ),
-                                h1: ({ children, ...props }: any) => (
-                                  <h1 className="text-lg sm:text-xl font-bold my-2" {...props}>{children}</h1>
-                                ),
-                                h2: ({ children, ...props }: any) => (
-                                  <h2 className="text-base sm:text-lg font-bold my-2" {...props}>{children}</h2>
-                                ),
-                                h3: ({ children, ...props }: any) => (
-                                  <h3 className="text-sm sm:text-base font-semibold my-2" {...props}>{children}</h3>
-                                ),
-                                p: ({ children, ...props }: any) => {
-                                  const extractText = (n: any): string => {
-                                    if (typeof n === "string") return n;
-                                    if (typeof n === "number") return String(n);
-                                    if (React.isValidElement(n) && (n.props as any)?.children) {
-                                      return extractText((n.props as any).children);
-                                    }
-                                    if (Array.isArray(n)) return n.map(extractText).join("");
-                                    return "";
-                                  };
-                                  const childrenText = extractText(children);
-                                  const isLastParagraph =
-                                    message.streaming &&
-                                    childrenText.trim() &&
-                                    message.content.trim().endsWith(childrenText.trim());
-                                  return (
-                                    <p className="my-1 sm:my-2" {...props}>
-                                      {children}
-                                      {isLastParagraph && (
-                                        <span className="inline-block w-[1.5px] h-[1em] ml-0.5 bg-zinc-900 dark:bg-zinc-50 animate-pulse align-text-bottom rounded-sm" />
-                                      )}
-                                    </p>
-                                  );
-                                },
-                                table: ({ children, ...props }: any) => (
-                                  <div className="overflow-x-auto my-2">
-                                    <table className="border-collapse border border-zinc-300 dark:border-zinc-600" {...props}>{children}</table>
-                                  </div>
-                                ),
-                                th: ({ children, ...props }: any) => (
-                                  <th className="border border-zinc-300 dark:border-zinc-600 px-2 sm:px-4 py-1 sm:py-2 bg-zinc-200 dark:bg-zinc-700" {...props}>{children}</th>
-                                ),
-                                td: ({ children, ...props }: any) => (
-                                  <td className="border border-zinc-300 dark:border-zinc-600 px-2 sm:px-4 py-1 sm:py-2" {...props}>{children}</td>
-                                ),
-                              }}
+                              components={buildMdComponents(true, message)}
                             >
                               {message.content}
                             </ReactMarkdown>
@@ -901,65 +916,7 @@ export function Thread({
                       >
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
-                        components={{
-                          code: ({
-                            inline,
-                            className,
-                            children,
-                            ...props
-                          }: any) => {
-                            return !inline ? (
-                              <pre className="overflow-x-auto rounded-lg p-2 sm:p-3 my-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200" {...props}>
-                                <code className={className} {...props}>{children}</code>
-                              </pre>
-                            ) : (
-                              <code className="px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200" {...props}>
-                                {children}
-                              </code>
-                            );
-                          },
-                          blockquote: ({ children, ...props }: any) => (
-                            <blockquote className="border-l-2 border-zinc-300 dark:border-zinc-600 pl-3 my-2 text-zinc-600 dark:text-zinc-400" {...props}>
-                              {children}
-                            </blockquote>
-                          ),
-                          a: ({ children, ...props }: any) => (
-                            <a className="underline text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100" {...props}>
-                              {children}
-                            </a>
-                          ),
-                          ul: ({ children, ...props }: any) => (
-                            <ul className="list-disc pl-4 sm:pl-6 my-2" {...props}>{children}</ul>
-                          ),
-                          ol: ({ children, ...props }: any) => (
-                            <ol className="list-decimal pl-4 sm:pl-6 my-2" {...props}>{children}</ol>
-                          ),
-                          h1: ({ children, ...props }: any) => (
-                            <h1 className="text-lg sm:text-xl font-bold my-2" {...props}>{children}</h1>
-                          ),
-                          h2: ({ children, ...props }: any) => (
-                            <h2 className="text-base sm:text-lg font-bold my-2" {...props}>{children}</h2>
-                          ),
-                          h3: ({ children, ...props }: any) => (
-                            <h3 className="text-sm sm:text-base font-semibold my-2" {...props}>{children}</h3>
-                          ),
-                          p: ({ children, ...props }: any) => (
-                            <p className="my-1 sm:my-2" {...props}>
-                              {children}
-                            </p>
-                          ),
-                          table: ({ children, ...props }: any) => (
-                            <div className="overflow-x-auto my-2">
-                              <table className="border-collapse border border-zinc-300 dark:border-zinc-600" {...props}>{children}</table>
-                            </div>
-                          ),
-                          th: ({ children, ...props }: any) => (
-                            <th className="border border-zinc-300 dark:border-zinc-600 px-2 sm:px-4 py-1 sm:py-2 bg-zinc-100 dark:bg-zinc-800" {...props}>{children}</th>
-                          ),
-                          td: ({ children, ...props }: any) => (
-                            <td className="border border-zinc-300 dark:border-zinc-600 px-2 sm:px-4 py-1 sm:py-2" {...props}>{children}</td>
-                          ),
-                        }}
+                        components={buildMdComponents(false)}
                       >
                         {message.content}
                       </ReactMarkdown>

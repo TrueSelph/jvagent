@@ -1,3 +1,7 @@
+import type { Agent } from './agent'
+
+export type { Agent }
+
 export interface LoginRequest {
   email: string
   password: string
@@ -27,16 +31,6 @@ export type TokenRefreshResponse = LoginResponse
 
 /** Docling PDF OCR backend for PageIndex / jvforge ingest (RapidOCR only). */
 export type DoclingOcrEngine = 'none' | 'rapidocr'
-
-export interface Agent {
-  id: string
-  namespace: string
-  name: string
-  alias?: string
-  enabled: boolean
-  description?: string
-  interaction_limit?: number
-}
 
 export interface AgentsResponse {
   agents: Agent[]

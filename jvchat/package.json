@@ -34,8 +34,7 @@
     "react-router-dom": "^6.20.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.5.0",
-    "yaml": "^2.3.4",
-    "zustand": "^4.4.7"
+    "yaml": "^2.3.4"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",

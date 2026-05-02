@@ -54,14 +54,41 @@ export function payloadToElements(
   return els
 }
 
+interface GraphThemeColors {
+  nodeBg: string
+  nodeBorder: string
+  nodeColor: string
+  missingBg: string
+  missingBorder: string
+  edgeColor: string
+  selectedBorder: string
+}
+
+function getGraphThemeColors(isDark: boolean): GraphThemeColors {
+  return isDark
+    ? {
+        nodeBg: '#2d3d52',
+        nodeBorder: '#3d9cfd',
+        nodeColor: '#f1f5f9',
+        missingBg: '#5c2d2d',
+        missingBorder: '#c94c4c',
+        edgeColor: '#64748b',
+        selectedBorder: '#93c5fd',
+      }
+    : {
+        nodeBg: '#e2e8f0',
+        nodeBorder: '#6366f1',
+        nodeColor: '#1e293b',
+        missingBg: '#fecaca',
+        missingBorder: '#dc2626',
+        edgeColor: '#94a3b8',
+        selectedBorder: '#4f46e5',
+      }
+}
+
 export function buildGraphStylesheet(theme: 'light' | 'dark') {
   const isDark = theme === 'dark'
-  const nodeBg = isDark ? '#2d3d52' : '#e2e8f0'
-  const nodeBorder = isDark ? '#3d9cfd' : '#6366f1'
-  const nodeColor = isDark ? '#f1f5f9' : '#1e293b'
-  const missingBg = isDark ? '#5c2d2d' : '#fecaca'
-  const missingBorder = isDark ? '#c94c4c' : '#dc2626'
-  const edgeColor = isDark ? '#64748b' : '#94a3b8'
+  const c = getGraphThemeColors(isDark)
 
   return [
     {
@@ -71,10 +98,10 @@ export function buildGraphStylesheet(theme: 'light' | 'dark') {
         'text-valign': 'center',
         'text-halign': 'center',
         'font-size': '11px',
-        color: nodeColor,
-        'background-color': nodeBg,
+        color: c.nodeColor,
+        'background-color': c.nodeBg,
         'border-width': 1,
-        'border-color': nodeBorder,
+        'border-color': c.nodeBorder,
         width: 'label',
         height: 32,
         shape: 'roundrectangle',
@@ -85,34 +112,34 @@ export function buildGraphStylesheet(theme: 'light' | 'dark') {
       selector: 'node:selected',
       style: {
         'border-width': 3,
-        'border-color': isDark ? '#93c5fd' : '#4f46e5',
+        'border-color': c.selectedBorder,
       },
     },
     {
       selector: 'node[?missing]',
       style: {
-        'background-color': missingBg,
-        'border-color': missingBorder,
+        'background-color': c.missingBg,
+        'border-color': c.missingBorder,
       },
     },
     {
       selector: 'edge',
       style: {
         width: 2,
-        'line-color': edgeColor,
-        'target-arrow-color': edgeColor,
-        'source-arrow-color': edgeColor,
+        'line-color': c.edgeColor,
+        'target-arrow-color': c.edgeColor,
+        'source-arrow-color': c.edgeColor,
         'target-arrow-shape': 'triangle',
         'target-arrow-fill': 'filled',
         'curve-style': 'bezier',
         'arrow-scale': 0.95,
         label: 'data(elabel)',
         'font-size': '8px',
-        color: edgeColor,
+        color: c.edgeColor,
         'text-background-color': isDark ? '#0f172a' : '#f8fafc',
         'text-background-opacity': 0.92,
         'text-background-padding': '2px',
-        'text-border-color': edgeColor,
+        'text-border-color': c.edgeColor,
         'text-border-width': 1,
         'text-border-opacity': 0.35,
       },
@@ -131,9 +158,9 @@ export function buildGraphStylesheet(theme: 'light' | 'dark') {
       selector: 'edge:selected',
       style: {
         width: 3,
-        'line-color': isDark ? '#93c5fd' : '#4f46e5',
-        'target-arrow-color': isDark ? '#93c5fd' : '#4f46e5',
-        'source-arrow-color': isDark ? '#93c5fd' : '#4f46e5',
+        'line-color': c.selectedBorder,
+        'target-arrow-color': c.selectedBorder,
+        'source-arrow-color': c.selectedBorder,
       },
     },
   ]
@@ -321,42 +348,36 @@ export function destroyCy(cy: Core | null): void {
 }
 
 export function applyThemeToCy(cy: Core, theme: 'light' | 'dark'): void {
-  const isDark = theme === 'dark'
-  const nodeBg = isDark ? '#2d3d52' : '#e2e8f0'
-  const nodeBorder = isDark ? '#3d9cfd' : '#6366f1'
-  const nodeColor = isDark ? '#f1f5f9' : '#1e293b'
-  const missingBg = isDark ? '#5c2d2d' : '#fecaca'
-  const missingBorder = isDark ? '#c94c4c' : '#dc2626'
-  const edgeColor = isDark ? '#64748b' : '#94a3b8'
+  const c = getGraphThemeColors(theme === 'dark')
 
   cy.style()
     .selector('node')
     .style({
-      color: nodeColor,
-      'background-color': nodeBg,
-      'border-color': nodeBorder,
+      color: c.nodeColor,
+      'background-color': c.nodeBg,
+      'border-color': c.nodeBorder,
     })
     .selector('node:selected')
     .style({
-      'border-color': isDark ? '#93c5fd' : '#4f46e5',
+      'border-color': c.selectedBorder,
     })
     .selector('node[?missing]')
     .style({
-      'background-color': missingBg,
-      'border-color': missingBorder,
+      'background-color': c.missingBg,
+      'border-color': c.missingBorder,
     })
     .selector('edge')
     .style({
-      'line-color': edgeColor,
-      'target-arrow-color': edgeColor,
-      'source-arrow-color': edgeColor,
-      color: edgeColor,
+      'line-color': c.edgeColor,
+      'target-arrow-color': c.edgeColor,
+      'source-arrow-color': c.edgeColor,
+      color: c.edgeColor,
     })
     .selector('edge:selected')
     .style({
-      'line-color': isDark ? '#93c5fd' : '#4f46e5',
-      'target-arrow-color': isDark ? '#93c5fd' : '#4f46e5',
-      'source-arrow-color': isDark ? '#93c5fd' : '#4f46e5',
+      'line-color': c.selectedBorder,
+      'target-arrow-color': c.selectedBorder,
+      'source-arrow-color': c.selectedBorder,
     })
     .update()
 }

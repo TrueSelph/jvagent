@@ -40,9 +40,10 @@ import type {
   GoogleDriveListResponse,
   DoclingOcrEngine,
 } from '../types/api'
+import * as graphService from './api/graph'
 
 class ApiClient {
-  private client: AxiosInstance
+  client: AxiosInstance
   private baseUrls: string[]
   /** jvforge HTTP API (``/v1/*``) — separate host/port from jvagent */
   private jvforgeBaseUrls: string[]
@@ -434,9 +435,15 @@ class ApiClient {
     return this.jvforgeBaseUrls.some((u) => u.replace(/\/$/, '') === base)
   }
 
-  private async _withFallback<T>(fn: (baseURL: string) => Promise<T>): Promise<T> {
+  private async _withFallback<T>(
+    fn: (baseURL: string) => Promise<T>,
+    urls?: string[],
+    label?: string,
+  ): Promise<T> {
+    const baseUrls = urls ?? this.baseUrls
+    const tag = label ?? 'Request'
     let lastError: unknown
-    for (const baseURL of this.baseUrls) {
+    for (const baseURL of baseUrls) {
       try {
         return await fn(baseURL)
       } catch (error: unknown) {
@@ -444,8 +451,7 @@ class ApiClient {
         if (this._isSessionAuthFailureStopFallback(error)) {
           throw error
         }
-        console.warn('Request failed for baseURL', baseURL, 'error:', (error as Error)?.message || error)
-        // Try next baseURL
+        console.warn(`${tag} failed for baseURL`, baseURL, 'error:', (error as Error)?.message || error)
       }
     }
     throw lastError
@@ -457,29 +463,6 @@ class ApiClient {
       return { 'X-API-Key': String(key).trim() }
     }
     return {}
-  }
-
-  private async _withJvforgeFallback<T>(
-    fn: (baseURL: string) => Promise<T>
-  ): Promise<T> {
-    let lastError: unknown
-    for (const baseURL of this.jvforgeBaseUrls) {
-      try {
-        return await fn(baseURL)
-      } catch (error: unknown) {
-        lastError = error
-        if (this._isSessionAuthFailureStopFallback(error)) {
-          throw error
-        }
-        console.warn(
-          'jvforge request failed for baseURL',
-          baseURL,
-          'error:',
-          (error as Error)?.message || error
-        )
-      }
-    }
-    throw lastError
   }
 
   async login(credentials: LoginRequest): Promise<LoginResponse> {
@@ -969,47 +952,7 @@ class ApiClient {
   }
 
   async getGraph(format: string = 'dot', include_attributes: boolean = true): Promise<string> {
-    // Endpoint returns plain text (DOT or Mermaid diagram syntax)
-    // Try /api/graph first, fallback to /graph, with baseURL fallbacks
-    try {
-      const params = {
-        format,
-        include_attributes: include_attributes,
-      }
-
-      const response = await this._withFallback(async (baseURL) => {
-        try {
-          // Use responseType: 'text' to get plain text response
-          return await this.client.get('/api/graph', {
-            params,
-            baseURL,
-            responseType: 'text',
-          })
-        } catch (err: any) {
-          if (err.response?.status === 404) {
-            // Try without /api prefix
-            return await this.client.get('/graph', {
-              params,
-              baseURL,
-              responseType: 'text',
-            })
-          }
-          throw err
-        }
-      })
-
-      // Response data is already a string when responseType is 'text'
-      return response.data as string
-    } catch (error: any) {
-      console.error('Error fetching graph:', error)
-      const errorMessage =
-        error.response?.data ||
-        error.message ||
-        'Failed to fetch graph data'
-      throw new Error(
-        typeof errorMessage === 'string' ? errorMessage : 'Failed to fetch graph data'
-      )
-    }
+    return graphService.getGraph({ client: this.client, _withFallback: this._withFallback.bind(this) }, format, include_attributes)
   }
 
   async getGraphSubgraph(params: {
@@ -1019,35 +962,7 @@ class ApiClient {
     max_edges_per_node?: number
     detail_level?: 'summary' | 'full'
   }): Promise<GraphSubgraphResponse> {
-    const query: Record<string, string | number> = {
-      root: params.root ?? 'n.Root.root',
-      max_depth: params.max_depth ?? 2,
-      max_nodes: params.max_nodes ?? 150,
-      max_edges_per_node: params.max_edges_per_node ?? 100,
-      detail_level: params.detail_level ?? 'full',
-    }
-    try {
-      const response = await this._withFallback(async (baseURL) => {
-        try {
-          return await this.client.get<GraphSubgraphResponse>('/api/graph/subgraph', {
-            params: query,
-            baseURL,
-          })
-        } catch (err: any) {
-          if (err.response?.status === 404) {
-            return await this.client.get<GraphSubgraphResponse>('/graph/subgraph', {
-              params: query,
-              baseURL,
-            })
-          }
-          throw err
-        }
-      })
-      return response.data as GraphSubgraphResponse
-    } catch (error: any) {
-      console.error('Error fetching graph subgraph:', error)
-      throw error
-    }
+    return graphService.getGraphSubgraph({ client: this.client, _withFallback: this._withFallback.bind(this) }, params)
   }
 
   async getGraphExpand(params: {
@@ -1057,35 +972,7 @@ class ApiClient {
     cursor?: number
     detail_level?: 'summary' | 'full'
   }): Promise<GraphExpandResponse> {
-    const query: Record<string, string | number> = {
-      node_id: params.node_id,
-      direction: params.direction ?? 'both',
-      limit: params.limit ?? 50,
-      cursor: params.cursor ?? 0,
-      detail_level: params.detail_level ?? 'full',
-    }
-    try {
-      const response = await this._withFallback(async (baseURL) => {
-        try {
-          return await this.client.get<GraphExpandResponse>('/api/graph/expand', {
-            params: query,
-            baseURL,
-          })
-        } catch (err: any) {
-          if (err.response?.status === 404) {
-            return await this.client.get<GraphExpandResponse>('/graph/expand', {
-              params: query,
-              baseURL,
-            })
-          }
-          throw err
-        }
-      })
-      return response.data as GraphExpandResponse
-    } catch (error: any) {
-      console.error('Error fetching graph expand:', error)
-      throw error
-    }
+    return graphService.getGraphExpand({ client: this.client, _withFallback: this._withFallback.bind(this) }, params)
   }
 
   async repairGraph(options?: {
@@ -1093,39 +980,7 @@ class ApiClient {
     recent_minutes?: number
     max_seconds?: number
   }): Promise<any> {
-    try {
-      const params: Record<string, string | number | boolean> = {}
-      if (options?.dry_run !== undefined) params.dry_run = options.dry_run
-      if (options?.recent_minutes !== undefined) params.recent_minutes = options.recent_minutes
-      if (options?.max_seconds !== undefined) params.max_seconds = options.max_seconds
-
-      const response = await this._withFallback(async (baseURL) => {
-        try {
-          return await this.client.post('/api/graph/repair', {}, { params, baseURL })
-        } catch (err: any) {
-          if (err.response?.status === 404) {
-            return await this.client.post('/graph/repair', {}, { params, baseURL })
-          }
-          throw err
-        }
-      })
-
-      const data = response.data
-      if (data?.success && data?.data) return data.data
-      return data
-    } catch (error: any) {
-      console.error('Error repairing graph:', error)
-      const status = error.response?.status
-      let errorMessage: string | unknown = error.response?.data?.detail ?? error.response?.data?.message ?? error.message ?? 'Failed to repair graph'
-      if (Array.isArray(errorMessage)) {
-        errorMessage = errorMessage.map((e: { msg?: string; message?: string }) => e?.msg ?? e?.message ?? String(e)).join('; ')
-      }
-      if (typeof errorMessage !== 'string') {
-        errorMessage = typeof errorMessage === 'object' ? JSON.stringify(errorMessage) : String(errorMessage)
-      }
-      const prefix = status ? `[${status}] ` : ''
-      throw new Error(prefix + errorMessage)
-    }
+    return graphService.repairGraph({ client: this.client, _withFallback: this._withFallback.bind(this) }, options)
   }
 
   async getActions(
@@ -1650,8 +1505,10 @@ class ApiClient {
   }> {
     const path = `/v1/jobs/${encodeURIComponent(jobId)}/position`
     const headers = this._jvforgeHeaders()
-    const response = await this._withJvforgeFallback((baseURL) =>
-      this.client.get(path, { baseURL, headers })
+    const response = await this._withFallback(
+      (baseURL) => this.client.get(path, { baseURL, headers }),
+      this.jvforgeBaseUrls,
+      'jvforge request',
     )
     return response.data
   }

@@ -13,6 +13,17 @@ import {
   validateAttachmentSize,
 } from '../utils/interactAttachments'
 
+function findLastIndex<T>(arr: T[], predicate: (item: T) => boolean): number {
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (predicate(arr[i])) return i
+  }
+  return -1
+}
+
+function isViewingStreamSession(currentView: string | undefined, streamSessionId: string | undefined): boolean {
+  return currentView === streamSessionId || (currentView === undefined && streamSessionId !== undefined)
+}
+
 /** Shown in the transcript and sent as `utterance` when the user attaches file(s) but types no message. */
 export const ATTACHMENT_ONLY_USER_PROMPT =
   'What can you infer about this image?'
@@ -442,7 +453,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                 const messageId = msg.id || assistantMessageId
                 const streamSessionId = streamSessionIdRef.current
                 const currentView = sessionIdRef.current
-                const viewingStreamSession = currentView === streamSessionId || (currentView === undefined && streamSessionId !== undefined)
+                const viewingStreamSession = isViewingStreamSession(currentView, streamSessionId)
 
                 if (!viewingStreamSession && streamSessionId) {
                   let stored = getMessages(streamSessionId)
@@ -516,7 +527,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                 const messageId = msg.id || assistantMessageId
                 const streamSessionId = streamSessionIdRef.current
                 const currentView = sessionIdRef.current
-                const viewingStreamSession = currentView === streamSessionId || (currentView === undefined && streamSessionId !== undefined)
+                const viewingStreamSession = isViewingStreamSession(currentView, streamSessionId)
 
                 if (!viewingStreamSession && streamSessionId) {
                   const stored = getMessages(streamSessionId)
@@ -612,7 +623,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                 }
                 const streamSessionId = streamSessionIdRef.current
                 const currentView = sessionIdRef.current
-                const viewingStreamSession = currentView === streamSessionId || (currentView === undefined && streamSessionId !== undefined)
+                const viewingStreamSession = isViewingStreamSession(currentView, streamSessionId)
 
                 if (!viewingStreamSession && streamSessionId) {
                   const stored = getMessages(streamSessionId)
@@ -660,18 +671,12 @@ export function useStreaming(agentId: string, sessionId?: string) {
             } else if (chunk.type === 'final') {
               const streamSessionId = streamSessionIdRef.current
               const currentView = sessionIdRef.current
-              const viewingStreamSession = currentView === streamSessionId || (currentView === undefined && streamSessionId !== undefined)
+              const viewingStreamSession = isViewingStreamSession(currentView, streamSessionId)
               const sessionIdForSave = receivedSessionId || streamSessionId
 
               if (!viewingStreamSession && sessionIdForSave) {
                 const stored = getMessages(sessionIdForSave)
                 const interactionIdForFinal = chunk.interaction?.id || interactionIdRef.current || undefined
-                const findLastIndex = (arr: Message[], predicate: (m: Message) => boolean): number => {
-                  for (let i = arr.length - 1; i >= 0; i--) {
-                    if (predicate(arr[i])) return i
-                  }
-                  return -1
-                }
                 const filtered = stored.filter((m) => m.id !== assistantMessageId || m.content !== '')
                 const targetIndex = interactionIdForFinal
                   ? findLastIndex(filtered, (m) => m.role === 'assistant' && m.interactionId === interactionIdForFinal)
@@ -711,16 +716,6 @@ export function useStreaming(agentId: string, sessionId?: string) {
                 const filtered = prev.filter((m) => m.id !== assistantMessageId || m.content !== '')
                 const interactionIdForFinal =
                   chunk.interaction?.id || interactionIdRef.current || undefined
-
-                // Find last matching message (findLastIndex polyfill for older TypeScript targets)
-                const findLastIndex = (arr: Message[], predicate: (m: Message) => boolean): number => {
-                  for (let i = arr.length - 1; i >= 0; i--) {
-                    if (predicate(arr[i])) {
-                      return i
-                    }
-                  }
-                  return -1
-                }
 
                 const targetIndex = interactionIdForFinal
                   ? findLastIndex(
@@ -812,7 +807,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
             } else if (chunk.type === 'error') {
               const streamSessionId = streamSessionIdRef.current
               const currentView = sessionIdRef.current
-              const viewingStreamSession = currentView === streamSessionId || (currentView === undefined && streamSessionId !== undefined)
+              const viewingStreamSession = isViewingStreamSession(currentView, streamSessionId)
 
               if (!viewingStreamSession && streamSessionId) {
                 const stored = getMessages(streamSessionId)
@@ -837,7 +832,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
           (err: Error) => {
             const streamSessionId = streamSessionIdRef.current
             const currentView = sessionIdRef.current
-            const viewingStreamSession = currentView === streamSessionId || (currentView === undefined && streamSessionId !== undefined)
+            const viewingStreamSession = isViewingStreamSession(currentView, streamSessionId)
 
             if (!viewingStreamSession && streamSessionId) {
               const stored = getMessages(streamSessionId)

@@ -20,6 +20,8 @@ import { useTheme } from "../context/ThemeContext";
 import { JsonViewer } from "./JsonViewer";
 import { JsonCodeEditor } from "./JsonCodeEditor";
 import { tryParseJsonDisplay } from "../utils/tryParseJsonDisplay";
+import { truncate } from "../utils/truncate";
+import { preserveScroll } from "../utils/preserveScroll";
 
 /** Code / text fields: black in dark theme, off-grey in light theme */
 function debugCodePanelClass(isDark: boolean) {
@@ -164,16 +166,6 @@ export function DebugInteractions({
     } else {
       window.scrollTo(0, scrollPos);
     }
-  };
-
-  const preserveScroll = (fn: () => void) => {
-    if (typeof window === "undefined") {
-      fn();
-      return;
-    }
-    const y = window.scrollY || window.pageYOffset || 0;
-    fn();
-    setTimeout(() => window.scrollTo({ top: y, behavior: "auto" }), 0);
   };
 
   const selectInteraction = useCallback(
@@ -743,11 +735,6 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
       e.target.value = "";
     };
     reader.readAsText(file);
-  };
-
-  const truncate = (str: string, length = 100) => {
-    if (!str) return "";
-    return str.length > length ? str.substring(0, length) + "..." : str;
   };
 
   const formatUserLabel = (userId: string) => {

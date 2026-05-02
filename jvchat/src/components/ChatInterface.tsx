@@ -44,13 +44,6 @@ export function ChatInterface() {
   const agent = agents.find((a) => a.id === agentId);
   const [sessionId, setSessionId] = useState<string | undefined>();
 
-  useEffect(() => {
-    if (agent) {
-      console.log("Current agent data:", agent);
-      console.log("Agent alias:", agent.alias);
-      console.log("Agent name:", agent.name);
-    }
-  }, [agent]);
   const { conversations, add, update, remove, refresh } =
     useConversations(agentId);
   const {

@@ -41,14 +41,6 @@ const DEFAULT_CONFIG: AppConfig = {
 let cachedConfig: AppConfig | null = null
 let configLoadPromise: Promise<AppConfig> | null = null
 
-async function loadConfigFromFile(): Promise<Partial<AppConfig>> {
-  // File-based config loading removed - configuration is now handled via:
-  // 1. User input from login screen (saved to localStorage)
-  // 2. Environment variables (VITE_JVAGENT_URL)
-  // 3. Default values
-  return {}
-}
-
 function loadConfigFromStorage(): Partial<AppConfig> {
   if (typeof window === 'undefined') return {}
 
@@ -74,23 +66,19 @@ export async function getConfigAsync(): Promise<AppConfig> {
   }
 
   configLoadPromise = (async () => {
-    const fileConfig = await loadConfigFromFile()
     const storedConfig = loadConfigFromStorage()
 
     cachedConfig = {
       jvagent: {
         ...DEFAULT_CONFIG.jvagent,
-        ...fileConfig.jvagent,
         ...storedConfig.jvagent,
       },
       jvforge: {
         ...DEFAULT_CONFIG.jvforge,
-        ...fileConfig.jvforge,
         ...storedConfig.jvforge,
       },
       ui: {
         ...DEFAULT_CONFIG.ui,
-        ...fileConfig.ui,
         ...storedConfig.ui,
       },
     }
