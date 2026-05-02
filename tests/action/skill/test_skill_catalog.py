@@ -144,7 +144,22 @@ class TestGetResponseModeOverride:
     def test_overrides_when_skill_has_respond_mode(self):
         skills = {"s": {"response_mode": "respond"}}
         catalog = SkillCatalog(skills)
-        result = catalog.get_response_mode_override({"s"}, "suppress")
+        result = catalog.get_response_mode_override({"s"}, "publish")
+        assert result == "respond"
+
+    def test_overrides_when_skill_has_publish_mode(self):
+        skills = {"s": {"response_mode": "publish"}}
+        catalog = SkillCatalog(skills)
+        result = catalog.get_response_mode_override({"s"}, "respond")
+        assert result == "publish"
+
+    def test_respond_wins_when_activated_skills_conflict(self):
+        skills = {
+            "a": {"response_mode": "publish"},
+            "b": {"response_mode": "respond"},
+        }
+        catalog = SkillCatalog(skills)
+        result = catalog.get_response_mode_override({"a", "b"}, "publish")
         assert result == "respond"
 
     def test_returns_default_when_no_override(self):
@@ -153,10 +168,78 @@ class TestGetResponseModeOverride:
         result = catalog.get_response_mode_override({"s"}, "suppress")
         assert result == "suppress"
 
+    def test_returns_default_when_inherit(self):
+        skills = {"s": {"response_mode": None}}
+        catalog = SkillCatalog(skills)
+        result = catalog.get_response_mode_override({"s"}, "respond")
+        assert result == "respond"
+
     def test_returns_default_when_no_skills_activated(self):
         catalog = SkillCatalog(_sample_skills())
         result = catalog.get_response_mode_override(set(), "suppress")
         assert result == "suppress"
+
+
+# --- Persona in system prompt (response-mode policy) ---
+
+
+class TestShouldInjectPersonaIdentityForSkillPrompt:
+    def test_no_skills_follows_action_default(self):
+        assert (
+            SkillCatalog.should_inject_persona_identity_for_skill_prompt(
+                None, "publish"
+            )
+            is False
+        )
+        assert (
+            SkillCatalog.should_inject_persona_identity_for_skill_prompt({}, "publish")
+            is False
+        )
+        assert (
+            SkillCatalog.should_inject_persona_identity_for_skill_prompt(
+                None, "respond"
+            )
+            is True
+        )
+
+    def test_all_explicit_publish_no_inject_when_default_respond(self):
+        skills = {
+            "a": {"response_mode": "publish"},
+            "b": {"response_mode": "publish"},
+        }
+        assert (
+            SkillCatalog.should_inject_persona_identity_for_skill_prompt(
+                skills, "respond"
+            )
+            is False
+        )
+
+    def test_any_respond_frontmatter_requires_persona_text(self):
+        skills = {
+            "a": {"response_mode": "publish"},
+            "b": {"response_mode": "respond"},
+        }
+        assert (
+            SkillCatalog.should_inject_persona_identity_for_skill_prompt(
+                skills, "respond"
+            )
+            is True
+        )
+
+    def test_inherit_with_action_respond_requires_persona_text(self):
+        skills = {"a": {"response_mode": None}}
+        assert (
+            SkillCatalog.should_inject_persona_identity_for_skill_prompt(
+                skills, "respond"
+            )
+            is True
+        )
+        assert (
+            SkillCatalog.should_inject_persona_identity_for_skill_prompt(
+                skills, "publish"
+            )
+            is False
+        )
 
 
 # --- Properties ---

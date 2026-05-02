@@ -171,7 +171,7 @@ agents/<namespace>/<agent_id>/
 - `description` (recommended)
 - `allowed-tools` (optional) -- whitelist of Python tool names to activate from this bundle
 - `requires-actions` (optional) -- Action entity types this skill depends on
-- `response-mode` (optional) -- override the action's response_mode for this skill
+- `response-mode` (optional) -- `"respond"` or `"publish"`; omit to inherit the action's `response_mode` (see [Response Mode](#response-mode))
 - `version`, `license`, `tags` (optional metadata)
 
 ### Progressive Disclosure Flow
@@ -680,7 +680,7 @@ tags:
 | `description` | Recommended | str | Shown in the skill index that the LLM sees. |
 | `allowed-tools` | Optional | list[str] | Whitelist of `.py` tool filenames (without `.py`) to activate from this bundle. If omitted, all `.py` tools in the directory are activated. |
 | `requires-actions` | Optional | list[str] or str | Action entity types this skill depends on (e.g. `GoogleCalendarAction`). If any are missing or disabled at activation time, `read_skill` returns an error. |
-| `response-mode` | Optional | str | Override the action's `response_mode` for this skill: `"respond"` (route through PersonaAction) or `"publish"` (direct bus delivery). If omitted, inherits the action's `response_mode` attribute. |
+| `response-mode` | Optional | str | When this skill is **activated** in a turn, set how the final answer is delivered: `"respond"` (PersonaAction) or `"publish"` (direct bus). If omitted or invalid, that skill **inherits** the action's `response_mode`. Resolution across multiple activated skills is described under [Resolution Logic](#resolution-logic). |
 | `version` | Optional | int/str | Version number for tracking |
 | `license` | Optional | str | License identifier |
 | `tags` | Optional | list[str] | Tags for categorization and search |
@@ -726,18 +726,24 @@ Setting `response_mode: "respond"` routes the final response through PersonaActi
 ---
 name: research
 description: Investigate a topic with evidence-first synthesis
-response-mode: respond        # Override action default for this skill only
+response-mode: respond        # PersonaAction for this skill when activated
 ---
 ```
 
+Use `response-mode: publish` to force direct bus delivery for that skill when the action default is `respond` (e.g. persona globally on, but a specific skill should skip Persona).
+
 ### Resolution Logic
 
-`SkillCatalog.get_response_mode_override()` resolves the effective mode:
+Only **activated** skills (those the model loaded with `read_skill` in that run) participate. `SkillCatalog.get_response_mode_override(activated_skills, default_mode)` uses `default_mode` from the action's `response_mode` setting, then:
 
-1. If any activated skill has `response-mode: respond` → use `respond`
-2. Otherwise → use the action's `response_mode` attribute (default: `publish`)
+1. Collect explicit frontmatter values from activated skills: `response-mode: respond` → `respond`, `response-mode: publish` → `publish`. Omitted or invalid values count as **inherit** (they do not add a vote).
+2. If any activated skill explicitly requests `respond` → effective mode is **`respond`**.
+3. Else if any explicitly requests `publish` → **`publish`**.
+4. Else → **`default_mode`** (typically the action's `response_mode`, defaulting to `publish` at the action level).
 
-This is additive: `publish` is the default (no behavior change for existing agents), `respond` is opt-in per-action or per-skill.
+If two activated skills disagree (`respond` vs `publish`), **`respond` wins** so Persona is not skipped when any skill requires it.
+
+Action-level `response_mode` remains the baseline for skills that inherit; per-skill frontmatter only applies when that skill is activated and sets `respond` or `publish` explicitly.
 
 ### When to Use Each Mode
 
@@ -1186,6 +1192,8 @@ class SkillCatalog:
     def get_response_mode_override(activated_skills, default_mode) -> str
     def search(query, top_k=5) -> str
 ```
+
+`get_response_mode_override` uses only **activated** skill bundles; explicit `respond` beats explicit `publish`; skills without `response-mode` inherit `default_mode`.
 
 ### LoopContext + LoopContextConfig
 

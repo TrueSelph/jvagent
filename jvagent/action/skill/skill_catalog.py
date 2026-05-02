@@ -382,22 +382,75 @@ class SkillCatalog:
     ) -> str:
         """Resolve the effective response mode for the final response.
 
-        If any activated skill has ``response-mode: respond`` in its frontmatter,
-        return ``respond``. Otherwise, return the default_mode.
+        Inspects each **activated** skill's ``response_mode`` (from SKILL.md
+        ``response-mode``). Values ``respond`` and ``publish`` apply; ``None`` /
+        omitted means inherit. When multiple activated skills set explicit modes,
+        ``respond`` wins over ``publish``; if none set a mode, ``default_mode``
+        is used (typically the action's ``response_mode``).
 
         Args:
             activated_skills: Set of activated skill names.
             default_mode: Default response mode (typically from action config).
 
         Returns:
-            Effective response mode string.
+            Effective response mode string (``respond`` or ``publish``).
         """
         activated_norm = {s.replace("-", "_") for s in activated_skills}
+        explicit: Set[str] = set()
         for catalog_key, skill_data in self._skills.items():
-            if catalog_key.replace("-", "_") in activated_norm:
-                if skill_data.get("response_mode") == "respond":
-                    return "respond"
+            if catalog_key.replace("-", "_") not in activated_norm:
+                continue
+            mode = skill_data.get("response_mode")
+            if mode == "respond":
+                explicit.add("respond")
+            elif mode == "publish":
+                explicit.add("publish")
+        if "respond" in explicit:
+            return "respond"
+        if "publish" in explicit:
+            return "publish"
         return default_mode
+
+    @staticmethod
+    def should_inject_persona_identity_for_skill_prompt(
+        discovered_skills: Optional[Dict[str, Dict[str, Any]]],
+        action_response_mode: str,
+    ) -> bool:
+        """Whether to load PersonaAction fields for the skill system prompt.
+
+        When every bundled skill uses explicit ``response-mode: publish`` and none
+        inherit or request ``respond``, the agentic loop never needs Persona
+        identity in the system prompt for response-mode policy (final delivery
+        is direct ``publish`` for those activations). Inheriting skills
+        (``response_mode`` unset) follow the action default; if that default is
+        ``respond``, keep persona text available.
+
+        If there are no discovered skills, follow the action-level
+        ``response_mode`` only.
+
+        Args:
+            discovered_skills: Skill catalog mapping from discovery (may be empty).
+            action_response_mode: Action's ``response_mode`` attribute.
+
+        Returns:
+            True if PersonaAction name/description should be read for ``SkillRunContext``.
+        """
+        mode = (action_response_mode or "publish").strip().lower()
+        if not discovered_skills:
+            return mode == "respond"
+        has_respond = False
+        has_inherit = False
+        for data in discovered_skills.values():
+            m = data.get("response_mode")
+            if m == "respond":
+                has_respond = True
+            elif m is None:
+                has_inherit = True
+        if has_respond:
+            return True
+        if mode == "respond" and has_inherit:
+            return True
+        return False
 
     def search(self, query: str, top_k: int = 5) -> str:
         """Search skills by metadata-driven token overlap.

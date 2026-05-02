@@ -35,7 +35,7 @@ from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.skill.action_resolver import ActionResolver
-from jvagent.action.skill.skill_action import SkillAction
+from jvagent.action.skill.skill_action import SkillAction, _AgentShim
 from jvagent.action.skill.skill_action_contracts import (
     DEFAULT_SKILL_MODEL,
     SkillRunConfig,
@@ -360,12 +360,46 @@ class SkillInteractAction(InteractAction):
             # Resolve model action and attach ActionResolver to visitor
             model_action = await self.get_model_action(required=True)
             agent = getattr(visitor, "_agent", None)
-            visitor.action_resolver = ActionResolver(agent) if agent else None
+            action_resolver = ActionResolver(agent) if agent else None
+            visitor.action_resolver = action_resolver
 
-            # Resolve persona for system prompt enrichment
+            # Build run config from declared attributes (with deprecated alias mapping)
+            cfg = self._build_run_config()
+
+            # Discover skills once for persona-in-prompt policy (mirrors SkillAction.prepare_run).
+            inject_persona_identity = (self.response_mode or "publish") == "respond"
+            try:
+                _visitor_shim = _AgentShim(
+                    agent,
+                    action_resolver,
+                    user_id=getattr(visitor, "user_id", None),
+                    conversation=conversation,
+                    interaction=interaction,
+                    session_id=visitor.session_id,
+                    response_bus=visitor.response_bus,
+                    channel=getattr(visitor, "channel", None),
+                )
+                _prompt_catalog = await SkillCatalog.discover(
+                    visitor=_visitor_shim,
+                    skills_selector=cfg.skills,
+                    skills_source=cfg.skills_source,
+                    denied_skills=cfg.denied_skills or None,
+                )
+                inject_persona_identity = (
+                    SkillCatalog.should_inject_persona_identity_for_skill_prompt(
+                        _prompt_catalog.skills, self.response_mode
+                    )
+                )
+            except Exception as exc:
+                logger.warning(
+                    "SkillInteractAction: skill discovery for persona prompt policy failed: %s",
+                    exc,
+                )
+
+            # Resolve persona for system prompt enrichment (skip when publish-only policy)
             agent_name = "Agent"
             agent_description = "An intelligent skills-based agent."
-            if agent:
+            if inject_persona_identity and agent:
                 actions_manager = await agent.get_actions_manager()
                 if actions_manager:
                     enabled_actions = await actions_manager.get_actions(
@@ -380,9 +414,6 @@ class SkillInteractAction(InteractAction):
                                 "An intelligent skills-based agent.",
                             )
                             break
-
-            # Build run config from declared attributes (with deprecated alias mapping)
-            cfg = self._build_run_config()
 
             # Publish callback bridges SkillAction output to the interact bus
             async def _publish_cb(
@@ -445,11 +476,13 @@ class SkillInteractAction(InteractAction):
             # Mark interaction executed regardless of response content (1.5).
             interaction.set_to_executed()
 
-            # Deliver final response
+            # Deliver final response (PersonaAction / directives only when mode is respond)
             if result.final_response:
                 skill_catalog = (visitor._skill_state or {}).get("skill_catalog")
-                effective_mode = self._resolve_response_mode_from_result(
-                    result, skill_catalog=skill_catalog
+                effective_mode = self._normalize_effective_response_mode(
+                    self._resolve_response_mode_from_result(
+                        result, skill_catalog=skill_catalog
+                    )
                 )
                 use_persona = (
                     effective_mode == "respond"
@@ -666,11 +699,10 @@ class SkillInteractAction(InteractAction):
     def _resolve_response_mode_from_result(
         self, result: Any, *, skill_catalog: Any = None
     ) -> str:
-        """Effective response mode honoring per-skill frontmatter overrides.
+        """Effective response mode honoring per-skill ``response-mode`` in SKILL.md.
 
-        If any activated skill declared ``response-mode: respond`` in its
-        ``SKILL.md``, that overrides the action-level default so the response
-        is delivered through PersonaAction instead of published directly.
+        Explicit ``respond`` or ``publish`` on activated skills overrides the
+        action default; omitted / inherit uses :attr:`response_mode`.
         """
         activated = getattr(result, "activated_skills", None) or []
         if activated and skill_catalog is not None:
@@ -683,6 +715,17 @@ class SkillInteractAction(InteractAction):
                     "SkillInteractAction: get_response_mode_override failed: %s", exc
                 )
         return self.response_mode
+
+    def _normalize_effective_response_mode(self, raw: str) -> str:
+        """Coerce resolved mode to ``publish`` or ``respond`` for delivery logic."""
+        if raw == "respond":
+            return "respond"
+        if raw == "publish":
+            return "publish"
+        fallback = (self.response_mode or "publish").strip().lower()
+        if fallback in ("respond", "publish"):
+            return fallback
+        return "publish"
 
     @staticmethod
     def _format_persona_directive(utterance: Optional[str], final_response: str) -> str:
