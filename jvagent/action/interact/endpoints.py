@@ -522,7 +522,7 @@ async def interact_endpoint(
         client_ip = "unknown"
 
     # Check rate limit
-    if not rate_limiter.check_rate_limit(client_ip, agent_id):
+    if not await rate_limiter.check_rate_limit(client_ip, agent_id):
         raise RateLimitError(
             message=f"Rate limit exceeded: {rate_limiter.rate_limit_per_minute} requests per minute",
             details={
@@ -544,7 +544,7 @@ async def interact_endpoint(
         )
 
     # Record the request for rate limiting
-    rate_limiter.record_request(client_ip, agent_id)
+    await rate_limiter.record_request(client_ip, agent_id)
 
     # Normalize channel: web/empty -> default
     channel = normalize_channel(channel)

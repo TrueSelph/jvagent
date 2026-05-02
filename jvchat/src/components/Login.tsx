@@ -196,7 +196,7 @@ export function Login() {
     a.download = `jvchat-saved-accounts-${stamp}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    setAccountsNotice("Exported saved accounts (file contains passwords).");
+    setAccountsNotice("Exported saved accounts. Warning: JSON file contains plaintext passwords — store it securely.");
   };
 
   const triggerImport = (mode: "merge" | "replace") => {
@@ -442,6 +442,17 @@ export function Login() {
               </p>
             </div>
 
+            {sortedSavedCreds.length > 0 && (
+              <div className="px-6 pb-3">
+                <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+                  <strong>Security note:</strong> Credentials are stored in this
+                  browser&apos;s local storage as plain text. Anyone with access to
+                  this device or browser can view saved passwords. Do not save
+                  credentials on shared devices.
+                </div>
+              </div>
+            )}
+
             <div className="px-6 pb-4">
               <div className="flex flex-wrap gap-2">
                 <button
@@ -488,6 +499,9 @@ export function Login() {
                   </p>
                   <p className="mt-1 text-sm text-zinc-400 dark:text-zinc-500 max-w-xs">
                     Sign in with your credentials on the right, or import a JSON backup to get started
+                  </p>
+                  <p className="mt-3 text-xs text-amber-600 dark:text-amber-400 max-w-xs">
+                    Note: saved credentials are stored in this browser&apos;s local storage as plain text.
                   </p>
                 </div>
               ) : (

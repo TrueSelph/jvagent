@@ -22,6 +22,7 @@ from jvagent.core.bootstrap_update_mode import (
 from jvagent.core.config import (
     get_config_value,
     get_file_storage_config,
+    is_production_mode,
     load_app_config,
     normalize_empty,
     resolve_db_path,
@@ -468,6 +469,28 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         )
     else:
         logger.info("Logging is disabled in configuration")
+
+    # Production safety checks
+    if is_production_mode():
+        if debug_mode:
+            logger.warning(
+                "PRODUCTION SAFETY: Debug mode is enabled in production. "
+                "Set JVSPATIAL_DEBUG=false or remove development.debug from app.yaml."
+            )
+        if not admin_password:
+            logger.warning(
+                "PRODUCTION SAFETY: JVAGENT_ADMIN_PASSWORD is not set in production. "
+                "No admin user will be created."
+            )
+        disable_runtime_pip = os.environ.get(
+            "JVAGENT_DISABLE_RUNTIME_PIP_INSTALL", ""
+        ).lower()
+        if disable_runtime_pip not in ("true", "1", "yes", "on"):
+            logger.warning(
+                "PRODUCTION SAFETY: Runtime pip install is enabled in production. "
+                "Set JVAGENT_DISABLE_RUNTIME_PIP_INSTALL=true to ensure all "
+                "dependencies are pre-installed in the deployment image."
+            )
 
     # Import core endpoint modules so @endpoint decorators run and register.
     # jvspatial auto-registers: decorators register immediately when server exists;

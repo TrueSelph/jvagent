@@ -297,6 +297,8 @@ class SkillAction:
             conversation=ctx.conversation,
             interaction=ctx.interaction,
             session_id=ctx.session_id,
+            response_bus=ctx.response_bus,
+            channel=ctx.channel,
         )
         skill_catalog = await SkillCatalog.discover(
             visitor=_visitor_shim,
@@ -3257,6 +3259,8 @@ class _AgentShim:
         conversation: Any = None,
         interaction: Any = None,
         session_id: Optional[str] = None,
+        response_bus: Any = None,
+        channel: Optional[str] = None,
     ) -> None:
         self._agent = agent
         self.action_resolver = action_resolver
@@ -3266,3 +3270,6 @@ class _AgentShim:
         self.conversation = conversation
         self.interaction = interaction
         self.session_id = session_id
+        # InteractWalker supplies these; need them on the visitor.
+        self.response_bus = response_bus
+        self.channel = channel or ""

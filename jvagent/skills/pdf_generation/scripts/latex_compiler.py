@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -28,6 +29,17 @@ logger = logging.getLogger(__name__)
 # Log slice limits: failures need enough context (Tectonic errors are often at end of stdout).
 _LOG_TAIL_OK = 2000
 _LOG_TAIL_FAIL = 20000
+
+# Hex color validation: only allow 6-digit hex (e.g. "1a2b3c") after stripping #
+_HEX_COLOR_RE = re.compile(r"^[0-9a-fA-F]{6}$")
+
+
+def _safe_hex_color(raw: str) -> str:
+    """Return the 6-digit hex portion of *raw* if it looks like a hex color, else empty string."""
+    if not raw:
+        return ""
+    stripped = raw.strip().lstrip("#")
+    return stripped if _HEX_COLOR_RE.match(stripped) else ""
 
 
 def _output_tails(
@@ -291,8 +303,8 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Dict[str, Any]:
         "author": _tex_escape(params.author) if params.author else "",
         "prepared_for_label": _tex_escape(params.prepared_for_label),
         "presented_by_label": _tex_escape(params.presented_by_label),
-        "brand_primary_color": params.brand_primary_color.strip().lstrip("#"),
-        "brand_accent_color": params.brand_accent_color.strip().lstrip("#"),
+        "brand_primary_color": _safe_hex_color(params.brand_primary_color),
+        "brand_accent_color": _safe_hex_color(params.brand_accent_color),
         "brand_logo_path": _tex_escape(logo_abs_path) if logo_abs_path else "",
         "company_letterhead": (
             _tex_escape(params.company_letterhead) if params.company_letterhead else ""
@@ -354,6 +366,7 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Dict[str, Any]:
                             latex_cmd,
                             "-interaction=nonstopmode",
                             "-halt-on-error",
+                            "-no-shell-escape",
                             f"-output-directory={work_dir}",
                             str(tex_path),
                         ],

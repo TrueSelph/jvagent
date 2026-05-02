@@ -4,6 +4,7 @@ This module provides rate limiting by IP and agent_id, as well as
 utterance length validation for anonymous requests.
 """
 
+import asyncio
 import logging
 import time
 from collections import defaultdict
@@ -17,6 +18,11 @@ class InteractRateLimiter:
 
     Implements sliding window rate limiting by IP address and agent_id combination.
     Also provides utterance length validation.
+
+    Uses ``asyncio.Lock`` to guard the in-memory timestamp store so concurrent
+    requests within a single process are serialised.  Multi-process deployments
+    need a shared store (e.g. Redis) — this implementation is adequate for
+    single-worker uvicorn or Lambda with at-most-one concurrent invocation.
     """
 
     def __init__(
@@ -32,11 +38,10 @@ class InteractRateLimiter:
         """
         self.rate_limit_per_minute = rate_limit_per_minute
         self.max_utterance_length = max_utterance_length
-        # Store request timestamps: key -> list of timestamps
         self._request_timestamps: dict[str, list[float]] = defaultdict(list)
-        self._lock = None  # Will be set if threading is needed
+        self._lock = asyncio.Lock()
 
-    def check_rate_limit(self, ip: str, agent_id: str) -> bool:
+    async def check_rate_limit(self, ip: str, agent_id: str) -> bool:
         """Check if request is within rate limit.
 
         Args:
@@ -47,31 +52,29 @@ class InteractRateLimiter:
             True if within rate limit, False if exceeded
         """
         if not ip:
-            # If no IP, allow the request (shouldn't happen in practice)
             logger.warning("Rate limit check called without IP address")
             return True
 
         key = f"{ip}:{agent_id}"
         now = time.time()
-        window_start = now - 60.0  # 60 second window
+        window_start = now - 60.0
 
-        # Clean old timestamps outside the window
-        if key in self._request_timestamps:
-            self._request_timestamps[key] = [
-                ts for ts in self._request_timestamps[key] if ts > window_start
-            ]
+        async with self._lock:
+            if key in self._request_timestamps:
+                self._request_timestamps[key] = [
+                    ts for ts in self._request_timestamps[key] if ts > window_start
+                ]
 
-        # Check if limit exceeded
-        current_count = len(self._request_timestamps[key])
-        if current_count >= self.rate_limit_per_minute:
-            logger.warning(
-                f"Rate limit exceeded for {key}: {current_count}/{self.rate_limit_per_minute} requests"
-            )
-            return False
+            current_count = len(self._request_timestamps[key])
+            if current_count >= self.rate_limit_per_minute:
+                logger.warning(
+                    f"Rate limit exceeded for {key}: {current_count}/{self.rate_limit_per_minute} requests"
+                )
+                return False
 
-        return True
+            return True
 
-    def record_request(self, ip: str, agent_id: str) -> None:
+    async def record_request(self, ip: str, agent_id: str) -> None:
         """Record a request for rate limiting.
 
         Args:
@@ -83,27 +86,26 @@ class InteractRateLimiter:
 
         key = f"{ip}:{agent_id}"
         now = time.time()
-        self._request_timestamps[key].append(now)
 
-        # Periodic cleanup of old entries (every 100 requests to avoid overhead)
-        if len(self._request_timestamps) > 1000:
-            self._cleanup_old_entries()
+        async with self._lock:
+            self._request_timestamps[key].append(now)
+
+            if len(self._request_timestamps) > 1000:
+                self._cleanup_old_entries()
 
     def _cleanup_old_entries(self) -> None:
-        """Clean up old entries from the rate limit cache."""
+        """Clean up old entries from the rate limit cache. Caller must hold ``_lock``."""
         now = time.time()
         window_start = now - 60.0
         keys_to_remove = []
 
         for key, timestamps in self._request_timestamps.items():
-            # Remove old timestamps
             filtered = [ts for ts in timestamps if ts > window_start]
             if filtered:
                 self._request_timestamps[key] = filtered
             else:
                 keys_to_remove.append(key)
 
-        # Remove empty entries
         for key in keys_to_remove:
             del self._request_timestamps[key]
 

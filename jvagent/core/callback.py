@@ -1,5 +1,7 @@
+import ipaddress
 import logging
 import os
+import socket
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
@@ -7,6 +9,42 @@ import httpx
 from jvspatial import create_task
 
 logger = logging.getLogger(__name__)
+
+# Reserved IP blocks that outbound webhooks must not target
+_SSRF_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
+
+
+def _validate_webhook_url(webhook_url: str) -> None:
+    """Raise ValueError if *webhook_url* resolves to a private or reserved IP address."""
+    parsed = urlparse(webhook_url)
+    hostname = (parsed.hostname or "").strip()
+    if not hostname:
+        raise ValueError(f"Webhook URL has no resolvable host: {webhook_url}")
+    try:
+        addrs = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    except socket.gaierror as e:
+        raise ValueError(f"Webhook URL hostname resolution failed: {hostname}: {e}")
+    for _, _, _, _, sockaddr in addrs:
+        ip_str = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        for net in _SSRF_BLOCKED_NETWORKS:
+            if ip in net:
+                raise ValueError(
+                    f"Webhook URL resolves to blocked address range "
+                    f"({ip} in {net}): {webhook_url}"
+                )
 
 
 def _safe_webhook_target(webhook_url: str) -> str:
@@ -99,6 +137,7 @@ async def trigger_task_created_callback(
                     f"(Session: {conversation.session_id}) to {redacted_target}. "
                     f"Session-Targeted Dispatch URL: {redacted_dispatch_target}"
                 )
+                _validate_webhook_url(webhook_url)
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     response = await client.post(webhook_url, json=payload)
                     response.raise_for_status()
@@ -187,6 +226,7 @@ async def _trigger_task_event_callback(
                     conversation.session_id,
                     redacted_target,
                 )
+                _validate_webhook_url(webhook_url)
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     response = await client.post(webhook_url, json=payload)
                     response.raise_for_status()
