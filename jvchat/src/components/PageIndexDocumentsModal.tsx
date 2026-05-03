@@ -91,6 +91,7 @@ function buildGoogleDriveSyncDefaultBody(
     ocr: true,
     docling_ocr_engine: 'rapidocr',
     google_drive_folders: folders,
+    use_jvforge: false,
   }
 }
 
@@ -290,7 +291,8 @@ export function PageIndexDocumentsModal({
   const [convertToMarkdown, setConvertToMarkdown] = useState(true)
   const [doclingOcrEngine, setDoclingOcrEngine] =
     useState<DoclingOcrEngine>('rapidocr')
-  const [normalizeBoldHeadings, setNormalizeBoldHeadings] = useState(true)
+  const [normalizeBoldHeadings, setNormalizeBoldHeadings] = useState(false)
+  const [useJvforge, setUseJvforge] = useState(false)
   const [purgeOnImport, setPurgeOnImport] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importText, setImportText] = useState('')
@@ -317,6 +319,7 @@ export function PageIndexDocumentsModal({
   const [driveIngestOcrEngine, setDriveIngestOcrEngine] =
     useState<DoclingOcrEngine>('rapidocr')
   const [driveIngestNormalizeBold, setDriveIngestNormalizeBold] = useState(false)
+  const [driveIngestUseJvforge, setDriveIngestUseJvforge] = useState(false)
   const [driveRemoveDeleted, setDriveRemoveDeleted] = useState(false)
   const [driveSkipExistingDocuments, setDriveSkipExistingDocuments] = useState(true)
   const [driveEditStatus, setDriveEditStatus] =
@@ -718,6 +721,7 @@ export function PageIndexDocumentsModal({
         ocr: doclingOcrEngine !== 'none',
         doclingOcrEngine,
         normalizeBoldHeadings,
+        useJvforge,
         emergency: emergencyMode,
       }
       if (remoteUrl) {
@@ -1204,6 +1208,7 @@ export function PageIndexDocumentsModal({
         docling_ocr_engine: driveIngestOcrEngine,
         normalize_bold_headings: driveIngestNormalizeBold,
         skip_existing_documents: driveSkipExistingDocuments,
+        use_jvforge: driveIngestUseJvforge,
       })
       await refreshGoogleDriveList()
     } catch (e: unknown) {
@@ -1232,6 +1237,7 @@ export function PageIndexDocumentsModal({
         docling_ocr_engine: driveIngestOcrEngine,
         normalize_bold_headings: driveIngestNormalizeBold,
         skip_existing_documents: driveSkipExistingDocuments,
+        use_jvforge: driveIngestUseJvforge,
       })
       await refreshGoogleDriveList()
     } catch (e: unknown) {
@@ -1315,6 +1321,7 @@ export function PageIndexDocumentsModal({
         docling_ocr_engine: driveIngestOcrEngine,
         normalize_bold_headings: driveIngestNormalizeBold,
         skip_existing_documents: driveSkipExistingDocuments,
+        use_jvforge: driveIngestUseJvforge,
       })
       await refreshGoogleDriveList()
       await refreshPageIndexData()
@@ -1784,18 +1791,19 @@ export function PageIndexDocumentsModal({
                     </div>
 
                     <div className="flex flex-wrap gap-4 items-center">
-                      <label className="flex items-center gap-2 cursor-pointer">
+                      <label className={`flex items-center gap-2 ${!driveIngestUseJvforge ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}>
                         <input
                           type="checkbox"
                           checked={driveIngestConvertMd}
                           onChange={(e) => setDriveIngestConvertMd(e.target.checked)}
+                          disabled={!driveIngestUseJvforge}
                           className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600"
                         />
                         <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                           Convert to Markdown
                         </span>
                       </label>
-                      <div className="flex items-center gap-2">
+                      <div className={`flex items-center gap-2 ${!driveIngestUseJvforge ? 'opacity-40' : ''}`}>
                         <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                           Docling OCR
                         </span>
@@ -1804,7 +1812,7 @@ export function PageIndexDocumentsModal({
                           onChange={(e) =>
                             setDriveIngestOcrEngine(e.target.value as DoclingOcrEngine)
                           }
-                          disabled={!driveIngestConvertMd}
+                          disabled={!driveIngestConvertMd || !driveIngestUseJvforge}
                           className={`rounded-md text-sm py-1.5 px-2 border disabled:opacity-50 ${
                             dark
                               ? 'border-zinc-600 bg-zinc-800 text-zinc-100'
@@ -1815,15 +1823,27 @@ export function PageIndexDocumentsModal({
                           <option value="rapidocr">RapidOCR</option>
                         </select>
                       </div>
-                      <label className="flex items-center gap-2 cursor-pointer">
+                      <label className={`flex items-center gap-2 ${!driveIngestUseJvforge ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}>
                         <input
                           type="checkbox"
                           checked={driveIngestNormalizeBold}
                           onChange={(e) => setDriveIngestNormalizeBold(e.target.checked)}
+                          disabled={!driveIngestUseJvforge}
                           className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600"
                         />
                         <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                           Bold → headings (sparse ##)
+                        </span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={driveIngestUseJvforge}
+                          onChange={(e) => setDriveIngestUseJvforge(e.target.checked)}
+                          className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600"
+                        />
+                        <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
+                          Process via jvforge (requires JVAGENT_JVFORGE_BASE_URL)
                         </span>
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
@@ -2797,21 +2817,18 @@ export function PageIndexDocumentsModal({
 
         {activeTab === 'documents' && (
           <div className="space-y-6">
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => void refreshPageIndexData()}
-                disabled={loading || queueLoading}
-                className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
-                  dark
-                    ? 'border-zinc-600 bg-zinc-800 text-zinc-200 hover:bg-zinc-700 disabled:opacity-50'
-                    : 'border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-50'
-                }`}
-              >
-                {loading || queueLoading ? 'Refreshing…' : 'Refresh'}
-              </button>
-            </div>
             <div className="space-y-3">
+              <label className="flex items-center gap-2 cursor-pointer mb-4">
+                <input
+                  type="checkbox"
+                  checked={useJvforge}
+                  onChange={(e) => setUseJvforge(e.target.checked)}
+                  className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600 focus:ring-zinc-500"
+                />
+                <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
+                  Process via jvforge (requires JVAGENT_JVFORGE_BASE_URL; leave off for native ingest)
+                </span>
+              </label>
               <h3 className={`text-sm font-medium ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                 Upload document
               </h3>
@@ -2914,48 +2931,6 @@ export function PageIndexDocumentsModal({
                   Generate node summaries (recommended for tree search)
                 </span>
               </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={convertToMarkdown}
-                  onChange={(e) => setConvertToMarkdown(e.target.checked)}
-                  className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600 focus:ring-zinc-500"
-                />
-                <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
-                  Convert PDF with Docling to Markdown first (requires server jvagent[pageindex])
-                </span>
-              </label>
-              <div className="flex items-center gap-2">
-                <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
-                  Docling OCR
-                </span>
-                <select
-                  value={doclingOcrEngine}
-                  onChange={(e) =>
-                    setDoclingOcrEngine(e.target.value as DoclingOcrEngine)
-                  }
-                  disabled={!convertToMarkdown}
-                  className={`rounded-md text-sm py-1.5 px-2 border disabled:opacity-50 ${
-                    dark
-                      ? 'border-zinc-600 bg-zinc-800 text-zinc-100'
-                      : 'border-zinc-300 bg-white text-zinc-900'
-                  }`}
-                >
-                  <option value="none">None</option>
-                  <option value="rapidocr">RapidOCR</option>
-                </select>
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={normalizeBoldHeadings}
-                  onChange={(e) => setNormalizeBoldHeadings(e.target.checked)}
-                  className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600 focus:ring-zinc-500"
-                />
-                <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
-                  Normalize bold lines to headings (sparse Markdown with fewer than five ##)
-                </span>
-              </label>
               <div className="w-full">
                 <JsonCodeEditor
                   value={metadataJson}
@@ -2984,8 +2959,55 @@ export function PageIndexDocumentsModal({
               {uploadError && (
                 <p className="text-sm text-red-600 dark:text-red-400">{uploadError}</p>
               )}
+            </div>
 
-              {/* Emergency mode checkbox */}
+            {/* jvforge Settings */}
+            <fieldset className={`space-y-3 border rounded-lg p-3 ${!useJvforge ? 'opacity-40 pointer-events-none' : dark ? 'border-zinc-700' : 'border-zinc-300'}`}>
+              <legend className={`text-sm font-medium px-1 ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
+                jvforge
+              </legend>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={convertToMarkdown}
+                  onChange={(e) => setConvertToMarkdown(e.target.checked)}
+                  className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600 focus:ring-zinc-500"
+                />
+                <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
+                  Convert PDF with Docling to Markdown first
+                </span>
+              </label>
+              <div className={`flex items-center gap-2 ${!convertToMarkdown ? 'opacity-40' : ''}`}>
+                <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
+                  Docling OCR
+                </span>
+                <select
+                  value={doclingOcrEngine}
+                  onChange={(e) =>
+                    setDoclingOcrEngine(e.target.value as DoclingOcrEngine)
+                  }
+                  disabled={!convertToMarkdown}
+                  className={`rounded-md text-sm py-1.5 px-2 border disabled:opacity-50 ${
+                    dark
+                      ? 'border-zinc-600 bg-zinc-800 text-zinc-100'
+                      : 'border-zinc-300 bg-white text-zinc-900'
+                  }`}
+                >
+                  <option value="none">None</option>
+                  <option value="rapidocr">RapidOCR</option>
+                </select>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={normalizeBoldHeadings}
+                  onChange={(e) => setNormalizeBoldHeadings(e.target.checked)}
+                  className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600 focus:ring-zinc-500"
+                />
+                <span className={`text-sm ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
+                  Normalize bold lines to headings (jvforge only)
+                </span>
+              </label>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -2997,13 +3019,27 @@ export function PageIndexDocumentsModal({
                   ⚡ Emergency (priority processing - moves to front of queue)
                 </span>
               </label>
-            </div>
+            </fieldset>
 
-            {/* Processing Queue — use Refresh above (queue + indexed documents) */}
-            <div className="space-y-3">
-              <h3 className={`text-sm font-medium ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
-                📋 Processing Queue
-              </h3>
+            {/* Processing Queue — jvforge only */}
+            <div className={`space-y-3 ${!useJvforge ? 'opacity-40 pointer-events-none' : ''}`}>
+              <div className="flex items-center justify-between">
+                <h3 className={`text-sm font-medium ${dark ? 'text-zinc-300' : 'text-zinc-700'}`}>
+                  📋 Processing Queue
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => void refreshPageIndexData()}
+                  disabled={loading || queueLoading}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                    dark
+                      ? 'border-zinc-600 bg-zinc-800 text-zinc-200 hover:bg-zinc-700 disabled:opacity-50'
+                      : 'border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-50'
+                  }`}
+                >
+                  {loading || queueLoading ? 'Refreshing…' : 'Refresh'}
+                </button>
+              </div>
               {queueLoading && queueJobs.length === 0 && (
                 <p className={`text-sm ${dark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                   Loading queue…

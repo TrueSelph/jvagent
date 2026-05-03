@@ -34,6 +34,7 @@ from jvagent.action.pageindex.pageindex_action import (
 from jvagent.core.public_url import get_public_base_url
 from jvagent.env import get_jvagent_jvforge_base_url
 
+from ..jvforge_routing import resolve_effective_jvforge_base
 from .drive_ingest_filter import (
     filter_drive_doc_queues_for_ingestible,
     is_drive_file_pageindex_ingestible,
@@ -247,6 +248,7 @@ class DriveIngestConfig:
     docling_ocr_engine: Optional[str] = None
     normalize_bold_headings: bool = False
     skip_existing_documents: bool = True
+    use_jvforge: Optional[bool] = None
 
 
 # Per-folder locks to prevent duplicate GoogleDriveDocuments on concurrent requests
@@ -476,12 +478,15 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
     ) -> Dict[str, Any]:
         file_bytes = await google_drive_action.get_media(file_id=file_id)
         forge_base = (get_jvagent_jvforge_base_url() or "").strip()
-        if cfg.normalize_bold_headings and not forge_base:
+        effective_forge = resolve_effective_jvforge_base(
+            forge_base, use_jvforge=cfg.use_jvforge
+        )
+        if cfg.normalize_bold_headings and not effective_forge:
             raise ValidationError(
                 "normalize_bold_headings requires JVAGENT_JVFORGE_BASE_URL "
                 "(bold-line normalization runs on jvforge only)."
             )
-        if forge_base:
+        if effective_forge:
             summary_for_forge = await _if_add_node_summary_for_jvforge(
                 cfg.agent_id, cfg.node_summary
             )
@@ -491,7 +496,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             )
             if async_mode:
                 q = await assimilate_via_jvforge_async(
-                    base_url=forge_base,
+                    base_url=effective_forge,
                     agent_id=cfg.agent_id,
                     filename=doc_name,
                     content=file_bytes,
@@ -515,7 +520,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     "jvforge_queue_status": q.get("status"),
                 }
             await assimilate_via_jvforge(
-                base_url=forge_base,
+                base_url=effective_forge,
                 agent_id=cfg.agent_id,
                 filename=doc_name,
                 content=file_bytes,
@@ -740,6 +745,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         docling_ocr_engine: Optional[str] = None,
         normalize_bold_headings: bool = False,
         skip_existing_documents: bool = True,
+        use_jvforge: Optional[bool] = None,
     ) -> dict:
         """Recursively extract and ingest PDF documents from Google Drive folders.
 
@@ -804,6 +810,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 docling_ocr_engine=docling_ocr_engine,
                 normalize_bold_headings=normalize_bold_headings,
                 skip_existing_documents=skip_existing_documents,
+                use_jvforge=use_jvforge,
             )
 
     async def _phase_sync_google_drive_folders(
@@ -1111,11 +1118,11 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         docling_ocr_engine: Optional[str] = None,
         normalize_bold_headings: bool = False,
         skip_existing_documents: bool = True,
+        use_jvforge: Optional[bool] = None,
     ) -> dict:
         """Inner ingestion logic (called with ingestion lock held)."""
         ocr_eff, docling_eff = _drive_resolve_docling_ocr(docling_ocr_engine, ocr)
-        if get_jvagent_jvforge_base_url():
-            initialize_pageindex_database(app_id=await _get_app_id_from_node())
+        initialize_pageindex_database(app_id=await _get_app_id_from_node())
         logger.info(
             "PageIndex Google Drive Sync: starting ingestion for %d folder(s)",
             len(google_drive_folders),
@@ -1145,6 +1152,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             docling_ocr_engine=docling_eff,
             normalize_bold_headings=normalize_bold_headings,
             skip_existing_documents=skip_existing_documents,
+            use_jvforge=use_jvforge,
         )
 
         await self._phase_sync_google_drive_folders(

@@ -22,6 +22,7 @@ from jvspatial.exceptions import DatabaseError
 
 from jvagent.action.base import Action
 from jvagent.core.public_url import get_public_base_url
+from jvagent.env import get_jvagent_jvforge_base_url
 
 from .. import llm_bridge
 from ..core import utils as pageindex_core_utils
@@ -227,6 +228,12 @@ class PageIndexAction(Action):
 
         return {"text": text or "", "model": model}
 
+    async def _ensure_jvforge_llm_webhook_if_configured(self) -> None:
+        """Provision inbound LLM webhook only when jvforge is configured (jvforge node-summary callback)."""
+        if not (get_jvagent_jvforge_base_url() or "").strip():
+            return
+        await self.get_webhook_url()
+
     async def on_register(self) -> None:
         await super().on_register()
         from .runtime_config import get_ingestion_config, push_ingestion_config
@@ -237,7 +244,7 @@ class PageIndexAction(Action):
         app = await self.get_app()
         app_id = getattr(app, "app_id", None) if app else None
         initialize_pageindex_database(app_id=app_id)
-        await self.get_webhook_url()
+        await self._ensure_jvforge_llm_webhook_if_configured()
 
     async def on_reload(self) -> None:
         await super().on_reload()
@@ -249,7 +256,7 @@ class PageIndexAction(Action):
         app = await self.get_app()
         app_id = getattr(app, "app_id", None) if app else None
         initialize_pageindex_database(app_id=app_id)
-        await self.get_webhook_url()
+        await self._ensure_jvforge_llm_webhook_if_configured()
 
     def resolve_collection(self) -> str:
         """Resolve the PageIndex collection name (public API for sibling actions)."""

@@ -150,6 +150,25 @@ export function useStreaming(agentId: string, sessionId?: string) {
 
   const sessionIdRef = useRef<string | undefined>(sessionId)
   const messagesRef = useRef<Message[]>(messages)
+  /** Only set during loadMessages — never during clearMessages (so first-turn saves are not blocked). */
+  const isHydratingFromStorageRef = useRef(false)
+  const prevMessagesRef = useRef<Message[]>([])
+  const prevSessionIdRef = useRef<string | undefined>(sessionId)
+  const isSavingRef = useRef(false)
+  /**
+   * When true, the next sessionId transition will preserve in-memory messages
+   * instead of clearing them. Set by the parent (ChatInterface) before triggering
+   * a session change that should keep the live transcript (e.g. server assigns
+   * a session_id during the first message stream on "new chat").
+   * Auto-resets to false after the transition is processed.
+   */
+  const preserveNextTransitionRef = useRef(false)
+  /**
+   * Set to true during a session transition so the autosave effect skips saving
+   * in the same commit phase (prevents writing A's stale messages to B's
+   * localStorage key when the session ID just changed).
+   */
+  const transitionInProgressRef = useRef(false)
 
   // Keep messagesRef in sync with messages
   useEffect(() => {
@@ -163,13 +182,14 @@ export function useStreaming(agentId: string, sessionId?: string) {
 
   useEffect(() => {
     if (sessionId !== sessionIdRef.current) {
-      const oldSessionId = sessionIdRef.current
+      transitionInProgressRef.current = true
 
+      const oldSessionId = sessionIdRef.current
 
       // CRITICAL: Save current messages to OLD session BEFORE updating refs
       // This ensures messages are saved to the correct session and prevents loss
       const currentMessages = messagesRef.current
-      if (oldSessionId && currentMessages.length > 0 && !isLoadingRef.current) {
+      if (oldSessionId && currentMessages.length > 0 && !isHydratingFromStorageRef.current) {
         // Create a deep copy to ensure we save the exact state at this moment
         // This prevents any reference issues or duplication
         const messagesToSave = currentMessages.map(msg => ({ ...msg }))
@@ -180,12 +200,24 @@ export function useStreaming(agentId: string, sessionId?: string) {
       sessionIdRef.current = sessionId
       prevSessionIdRef.current = sessionId
 
-      // First session id after "new chat" (undefined → id): keep in-flight messages; do not clear.
-      const isInitialSessionBinding =
-        oldSessionId === undefined && sessionId !== undefined
+      // Determine whether to preserve in-flight messages for this transition.
+      // preserveNextTransitionRef is set by the parent (ChatInterface) BEFORE
+      // triggering the session change when the live transcript should be kept
+      // (e.g. the server assigns a session_id during the first message stream).
+      // For all other transitions (sidebar selection, new chat), messages are cleared
+      // and the parent is responsible for calling loadMessages() to restore from storage.
+      const shouldPreserve = preserveNextTransitionRef.current
+      preserveNextTransitionRef.current = false
 
-      if (!isInitialSessionBinding) {
-        // Clear messages when switching between real sessions or resetting to new chat
+      if (shouldPreserve) {
+        // Keep in-flight messages — just persist them under the new session key
+        if (sessionId && currentMessages.length > 0) {
+          const messagesToSave = currentMessages.map((msg) => ({ ...msg }))
+          saveMessages(sessionId, messagesToSave)
+          prevMessagesRef.current = messagesToSave
+        }
+      } else {
+        // Clear messages when switching between sessions or resetting to new chat
         setMessages([])
         prevMessagesRef.current = []
       }
@@ -704,8 +736,9 @@ export function useStreaming(agentId: string, sessionId?: string) {
                     saveMessages(oldSessionId, messagesToSave)
                   }
                 }
-                sessionIdRef.current = receivedSessionId
-                prevSessionIdRef.current = receivedSessionId
+                // Do not assign sessionIdRef here — it must stay aligned with the parent's
+                // sessionId prop only. Otherwise the prop-driven session effect sees a false
+                // transition (ref set while prop still undefined) and clears the transcript.
                 setCurrentSessionId(receivedSessionId)
               }
 
@@ -992,23 +1025,15 @@ export function useStreaming(agentId: string, sessionId?: string) {
   }, [])
 
   const clearMessages = useCallback(() => {
-    isLoadingRef.current = true // Prevent auto-save during clear
     setMessages([])
     setBranchSnapshots({})
     setBranchVersionIndex({})
     messageOrderRef.current = 0
     streamingMessageRef.current = ''
     interactionIdRef.current = null
-    // Clear previous messages ref to prevent stale saves
     prevMessagesRef.current = []
-    // Reset flag after clear completes
-    setTimeout(() => {
-      isLoadingRef.current = false
-    }, 50)
+    preserveNextTransitionRef.current = false
   }, [])
-
-  // Track if we're manually loading messages to prevent auto-save interference
-  const isLoadingRef = useRef(false)
 
   const loadMessages = useCallback((loadedMessages: Message[]) => {
     // CRITICAL: Only load messages if we're still on the same session
@@ -1020,7 +1045,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
     }
 
 
-    isLoadingRef.current = true
+    isHydratingFromStorageRef.current = true
 
     // Create a deep copy to prevent reference issues and ensure isolation
     const messagesToLoad = loadedMessages
@@ -1043,25 +1068,19 @@ export function useStreaming(agentId: string, sessionId?: string) {
     prevSessionIdRef.current = activeSessionId
     // Reset flag after a brief delay to allow state to settle
     setTimeout(() => {
-      isLoadingRef.current = false
+      isHydratingFromStorageRef.current = false
     }, 100)
   }, [])
 
   // Save messages whenever they change (for conversation persistence)
-  // But skip if we're in the middle of loading messages
-  // Use a ref to track previous messages to prevent unnecessary saves and loops
-  const prevMessagesRef = useRef<Message[]>([])
-  const prevSessionIdRef = useRef<string | undefined>(currentSessionId)
-  const isSavingRef = useRef(false)
-
   useEffect(() => {
     // Prevent saving if we're already in the middle of a save operation
     if (isSavingRef.current) {
       return
     }
 
-    // Don't save if we're loading messages
-    if (isLoadingRef.current) {
+    // Don't save while hydrating from localStorage (prevents clobbering stored history)
+    if (isHydratingFromStorageRef.current) {
       return
     }
 
@@ -1095,6 +1114,11 @@ export function useStreaming(agentId: string, sessionId?: string) {
         })
 
       if (messagesChanged) {
+        if (transitionInProgressRef.current) {
+          transitionInProgressRef.current = false
+          return
+        }
+
         isSavingRef.current = true
 
         // Create a deep copy of messages to save - this prevents reference issues
@@ -1116,12 +1140,18 @@ export function useStreaming(agentId: string, sessionId?: string) {
       // If messages are cleared but we have a session ID, update refs
       prevMessagesRef.current = []
       prevSessionIdRef.current = activeSessionId
+      transitionInProgressRef.current = false
     } else if (!activeSessionId) {
       // If no session ID, clear the refs
       prevMessagesRef.current = []
       prevSessionIdRef.current = undefined
+      transitionInProgressRef.current = false
     }
-  }, [messages])
+  }, [messages, sessionId])
+
+  const preserveNextTransition = useCallback(() => {
+    preserveNextTransitionRef.current = true
+  }, [])
 
   return {
     messages,
@@ -1136,6 +1166,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
     selectBranchVersion,
     branchSnapshots,
     branchVersionIndex,
+    preserveNextTransition,
   }
 }
 

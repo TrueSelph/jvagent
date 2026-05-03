@@ -12,6 +12,7 @@ pytest.importorskip("PyPDF2")
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+from jvspatial.api.exceptions import ValidationError
 from jvspatial.core.context import get_default_context, set_default_context
 from jvspatial.db import get_database_manager, unregister_database
 
@@ -38,7 +39,11 @@ from jvagent.action.pageindex.documents import (
     list_document_chunks,
     list_documents,
 )
-from jvagent.action.pageindex.endpoints import _do_assimilate
+from jvagent.action.pageindex.endpoints import (
+    _do_assimilate,
+    get_documents_queue_endpoint,
+)
+from jvagent.action.pageindex.jvforge_routing import resolve_effective_jvforge_base
 from jvagent.action.pageindex.md_tree_enriched import (
     annotate_content_type_and_enabled,
     assign_hierarchy_breadcrumbs,
@@ -1025,3 +1030,56 @@ def test_docling_convert_requires_installed_package(tmp_path):
         pytest.skip(f"docling convert failed in this environment: {e}")
     assert isinstance(md, str)
     assert len(md) >= 0
+
+
+def test_resolve_effective_jvforge_base_tri_state():
+    assert resolve_effective_jvforge_base("", use_jvforge=None) == ""
+    assert resolve_effective_jvforge_base("https://f", use_jvforge=None) == "https://f"
+    assert resolve_effective_jvforge_base("https://f", use_jvforge=False) == ""
+    assert resolve_effective_jvforge_base("https://f", use_jvforge=True) == "https://f"
+
+
+def test_resolve_effective_jvforge_base_requires_url_when_yes():
+    with pytest.raises(ValidationError):
+        resolve_effective_jvforge_base("", use_jvforge=True)
+
+
+@pytest.mark.asyncio
+async def test_get_documents_queue_empty_without_jvforge():
+    """Native-only installs have no remote queue; endpoint returns empty lists."""
+    with patch(
+        "jvagent.action.pageindex.endpoints.get_jvagent_jvforge_base_url",
+        return_value=None,
+    ):
+        out = await get_documents_queue_endpoint("any-agent-id")
+    assert out == {"jobs": [], "total": 0}
+
+
+@pytest.mark.asyncio
+async def test_ensure_jvforge_llm_webhook_skipped_when_jvforge_url_unset():
+    """Do not call get_webhook_url when JVAGENT_JVFORGE_BASE_URL is unset."""
+    action = object.__new__(PageIndexAction)
+    with patch.object(
+        PageIndexAction, "get_webhook_url", new_callable=AsyncMock
+    ) as mock_wh:
+        with patch(
+            "jvagent.action.pageindex.pageindex_action.pageindex_action.get_jvagent_jvforge_base_url",
+            return_value=None,
+        ):
+            await PageIndexAction._ensure_jvforge_llm_webhook_if_configured(action)
+        mock_wh.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_ensure_jvforge_llm_webhook_calls_when_jvforge_url_set():
+    """Provision webhook when jvforge base URL is configured."""
+    action = object.__new__(PageIndexAction)
+    with patch.object(
+        PageIndexAction, "get_webhook_url", new_callable=AsyncMock
+    ) as mock_wh:
+        with patch(
+            "jvagent.action.pageindex.pageindex_action.pageindex_action.get_jvagent_jvforge_base_url",
+            return_value="https://forge.example",
+        ):
+            await PageIndexAction._ensure_jvforge_llm_webhook_if_configured(action)
+        mock_wh.assert_awaited_once()

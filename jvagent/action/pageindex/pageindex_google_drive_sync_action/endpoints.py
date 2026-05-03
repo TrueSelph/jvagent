@@ -39,6 +39,23 @@ def _payload_bool(payload: Dict[str, Any], key: str, *, default: bool) -> bool:
     return default
 
 
+def _payload_optional_bool(payload: Dict[str, Any], key: str) -> Optional[bool]:
+    """Parse JSON/body bool; missing key -> None (caller default)."""
+    if key not in payload:
+        return None
+    v = payload[key]
+    if isinstance(v, bool):
+        return v
+    if v is None:
+        return None
+    s = str(v).lower().strip()
+    if s in ("true", "1", "yes"):
+        return True
+    if s in ("false", "0", "no"):
+        return False
+    return None
+
+
 @endpoint(
     "/actions/{action_id}/ingest_google_documents",
     methods=["POST"],
@@ -101,6 +118,13 @@ async def ingest_google_documents_endpoint(
             "redundant .md strip, or same leading name segment before the first dot)"
         ),
     ),
+    use_jvforge: Optional[bool] = Field(
+        default=None,
+        description=(
+            "When True: require jvforge (JVAGENT_JVFORGE_BASE_URL). When False: ingest "
+            "natively on this server even if jvforge URL is set. Omit for env-driven behavior."
+        ),
+    ),
 ) -> Dict[str, Any]:
     """Recursively extract and ingest PDF documents from Google Drive folders.
 
@@ -146,6 +170,7 @@ async def ingest_google_documents_endpoint(
             docling_ocr_engine=docling_ocr_engine,
             normalize_bold_headings=normalize_bold_headings,
             skip_existing_documents=skip_existing_documents,
+            use_jvforge=use_jvforge,
         )
 
         response = result.get("message") or "No pending documents to ingest"
@@ -586,6 +611,7 @@ async def pageindex_google_drive_sync_action_interact(
         skip_existing_flag = _payload_bool(
             request_data, "skip_existing_documents", default=True
         )
+        use_jvforge_opt = _payload_optional_bool(request_data, "use_jvforge")
 
         ingest_kw: Dict[str, Any] = {
             "google_drive_folders": folders,
@@ -597,6 +623,8 @@ async def pageindex_google_drive_sync_action_interact(
             "normalize_bold_headings": normalize_bold_flag,
             "skip_existing_documents": skip_existing_flag,
         }
+        if use_jvforge_opt is not None:
+            ingest_kw["use_jvforge"] = use_jvforge_opt
 
         if is_serverless_mode():
             logger.info(

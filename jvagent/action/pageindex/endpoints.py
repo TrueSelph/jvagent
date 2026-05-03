@@ -68,6 +68,7 @@ from .documents import (
     update_document_chunk,
 )
 from .jvforge_assimilate import assimilate_via_jvforge, assimilate_via_jvforge_async
+from .jvforge_routing import resolve_effective_jvforge_base
 from .pageindex_action import (
     PageIndexAction,
     ensure_ingestion_config_for_agent,
@@ -653,12 +654,14 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
     Optional[str],
     Optional[str],
     Optional[str],
+    Optional[str],
 ]:
     """Parse multipart form-data from raw body without decoding file content.
 
     Returns (file_content, filename, doc_name, model, if_add_node_summary,
              collection_name, metadata, doc_description, doc_url,
-             convert_to_markdown, ocr, docling_ocr_engine, normalize_bold_headings, file_url).
+             convert_to_markdown, ocr, docling_ocr_engine, normalize_bold_headings, file_url,
+             use_jvforge).
     Uses latin-1 for headers to avoid UTF-8 decode errors on non-ASCII filenames or field values.
     """
     content_type_bytes = (
@@ -687,6 +690,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
     docling_ocr_engine: Optional[str] = None
     normalize_bold_headings: Optional[str] = None
     file_url: Optional[str] = None
+    use_jvforge: Optional[str] = None
 
     def _safe_str(b: bytes) -> str:
         try:
@@ -695,7 +699,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
             return b.decode("latin-1")
 
     def on_field(field) -> None:
-        nonlocal doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description, doc_url, convert_to_markdown, ocr, docling_ocr_engine, normalize_bold_headings, file_url
+        nonlocal doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description, doc_url, convert_to_markdown, ocr, docling_ocr_engine, normalize_bold_headings, file_url, use_jvforge
         name = _safe_str(field.field_name) if field.field_name else ""
         val = field.value
         value = _safe_str(val) if val is not None else ""
@@ -723,6 +727,8 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
             normalize_bold_headings = value or None
         elif name == "file_url":
             file_url = value or None
+        elif name == "use_jvforge":
+            use_jvforge = value or None
 
     def on_file(f) -> None:
         nonlocal file_content, filename
@@ -759,6 +765,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
         docling_ocr_engine,
         normalize_bold_headings,
         file_url,
+        use_jvforge,
     )
 
 
@@ -893,6 +900,7 @@ async def ingest_document_endpoint(
     | ocr | string | No | "yes" or "no" – enable OCR when using Docling on PDF (default: no). Ignored when ``docling_ocr_engine`` is set. |
     | docling_ocr_engine | string | No | ``none`` or ``rapidocr`` – RapidOCR (ONNX) on jvforge / local Docling when ``convert_to_markdown`` is on. Legacy names map to ``rapidocr``. When set, overrides ``ocr`` yes/no. |
     | normalize_bold_headings | string | No | "yes" or "no" — sparse bold→``##`` normalization on **jvforge** only; requires ``JVAGENT_JVFORGE_BASE_URL`` (validation error if ``yes`` without it). Default: no |
+    | use_jvforge | string | No | "yes" or "no" — when "no", ingest on this server even if ``JVAGENT_JVFORGE_BASE_URL`` is set. When "yes", require jvforge URL. Omit for legacy behavior (use server env only). |
     | metadata | string | No | JSON object for tagging, e.g. `{"topic": "finance", "year": 2024}` |
 
     **Response:** `doc_name`, `root_id`, `doc_description`, `chunks` (chunk count when the graph
@@ -901,6 +909,11 @@ async def ingest_document_endpoint(
     null, and ``chunks`` is 0 until the webhook finishes importing the graph.
 
     Documents are stored in the agent's collection (collection = `agent_id` from path).
+
+    **Default (native) processing:** When ``JVAGENT_JVFORGE_BASE_URL`` is unset, this server
+    always performs download (for ``file_url``), normalization, and graph build locally—the
+    same path as multipart file uploads. jvforge is optional and only changes where heavy
+    work runs when the URL is set.
 
     When ``JVAGENT_JVFORGE_BASE_URL`` is set, ingestion is delegated to that jvforge service
     (``POST /v1/process`` or async ``POST /v1/jobs``). ``llm_webhook_url`` is taken from
@@ -934,6 +947,7 @@ async def ingest_document_endpoint(
         docling_ocr_engine_raw,
         normalize_bold_headings_raw,
         file_url_raw,
+        use_jvforge_raw,
     ) = _parse_multipart_safe(body, content_type)
     collection_name = collection_name or agent_id
     metadata = _parse_metadata(metadata_raw)
@@ -958,6 +972,10 @@ async def ingest_document_endpoint(
         raise ValidationError("Provide a file upload or file_url")
 
     forge_base = (get_jvagent_jvforge_base_url() or "").strip()
+    use_jvforge_opt = _form_yes_no_optional(use_jvforge_raw)
+    effective_forge = resolve_effective_jvforge_base(
+        forge_base, use_jvforge=use_jvforge_opt
+    )
 
     staged_path: Optional[str] = None
     try:
@@ -1007,7 +1025,7 @@ async def ingest_document_endpoint(
                 "chunks": int((pick or {}).get("chunks") or 0),
             }
 
-        if file_url and forge_base:
+        if file_url and effective_forge:
             doc_url_effective = (doc_url or "").strip() or file_url
             effective_doc_name = (doc_name or "").strip()
             async_mode = (
@@ -1021,7 +1039,7 @@ async def ingest_document_endpoint(
 
                 if async_mode:
                     result = await assimilate_via_jvforge_async(
-                        base_url=forge_base,
+                        base_url=effective_forge,
                         agent_id=agent_id,
                         doc_name=effective_doc_name,
                         model=model,
@@ -1051,7 +1069,7 @@ async def ingest_document_endpoint(
                         "chunks": 0,
                     }
                 result = await assimilate_via_jvforge(
-                    base_url=forge_base,
+                    base_url=effective_forge,
                     agent_id=agent_id,
                     doc_name=effective_doc_name,
                     model=model,
@@ -1134,7 +1152,7 @@ async def ingest_document_endpoint(
 
         effective_doc_name = doc_name or filename
 
-        if normalize_bold_flag and not forge_base:
+        if normalize_bold_flag and not effective_forge:
             raise ValidationError(
                 "normalize_bold_headings=yes requires JVAGENT_JVFORGE_BASE_URL "
                 "(bold-line normalization runs on jvforge only)."
@@ -1144,7 +1162,7 @@ async def ingest_document_endpoint(
         async_mode = os.environ.get("JVAGENT_JVFORGE_ASYNC", "false").lower() == "true"
 
         try:
-            if forge_base:
+            if effective_forge:
                 llm_wh_url = await _pageindex_llm_webhook_url_for_jvforge(agent_id)
                 summary_for_forge = if_add_node_summary
                 if summary_for_forge is None:
@@ -1153,7 +1171,7 @@ async def ingest_document_endpoint(
                 if async_mode:
                     # Async mode: queue job and return immediately
                     result = await assimilate_via_jvforge_async(
-                        base_url=forge_base,
+                        base_url=effective_forge,
                         agent_id=agent_id,
                         doc_name=effective_doc_name,
                         model=model,
@@ -1187,7 +1205,7 @@ async def ingest_document_endpoint(
                 else:
                     # Sync mode: wait for processing to complete
                     result = await assimilate_via_jvforge(
-                        base_url=forge_base,
+                        base_url=effective_forge,
                         agent_id=agent_id,
                         doc_name=effective_doc_name,
                         model=model,
@@ -2232,21 +2250,17 @@ async def get_documents_queue_endpoint(
 ) -> Dict[str, Any]:
     """Get the documents queue for the agent (proxied from jvforge ``/v1/queue``).
 
+    When jvforge is not configured, native ingest has no remote queue; returns empty ``jobs``.
+
     Args:
         agent_id: Agent id.
 
     Returns:
         The documents queue for the agent.
-
-    Raises:
-        ValidationError: If jvforge base URL is not configured.
     """
     forge_base = (get_jvagent_jvforge_base_url() or "").strip().rstrip("/")
     if not forge_base:
-        raise ValidationError(
-            message="JVAGENT_JVFORGE_BASE_URL is not configured",
-            details={"agent_id": agent_id},
-        )
+        return {"jobs": [], "total": 0}
     url = f"{forge_base}/v1/queue?agent_id={agent_id}"
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.get(url)
@@ -2266,7 +2280,10 @@ async def _jvforge_verify_queue_job_agent(agent_id: str, job_id: str) -> str:
     forge_base = (get_jvagent_jvforge_base_url() or "").strip().rstrip("/")
     if not forge_base:
         raise ValidationError(
-            message="JVAGENT_JVFORGE_BASE_URL is not configured",
+            message=(
+                "Remote processing queue is unavailable: set JVAGENT_JVFORGE_BASE_URL "
+                "to use jvforge queue operations (native ingest has no remote queue)."
+            ),
             details={"agent_id": agent_id},
         )
     safe_jid = quote(job_id, safe="")

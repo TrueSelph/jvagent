@@ -3,7 +3,6 @@ import {
   useEffect,
   useRef,
   useCallback,
-  startTransition,
   useMemo,
 } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
@@ -50,7 +49,6 @@ export function ChatInterface() {
     messages,
     sendMessage,
     stopStreaming,
-    clearMessages,
     loadMessages,
     isStreaming,
     error,
@@ -59,6 +57,7 @@ export function ChatInterface() {
     selectBranchVersion,
     branchSnapshots,
     branchVersionIndex,
+    preserveNextTransition,
   } = useStreaming(agentId || "", sessionId);
 
   const viewingOldBranch = useMemo(() => {
@@ -255,23 +254,23 @@ export function ChatInterface() {
   }, [agentId]);
 
   const prevStreamSessionIdRef = useRef<string | undefined>(streamSessionId);
-  // Tracks whether the pending setSessionId call was triggered by the SSE stream
-  // (server assigned a session id) vs. by the user selecting/navigating to a session.
-  // Only stream-triggered bindings should skip the clear+load sequence.
-  const sessionSetByStreamRef = useRef(false);
+  /** True only when choosing a row in the sidebar list (not stream/send binding). */
+  const conversationListSelectRef = useRef(false);
   useEffect(() => {
     if (
       streamSessionId &&
       streamSessionId !== prevStreamSessionIdRef.current &&
       streamSessionId !== sessionId
     ) {
+      // The server assigned a session_id during streaming (initial binding).
+      // Tell useStreaming to preserve in-flight messages instead of clearing them.
+      preserveNextTransition();
       prevStreamSessionIdRef.current = streamSessionId;
-      sessionSetByStreamRef.current = true;
       setSessionId(streamSessionId);
     } else if (streamSessionId) {
       prevStreamSessionIdRef.current = streamSessionId;
     }
-  }, [streamSessionId, sessionId]);
+  }, [streamSessionId, sessionId, preserveNextTransition]);
 
   const prevSessionIdRef = useRef<string | undefined>(sessionId);
 
@@ -284,19 +283,25 @@ export function ChatInterface() {
       );
       prevSessionIdRef.current = sessionId;
 
-      // Server assigned first session id while messages are already live — avoid clear + reload flicker.
-      // This only applies when the stream itself triggered the session id change; if the user
-      // selected or navigated to an existing session we must still load from localStorage.
-      const sessionSetByStream = sessionSetByStreamRef.current;
-      sessionSetByStreamRef.current = false;
-      const isInitialSessionBinding =
-        oldSessionId === undefined && newSessionId !== undefined && sessionSetByStream;
+      // useStreaming's sessionId effect handles message preservation (when
+      // preserveNextTransition was called) or clearing (all other cases).
+      // This effect only needs to handle UI-level orchestration:
+      //   - Sidebar selection: indicate the source so future logic can distinguish it
+      //   - Session switch: load messages from localStorage after useStreaming clears them
+      //   - New chat: nothing extra needed (useStreaming already cleared messages)
+      const selectedFromConversationList = conversationListSelectRef.current;
+      conversationListSelectRef.current = false;
 
       if (newSessionId) {
-        if (isInitialSessionBinding) {
+        // Initial binding (undefined → real id) with live transcript:
+        // preserveNextTransition was called before setSessionId, so useStreaming
+        // preserved the in-flight messages. Nothing to do here.
+        if (oldSessionId === undefined && !selectedFromConversationList) {
           return;
         }
-        clearMessages();
+
+        // Switching between two real sessions or selecting from sidebar:
+        // useStreaming already cleared messages. Load from localStorage.
         const timer = setTimeout(() => {
           if (prevSessionIdRef.current === newSessionId) {
             const savedMessages = getMessages(newSessionId);
@@ -324,8 +329,8 @@ export function ChatInterface() {
         }, 50);
         return () => clearTimeout(timer);
       } else {
-        console.log("Starting new conversation - clearing messages");
-        clearMessages();
+        // Resetting to "new chat" — useStreaming already cleared messages.
+        console.log("Starting new conversation");
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -352,8 +357,11 @@ export function ChatInterface() {
       const existingConv = allConversations.find(
         (c) => c.session_id === receivedSessionId && c.agent_id === agent.id,
       );
-      const sessionIdChanged = receivedSessionId !== sessionId;
-      if (sessionIdChanged) {
+      // If the streamSessionId effect hasn't already set sessionId, this is the
+      // first time we know the session_id. Signal useStreaming to preserve in-flight
+      // messages rather than clearing them (this is the initial binding).
+      if (receivedSessionId !== sessionId) {
+        preserveNextTransition();
         setSessionId(receivedSessionId);
       }
       if (!existingConv) {
@@ -365,19 +373,15 @@ export function ChatInterface() {
           last_message: lastPreview,
           last_message_at: new Date().toISOString(),
         };
-        startTransition(() => {
-          add(newConv);
-          console.log(
-            `Created new conversation: ${receivedSessionId} for agent ${agent.id}`,
-          );
-        });
+        add(newConv);
+        console.log(
+          `Created new conversation: ${receivedSessionId} for agent ${agent.id}`,
+        );
       } else {
         if (existingConv.last_message !== lastPreview) {
-          startTransition(() => {
-            update(receivedSessionId, {
-              last_message: lastPreview,
-              last_message_at: new Date().toISOString(),
-            });
+          update(receivedSessionId, {
+            last_message: lastPreview,
+            last_message_at: new Date().toISOString(),
           });
         }
       }
@@ -387,11 +391,9 @@ export function ChatInterface() {
         (c) => c.session_id === sessionId && c.agent_id === agent.id,
       );
       if (currentConv && currentConv.last_message !== lastPreview) {
-        startTransition(() => {
-          update(sessionId, {
-            last_message: lastPreview,
-            last_message_at: new Date().toISOString(),
-          });
+        update(sessionId, {
+          last_message: lastPreview,
+          last_message_at: new Date().toISOString(),
         });
       }
     }
@@ -410,6 +412,7 @@ export function ChatInterface() {
       console.log(
         `Switching conversation from ${sessionId || "none"} to ${selectedSessionId}`,
       );
+      conversationListSelectRef.current = true;
       setSessionId(selectedSessionId);
     },
     [sessionId],

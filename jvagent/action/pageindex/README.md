@@ -131,6 +131,9 @@ Agents should include **`jvagent/pageindex_action`** (ingestion defaults, `searc
 | `JVAGENT_PAGEINDEX_DB_REGION` | AWS region for DynamoDB | us-east-1 |
 | `PAGEINDEX_TREE_SEARCH_MODEL` | LLM for tree_search | gpt-4o-mini |
 | `OPENAI_API_KEY` | API key for tree_search | - |
+| `JVAGENT_JVFORGE_BASE_URL` | jvforge service origin (trailing slash optional). When set, PDF→Markdown and assimilate can run on jvforge; the agent also provisions the inbound jvforge **LLM webhook** on `PageIndexAction` register/reload. When unset, ingest runs on this jvagent host; the documents queue API returns an empty `jobs` list and queue control endpoints that require jvforge report a validation error. | - |
+
+**jvforge vs native ingest:** If this variable is set, REST multipart ingest and Google Drive sync still default to the historical “use jvforge when available” behavior unless the client passes `use_jvforge=no` (multipart) or `use_jvforge: false` (JSON / Drive). Set `use_jvforge=yes` or `true` to require jvforge (fails if the base URL is not configured). The same tri-state rule is centralized in ``jvforge_routing.resolve_effective_jvforge_base`` (multipart ingest, Drive ingest, and helpers stay aligned).
 
 **DB name resolution** (when `JVAGENT_PAGEINDEX_DB_NAME` is unset): `{app_id}_pageindex_db` — one db per app; multiple agents share it, documents scoped by collection (agent_id). Fallback: `config.pageindex.db_name` in app.yaml, else `pageindex_db`.
 

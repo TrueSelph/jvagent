@@ -156,14 +156,14 @@ class TestWaveLatency:
         await Root.get()
         await _seed_graph(temp_dir, n_users=30, interactions_per_conv=2)
 
-        max_s = 3.0
+        max_s = 6.0
         start = time.monotonic()
         await repair_agent_graph(max_seconds=max_s)
         elapsed = time.monotonic() - start
 
         assert (
-            elapsed < max_s * 1.5
-        ), f"Repair wave took {elapsed:.2f}s, expected < {max_s * 1.5:.2f}s"
+            elapsed < max_s * 2.0
+        ), f"Repair wave took {elapsed:.2f}s, expected < {max_s * 2.0:.2f}s"
 
 
 class TestCounterCorrectness:

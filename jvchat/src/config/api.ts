@@ -61,8 +61,6 @@ class ApiClient {
     const baseURL = getJvagentUrl()
     this.baseUrls = this._buildBaseUrls(baseURL)
     this.jvforgeBaseUrls = this._buildBaseUrls(getJvforgeUrl())
-    console.log('API Client initialized with baseURLs:', this.baseUrls)
-    console.log('jvforge baseURLs:', this.jvforgeBaseUrls)
 
     this.client = axios.create({
       baseURL: baseURL,
@@ -1251,6 +1249,8 @@ class ApiClient {
       docling_ocr_engine?: DoclingOcrEngine
       normalize_bold_headings?: boolean
       skip_existing_documents?: boolean
+      /** When true, require jvforge. When false, native ingest even if jvforge URL is set. */
+      use_jvforge?: boolean
     }
   ): Promise<{ message?: string; result?: unknown }> {
     const response = await this._withFallback(async (baseURL) => {
@@ -1420,6 +1420,8 @@ class ApiClient {
       /** When set, sent as ``docling_ocr_engine``; overrides plain ``ocr`` on jvforge. */
       doclingOcrEngine?: DoclingOcrEngine
       normalizeBoldHeadings?: boolean
+      /** When set, sent as multipart ``use_jvforge`` (yes/no). False = always native on jvagent. */
+      useJvforge?: boolean
       emergency?: boolean  // NEW: Mark as emergency priority
     }
   ): Promise<PageIndexUploadResponse & {
@@ -1455,6 +1457,9 @@ class ApiClient {
     }
     if (options?.normalizeBoldHeadings !== undefined) {
       formData.append('normalize_bold_headings', options.normalizeBoldHeadings ? 'yes' : 'no')
+    }
+    if (options?.useJvforge !== undefined) {
+      formData.append('use_jvforge', options.useJvforge ? 'yes' : 'no')
     }
     if (options?.emergency !== undefined) {
       formData.append('emergency', options.emergency ? 'true' : 'false')

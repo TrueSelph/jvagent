@@ -8,6 +8,164 @@ const SAVED_CREDENTIALS_KEY = 'jvchat_saved_credentials_v2'
 const DEBUG_INTERACTIONS_PAGE_SIZE_KEY = 'jvchat_debug_interactions_page_size'
 const DEBUG_INTERACTIONS_USER_FILTER_KEY = 'jvchat_debug_interactions_user_filter'
 
+/**
+ * Attempt to write to localStorage with automatic quota management.
+ * If the write fails due to QuotaExceededError, this prunes oldest message
+ * sessions (and then oldest conversation entries) one by one until the write
+ * succeeds or there is nothing left to prune.
+ */
+function safeSetItem(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value)
+  } catch (quotaError: any) {
+    const isQuotaError =
+      quotaError instanceof DOMException &&
+      (quotaError.name === 'QuotaExceededError' ||
+        quotaError.code === DOMException.QUOTA_EXCEEDED_ERR ||
+        (typeof quotaError.message === 'string' &&
+          /quota/i.test(quotaError.message)))
+    if (!isQuotaError) {
+      throw quotaError
+    }
+    console.warn(
+      '[jvchat] localStorage quota exceeded. Pruning old data to free space…',
+    )
+
+    // First pass: prune oldest message sessions
+    const pruned = pruneOldestData()
+    if (!pruned) {
+      console.error(
+        '[jvchat] Could not free enough localStorage space; write failed.',
+        quotaError,
+      )
+      return
+    }
+
+    // Retry the write
+    try {
+      localStorage.setItem(key, value)
+    } catch (retryError: any) {
+      const isStillQuota =
+        retryError instanceof DOMException &&
+        (retryError.name === 'QuotaExceededError' ||
+          retryError.code === DOMException.QUOTA_EXCEEDED_ERR)
+      if (isStillQuota) {
+        console.error(
+          '[jvchat] localStorage still full after pruning. Write failed.',
+          retryError,
+        )
+      } else {
+        throw retryError
+      }
+    }
+  }
+}
+
+/**
+ * Prune oldest data from localStorage to free space.
+ * Removes message sessions oldest-first, then conversation entries.
+ * Returns true if any data was pruned, false if nothing to prune.
+ */
+function pruneOldestData(): boolean {
+  let pruned = false
+
+  // 1. Prune oldest message sessions (by parsed order)
+  try {
+    const raw = localStorage.getItem(MESSAGES_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      const sessionIds = Object.keys(parsed)
+      // Sort sessions so the one with the oldest first message is removed first
+      const scored = sessionIds
+        .map((sid) => {
+          const msgs = parsed[sid]
+          if (!Array.isArray(msgs) || msgs.length === 0) {
+            return { sid, score: 0, empty: true }
+          }
+          const firstTs =
+            msgs.find((m: any) => m.timestamp)?.timestamp ?? ''
+          return {
+            sid,
+            score: firstTs ? new Date(firstTs).getTime() : 0,
+            empty: false,
+          }
+        })
+        .sort((a, b) => a.score - b.score)
+
+      // Remove oldest sessions one at a time until we've freed enough space
+      for (const entry of scored) {
+        delete parsed[entry.sid]
+        pruned = true
+        try {
+          localStorage.setItem(MESSAGES_KEY, JSON.stringify(parsed))
+          return true
+        } catch {
+          // Still not enough — keep pruning
+          continue
+        }
+      }
+
+      // If all messages are pruned, clear the key entirely
+      if (pruned) {
+        try {
+          localStorage.removeItem(MESSAGES_KEY)
+        } catch {
+          // best effort
+        }
+      }
+    }
+  } catch {
+    // Parsing failed; nuke messages key entirely
+    try {
+      localStorage.removeItem(MESSAGES_KEY)
+      pruned = true
+    } catch {
+      // best effort
+    }
+  }
+
+  // 2. Prune oldest conversation entries for current user
+  try {
+    const raw = localStorage.getItem(CONVERSATIONS_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      const uid = getEffectiveUserId()
+      const userConvs = uid ? parsed[uid] : null
+      if (userConvs && typeof userConvs === 'object') {
+        const entries = Object.entries(userConvs) as [string, any][]
+        entries.sort(([, a], [, b]) => {
+          const at = a?.last_message_at || a?.created_at || ''
+          const bt = b?.last_message_at || b?.created_at || ''
+          return new Date(at).getTime() - new Date(bt).getTime()
+        })
+        // Remove oldest conversations one at a time
+        for (const [sid] of entries) {
+          delete userConvs[sid]
+          pruned = true
+          try {
+            localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(parsed))
+            return true
+          } catch {
+            continue
+          }
+        }
+      }
+    }
+  } catch {
+    // best effort
+  }
+
+  if (pruned) {
+    try {
+      localStorage.removeItem(CONVERSATIONS_KEY)
+    } catch {
+      // best effort
+    }
+  }
+
+  return pruned
+}
+
 export const DEBUG_INTERACTIONS_PAGE_SIZES = [10, 20, 40, 80, 100] as const
 export type DebugInteractionsPageSize =
   (typeof DEBUG_INTERACTIONS_PAGE_SIZES)[number]
@@ -301,7 +459,7 @@ function migrateLegacyConversationsRaw(parsed: Record<string, unknown>): Record<
   }
   delete parsed.conversations
   try {
-    localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(parsed))
+    safeSetItem(CONVERSATIONS_KEY, JSON.stringify(parsed))
   } catch (e) {
     console.warn('[jvchat] Failed to persist migrated conversations', e)
   }
@@ -361,9 +519,8 @@ export function getConversations(userId?: string | null): any[] {
 export function saveConversations(conversations: any[], userId?: string | null): void {
   if (typeof window === 'undefined') return
   if (!userId) {
-    // If no user_id, save as flat structure (backward compatibility)
     try {
-      localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify({ conversations }))
+      safeSetItem(CONVERSATIONS_KEY, JSON.stringify({ conversations }))
     } catch (error) {
       console.error('Failed to save conversations:', error)
     }
@@ -374,7 +531,6 @@ export function saveConversations(conversations: any[], userId?: string | null):
     const data = localStorage.getItem(CONVERSATIONS_KEY)
     const parsed = data ? JSON.parse(data) : {}
 
-    // Convert array to object keyed by session_id
     const userConversations: { [sessionId: string]: any } = {}
     conversations.forEach((conv) => {
       if (conv && conv.session_id) {
@@ -382,9 +538,8 @@ export function saveConversations(conversations: any[], userId?: string | null):
       }
     })
 
-    // Store under user_id
     parsed[userId] = userConversations
-    localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(parsed))
+    safeSetItem(CONVERSATIONS_KEY, JSON.stringify(parsed))
   } catch (error) {
     console.error('Failed to save conversations:', error)
   }
@@ -409,25 +564,20 @@ export function addConversation(conversation: any, userId?: string | null): void
     const data = localStorage.getItem(CONVERSATIONS_KEY)
     const parsed = data ? JSON.parse(data) : {}
 
-    // Get or create user's conversations object
     if (!parsed[userId] || typeof parsed[userId] !== 'object') {
       parsed[userId] = {}
     }
 
-    // Ensure conversation has user_id set (for consistency)
     const conversationWithUserId = { ...conversation }
 
-    // Add or update conversation by session_id
     const existingConv = parsed[userId][conversation.session_id]
     if (existingConv) {
-      // Update existing conversation (merge to preserve other fields)
       parsed[userId][conversation.session_id] = { ...existingConv, ...conversationWithUserId }
     } else {
-      // Add new conversation
       parsed[userId][conversation.session_id] = conversationWithUserId
     }
 
-    localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(parsed))
+    safeSetItem(CONVERSATIONS_KEY, JSON.stringify(parsed))
   } catch (error) {
     console.error('Failed to add conversation:', error)
   }
@@ -460,7 +610,7 @@ export function updateConversation(
         ...updates,
       }
       parsed[userId] = userConversations
-      localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(parsed))
+      safeSetItem(CONVERSATIONS_KEY, JSON.stringify(parsed))
     }
   } catch (error) {
     console.error('Failed to update conversation:', error)
@@ -487,7 +637,7 @@ export function removeConversation(sessionId: string, userId?: string | null): v
     if (userConversations && userConversations[sessionId]) {
       delete userConversations[sessionId]
       parsed[userId] = userConversations
-      localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(parsed))
+      safeSetItem(CONVERSATIONS_KEY, JSON.stringify(parsed))
     }
   } catch (error) {
     console.error('Failed to remove conversation:', error)
@@ -565,10 +715,8 @@ export function saveMessages(sessionId: string, messages: any[]): void {
   try {
     const data = localStorage.getItem(MESSAGES_KEY)
     const parsed = data ? JSON.parse(data) : {}
-    // CRITICAL: Ensure messages are stored uniquely by session_id
-    // Create a deep copy to prevent reference issues
     parsed[sessionId] = JSON.parse(JSON.stringify(messages))
-    localStorage.setItem(MESSAGES_KEY, JSON.stringify(parsed))
+    safeSetItem(MESSAGES_KEY, JSON.stringify(parsed))
   } catch (error) {
     console.error('Failed to save messages:', error)
   }
@@ -581,7 +729,7 @@ export function deleteMessages(sessionId: string): void {
     if (!data) return
     const parsed = JSON.parse(data)
     delete parsed[sessionId]
-    localStorage.setItem(MESSAGES_KEY, JSON.stringify(parsed))
+    safeSetItem(MESSAGES_KEY, JSON.stringify(parsed))
   } catch (error) {
     console.error('Failed to delete messages:', error)
   }
