@@ -80,13 +80,13 @@ class TestAgentInteractActionSmoke:
         action = AgentInteractAction()
         assert isinstance(action, InteractAction)
 
-    def test_native_conv_enabled_by_default(self):
+    def test_converse_enabled_by_default(self):
         action = AgentInteractAction()
-        assert action.native_conv_enabled is True
+        assert action.converse_enabled is True
 
-    def test_native_conv_default_model(self):
+    def test_converse_default_model(self):
         action = AgentInteractAction()
-        assert action.native_conv_model == "gpt-4o-mini"
+        assert action.converse_model == "gpt-4o-mini"
 
     def test_router_model_default(self):
         action = AgentInteractAction()
@@ -157,9 +157,9 @@ class TestAgentInteractRouting:
             await action.execute(visitor)
 
     @pytest.mark.asyncio
-    async def test_conversational_intent_triggers_native_conv(self):
+    async def test_conversational_intent_triggers_converse_path(self):
         action = AgentInteractAction()
-        object.__setattr__(action, "native_conv_enabled", True)
+        object.__setattr__(action, "converse_enabled", True)
         visitor = _make_visitor()
 
         result = RoutingResult(
@@ -175,7 +175,7 @@ class TestAgentInteractRouting:
             return_value=(POSTURE_RESPOND, result),
         ):
             with patch(
-                f"{_ACTION_MODULE}.NativeConversation.respond",
+                f"{_ACTION_MODULE}.ConverseHandler.respond",
                 new_callable=AsyncMock,
             ) as mock_conv:
                 await action.execute(visitor)
@@ -183,9 +183,9 @@ class TestAgentInteractRouting:
         mock_conv.assert_called_once_with(visitor)
 
     @pytest.mark.asyncio
-    async def test_no_actions_triggers_native_conv(self):
+    async def test_no_actions_triggers_converse_path(self):
         action = AgentInteractAction()
-        object.__setattr__(action, "native_conv_enabled", True)
+        object.__setattr__(action, "converse_enabled", True)
         visitor = _make_visitor()
 
         result = RoutingResult(
@@ -201,7 +201,7 @@ class TestAgentInteractRouting:
             return_value=(POSTURE_RESPOND, result),
         ):
             with patch(
-                f"{_ACTION_MODULE}.NativeConversation.respond",
+                f"{_ACTION_MODULE}.ConverseHandler.respond",
                 new_callable=AsyncMock,
             ) as mock_conv:
                 await action.execute(visitor)
@@ -209,9 +209,9 @@ class TestAgentInteractRouting:
         mock_conv.assert_called_once_with(visitor)
 
     @pytest.mark.asyncio
-    async def test_native_conv_disabled_goes_to_skill_loop(self):
+    async def test_converse_disabled_goes_to_skill_loop(self):
         action = AgentInteractAction()
-        object.__setattr__(action, "native_conv_enabled", False)
+        object.__setattr__(action, "converse_enabled", False)
         visitor = _make_visitor()
 
         result = RoutingResult(
@@ -262,7 +262,7 @@ class TestAgentInteractRouting:
     @pytest.mark.asyncio
     async def test_null_routing_result_defaults_to_conv(self):
         action = AgentInteractAction()
-        object.__setattr__(action, "native_conv_enabled", True)
+        object.__setattr__(action, "converse_enabled", True)
         visitor = _make_visitor()
 
         with patch(
@@ -271,7 +271,7 @@ class TestAgentInteractRouting:
             return_value=(POSTURE_RESPOND, None),
         ):
             with patch(
-                f"{_ACTION_MODULE}.NativeConversation.respond",
+                f"{_ACTION_MODULE}.ConverseHandler.respond",
                 new_callable=AsyncMock,
             ) as mock_conv:
                 await action.execute(visitor)
@@ -353,7 +353,7 @@ class TestAgentInteractModelResolution:
             action, "router_model_action_type", "OpenAILanguageModelAction"
         )
         object.__setattr__(
-            action, "native_conv_model_action_type", "OpenAILanguageModelAction"
+            action, "converse_model_action_type", "OpenAILanguageModelAction"
         )
 
         assert action._language_model_action_type_for_purpose("skill") == (
@@ -362,7 +362,7 @@ class TestAgentInteractModelResolution:
         assert action._language_model_action_type_for_purpose("router") == (
             "OpenAILanguageModelAction"
         )
-        assert action._language_model_action_type_for_purpose("native") == (
+        assert action._language_model_action_type_for_purpose("converse") == (
             "OpenAILanguageModelAction"
         )
 
@@ -372,45 +372,45 @@ class TestAgentInteractModelResolution:
         assert action._language_model_action_type_for_purpose("router") == (
             "AnthropicLanguageModelAction"
         )
-        assert action._language_model_action_type_for_purpose("native") == (
+        assert action._language_model_action_type_for_purpose("converse") == (
             "AnthropicLanguageModelAction"
         )
 
 
 # ---------------------------------------------------------------------------
-# NativeConversation unit tests
+# ConverseHandler unit tests
 # ---------------------------------------------------------------------------
 
 
-class TestNativeConversation:
+class TestConverseHandler:
     def test_effective_model_ollama_replaces_default_mini_with_primary(self):
-        from jvagent.action.agent_interact.converse import NativeConversation
+        from jvagent.action.agent_interact.converse import ConverseHandler
 
         action = AgentInteractAction()
-        conv = NativeConversation(action)
+        conv = ConverseHandler(action)
         ma = SimpleNamespace(provider="ollama", model="deepseek-v4-flash:cloud")
         assert conv._effective_model(ma) == "deepseek-v4-flash:cloud"
 
-    def test_effective_model_ollama_respects_explicit_native_model(self):
-        from jvagent.action.agent_interact.converse import NativeConversation
+    def test_effective_model_ollama_respects_explicit_converse_model(self):
+        from jvagent.action.agent_interact.converse import ConverseHandler
 
         action = AgentInteractAction()
-        object.__setattr__(action, "native_conv_model", "llama3.2")
-        conv = NativeConversation(action)
+        object.__setattr__(action, "converse_model", "llama3.2")
+        conv = ConverseHandler(action)
         ma = SimpleNamespace(provider="ollama", model="deepseek-v4-flash:cloud")
         assert conv._effective_model(ma) == "llama3.2"
 
     def test_effective_model_openai_keeps_default_mini(self):
-        from jvagent.action.agent_interact.converse import NativeConversation
+        from jvagent.action.agent_interact.converse import ConverseHandler
 
         action = AgentInteractAction()
-        conv = NativeConversation(action)
+        conv = ConverseHandler(action)
         ma = SimpleNamespace(provider="openai", model="gpt-4o")
         assert conv._effective_model(ma) == "gpt-4o-mini"
 
     @pytest.mark.asyncio
-    async def test_native_conv_integration(self):
-        from jvagent.action.agent_interact.converse import NativeConversation
+    async def test_converse_integration(self):
+        from jvagent.action.agent_interact.converse import ConverseHandler
 
         action = AgentInteractAction()
         model = MagicMock()
@@ -418,7 +418,7 @@ class TestNativeConversation:
         model.provider = "openai"
         model.model = "gpt-4o-mini"
 
-        conv = NativeConversation(action)
+        conv = ConverseHandler(action)
         visitor = _make_visitor()
         visitor.conversation.get_interaction_history = AsyncMock(return_value=[])
 
@@ -437,8 +437,8 @@ class TestNativeConversation:
         )
 
     @pytest.mark.asyncio
-    async def test_native_conv_caches_model(self):
-        from jvagent.action.agent_interact.converse import NativeConversation
+    async def test_converse_caches_model(self):
+        from jvagent.action.agent_interact.converse import ConverseHandler
 
         action = AgentInteractAction()
         model = MagicMock()
@@ -446,7 +446,7 @@ class TestNativeConversation:
         model.provider = "openai"
         model.model = "gpt-4o-mini"
 
-        conv = NativeConversation(action)
+        conv = ConverseHandler(action)
         visitor = _make_visitor()
         visitor.conversation.get_interaction_history = AsyncMock(return_value=[])
 
@@ -464,11 +464,11 @@ class TestNativeConversation:
         assert mock_get_model.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_native_conv_no_conversation_returns_early(self):
-        from jvagent.action.agent_interact.converse import NativeConversation
+    async def test_converse_no_conversation_returns_early(self):
+        from jvagent.action.agent_interact.converse import ConverseHandler
 
         action = AgentInteractAction()
-        conv = NativeConversation(action)
+        conv = ConverseHandler(action)
         visitor = _make_visitor()
         visitor.conversation = None
 

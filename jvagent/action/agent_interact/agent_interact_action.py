@@ -8,7 +8,7 @@ Phase 1 — Route (SkillRouter):
     ``model_action_type``). Register one LM action per provider (e.g. OpenAI + Ollama).
 
 Phase 2 — Execute:
-    2a: Native conversation — ``native_conv_model_action_type`` (then router, then skill).
+    2a: Converse fast path — ``converse_model_action_type`` (then router, then skill).
     2b: Skill loop — ``model_action_type`` (agentic think-act-observe).
 
 Legacy InteractRouter + SkillInteractAction remain available for backward
@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 
 from jvspatial.core.annotations import attribute
 
-from jvagent.action.agent_interact.converse import NativeConversation
+from jvagent.action.agent_interact.converse import ConverseHandler
 from jvagent.action.agent_interact.skill_handler.agentic_loop import (
     AgentInteractSkillAction,
     run_agentic_skill_loop,
@@ -60,31 +60,92 @@ class AgentInteractAction(InteractAction):
 
     Replaces the legacy InteractRouter + SkillInteractAction pair with a
     single action that routes posture/intent, handles conversational banter
-    with a native fast model, and executes skill-based tasks in an agentic
+    on the converse fast path, and executes skill-based tasks in an agentic
     think-act-observe loop with mid-loop skill discovery.
     """
 
-    weight: int = attribute(
-        default=-200,
-        description="Execution weight (replaces both InteractRouter at -200 and SkillInteractAction at -60)",
-    )
+    weight: int = attribute(default=-200, description="Execution weight")
     description: str = attribute(
-        default="Unified skill-routing action: route posture/intent, handle conversation natively, execute skills in an agentic loop.",
-        description="Action description",
+        default="Unified skill-routing action: route posture/intent, converse fast path for casual chat, execute skills in an agentic loop."
     )
 
-    # ── Router configuration (from InteractRouter) ──
+    # ═══════════════════════════════════════════════════════════════════
+    # Tier 1 — Core: set these in every agent.yaml
+    # ═══════════════════════════════════════════════════════════════════
+
+    # ── Router ──
     router_model: str = attribute(
-        default="gpt-4o-mini", description="Model for routing LLM calls"
+        default="gpt-4o-mini", description="Model id for routing LLM call"
     )
+    router_model_action_type: str = attribute(
+        default="",
+        description="LM action class name for router (empty → model_action_type)",
+    )
+    enable_canned_response: bool = attribute(
+        default=True, description="Publish brief canned ack before loop"
+    )
+    enable_routing_cache: bool = attribute(
+        default=False, description="Cache routing decisions per session"
+    )
+
+    # ── Converse fast path (no tools) ──
+    converse_enabled: bool = attribute(
+        default=True, description="Enable conversational fast path"
+    )
+    converse_model: str = attribute(
+        default="gpt-4o-mini", description="Model id for converse path"
+    )
+    converse_model_action_type: str = attribute(
+        default="",
+        description="LM action class name for converse (empty → router, then model_action_type)",
+    )
+
+    # ── Skill loop ──
+    model_action_type: str = attribute(
+        default="AnthropicLanguageModelAction",
+        description="LM action class name for agentic loop",
+    )
+    model: str = attribute(
+        default=DEFAULT_SKILL_MODEL, description="Model id for agentic loop"
+    )
+    skills: Any = attribute(
+        default=None, description="Skill selector: list of names/globs, '-all', or None"
+    )
+    denied_skills: List[str] = attribute(
+        default_factory=list, description="Names/globs to exclude from skill bundles"
+    )
+    skills_source: str = attribute(
+        default="both", description="Skill source: builtin | app | both | none"
+    )
+    max_iterations: int = attribute(
+        default=25, description="Hard cap on think-act-observe cycles"
+    )
+    strict_grounding: bool = attribute(
+        default=True, description="Enforce grounding-focused prompting"
+    )
+    response_mode: str = attribute(
+        default="publish",
+        description="Deliver response via publish or respond (Persona)",
+    )
+
+    # ── Shared ──
+    history_limit: int = attribute(
+        default=3, description="Prior interactions included in context"
+    )
+    enable_accumulation: bool = attribute(
+        default=True, description="Enable DEFER posture + fragment buffer"
+    )
+
+    # ═══════════════════════════════════════════════════════════════════
+    # Tier 2 — Advanced: tune only when the defaults aren't suitable
+    # ═══════════════════════════════════════════════════════════════════
+
+    # ── Router tuning ──
     router_model_temperature: float = attribute(
         default=0.1, description="Temperature for routing LLM"
     )
     router_model_max_tokens: int = attribute(
         default=400, description="Max tokens for routing LLM"
-    )
-    enable_canned_response: bool = attribute(
-        default=True, description="Publish canned response before execution"
     )
     canned_response_max_words: int = attribute(
         default=8, description="Max words for canned response"
@@ -94,25 +155,14 @@ class AgentInteractAction(InteractAction):
         description="Intent types that skip canned response",
     )
     confidence_threshold: float = attribute(
-        default=0.7, description="Minimum confidence to proceed"
+        default=0.7, description="Min confidence to proceed"
     )
-    enable_clarification: bool = attribute(
-        default=False, description="Request clarification on low confidence"
-    )
-    history_limit: int = attribute(
-        default=3, description="Prior interactions in router context"
-    )
-    enable_accumulation: bool = attribute(
-        default=True, description="Enable DEFER posture + fragment buffer"
-    )
+    enable_clarification: bool = attribute(default=False)
     max_fragment_buffer: int = attribute(
         default=5, description="Max deferred fragments"
     )
-    enable_routing_cache: bool = attribute(
-        default=False, description="Cache routing decisions"
-    )
     exceptions: List[str] = attribute(
-        default_factory=list, description="Actions that always execute"
+        default_factory=list, description="Action names that always execute"
     )
     pass_through_task_types: Sequence[str] = attribute(
         default=("INTERVIEW",), description="Task types that skip router LLM"
@@ -127,59 +177,25 @@ class AgentInteractAction(InteractAction):
         default_factory=list, description="Route to these actions when media attached"
     )
 
-    # ── Native conversational skill ──
-    native_conv_enabled: bool = attribute(
-        default=True, description="Enable native conversational path"
-    )
-    native_conv_model: str = attribute(
-        default="gpt-4o-mini",
-        description=(
-            "Model id for native conversation; OpenAI default gpt-4o-mini is mapped "
-            "to the primary LM action's model when that LM is Ollama"
-        ),
-    )
-    native_conv_temperature: float = attribute(
-        default=0.7, description="Temperature for native conversation"
-    )
-    native_conv_max_tokens: int = attribute(
-        default=256, description="Max tokens for native conversation"
-    )
-    native_conv_context_limit: int = attribute(
+    # ── Converse path tuning ──
+    converse_temperature: float = attribute(default=0.7)
+    converse_max_tokens: int = attribute(default=256)
+    converse_context_limit: int = attribute(
         default=2, description="Prior interactions in conv context"
     )
-    native_conv_persona_prompt: str = attribute(
+    converse_persona_prompt: str = attribute(
         default=(
             "You are a friendly, concise assistant. "
             "Respond to greetings and casual conversation naturally. "
             "Keep responses brief (1-3 sentences). "
-            "For task-oriented requests, acknowledge and hand off gracefully. "
-            "Never mention that you are a 'native conversational skill' or "
-            "reference internal system mechanics."
+            "For task-oriented requests, acknowledge and hand off gracefully."
         ),
-        description="System prompt for native conversational responses",
+        description="System prompt for converse path responses",
     )
 
-    # ── Per-phase language model actions (class names, e.g. OpenAILanguageModelAction) ──
-    model_action_type: str = attribute(default="AnthropicLanguageModelAction")
-    router_model_action_type: str = attribute(
-        default="",
-        description=(
-            "LanguageModelAction class for Phase 1 (SkillRouter). "
-            "Empty: use model_action_type."
-        ),
-    )
-    native_conv_model_action_type: str = attribute(
-        default="",
-        description=(
-            "LanguageModelAction class for native conversational replies. "
-            "Empty: use router_model_action_type, then model_action_type."
-        ),
-    )
-    # ── Skill loop (all SkillInteractAction attributes) ──
-    model: str = attribute(default=DEFAULT_SKILL_MODEL)
+    # ── Skill loop tuning ──
     model_temperature: float = attribute(default=0.3)
     model_max_tokens: int = attribute(default=8192)
-    max_iterations: int = attribute(default=25)
     max_duration_seconds: float = attribute(default=300.0)
     reasoning_budget_tokens: int = attribute(default=0)
     reasoning_enabled: Optional[bool] = attribute(default=None)
@@ -195,9 +211,6 @@ class AgentInteractAction(InteractAction):
     max_tool_result_tokens: int = attribute(default=400)
     tool_result_truncation_chars: int = attribute(default=500)
     call_timeout_seconds: float = attribute(default=60.0)
-    skills: Any = attribute(default=None)
-    denied_skills: List[str] = attribute(default_factory=list)
-    skills_source: str = attribute(default="both")
     enable_skill_helper_tools: bool = attribute(default=True)
     skill_index_inline_max_skills: int = attribute(default=5)
     max_skill_activations: int = attribute(default=8)
@@ -210,7 +223,6 @@ class AgentInteractAction(InteractAction):
     tool_servers: List[str] = attribute(default_factory=list)
     allow_local_tools: bool = attribute(default=False)
     local_tools_path: Optional[str] = attribute(default=None)
-    strict_grounding: bool = attribute(default=True)
     plan_first: bool = attribute(default=True)
     final_review: bool = attribute(default=True)
     final_review_max_plan_steps: Optional[int] = attribute(default=None)
@@ -223,22 +235,6 @@ class AgentInteractAction(InteractAction):
     progress_check_interval: int = attribute(default=5)
     enable_checkpoints: bool = attribute(default=True)
     enable_evidence_log: bool = attribute(default=True)
-    conversational_skip_patterns: List[str] = attribute(default_factory=list)
-    skill_first_conversational_heuristic: bool = attribute(default=True)
-    conversational_short_utterance_max_chars: int = attribute(default=60)
-    conversational_short_utterance_max_tokens: int = attribute(default=8)
-    conversational_heuristic_max_relevance: float = attribute(default=3.0)
-    conversational_min_response_chars: int = attribute(default=20)
-    meta_intent_skip_nudge: bool = attribute(default=True)
-    meta_intent_patterns: List[str] = attribute(default_factory=list)
-    degenerate_response_max_chars: int = attribute(default=25)
-    best_candidate_shrink_ratio: float = attribute(default=0.4)
-    response_mode: str = attribute(default="publish")
-
-    # ── Deprecated aliases (forwarded in _build_run_config) ──
-    thinking_budget_tokens: int = attribute(default=0)
-    reasoning: Optional[Dict[str, Any]] = attribute(default=None)
-    mirror_openai_assistant_stream_to_thoughts: Optional[bool] = attribute(default=None)
 
     # ------------------------------------------------------------------
     # Language model resolution (multi-provider)
@@ -257,15 +253,15 @@ class AgentInteractAction(InteractAction):
         router = self._strip_model_action_type(
             getattr(self, "router_model_action_type", None)
         )
-        native = self._strip_model_action_type(
-            getattr(self, "native_conv_model_action_type", None)
+        converse = self._strip_model_action_type(
+            getattr(self, "converse_model_action_type", None)
         )
         if purpose == "skill":
             return skill
         if purpose == "router":
             return router or skill
-        if purpose == "native":
-            return native or router or skill
+        if purpose == "converse":
+            return converse or router or skill
         return skill
 
     async def get_model_action(
@@ -274,16 +270,16 @@ class AgentInteractAction(InteractAction):
         *,
         purpose: str = "skill",
     ) -> Optional[Any]:
-        """Return the LanguageModelAction for *purpose* (router / native / skill).
+        """Return the LanguageModelAction for *purpose* (router / converse / skill).
 
         Each *purpose* maps to a registered LM action class name:
-        ``router_model_action_type`` → ``native_conv_model_action_type`` →
+        ``router_model_action_type`` → ``converse_model_action_type`` →
         ``model_action_type`` with the fallbacks described on those attributes.
 
         Args:
             required: If True, raise when no LM action can be resolved.
             purpose: ``skill`` (agentic loop), ``router`` (SkillRouter), or
-                ``native`` (NativeConversation).
+                ``converse`` (ConverseHandler).
         """
         from jvagent.action.model.language.base import LanguageModelAction
 
@@ -349,7 +345,7 @@ class AgentInteractAction(InteractAction):
             routing = RoutingResult(posture=POSTURE_RESPOND)
 
         # ── Phase 2: Execute ──
-        if self.native_conv_enabled and (
+        if self.converse_enabled and (
             routing.intent_type == "CONVERSATIONAL" or not routing.actions
         ):
             await self._phase_execute_conversational(visitor)
@@ -357,11 +353,11 @@ class AgentInteractAction(InteractAction):
             await self._phase_execute_skill_loop(visitor, routing)
 
     # ------------------------------------------------------------------
-    # Phase 2a: Native conversational
+    # Phase 2a: Converse fast path
     # ------------------------------------------------------------------
 
     async def _phase_execute_conversational(self, visitor: "InteractWalker") -> None:
-        conv = NativeConversation(self)
+        conv = ConverseHandler(self)
         await conv.respond(visitor)
 
     # ------------------------------------------------------------------

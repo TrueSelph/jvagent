@@ -2,12 +2,13 @@
 # Demonstrates the new unified skill-routing architecture.
 #
 # Architecture (multi-provider):
-#   Phase 1 — SkillRouter: router_model + router_model_action_type → OpenAI GPT-4o-mini
-#   Phase 2a — Native conversation: native_conv_model_action_type (default: same as router)
-#   Phase 2b — Skill loop: model_action_type → Ollama cloud (agentic loop)
+#   Phase 1 — SkillRouter:   router_model_action_type → OpenAI GPT-4o-mini
+#   Phase 2a — Converse:  converse_model_action_type → OpenAI GPT-4o-mini
+#   Phase 2b — Skill loop:   model_action_type → Ollama cloud (agentic loop)
 #
 # Register one jvagent language-model action per provider; point each phase at the
-# right class name (OpenAILanguageModelAction vs OllamaLanguageModelAction).
+# right class name.  All advanced tuning params use sensible defaults — see
+# jvagent/action/agent_interact/agent_interact_action.py for the full Tier 2 list.
 #
 # Skills:
 #   - pageindex_search   → internal knowledge base search (requires PageIndexAction)
@@ -15,8 +16,7 @@
 #   - web_search          → public web search fallback (requires SerperWebSearchAction)
 #
 # The model can call skill_search / list_skills mid-loop to discover and activate
-# additional skills on demand.  The router pre-selects the most relevant skills
-# for each user request, minimizing token overhead for simple queries.
+# additional skills on demand.
 
 agent: jvagent/unified_agent
 version: 1.0.0
@@ -26,7 +26,7 @@ jvagent: ~0.0.1
 context:
   alias: Unified Agent
   description: >-
-    A search-first agent powered by the new AgentInteractAction.
+    A search-first agent powered by AgentInteractAction.
     Routes intent and small talk via OpenAI (GPT-4o-mini); runs the agentic
     skill loop on Ollama cloud. Pre-loaded with pageindex_search, pageindex_docs,
     and web_search skills.
@@ -38,66 +38,32 @@ actions:
   - action: jvagent/agent_interact_action
     context:
       enabled: true
-      description: >-
-        Unified skill-routing interact action: fast posture classification,
-        native conversational handling, and pre-loaded retrieval skills executed
-        in an agentic think-act-observe loop with mid-loop skill discovery.
-      # ── Router (fast model on OpenAI — see router_model_action_type) ──
-      router_model_action_type: OpenAILanguageModelAction
+      # ── Router ──
       router_model: gpt-4o-mini
-      router_model_temperature: 0.1
-      router_model_max_tokens: 400
+      router_model_action_type: OpenAILanguageModelAction
       enable_canned_response: true
-      canned_response_max_words: 8
       enable_routing_cache: true
-      enable_accumulation: true
-      # ── Native conversation (fast model, no tools; omit type → same as router) ──
-      native_conv_enabled: true
-      native_conv_model_action_type: OpenAILanguageModelAction
-      native_conv_model: gpt-4o-mini
-      native_conv_temperature: 0.7
-      native_conv_max_tokens: 256
-      native_conv_context_limit: 2
-      # ── Skill loop (capable model, agentic — Ollama cloud) ──
+      # ── Converse fast path ──
+      converse_enabled: true
+      converse_model_action_type: OpenAILanguageModelAction
+      converse_model: gpt-4o-mini
+      # ── Skill loop ──
       model_action_type: OllamaLanguageModelAction
       model: deepseek-v4-flash:cloud
-      model_temperature: 0.3
-      model_max_tokens: 32768
-      max_iterations: 25
-      max_duration_seconds: 300
-      stream_thinking: true
-      stream_reasoning: true
-      stream_tool_progress: true
-      commit_intermediate_messages: true
-      strict_grounding: true
-      plan_first: true
-      enable_skill_helper_tools: true
-      skill_index_inline_max_skills: 5
-      max_skill_activations: 8
-      final_review: true
-      max_tool_result_tokens: 2000
-      tool_result_truncation_chars: 3000
-      max_full_tool_results: 10
-      max_midcourse_corrections: 2
-      stuck_detection_window: 3
-      task_nudge_retry_limit: 4
-      stuck_intent_jaccard_threshold: 0.7
-      history_limit: 5
-      call_timeout_seconds: 60
-      response_mode: respond
-      # Pre-loaded skills
       skills:
         - pageindex_search
         - pageindex_docs
         - web_search
       skills_source: both
-      denied_skills: []
+      max_iterations: 25
+      strict_grounding: true
+      response_mode: respond
 
+  # ── Ollama Language Model (agentic loop) ──
   - action: jvagent/ollama_lm
     context:
       enabled: true
-      description: Optional Ollama endpoint — switch skill_interact_action to OllamaLanguageModelAction
-        and set model to use this provider instead of OpenAI.
+      description: Ollama cloud endpoint for the agentic skill loop
       api_endpoint: https://ollama.com
       api_key: ${OLLAMA_API_KEY}
       model: kimi-k2.6:cloud
@@ -105,11 +71,11 @@ actions:
       max_tokens: 16384
       timeout: 120
 
-  # ── OpenAI Language Model (GPT-4o-mini — routing + persona) ──
+  # ── OpenAI Language Model (routing + persona) ──
   - action: jvagent/openai_lm
     context:
       enabled: true
-      description: OpenAI GPT-4o-mini for fast routing, canned responses, and persona
+      description: OpenAI GPT-4o-mini for fast routing and persona
       api_key: ${OPENAI_API_KEY}
       api_endpoint: https://api.openai.com/v1
       model: gpt-4o-mini
@@ -117,7 +83,7 @@ actions:
       max_tokens: 4096
       timeout: 60
 
-  # ── PageIndex Action (dependency of pageindex_search + pageindex_docs skills) ──
+  # ── PageIndex Action (dependency of pageindex_search + pageindex_docs) ──
   - action: jvagent/pageindex_action
     context:
       enabled: true
@@ -125,6 +91,7 @@ actions:
       strategy: tree_search
       limit: 10
       node_summary: true
+    config:
       node_text: true
       summary_token_threshold: 200
 

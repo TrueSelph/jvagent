@@ -382,7 +382,7 @@ class SkillRouter:
 
         Reads from the cached skill catalog (no disk I/O per call).
         Returns dict of skill_name -> {description, tags, plan_steps, always_active}.
-        Native conversational skill is EXCLUDED — it's the default fallback.
+        The converse fast-path skill is EXCLUDED — it's the default fallback.
         """
         actions_manager = await agent.get_actions_manager()
         if not actions_manager:

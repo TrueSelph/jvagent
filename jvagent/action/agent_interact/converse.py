@@ -1,6 +1,6 @@
-"""NativeConversation: lightweight conversational handler for fast responses.
+"""ConverseHandler: lightweight conversational handler for fast responses.
 
-Uses the configured ``native_conv_model`` (default ``gpt-4o-mini``) with no tool
+Uses the configured ``converse_model`` (default ``gpt-4o-mini``) with no tool
 access. When the primary LM is Ollama, that OpenAI default is replaced by the LM
 action's ``model`` so requests target a valid Ollama model id.
 """
@@ -15,10 +15,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class NativeConversation:
-    """Encapsulated handler for native conversational skill execution.
+class ConverseHandler:
+    """Encapsulated handler for the conversational fast path (no tools).
 
-    Uses ``native_conv_model`` (default ``gpt-4o-mini`` when the LM is not
+    Uses ``converse_model`` (default ``gpt-4o-mini`` when the LM is not
     Ollama; Ollama stacks inherit the primary LM's model id for that default).
     Optimized for minimal latency:
 
@@ -29,7 +29,7 @@ class NativeConversation:
 
     Usage::
 
-        conv = NativeConversation(action)
+        conv = ConverseHandler(action)
         await conv.respond(visitor)
     """
 
@@ -38,14 +38,14 @@ class NativeConversation:
         self._model_action: Optional[Any] = None
 
     def _effective_model(self, model_action: Any) -> str:
-        """Model id for native conversation.
+        """Model id for the converse fast path.
 
-        Defaults to ``native_conv_model`` (gpt-4o-mini). When the primary LM is
+        Defaults to ``converse_model`` (gpt-4o-mini). When the primary LM is
         Ollama, that OpenAI default is invalid on the remote server and commonly
         yields HTTP 404 — fall back to the language model action's configured
-        ``model`` unless the user set ``native_conv_model`` to something else.
+        ``model`` unless the user set ``converse_model`` to something else.
         """
-        configured = getattr(self._action, "native_conv_model", "gpt-4o-mini")
+        configured = getattr(self._action, "converse_model", "gpt-4o-mini")
         primary = (getattr(model_action, "model", None) or "").strip()
         provider = getattr(model_action, "provider", "") or ""
         if provider != "ollama":
@@ -56,25 +56,25 @@ class NativeConversation:
 
     @property
     def _temperature(self) -> float:
-        return getattr(self._action, "native_conv_temperature", 0.7)
+        return getattr(self._action, "converse_temperature", 0.7)
 
     @property
     def _max_tokens(self) -> int:
-        return getattr(self._action, "native_conv_max_tokens", 256)
+        return getattr(self._action, "converse_max_tokens", 256)
 
     @property
     def _persona_prompt(self) -> str:
-        return getattr(self._action, "native_conv_persona_prompt", "")
+        return getattr(self._action, "converse_persona_prompt", "")
 
     @property
     def _context_limit(self) -> int:
-        return getattr(self._action, "native_conv_context_limit", 2)
+        return getattr(self._action, "converse_context_limit", 2)
 
     async def _ensure_model(self) -> Any:
         """Resolve and cache the fast conversational model action."""
         if self._model_action is None:
             self._model_action = await self._action.get_model_action(
-                required=True, purpose="native"
+                required=True, purpose="converse"
             )
         return self._model_action
 
@@ -87,7 +87,7 @@ class NativeConversation:
         conversation = visitor.conversation
         interaction = visitor.interaction
         if not conversation or not interaction:
-            logger.warning("NativeConversation: No conversation or interaction")
+            logger.warning("ConverseHandler: No conversation or interaction")
             return
 
         try:
@@ -124,5 +124,5 @@ class NativeConversation:
 
         except Exception as exc:
             logger.error(
-                "NativeConversation: Error generating response: %s", exc, exc_info=True
+                "ConverseHandler: Error generating response: %s", exc, exc_info=True
             )

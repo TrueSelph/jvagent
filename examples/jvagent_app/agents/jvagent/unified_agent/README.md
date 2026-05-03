@@ -16,7 +16,7 @@ Custom action packages live under `actions/<namespace>/<action_name>/` when you 
 
 | Action | Role |
 |--------|------|
-| `jvagent/agent_interact_action` | Router, native convo, and skill loop |
+| `jvagent/agent_interact_action` | Router, converse path, and skill loop |
 | `jvagent/anthropic_lm` | Claude for the agentic loop |
 | `jvagent/openai_lm` | GPT-4o-mini for routing and persona-driven rewrite paths |
 | `jvagent/pageindex_action` | Backing APIs for `pageindex_search` and `pageindex_docs` skills |

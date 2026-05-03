@@ -72,10 +72,10 @@ def _make_visitor(**overrides):
 
 class TestFullFlowConversational:
     @pytest.mark.asyncio
-    async def test_hello_triggers_native_conv_and_publishes(self):
-        """E2E: "Hello" → route (CONVERSATIONAL) → native conv → publish."""
+    async def test_hello_triggers_converse_path_and_publishes(self):
+        """E2E: "Hello" → route (CONVERSATIONAL) → converse path → publish."""
         action = AgentInteractAction()
-        object.__setattr__(action, "native_conv_enabled", True)
+        object.__setattr__(action, "converse_enabled", True)
         visitor = _make_visitor()
         visitor.interaction.utterance = "Hello"
 
@@ -251,7 +251,7 @@ class TestFullFlowSkillBased:
 class TestSkillRouterSkillsFieldRegression:
     """End-to-end regression for the bug where an LLM response with the
     ``skills`` field (per ``SKILL_ROUTING_PROMPT_TEMPLATE``) was silently
-    parsed as ``actions=[]`` and routed to the native conversational path
+    parsed as ``actions=[]`` and routed to the converse fast path
     instead of dispatching the agentic skill loop."""
 
     @pytest.mark.asyncio
@@ -323,11 +323,11 @@ class TestSkillRouterSkillsFieldRegression:
         ):
             await action.execute(visitor)
 
-        # Skill loop ran (proves we didn't fall through to native conv) and
+        # Skill loop ran (proves we didn't fall through to converse path) and
         # received the router-selected skill as a preload.
         assert len(captured_ctx) == 1, (
             "skill loop was not invoked; router likely fell through to "
-            "native conversational path"
+            "converse fast path"
         )
         assert "web_search" in captured_ctx[0].preloaded_skills
         mock_publish.assert_called_once_with(

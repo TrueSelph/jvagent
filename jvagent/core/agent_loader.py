@@ -261,6 +261,8 @@ class AgentLoader:
             if descriptor.actions or update_mode is not None:
                 self.action_loader.invalidate_core_cache()
 
+                _validate_interact_routing_config(descriptor.actions)
+
                 await self._install_actions(
                     agent,
                     descriptor,
@@ -746,3 +748,38 @@ def _apply_properties(
             setattr(target, key, value)
         except Exception as e:
             logger.warning(f"Could not set {type(target).__name__}.{key}: {e}")
+
+
+def _validate_interact_routing_config(declared_actions: List[Dict[str, Any]]) -> None:
+    """Emit migration notices for interact-related actions.
+
+    ``agent_interact_action`` is the unified interact stack.  Legacy actions
+    may appear alone or together; no pairing is enforced.  Warnings only —
+    never blocks registration.
+    """
+    has_new = any(
+        "agent_interact_action" in a.get("action", "") for a in declared_actions
+    )
+    has_router = any("interact_router" in a.get("action", "") for a in declared_actions)
+    has_skill = any(
+        "skill_interact_action" in a.get("action", "") for a in declared_actions
+    )
+
+    if not has_new and not has_router and not has_skill:
+        return
+
+    if has_new:
+        if has_router or has_skill:
+            logger.warning(
+                "Both AgentInteractAction and legacy interact actions declared; "
+                "using AgentInteractAction. Remove legacy interact_router and "
+                "skill_interact_action from agent.yaml."
+            )
+        return
+
+    if has_router and has_skill:
+        logger.warning(
+            "Using deprecated InteractRouter + SkillInteractAction. "
+            "Migrate to AgentInteractAction for lower latency and mid-loop "
+            "skill discovery. See docs/migration.md."
+        )
