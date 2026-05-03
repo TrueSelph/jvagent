@@ -1,9 +1,8 @@
-"""Skill router: posture classification + skill selection via fast LLM.
+"""Routing sub-service for ``AgentInteractAction`` (posture + route selection).
 
-Extracted and adapted from InteractRouter (jvagent/action/router/interact_router.py).
-Routes using skill descriptors from the cached skill catalog instead of raw
-InteractAction anchors.  Returns posture and a RoutingResult with selected
-skill names.
+Uses the skill catalog plus enabled ``InteractAction`` handlers as the route
+table; selected names become the walk path. Adapted from legacy
+``InteractRouter`` patterns.
 """
 
 import asyncio
@@ -12,21 +11,12 @@ import json
 import logging
 import random
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from jvagent.action.agent_interact.skill_handler.always_active import (
     always_active_from_skill_dir,
 )
 from jvagent.action.agent_interact.skill_handler.shim import AgentInteractVisitorShim
-from jvagent.action.agent_interact.skill_handler.skill_router_prompts import (
-    CANNED_RESPONSE_INSTRUCTIONS_TEMPLATE_SKILL,
-    CLARIFICATION_PARAPHRASE_PROMPT_TEMPLATE_SKILL,
-    CLARIFICATION_PROMPT_TEMPLATE_SKILL,
-    DEFAULT_CLARIFICATION_MESSAGES,
-    PRIOR_FRAGMENTS_SECTION_SKILL,
-    SKILL_ROUTER_SYSTEM_PROMPT,
-    SKILL_ROUTING_PROMPT_TEMPLATE,
-)
 from jvagent.action.router.formatting import format_interaction_history
 from jvagent.action.router.routing_result import (
     POSTURE_DEFER,
@@ -55,11 +45,11 @@ def _get_buffer(conversation: "Conversation") -> list:
     return list(conversation.context.get(BUFFER_KEY, []))
 
 
-class SkillRouter:
-    """Routing engine embedded in AgentInteractAction.
+class AgentInteractRouter:
+    """Routing engine embedded in ``AgentInteractAction``.
 
-    Performs posture classification + skill selection in a single fast LLM
-    call, then publishes canned responses and finalizes routing.
+    Posture classification plus route (skill) selection in one fast LLM call,
+    then canned responses and walk-path finalization.
     """
 
     def __init__(self, action: Any) -> None:
@@ -134,12 +124,12 @@ class SkillRouter:
         return getattr(self._action, "pass_through_when_media", True)
 
     @property
-    def _bypass_canned_response(self) -> str:
-        return getattr(self._action, "bypass_canned_response", "One moment")
-
-    @property
     def _media_bypass_actions(self) -> List[str]:
         return getattr(self._action, "media_bypass_actions", [])
+
+    @property
+    def _bypass_canned_response(self) -> str:
+        return getattr(self._action, "bypass_canned_response", "One moment")
 
     # ------------------------------------------------------------------
     # Main entry point
@@ -154,18 +144,18 @@ class SkillRouter:
         setattr(self._action, "_last_visitor", visitor)
         interaction = visitor.interaction
         if not interaction:
-            logger.warning("SkillRouter: No interaction available")
+            logger.warning("AgentInteractRouter: No interaction available")
             return POSTURE_RESPOND, None
 
         if interaction.interpretation:
-            logger.debug("SkillRouter: Interaction already routed, skipping")
+            logger.debug("AgentInteractRouter: Interaction already routed, skipping")
             return POSTURE_RESPOND, None
 
         try:
             agent = await self._action.get_agent()
             conversation = getattr(visitor, "conversation", None)
             if not agent:
-                logger.error("SkillRouter: Agent not found")
+                logger.error("AgentInteractRouter: Agent not found")
                 return POSTURE_RESPOND, None
 
             dynamic_exceptions = await self._get_dynamic_exceptions(agent)
@@ -178,7 +168,7 @@ class SkillRouter:
                     if t.get("task_type") in self._pass_through_task_types:
                         action_name = t.get("action_name", "")
                         logger.debug(
-                            "SkillRouter: Bypass (active %s: %s)",
+                            "AgentInteractRouter: Bypass (active %s: %s)",
                             t.get("task_type"),
                             action_name,
                         )
@@ -210,7 +200,7 @@ class SkillRouter:
                 media_urls = data.get("image_urls") or data.get("whatsapp_media") or []
                 if media_urls:
                     logger.debug(
-                        "SkillRouter: Bypass (media attached: %d items)",
+                        "AgentInteractRouter: Bypass (media attached: %d items)",
                         len(media_urls),
                     )
                     result = RoutingResult(
@@ -237,13 +227,18 @@ class SkillRouter:
 
             model_action = await self._action.get_model_action(purpose="router")
             if not model_action:
-                logger.error("SkillRouter: Model action not found")
+                logger.error("AgentInteractRouter: Model action not found")
                 return POSTURE_RESPOND, None
 
-            # ── Collect skill descriptors ──
+            # ── Collect skill + interact-action route tables ──
             if conversation:
-                skill_descriptors, interaction_history = await asyncio.gather(
+                (
+                    skill_descriptors,
+                    route_action_descriptors,
+                    interaction_history,
+                ) = await asyncio.gather(
                     self._collect_skill_descriptors(agent, conversation),
+                    self._collect_route_action_descriptors(agent),
                     conversation.get_interaction_history(
                         limit=self._history_limit,
                         excluded=interaction.id,
@@ -256,16 +251,19 @@ class SkillRouter:
                     ),
                 )
             else:
-                skill_descriptors = await self._collect_skill_descriptors(agent, None)
+                skill_descriptors, route_action_descriptors = await asyncio.gather(
+                    self._collect_skill_descriptors(agent, None),
+                    self._collect_route_action_descriptors(agent),
+                )
                 interaction_history = []
 
-            if not skill_descriptors:
+            if not skill_descriptors and not route_action_descriptors:
                 logger.warning(
-                    "SkillRouter: No skills available for routing (session_id=%s)",
+                    "AgentInteractRouter: No routes available for routing (session_id=%s)",
                     getattr(visitor, "session_id", None),
                 )
                 result = RoutingResult.error_result(
-                    "No skills available for routing",
+                    "No skills or interact actions available for routing",
                     interaction.utterance or "",
                 )
                 await self._finalize_routing(
@@ -315,14 +313,19 @@ class SkillRouter:
                 )
                 if cached is not None:
                     result = RoutingResult.from_dict(cached)
-                    result.actions = self._resolve_skill_names_to_keys(
-                        result.actions, skill_descriptors
+                    result.actions = self._merge_and_validate_routes(
+                        result.actions,
+                        result.interact_actions,
+                        skill_descriptors,
+                        route_action_descriptors,
                     )
+                    result.interact_actions = []
 
             if result is None:
                 result = await self._route_direct(
                     interaction,
                     skill_descriptors,
+                    route_action_descriptors,
                     interaction_history or [],
                     conversation,
                 )
@@ -368,7 +371,9 @@ class SkillRouter:
             return result.posture, result
 
         except Exception as e:
-            logger.error(f"SkillRouter: Error during routing: {e}", exc_info=True)
+            logger.error(
+                f"AgentInteractRouter: Error during routing: {e}", exc_info=True
+            )
             return POSTURE_RESPOND, None
 
     # ------------------------------------------------------------------
@@ -401,6 +406,31 @@ class SkillRouter:
                 "plan_steps": skill_data.get("plan_steps", []),
                 "always_active": bool(skill_data.get("always_active", False))
                 or (bool(d) and always_active_from_skill_dir(d)),
+            }
+        return descriptors
+
+    async def _collect_route_action_descriptors(
+        self, agent: Any
+    ) -> Dict[str, Dict[str, Any]]:
+        """Enabled ``InteractAction`` class names (excluding this action) for routing."""
+        from jvagent.action.interact.base import InteractAction
+
+        actions_manager = await agent.get_actions_manager()
+        if not actions_manager:
+            return {}
+
+        self_name = self._action.get_class_name()
+        descriptors: Dict[str, Dict[str, Any]] = {}
+        for action in await actions_manager.get_actions(
+            enabled_only=True, entity=InteractAction
+        ):
+            name = action.get_class_name()
+            if name == self_name:
+                continue
+            descriptors[name] = {
+                "kind": "interact_action",
+                "description": getattr(action, "description", "") or "",
+                "weight": getattr(action, "weight", 0),
             }
         return descriptors
 
@@ -452,7 +482,9 @@ class SkillRouter:
             )
             return catalog
         except Exception as exc:
-            logger.warning("SkillRouter: skill catalog discovery failed: %s", exc)
+            logger.warning(
+                "AgentInteractRouter: skill catalog discovery failed: %s", exc
+            )
             return None
 
     # ------------------------------------------------------------------
@@ -463,6 +495,7 @@ class SkillRouter:
         self,
         interaction: "Interaction",
         skill_descriptors: Dict[str, Dict[str, Any]],
+        route_action_descriptors: Dict[str, Dict[str, Any]],
         interaction_history: List[Dict[str, Any]],
         conversation: Optional["Conversation"] = None,
     ) -> RoutingResult:
@@ -475,16 +508,17 @@ class SkillRouter:
                     "Could not get model action", interaction.utterance or ""
                 )
 
-            prompt = self._build_skill_routing_prompt(
+            prompt = self._build_routing_prompt(
                 utterance=interaction.utterance or "",
                 skill_descriptors=skill_descriptors,
+                route_action_descriptors=route_action_descriptors,
                 interaction_history=interaction_history,
                 conversation=conversation,
             )
 
             response = await model_action.generate(
                 prompt=prompt,
-                system=SKILL_ROUTER_SYSTEM_PROMPT,
+                system=self._action.routing_system_prompt,
                 temperature=self._router_model_temperature,
                 max_tokens=self._router_model_max_tokens,
                 model=self._router_model,
@@ -494,25 +528,32 @@ class SkillRouter:
 
             result = parse_routing_response(response)
 
-            # The LLM returns "actions" field — map back to skill names
-            result.actions = self._resolve_skill_names_to_keys(
-                result.actions, skill_descriptors
+            result.actions = self._merge_and_validate_routes(
+                result.actions,
+                result.interact_actions,
+                skill_descriptors,
+                route_action_descriptors,
             )
+            result.interact_actions = []
 
             return result
 
         except Exception as e:
-            logger.error(f"SkillRouter: Direct routing failed: {e}", exc_info=True)
+            logger.error(
+                f"AgentInteractRouter: Direct routing failed: {e}", exc_info=True
+            )
             return RoutingResult.error_result(str(e), interaction.utterance or "")
 
-    def _build_skill_routing_prompt(
+    def _build_routing_prompt(
         self,
         utterance: str,
         skill_descriptors: Dict[str, Dict[str, Any]],
+        route_action_descriptors: Dict[str, Dict[str, Any]],
         interaction_history: List[Dict[str, Any]],
         conversation: Optional["Conversation"] = None,
     ) -> str:
         skills_json = json.dumps(skill_descriptors, indent=2)
+        interact_actions_json = json.dumps(route_action_descriptors, indent=2)
 
         history_section = (
             format_interaction_history(interaction_history, conversation=conversation)
@@ -537,8 +578,10 @@ class SkillRouter:
                 fragments_list = "\n".join(
                     f'  {i + 1}. "{f}"' for i, f in enumerate(prior_fragments)
                 )
-                prior_fragments_section = PRIOR_FRAGMENTS_SECTION_SKILL.format(
-                    fragments_list=fragments_list,
+                prior_fragments_section = (
+                    self._action.routing_prior_fragments_section.format(
+                        fragments_list=fragments_list,
+                    )
                 )
 
         entity_field = ""
@@ -549,14 +592,17 @@ class SkillRouter:
 
         if self._enable_canned_response:
             skip_intents = ", ".join(self._skip_canned_for_intents)
-            optional_instructions += CANNED_RESPONSE_INSTRUCTIONS_TEMPLATE_SKILL.format(
-                max_words=self._canned_response_max_words,
-                skip_intents=skip_intents,
+            optional_instructions += (
+                self._action.routing_canned_instructions_template.format(
+                    max_words=self._canned_response_max_words,
+                    skip_intents=skip_intents,
+                )
             )
 
-        prompt = SKILL_ROUTING_PROMPT_TEMPLATE.format(
+        prompt = self._action.routing_user_prompt_template.format(
             utterance=utterance,
             skills_json=skills_json,
+            interact_actions_json=interact_actions_json,
             active_tasks_section=active_tasks_section,
             history_section=history_section,
             prior_fragments_section=prior_fragments_section,
@@ -590,11 +636,40 @@ class SkillRouter:
                 resolved.append(a_str)
             else:
                 logger.debug(
-                    "SkillRouter: Dropping non-skill action '%s' (not in skill descriptors)",
+                    "AgentInteractRouter: Dropping non-skill action '%s' (not in skill descriptors)",
                     a_str[:50],
                 )
 
         return list(dict.fromkeys(resolved))
+
+    def _merge_and_validate_routes(
+        self,
+        skill_names: List[str],
+        interact_names: List[str],
+        skill_descriptors: Dict[str, Dict[str, Any]],
+        route_action_descriptors: Dict[str, Dict[str, Any]],
+    ) -> List[str]:
+        """Keep valid skill keys and enabled interact action class names; dedupe order."""
+        valid_ia: Set[str] = set(route_action_descriptors)
+        resolved_skills = self._resolve_skill_names_to_keys(
+            skill_names, skill_descriptors
+        )
+        out: List[str] = list(dict.fromkeys(resolved_skills))
+        seen: Set[str] = set(out)
+
+        for raw in interact_names:
+            n = str(raw).strip() if raw else ""
+            if n and n in valid_ia and n not in seen:
+                seen.add(n)
+                out.append(n)
+
+        for raw in skill_names:
+            n = str(raw).strip() if raw else ""
+            if n and n in valid_ia and n not in seen:
+                seen.add(n)
+                out.append(n)
+
+        return out
 
     # ------------------------------------------------------------------
     # Canned response
@@ -625,7 +700,9 @@ class SkillRouter:
             interaction.canned_response = canned.strip()
             await interaction.save()
         except Exception as e:
-            logger.warning(f"SkillRouter: Failed to publish canned response: {e}")
+            logger.warning(
+                f"AgentInteractRouter: Failed to publish canned response: {e}"
+            )
 
     # ------------------------------------------------------------------
     # Posture handlers
@@ -633,7 +710,7 @@ class SkillRouter:
 
     async def _handle_suppress(self, visitor: Any) -> None:
         await visitor.set_walk_path([])
-        logger.info("SkillRouter: SUPPRESS - cleared walk path, no response")
+        logger.info("AgentInteractRouter: SUPPRESS - cleared walk path, no response")
 
     async def _handle_defer(
         self,
@@ -660,7 +737,7 @@ class SkillRouter:
         await conversation.update_context({BUFFER_KEY: buffer})
         await visitor.set_walk_path([])
         logger.info(
-            "SkillRouter: DEFER - appended to buffer (%d fragments), no response",
+            "AgentInteractRouter: DEFER - appended to buffer (%d fragments), no response",
             len(buffer),
         )
 
@@ -682,7 +759,7 @@ class SkillRouter:
                 )
                 await visitor.add_directive(directive)
                 logger.info(
-                    "SkillRouter: RESPOND - injected directive with %d prior fragments",
+                    "AgentInteractRouter: RESPOND - injected directive with %d prior fragments",
                     len(fragments),
                 )
             await conversation.update_context({BUFFER_KEY: []})
@@ -702,7 +779,7 @@ class SkillRouter:
 
         issues = result.verification.issues_found if result.verification else []
         logger.info(
-            "SkillRouter: Low confidence (%.2f < %.2f), issues: %s",
+            "AgentInteractRouter: Low confidence (%.2f < %.2f), issues: %s",
             result.confidence,
             self._confidence_threshold,
             issues,
@@ -722,7 +799,7 @@ class SkillRouter:
                     await self._action.publish(visitor, clarification, stream=False)
                 except Exception as e:
                     logger.warning(
-                        "SkillRouter: Failed to publish clarification: %s", e
+                        "AgentInteractRouter: Failed to publish clarification: %s", e
                     )
 
             result.needs_clarification = True
@@ -740,11 +817,47 @@ class SkillRouter:
         *,
         interaction: Optional["Interaction"] = None,
     ) -> str:
-        template = random.choice(DEFAULT_CLARIFICATION_MESSAGES)
+        issues_text = ", ".join(str(i) for i in issues) if issues else "(none)"
+
+        user_tpl = (
+            self._action.routing_clarification_user_prompt_template or ""
+        ).strip()
+        if user_tpl:
+            try:
+                model_action = await self._action.get_model_action(purpose="router")
+                if model_action:
+                    primary_prompt = user_tpl.format(
+                        utterance=utterance,
+                        interpretation=interpretation,
+                        intent_type=intent_type,
+                        confidence=confidence,
+                        issues=issues_text,
+                    )
+                    clarification = await model_action.generate(
+                        prompt=primary_prompt,
+                        temperature=0.7,
+                        max_tokens=150,
+                        model=self._router_model,
+                        calling_action_name=(
+                            f"{self._action.get_class_name()}_clarification_primary"
+                        ),
+                        interaction=interaction,
+                    )
+                    if clarification and clarification.strip():
+                        return clarification.strip()
+            except Exception as e:
+                logger.warning(
+                    "AgentInteractRouter: Primary clarification prompt failed: %s", e
+                )
+
+        fallbacks = self._action.routing_clarification_fallback_messages
+        if not fallbacks:
+            return ""
+        template = random.choice(fallbacks)
         try:
             model_action = await self._action.get_model_action(purpose="router")
             if model_action:
-                prompt = CLARIFICATION_PARAPHRASE_PROMPT_TEMPLATE_SKILL.format(
+                prompt = self._action.routing_clarification_paraphrase_prompt_template.format(
                     utterance=utterance,
                     template=template,
                 )
@@ -759,7 +872,9 @@ class SkillRouter:
                 if clarification and clarification.strip():
                     return clarification.strip()
         except Exception as e:
-            logger.warning("SkillRouter: Paraphrase failed, using template: %s", e)
+            logger.warning(
+                "AgentInteractRouter: Paraphrase failed, using template: %s", e
+            )
         return template
 
     # ------------------------------------------------------------------
@@ -812,7 +927,7 @@ class SkillRouter:
         )
 
         logger.info(
-            "SkillRouter: intent_type=%s, confidence=%.2f, routed to %d skills (+ %d exceptions)",
+            "AgentInteractRouter: intent_type=%s, confidence=%.2f, routed to %d skills (+ %d exceptions)",
             result.intent_type,
             result.confidence,
             len(routed_skills),
@@ -858,7 +973,9 @@ class SkillRouter:
         filtered_actions = sorted(filtered_actions, key=lambda a: a.weight)
 
         curated = await visitor.curate_walk_path(filtered_actions)
-        logger.info("SkillRouter: Updated walk path with %d actions", len(curated))
+        logger.info(
+            "AgentInteractRouter: Updated walk path with %d actions", len(curated)
+        )
 
     async def _get_dynamic_exceptions(self, agent: Any) -> List[str]:
         actions_manager = await agent.get_actions_manager()

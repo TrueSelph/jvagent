@@ -70,7 +70,8 @@ class RoutingResult:
         posture: Response posture (RESPOND | SUPPRESS | DEFER) from posture classification
         interpretation: Synopsis of user intent and why this posture applies. Covers both posture justification and intent summary.
         intent_type: Classified intent (CONVERSATIONAL, INFORMATIONAL, INTERACTIVE, DIRECTIVE, UNCLEAR)
-        actions: List of matched action names to route to
+        actions: Matched skill catalog keys and/or interact action class names (walk path)
+        interact_actions: Parsed ``interact_actions`` JSON field before merge (AgentInteractRouter)
         confidence: Confidence score (0.0-1.0)
         verification: Optional self-verification trace (issues_found / passed / reasoning) used by InteractRouter to decide whether to escalate to clarification
         extracted_entities: Generic dict with extracted entity data (no predefined schema)
@@ -83,6 +84,7 @@ class RoutingResult:
     interpretation: str = ""
     intent_type: str = "UNCLEAR"
     actions: List[str] = field(default_factory=list)
+    interact_actions: List[str] = field(default_factory=list)
     confidence: float = 0.0
     verification: Optional[VerificationTrace] = None
     extracted_entities: ExtractedEntities = field(default_factory=dict)
@@ -104,6 +106,8 @@ class RoutingResult:
         }
         if self.verification:
             result["verification"] = self.verification.to_dict()
+        if self.interact_actions:
+            result["interact_actions"] = self.interact_actions
         return result
 
     @classmethod
@@ -115,8 +119,13 @@ class RoutingResult:
         verification) and round-tripped ``to_dict`` payloads from the routing
         cache (where ``needs_clarification`` was previously decided).
 
-        ``actions`` may also be supplied under the alias ``skills`` to match the
-        ``SkillRouter`` prompt terminology; ``actions`` wins when both are set.
+        ``actions`` may be supplied under the alias ``skills``. When both ``actions``
+        and ``skills`` appear, ``actions`` wins (legacy InteractRouter payloads).
+
+        Split schema (``AgentInteractRouter``): if ``interact_actions`` is present,
+        or if only ``skills`` is present (no top-level ``actions``), then
+        ``skills`` → ``actions`` (skill catalog keys) and ``interact_actions`` →
+        ``interact_actions`` (interact action class names).
 
         Args:
             data: Parsed JSON from LLM response or cached ``to_dict`` output
@@ -128,11 +137,26 @@ class RoutingResult:
         verification_data = data.get("verification")
         entities_data = data.get("extracted_entities", {})
 
+        has_split_schema = "interact_actions" in data or (
+            "skills" in data and "actions" not in data
+        )
+        if has_split_schema:
+            parsed_actions = cls._parse_actions(data.get("skills", []))
+            parsed_interact_actions = cls._parse_actions(
+                data.get("interact_actions", [])
+            )
+        else:
+            parsed_actions = cls._parse_actions(
+                data.get("actions", data.get("skills", []))
+            )
+            parsed_interact_actions = []
+
         return cls(
             posture=cls._normalize_posture(data.get("posture", POSTURE_RESPOND)),
             interpretation=data.get("interpretation", ""),
             intent_type=cls._normalize_intent_type(data.get("intent_type", "UNCLEAR")),
-            actions=cls._parse_actions(data.get("actions", data.get("skills", []))),
+            actions=parsed_actions,
+            interact_actions=parsed_interact_actions,
             confidence=cls._parse_confidence(data.get("confidence", 0.0)),
             verification=(
                 VerificationTrace.from_dict(verification_data)
@@ -347,11 +371,14 @@ def parse_routing_response(response: str) -> RoutingResult:
         result = RoutingResult.from_dict(data, raw_response=response)
 
         # Enforce CONVERSATIONAL intent rule
-        if result.intent_type == "CONVERSATIONAL" and result.actions:
+        if result.intent_type == "CONVERSATIONAL" and (
+            result.actions or result.interact_actions
+        ):
             logger.debug(
-                "RoutingResult: Enforcing CONVERSATIONAL intent rule - clearing actions"
+                "RoutingResult: Enforcing CONVERSATIONAL intent rule - clearing routes"
             )
             result.actions = []
+            result.interact_actions = []
 
         return result
 

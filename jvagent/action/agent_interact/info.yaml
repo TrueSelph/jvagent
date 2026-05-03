@@ -16,4 +16,5 @@ package:
       weight: -200
   dependencies:
     jvagent: ~0.0.1
-    actions: []
+    actions:
+      - "jvagent/persona"

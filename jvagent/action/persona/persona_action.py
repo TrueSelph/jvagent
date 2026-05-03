@@ -322,6 +322,126 @@ class PersonaAction(Action):
             model_action=model_action,
         )
 
+    async def respond_slim(
+        self,
+        interaction: Interaction,
+        visitor: Optional[Any] = None,
+        *,
+        prompt: Optional[str] = None,
+        history: Optional[List[Dict[str, Any]]] = None,
+        transient: bool = False,
+    ) -> Optional[str]:
+        """Single LM turn with ``system`` = ``persona_description`` only (no full compose).
+
+        Skips ``_compose_prompt``, directives, and persona parameter injection. Uses the
+        same model, streaming / ``_pipe_response``, voice formatting, and optional
+        image interpretation as the main respond path where applicable.
+
+        Args:
+            interaction: Active interaction (utterance used if ``prompt`` is omitted).
+            visitor: Optional walker for bus / streaming.
+            prompt: User-facing prompt text; defaults to ``interaction.utterance``.
+            history: Optional formatted history list for ``generate`` (default none).
+            transient: Passed through to ``generate`` / ``_pipe_response``.
+
+        Returns:
+            Generated text, or None if generation returned empty.
+
+        Raises:
+            ValidationError: If ``persona_description`` is empty.
+            RuntimeError: If no language model action is available.
+        """
+        system = (self.persona_description or "").strip()
+        if not system:
+            raise ValidationError(
+                message="PersonaAction.respond_slim requires non-empty persona_description.",
+                details={"reason": "empty_persona_description"},
+            )
+
+        model_action = await self.get_model_action(required=True)
+
+        if visitor:
+            data = getattr(visitor, "data", None) or {}
+            image_urls = data.get("image_urls") or []
+            if image_urls and data.get("image_interpretation") is not False:
+                try:
+                    vision_pass_model_action = (
+                        await self._get_vision_model_action() or model_action
+                    )
+                    vision_pass_kwargs: dict = {}
+                    if self.vision_model:
+                        vision_pass_kwargs["model"] = self.vision_model
+                    if self.vision_model_temperature is not None:
+                        vision_pass_kwargs["temperature"] = (
+                            self.vision_model_temperature
+                        )
+                    if self.vision_model_max_tokens is not None:
+                        vision_pass_kwargs["max_tokens"] = self.vision_model_max_tokens
+                    interpretation = await generate_image_interpretation(
+                        image_urls, vision_pass_model_action, **vision_pass_kwargs
+                    )
+                    if interpretation:
+                        interaction.image_interpretation = interpretation
+                        await interaction.save()
+                except Exception as e:
+                    logger.warning(
+                        f"PersonaAction.respond_slim: Failed to generate image interpretation: {e}"
+                    )
+
+        prompt_text = prompt if prompt is not None else (interaction.utterance or "")
+        use_voice = self._use_voice_formatting(interaction, visitor)
+        if use_voice and prompt_text:
+            prompt_text = (
+                f"{prompt_text}\n\n[VOICE: Plain text only. Max {self.voice_response_limit} "
+                "words. No markdown, lists, or **bold**.]"
+            )
+
+        prompt_text = build_prompt_for_vision(prompt_text, visitor, model_action)
+
+        streaming = bool(
+            visitor
+            and getattr(visitor, "stream", False)
+            and getattr(visitor, "response_bus", None)
+            and getattr(visitor, "session_id", None)
+        )
+        response_bus = getattr(visitor, "response_bus", None) if visitor else None
+
+        response_format = (
+            {"type": "json_object"} if self.use_structured_output else None
+        )
+        max_tokens = self.voice_max_tokens if use_voice else self.model_max_tokens
+
+        response = await model_action.generate(
+            prompt=prompt_text or " ",
+            stream=streaming,
+            system=system,
+            history=list(history or []),
+            calling_action_name=self.get_class_name(),
+            model=self.model,
+            temperature=self.model_temperature,
+            max_tokens=max_tokens,
+            response_bus=response_bus if streaming else None,
+            interaction=interaction,
+            response_format=response_format,
+            transient=transient,
+        )
+
+        if self.use_structured_output and response:
+            parsed_response = self._parse_structured_output(response)
+            if parsed_response:
+                response = parsed_response
+
+        if use_voice and response:
+            response = self._sanitize_voice_response(response)
+
+        if response and response.strip():
+            await self._pipe_response(
+                response, interaction, visitor, streaming, transient
+            )
+            interaction.record_action_execution("PersonaAction")
+
+        return response
+
     async def _get_user_display_name(self, interaction: Interaction) -> str:
         """Resolve a friendly user name for prompt personalization."""
         try:

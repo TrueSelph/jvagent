@@ -2,6 +2,8 @@
 
 Demonstrates **AgentInteractAction**: unified skill routing (fast posture classification), native lightweight conversation, and an agentic skill loop with pre-loaded retrieval skills. Actions resolve from the installed **jvagent** package; this folder contains only `agent.yaml` and documentation (no bundled `actions/` subtree).
 
+See the repository guide **[AgentInteract](../../../../../docs/agent-interact.md)** for architecture, routing (`skills` + `interact_actions`), canned lead-ins, and prompt overrides.
+
 ## Structure
 
 ```

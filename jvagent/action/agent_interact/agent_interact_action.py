@@ -3,13 +3,16 @@
 Fuses the InteractRouter and SkillInteractAction into a single InteractAction
 with a single walker visit.  Architecture:
 
-Phase 1 — Route (SkillRouter):
+Phase 1 — Route (``AgentInteractRouter``):
     ``router_model`` + optional ``router_model_action_type`` (falls back to
     ``model_action_type``). Register one LM action per provider (e.g. OpenAI + Ollama).
 
-Phase 2 — Execute:
-    2a: Converse fast path — ``converse_model_action_type`` (then router, then skill).
-    2b: Skill loop — ``model_action_type`` (agentic think-act-observe).
+Phase 2 — Execute (requires enabled ``PersonaAction`` on the agent):
+    2a: Conversational path — ``response_mode`` ``publish`` uses ``PersonaAction.respond_slim``
+    (``system`` = ``persona_description`` only); ``respond`` adds a directive and calls
+    ``PersonaAction`` via ``respond(visitor)``.
+    2b: Skill loop — ``model_action_type`` (agentic think-act-observe); final delivery
+    mirrors the same ``publish`` vs ``respond`` split.
 
 Legacy InteractRouter + SkillInteractAction remain available for backward
 compatibility; this class takes precedence when declared in agent.yaml.
@@ -22,7 +25,16 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 
 from jvspatial.core.annotations import attribute
 
-from jvagent.action.agent_interact.converse import ConverseHandler
+from jvagent.action.agent_interact.router import AgentInteractRouter
+from jvagent.action.agent_interact.router.prompts import (
+    ROUTING_CANNED_INSTRUCTIONS_TEMPLATE,
+    ROUTING_CLARIFICATION_FALLBACK_MESSAGES,
+    ROUTING_CLARIFICATION_PARAPHRASE_PROMPT_TEMPLATE,
+    ROUTING_CLARIFICATION_USER_PROMPT_TEMPLATE,
+    ROUTING_PRIOR_FRAGMENTS_SECTION,
+    ROUTING_SYSTEM_PROMPT,
+    ROUTING_USER_PROMPT_TEMPLATE,
+)
 from jvagent.action.agent_interact.skill_handler.agentic_loop import (
     AgentInteractSkillAction,
     run_agentic_skill_loop,
@@ -44,8 +56,8 @@ from jvagent.action.agent_interact.skill_handler.run_config import (
     build_skill_run_config,
 )
 from jvagent.action.agent_interact.skill_handler.shim import AgentInteractVisitorShim
-from jvagent.action.agent_interact.skill_handler.skill_router import SkillRouter
 from jvagent.action.interact.base import InteractAction
+from jvagent.action.persona.persona_action import PersonaAction
 from jvagent.action.router.routing_result import POSTURE_RESPOND, RoutingResult
 from jvagent.action.skill.skill_catalog import SkillCatalog
 
@@ -53,6 +65,10 @@ if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
 
 logger = logging.getLogger(__name__)
+
+
+def _routing_clarification_fallbacks_default() -> List[str]:
+    return list(ROUTING_CLARIFICATION_FALLBACK_MESSAGES)
 
 
 class AgentInteractAction(InteractAction):
@@ -87,17 +103,46 @@ class AgentInteractAction(InteractAction):
     enable_routing_cache: bool = attribute(
         default=False, description="Cache routing decisions per session"
     )
+    routing_system_prompt: str = attribute(
+        default=ROUTING_SYSTEM_PROMPT,
+        description="Routing LLM system prompt (defaults in router/prompts.py)",
+    )
+    routing_user_prompt_template: str = attribute(
+        default=ROUTING_USER_PROMPT_TEMPLATE,
+        description=(
+            "Routing user prompt template; placeholders: utterance, skills_json, "
+            "interact_actions_json, active_tasks_section, history_section, "
+            "prior_fragments_section, optional_instructions, entity_field, canned_field"
+        ),
+    )
+    routing_prior_fragments_section: str = attribute(
+        default=ROUTING_PRIOR_FRAGMENTS_SECTION,
+        description="Template for prior deferred fragments block; placeholder: fragments_list",
+    )
+    routing_canned_instructions_template: str = attribute(
+        default=ROUTING_CANNED_INSTRUCTIONS_TEMPLATE,
+        description="Appended routing rule #6 for canned_response; placeholders: skip_intents, max_words",
+    )
+    routing_clarification_user_prompt_template: str = attribute(
+        default=ROUTING_CLARIFICATION_USER_PROMPT_TEMPLATE,
+        description=(
+            "Primary clarification user prompt (low-confidence branch); placeholders: "
+            "utterance, interpretation, intent_type, confidence, issues. Empty string skips this step."
+        ),
+    )
+    routing_clarification_paraphrase_prompt_template: str = attribute(
+        default=ROUTING_CLARIFICATION_PARAPHRASE_PROMPT_TEMPLATE,
+        description="User prompt when paraphrasing a clarification fallback; placeholders: utterance, template",
+    )
+    routing_clarification_fallback_messages: List[str] = attribute(
+        default_factory=_routing_clarification_fallbacks_default,
+        description="Fallback clarification strings before paraphrase LLM call",
+    )
 
-    # ── Converse fast path (no tools) ──
+    # ── Conversational branch (PersonaAction) ──
     converse_enabled: bool = attribute(
-        default=True, description="Enable conversational fast path"
-    )
-    converse_model: str = attribute(
-        default="gpt-4o-mini", description="Model id for converse path"
-    )
-    converse_model_action_type: str = attribute(
-        default="",
-        description="LM action class name for converse (empty → router, then model_action_type)",
+        default=True,
+        description="Enable conversational branch (requires PersonaAction)",
     )
 
     # ── Skill loop ──
@@ -125,7 +170,11 @@ class AgentInteractAction(InteractAction):
     )
     response_mode: str = attribute(
         default="publish",
-        description="Deliver response via publish or respond (Persona)",
+        description=(
+            "Final delivery for conversational turns and skill results: 'publish' = "
+            "PersonaAction.respond_slim (system = persona_description only); "
+            "'respond' = full Persona via directives + respond(visitor). Requires PersonaAction."
+        ),
     )
 
     # ── Shared ──
@@ -177,9 +226,7 @@ class AgentInteractAction(InteractAction):
         default_factory=list, description="Route to these actions when media attached"
     )
 
-    # ── Converse path tuning ──
-    converse_temperature: float = attribute(default=0.7)
-    converse_max_tokens: int = attribute(default=256)
+    # ── Conversational branch tuning ──
     converse_context_limit: int = attribute(
         default=2, description="Prior interactions in conv context"
     )
@@ -190,7 +237,10 @@ class AgentInteractAction(InteractAction):
             "Keep responses brief (1-3 sentences). "
             "For task-oriented requests, acknowledge and hand off gracefully."
         ),
-        description="System prompt for converse path responses",
+        description=(
+            "When response_mode=respond on conversational turns, this text is embedded in the "
+            "directive to PersonaAction (not used as a separate LM system prompt)."
+        ),
     )
 
     # ── Skill loop tuning ──
@@ -253,15 +303,10 @@ class AgentInteractAction(InteractAction):
         router = self._strip_model_action_type(
             getattr(self, "router_model_action_type", None)
         )
-        converse = self._strip_model_action_type(
-            getattr(self, "converse_model_action_type", None)
-        )
         if purpose == "skill":
             return skill
         if purpose == "router":
             return router or skill
-        if purpose == "converse":
-            return converse or router or skill
         return skill
 
     async def get_model_action(
@@ -270,16 +315,13 @@ class AgentInteractAction(InteractAction):
         *,
         purpose: str = "skill",
     ) -> Optional[Any]:
-        """Return the LanguageModelAction for *purpose* (router / converse / skill).
+        """Return the LanguageModelAction for *purpose* (``router`` or ``skill``).
 
-        Each *purpose* maps to a registered LM action class name:
-        ``router_model_action_type`` → ``converse_model_action_type`` →
-        ``model_action_type`` with the fallbacks described on those attributes.
+        ``router_model_action_type`` falls back to ``model_action_type`` when unset.
 
         Args:
             required: If True, raise when no LM action can be resolved.
-            purpose: ``skill`` (agentic loop), ``router`` (SkillRouter), or
-                ``converse`` (ConverseHandler).
+            purpose: ``skill`` (agentic loop) or ``router`` (``AgentInteractRouter``).
         """
         from jvagent.action.model.language.base import LanguageModelAction
 
@@ -306,6 +348,60 @@ class AgentInteractAction(InteractAction):
                 f"Model action for purpose '{purpose}' (type '{label}') not found for agent '{agent_id}'"
             )
         return None
+
+    async def _require_persona_for_interact(self) -> PersonaAction:
+        """Return enabled PersonaAction or raise (AgentInteract hard-depends on Persona)."""
+        persona = await self.get_action(PersonaAction)
+        agent = await self.get_agent()
+        aid = getattr(agent, "id", None) or "unknown"
+        if persona is None or not getattr(persona, "enabled", True):
+            raise RuntimeError(
+                f"AgentInteractAction requires an enabled PersonaAction on agent '{aid}'. "
+                "Add `action: jvagent/persona` to agent.yaml (see examples/jvagent_app/agents/jvagent/unified_agent)."
+            )
+        desc = (getattr(persona, "persona_description", None) or "").strip()
+        if not desc:
+            raise RuntimeError(
+                f"AgentInteractAction requires non-empty PersonaAction.persona_description "
+                f"on agent '{aid}'."
+            )
+        return persona
+
+    @staticmethod
+    def _persona_description_text(persona: PersonaAction) -> str:
+        return (getattr(persona, "persona_description", None) or "").strip()
+
+    async def _deliver_slim_persona_publish(
+        self,
+        visitor: "InteractWalker",
+        *,
+        user_prompt: str,
+        history: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
+        """Delegate slim delivery to ``PersonaAction.respond_slim``."""
+        persona = await self._require_persona_for_interact()
+        interaction = visitor.interaction
+        if not interaction:
+            return
+        await persona.respond_slim(
+            interaction,
+            visitor,
+            prompt=user_prompt,
+            history=history or [],
+        )
+
+    @staticmethod
+    def _format_conversational_directive_for_persona(
+        utterance: Optional[str], directive_instructions: str
+    ) -> str:
+        uq = (utterance or "").strip() or "(no utterance)"
+        instr = (directive_instructions or "").strip()
+        return (
+            f"CONVERSATIONAL_TURN\n\nUser said:\n{uq}\n\n"
+            f"Instructions for this reply:\n{instr}\n\n"
+            "Respond in character per your persona. Keep it brief (1–3 sentences) unless "
+            "the user clearly needs more. For task-oriented requests, acknowledge and hand off."
+        )
 
     # ------------------------------------------------------------------
     # InteractAction entry point
@@ -335,7 +431,7 @@ class AgentInteractAction(InteractAction):
         visitor._skill_state.setdefault("action", self)
 
         # ── Phase 1: Route ──
-        router = SkillRouter(self)
+        router = AgentInteractRouter(self)
         posture, routing = await router.route(visitor)
 
         if posture == "SUPPRESS" or posture == "DEFER":
@@ -343,6 +439,13 @@ class AgentInteractAction(InteractAction):
 
         if routing is None:
             routing = RoutingResult(posture=POSTURE_RESPOND)
+
+        try:
+            await self._require_persona_for_interact()
+        except RuntimeError as exc:
+            logger.error("AgentInteractAction: %s", exc)
+            await visitor.unrecord_action_execution()
+            raise
 
         # ── Phase 2: Execute ──
         if self.converse_enabled and (
@@ -357,8 +460,56 @@ class AgentInteractAction(InteractAction):
     # ------------------------------------------------------------------
 
     async def _phase_execute_conversational(self, visitor: "InteractWalker") -> None:
-        conv = ConverseHandler(self)
-        await conv.respond(visitor)
+        conversation = visitor.conversation
+        interaction = visitor.interaction
+        if not conversation or not interaction:
+            logger.warning(
+                "AgentInteractAction: conversational path missing conversation"
+            )
+            return
+
+        mode = self._normalize_effective_response_mode(self.response_mode)
+        if mode == "respond":
+            directive = self._format_conversational_directive_for_persona(
+                interaction.utterance or "",
+                self.converse_persona_prompt,
+            )
+            await visitor.add_directive(directive)
+            await self.respond(
+                visitor,
+                use_history=True,
+                history_limit=max(
+                    1, int(getattr(self, "converse_context_limit", 2) or 2)
+                ),
+            )
+            return
+
+        history: List[Dict[str, Any]] = []
+        limit = max(0, int(getattr(self, "converse_context_limit", 2) or 0))
+        if limit and conversation:
+            history = await conversation.get_interaction_history(
+                limit=limit,
+                excluded=interaction.id,
+                with_utterance=True,
+                with_response=True,
+                formatted=True,
+            )
+        utterance = interaction.utterance or ""
+        user_prompt = utterance
+        if history:
+            lines: List[str] = ["Recent conversation (oldest first):"]
+            for h in history:
+                u = (h.get("utterance") or h.get("user") or "").strip()
+                r = (h.get("response") or h.get("assistant") or "").strip()
+                if u:
+                    lines.append(f"User: {u}")
+                if r:
+                    lines.append(f"Assistant: {r}")
+            lines.append(f"\nCurrent user message:\n{utterance}")
+            user_prompt = "\n".join(lines)
+        await self._deliver_slim_persona_publish(
+            visitor, user_prompt=user_prompt, history=[]
+        )
 
     # ------------------------------------------------------------------
     # Phase 2b: Agentic skill loop
@@ -384,11 +535,14 @@ class AgentInteractAction(InteractAction):
 
             cfg = build_skill_run_config(self)
 
-            # ── Resolve persona identity for system prompt ──
-            agent_name = "Agent"
-            agent_description = "An intelligent skills-based agent."
+            persona = await self._require_persona_for_interact()
+            agent_name = getattr(persona, "persona_name", "Agent")
+            agent_description = getattr(
+                persona,
+                "persona_description",
+                "An intelligent skills-based agent.",
+            )
 
-            inject_persona_identity = (self.response_mode or "publish") == "respond"
             try:
                 visitor_shim = AgentInteractVisitorShim(
                     agent,
@@ -400,38 +554,17 @@ class AgentInteractAction(InteractAction):
                     response_bus=visitor.response_bus,
                     channel=getattr(visitor, "channel", None),
                 )
-                prompt_catalog = await SkillCatalog.discover(
+                await SkillCatalog.discover(
                     visitor=visitor_shim,
                     skills_selector=cfg.skills,
                     skills_source=cfg.skills_source,
                     denied_skills=cfg.denied_skills or None,
-                )
-                inject_persona_identity = (
-                    SkillCatalog.should_inject_persona_identity_for_skill_prompt(
-                        prompt_catalog.skills, self.response_mode
-                    )
                 )
             except Exception as exc:
                 logger.warning(
                     "AgentInteractAction: skill discovery for persona prompt failed: %s",
                     exc,
                 )
-
-            if inject_persona_identity and agent:
-                actions_manager = await agent.get_actions_manager()
-                if actions_manager:
-                    enabled_actions = await actions_manager.get_actions(
-                        enabled_only=True
-                    )
-                    for a in enabled_actions:
-                        if a.get_class_name() == "PersonaAction":
-                            agent_name = getattr(a, "persona_name", "Agent")
-                            agent_description = getattr(
-                                a,
-                                "persona_description",
-                                "An intelligent skills-based agent.",
-                            )
-                            break
 
             # ── Publish callback ──
             async def _publish_cb(
@@ -503,30 +636,39 @@ class AgentInteractAction(InteractAction):
                         result, skill_catalog=skill_catalog
                     )
                 )
-                use_persona = (
-                    effective_mode == "respond"
-                    and not AgentInteractSkillAction._is_degenerate_response(
-                        result.final_response,
-                        max_chars=cfg.degenerate_response_max_chars,
-                    )
+                degenerate = AgentInteractSkillAction._is_degenerate_response(
+                    result.final_response,
+                    max_chars=cfg.degenerate_response_max_chars,
                 )
-                if use_persona:
+                if effective_mode == "respond" and not degenerate:
                     await visitor.add_directive(
                         self._format_persona_directive(
                             visitor.utterance, result.final_response
                         )
                     )
                     await self.respond(visitor)
-                else:
-                    if effective_mode == "respond":
-                        logger.warning(
-                            "AgentInteractAction: skipping Persona; degenerate response; "
-                            "publishing directly"
-                        )
+                elif effective_mode == "respond" and degenerate:
+                    logger.warning(
+                        "AgentInteractAction: skipping Persona; degenerate response; "
+                        "publishing raw skill output"
+                    )
                     await self.publish(
                         visitor,
                         content=result.final_response,
                         streaming_complete=True,
+                    )
+                elif degenerate:
+                    await self.publish(
+                        visitor,
+                        content=result.final_response,
+                        streaming_complete=True,
+                    )
+                else:
+                    slim_prompt = self._format_skill_slim_publish_prompt(
+                        visitor.utterance, result.final_response
+                    )
+                    await self._deliver_slim_persona_publish(
+                        visitor, user_prompt=slim_prompt, history=[]
                     )
 
         except Exception as exc:
@@ -569,6 +711,19 @@ class AgentInteractAction(InteractAction):
         return fallback if fallback in ("respond", "publish") else "publish"
 
     @staticmethod
+    def _format_skill_slim_publish_prompt(
+        utterance: Optional[str], final_response: str
+    ) -> str:
+        uq = (utterance or "").strip() or "(no utterance)"
+        return (
+            f"The user's message (for context):\n{uq}\n\n"
+            "Draft assistant result to deliver naturally to the user. "
+            "Preserve all facts, names, quotes, and URLs; do not invent sources.\n\n"
+            f"DRAFT:\n{final_response}\n\n"
+            "Write the concise user-facing reply."
+        )
+
+    @staticmethod
     def _format_persona_directive(utterance: Optional[str], final_response: str) -> str:
         uq = (utterance or "").strip() or "(no utterance)"
         return (
@@ -600,5 +755,13 @@ class AgentInteractAction(InteractAction):
         if not self.model_action_type:
             return False
         if self.max_iterations < 1:
+            return False
+        agent = await self.get_agent()
+        if not agent:
+            return True
+        persona = await self.get_action(PersonaAction)
+        if not persona or not getattr(persona, "enabled", True):
+            return False
+        if not self._persona_description_text(persona):
             return False
         return True

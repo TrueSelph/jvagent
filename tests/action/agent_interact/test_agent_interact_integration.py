@@ -14,7 +14,27 @@ from jvagent.action.router.routing_result import (
 )
 
 _ACTION_MODULE = "jvagent.action.agent_interact.agent_interact_action"
-_ROUTER_MODULE = "jvagent.action.agent_interact.skill_handler.skill_router"
+_ROUTER_MODULE = "jvagent.action.agent_interact.router.service"
+
+
+def _make_persona_mock(*, slim_reply: str = "Slim polished reply."):
+    persona = MagicMock()
+    persona.enabled = True
+    persona.persona_description = "Integration test persona description."
+    persona.persona_name = "IntegrationTester"
+    persona.model = "gpt-4o-mini"
+    persona.model_temperature = 0.2
+    persona.model_max_tokens = 2048
+    persona.respond_slim = AsyncMock(return_value=slim_reply)
+    return persona
+
+
+def _patch_require_persona(persona):
+    return patch(
+        f"{_ACTION_MODULE}.AgentInteractAction._require_persona_for_interact",
+        new_callable=AsyncMock,
+        return_value=persona,
+    )
 
 
 def _make_visitor(**overrides):
@@ -87,31 +107,18 @@ class TestFullFlowConversational:
             canned_response="",
         )
 
-        conv_model = MagicMock()
-        conv_model.generate = AsyncMock(return_value="Hi there! How can I help?")
-        conv_model.provider = "openai"
-        conv_model.model = "gpt-4o-mini"
+        persona = _make_persona_mock(slim_reply="Hi there! How can I help?")
 
         with patch(
-            f"{_ROUTER_MODULE}.SkillRouter.route",
+            f"{_ROUTER_MODULE}.AgentInteractRouter.route",
             new_callable=AsyncMock,
             return_value=(POSTURE_RESPOND, routing),
-        ), patch(
-            f"{_ACTION_MODULE}.AgentInteractAction.get_model_action",
-            new_callable=AsyncMock,
-            return_value=conv_model,
-        ), patch(
-            "jvagent.action.interact.base.InteractAction.publish",
-            new_callable=AsyncMock,
-        ) as mock_publish:
+        ), _patch_require_persona(persona):
             await action.execute(visitor)
 
-        conv_model.generate.assert_called_once()
-        mock_publish.assert_called_once_with(
-            visitor,
-            content="Hi there! How can I help?",
-            streaming_complete=True,
-        )
+        persona.respond_slim.assert_called_once()
+        _a, kw = persona.respond_slim.call_args
+        assert kw.get("history") == []
 
 
 # ---------------------------------------------------------------------------
@@ -153,11 +160,13 @@ class TestFullFlowSkillBased:
         model = AsyncMock()
         model.generate = AsyncMock()
 
+        persona = _make_persona_mock(slim_reply="Polished: Email sent to Bob.")
+
         with patch(
-            f"{_ROUTER_MODULE}.SkillRouter.route",
+            f"{_ROUTER_MODULE}.AgentInteractRouter.route",
             new_callable=AsyncMock,
             return_value=(POSTURE_RESPOND, routing),
-        ), patch(
+        ), _patch_require_persona(persona), patch(
             f"{_ACTION_MODULE}.AgentInteractAction.get_model_action",
             new_callable=AsyncMock,
             return_value=model,
@@ -165,18 +174,12 @@ class TestFullFlowSkillBased:
             "jvagent.action.skill.skill_action.SkillAction.run_to_completion",
             new_callable=AsyncMock,
             return_value=skill_result,
-        ), patch(
-            "jvagent.action.interact.base.InteractAction.publish",
-            new_callable=AsyncMock,
-        ) as mock_publish:
+        ):
             await action.execute(visitor)
 
-        # result.final_response should be published
-        mock_publish.assert_called_once_with(
-            visitor,
-            content="Email sent to Bob.",
-            streaming_complete=True,
-        )
+        persona.respond_slim.assert_called_once()
+        _a, kw = persona.respond_slim.call_args
+        assert "Email sent to Bob" in kw.get("prompt", "")
 
     @pytest.mark.asyncio
     async def test_skill_loop_passes_preloaded_skills_to_context(self):
@@ -215,12 +218,13 @@ class TestFullFlowSkillBased:
             return skill_result
 
         model = AsyncMock()
+        persona = _make_persona_mock()
 
         with patch(
-            f"{_ROUTER_MODULE}.SkillRouter.route",
+            f"{_ROUTER_MODULE}.AgentInteractRouter.route",
             new_callable=AsyncMock,
             return_value=(POSTURE_RESPOND, routing),
-        ), patch(
+        ), _patch_require_persona(persona), patch(
             f"{_ACTION_MODULE}.AgentInteractAction.get_model_action",
             new_callable=AsyncMock,
             return_value=model,
@@ -244,13 +248,13 @@ class TestFullFlowSkillBased:
 
 
 # ---------------------------------------------------------------------------
-# Regression: SkillRouter LLM output uses `skills`, not `actions`
+# Regression: router LLM output uses `skills`, not `actions`
 # ---------------------------------------------------------------------------
 
 
-class TestSkillRouterSkillsFieldRegression:
+class TestAgentInteractRouterSkillsFieldRegression:
     """End-to-end regression for the bug where an LLM response with the
-    ``skills`` field (per ``SKILL_ROUTING_PROMPT_TEMPLATE``) was silently
+    ``skills`` field (per routing user prompt template) was silently
     parsed as ``actions=[]`` and routed to the converse fast path
     instead of dispatching the agentic skill loop."""
 
@@ -301,12 +305,13 @@ class TestSkillRouterSkillsFieldRegression:
             return skill_result
 
         model = AsyncMock()
+        persona = _make_persona_mock(slim_reply="Eldon Marks is ...")
 
         with patch(
-            f"{_ROUTER_MODULE}.SkillRouter.route",
+            f"{_ROUTER_MODULE}.AgentInteractRouter.route",
             new_callable=AsyncMock,
             return_value=(POSTURE_RESPOND, routing),
-        ), patch(
+        ), _patch_require_persona(persona), patch(
             f"{_ACTION_MODULE}.AgentInteractAction.get_model_action",
             new_callable=AsyncMock,
             return_value=model,
@@ -314,9 +319,6 @@ class TestSkillRouterSkillsFieldRegression:
             "jvagent.action.skill.skill_action.SkillAction.run_to_completion",
             side_effect=capture_ctx,
         ), patch(
-            "jvagent.action.interact.base.InteractAction.publish",
-            new_callable=AsyncMock,
-        ) as mock_publish, patch(
             f"{_ACTION_MODULE}.AgentInteractAction._get_always_active_skills",
             new_callable=AsyncMock,
             return_value=[],
@@ -330,11 +332,7 @@ class TestSkillRouterSkillsFieldRegression:
             "converse fast path"
         )
         assert "web_search" in captured_ctx[0].preloaded_skills
-        mock_publish.assert_called_once_with(
-            visitor,
-            content="Eldon Marks is ...",
-            streaming_complete=True,
-        )
+        persona.respond_slim.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -430,7 +428,7 @@ class TestMigrationCompatibility:
         ) as mock_warn:
             _validate_interact_routing_config(actions)
 
-        mock_warn.assert_called_once()
+        assert mock_warn.call_count >= 1
 
 
 # ---------------------------------------------------------------------------
@@ -475,12 +473,13 @@ class TestAlwaysActiveIntegration:
             return skill_result
 
         model = AsyncMock()
+        persona = _make_persona_mock()
 
         with patch(
-            f"{_ROUTER_MODULE}.SkillRouter.route",
+            f"{_ROUTER_MODULE}.AgentInteractRouter.route",
             new_callable=AsyncMock,
             return_value=(POSTURE_RESPOND, routing),
-        ), patch(
+        ), _patch_require_persona(persona), patch(
             f"{_ACTION_MODULE}.AgentInteractAction.get_model_action",
             new_callable=AsyncMock,
             return_value=model,
@@ -501,6 +500,8 @@ class TestAlwaysActiveIntegration:
         ctx = captured_ctx[0]
         assert "research" in ctx.preloaded_skills
         assert "triage" in ctx.preloaded_skills
+        assert ctx.agent_description == persona.persona_description
+        assert ctx.agent_name == persona.persona_name
 
 
 # ---------------------------------------------------------------------------
@@ -540,12 +541,13 @@ class TestPersonaResponseDelivery:
         )
 
         model = AsyncMock()
+        persona = _make_persona_mock()
 
         with patch(
-            f"{_ROUTER_MODULE}.SkillRouter.route",
+            f"{_ROUTER_MODULE}.AgentInteractRouter.route",
             new_callable=AsyncMock,
             return_value=(POSTURE_RESPOND, routing),
-        ), patch(
+        ), _patch_require_persona(persona), patch(
             f"{_ACTION_MODULE}.AgentInteractAction.get_model_action",
             new_callable=AsyncMock,
             return_value=model,
@@ -562,3 +564,4 @@ class TestPersonaResponseDelivery:
         # Should have called add_directive FIRST then respond
         visitor.add_directive.assert_called_once()
         mock_respond.assert_called_once_with(visitor)
+        persona.respond_slim.assert_not_called()

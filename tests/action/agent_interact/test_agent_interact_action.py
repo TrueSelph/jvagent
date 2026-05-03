@@ -1,6 +1,5 @@
 """Unit tests for AgentInteractAction: smoke, conversational path, router helpers."""
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,7 +13,7 @@ from jvagent.action.router.routing_result import (
 )
 
 _ACTION_MODULE = "jvagent.action.agent_interact.agent_interact_action"
-_ROUTER_MODULE = "jvagent.action.agent_interact.skill_handler.skill_router"
+_ROUTER_MODULE = "jvagent.action.agent_interact.router.service"
 
 
 def _make_visitor(**overrides):
@@ -61,6 +60,27 @@ def _make_visitor(**overrides):
     return visitor
 
 
+def _make_persona_mock(*, slim_reply: str = "Slim LM reply."):
+    """Stub Persona with ``respond_slim`` async mock."""
+    persona = MagicMock()
+    persona.enabled = True
+    persona.persona_description = "Test persona description body."
+    persona.persona_name = "TestAgent"
+    persona.model = "gpt-4o-mini"
+    persona.model_temperature = 0.2
+    persona.model_max_tokens = 2048
+    persona.respond_slim = AsyncMock(return_value=slim_reply)
+    return persona
+
+
+def _patch_require_persona(persona):
+    return patch(
+        f"{_ACTION_MODULE}.AgentInteractAction._require_persona_for_interact",
+        new_callable=AsyncMock,
+        return_value=persona,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Smoke test: action can be instantiated
 # ---------------------------------------------------------------------------
@@ -83,10 +103,6 @@ class TestAgentInteractActionSmoke:
     def test_converse_enabled_by_default(self):
         action = AgentInteractAction()
         assert action.converse_enabled is True
-
-    def test_converse_default_model(self):
-        action = AgentInteractAction()
-        assert action.converse_model == "gpt-4o-mini"
 
     def test_router_model_default(self):
         action = AgentInteractAction()
@@ -120,9 +136,48 @@ class TestAgentInteractActionSmoke:
         result = await action.healthcheck()
         assert result is False
 
+    @pytest.mark.asyncio
+    async def test_healthcheck_fails_when_agent_but_no_persona(self):
+        action = AgentInteractAction()
+        object.__setattr__(action, "model_action_type", "AnthropicLanguageModelAction")
+        object.__setattr__(action, "max_iterations", 10)
+        with patch.object(
+            AgentInteractAction,
+            "get_agent",
+            new=AsyncMock(return_value=MagicMock(id="ag1")),
+        ), patch.object(
+            AgentInteractAction,
+            "get_action",
+            new=AsyncMock(return_value=None),
+        ):
+            assert await action.healthcheck() is False
+
+    @pytest.mark.asyncio
+    async def test_execute_raises_when_persona_missing(self):
+        action = AgentInteractAction()
+        visitor = _make_visitor()
+        routing = RoutingResult(
+            posture=POSTURE_RESPOND,
+            intent_type="CONVERSATIONAL",
+            actions=[],
+            confidence=1.0,
+        )
+        with patch(
+            f"{_ROUTER_MODULE}.AgentInteractRouter.route",
+            new_callable=AsyncMock,
+            return_value=(POSTURE_RESPOND, routing),
+        ), patch.object(
+            AgentInteractAction,
+            "_require_persona_for_interact",
+            AsyncMock(side_effect=RuntimeError("no persona")),
+        ):
+            with pytest.raises(RuntimeError, match="no persona"):
+                await action.execute(visitor)
+        visitor.unrecord_action_execution.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
-# Routing: posture (SUPPRESS / DEFER / RESPOND) via SkillRouter
+# Routing: posture (SUPPRESS / DEFER / RESPOND) via AgentInteractRouter
 # ---------------------------------------------------------------------------
 
 
@@ -135,7 +190,7 @@ class TestAgentInteractRouting:
 
         result = RoutingResult(posture=POSTURE_SUPPRESS, interpretation="Bye")
         with patch(
-            f"{_ROUTER_MODULE}.SkillRouter.route",
+            f"{_ROUTER_MODULE}.AgentInteractRouter.route",
             new_callable=AsyncMock,
             return_value=(POSTURE_SUPPRESS, result),
         ):
@@ -150,7 +205,7 @@ class TestAgentInteractRouting:
 
         result = RoutingResult(posture=POSTURE_DEFER)
         with patch(
-            f"{_ROUTER_MODULE}.SkillRouter.route",
+            f"{_ROUTER_MODULE}.AgentInteractRouter.route",
             new_callable=AsyncMock,
             return_value=(POSTURE_DEFER, result),
         ):
@@ -160,6 +215,7 @@ class TestAgentInteractRouting:
     async def test_conversational_intent_triggers_converse_path(self):
         action = AgentInteractAction()
         object.__setattr__(action, "converse_enabled", True)
+        object.__setattr__(action, "response_mode", "publish")
         visitor = _make_visitor()
 
         result = RoutingResult(
@@ -169,23 +225,25 @@ class TestAgentInteractRouting:
             confidence=1.0,
         )
 
+        persona = _make_persona_mock(slim_reply="Hi from slim path")
+
         with patch(
-            f"{_ROUTER_MODULE}.SkillRouter.route",
+            f"{_ROUTER_MODULE}.AgentInteractRouter.route",
             new_callable=AsyncMock,
             return_value=(POSTURE_RESPOND, result),
-        ):
-            with patch(
-                f"{_ACTION_MODULE}.ConverseHandler.respond",
-                new_callable=AsyncMock,
-            ) as mock_conv:
-                await action.execute(visitor)
+        ), _patch_require_persona(persona):
+            await action.execute(visitor)
 
-        mock_conv.assert_called_once_with(visitor)
+        persona.respond_slim.assert_called_once()
+        _args, kwargs = persona.respond_slim.call_args
+        assert kwargs.get("prompt") == "Hello"
+        assert kwargs.get("history") == []
 
     @pytest.mark.asyncio
     async def test_no_actions_triggers_converse_path(self):
         action = AgentInteractAction()
         object.__setattr__(action, "converse_enabled", True)
+        object.__setattr__(action, "response_mode", "publish")
         visitor = _make_visitor()
 
         result = RoutingResult(
@@ -195,18 +253,16 @@ class TestAgentInteractRouting:
             confidence=1.0,
         )
 
+        persona = _make_persona_mock()
+
         with patch(
-            f"{_ROUTER_MODULE}.SkillRouter.route",
+            f"{_ROUTER_MODULE}.AgentInteractRouter.route",
             new_callable=AsyncMock,
             return_value=(POSTURE_RESPOND, result),
-        ):
-            with patch(
-                f"{_ACTION_MODULE}.ConverseHandler.respond",
-                new_callable=AsyncMock,
-            ) as mock_conv:
-                await action.execute(visitor)
+        ), _patch_require_persona(persona):
+            await action.execute(visitor)
 
-        mock_conv.assert_called_once_with(visitor)
+        persona.respond_slim.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_converse_disabled_goes_to_skill_loop(self):
@@ -221,16 +277,17 @@ class TestAgentInteractRouting:
             confidence=1.0,
         )
 
+        persona = _make_persona_mock()
+
         with patch(
-            f"{_ROUTER_MODULE}.SkillRouter.route",
+            f"{_ROUTER_MODULE}.AgentInteractRouter.route",
             new_callable=AsyncMock,
             return_value=(POSTURE_RESPOND, result),
-        ):
-            with patch(
-                f"{_ACTION_MODULE}.AgentInteractAction._phase_execute_skill_loop",
-                new_callable=AsyncMock,
-            ) as mock_skill:
-                await action.execute(visitor)
+        ), _patch_require_persona(persona), patch(
+            f"{_ACTION_MODULE}.AgentInteractAction._phase_execute_skill_loop",
+            new_callable=AsyncMock,
+        ) as mock_skill:
+            await action.execute(visitor)
 
         mock_skill.assert_called_once()
 
@@ -246,16 +303,17 @@ class TestAgentInteractRouting:
             confidence=0.9,
         )
 
+        persona = _make_persona_mock()
+
         with patch(
-            f"{_ROUTER_MODULE}.SkillRouter.route",
+            f"{_ROUTER_MODULE}.AgentInteractRouter.route",
             new_callable=AsyncMock,
             return_value=(POSTURE_RESPOND, result),
-        ):
-            with patch(
-                f"{_ACTION_MODULE}.AgentInteractAction._phase_execute_skill_loop",
-                new_callable=AsyncMock,
-            ) as mock_skill:
-                await action.execute(visitor)
+        ), _patch_require_persona(persona), patch(
+            f"{_ACTION_MODULE}.AgentInteractAction._phase_execute_skill_loop",
+            new_callable=AsyncMock,
+        ) as mock_skill:
+            await action.execute(visitor)
 
         mock_skill.assert_called_once_with(visitor, result)
 
@@ -263,20 +321,49 @@ class TestAgentInteractRouting:
     async def test_null_routing_result_defaults_to_conv(self):
         action = AgentInteractAction()
         object.__setattr__(action, "converse_enabled", True)
+        object.__setattr__(action, "response_mode", "publish")
         visitor = _make_visitor()
 
+        persona = _make_persona_mock()
+
         with patch(
-            f"{_ROUTER_MODULE}.SkillRouter.route",
+            f"{_ROUTER_MODULE}.AgentInteractRouter.route",
             new_callable=AsyncMock,
             return_value=(POSTURE_RESPOND, None),
-        ):
-            with patch(
-                f"{_ACTION_MODULE}.ConverseHandler.respond",
-                new_callable=AsyncMock,
-            ) as mock_conv:
-                await action.execute(visitor)
+        ), _patch_require_persona(persona):
+            await action.execute(visitor)
 
-        mock_conv.assert_called_once_with(visitor)
+        persona.respond_slim.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_conversational_respond_mode_calls_respond_not_slim_lm(self):
+        action = AgentInteractAction()
+        object.__setattr__(action, "converse_enabled", True)
+        object.__setattr__(action, "response_mode", "respond")
+        visitor = _make_visitor()
+
+        result = RoutingResult(
+            posture=POSTURE_RESPOND,
+            intent_type="CONVERSATIONAL",
+            actions=[],
+            confidence=1.0,
+        )
+
+        persona = _make_persona_mock()
+
+        with patch(
+            f"{_ROUTER_MODULE}.AgentInteractRouter.route",
+            new_callable=AsyncMock,
+            return_value=(POSTURE_RESPOND, result),
+        ), _patch_require_persona(persona), patch(
+            "jvagent.action.interact.base.InteractAction.respond",
+            new_callable=AsyncMock,
+        ) as mock_respond:
+            await action.execute(visitor)
+
+        visitor.add_directive.assert_called_once()
+        mock_respond.assert_called_once()
+        persona.respond_slim.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_no_interaction_unrecords_and_returns(self):
@@ -295,49 +382,85 @@ class TestAgentInteractRouting:
 
 class TestSkillNameResolution:
     def test_valid_skill_names_pass_through(self):
-        from jvagent.action.agent_interact.skill_handler.skill_router import SkillRouter
+        from jvagent.action.agent_interact.router.service import AgentInteractRouter
 
         descriptors = {
             "outlook_mail": {"description": "Send/list emails"},
             "google_drive": {"description": "Upload/list files"},
         }
-        result = SkillRouter._resolve_skill_names_to_keys(
+        result = AgentInteractRouter._resolve_skill_names_to_keys(
             ["outlook_mail", "google_drive"], descriptors
         )
         assert result == ["outlook_mail", "google_drive"]
 
     def test_drops_invalid_skill_names(self):
-        from jvagent.action.agent_interact.skill_handler.skill_router import SkillRouter
+        from jvagent.action.agent_interact.router.service import AgentInteractRouter
 
         descriptors = {"outlook_mail": {"description": "Send emails"}}
-        result = SkillRouter._resolve_skill_names_to_keys(
+        result = AgentInteractRouter._resolve_skill_names_to_keys(
             ["outlook_mail", "made_up_skill", "gibberish"], descriptors
         )
         assert result == ["outlook_mail"]
 
     def test_deduplication(self):
-        from jvagent.action.agent_interact.skill_handler.skill_router import SkillRouter
+        from jvagent.action.agent_interact.router.service import AgentInteractRouter
 
         descriptors = {"outlook_mail": {"description": "..."}}
-        result = SkillRouter._resolve_skill_names_to_keys(
+        result = AgentInteractRouter._resolve_skill_names_to_keys(
             ["outlook_mail", "outlook_mail"], descriptors
         )
         assert result == ["outlook_mail"]
 
     def test_empty_input(self):
-        from jvagent.action.agent_interact.skill_handler.skill_router import SkillRouter
+        from jvagent.action.agent_interact.router.service import AgentInteractRouter
 
         descriptors = {"outlook_mail": {"description": "..."}}
-        assert SkillRouter._resolve_skill_names_to_keys([], descriptors) == []
+        assert AgentInteractRouter._resolve_skill_names_to_keys([], descriptors) == []
 
     def test_empty_strings_skipped(self):
-        from jvagent.action.agent_interact.skill_handler.skill_router import SkillRouter
+        from jvagent.action.agent_interact.router.service import AgentInteractRouter
 
         descriptors = {"outlook_mail": {"description": "..."}}
-        result = SkillRouter._resolve_skill_names_to_keys(
+        result = AgentInteractRouter._resolve_skill_names_to_keys(
             ["", "outlook_mail", " "], descriptors
         )
         assert result == ["outlook_mail"]
+
+
+class TestMergeRouteTargets:
+    def test_merges_skills_and_interact_actions(self):
+        from jvagent.action.agent_interact.router.service import AgentInteractRouter
+
+        action = AgentInteractAction()
+        router = AgentInteractRouter(action)
+        skill_desc = {"s1": {"description": "skill one"}}
+        ia_desc = {
+            "HandoffInteractAction": {"kind": "interact_action", "description": ""}
+        }
+        out = router._merge_and_validate_routes(
+            ["s1", "unknown_skill"],
+            ["HandoffInteractAction", "UnknownIA"],
+            skill_desc,
+            ia_desc,
+        )
+        assert out == ["s1", "HandoffInteractAction"]
+
+    def test_recovers_interact_action_listed_under_skills(self):
+        from jvagent.action.agent_interact.router.service import AgentInteractRouter
+
+        action = AgentInteractAction()
+        router = AgentInteractRouter(action)
+        skill_desc = {"s1": {"description": "x"}}
+        ia_desc = {
+            "PageIndexInteractAction": {"kind": "interact_action", "description": ""}
+        }
+        out = router._merge_and_validate_routes(
+            ["PageIndexInteractAction"],
+            [],
+            skill_desc,
+            ia_desc,
+        )
+        assert out == ["PageIndexInteractAction"]
 
 
 # ---------------------------------------------------------------------------
@@ -352,17 +475,11 @@ class TestAgentInteractModelResolution:
         object.__setattr__(
             action, "router_model_action_type", "OpenAILanguageModelAction"
         )
-        object.__setattr__(
-            action, "converse_model_action_type", "OpenAILanguageModelAction"
-        )
 
         assert action._language_model_action_type_for_purpose("skill") == (
             "OllamaLanguageModelAction"
         )
         assert action._language_model_action_type_for_purpose("router") == (
-            "OpenAILanguageModelAction"
-        )
-        assert action._language_model_action_type_for_purpose("converse") == (
             "OpenAILanguageModelAction"
         )
 
@@ -372,112 +489,6 @@ class TestAgentInteractModelResolution:
         assert action._language_model_action_type_for_purpose("router") == (
             "AnthropicLanguageModelAction"
         )
-        assert action._language_model_action_type_for_purpose("converse") == (
-            "AnthropicLanguageModelAction"
-        )
-
-
-# ---------------------------------------------------------------------------
-# ConverseHandler unit tests
-# ---------------------------------------------------------------------------
-
-
-class TestConverseHandler:
-    def test_effective_model_ollama_replaces_default_mini_with_primary(self):
-        from jvagent.action.agent_interact.converse import ConverseHandler
-
-        action = AgentInteractAction()
-        conv = ConverseHandler(action)
-        ma = SimpleNamespace(provider="ollama", model="deepseek-v4-flash:cloud")
-        assert conv._effective_model(ma) == "deepseek-v4-flash:cloud"
-
-    def test_effective_model_ollama_respects_explicit_converse_model(self):
-        from jvagent.action.agent_interact.converse import ConverseHandler
-
-        action = AgentInteractAction()
-        object.__setattr__(action, "converse_model", "llama3.2")
-        conv = ConverseHandler(action)
-        ma = SimpleNamespace(provider="ollama", model="deepseek-v4-flash:cloud")
-        assert conv._effective_model(ma) == "llama3.2"
-
-    def test_effective_model_openai_keeps_default_mini(self):
-        from jvagent.action.agent_interact.converse import ConverseHandler
-
-        action = AgentInteractAction()
-        conv = ConverseHandler(action)
-        ma = SimpleNamespace(provider="openai", model="gpt-4o")
-        assert conv._effective_model(ma) == "gpt-4o-mini"
-
-    @pytest.mark.asyncio
-    async def test_converse_integration(self):
-        from jvagent.action.agent_interact.converse import ConverseHandler
-
-        action = AgentInteractAction()
-        model = MagicMock()
-        model.generate = AsyncMock(return_value="Hi there!")
-        model.provider = "openai"
-        model.model = "gpt-4o-mini"
-
-        conv = ConverseHandler(action)
-        visitor = _make_visitor()
-        visitor.conversation.get_interaction_history = AsyncMock(return_value=[])
-
-        with patch(
-            f"{_ACTION_MODULE}.AgentInteractAction.get_model_action",
-            new_callable=AsyncMock,
-            return_value=model,
-        ), patch(
-            "jvagent.action.interact.base.InteractAction.publish",
-            new_callable=AsyncMock,
-        ) as mock_publish:
-            await conv.respond(visitor)
-
-        mock_publish.assert_called_once_with(
-            visitor, content="Hi there!", streaming_complete=True
-        )
-
-    @pytest.mark.asyncio
-    async def test_converse_caches_model(self):
-        from jvagent.action.agent_interact.converse import ConverseHandler
-
-        action = AgentInteractAction()
-        model = MagicMock()
-        model.generate = AsyncMock(return_value="Hello!")
-        model.provider = "openai"
-        model.model = "gpt-4o-mini"
-
-        conv = ConverseHandler(action)
-        visitor = _make_visitor()
-        visitor.conversation.get_interaction_history = AsyncMock(return_value=[])
-
-        with patch(
-            f"{_ACTION_MODULE}.AgentInteractAction.get_model_action",
-            new_callable=AsyncMock,
-            return_value=model,
-        ) as mock_get_model, patch(
-            "jvagent.action.interact.base.InteractAction.publish",
-            new_callable=AsyncMock,
-        ):
-            await conv.respond(visitor)
-            await conv.respond(visitor)
-
-        assert mock_get_model.call_count == 1
-
-    @pytest.mark.asyncio
-    async def test_converse_no_conversation_returns_early(self):
-        from jvagent.action.agent_interact.converse import ConverseHandler
-
-        action = AgentInteractAction()
-        conv = ConverseHandler(action)
-        visitor = _make_visitor()
-        visitor.conversation = None
-
-        with patch(
-            "jvagent.action.interact.base.InteractAction.publish",
-            new_callable=AsyncMock,
-        ) as mock_publish:
-            await conv.respond(visitor)
-        mock_publish.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -497,6 +508,19 @@ class TestPersonaDirective:
         d = AgentInteractAction._format_persona_directive(None, "Result")
         assert "(no utterance)" in d
         assert "Result" in d
+
+    def test_conversational_directive_contains_utterance_and_instructions(self):
+        d = AgentInteractAction._format_conversational_directive_for_persona(
+            "Hi there", "Be brief."
+        )
+        assert "Hi there" in d
+        assert "Be brief." in d
+        assert "CONVERSATIONAL_TURN" in d
+
+    def test_skill_slim_publish_prompt_contains_draft(self):
+        p = AgentInteractAction._format_skill_slim_publish_prompt("Q?", "Draft answer")
+        assert "Q?" in p
+        assert "Draft answer" in p
 
 
 # ---------------------------------------------------------------------------

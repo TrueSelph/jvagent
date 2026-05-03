@@ -18,13 +18,11 @@ from jvagent.action.agent_interact.skill_handler.run_config import (
     build_skill_run_config,
 )
 from jvagent.action.agent_interact.skill_handler.shim import AgentInteractVisitorShim
-from jvagent.action.agent_interact.skill_handler.skill_router import SkillRouter
 
 __all__ = [
     "AgentInteractSkillAction",
     "AgentInteractToolExecutor",
     "AgentInteractVisitorShim",
-    "SkillRouter",
     "SkillRunConfig",
     "SkillRunContext",
     "SkillRunResult",

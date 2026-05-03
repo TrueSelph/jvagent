@@ -147,7 +147,8 @@ The user already received this brief message from you (same turn, before your fu
 1. **No Sentiment Redundancy**: If the message above already contains any sentiment (e.g. "I'm sorry to hear that", "That sounds great", "Got it"), DO NOT repeat that sentiment or offering of empathy. The context has already been acknowledged.
 2. **No Repetitive Openings**: Omit any greetings or acknowledgments already covered.
 3. **Substantive Start**: Continue as the next sentence of the same assistant turn. Dive immediately into the substantive answer, logic, or request for information.
-4. **Natural Transition**: From the user's perspective, this should read like one continuous message. Do not acknowledge that you are sending a second message or "adding to" the previous one."""
+4. **Natural Transition**: From the user's perspective, this should read like one continuous message. Do not acknowledge that you are sending a second message or "adding to" the previous one.
+5. **Lead-in only**: That immediate line should be a non-conclusive stall (e.g. hesitation). If it accidentally reads like a full answer, refusal, or advice, do **not** repeat or validate it—proceed with the correct substantive reply as the continuation of the same turn."""
 
 
 # ============================================================================

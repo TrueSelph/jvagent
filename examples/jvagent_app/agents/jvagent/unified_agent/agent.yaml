@@ -1,9 +1,12 @@
 # Unified Agent — single agent_interact_action with retrieval skills
 # Demonstrates the new unified skill-routing architecture.
 #
+# Requires jvagent/persona (PersonaAction). Conversational + publish-mode replies use
+# persona_description as the LM system prompt; respond mode uses full Persona compose.
+#
 # Architecture (multi-provider):
-#   Phase 1 — SkillRouter:   router_model_action_type → OpenAI GPT-4o-mini
-#   Phase 2a — Converse:  converse_model_action_type → OpenAI GPT-4o-mini
+#   Phase 1 — AgentInteractRouter: router_model_action_type → OpenAI GPT-4o-mini
+#   Phase 2a — Converse:     Persona (slim publish or full respond per response_mode)
 #   Phase 2b — Skill loop:   model_action_type → Ollama cloud (agentic loop)
 #
 # Register one jvagent language-model action per provider; point each phase at the
@@ -43,10 +46,8 @@ actions:
       router_model_action_type: OpenAILanguageModelAction
       enable_canned_response: true
       enable_routing_cache: true
-      # ── Converse fast path ──
+      # ── Conversational branch (Persona; publish = respond_slim / respond = full compose) ──
       converse_enabled: true
-      converse_model_action_type: OpenAILanguageModelAction
-      converse_model: gpt-4o-mini
       # ── Skill loop ──
       model_action_type: OllamaLanguageModelAction
       model: deepseek-v4-flash:cloud
@@ -108,7 +109,7 @@ actions:
   - action: jvagent/persona
     context:
       enabled: true
-      description: Persona for final response rewriting (used when response_mode=respond)
+      description: Required for AgentInteract — publish vs full respond per response_mode
       persona_name: Research Assistant
       persona_description: >-
         You are a knowledgeable research assistant with access to internal documents

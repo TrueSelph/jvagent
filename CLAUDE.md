@@ -40,6 +40,7 @@ jvagent is a modular AI agent platform built on `jvspatial`'s graph-based primit
 - **Actions**: Pluggable modules.
     - `Action` (Base): Core logic and lifecycle hooks (`on_register`, `on_enable`, etc.).
     - `InteractAction`: Specialized actions for the interaction subsystem, used by the `InteractWalker`.
+    - **AgentInteract** (`jvagent/agent_interact_action`): unified router + converse + skill loop; see [docs/agent-interact.md](docs/agent-interact.md).
 - **Memory**: Manages user state and conversation history with a rolling window pruning mechanism (`interaction_limit`).
 - **Namespaces**: Prevents naming conflicts using `namespace/action_name` format (e.g., `jvagent/`, `contrib/`, `custom/`).
 

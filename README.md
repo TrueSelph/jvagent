@@ -462,7 +462,7 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
 - **Simplified API**: Pass directives and parameters directly to `respond()` method
 - **Bulk Operations**: Use `add_directives()` and `add_parameters()` for efficient batch operations
 - **Automatic Persistence**: Interactions are automatically saved after adding directives/parameters
-- **Routing Support**: Can be routed via InteractRouter based on anchor statements
+- **Routing Support**: Can be routed via InteractRouter based on anchor statements (legacy stack), or use **`jvagent/agent_interact_action`** ([AgentInteract](docs/agent-interact.md)) for unified LLM routing plus skills in one interact action
 
 See the [InteractAction API Guide](jvagent/action/interact/README.md) for complete documentation.
 
@@ -1053,7 +1053,7 @@ InteractActions are actions that participate in the interact subsystem. They ser
 **Architecture:**
 - InteractActions are modular execution points in a chain
 - The InteractWalker traverses and executes the modular pipeline
-- Core actions like InteractRouter can alter/curate the walker's path based on input
+- Core actions like InteractRouter (legacy) or **AgentInteractAction** ([guide](docs/agent-interact.md)) alter/curate the walker's path based on input
 - InteractActions may have branches of other InteractActions
 - **Top-level InteractActions** (directly connected to the Actions branch node) **must explicitly route the walker to their children** conditionally - the walker does not automatically traverse child actions from top-level actions
 
@@ -1132,7 +1132,8 @@ OpenAI actions read credentials from environment (`OPENAI_API_KEY`).
 
 **Core Action Documentation:**
 - [InteractAction API Guide](jvagent/action/interact/README.md) - Complete guide to InteractAction API including `respond()` method
-- [InteractRouter](jvagent/action/router/README.md) - Intent-based routing for InteractActions
+- [AgentInteract](docs/agent-interact.md) - Unified `AgentInteractAction` (routing, skills, interact-action targets, canned lead-ins, prompts)
+- [InteractRouter](jvagent/action/router/README.md) - Legacy intent-based routing (often paired with `skill_interact_action`)
 - [RetrievalInteractAction](jvagent/action/retrieval/README.md) - Vector store retrieval with simplified API
 - [IntroInteractAction](jvagent/action/intro/README.md) - First-time user welcome messages
 - [InterviewInteractAction](jvagent/action/interview/README.md) - Reusable interview system for stepwise information collection with validation
@@ -2057,6 +2058,7 @@ For more details, see [jvagent/bundle/README.md](jvagent/bundle/README.md).
 ### Action Modules
 
 - [InteractAction API](jvagent/action/interact/README.md)
+- [AgentInteract package](jvagent/action/agent_interact/README.md) — `AgentInteractAction` source layout
 - [InteractRouter](jvagent/action/router/README.md)
 - [RetrievalInteractAction](jvagent/action/retrieval/README.md)
 - [IntroInteractAction](jvagent/action/intro/README.md)
