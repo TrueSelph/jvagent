@@ -31,6 +31,20 @@ logger = logging.getLogger(__name__)
 # Sentinel end-of-stream marker for thinking/reasoning delta queues
 _THINKING_END = object()
 
+# query() must not forward these via **query_params (duplicate query_messages() args).
+_QUERY_KWARGS_BLOCKLIST = frozenset(
+    {
+        "messages",
+        "stream",
+        "system",
+        "history",
+        "tools",
+        "calling_action_name",
+        "prompt_for_observability",
+        "start_time",
+    }
+)
+
 # Type aliases for multimodal content
 ContentPart = Dict[
     str, Any
@@ -606,7 +620,7 @@ class LanguageModelAction(BaseModelAction, ABC):
         }
         # Preserve provider-specific kwargs (e.g., Anthropic extended thinking).
         for key, value in kwargs.items():
-            if key not in query_params:
+            if key not in query_params and key not in _QUERY_KWARGS_BLOCKLIST:
                 query_params[key] = value
 
         # Debug logging to track model selection

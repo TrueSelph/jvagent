@@ -10,6 +10,7 @@ import httpx
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.model.embedding.base import EmbeddingModelAction
+from jvagent.action.model.ollama_endpoint import ollama_host_root
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,11 @@ class OllamaEmbeddingModelAction(EmbeddingModelAction):
     """Ollama native embeddings API implementation."""
 
     api_endpoint: str = attribute(
-        default="http://localhost:11434", description="Ollama API endpoint URL"
+        default="http://localhost:11434",
+        description=(
+            "Ollama host root (e.g. http://localhost:11434); "
+            "may end with /api per Ollama docs"
+        ),
     )
     model: str = attribute(
         default="nomic-embed-text", description="Ollama embedding model identifier"
@@ -39,7 +44,7 @@ class OllamaEmbeddingModelAction(EmbeddingModelAction):
 
         try:
             response = await self._http_client.post(  # type: ignore[union-attr]
-                f"{self.api_endpoint}/api/embed",
+                f"{ollama_host_root(self.api_endpoint)}/api/embed",
                 json=payload,
                 headers={"Content-Type": "application/json"},
             )
@@ -79,7 +84,7 @@ class OllamaEmbeddingModelAction(EmbeddingModelAction):
 
         try:
             response = await self._http_client.post(  # type: ignore[union-attr]
-                f"{self.api_endpoint}/api/embed",
+                f"{ollama_host_root(self.api_endpoint)}/api/embed",
                 json=payload,
                 headers={"Content-Type": "application/json"},
             )

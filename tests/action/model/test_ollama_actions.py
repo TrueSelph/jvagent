@@ -314,6 +314,14 @@ async def test_ollama_embedding_request_error_raises_runtime_error():
         await action.embed("embed this")
 
 
+def test_ollama_host_root_strips_docs_style_api_suffix():
+    from jvagent.action.model.ollama_endpoint import ollama_host_root
+
+    assert ollama_host_root("https://ollama.com/api") == "https://ollama.com"
+    assert ollama_host_root("http://localhost:11434/api/") == "http://localhost:11434"
+    assert ollama_host_root("http://localhost:11434") == "http://localhost:11434"
+
+
 def test_ollama_exports_available():
     from jvagent.action.model.embedding import OllamaEmbeddingModelAction as EmbExport
     from jvagent.action.model.language import OllamaLanguageModelAction as LmExport

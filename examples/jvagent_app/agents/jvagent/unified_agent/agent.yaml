@@ -1,0 +1,160 @@
+# Unified Agent — single agent_interact_action with retrieval skills
+# Demonstrates the new unified skill-routing architecture.
+#
+# Architecture (multi-provider):
+#   Phase 1 — SkillRouter: router_model + router_model_action_type → OpenAI GPT-4o-mini
+#   Phase 2a — Native conversation: native_conv_model_action_type (default: same as router)
+#   Phase 2b — Skill loop: model_action_type → Ollama cloud (agentic loop)
+#
+# Register one jvagent language-model action per provider; point each phase at the
+# right class name (OpenAILanguageModelAction vs OllamaLanguageModelAction).
+#
+# Skills:
+#   - pageindex_search   → internal knowledge base search (requires PageIndexAction)
+#   - pageindex_docs      → document management: list, ingest, delete (requires PageIndexAction)
+#   - web_search          → public web search fallback (requires SerperWebSearchAction)
+#
+# The model can call skill_search / list_skills mid-loop to discover and activate
+# additional skills on demand.  The router pre-selects the most relevant skills
+# for each user request, minimizing token overhead for simple queries.
+
+agent: jvagent/unified_agent
+version: 1.0.0
+author: V75 Inc.
+jvagent: ~0.0.1
+
+context:
+  alias: Unified Agent
+  description: >-
+    A search-first agent powered by the new AgentInteractAction.
+    Routes intent and small talk via OpenAI (GPT-4o-mini); runs the agentic
+    skill loop on Ollama cloud. Pre-loaded with pageindex_search, pageindex_docs,
+    and web_search skills.
+  enabled: true
+  interaction_limit: 20
+
+actions:
+  # ── Unified routing + agentic skill loop (replaces InteractRouter + SkillInteractAction) ──
+  - action: jvagent/agent_interact_action
+    context:
+      enabled: true
+      description: >-
+        Unified skill-routing interact action: fast posture classification,
+        native conversational handling, and pre-loaded retrieval skills executed
+        in an agentic think-act-observe loop with mid-loop skill discovery.
+      # ── Router (fast model on OpenAI — see router_model_action_type) ──
+      router_model_action_type: OpenAILanguageModelAction
+      router_model: gpt-4o-mini
+      router_model_temperature: 0.1
+      router_model_max_tokens: 400
+      enable_canned_response: true
+      canned_response_max_words: 8
+      enable_routing_cache: true
+      enable_accumulation: true
+      # ── Native conversation (fast model, no tools; omit type → same as router) ──
+      native_conv_enabled: true
+      native_conv_model_action_type: OpenAILanguageModelAction
+      native_conv_model: gpt-4o-mini
+      native_conv_temperature: 0.7
+      native_conv_max_tokens: 256
+      native_conv_context_limit: 2
+      # ── Skill loop (capable model, agentic — Ollama cloud) ──
+      model_action_type: OllamaLanguageModelAction
+      model: deepseek-v4-flash:cloud
+      model_temperature: 0.3
+      model_max_tokens: 32768
+      max_iterations: 25
+      max_duration_seconds: 300
+      stream_thinking: true
+      stream_reasoning: true
+      stream_tool_progress: true
+      commit_intermediate_messages: true
+      strict_grounding: true
+      plan_first: true
+      enable_skill_helper_tools: true
+      skill_index_inline_max_skills: 5
+      max_skill_activations: 8
+      final_review: true
+      max_tool_result_tokens: 2000
+      tool_result_truncation_chars: 3000
+      max_full_tool_results: 10
+      max_midcourse_corrections: 2
+      stuck_detection_window: 3
+      task_nudge_retry_limit: 4
+      stuck_intent_jaccard_threshold: 0.7
+      history_limit: 5
+      call_timeout_seconds: 60
+      response_mode: respond
+      # Pre-loaded skills
+      skills:
+        - pageindex_search
+        - pageindex_docs
+        - web_search
+      skills_source: both
+      denied_skills: []
+
+  - action: jvagent/ollama_lm
+    context:
+      enabled: true
+      description: Optional Ollama endpoint — switch skill_interact_action to OllamaLanguageModelAction
+        and set model to use this provider instead of OpenAI.
+      api_endpoint: https://ollama.com
+      api_key: ${OLLAMA_API_KEY}
+      model: kimi-k2.6:cloud
+      temperature: 0.2
+      max_tokens: 16384
+      timeout: 120
+
+  # ── OpenAI Language Model (GPT-4o-mini — routing + persona) ──
+  - action: jvagent/openai_lm
+    context:
+      enabled: true
+      description: OpenAI GPT-4o-mini for fast routing, canned responses, and persona
+      api_key: ${OPENAI_API_KEY}
+      api_endpoint: https://api.openai.com/v1
+      model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 4096
+      timeout: 60
+
+  # ── PageIndex Action (dependency of pageindex_search + pageindex_docs skills) ──
+  - action: jvagent/pageindex_action
+    context:
+      enabled: true
+      description: Vectorless RAG — indexes documents and provides search / ingest / management APIs
+      strategy: tree_search
+      limit: 10
+      node_summary: true
+      node_text: true
+      summary_token_threshold: 200
+
+  # ── Serper Web Search (dependency of web_search skill) ──
+  - action: jvagent/serper_web_search
+    context:
+      enabled: true
+      description: Serper Google Search provider
+      engine: google_light
+      hl: en
+      max_results: 10
+
+  # ── Persona Action ──
+  - action: jvagent/persona
+    context:
+      enabled: true
+      description: Persona for final response rewriting (used when response_mode=respond)
+      persona_name: Research Assistant
+      persona_description: >-
+        You are a knowledgeable research assistant with access to internal documents
+        and the public web.  For simple questions, respond directly and concisely.
+        For complex research tasks, you search internal sources first, supplement with
+        web search when needed, and synthesize clear, cited answers.
+      persona_capabilities:
+        - Answer questions from internal knowledge base
+        - Search the web for current information
+        - Ingest and manage documents
+        - Synthesize multi-source research findings
+        - Provide clear, cited, evidence-backed answers
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      model_temperature: 0.2
+      model_max_tokens: 8192

@@ -185,6 +185,8 @@ class SkillRunContext:
         agent_description: Persona description injected into the system prompt.
         skill_state: Mutable dict shared with SkillInteractAction for hot-reload
             (``refresh_skills``). Populated by SkillAction after ``prepare_run``.
+        preloaded_skills: When non-empty (AgentInteract), only these skill bundles
+            are registered during ``prepare_run``; mid-loop discovery unchanged.
     """
 
     utterance: str
@@ -215,6 +217,13 @@ class SkillRunContext:
 
     # Mutable hot-reload state dict (set by SkillInteractAction; written after prepare_run)
     skill_state: Optional[Dict[str, Any]] = None
+
+    # When non-empty, AgentInteractSkillAction.prepare_run() pre-registers only these
+    # skill names as tool bundles. Router-selected and always-active names are merged
+    # by AgentInteractAction before building this context. When empty, all discovered
+    # skills are registered up front. Mid-loop skill_search / list_skills may still
+    # call register_skill_bundle.
+    preloaded_skills: List[str] = field(default_factory=list)
 
 
 @dataclass

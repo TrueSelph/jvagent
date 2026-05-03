@@ -1,0 +1,19 @@
+# AgentInteractAction Package Descriptor
+# This file defines the action's package metadata, dependencies, and configuration
+
+package:
+  name: jvagent/agent_interact_action
+  author: jvagent
+  archetype: AgentInteractAction
+  version: 0.0.1
+  meta:
+    title: AgentInteractAction
+    description: Unified skill-routing interact action that fuses routing, conversational handling, and agentic skill loops into a single walker visit.
+    group: jvagent
+    type: interact_action
+  config:
+    order:
+      weight: -200
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []

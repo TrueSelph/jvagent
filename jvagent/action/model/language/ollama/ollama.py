@@ -21,6 +21,7 @@ from jvagent.action.model.language.base import (
     ModelActionResult,
     ReasoningModelConfig,
 )
+from jvagent.action.model.ollama_endpoint import ollama_host_root
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,10 @@ class OllamaLanguageModelAction(LanguageModelAction):
 
     api_endpoint: str = attribute(
         default="http://localhost:11434",
-        description="Ollama API endpoint URL",
+        description=(
+            "Ollama host root (e.g. http://localhost:11434 or https://ollama.com); "
+            "may also be set to the docs-style API base ending in /api"
+        ),
     )
     api_key: str = attribute(
         default="",
@@ -277,7 +281,7 @@ class OllamaLanguageModelAction(LanguageModelAction):
 
         try:
             response = await self._http_client.post(  # type: ignore[union-attr]
-                f"{self.api_endpoint.rstrip('/')}/api/chat",
+                f"{ollama_host_root(self.api_endpoint)}/api/chat",
                 json=payload,
                 headers=self._build_headers(),
             )
@@ -348,7 +352,7 @@ class OllamaLanguageModelAction(LanguageModelAction):
             try:
                 async with self._http_client.stream(  # type: ignore[union-attr]
                     "POST",
-                    f"{self.api_endpoint.rstrip('/')}/api/chat",
+                    f"{ollama_host_root(self.api_endpoint)}/api/chat",
                     json=payload,
                     headers=self._build_headers(),
                 ) as response:

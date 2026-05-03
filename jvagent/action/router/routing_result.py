@@ -115,6 +115,9 @@ class RoutingResult:
         verification) and round-tripped ``to_dict`` payloads from the routing
         cache (where ``needs_clarification`` was previously decided).
 
+        ``actions`` may also be supplied under the alias ``skills`` to match the
+        ``SkillRouter`` prompt terminology; ``actions`` wins when both are set.
+
         Args:
             data: Parsed JSON from LLM response or cached ``to_dict`` output
             raw_response: Original LLM response string for debugging
@@ -129,7 +132,7 @@ class RoutingResult:
             posture=cls._normalize_posture(data.get("posture", POSTURE_RESPOND)),
             interpretation=data.get("interpretation", ""),
             intent_type=cls._normalize_intent_type(data.get("intent_type", "UNCLEAR")),
-            actions=cls._parse_actions(data.get("actions", [])),
+            actions=cls._parse_actions(data.get("actions", data.get("skills", []))),
             confidence=cls._parse_confidence(data.get("confidence", 0.0)),
             verification=(
                 VerificationTrace.from_dict(verification_data)
