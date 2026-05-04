@@ -18,9 +18,12 @@ from jvagent.action.skill.tool_executor import ToolExecutor
 
 logger = logging.getLogger(__name__)
 
+_TOOL_ARGS_PREVIEW_LIMIT = 500
+_TOOL_RESULT_PREVIEW_LIMIT = 500
+
 
 class AgentInteractToolExecutor(ToolExecutor):
-    """``ToolExecutor`` with idempotent ``register_skill_bundle`` (mid-loop discovery)."""
+    """``ToolExecutor`` with idempotent ``register_skill_bundle`` and dispatch logging."""
 
     def __init__(
         self,
@@ -38,6 +41,7 @@ class AgentInteractToolExecutor(ToolExecutor):
             allowed_tool_paths=allowed_tool_paths,
         )
         self._registered_skill_names: Set[str] = set()
+        self.dispatch_log: List[Dict[str, Any]] = []
 
     def register_skill_bundle(
         self,
@@ -68,6 +72,120 @@ class AgentInteractToolExecutor(ToolExecutor):
         out = super().unregister_skill_bundle(skill_name)
         self._registered_skill_names.discard(skill_name)
         return out
+
+    async def dispatch(
+        self, tool_calls: List[Dict[str, Any]], visitor: Any = None
+    ) -> List[Dict[str, Any]]:
+        results = await super().dispatch(tool_calls, visitor=visitor)
+        for tc, result in zip(tool_calls, results):
+            fn = tc.get("function", {})
+            self.dispatch_log.append(
+                {
+                    "tool_call_id": tc.get("id", "") or result.get("tool_call_id", ""),
+                    "tool_name": fn.get("name", "unknown"),
+                    "arguments": (fn.get("arguments") or "")[:_TOOL_ARGS_PREVIEW_LIMIT],
+                    "result_preview": (result.get("content") or "")[
+                        :_TOOL_RESULT_PREVIEW_LIMIT
+                    ],
+                }
+            )
+        return results
+
+
+class _ObservingTaskHandle:
+    """Wraps a ``TaskHandle`` to enrich ``tool_result`` step recordings."""
+
+    def __init__(self, real_handle: Any, executor: AgentInteractToolExecutor) -> None:
+        object.__setattr__(self, "_real", real_handle)
+        object.__setattr__(self, "_executor", executor)
+        for attr in (
+            "task_id",
+            "update_metadata",
+            "complete",
+            "fail",
+            "cancel",
+            "get",
+            "get_record",
+        ):
+            val = getattr(real_handle, attr, None)
+            if val is not None:
+                try:
+                    object.__setattr__(self, attr, val)
+                except TypeError:
+                    pass
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(object.__getattribute__(self, "_real"), name)
+
+    async def record_step(
+        self,
+        step_type: str,
+        iteration: int = 0,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        if step_type == "tool_result" and details:
+            executor = object.__getattribute__(self, "_executor")
+            if isinstance(executor, AgentInteractToolExecutor):
+                details = _enrich_tool_result(details, executor)
+        return await object.__getattribute__(self, "_real").record_step(
+            step_type, iteration, details
+        )
+
+
+def _enrich_tool_result(
+    details: Dict[str, Any], executor: AgentInteractToolExecutor
+) -> Dict[str, Any]:
+    if not executor.dispatch_log:
+        return details
+    args_by_id: Dict[str, Dict[str, Any]] = {}
+    for entry in executor.dispatch_log:
+        tc_id = entry.get("tool_call_id", "")
+        if entry.get("tool_name") and tc_id:
+            args_by_id[tc_id] = entry
+    enriched_results: List[Dict[str, Any]] = []
+    for r in details.get("results", []):
+        r2 = dict(r)
+        tc_id = r.get("tool_call_id", "")
+        entry = args_by_id.get(tc_id)
+        if entry:
+            r2["tool_name"] = entry["tool_name"]
+            r2["tool_args"] = entry["arguments"]
+            if len(r2.get("content_preview", "")) < len(entry["result_preview"]):
+                r2["content_preview"] = entry["result_preview"]
+        enriched_results.append(r2)
+    details = dict(details)
+    details["results"] = enriched_results
+    return details
+
+
+class _ObservingTaskService:
+    """Wraps a ``TaskService`` so ``track()`` returns observing handles."""
+
+    def __init__(self, real_service: Any, skill_state: dict) -> None:
+        self._real = real_service
+        self._skill_state = skill_state
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._real, name)
+
+    def track(self, **kwargs: Any) -> Any:
+        inner = self._real.track(**kwargs)
+        skill_state = self._skill_state
+        real_aenter = inner.__aenter__
+        real_aexit = inner.__aexit__
+
+        class _Ctx:
+            async def __aenter__(_self):  # noqa: N805
+                handle = await real_aenter()
+                executor = skill_state.get("tool_executor") if skill_state else None
+                if isinstance(executor, AgentInteractToolExecutor):
+                    return _ObservingTaskHandle(handle, executor)
+                return handle
+
+            async def __aexit__(_self, *args):  # noqa: N805
+                return await real_aexit(*args)
+
+        return _Ctx()
 
 
 class AgentInteractSkillAction(SkillAction):
@@ -129,8 +247,6 @@ class AgentInteractSkillAction(SkillAction):
                             exports=skill_data.get("exports", []),
                             imports=skill_data.get("imports", []),
                         )
-                        # Pre-activate so the plan-first gate allows
-                        # substantive tools immediately (shortcut path).
                         try:
                             await tool_executor.activate_skill(
                                 skill_name,
@@ -220,4 +336,14 @@ class AgentInteractSkillAction(SkillAction):
 async def run_agentic_skill_loop(ctx: SkillRunContext) -> SkillRunResult:
     """Run the full skill loop using AgentInteract-specific ``prepare_run``."""
     engine = AgentInteractSkillAction()
-    return await engine.run_to_completion(ctx)
+
+    skill_state = ctx.skill_state if ctx.skill_state is not None else {}
+    original_task_service = ctx.task_service
+    ctx.task_service = _ObservingTaskService(original_task_service, skill_state)
+
+    try:
+        result = await engine.run_to_completion(ctx)
+    finally:
+        ctx.task_service = original_task_service
+
+    return result

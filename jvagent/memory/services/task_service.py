@@ -446,7 +446,7 @@ class TaskService:
         steps.append(step_dict)
         metadata["steps"] = steps
         metadata["iterations"] = max(int(metadata.get("iterations", 0)), int(iteration))
-        if step_type == "tool_call":
+        if step_type in ("tool_call", "tool_result"):
             tools_list = (details or {}).get("tools")
             if tools_list and isinstance(tools_list, list):
                 tools_called = list(metadata.get("tools_called") or [])
