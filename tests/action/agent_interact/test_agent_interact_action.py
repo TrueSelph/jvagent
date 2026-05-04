@@ -576,18 +576,6 @@ class TestSkillLoopDeliverability:
         msg = "Tool `foo` returned empty output.\n\nHours are 9–5."
         assert _skill_loop_output_is_deliverable(msg) is True
 
-    def test_skill_slim_publish_prompt_contains_draft(self):
-        p = AgentInteractAction._format_skill_slim_publish_prompt("Q?", "Draft answer")
-        assert "Q?" in p
-        assert "Draft answer" in p
-
-    def test_slim_prompt_forbids_inventing_details(self):
-        p = AgentInteractAction._format_skill_slim_publish_prompt("Q?", "Draft answer")
-        assert "MUST NOT add it" in p
-        assert "MUST NOT add it" in p
-        assert "deliberately generic" in p.lower() or "keep it generic" in p.lower()
-        assert "Do not invent examples" in p or "invent examples" in p.lower()
-
 
 # ---------------------------------------------------------------------------
 # Response mode normalization

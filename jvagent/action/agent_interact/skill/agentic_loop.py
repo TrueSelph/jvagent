@@ -129,6 +129,20 @@ class AgentInteractSkillAction(SkillAction):
                             exports=skill_data.get("exports", []),
                             imports=skill_data.get("imports", []),
                         )
+                        # Pre-activate so the plan-first gate allows
+                        # substantive tools immediately (shortcut path).
+                        try:
+                            await tool_executor.activate_skill(
+                                skill_name,
+                                action_resolver=action_resolver,
+                                visitor=_visitor_shim,
+                            )
+                        except Exception as exc:
+                            logger.warning(
+                                "AgentInteractSkillAction: pre-activation of '%s' failed: %s",
+                                skill_name,
+                                exc,
+                            )
             else:
                 for skill_name, skill_data in discovered_skills.items():
                     tool_executor.register_skill_bundle(

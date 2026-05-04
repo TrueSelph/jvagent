@@ -653,11 +653,10 @@ class AgentInteractAction(InteractAction):
                         streaming_complete=True,
                     )
                 else:
-                    slim_prompt = self._format_skill_slim_publish_prompt(
-                        visitor.utterance, result.final_response
-                    )
                     await self._deliver_slim_persona_publish(
-                        visitor, user_prompt=slim_prompt, history=[]
+                        visitor,
+                        user_prompt=result.final_response,
+                        history=[],
                     )
 
         except Exception as exc:
@@ -698,25 +697,6 @@ class AgentInteractAction(InteractAction):
             return "publish"
         fallback = (self.response_mode or "publish").strip().lower()
         return fallback if fallback in ("respond", "publish") else "publish"
-
-    @staticmethod
-    def _format_skill_slim_publish_prompt(
-        utterance: Optional[str], final_response: str
-    ) -> str:
-        uq = (utterance or "").strip() or "(no utterance)"
-        return (
-            f"The user's message (for context):\n{uq}\n\n"
-            "Draft assistant result to deliver naturally to the user.\n"
-            "You may edit for brevity, tone, and conversational flow only.\n"
-            "STRICT RULES:\n"
-            "- If a product name, brand, SKU, price, URL, or specific spec does NOT appear "
-            "verbatim in the DRAFT, you MUST NOT add it.\n"
-            "- If the DRAFT is deliberately generic or vague, keep it generic. Do not "
-            "fill in plausible-sounding details.\n"
-            "- Do not invent examples to make the reply feel more helpful.\n\n"
-            f"DRAFT:\n{final_response}\n\n"
-            "Write the concise user-facing reply."
-        )
 
     @staticmethod
     def _format_persona_directive(final_response: str) -> str:
