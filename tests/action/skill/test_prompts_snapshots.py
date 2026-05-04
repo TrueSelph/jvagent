@@ -5,10 +5,11 @@ from jvagent.action.skill import prompts as skill_prompts
 
 
 def test_skill_prompts_version_and_key_phrases():
-    assert skill_prompts.SKILL_PROMPTS_VERSION == 12
+    assert skill_prompts.SKILL_PROMPTS_VERSION == 13
     assert "You are an intelligent skills-based agent with access to tools" in (
         skill_prompts.SKILL_AGENT_SYSTEM_PROMPT
     )
+    assert "Ground claims in this thread" in skill_prompts.SKILL_AGENT_SYSTEM_PROMPT
     # claw-code-style section headers adopted in Fix 1
     assert "# Doing tasks" in skill_prompts.SKILL_AGENT_SYSTEM_PROMPT
     assert "# Task planning" in skill_prompts.SKILL_AGENT_SYSTEM_PROMPT

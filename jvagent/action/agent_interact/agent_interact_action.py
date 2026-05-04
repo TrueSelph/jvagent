@@ -21,11 +21,13 @@ compatibility; this class takes precedence when declared in agent.yaml.
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.agent_interact.router import AgentInteractRouter
+from jvagent.action.agent_interact.router.gates import should_use_conversational_gate
 from jvagent.action.agent_interact.router.prompts import (
     ROUTING_CANNED_INSTRUCTIONS_TEMPLATE,
     ROUTING_CLARIFICATION_FALLBACK_MESSAGES,
@@ -35,27 +37,28 @@ from jvagent.action.agent_interact.router.prompts import (
     ROUTING_SYSTEM_PROMPT,
     ROUTING_USER_PROMPT_TEMPLATE,
 )
-from jvagent.action.agent_interact.skill_handler.agentic_loop import (
+from jvagent.action.agent_interact.skill.agentic_loop import (
     AgentInteractSkillAction,
     run_agentic_skill_loop,
 )
-from jvagent.action.agent_interact.skill_handler.always_active import (
+from jvagent.action.agent_interact.skill.always_active import (
     list_always_active_skill_names,
 )
-from jvagent.action.agent_interact.skill_handler.contracts import (
-    DEFAULT_SKILL_MODEL,
-    SkillRunContext,
+from jvagent.action.agent_interact.skill.context import AgentInteractSkillRunContext
+from jvagent.action.agent_interact.skill.contracts import DEFAULT_SKILL_MODEL
+from jvagent.action.agent_interact.skill.converse_delivery import (
+    deliver_conversational_turn,
 )
-from jvagent.action.agent_interact.skill_handler.hot_reload import (
+from jvagent.action.agent_interact.skill.hot_reload import (
     refresh_skills as _refresh_skills_impl,
 )
-from jvagent.action.agent_interact.skill_handler.hot_reload import (
+from jvagent.action.agent_interact.skill.hot_reload import (
     remove_skill as _remove_skill_impl,
 )
-from jvagent.action.agent_interact.skill_handler.run_config import (
+from jvagent.action.agent_interact.skill.run_config import (
     build_skill_run_config,
 )
-from jvagent.action.agent_interact.skill_handler.shim import AgentInteractVisitorShim
+from jvagent.action.agent_interact.skill.shim import AgentInteractVisitorShim
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.persona.persona_action import PersonaAction
 from jvagent.action.router.routing_result import POSTURE_RESPOND, RoutingResult
@@ -65,6 +68,22 @@ if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
 
 logger = logging.getLogger(__name__)
+
+# Matches ToolExecutor's canonical empty-result line (see ``tool_executor.py``).
+_EMPTY_TOOL_RESULT_LINE_RE = re.compile(r"^Tool `[^`]+` returned empty output\.\s*$")
+
+
+def _skill_loop_output_is_deliverable(text: Optional[str]) -> bool:
+    """True when skill-loop output is substantive (not blank / empty-tool-only)."""
+    raw = text or ""
+    if not raw.strip():
+        return False
+    lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+    if not lines:
+        return False
+    if all(_EMPTY_TOOL_RESULT_LINE_RE.match(ln) for ln in lines):
+        return False
+    return True
 
 
 def _routing_clarification_fallbacks_default() -> List[str]:
@@ -232,14 +251,13 @@ class AgentInteractAction(InteractAction):
     )
     converse_persona_prompt: str = attribute(
         default=(
-            "You are a friendly, concise assistant. "
-            "Respond to greetings and casual conversation naturally. "
-            "Keep responses brief (1-3 sentences). "
-            "For task-oriented requests, acknowledge and hand off gracefully."
+            "Brief, in-character replies. Greetings and small talk: natural and short. "
+            "Task-style asks: acknowledge and hand off to skills/tools."
         ),
         description=(
-            "When response_mode=respond on conversational turns, this text is embedded in the "
-            "directive to PersonaAction (not used as a separate LM system prompt)."
+            "Short sub-prompt used as the Persona directive when response_mode=respond on "
+            "conversational turns (utterance/history are already in Persona scaffolding—do not "
+            "repeat them here)."
         ),
     )
 
@@ -390,19 +408,6 @@ class AgentInteractAction(InteractAction):
             history=history or [],
         )
 
-    @staticmethod
-    def _format_conversational_directive_for_persona(
-        utterance: Optional[str], directive_instructions: str
-    ) -> str:
-        uq = (utterance or "").strip() or "(no utterance)"
-        instr = (directive_instructions or "").strip()
-        return (
-            f"CONVERSATIONAL_TURN\n\nUser said:\n{uq}\n\n"
-            f"Instructions for this reply:\n{instr}\n\n"
-            "Respond in character per your persona. Keep it brief (1–3 sentences) unless "
-            "the user clearly needs more. For task-oriented requests, acknowledge and hand off."
-        )
-
     # ------------------------------------------------------------------
     # InteractAction entry point
     # ------------------------------------------------------------------
@@ -447,9 +452,9 @@ class AgentInteractAction(InteractAction):
             await visitor.unrecord_action_execution()
             raise
 
-        # ── Phase 2: Execute ──
-        if self.converse_enabled and (
-            routing.intent_type == "CONVERSATIONAL" or not routing.actions
+        # ── Phase 2: Execute (conversational gate vs processing gate) ──
+        if should_use_conversational_gate(
+            routing, converse_enabled=self.converse_enabled
         ):
             await self._phase_execute_conversational(visitor)
         else:
@@ -468,48 +473,7 @@ class AgentInteractAction(InteractAction):
             )
             return
 
-        mode = self._normalize_effective_response_mode(self.response_mode)
-        if mode == "respond":
-            directive = self._format_conversational_directive_for_persona(
-                interaction.utterance or "",
-                self.converse_persona_prompt,
-            )
-            await visitor.add_directive(directive)
-            await self.respond(
-                visitor,
-                use_history=True,
-                history_limit=max(
-                    1, int(getattr(self, "converse_context_limit", 2) or 2)
-                ),
-            )
-            return
-
-        history: List[Dict[str, Any]] = []
-        limit = max(0, int(getattr(self, "converse_context_limit", 2) or 0))
-        if limit and conversation:
-            history = await conversation.get_interaction_history(
-                limit=limit,
-                excluded=interaction.id,
-                with_utterance=True,
-                with_response=True,
-                formatted=True,
-            )
-        utterance = interaction.utterance or ""
-        user_prompt = utterance
-        if history:
-            lines: List[str] = ["Recent conversation (oldest first):"]
-            for h in history:
-                u = (h.get("utterance") or h.get("user") or "").strip()
-                r = (h.get("response") or h.get("assistant") or "").strip()
-                if u:
-                    lines.append(f"User: {u}")
-                if r:
-                    lines.append(f"Assistant: {r}")
-            lines.append(f"\nCurrent user message:\n{utterance}")
-            user_prompt = "\n".join(lines)
-        await self._deliver_slim_persona_publish(
-            visitor, user_prompt=user_prompt, history=[]
-        )
+        await deliver_conversational_turn(self, visitor)
 
     # ------------------------------------------------------------------
     # Phase 2b: Agentic skill loop
@@ -602,8 +566,10 @@ class AgentInteractAction(InteractAction):
                 if name not in preloaded:
                     preloaded.append(name)
 
-            # Build SkillRunContext
-            ctx = SkillRunContext(
+            visitor._skill_state["interact_walker"] = visitor
+
+            # Build AgentInteract-only run context (preload names are not on shared SkillRunContext).
+            ctx = AgentInteractSkillRunContext(
                 utterance=visitor.utterance or "",
                 conversation=conversation,
                 interaction=interaction,
@@ -616,11 +582,11 @@ class AgentInteractAction(InteractAction):
                 channel=getattr(visitor, "channel", None),
                 stream=getattr(visitor, "stream", False),
                 user_id=getattr(visitor, "user_id", None),
-                preloaded_skills=preloaded,
                 publish_callback=_publish_cb,
                 agent_name=agent_name,
                 agent_description=agent_description,
                 skill_state=visitor._skill_state,
+                preloaded_skills=preloaded,
             )
 
             result = await run_agentic_skill_loop(ctx)
@@ -628,7 +594,13 @@ class AgentInteractAction(InteractAction):
             # Mark interaction as executed
             interaction.set_to_executed()
 
-            # Deliver final response
+            # Deliver final response (no user-facing reply if nothing substantive came back)
+            if not _skill_loop_output_is_deliverable(result.final_response):
+                logger.info(
+                    "AgentInteractAction: skipping delivery; empty or empty-tool-only skill output"
+                )
+                return
+
             if result.final_response:
                 skill_catalog = (visitor._skill_state or {}).get("skill_catalog")
                 effective_mode = self._normalize_effective_response_mode(
@@ -640,11 +612,28 @@ class AgentInteractAction(InteractAction):
                     result.final_response,
                     max_chars=cfg.degenerate_response_max_chars,
                 )
+
+                # Verbatim delivery paths (skip unconstrained Persona polish)
+                _verbatim = False
+                if skill_catalog is not None:
+                    activated = set(getattr(result, "activated_skills", []) or [])
+                    _verbatim = skill_catalog.get_verbatim_final_override(activated)
+
+                if _verbatim and not degenerate:
+                    logger.info(
+                        "AgentInteractAction: delivering skill output verbatim "
+                        "(verbatim-final or final_review_exercised with polish disabled)"
+                    )
+                    await self.publish(
+                        visitor,
+                        content=result.final_response,
+                        streaming_complete=True,
+                    )
+                    return
+
                 if effective_mode == "respond" and not degenerate:
                     await visitor.add_directive(
-                        self._format_persona_directive(
-                            visitor.utterance, result.final_response
-                        )
+                        self._format_persona_directive(result.final_response)
                     )
                     await self.respond(visitor)
                 elif effective_mode == "respond" and degenerate:
@@ -717,24 +706,23 @@ class AgentInteractAction(InteractAction):
         uq = (utterance or "").strip() or "(no utterance)"
         return (
             f"The user's message (for context):\n{uq}\n\n"
-            "Draft assistant result to deliver naturally to the user. "
-            "Preserve all facts, names, quotes, and URLs; do not invent sources.\n\n"
+            "Draft assistant result to deliver naturally to the user.\n"
+            "You may edit for brevity, tone, and conversational flow only.\n"
+            "STRICT RULES:\n"
+            "- If a product name, brand, SKU, price, URL, or specific spec does NOT appear "
+            "verbatim in the DRAFT, you MUST NOT add it.\n"
+            "- If the DRAFT is deliberately generic or vague, keep it generic. Do not "
+            "fill in plausible-sounding details.\n"
+            "- Do not invent examples to make the reply feel more helpful.\n\n"
             f"DRAFT:\n{final_response}\n\n"
             "Write the concise user-facing reply."
         )
 
     @staticmethod
-    def _format_persona_directive(utterance: Optional[str], final_response: str) -> str:
-        uq = (utterance or "").strip() or "(no utterance)"
-        return (
-            f'A verified research result has been produced for the user\'s question: "{uq}"\n\n'
-            f"VERIFIED CONTENT:\n{final_response}\n\n"
-            "Rewrite as a natural, direct user reply.\n"
-            "- Lead with the answer; no process narration.\n"
-            "- Remove internal terms/tags (e.g. PageIndex, skill loop, retrieval, assimilate, assimilated, document index, [PageIndex], [General Knowledge]).\n"
-            "- Preserve all facts, names, quotes, and URLs exactly; do not add or invent anything.\n"
-            "- Keep citations human-friendly (title + link), and keep the tone knowledgeable and friendly."
-        )
+    def _format_persona_directive(final_response: str) -> str:
+        """Minimal Persona directive: sub-prompt only—utterance/history live in Persona scaffolding."""
+        body = (final_response or "").strip()
+        return f"Tell the user: {body}" if body else ""
 
     # ------------------------------------------------------------------
     # Hot-reload helpers (mirrors SkillInteractAction API)

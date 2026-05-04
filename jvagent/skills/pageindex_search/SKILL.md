@@ -1,15 +1,22 @@
 ---
 name: pageindex_search
-description: Search internal knowledge base for content to inform your answers.
+description: >-
+  Knowledge retrieval from the agent's indexed knowledge base: answer knowledge-based questions using ingested documents (FAQs, manuals, policies, runbooks, wikis, notes, exports—whatever has been indexed). Use whenever the user needs **domain-specific** answers instead of general model knowledge. Do not use for document upload/delete/list lifecycle (that is `pageindex_docs`); use another skill when the task is explicitly handled elsewhere (e.g. live tools, APIs, or workflows bound to a different skill).
 requires-actions:
   - PageIndexAction
 allowed-tools:
   - pageindex_search__search
-version: 1
+version: 3
 tags:
+  - knowledge
+  - documentation
   - retrieval
   - rag
   - pageindex
+  - indexed
+  - internal
+  - faq
+  - help
 ---
 
 ## Workflow

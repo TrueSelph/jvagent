@@ -17,9 +17,8 @@
 
 Implementation lives under [`jvagent/action/agent_interact/`](../jvagent/action/agent_interact/README.md):
 
-- **`router/`** — `AgentInteractRouter`, [`router/prompts.py`](../jvagent/action/agent_interact/router/prompts.py) defaults, clarification prompts.
-- **`skill_handler/`** — skill loop scaffolding (agentic loop, catalog shim, hot reload helpers).
-- **`converse.py`** — conversational branch helpers (when enabled).
+- **`router/`** — `AgentInteractRouter`, [`router/prompts.py`](../jvagent/action/agent_interact/router/prompts.py) defaults, [`router/gating.py`](../jvagent/action/agent_interact/router/gating.py) (canned + clarification), [`router/gates.py`](../jvagent/action/agent_interact/router/gates.py) (conversational vs processing gate).
+- **`skill/`** — agentic loop ([`skill/agentic_loop.py`](../jvagent/action/agent_interact/skill/agentic_loop.py)), catalog shim, hot reload, [`skill/native_tools.py`](../jvagent/action/agent_interact/skill/native_tools.py) (`converse_skill`), [`skill/converse_delivery.py`](../jvagent/action/agent_interact/skill/converse_delivery.py) (Persona conversational path shared with the gate).
 
 ## Routing model
 

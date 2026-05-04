@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from jvagent.action.agent_interact.skill_handler.contracts import SkillRunConfig
+from jvagent.action.skill.skill_action_contracts import SkillRunConfig
 
 if TYPE_CHECKING:
     from jvagent.action.agent_interact.agent_interact_action import AgentInteractAction

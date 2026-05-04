@@ -9,14 +9,17 @@ import asyncio
 import hashlib
 import json
 import logging
-import random
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Set, Tuple
 
-from jvagent.action.agent_interact.skill_handler.always_active import (
+from jvagent.action.agent_interact.router.gating import (
+    evaluate_confidence,
+    publish_canned_response,
+)
+from jvagent.action.agent_interact.skill.always_active import (
     always_active_from_skill_dir,
 )
-from jvagent.action.agent_interact.skill_handler.shim import AgentInteractVisitorShim
+from jvagent.action.agent_interact.skill.shim import AgentInteractVisitorShim
 from jvagent.action.router.formatting import format_interaction_history
 from jvagent.action.router.routing_result import (
     POSTURE_DEFER,
@@ -183,7 +186,7 @@ class AgentInteractRouter:
                         interaction.response_posture = POSTURE_RESPOND
                         await interaction.save()
                         await self._handle_respond(visitor, interaction, conversation)
-                        await self._publish_canned_response(visitor, result)
+                        await publish_canned_response(self, visitor, result)
                         await self._finalize_routing(
                             visitor,
                             interaction,
@@ -214,7 +217,7 @@ class AgentInteractRouter:
                     interaction.response_posture = POSTURE_RESPOND
                     await interaction.save()
                     await self._handle_respond(visitor, interaction, conversation)
-                    await self._publish_canned_response(visitor, result)
+                    await publish_canned_response(self, visitor, result)
                     await self._finalize_routing(
                         visitor,
                         interaction,
@@ -358,10 +361,10 @@ class AgentInteractRouter:
                 await self._handle_respond(visitor, interaction, conversation)
 
             # ── Canned response ──
-            await self._publish_canned_response(visitor, result)
+            await publish_canned_response(self, visitor, result)
 
             # ── Clarification ──
-            result = await self._evaluate_confidence(result, visitor, interaction)
+            result = await evaluate_confidence(self, result, visitor, interaction)
 
             # ── Finalize routing ──
             await self._finalize_routing(
@@ -400,8 +403,14 @@ class AgentInteractRouter:
         descriptors: Dict[str, Dict[str, Any]] = {}
         for skill_name, skill_data in catalog.skills.items():
             d = skill_data.get("dir", "")
+            scope_hint = str(skill_data.get("scope_hint") or "").strip()
+            description = str(skill_data.get("description") or "").strip()
             descriptors[skill_name] = {
-                "description": skill_data.get("description", ""),
+                "description": (
+                    f"{description} (scope: {scope_hint})"
+                    if scope_hint
+                    else description
+                ),
                 "tags": skill_data.get("metadata", {}).get("tags", []),
                 "plan_steps": skill_data.get("plan_steps", []),
                 "always_active": bool(skill_data.get("always_active", False))
@@ -453,9 +462,7 @@ class AgentInteractRouter:
             return skill_state["skill_catalog"]
 
         try:
-            from jvagent.action.agent_interact.skill_handler.contracts import (
-                SkillRunConfig,
-            )
+            from jvagent.action.skill.skill_action_contracts import SkillRunConfig
 
             cfg = SkillRunConfig(
                 skills=getattr(self._action, "skills", None),
@@ -672,39 +679,6 @@ class AgentInteractRouter:
         return out
 
     # ------------------------------------------------------------------
-    # Canned response
-    # ------------------------------------------------------------------
-
-    async def _publish_canned_response(
-        self, visitor: Any, result: RoutingResult
-    ) -> None:
-        if not self._enable_canned_response:
-            return
-
-        if result.intent_type in self._skip_canned_for_intents:
-            return
-
-        canned = result.canned_response
-        if not canned or not canned.strip():
-            return
-
-        interaction = visitor.interaction
-        if not interaction:
-            return
-
-        if interaction.response:
-            return
-
-        try:
-            await self._action.publish(visitor, canned.strip(), transient=True)
-            interaction.canned_response = canned.strip()
-            await interaction.save()
-        except Exception as e:
-            logger.warning(
-                f"AgentInteractRouter: Failed to publish canned response: {e}"
-            )
-
-    # ------------------------------------------------------------------
     # Posture handlers
     # ------------------------------------------------------------------
 
@@ -763,119 +737,6 @@ class AgentInteractRouter:
                     len(fragments),
                 )
             await conversation.update_context({BUFFER_KEY: []})
-
-    # ------------------------------------------------------------------
-    # Confidence / clarification
-    # ------------------------------------------------------------------
-
-    async def _evaluate_confidence(
-        self,
-        result: RoutingResult,
-        visitor: Any,
-        interaction: "Interaction",
-    ) -> RoutingResult:
-        if not result.should_clarify(self._confidence_threshold):
-            return result
-
-        issues = result.verification.issues_found if result.verification else []
-        logger.info(
-            "AgentInteractRouter: Low confidence (%.2f < %.2f), issues: %s",
-            result.confidence,
-            self._confidence_threshold,
-            issues,
-        )
-
-        if self._enable_clarification:
-            clarification = await self._generate_clarification(
-                interaction.utterance or "",
-                result.interpretation,
-                result.intent_type,
-                result.confidence,
-                issues,
-                interaction=interaction,
-            )
-            if clarification:
-                try:
-                    await self._action.publish(visitor, clarification, stream=False)
-                except Exception as e:
-                    logger.warning(
-                        "AgentInteractRouter: Failed to publish clarification: %s", e
-                    )
-
-            result.needs_clarification = True
-            result.intent_type = "UNCLEAR"
-
-        return result
-
-    async def _generate_clarification(
-        self,
-        utterance: str,
-        interpretation: str,
-        intent_type: str,
-        confidence: float,
-        issues: List[str],
-        *,
-        interaction: Optional["Interaction"] = None,
-    ) -> str:
-        issues_text = ", ".join(str(i) for i in issues) if issues else "(none)"
-
-        user_tpl = (
-            self._action.routing_clarification_user_prompt_template or ""
-        ).strip()
-        if user_tpl:
-            try:
-                model_action = await self._action.get_model_action(purpose="router")
-                if model_action:
-                    primary_prompt = user_tpl.format(
-                        utterance=utterance,
-                        interpretation=interpretation,
-                        intent_type=intent_type,
-                        confidence=confidence,
-                        issues=issues_text,
-                    )
-                    clarification = await model_action.generate(
-                        prompt=primary_prompt,
-                        temperature=0.7,
-                        max_tokens=150,
-                        model=self._router_model,
-                        calling_action_name=(
-                            f"{self._action.get_class_name()}_clarification_primary"
-                        ),
-                        interaction=interaction,
-                    )
-                    if clarification and clarification.strip():
-                        return clarification.strip()
-            except Exception as e:
-                logger.warning(
-                    "AgentInteractRouter: Primary clarification prompt failed: %s", e
-                )
-
-        fallbacks = self._action.routing_clarification_fallback_messages
-        if not fallbacks:
-            return ""
-        template = random.choice(fallbacks)
-        try:
-            model_action = await self._action.get_model_action(purpose="router")
-            if model_action:
-                prompt = self._action.routing_clarification_paraphrase_prompt_template.format(
-                    utterance=utterance,
-                    template=template,
-                )
-                clarification = await model_action.generate(
-                    prompt=prompt,
-                    temperature=0.7,
-                    max_tokens=100,
-                    model=self._router_model,
-                    calling_action_name=f"{self._action.get_class_name()}_clarification",
-                    interaction=interaction,
-                )
-                if clarification and clarification.strip():
-                    return clarification.strip()
-        except Exception as e:
-            logger.warning(
-                "AgentInteractRouter: Paraphrase failed, using template: %s", e
-            )
-        return template
 
     # ------------------------------------------------------------------
     # Finalize routing

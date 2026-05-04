@@ -411,6 +411,19 @@ class SkillCatalog:
             return "publish"
         return default_mode
 
+    def get_verbatim_final_override(self, activated_skills: Set[str]) -> bool:
+        """Return True if any activated skill demands verbatim delivery.
+
+        Checks ``verbatim_final`` parsed from SKILL.md ``verbatim-final`` frontmatter.
+        """
+        activated_norm = {s.replace("-", "_") for s in activated_skills}
+        for catalog_key, skill_data in self._skills.items():
+            if catalog_key.replace("-", "_") not in activated_norm:
+                continue
+            if skill_data.get("verbatim_final"):
+                return True
+        return False
+
     @staticmethod
     def should_inject_persona_identity_for_skill_prompt(
         discovered_skills: Optional[Dict[str, Dict[str, Any]]],

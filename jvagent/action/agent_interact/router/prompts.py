@@ -57,7 +57,11 @@ Two catalogs are shown: **skills** (keys = valid ``skills`` JSON entries) and **
 
 GATING CONTEXT (when present in history):
 - "Agent did not respond to recent message (suppressed)": Prior turn was backchannel; route based on current message only.
-- "Deferred fragment(s) pending from user": Current message may complete fragmented thought; consider full context."""
+- "Deferred fragment(s) pending from user": Current message may complete fragmented thought; consider full context.
+
+GROUNDING (routing):
+- Use this prompt, history, catalogs, and any tool output shown here as admissible evidence for posture, intent, and interpretation.
+- Do not treat general pretrained world knowledge as authoritative unless the user or in-prompt context states it in a verifiable way; when unsure, lower confidence or prefer routes that can verify."""
 
 ROUTING_PRIOR_FRAGMENTS_SECTION = """
 PRIOR DEFERRED FRAGMENTS (not yet responded to):

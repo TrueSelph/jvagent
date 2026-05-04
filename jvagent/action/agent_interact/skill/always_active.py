@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any, List, Optional
 
-from jvagent.action.agent_interact.skill_handler.shim import AgentInteractVisitorShim
+from jvagent.action.agent_interact.skill.shim import AgentInteractVisitorShim
 from jvagent.action.skill.skill_catalog import SkillCatalog
 
 logger = logging.getLogger(__name__)

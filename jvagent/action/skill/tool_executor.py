@@ -989,6 +989,9 @@ class ToolExecutor:
                 envelope.close(content=err_msg, is_error=True)
                 return self._make_error_result(call.id, err_msg)
 
+            if isinstance(result_text, str) and not result_text.strip():
+                result_text = f"Tool `{call.name}` returned empty output."
+
             envelope.close(content=result_text, is_error=False)
             logger.debug(
                 "ToolExecutor: %s completed in %dms", call.name, envelope.latency_ms

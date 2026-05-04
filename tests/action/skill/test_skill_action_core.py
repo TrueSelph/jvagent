@@ -422,6 +422,14 @@ class TestSkillActionHelpers:
         assert SkillAction._update_best_candidate(None, "first") == "first"
         assert SkillAction._update_best_candidate("existing", "") == "existing"
 
+    def test_should_prefer_best_over_candidate(self):
+        cfg = SkillRunConfig()
+        engine = SkillAction()
+        assert engine._should_prefer_best_over_candidate(cfg, "ok", "longer response")
+        assert not engine._should_prefer_best_over_candidate(
+            cfg, "Here is a sufficient answer", "short"
+        )
+
     def test_clean_tool_name_namespaced(self):
         assert SkillAction._clean_tool_name("myskill__search") == "search"
         assert SkillAction._clean_tool_name("search") == "search"

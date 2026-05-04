@@ -214,6 +214,7 @@ def parse_skill_bundle(
     response_mode = _normalize_response_mode(
         frontmatter.get("response-mode"), skill_file
     )
+    verbatim_final = bool(frontmatter.get("verbatim-final"))
     plan_steps = _normalize_plan_steps(frontmatter.get("plan-steps"), skill_file)
     tags = frontmatter.get("tags") or []
     if isinstance(tags, str):
@@ -252,6 +253,7 @@ def parse_skill_bundle(
         "requires_jvagent": requires_jvagent,
         "requires_action_versions": requires_action_versions,
         "response_mode": response_mode,
+        "verbatim_final": verbatim_final,
         "plan_steps": plan_steps,
         "exports": exports,
         "imports": imports,

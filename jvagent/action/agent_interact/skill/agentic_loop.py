@@ -5,13 +5,14 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from jvagent.action.agent_interact.skill_handler.contracts import (
-    SkillRunContext,
-    SkillRunResult,
+from jvagent.action.agent_interact.skill.context import AgentInteractSkillRunContext
+from jvagent.action.agent_interact.skill.native_tools import (
+    register_converse_skill_tool,
 )
-from jvagent.action.agent_interact.skill_handler.shim import AgentInteractVisitorShim
+from jvagent.action.agent_interact.skill.shim import AgentInteractVisitorShim
 from jvagent.action.skill.action_resolver import ActionResolver
 from jvagent.action.skill.skill_action import SkillAction
+from jvagent.action.skill.skill_action_contracts import SkillRunContext, SkillRunResult
 from jvagent.action.skill.skill_catalog import SkillCatalog
 from jvagent.action.skill.tool_executor import ToolExecutor
 
@@ -111,8 +112,11 @@ class AgentInteractSkillAction(SkillAction):
             local_tools_paths=local_paths,
         )
 
+        preloaded: List[str] = []
+        if isinstance(ctx, AgentInteractSkillRunContext):
+            preloaded = list(ctx.preloaded_skills or [])
+
         if not skill_catalog.is_empty:
-            preloaded = getattr(ctx, "preloaded_skills", None) or []
             if preloaded:
                 for skill_name in preloaded:
                     if skill_name in discovered_skills:
@@ -165,10 +169,11 @@ class AgentInteractSkillAction(SkillAction):
                 ),
             )
 
-            if cfg.enable_skill_helper_tools:
-                self._register_skill_helper_tools(
-                    tool_executor, skill_catalog, discovered_skills, ctx
-                )
+        # Always-on catalog helpers + native converse (no skill-bundle bootstrap delay).
+        self._register_skill_helper_tools(
+            tool_executor, skill_catalog, discovered_skills, ctx
+        )
+        register_converse_skill_tool(tool_executor, ctx)
 
         if not tool_executor.get_tool_names():
             logger.warning(

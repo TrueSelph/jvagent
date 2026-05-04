@@ -4,7 +4,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from jvagent.action.agent_interact.agent_interact_action import AgentInteractAction
+from jvagent.action.agent_interact.agent_interact_action import (
+    AgentInteractAction,
+    _skill_loop_output_is_deliverable,
+)
+from jvagent.action.agent_interact.skill.converse_delivery import (
+    format_conversational_directive_for_persona,
+)
 from jvagent.action.router.routing_result import (
     POSTURE_DEFER,
     POSTURE_RESPOND,
@@ -240,7 +246,8 @@ class TestAgentInteractRouting:
         assert kwargs.get("history") == []
 
     @pytest.mark.asyncio
-    async def test_no_actions_triggers_converse_path(self):
+    async def test_directive_intent_goes_to_skill_loop_even_with_empty_actions(self):
+        """DIRECTIVE with empty actions is forced to skill loop (Fix 1)."""
         action = AgentInteractAction()
         object.__setattr__(action, "converse_enabled", True)
         object.__setattr__(action, "response_mode", "publish")
@@ -259,10 +266,47 @@ class TestAgentInteractRouting:
             f"{_ROUTER_MODULE}.AgentInteractRouter.route",
             new_callable=AsyncMock,
             return_value=(POSTURE_RESPOND, result),
-        ), _patch_require_persona(persona):
+        ), _patch_require_persona(persona), patch(
+            f"{_ACTION_MODULE}.AgentInteractAction._phase_execute_skill_loop",
+            new_callable=AsyncMock,
+        ) as mock_skill:
             await action.execute(visitor)
 
-        persona.respond_slim.assert_called_once()
+        # With Fix 1, DIRECTIVE always enters the skill loop—never persona
+        mock_skill.assert_called_once()
+        persona.respond_slim.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_informational_intent_goes_to_skill_loop_even_with_empty_actions(
+        self,
+    ):
+        """INFORMATIONAL with empty actions is forced to skill loop (Fix 1)."""
+        action = AgentInteractAction()
+        object.__setattr__(action, "converse_enabled", True)
+        object.__setattr__(action, "response_mode", "publish")
+        visitor = _make_visitor()
+
+        result = RoutingResult(
+            posture=POSTURE_RESPOND,
+            intent_type="INFORMATIONAL",
+            actions=[],
+            confidence=1.0,
+        )
+
+        persona = _make_persona_mock()
+
+        with patch(
+            f"{_ROUTER_MODULE}.AgentInteractRouter.route",
+            new_callable=AsyncMock,
+            return_value=(POSTURE_RESPOND, result),
+        ), _patch_require_persona(persona), patch(
+            f"{_ACTION_MODULE}.AgentInteractAction._phase_execute_skill_loop",
+            new_callable=AsyncMock,
+        ) as mock_skill:
+            await action.execute(visitor)
+
+        mock_skill.assert_called_once()
+        persona.respond_slim.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_converse_disabled_goes_to_skill_loop(self):
@@ -497,30 +541,52 @@ class TestAgentInteractModelResolution:
 
 
 class TestPersonaDirective:
-    def test_format_includes_utterance_and_content(self):
-        d = AgentInteractAction._format_persona_directive(
-            "What skills do you have?", "A, B, C"
-        )
-        assert "What skills do you have?" in d
-        assert "A, B, C" in d
+    def test_format_persona_directive_is_tell_the_user(self):
+        d = AgentInteractAction._format_persona_directive("A, B, C")
+        assert d == "Tell the user: A, B, C"
 
-    def test_format_with_none_utterance(self):
-        d = AgentInteractAction._format_persona_directive(None, "Result")
-        assert "(no utterance)" in d
-        assert "Result" in d
+    def test_format_persona_directive_strips_whitespace(self):
+        d = AgentInteractAction._format_persona_directive("  Result  ")
+        assert d == "Tell the user: Result"
 
-    def test_conversational_directive_contains_utterance_and_instructions(self):
-        d = AgentInteractAction._format_conversational_directive_for_persona(
-            "Hi there", "Be brief."
-        )
-        assert "Hi there" in d
-        assert "Be brief." in d
-        assert "CONVERSATIONAL_TURN" in d
+    def test_conversational_directive_is_instructions_only(self):
+        d = format_conversational_directive_for_persona("Be brief.")
+        assert d == "Be brief."
+        assert "CONVERSATIONAL_TURN" not in d
+        assert "User said" not in d
+
+    def test_conversational_directive_fallback_when_empty_instructions(self):
+        d = format_conversational_directive_for_persona("")
+        assert "brief" in d.lower()
+
+
+class TestSkillLoopDeliverability:
+    def test_deliverable_false_for_blank(self):
+        assert _skill_loop_output_is_deliverable("") is False
+        assert _skill_loop_output_is_deliverable("   ") is False
+
+    def test_deliverable_false_for_empty_tool_lines_only(self):
+        msg = "Tool `foo` returned empty output."
+        assert _skill_loop_output_is_deliverable(msg) is False
+
+    def test_deliverable_true_for_real_content(self):
+        assert _skill_loop_output_is_deliverable("Here is the answer.") is True
+
+    def test_deliverable_true_when_empty_tool_line_plus_substance(self):
+        msg = "Tool `foo` returned empty output.\n\nHours are 9–5."
+        assert _skill_loop_output_is_deliverable(msg) is True
 
     def test_skill_slim_publish_prompt_contains_draft(self):
         p = AgentInteractAction._format_skill_slim_publish_prompt("Q?", "Draft answer")
         assert "Q?" in p
         assert "Draft answer" in p
+
+    def test_slim_prompt_forbids_inventing_details(self):
+        p = AgentInteractAction._format_skill_slim_publish_prompt("Q?", "Draft answer")
+        assert "MUST NOT add it" in p
+        assert "MUST NOT add it" in p
+        assert "deliberately generic" in p.lower() or "keep it generic" in p.lower()
+        assert "Do not invent examples" in p or "invent examples" in p.lower()
 
 
 # ---------------------------------------------------------------------------
