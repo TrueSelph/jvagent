@@ -32,11 +32,11 @@ async def test_bypass_when_active_interview():
     visitor.interaction = interaction
 
     conversation = MagicMock()
-    conversation.get_active_tasks = MagicMock(
+    conversation.get_tasks = MagicMock(
         return_value=[
             {
                 "task_type": "INTERVIEW",
-                "action_name": "SignupInterviewInteractAction",
+                "owner_action": "SignupInterviewInteractAction",
                 "status": "active",
             }
         ]
@@ -104,7 +104,7 @@ async def test_suppress_applied_when_no_active_interview():
     visitor.interaction = interaction
 
     conversation = MagicMock()
-    conversation.get_active_tasks = MagicMock(return_value=[])
+    conversation.get_tasks = MagicMock(return_value=[])
     conversation.get_interaction_history = AsyncMock(return_value=[])
     conversation.get_active_tasks_for_context = MagicMock(return_value=[])
     conversation.context = {}
@@ -184,11 +184,11 @@ async def test_bypass_respects_pass_through_task_types():
     visitor.interaction = interaction
 
     conversation = MagicMock()
-    conversation.get_active_tasks = MagicMock(
+    conversation.get_tasks = MagicMock(
         return_value=[
             {
                 "task_type": "CUSTOM_FLOW",
-                "action_name": "CustomFlowAction",
+                "owner_action": "CustomFlowAction",
                 "status": "active",
             }
         ]
@@ -255,11 +255,11 @@ async def test_bypass_disabled_when_empty_task_types():
     visitor.interaction = interaction
 
     conversation = MagicMock()
-    conversation.get_active_tasks = MagicMock(
+    conversation.get_tasks = MagicMock(
         return_value=[
             {
                 "task_type": "INTERVIEW",
-                "action_name": "SignupInterviewInteractAction",
+                "owner_action": "SignupInterviewInteractAction",
                 "status": "active",
             }
         ]

@@ -33,8 +33,8 @@ logger = logging.getLogger(__name__)
     name="user_status",
 )
 @compound_index(
-    [("active_tasks.status", 1), ("active_tasks.next_trigger_at", 1)],
-    name="active_task_trigger",
+    [("tasks.status", 1), ("tasks.created_at", 1)],
+    name="task_status_created",
 )
 class Conversation(DeferredSaveMixin, Node):
     """Session-based conversation. session_id can be set or auto-generated.
@@ -91,9 +91,9 @@ class Conversation(DeferredSaveMixin, Node):
     context: Dict[str, Any] = attribute(
         default_factory=dict, description="Conversation context dictionary"
     )
-    active_tasks: List[Dict[str, Any]] = attribute(
+    tasks: List[Dict[str, Any]] = attribute(
         default_factory=list,
-        description="Active/inactive tasks for AI context (task tracker)",
+        description="Tasks for this conversation (task tracker)",
     )
 
     async def get_agent(self) -> Optional[Any]:
@@ -858,84 +858,74 @@ class Conversation(DeferredSaveMixin, Node):
         self.context.update(updates)
         await self.save()
 
-    def get_active_tasks(
+    def get_tasks(
         self,
         status: Optional[Union[str, List[str]]] = None,
-        action_name: Optional[str] = None,
+        owner_action: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Get tasks, optionally filtered by status and/or action_name.
+        """Get tasks, optionally filtered by status and/or owner_action.
 
         Args:
-            status: Optional filter by a single status or a list of statuses (e.g. ``"active"`` or ``["active", "triggered"]``)
-            action_name: Optional filter by action class name for actions managing tasks
+            status: Optional filter by a single status or a list of statuses.
+            owner_action: Optional filter by action class name.
 
         Returns:
-            List of task dicts
+            List of task dicts.
         """
-        from jvagent.memory.services.task_service import TaskService
+        from jvagent.memory.task_store import TaskStore
 
-        service = TaskService(self)
-        return service.list(status=status, action_name=action_name)
+        store = TaskStore(self)
+        return [t.to_dict() for t in store.list(status=status, owner_action=owner_action)]
 
-    def get_active_task(
+    def get_task(
         self,
         *,
         task_id: Optional[str] = None,
-        task_type: Optional[str] = None,
+        title: Optional[str] = None,
         description: Optional[str] = None,
-        action_name: Optional[str] = None,
+        task_type: Optional[str] = None,
+        owner_action: Optional[str] = None,
         status: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Get first task matching all provided filters.
 
-        Replaces get_active_task_by_description, get_active_task_by_action,
-        and get_active_task_action_name. Use task.get("action_name") when
-        you need the action name.
-
         Args:
-            task_id: Optional filter by task_id
-            task_type: Optional filter by task_type (e.g. "INTERVIEW")
-            description: Optional filter by description
-            action_name: Optional filter by action_name
-            status: Optional filter by status (e.g. "active")
+            task_id: Optional filter by task id.
+            title: Optional filter by title.
+            description: Optional filter by description.
+            task_type: Optional filter by task type.
+            owner_action: Optional filter by owner_action.
+            status: Optional filter by status.
 
         Returns:
-            First matching task dict, or None
+            First matching task dict, or None.
         """
-        from jvagent.memory.services.task_service import TaskService
+        from jvagent.memory.task_store import TaskStore
 
-        service = TaskService(self)
-        return service.get(
-            task_id=task_id,
-            task_type=task_type,
-            description=description,
-            action_name=action_name,
-            status=status,
-        )
+        store = TaskStore(self)
+        for t in store.list():
+            if task_id is not None and t.id != task_id:
+                continue
+            if title is not None and t.title != title:
+                continue
+            if description is not None and t.description != description:
+                continue
+            if task_type is not None and t._task.task_type != task_type:
+                continue
+            if owner_action is not None and t._task.owner_action != owner_action:
+                continue
+            if status is not None and t.status != status:
+                continue
+            return t.to_dict()
+        return None
 
     def get_active_tasks_for_context(self) -> List[str]:
-        """Return list of task descriptions for context line.
+        """Return list of task titles for context line.
 
         Returns:
-            List of descriptions for active tasks (status=active)
+            List of titles for active tasks.
         """
-        return [t["description"] for t in self.get_active_tasks(status="active")]
-
-    async def get_task_nodes(self, status: Optional[str] = None) -> List[Any]:
-        """Get tasks as first-class TaskNode entities via graph traversal.
-
-        Args:
-            status: Optional status filter.
-
-        Returns:
-            List of TaskNode instances connected to this conversation.
-        """
-        from jvagent.memory.task_node import TaskNode
-
-        nodes = await self.nodes(node=TaskNode, direction="out")
-        if status:
-            nodes = [n for n in nodes if getattr(n, "status", None) == status]
-        return nodes
+        return [t["title"] for t in self.get_tasks(status="active")]
 
     async def archive(self) -> None:
         """Archive the conversation."""
@@ -1002,7 +992,7 @@ class Conversation(DeferredSaveMixin, Node):
                         if duration:
                             total_duration += duration
 
-        active_task_count = len(self.get_active_tasks(status="active"))
+        active_task_count = len(self.get_tasks(status="active"))
 
         return {
             "interaction_count": self.interaction_count,

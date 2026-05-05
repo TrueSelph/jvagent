@@ -166,7 +166,7 @@ class AgentInteractRouter:
 
             # ── Bypass: interview active ──
             if self._pass_through_task_types and conversation:
-                active_tasks = conversation.get_active_tasks(status="active")
+                active_tasks = conversation.get_tasks(status="active")
                 for t in active_tasks:
                     if t.get("task_type") in self._pass_through_task_types:
                         action_name = t.get("action_name", "")
@@ -294,11 +294,11 @@ class AgentInteractRouter:
                     if buffer
                     else ""
                 )
-                active_tasks = conversation.get_active_tasks(status="active")
+                active_tasks = conversation.get_tasks(status="active")
                 active_task_fingerprint = (
                     hashlib.sha256(
                         json.dumps(
-                            sorted([t.get("action_name", "") for t in active_tasks])
+                            sorted([t.get("owner_action", "") for t in active_tasks])
                         ).encode()
                     ).hexdigest()
                     if active_tasks
@@ -755,11 +755,11 @@ class AgentInteractRouter:
         all_allowed = list(set(routed_skills + combined_exceptions))
 
         if conversation:
-            active_task = conversation.get_active_task(
+            active_task = conversation.get_task(
                 task_type="INTERVIEW", status="active"
             )
             active_interview_name = (
-                active_task.get("action_name") if active_task else None
+                active_task.get("owner_action") if active_task else None
             )
             if active_interview_name:
                 actions_manager = await agent.get_actions_manager()

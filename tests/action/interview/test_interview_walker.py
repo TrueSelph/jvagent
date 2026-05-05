@@ -257,7 +257,7 @@ class TestTargetResolverCancellationGate:
 
         visitor = MagicMock()
         visitor.conversation = MagicMock()
-        visitor.conversation.get_active_tasks.return_value = []
+        visitor.conversation.get_tasks.return_value = []
 
         resolver = TargetResolver(action)
         await resolver.resolve(session, Intent.CANCELLATION, visitor=visitor)

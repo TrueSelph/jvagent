@@ -22,7 +22,7 @@ without going through the interact subsystem should instantiate
         utterance=my_task,
         conversation=conversation,
         model_action=await self.get_model_action(required=True),
-        task_service=TaskService(conversation),
+        task_store=TaskStore(conversation),
         config=SkillRunConfig(skills="-all"),
     )
     result = await SkillAction().run_to_completion(ctx)
@@ -462,7 +462,7 @@ class SkillInteractAction(InteractAction):
                 agent=agent,
                 user_id=getattr(visitor, "user_id", None) or None,
                 model_action=model_action,
-                task_service=visitor.tasks,
+                task_store=visitor.tasks,
                 config=cfg,
                 agent_name=agent_name,
                 agent_description=agent_description,

@@ -69,7 +69,7 @@ class TaskTriggerInteractAction(InteractAction):
         now_str = now.strftime("%Y-%m-%dT%H:%M")
 
         # Check for both 'active' (time/keyword triggers) and 'triggered' (already background-dispatched)
-        pending_tasks = conversation.get_active_tasks(status=["active", "triggered"])
+        pending_tasks = conversation.get_tasks(status=["active", "triggered"])
         triggered_count = 0
 
         for task in pending_tasks:
@@ -124,12 +124,10 @@ class TaskTriggerInteractAction(InteractAction):
                 await visitor.add_directive(directive)
 
                 # Mark as completed
-                task_id = task.get("task_id")
-                success = await visitor.tasks.complete(
-                    task_id=task_id,
-                    status="completed",
-                )
-                if success:
+                task_id = task.get("id")
+                handle = visitor.tasks.get(task_id)
+                if handle:
+                    await handle.complete()
                     logger.info(f"TaskTrigger: Marked task {task_id} as completed.")
                 else:
                     logger.warning(

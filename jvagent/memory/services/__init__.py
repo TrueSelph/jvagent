@@ -1,10 +1,11 @@
 """Memory service-layer facades."""
 
 from .long_memory_service import LongMemoryService
-from .task_service import TaskHandle, TaskService
+from ..task_store import TaskHandle, StepHandle, TaskStore
 
 __all__ = [
     "LongMemoryService",
-    "TaskService",
+    "TaskStore",
     "TaskHandle",
+    "StepHandle",
 ]

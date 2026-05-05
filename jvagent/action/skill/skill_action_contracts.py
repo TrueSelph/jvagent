@@ -29,7 +29,7 @@ class LoopPhase(str, Enum):
 
 
 class TerminationReason(str, Enum):
-    """Canonical termination reasons shared between SkillAction and TaskService."""
+    """Canonical termination reasons used by the skill loop engine."""
 
     COMPLETED = "completed"
     ITER_CAP = "max_iterations"
@@ -164,7 +164,7 @@ class SkillRunContext:
         utterance: The user's input text driving the task.
         conversation: Conversation node (memory anchor for tasks/checkpoints).
         model_action: Pre-resolved LanguageModelAction instance.
-        task_service: TaskService bound to this conversation.
+        task_store: TaskStore bound to this conversation.
         config: Full loop configuration.
         interaction: Interact-subsystem Interaction node (optional).
         response_bus: ResponseBus for streaming output (optional).
@@ -192,7 +192,7 @@ class SkillRunContext:
     utterance: str
     conversation: Any
     model_action: Any
-    task_service: Any
+    task_store: Any
     config: SkillRunConfig
 
     # Optional interact-subsystem fields

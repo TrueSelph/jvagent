@@ -139,7 +139,7 @@ async def finalize_email_interaction(
             app_id = app.id if app else ""
             active_tasks = []
             if walker.conversation:
-                active_tasks = walker.conversation.get_active_tasks(status="active")
+                active_tasks = walker.conversation.get_tasks(status="active")
             log_data, message = _build_interaction_log_data(
                 interaction,
                 app_id,

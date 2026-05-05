@@ -668,10 +668,10 @@ async def interact_endpoint(
                     active_tasks = []
                     completed_tasks = []
                     if walker.conversation:
-                        active_tasks = walker.conversation.get_active_tasks(
+                        active_tasks = walker.conversation.get_tasks(
                             status="active"
                         )
-                        completed_tasks = walker.conversation.get_active_tasks(
+                        completed_tasks = walker.conversation.get_tasks(
                             status="completed"
                         )
                     log_data, message = _build_interaction_log_data(
@@ -945,8 +945,8 @@ async def _stream_interaction(
                 active_tasks = []
                 completed_tasks = []
                 if walker.conversation:
-                    active_tasks = walker.conversation.get_active_tasks(status="active")
-                    completed_tasks = walker.conversation.get_active_tasks(
+                    active_tasks = walker.conversation.get_tasks(status="active")
+                    completed_tasks = walker.conversation.get_tasks(
                         status="completed"
                     )
                 agent_id_for_logging = (
@@ -1024,8 +1024,8 @@ async def _stream_interaction(
                 active_tasks = []
                 completed_tasks = []
                 if walker.conversation:
-                    active_tasks = walker.conversation.get_active_tasks(status="active")
-                    completed_tasks = walker.conversation.get_active_tasks(
+                    active_tasks = walker.conversation.get_tasks(status="active")
+                    completed_tasks = walker.conversation.get_tasks(
                         status="completed"
                     )
                 agent_id_from_walker = (

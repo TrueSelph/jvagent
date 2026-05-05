@@ -98,38 +98,53 @@ class _ObservingTaskHandle:
     def __init__(self, real_handle: Any, executor: AgentInteractToolExecutor) -> None:
         object.__setattr__(self, "_real", real_handle)
         object.__setattr__(self, "_executor", executor)
-        for attr in (
-            "task_id",
-            "update_metadata",
-            "complete",
-            "fail",
-            "cancel",
-            "get",
-            "get_record",
-        ):
-            val = getattr(real_handle, attr, None)
-            if val is not None:
-                try:
-                    object.__setattr__(self, attr, val)
-                except TypeError:
-                    pass
 
     def __getattr__(self, name: str) -> Any:
         return getattr(object.__getattribute__(self, "_real"), name)
 
-    async def record_step(
+    async def add_event(
         self,
-        step_type: str,
+        event_type: str,
         iteration: int = 0,
         details: Optional[Dict[str, Any]] = None,
-    ) -> bool:
-        if step_type == "tool_result" and details:
+    ) -> None:
+        if event_type == "tool_result" and details:
             executor = object.__getattribute__(self, "_executor")
             if isinstance(executor, AgentInteractToolExecutor):
                 details = _enrich_tool_result(details, executor)
-        return await object.__getattribute__(self, "_real").record_step(
-            step_type, iteration, details
+        return await object.__getattribute__(self, "_real").add_event(
+            event_type, iteration, details
         )
+
+
+class _ObservingTaskStore:
+    """Wraps a ``TaskStore`` so ``track()`` returns observing handles."""
+
+    def __init__(self, real_store: Any, skill_state: dict) -> None:
+        self._real = real_store
+        self._skill_state = skill_state
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._real, name)
+
+    def track(self, **kwargs: Any) -> Any:
+        inner = self._real.track(**kwargs)
+        skill_state = self._skill_state
+        real_aenter = inner.__aenter__
+        real_aexit = inner.__aexit__
+
+        class _Ctx:
+            async def __aenter__(_self):  # noqa: N805
+                handle = await real_aenter()
+                executor = skill_state.get("tool_executor") if skill_state else None
+                if isinstance(executor, AgentInteractToolExecutor):
+                    return _ObservingTaskHandle(handle, executor)
+                return handle
+
+            async def __aexit__(_self, *args):  # noqa: N805
+                return await real_aexit(*args)
+
+        return _Ctx()
 
 
 def _enrich_tool_result(
@@ -156,36 +171,6 @@ def _enrich_tool_result(
     details = dict(details)
     details["results"] = enriched_results
     return details
-
-
-class _ObservingTaskService:
-    """Wraps a ``TaskService`` so ``track()`` returns observing handles."""
-
-    def __init__(self, real_service: Any, skill_state: dict) -> None:
-        self._real = real_service
-        self._skill_state = skill_state
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._real, name)
-
-    def track(self, **kwargs: Any) -> Any:
-        inner = self._real.track(**kwargs)
-        skill_state = self._skill_state
-        real_aenter = inner.__aenter__
-        real_aexit = inner.__aexit__
-
-        class _Ctx:
-            async def __aenter__(_self):  # noqa: N805
-                handle = await real_aenter()
-                executor = skill_state.get("tool_executor") if skill_state else None
-                if isinstance(executor, AgentInteractToolExecutor):
-                    return _ObservingTaskHandle(handle, executor)
-                return handle
-
-            async def __aexit__(_self, *args):  # noqa: N805
-                return await real_aexit(*args)
-
-        return _Ctx()
 
 
 class AgentInteractSkillAction(SkillAction):
@@ -338,12 +323,12 @@ async def run_agentic_skill_loop(ctx: SkillRunContext) -> SkillRunResult:
     engine = AgentInteractSkillAction()
 
     skill_state = ctx.skill_state if ctx.skill_state is not None else {}
-    original_task_service = ctx.task_service
-    ctx.task_service = _ObservingTaskService(original_task_service, skill_state)
+    original_task_store = ctx.task_store
+    ctx.task_store = _ObservingTaskStore(original_task_store, skill_state)
 
     try:
         result = await engine.run_to_completion(ctx)
     finally:
-        ctx.task_service = original_task_service
+        ctx.task_store = original_task_store
 
     return result

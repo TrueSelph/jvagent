@@ -30,6 +30,16 @@ def _task_result(task_id: str = "t-1"):
     return result
 
 
+def _make_mock_handle(task_id: str = "task_123"):
+    handle = MagicMock()
+    handle.id = task_id
+    handle.start = AsyncMock()
+    handle.complete = AsyncMock()
+    handle.cancel = AsyncMock()
+    handle.fail = AsyncMock()
+    return handle
+
+
 class TestDirectiveBuilderResetTaskTracking:
     """Test reset_task_tracking."""
 
@@ -53,9 +63,11 @@ class TestDirectiveBuilderEventOncePerRun:
         action.metadata = {"title": "TestInterview InteractAction"}
         action.description = ""
 
+        mock_handle = _make_mock_handle("t-1")
+
         visitor = MagicMock()
         visitor.tasks = MagicMock()
-        visitor.tasks.start = AsyncMock(return_value=_task_result())
+        visitor.tasks.create = AsyncMock(return_value=mock_handle)
         visitor.add_directive = AsyncMock()
         visitor.interview_session = MagicMock()
         visitor.interview_session.state = InterviewState.ACTIVE
@@ -66,14 +78,13 @@ class TestDirectiveBuilderEventOncePerRun:
         await builder.queue_directive(visitor, "First directive")
         await builder.queue_directive(visitor, "Second directive")
 
-        visitor.tasks.start.assert_called_once()
-        call_kwargs = visitor.tasks.start.call_args[1]
+        visitor.tasks.create.assert_called_once()
+        call_kwargs = visitor.tasks.create.call_args[1]
         assert call_kwargs["description"] == _active_task_description(
             "TestInterview InteractAction", ""
         )
-        assert call_kwargs["action_name"] == "TestInterview"
+        assert call_kwargs["owner_action"] == "TestInterview"
         assert call_kwargs["task_type"] == "INTERVIEW"
-        assert call_kwargs["singleton_action"] is True
         assert visitor.add_directive.call_count == 2
 
     @pytest.mark.asyncio
@@ -84,9 +95,11 @@ class TestDirectiveBuilderEventOncePerRun:
         action.metadata = {"title": "TestInterview InteractAction"}
         action.description = ""
 
+        mock_handle = _make_mock_handle("t-1")
+
         visitor = MagicMock()
         visitor.tasks = MagicMock()
-        visitor.tasks.start = AsyncMock(return_value=_task_result())
+        visitor.tasks.create = AsyncMock(return_value=mock_handle)
         visitor.add_directive = AsyncMock()
         visitor.interview_session = MagicMock()
         visitor.interview_session.state = InterviewState.ACTIVE
@@ -95,11 +108,11 @@ class TestDirectiveBuilderEventOncePerRun:
         builder = DirectiveBuilder(action)
 
         await builder.queue_directive(visitor, "First run")
-        assert visitor.tasks.start.call_count == 1
+        assert visitor.tasks.create.call_count == 1
 
         builder.reset_task_tracking()
         await builder.queue_directive(visitor, "Second run")
-        assert visitor.tasks.start.call_count == 2
+        assert visitor.tasks.create.call_count == 2
 
 
 class TestDirectiveBuilderGenerateCancelledDirective:
@@ -120,17 +133,20 @@ class TestDirectiveBuilderGenerateCancelledDirective:
         )
         action.cancellation_message = CANCELLATION_MESSAGE_TEMPLATE
 
+        mock_handle = _make_mock_handle("t-1")
+
         visitor = MagicMock()
         visitor.add_event = AsyncMock()
         visitor.add_directive = AsyncMock()
         visitor.tasks = MagicMock()
-        visitor.tasks.update_status = AsyncMock()
+        visitor.tasks.get = MagicMock(return_value=mock_handle)
 
         session = MagicMock()
         session.interview_type = "default"
         session.delete = AsyncMock()
 
         builder = DirectiveBuilder(action)
+        builder._task_id = "t-1"  # Simulate prior task registration
 
         with patch(
             "jvagent.action.interview.core.utils.session_utils.cleanup_session",
@@ -142,13 +158,7 @@ class TestDirectiveBuilderGenerateCancelledDirective:
             class_name="SignupInterviewInteractAction"
         )
         visitor.add_event.assert_called_once_with(expected_event)
-        visitor.tasks.update_status.assert_called_once_with(
-            status="cancelled",
-            description=_active_task_description(
-                "SignupInterviewInteractAction InteractAction", ""
-            ),
-            action_name="SignupInterviewInteractAction",
-        )
+        mock_handle.cancel.assert_called_once()
         visitor.add_directive.assert_called_once_with(CANCELLATION_MESSAGE_TEMPLATE)
 
 
@@ -166,17 +176,20 @@ class TestDirectiveBuilderGenerateCompletedDirective:
         action.get_state_event_message.return_value = "Task completed"
         action.completion_message = "Thanks for completing the report"
 
+        mock_handle = _make_mock_handle("t-1")
+
         visitor = MagicMock()
         visitor.add_event = AsyncMock()
         visitor.add_directive = AsyncMock()
         visitor.tasks = MagicMock()
-        visitor.tasks.update_status = AsyncMock()
+        visitor.tasks.get = MagicMock(return_value=mock_handle)
 
         session = MagicMock()
         session.interview_type = "default"
         session.delete = AsyncMock()
 
         builder = DirectiveBuilder(action)
+        builder._task_id = "t-1"  # Simulate prior task registration
 
         with patch(
             "jvagent.action.interview.core.utils.session_utils.cleanup_session",
@@ -184,10 +197,4 @@ class TestDirectiveBuilderGenerateCompletedDirective:
         ):
             await builder.generate_completed_directive(session, visitor)
 
-        visitor.tasks.update_status.assert_called_once_with(
-            status="completed",
-            description=_active_task_description(
-                "ReportInterviewInteractAction InteractAction", ""
-            ),
-            action_name="ReportInterviewInteractAction",
-        )
+        mock_handle.complete.assert_called_once()

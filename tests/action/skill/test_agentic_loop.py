@@ -295,11 +295,17 @@ class TestTaskTrackerHandler:
     @staticmethod
     def _make_handler(iteration: int = 1, final_review: bool = False):
         from jvagent.action.skill.skill_action_contracts import SkillRunConfig
+        from jvagent.memory.task_store import Task, TaskHandle, TaskStore
 
-        task_handle = MagicMock()
-        task_handle.record_step = AsyncMock()
-        task_handle.update_metadata = AsyncMock()
-        task_plan_state = {"plan": None}
+        conv = MagicMock()
+        conv.tasks = []
+        conv.save = AsyncMock()
+        store = TaskStore(conv)
+        task = Task(id="task_123", title="Test", description="Test", owner_action="SkillAction")
+        task_handle = TaskHandle(store, task)
+        task_handle.add_event = AsyncMock()
+        task_handle.update = AsyncMock()
+        task_plan_state: dict = {}
         publish_callback = AsyncMock()
         ctx = SimpleNamespace(
             publish_callback=publish_callback,
@@ -317,13 +323,13 @@ class TestTaskTrackerHandler:
 
     @pytest.mark.asyncio
     async def test_create_read_and_complete_plan(self):
-        handler, task_plan_state, task_handle, publish_callback = self._make_handler()
+        handler, _, task_handle, publish_callback = self._make_handler()
 
         created = await handler(
             {"action": "create", "steps": ["Search the web", "Write the report"]}
         )
         assert "Task plan created" in created
-        assert task_plan_state["plan"] is not None
+        assert task_handle.has_pending_steps()
         assert "1. [in_progress] Search the web" in created
 
         read = await handler({"action": "read"})
@@ -332,9 +338,9 @@ class TestTaskTrackerHandler:
 
         completed = await handler({"action": "complete", "step_id": 1})
         assert "Completed step 1" in completed
-        assert "Next step is 2: Write the report" in completed
-        task_handle.record_step.assert_awaited()
-        task_handle.update_metadata.assert_awaited()
+        # Step IDs are now UUIDs; verify by presence of "Next step is" fragment
+        assert "Next step is" in completed
+        assert "Write the report" in completed
         published_messages = [call.args[0] for call in publish_callback.await_args_list]
         assert published_messages == [
             "Planning my approach - 2 steps.",

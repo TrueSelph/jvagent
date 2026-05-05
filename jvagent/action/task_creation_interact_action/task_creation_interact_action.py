@@ -177,18 +177,18 @@ class TaskCreationInteractAction(InteractAction):
         try:
             # Robust task retrieval
             active_tasks: List[Dict[str, Any]] = []
-            if hasattr(conversation, "get_active_tasks"):
-                active_tasks = conversation.get_active_tasks(status="active")
-            elif hasattr(conversation, "active_tasks"):
+            if hasattr(conversation, "get_tasks"):
+                active_tasks = conversation.get_tasks(status="active")
+            elif hasattr(conversation, "tasks"):
                 active_tasks = [
-                    t for t in conversation.active_tasks if t.get("status") == "active"
+                    t for t in conversation.tasks if t.get("status") == "active"
                 ]
 
             pending_tasks_section = "No pending tasks."
             if active_tasks:
                 pending_tasks_section = "\n".join(
                     [
-                        f"ID: {t.get('task_id')} | TASK: {t.get('description')}"
+                        f"ID: {t.get('id')} | TASK: {t.get('description')}"
                         for t in active_tasks
                         if t.get("task_type") == "PROACTIVE"
                     ]
@@ -221,22 +221,25 @@ class TaskCreationInteractAction(InteractAction):
                     r"COMPLETE_TASK:\s*([a-fA-F0-9\-]+|[0-9]+)", response
                 )
                 for task_id in completions:
-                    await visitor.tasks.complete(task_id=task_id)
+                    t = visitor.tasks.get(task_id)
+                    if t:
+                        await t.complete()
 
                 # 2. Process New Tasks
                 new_tasks = self._extract_tasks(response)
                 for task in new_tasks:
-                    await visitor.tasks.start(
+                    t = await visitor.tasks.create(
+                        title=task["description"],
                         description=task["description"],
-                        task_type="PROACTIVE",
-                        action_name=self.get_class_name(),
-                        metadata={
+                        owner_action=self.get_class_name(),
+                        data={
                             "context": task["context"],
                             "channel": interaction.channel or "default",
+                            "trigger_at": task["trigger_time"],
+                            "trigger_condition": task["trigger_condition"],
                         },
-                        trigger_at=task["trigger_time"],
-                        trigger_condition=task["trigger_condition"],
                     )
+                    await t.start()
 
                 for task in new_tasks:
                     logger.info(

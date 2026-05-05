@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from jvagent.core.agent import Agent
     from jvagent.memory.conversation import Conversation
     from jvagent.memory.manager import Memory
-    from jvagent.memory.services.task_service import TaskService
+    from jvagent.memory.task_store import TaskStore
     from jvagent.memory.user import User
 else:
     # Import at runtime for Pydantic model_rebuild
@@ -101,7 +101,7 @@ class InteractWalker(Walker):
         False  # Allow actions to opt-out of being recorded as executed
     )
     _agent: Optional["Agent"] = None  # Agent node, set in on_agent for access control
-    _task_service: Optional["TaskService"] = None
+    _task_store: Optional["TaskStore"] = None
     _bootstrap_error: Optional[str] = (
         None  # outcome code from _bootstrap_interaction when failed
     )
@@ -110,15 +110,15 @@ class InteractWalker(Walker):
     )  # Actions deferred for post-interaction execution
 
     @property
-    def tasks(self) -> "TaskService":
-        """Return conversation-scoped task service."""
+    def tasks(self) -> "TaskStore":
+        """Return conversation-scoped task store."""
         if not self.conversation:
             raise RuntimeError("No conversation available for task tracker")
-        if self._task_service is None:
-            from jvagent.memory.services.task_service import TaskService
+        if self._task_store is None:
+            from jvagent.memory.task_store import TaskStore
 
-            self._task_service = TaskService(self.conversation)
-        return self._task_service
+            self._task_store = TaskStore(self.conversation)
+        return self._task_store
 
     async def record_action_execution(
         self, action_name: Optional[str] = None

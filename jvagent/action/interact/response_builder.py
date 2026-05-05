@@ -44,7 +44,7 @@ def _completed_tasks_for_interaction(
         return []
 
     completed: List[Dict[str, Any]] = []
-    for task in getattr(conversation, "active_tasks", []):
+    for task in getattr(conversation, "tasks", []):
         if task.get("status") not in _TERMINAL_COMPLETED_STATUSES:
             continue
         updated_at = _parse_interaction_timestamp(task.get("updated_at"))
@@ -141,7 +141,7 @@ async def build_interact_response(
 
             conversation = await Conversation.get(interaction.conversation_id)
             if conversation:
-                active_tasks = conversation.get_active_tasks(status="active")
+                active_tasks = conversation.get_tasks(status="active")
                 completed_tasks = _completed_tasks_for_interaction(
                     interaction, conversation
                 )

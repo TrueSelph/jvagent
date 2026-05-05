@@ -58,7 +58,7 @@ def _make_visitor(**overrides):
     visitor.conversation.id = "conv_1"
     visitor.conversation.context = {}
     visitor.conversation.update_context = AsyncMock()
-    visitor.conversation.get_active_tasks = MagicMock(return_value=[])
+    visitor.conversation.get_tasks = MagicMock(return_value=[])
     visitor.conversation.get_active_tasks_for_context = MagicMock(return_value=[])
     visitor.conversation.get_interaction_history = AsyncMock(return_value=[])
 

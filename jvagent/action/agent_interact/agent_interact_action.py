@@ -589,7 +589,7 @@ class AgentInteractAction(InteractAction):
                 conversation=conversation,
                 interaction=interaction,
                 model_action=model_action,
-                task_service=visitor.tasks,
+                task_store=visitor.tasks,
                 config=cfg,
                 agent=agent,
                 response_bus=visitor.response_bus,

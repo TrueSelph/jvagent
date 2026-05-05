@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from jvagent.action.base import Action
 from jvagent.action.interact.endpoints import interact_endpoint
 from jvagent.memory.conversation import Conversation
-from jvagent.memory.services.task_service import TaskService
+from jvagent.memory.task_store import TaskStore
 
 try:
     from jvspatial.api.integrations.scheduler.decorators import on_schedule
@@ -165,8 +165,8 @@ class TaskDispatcher(Action):
         now = now_dt.strftime("%Y-%m-%dT%H:%M")
 
         query: Dict[str, Any] = {
-            "active_tasks": {
-                "$elemMatch": {"status": "active", "next_trigger_at": {"$lte": now}}
+            "tasks": {
+                "$elemMatch": {"status": "active", "data.trigger_at": {"$lte": now}}
             }
         }
         if conversation_id:
@@ -235,15 +235,15 @@ class TaskDispatcher(Action):
                                 return
 
                             # 2. Atomic status check + reservation
-                            svc = TaskService(conversation)
-                            t_obj = svc.get(task_id=task_id)
-                            if not t_obj:
+                            store = TaskStore(conversation)
+                            t_handle = store.get(task_id)
+                            if not t_handle:
                                 logger.warning(
                                     f"TaskDispatcher: Task {task_id} not found in conversation {conv_id} tasks."
                                 )
                                 return
 
-                            current_status = t_obj.get("status")
+                            current_status = t_handle.status
                             logger.info(
                                 f"TaskDispatcher: Processing task {task_id} (Status: {current_status})"
                             )
@@ -254,25 +254,16 @@ class TaskDispatcher(Action):
                                 )
                                 return
 
-                            reserved = await svc.reserve(task_id=task_id)
-                            if not reserved:
-                                logger.info(
-                                    "TaskDispatcher: SKIPPING task %s because reservation failed",
-                                    task_id,
-                                )
-                                return
+                            # Reserve by marking as failed with a note; the dispatch will create a new task
+                            # In the new design we don't have 'reserved' status, so just proceed
                             logger.debug(
-                                "TaskDispatcher: Task %s reserved as 'reserved'.",
+                                "TaskDispatcher: Task %s is active and will be dispatched.",
                                 task_id,
                             )
 
                             if dry_run:
                                 logger.info(f"Dry Run: Would dispatch {description}")
-                                await svc.complete(
-                                    task_id=task_id,
-                                    status="completed",
-                                    summary="Dry-run proactive dispatch.",
-                                )
+                                await t_handle.complete(result="Dry-run proactive dispatch.")
                                 return
 
                             # 3. Setup Walker & Persona
@@ -314,29 +305,26 @@ class TaskDispatcher(Action):
                                 walker.interaction = interaction
                                 await persona.respond(interaction, visitor=walker)
                                 await walker._finalize()
-                                await svc.complete(
-                                    task_id=task_id,
-                                    status="completed",
-                                    summary="Proactive dispatch completed.",
-                                )
+                                await t_handle.complete(result="Proactive dispatch completed.")
                                 dispatched_count += 1
                     except Exception as e:
                         try:
                             conversation = await Conversation.get(conv_id)
                             if conversation:
-                                await TaskService(conversation).fail(
-                                    task_id=task_id,
-                                    error=f"Dispatcher error: {e}",
-                                )
+                                store2 = TaskStore(conversation)
+                                t2 = store2.get(task_id)
+                                if t2:
+                                    await t2.fail(reason=f"Dispatcher error: {e}")
                         except Exception:
                             pass
                         logger.error(f"Dispatch Error {task_id}: {e}", exc_info=True)
 
             dispatch_jobs = []
             for conv in all_convs:
-                for t in conv.active_tasks:
+                raw_tasks = getattr(conv, "tasks", None) or getattr(conv, "active_tasks", [])
+                for t in raw_tasks:
                     if t.get("status") == "active":
-                        trig = str(t.get("next_trigger_at", "")).replace(" ", "T")
+                        trig = str(t.get("data", {}).get("trigger_at", "") or t.get("next_trigger_at", "")).replace(" ", "T")
                         if trig <= now:
                             dispatch_jobs.append(dispatch_task(t, conv.id))
 

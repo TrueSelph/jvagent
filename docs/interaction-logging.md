@@ -191,7 +191,7 @@ Interaction logs include:
     "streamed": false,
     "actions": ["InteractRouter", "PersonaAction"],
     "directives": [],
-    "active_tasks": [],
+    "tasks": [],
     "parameters": [],
     "events": [],
     "observability_metrics": [],

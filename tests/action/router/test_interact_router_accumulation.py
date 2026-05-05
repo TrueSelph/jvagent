@@ -31,7 +31,7 @@ async def test_defer_appends_to_buffer():
     # Use visitor.conversation so buffer updates go to the flushed instance
     conversation = MagicMock()
     conversation.context = {}
-    conversation.get_active_tasks = MagicMock(return_value=[])
+    conversation.get_tasks = MagicMock(return_value=[])
     conversation.get_interaction_history = AsyncMock(return_value=[])
     conversation.get_active_tasks_for_context = MagicMock(return_value=[])
     conversation.update_context = AsyncMock()
@@ -110,7 +110,7 @@ async def test_respond_consumes_buffer_and_injects_directive():
             },
         ]
     }
-    conversation.get_active_tasks = MagicMock(return_value=[])
+    conversation.get_tasks = MagicMock(return_value=[])
     conversation.get_interaction_history = AsyncMock(return_value=[])
     conversation.get_active_tasks_for_context = MagicMock(return_value=[])
     conversation.update_context = AsyncMock()

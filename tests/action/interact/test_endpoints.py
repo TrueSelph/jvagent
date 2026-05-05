@@ -297,15 +297,15 @@ class TestResponseBuilder:
             }
 
             conversation = MagicMock()
-            conversation.active_tasks = [
+            conversation.tasks = [
                 in_window_completed,
                 out_window_completed,
                 active_task,
             ]
-            conversation.get_active_tasks = MagicMock(
-                side_effect=lambda status=None, action_name=None: [
+            conversation.get_tasks = MagicMock(
+                side_effect=lambda status=None, owner_action=None: [
                     t
-                    for t in conversation.active_tasks
+                    for t in conversation.tasks
                     if status is None or t.get("status") == status
                 ]
             )

@@ -297,7 +297,7 @@ class TestSkillInteractActionTermination:
             utterance="Do work",
             conversation=None,
             model_action=MagicMock(),
-            task_service=None,
+            task_store=None,
             config=run_cfg,
         )
         messages = [{"role": "user", "content": "Do work"}]
@@ -453,8 +453,14 @@ class TestSkillInteractActionThoughtPublishing:
         )
 
         task_handle = MagicMock()
-        task_handle.record_step = AsyncMock()
-        task_handle.update_metadata = AsyncMock()
+        task_handle.add_event = AsyncMock()
+        task_handle.update = AsyncMock()
+        task_handle.current_step = MagicMock(return_value=None)
+        task_handle.has_pending_steps = MagicMock(return_value=False)
+        task_handle.list_steps = MagicMock(return_value=[])
+        task_handle.format_plan = MagicMock(return_value="")
+        task_handle.pending_steps = MagicMock(return_value=[])
+        task_handle.to_checklist = MagicMock(return_value=[])
 
         (
             response,
@@ -532,8 +538,14 @@ class TestSkillInteractActionThoughtPublishing:
         )
 
         task_handle = MagicMock()
-        task_handle.record_step = AsyncMock()
-        task_handle.update_metadata = AsyncMock()
+        task_handle.add_event = AsyncMock()
+        task_handle.update = AsyncMock()
+        task_handle.current_step = MagicMock(return_value=None)
+        task_handle.has_pending_steps = MagicMock(return_value=False)
+        task_handle.list_steps = MagicMock(return_value=[])
+        task_handle.format_plan = MagicMock(return_value="")
+        task_handle.pending_steps = MagicMock(return_value=[])
+        task_handle.to_checklist = MagicMock(return_value=[])
 
         await action._run_agentic_loop(
             visitor=visitor,
@@ -599,8 +611,14 @@ class TestSkillInteractActionThoughtPublishing:
         )
 
         task_handle = MagicMock()
-        task_handle.record_step = AsyncMock()
-        task_handle.update_metadata = AsyncMock()
+        task_handle.add_event = AsyncMock()
+        task_handle.update = AsyncMock()
+        task_handle.current_step = MagicMock(return_value=None)
+        task_handle.has_pending_steps = MagicMock(return_value=False)
+        task_handle.list_steps = MagicMock(return_value=[])
+        task_handle.format_plan = MagicMock(return_value="")
+        task_handle.pending_steps = MagicMock(return_value=[])
+        task_handle.to_checklist = MagicMock(return_value=[])
 
         await action._run_agentic_loop(
             visitor=visitor,
@@ -638,8 +656,14 @@ class TestSkillInteractActionThoughtPublishing:
         tool_executor.dispatch = AsyncMock(return_value=[])
 
         task_handle = MagicMock()
-        task_handle.record_step = AsyncMock()
-        task_handle.update_metadata = AsyncMock()
+        task_handle.add_event = AsyncMock()
+        task_handle.update = AsyncMock()
+        task_handle.current_step = MagicMock(return_value=None)
+        task_handle.has_pending_steps = MagicMock(return_value=False)
+        task_handle.list_steps = MagicMock(return_value=[])
+        task_handle.format_plan = MagicMock(return_value="")
+        task_handle.pending_steps = MagicMock(return_value=[])
+        task_handle.to_checklist = MagicMock(return_value=[])
 
         (
             response,
@@ -699,8 +723,14 @@ class TestSkillInteractActionThoughtPublishing:
         tool_executor.activated_skills = set()
 
         task_handle = MagicMock()
-        task_handle.record_step = AsyncMock()
-        task_handle.update_metadata = AsyncMock()
+        task_handle.add_event = AsyncMock()
+        task_handle.update = AsyncMock()
+        task_handle.current_step = MagicMock(return_value=None)
+        task_handle.has_pending_steps = MagicMock(return_value=False)
+        task_handle.list_steps = MagicMock(return_value=[])
+        task_handle.format_plan = MagicMock(return_value="")
+        task_handle.pending_steps = MagicMock(return_value=[])
+        task_handle.to_checklist = MagicMock(return_value=[])
 
         discovered_skills = {
             "pageindex_search": {
@@ -759,8 +789,14 @@ class TestSkillInteractActionThoughtPublishing:
         tool_executor.activated_skills = set()
 
         task_handle = MagicMock()
-        task_handle.record_step = AsyncMock()
-        task_handle.update_metadata = AsyncMock()
+        task_handle.add_event = AsyncMock()
+        task_handle.update = AsyncMock()
+        task_handle.current_step = MagicMock(return_value=None)
+        task_handle.has_pending_steps = MagicMock(return_value=False)
+        task_handle.list_steps = MagicMock(return_value=[])
+        task_handle.format_plan = MagicMock(return_value="")
+        task_handle.pending_steps = MagicMock(return_value=[])
+        task_handle.to_checklist = MagicMock(return_value=[])
 
         discovered_skills = {
             "code_review": {
@@ -818,8 +854,14 @@ class TestSkillInteractActionThoughtPublishing:
         tool_executor.activated_skills = set()
 
         task_handle = MagicMock()
-        task_handle.record_step = AsyncMock()
-        task_handle.update_metadata = AsyncMock()
+        task_handle.add_event = AsyncMock()
+        task_handle.update = AsyncMock()
+        task_handle.current_step = MagicMock(return_value=None)
+        task_handle.has_pending_steps = MagicMock(return_value=False)
+        task_handle.list_steps = MagicMock(return_value=[])
+        task_handle.format_plan = MagicMock(return_value="")
+        task_handle.pending_steps = MagicMock(return_value=[])
+        task_handle.to_checklist = MagicMock(return_value=[])
 
         discovered_skills = {
             "pageindex_search": {
@@ -1169,7 +1211,7 @@ def _make_thinking_action(**kwargs):
             utterance=getattr(visitor, "utterance", "") or "",
             conversation=getattr(visitor, "conversation", None),
             model_action=MagicMock(),
-            task_service=None,
+            task_store=None,
             config=run_cfg,
             publish_callback=_publish_cb,
         )

@@ -23,15 +23,8 @@ from jvagent.action.skill.skill_action_contracts import (
     SkillRunContext,
     TerminationReason,
 )
-from jvagent.action.skill.task_plan import InLoopTaskPlan, TaskStep
 from jvagent.memory.evidence_log import EvidenceEntry, EvidenceLog
-from jvagent.memory.task_record import (
-    ACTIVE_STATUSES,
-    TERMINAL_STATUSES,
-    InvalidTaskTransition,
-    StepRecord,
-    TaskRecord,
-)
+from jvagent.memory.task_store import TaskStore, TaskHandle, Step, Task
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -41,7 +34,7 @@ from jvagent.memory.task_record import (
 def _make_conversation(context: Optional[Dict] = None) -> MagicMock:
     conv = MagicMock()
     conv.context = context if context is not None else {}
-    conv.active_tasks = []
+    conv.tasks = []
     conv.save = AsyncMock()
     return conv
 
@@ -49,17 +42,18 @@ def _make_conversation(context: Optional[Dict] = None) -> MagicMock:
 def _make_task_handle() -> MagicMock:
     th = MagicMock()
     th.task_id = "test-task-001"
-    th.record_step = AsyncMock(return_value=True)
-    th.update_metadata = AsyncMock(return_value=True)
+    th.add_event = AsyncMock(return_value=True)
+    th.update = AsyncMock(return_value=True)
+    th.list_steps = MagicMock(return_value=[])
     th.complete = AsyncMock(return_value=True)
     th.fail = AsyncMock(return_value=True)
     return th
 
 
-def _make_task_service() -> MagicMock:
-    svc = MagicMock()
-    svc.track = MagicMock(return_value=_tracking_ctx())
-    return svc
+def _make_task_store() -> MagicMock:
+    store = MagicMock()
+    store.track = MagicMock(return_value=_tracking_ctx())
+    return store
 
 
 def _tracking_ctx():
@@ -138,63 +132,6 @@ class TestEnums:
 
 class TestSkillActionHelpers:
     engine = SkillAction()
-
-    def test_task_plan_sets_first_step_in_progress(self):
-        plan = InLoopTaskPlan(
-            steps=[
-                TaskStep(id=1, description="Search for docs"),
-                TaskStep(id=2, description="Write report"),
-            ],
-            created_at_iteration=1,
-        )
-        assert plan.current_step() is not None
-        assert plan.current_step().id == 1
-        assert plan.steps[0].status == "in_progress"
-
-    def test_task_plan_complete_step_advances_in_order(self):
-        plan = InLoopTaskPlan(
-            steps=[
-                TaskStep(id=1, description="Search for docs"),
-                TaskStep(id=2, description="Write report"),
-            ],
-            created_at_iteration=1,
-        )
-        assert plan.complete_step(1) is True
-        assert plan.steps[0].status == "done"
-        assert plan.steps[1].status == "in_progress"
-
-    def test_task_plan_rejects_out_of_order_completion(self):
-        plan = InLoopTaskPlan(
-            steps=[
-                TaskStep(id=1, description="Search for docs"),
-                TaskStep(id=2, description="Write report"),
-            ],
-            created_at_iteration=1,
-        )
-        assert plan.complete_step(2) is False
-        assert plan.steps[0].status == "in_progress"
-
-    def test_task_plan_step_label(self):
-        plan = InLoopTaskPlan(
-            steps=[
-                TaskStep(id=1, description="Search for docs"),
-                TaskStep(id=2, description="Write report"),
-            ],
-            created_at_iteration=1,
-        )
-        assert plan.step_label(plan.steps[1]) == "step 2/2: Write report"
-
-    def test_task_plan_checklist_helper_uses_pending_only(self):
-        plan = InLoopTaskPlan(
-            steps=[
-                TaskStep(id=1, description="Search for docs"),
-                TaskStep(id=2, description="Write report"),
-            ],
-            created_at_iteration=1,
-        )
-        assert plan.complete_step(1) is True
-        checklist = SkillAction._task_plan_pending_checklist(plan)
-        assert checklist == [{"item": "Write report", "status": "in_progress"}]
 
     def test_reorder_task_calls_create_then_read_skill_then_rest(self):
         read_file = {
@@ -890,136 +827,6 @@ class TestContextCompactor:
 
 
 # ---------------------------------------------------------------------------
-# TaskRecord
-# ---------------------------------------------------------------------------
-
-
-class TestTaskRecord:
-    def test_create_defaults(self):
-        record = TaskRecord.create(
-            description="test task", task_type="AGENTIC_LOOP", action_name="SkillAction"
-        )
-        assert record.status == "active"
-        assert record.is_terminal() is False
-        assert "SkillAction" in record.task_id
-
-    def test_valid_transition_active_to_completed(self):
-        record = TaskRecord.create(description="t", task_type="T")
-        record.transition("completed")
-        assert record.status == "completed"
-        assert record.terminal_at is not None
-        assert record.is_terminal()
-
-    def test_valid_transition_active_to_reserved(self):
-        record = TaskRecord.create(description="t", task_type="T")
-        record.transition("reserved")
-        assert record.status == "reserved"
-        assert not record.is_terminal()
-
-    def test_invalid_transition_terminal_to_active_raises(self):
-        record = TaskRecord.create(description="t", task_type="T")
-        record.transition("completed")
-        with pytest.raises(InvalidTaskTransition):
-            record.transition("active")
-
-    def test_noop_transition_allowed(self):
-        record = TaskRecord.create(description="t", task_type="T")
-        record.transition("active", allow_noop=True)
-        assert record.status == "active"
-
-    def test_invalid_status_raises_value_error(self):
-        record = TaskRecord.create(description="t", task_type="T")
-        with pytest.raises(ValueError):
-            record.transition("nonexistent_status")
-
-    def test_add_step(self):
-        record = TaskRecord.create(description="t", task_type="T")
-        step = StepRecord(
-            step_type="thinking", iteration=1, timestamp="2025-01-01T00:00:00+00:00"
-        )
-        record.add_step(step)
-        assert len(record.steps) == 1
-
-    def test_heartbeat_updates_timestamp(self):
-        record = TaskRecord.create(description="t", task_type="T")
-        old_ts = record.updated_at
-        import time
-
-        time.sleep(0.01)
-        record.heartbeat()
-        assert record.updated_at >= old_ts
-
-    def test_add_provenance(self):
-        record = TaskRecord.create(description="t", task_type="T")
-        record.add_provenance("ev:1", "ev:2")
-        assert "ev:1" in record.provenance_refs
-        # No duplicates
-        record.add_provenance("ev:1")
-        assert record.provenance_refs.count("ev:1") == 1
-
-    def test_to_legacy_dict_backward_compat(self):
-        record = TaskRecord.create(
-            description="agentic task",
-            task_type="AGENTIC_LOOP",
-            action_name="SkillAction",
-            metadata={"iterations": 5},
-        )
-        record.add_step(
-            StepRecord(
-                step_type="tool_call",
-                iteration=1,
-                timestamp="now",
-                details={"tools": ["search"]},
-            )
-        )
-        d = record.to_legacy_dict()
-        # Legacy consumers expect these top-level keys
-        assert "task_id" in d
-        assert "status" in d
-        assert "metadata" in d
-        assert "created_at" in d
-        assert "terminal_at" in d
-        # Steps should be in metadata
-        assert "steps" in d["metadata"]
-
-    def test_from_dict_round_trip(self):
-        record = TaskRecord.create(
-            description="test",
-            task_type="AGENTIC_LOOP",
-            action_name="SkillAction",
-            metadata={"iterations": 3, "tools_called": ["search"]},
-        )
-        record.add_step(
-            StepRecord(
-                step_type="thinking",
-                iteration=1,
-                timestamp="now",
-                details={"tokens": 10},
-            )
-        )
-        d = record.to_legacy_dict()
-        restored = TaskRecord.from_dict(d)
-        assert restored.task_id == record.task_id
-        assert restored.status == record.status
-        assert len(restored.steps) == 1
-        assert restored.steps[0].step_type == "thinking"
-
-    def test_terminal_statuses_complete(self):
-        assert "completed" in TERMINAL_STATUSES
-        assert "failed" in TERMINAL_STATUSES
-        assert "cancelled" in TERMINAL_STATUSES
-        assert "timed_out" in TERMINAL_STATUSES
-        assert "max_iterations" in TERMINAL_STATUSES
-        assert "superseded" in TERMINAL_STATUSES
-        assert "stuck_forced" in TERMINAL_STATUSES
-
-    def test_active_statuses_complete(self):
-        assert "active" in ACTIVE_STATUSES
-        assert "pending" in ACTIVE_STATUSES
-        assert "reserved" in ACTIVE_STATUSES
-
-
-# ---------------------------------------------------------------------------
 # SkillRunContext build
 # ---------------------------------------------------------------------------
 
@@ -1030,7 +837,7 @@ class TestSkillRunContext:
             utterance="do something",
             conversation=_make_conversation(),
             model_action=MagicMock(),
-            task_service=_make_task_service(),
+            task_store=_make_task_store(),
             config=SkillRunConfig(),
         )
         # All interact-specific fields are optional
@@ -1048,7 +855,7 @@ class TestSkillRunContext:
             utterance="test",
             conversation=_make_conversation(),
             model_action=MagicMock(),
-            task_service=_make_task_service(),
+            task_store=_make_task_store(),
             config=SkillRunConfig(),
             publish_callback=cb,
         )

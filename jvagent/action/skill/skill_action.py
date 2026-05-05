@@ -80,7 +80,6 @@ from jvagent.action.skill.skill_action_contracts import (
 )
 from jvagent.action.skill.skill_catalog import SkillCatalog
 from jvagent.action.skill.stuck_detector import StuckDetector, StuckDetectorConfig
-from jvagent.action.skill.task_plan import InLoopTaskPlan, TaskStep
 from jvagent.action.skill.tool_executor import ToolExecutor
 from jvagent.memory.evidence_log import EvidenceLog
 
@@ -195,11 +194,12 @@ class SkillAction:
                 if ctx.utterance
                 else "Agentic task"
             )
-            async with ctx.task_service.track(
+            async with ctx.task_store.track(
+                title=task_description,
                 description=task_description,
                 task_type="AGENTIC_LOOP",
-                action_name="SkillAction",
-                metadata=self._initial_task_metadata(ctx),
+                owner_action="SkillAction",
+                data=self._initial_task_metadata(ctx),
             ) as task_handle:
 
                 # 3. Build system prompt with optional persona injection
@@ -254,15 +254,13 @@ class SkillAction:
                     skill_index_section=skill_index_section,
                 )
 
-                await task_handle.update_metadata(
+                await task_handle.update(
                     activated_skills=sorted(tool_executor.activated_skills),
                     stuck_corrections=result.stuck_corrections,
+                    termination_reason=result.termination_reason.value,
                 )
                 await task_handle.complete(
-                    status=result.termination_reason.value,
-                    summary=(
-                        result.final_response[:200] if result.final_response else None
-                    ),
+                    result=result.final_response[:200] if result.final_response else None
                 )
                 return result
 
@@ -270,7 +268,7 @@ class SkillAction:
             logger.error("SkillAction.run_to_completion failed: %s", exc, exc_info=True)
             if task_handle:
                 try:
-                    await task_handle.fail(error=str(exc))
+                    await task_handle.fail(reason=str(exc))
                 except Exception:
                     pass
             return SkillRunResult(
@@ -534,12 +532,9 @@ class SkillAction:
         is_meta_utterance = SkillCatalog.is_meta_intent(
             ctx.utterance or "", meta_extra or None
         )
-        await task_handle.update_metadata(meta_intent_detected=is_meta_utterance)
+        await task_handle.update(meta_intent_detected=is_meta_utterance)
 
         task_plan_state: Dict[str, Any] = {
-            "plan": None,
-            # Counts non-helper tool calls since the last task_tracker complete/skip.
-            # Used to warn the model if it tries to complete a step without doing any work.
             "tool_calls_since_complete": 0,
         }
         tool_executor.register_dynamic_tool(
@@ -613,7 +608,7 @@ class SkillAction:
                     base_model_kwargs,
                     reasoning_cfg,
                     checklist=self._task_plan_pending_checklist(
-                        task_plan_state["plan"]
+                        task_handle
                     ),
                     termination_cause="time_cap",
                 )
@@ -655,7 +650,7 @@ class SkillAction:
             # some steps were not done, inject a one-time honesty reminder before
             # the model produces its final response.  This prevents fabricated
             # "I completed X" claims for steps the model actually skipped.
-            _pre_warn_plan = task_plan_state.get("plan")
+            _pre_warn_plan = task_handle
             if (
                 _pre_warn_plan is not None
                 and not _pre_warn_plan.has_pending_steps()
@@ -668,8 +663,8 @@ class SkillAction:
                     _warn_lines = []
                     for s in _incomplete_steps:
                         detail = f"[{s.status}]"
-                        if s.skip_reason:
-                            detail += f" reason: {s.skip_reason}"
+                        if s.data.get("skip_reason"):
+                            detail += f" reason: {s.data['skip_reason']}"
                         _warn_lines.append(f"- Step {s.id}: {s.description} {detail}")
                     messages.append(
                         {
@@ -714,16 +709,16 @@ class SkillAction:
                         ctx,
                         base_model_kwargs,
                         reasoning_cfg,
-                        checklist=self._task_plan_pending_checklist(
-                            task_plan_state["plan"]
-                        ),
+                    checklist=self._task_plan_pending_checklist(
+                        task_handle
+                    ),
                         termination_cause="iter_cap",
                     )
                     break
                 # retry: apply backoff, then continue (messages unchanged)
                 if decision.delay_seconds > 0:
                     await asyncio.sleep(decision.delay_seconds)
-                await task_handle.record_step(
+                await task_handle.add_event(
                     "model_error",
                     iteration=iteration,
                     details={
@@ -736,10 +731,11 @@ class SkillAction:
 
             tok = self._resolve_thinking_token_count(model_result)
             thinking_tokens_total += tok
-            await task_handle.update_metadata(
+            await task_handle.update(
                 thinking_tokens_used=thinking_tokens_total
             )
-            await task_handle.record_step(
+            await self._record_event(
+                task_handle,
                 "thinking",
                 iteration=iteration,
                 details={"tokens": tok},
@@ -832,7 +828,7 @@ class SkillAction:
                 ctx,
                 base_model_kwargs,
                 reasoning_cfg,
-                checklist=self._task_plan_pending_checklist(task_plan_state["plan"]),
+                checklist=self._task_plan_pending_checklist(task_handle),
                 termination_cause="iter_cap",
             )
             termination_reason = TerminationReason.ITER_CAP
@@ -846,7 +842,7 @@ class SkillAction:
         elif cfg.final_review:
             loop_phase = LoopPhase.FINALIZE
             if is_meta_utterance:
-                await task_handle.record_step(
+                await task_handle.add_event(
                     "final_review_skipped",
                     iteration=iteration,
                     details={"reason": "meta_intent_utterance"},
@@ -857,24 +853,19 @@ class SkillAction:
                 # no tool evidence to ground-check against. Running the review
                 # in this case causes the model to meta-respond asking for a
                 # "candidate answer" instead of delivering the actual response.
-                await task_handle.record_step(
+                await task_handle.add_event(
                     "final_review_skipped",
                     iteration=iteration,
                     details={"reason": "no_tool_evidence"},
                 )
             else:
-                task_plan = task_plan_state.get("plan")
-                step_count = (
-                    len(task_plan.steps)
-                    if task_plan is not None and task_plan.steps
-                    else 0
-                )
+                steps = task_handle.list_steps()
+                step_count = len(steps)
                 if (
                     cfg.final_review_max_plan_steps is not None
-                    and task_plan is not None
                     and step_count <= cfg.final_review_max_plan_steps
                 ):
-                    await task_handle.record_step(
+                    await task_handle.add_event(
                         "final_review_skipped",
                         iteration=iteration,
                         details={
@@ -884,7 +875,7 @@ class SkillAction:
                         },
                     )
                 else:
-                    await task_handle.record_step(
+                    await task_handle.add_event(
                         "final_review",
                         iteration=iteration,
                         details={"steps_to_verify": step_count},
@@ -895,30 +886,28 @@ class SkillAction:
                         ctx=ctx,
                         base_model_kwargs=base_model_kwargs,
                         reasoning_cfg=reasoning_cfg,
-                        task_plan=task_plan_state.get("plan"),
+                        task_plan=task_handle,
                     )
 
         # Layer 3 — deterministic faithfulness backstop (5.10).
         # Catches fabricated completion claims for skipped steps that the
         # review model may have failed to remove.
         if final_response:
-            _plan_for_check = task_plan_state.get("plan")
             final_response = self._check_plan_faithfulness(
-                final_response, _plan_for_check
+                final_response, task_handle
             )
 
         # Layer 4 — unconditional non-done footer.
         # Regardless of what the model wrote, always append an honest accounting
         # of every step that was not done so the user is never left with a
         # fabricated success story and no caveat at all.
-        _footer_plan = task_plan_state.get("plan")
-        if _footer_plan:
-            _non_done = [s for s in _footer_plan.steps if s.status != "done"]
+        if task_handle.list_steps():
+            _non_done = [s for s in task_handle.list_steps() if s.status != "done"]
             if _non_done:
                 _footer_lines = ["\n\n**Steps not completed:**"]
                 for _s in _non_done:
                     _label = "skipped" if _s.status == "skipped" else _s.status
-                    _reason = _s.skip_reason or "could not be completed"
+                    _reason = _s.data.get("skip_reason") or "could not be completed"
                     _footer_lines.append(f"- [{_label}] {_s.description}: {_reason}")
                 _footer = "\n".join(_footer_lines)
                 if "steps not completed" not in final_response.lower():
@@ -936,7 +925,7 @@ class SkillAction:
                     unattributed[:5],
                 )
 
-        await task_handle.record_step(
+        await task_handle.add_event(
             "response",
             iteration=iteration,
             details={
@@ -945,9 +934,6 @@ class SkillAction:
                 "termination_reason": termination_reason.value,
                 "preview": final_response[:300],
             },
-        )
-        await task_handle.update_metadata(
-            best_candidate_length=len((best_candidate or "").strip()),
         )
 
         # Persist evidence log to conversation context
@@ -995,13 +981,8 @@ class SkillAction:
             await checkpoint_store.clear()
 
         # Tally abandoned (pending/in_progress) and intentionally skipped steps.
-        _final_plan = task_plan_state.get("plan")
-        _abandoned_steps = (
-            len(_final_plan.pending_steps()) if _final_plan is not None else 0
-        )
-        _intentional_skips = (
-            len(_final_plan.skipped_steps()) if _final_plan is not None else 0
-        )
+        _abandoned_steps = len(task_handle.pending_steps())
+        _intentional_skips = len([s for s in task_handle.list_steps() if s.status == "skipped"])
 
         return SkillRunResult(
             final_response=final_response,
@@ -1010,7 +991,7 @@ class SkillAction:
             result_attributions=result_attributions,
             iterations=iteration,
             duration_seconds=time.monotonic() - loop_start,
-            task_id=getattr(task_handle, "task_id", None),
+            task_id=getattr(task_handle, "id", None),
             activated_skills=sorted(tool_executor.activated_skills),
             task_plan_abandoned_steps=_abandoned_steps,
             task_plan_intentional_skips=_intentional_skips,
@@ -1306,7 +1287,9 @@ class SkillAction:
             candidate_response = model_result.response
 
         best_candidate = self._update_best_candidate(best_candidate, candidate_response)
-        await task_handle.record_step(
+        await task_handle.update(best_candidate=best_candidate)
+        await self._record_event(
+            task_handle,
             "candidate",
             iteration=iteration,
             details={
@@ -1327,13 +1310,13 @@ class SkillAction:
             nontrivial_tools_called=nontrivial_tools_ever_called,
         ):
             loop_phase = LoopPhase.NUDGE
-            await task_handle.record_step(
+            await task_handle.add_event(
                 "skill_first_retry",
                 iteration=iteration,
                 details={"nudge_index": skill_first_retries + 1},
             )
             retry_nudges += 1
-            await task_handle.update_metadata(retry_nudges_fired=retry_nudges)
+            await task_handle.update(retry_nudges_fired=retry_nudges)
             messages.append({"role": "assistant", "content": candidate_response or ""})
             messages.append({"role": "user", "content": SKILL_FIRST_RETRY_PROMPT})
             skill_first_retries += 1
@@ -1351,8 +1334,7 @@ class SkillAction:
             )
 
         # Pending-step gate: task-plan state is the source of truth.
-        task_plan = task_plan_state["plan"]
-        if task_plan is not None and task_plan.has_pending_steps():
+        if task_handle.has_pending_steps():
             consecutive_limit = cfg.task_nudge_retry_limit
             total_limit = cfg.max_total_task_nudges
             nudge_allowed = (
@@ -1369,17 +1351,17 @@ class SkillAction:
                     if is_final_nudge
                     else PENDING_STEPS_NUDGE_PROMPT
                 )
-                await task_handle.record_step(
+                await task_handle.add_event(
                     "task_plan_nudge",
                     iteration=iteration,
                     details={
                         "nudge_index": task_nudges + 1,
                         "is_final_nudge": is_final_nudge,
-                        "pending_steps": task_plan.format_for_model(),
+                        "pending_steps": task_handle.format_plan(),
                     },
                 )
                 retry_nudges += 1
-                await task_handle.update_metadata(retry_nudges_fired=retry_nudges)
+                await task_handle.update(retry_nudges_fired=retry_nudges)
                 messages.append(
                     {"role": "assistant", "content": candidate_response or ""}
                 )
@@ -1387,7 +1369,7 @@ class SkillAction:
                     {
                         "role": "user",
                         "content": nudge_prompt.format(
-                            pending=task_plan.format_for_model()
+                            pending=task_handle.format_plan()
                         ),
                     }
                 )
@@ -1407,22 +1389,22 @@ class SkillAction:
                 )
             else:
                 # Nudge limit exhausted — escalate to forced termination.
-                pending_count = len(task_plan.pending_steps())
+                pending_count = len(task_handle.pending_steps())
                 logger.warning(
                     "SkillAction: nudge limit exhausted with %d pending step(s); "
                     "escalating to forced termination",
                     pending_count,
                 )
-                await task_handle.update_metadata(
+                await task_handle.update(
                     task_plan_incomplete_accepted=True,
-                    task_plan_pending_at_termination=task_plan.format_for_model(),
+                    task_plan_pending_at_termination=task_handle.format_plan(),
                 )
-                await task_handle.record_step(
+                await task_handle.add_event(
                     "task_plan_incomplete_forced",
                     iteration=iteration,
                     details={
                         "pending_count": pending_count,
-                        "pending_steps": task_plan.format_for_model(),
+                        "pending_steps": task_handle.format_plan(),
                     },
                 )
                 messages.append(
@@ -1455,7 +1437,8 @@ class SkillAction:
         # Accept candidate
         chosen = candidate_response or ""
         if self._should_prefer_best_over_candidate(cfg, chosen, best_candidate):
-            await task_handle.record_step(
+            await self._record_event(
+                task_handle,
                 "candidate_discarded",
                 iteration=iteration,
                 details={"reason": "degenerate_or_shrunk_vs_best"},
@@ -1463,7 +1446,8 @@ class SkillAction:
             final_response = (best_candidate or chosen) or ""
         else:
             final_response = chosen
-            await task_handle.record_step(
+            await self._record_event(
+                task_handle,
                 "candidate_accepted",
                 iteration=iteration,
                 details={"length": len(final_response.strip())},
@@ -1523,7 +1507,7 @@ class SkillAction:
             self._apply_plan_first_tool_gate(
                 reordered,
                 plan_first=cfg.plan_first,
-                has_task_plan=task_plan_state.get("plan") is not None,
+                has_task_plan=bool(task_handle.list_steps()),
                 is_meta_utterance=is_meta_utterance,
                 activated_skill_names=set(
                     getattr(tool_executor, "activated_skills", set()) or ()
@@ -1531,7 +1515,7 @@ class SkillAction:
             )
         )
         if plan_first_blocked_names:
-            await task_handle.record_step(
+            await task_handle.add_event(
                 "plan_first_gated",
                 iteration=iteration,
                 details={"blocked_tools": sorted(plan_first_blocked_names)},
@@ -1574,7 +1558,7 @@ class SkillAction:
             synthetic_plan_blocks = _revised_synthetic
 
         if skill_budget_blocked_names:
-            await task_handle.record_step(
+            await task_handle.add_event(
                 "skill_budget_gated",
                 iteration=iteration,
                 details={"blocked_tools": sorted(skill_budget_blocked_names)},
@@ -1595,7 +1579,7 @@ class SkillAction:
             if t in _SKILL_HELPER_TOOL_NAMES or t.startswith("skill_hub__")
         )
         if helper_snapshot:
-            await task_handle.update_metadata(helper_tools_called=helper_snapshot)
+            await task_handle.update(helper_tools_called=helper_snapshot)
 
         # Tool call announce
         intermediate_text = (model_result.response or "").strip()
@@ -1736,7 +1720,7 @@ class SkillAction:
             }
             for tr in tool_result_messages
         ]
-        await task_handle.record_step(
+        await task_handle.add_event(
             "tool_result",
             iteration=iteration,
             details={
@@ -1759,7 +1743,7 @@ class SkillAction:
                     base_model_kwargs,
                     reasoning_cfg,
                     checklist=self._task_plan_pending_checklist(
-                        task_plan_state["plan"]
+                        task_handle
                     ),
                     termination_cause="stuck",
                 )
@@ -1818,26 +1802,26 @@ class SkillAction:
         base_model_kwargs: Dict[str, Any],
         reasoning_cfg: ReasoningModelConfig,
         *,
-        task_plan: Optional[InLoopTaskPlan] = None,
+        task_plan: Any = None,
     ) -> str:
         # Layer 2 — pre-review skipped-step suffix injection.
         # Append a grounded "could not complete" section so the reviewer sees
         # both the candidate claim AND the truth side-by-side.
-        skipped_steps = task_plan.skipped_steps() if task_plan else []
+        skipped_steps = [s for s in task_plan.list_steps() if s.status == "skipped"] if task_plan else []
         if skipped_steps:
             suffix_lines = ["\n\n**Steps that could not be completed:**"]
             for s in skipped_steps:
-                reason = s.skip_reason or "no reason recorded"
+                reason = s.data.get("skip_reason") or "no reason recorded"
                 suffix_lines.append(f"- {s.description}: {reason}")
             candidate_response = candidate_response + "\n".join(suffix_lines)
 
         # Layer 1 — plan-aware review prompt.
-        if task_plan and task_plan.steps:
+        if task_plan and task_plan.list_steps():
             plan_lines = []
-            for s in task_plan.steps:
+            for s in task_plan.list_steps():
                 entry = f"- step {s.id}: [{s.status}] {s.description}"
-                if s.status == "skipped" and s.skip_reason:
-                    entry += f" REASON: {s.skip_reason}"
+                if s.status == "skipped" and s.data.get("skip_reason"):
+                    entry += f" REASON: {s.data['skip_reason']}"
                 plan_lines.append(entry)
             plan_summary = "\n".join(plan_lines)
             review_prompt = FINAL_REVIEW_PROMPT_WITH_PLAN.format(
@@ -2411,8 +2395,6 @@ class SkillAction:
                 if not steps:
                     return "Error: `steps` must contain at least one non-empty step."
 
-                # 5.8a — Validate step specificity: reject trivially-vague "dummy" plans
-                # that would bypass the plan-first gate without describing actual work.
                 _vague_warnings = self._check_step_specificity(steps)
                 if _vague_warnings:
                     logger.warning(
@@ -2421,7 +2403,6 @@ class SkillAction:
                         _vague_warnings,
                     )
 
-                # 5.8 — Enforce step count ceiling and warn when plan exceeds budget.
                 if len(steps) > cfg.max_task_plan_steps:
                     return (
                         f"Error: plan has {len(steps)} steps which exceeds the "
@@ -2437,64 +2418,30 @@ class SkillAction:
                         remaining_iterations,
                     )
 
-                # 5.1 — Guard against silent plan re-creation mid-execution.
-                existing_plan = task_plan_state.get("plan")
-                if existing_plan is not None:
-                    if existing_plan.has_pending_steps():
-                        # Block re-creation while steps are still pending to
-                        # prevent the model from "escaping" nudging by resetting
-                        # to a shorter plan.
-                        current = existing_plan.current_step()
-                        return (
-                            "Error: a task plan with pending steps already exists. "
-                            "Complete or skip the remaining steps before creating a "
-                            "new plan. "
-                            + (
-                                f"Current step: {current.id}: {current.description}"
-                                if current
-                                else "Use `action=read` to review remaining steps."
-                            )
+                if task_handle.has_pending_steps():
+                    current = task_handle.current_step()
+                    return (
+                        "Error: a task plan with pending steps already exists. "
+                        "Complete or skip the remaining steps before creating a "
+                        "new plan. "
+                        + (
+                            f"Current step: {current.id}: {current.description}"
+                            if current
+                            else "Use `action=read` to review remaining steps."
                         )
-                    # Plan finished (all done/skipped) — allow revision but log it.
-                    await task_handle.record_step(
-                        "task_plan_revised",
-                        iteration=iteration,
-                        details={
-                            "old_plan": existing_plan.to_checklist(),
-                            "new_steps": steps,
-                        },
                     )
 
-                task_plan = InLoopTaskPlan(
-                    steps=[
-                        TaskStep(id=idx + 1, description=description)
-                        for idx, description in enumerate(steps)
-                    ],
-                    created_at_iteration=iteration,
-                )
-                task_plan_state["plan"] = task_plan
-                # Reset per-step validation counter on new plan creation.
+                await task_handle.set_plan(steps)
                 task_plan_state["tool_calls_since_complete"] = 0
-                await task_handle.record_step(
-                    "task_plan_created",
-                    iteration=iteration,
-                    details={"steps": steps},
-                )
-                await task_handle.update_metadata(
-                    task_plan=task_plan.to_checklist(),
-                    task_plan_active=task_plan.has_pending_steps(),
-                    task_plan_created_iteration=iteration,
-                    task_plan_pending_count=len(task_plan.pending_steps()),
-                )
                 await self._emit_task_status(
                     ctx=ctx,
                     message=STATUS_PLAN_CREATED.format(
-                        n=len(task_plan.steps),
-                        plural="" if len(task_plan.steps) == 1 else "s",
+                        n=len(steps),
+                        plural="" if len(steps) == 1 else "s",
                         review_suffix=" + review" if review_enabled else "",
                     ),
                 )
-                plan_response = "Task plan created:\n" + task_plan.format_for_model()
+                plan_response = "Task plan created:\n" + task_handle.format_plan()
                 if _vague_warnings:
                     plan_response += (
                         "\n\nWarning: the following steps are too vague to be verifiable:\n"
@@ -2503,19 +2450,13 @@ class SkillAction:
                     )
                 return plan_response
 
-            task_plan = task_plan_state.get("plan")
-            if task_plan is None:
+            if not task_handle.list_steps():
                 return (
                     'No task plan exists yet. Create one first with `action="create"`.'
                 )
 
             if action == "read":
-                await task_handle.record_step(
-                    "task_plan_read",
-                    iteration=iteration,
-                    details={"pending_count": len(task_plan.pending_steps())},
-                )
-                return "Current task plan:\n" + task_plan.format_for_model()
+                return "Current task plan:\n" + task_handle.format_plan()
 
             if action == "complete":
                 try:
@@ -2523,9 +2464,6 @@ class SkillAction:
                 except (TypeError, ValueError):
                     return "Error: `step_id` must be a 1-based integer."
 
-                # Warn if no real tool calls were observed since the last completion.
-                # This is a soft guard — it does not block completion, but prompts the
-                # model to verify it actually performed the step's required work.
                 tool_calls_since = task_plan_state.get("tool_calls_since_complete", 0)
                 warning_prefix = ""
                 if tool_calls_since == 0:
@@ -2535,61 +2473,52 @@ class SkillAction:
                         "calls for this step before marking it done.\n\n"
                     )
 
-                current_step = task_plan.current_step()
-                if not task_plan.complete_step(step_id):
-                    if current_step is None:
-                        return "Error: there is no current step to complete."
+                step = task_handle.get_step_by_index(step_id)
+                if step is None:
+                    return f"Error: step {step_id} does not exist."
+                current = task_handle.current_step()
+                if current is None or current.id != step.id:
                     return (
                         "Error: steps must be completed in order. "
-                        f"The current step is {current_step.id}: {current_step.description}"
+                        f"The current step is {current.id}: {current.description}"
+                        if current
+                        else "Error: there is no current step to complete."
                     )
 
-                # Reset per-step validation counter after successful completion.
+                await step.complete(
+                    result=task_handle.data.get("best_candidate", "")[:500] or None
+                )
+                await task_handle.update(best_candidate=None)
                 task_plan_state["tool_calls_since_complete"] = 0
-                # Signal _run_loop to reset the consecutive nudge counter (5.5).
                 task_plan_state["_nudge_reset_requested"] = True
 
-                next_step = task_plan.current_step()
-                await task_handle.record_step(
-                    "task_step_completed",
-                    iteration=iteration,
-                    details={
-                        "step_id": step_id,
-                        "next_step_id": next_step.id if next_step else None,
-                        "tool_calls_observed": tool_calls_since,
-                    },
-                )
-                await task_handle.update_metadata(
-                    task_plan=task_plan.to_checklist(),
-                    task_plan_active=task_plan.has_pending_steps(),
-                    task_plan_pending_count=len(task_plan.pending_steps()),
-                )
+                next_step = task_handle.current_step()
                 completed_label = (
-                    task_plan.step_label(current_step)
-                    if current_step is not None
+                    task_handle.step_label(step._step)
+                    if step is not None
                     else f"step {step_id}"
                 )
                 if next_step is None:
                     await self._emit_task_status(
                         ctx=ctx,
-                        message=plan_final_status_message(task_plan),
+                        message=plan_final_status_message(task_handle),
                     )
                     return (
                         warning_prefix
                         + f"Completed step {step_id}. All tracked steps are now done.\n"
-                        + task_plan.format_for_model()
+                        + task_handle.format_plan()
                     )
                 await self._emit_task_status(
                     ctx=ctx,
                     message=STATUS_STEP_COMPLETED.format(step_desc=completed_label)
                     + STATUS_STEP_NEXT.format(
-                        next_desc=task_plan.step_label(next_step)
+                        next_desc=task_handle.step_label(next_step._step)
                     ),
                 )
                 return (
                     warning_prefix
                     + f"Completed step {step_id}. Next step is {next_step.id}: "
-                    f"{next_step.description}\n{task_plan.format_for_model()}"
+                    f"{next_step.description}\n{task_handle.format_plan()}"
                 )
 
             if action == "skip":
@@ -2605,64 +2534,51 @@ class SkillAction:
                         "Provide a specific explanation for why this step cannot be performed."
                     )
 
-                current_step = task_plan.current_step()
-                if not task_plan.skip_step(step_id, reason):
-                    if current_step is None:
-                        return "Error: there is no current step to skip."
+                step = task_handle.get_step_by_index(step_id)
+                if step is None:
+                    return f"Error: step {step_id} does not exist."
+                current = task_handle.current_step()
+                if current is None or current.id != step.id:
                     return (
                         "Error: steps must be processed in order. "
-                        f"The current step is {current_step.id}: {current_step.description}"
+                        f"The current step is {current.id}: {current.description}"
+                        if current
+                        else "Error: there is no current step to skip."
                     )
 
-                # Reset per-step validation counter after skip.
+                await step.skip(reason=reason)
                 task_plan_state["tool_calls_since_complete"] = 0
-                # Signal _run_loop to reset the consecutive nudge counter (5.5).
                 task_plan_state["_nudge_reset_requested"] = True
 
-                next_step = task_plan.current_step()
-                await task_handle.record_step(
-                    "task_step_skipped",
-                    iteration=iteration,
-                    details={
-                        "step_id": step_id,
-                        "reason": reason,
-                        "next_step_id": next_step.id if next_step else None,
-                    },
-                )
-                await task_handle.update_metadata(
-                    task_plan=task_plan.to_checklist(),
-                    task_plan_active=task_plan.has_pending_steps(),
-                    task_plan_pending_count=len(task_plan.pending_steps()),
-                )
+                next_step = task_handle.current_step()
                 skipped_label = (
-                    task_plan.step_label(current_step)
-                    if current_step is not None
+                    task_handle.step_label(step._step)
+                    if step is not None
                     else f"step {step_id}"
                 )
                 if next_step is None:
                     await self._emit_task_status(
                         ctx=ctx,
-                        message=plan_final_status_message(task_plan),
+                        message=plan_final_status_message(task_handle),
                     )
                     return (
                         f"Skipped step {step_id} ({reason}). All tracked steps are now done or skipped.\n"
-                        + task_plan.format_for_model()
+                        + task_handle.format_plan()
                     )
                 await self._emit_task_status(
                     ctx=ctx,
                     message=STATUS_STEP_SKIPPED_WITH_NEXT.format(
                         step_desc=skipped_label.rstrip(". "),
-                        next_desc=task_plan.step_label(next_step),
+                        next_desc=task_handle.step_label(next_step._step),
                     ),
                 )
                 return (
                     f"Skipped step {step_id} (reason: {reason}). "
                     f"Next step is {next_step.id}: {next_step.description}\n"
-                    + task_plan.format_for_model()
+                    + task_handle.format_plan()
                 )
 
             if action == "append":
-                # 5.6 — Append new steps without re-creating the plan.
                 raw_new_steps = args.get("steps")
                 if not isinstance(raw_new_steps, list):
                     return "Error: `steps` must be an array of step descriptions."
@@ -2671,28 +2587,16 @@ class SkillAction:
                 ]
                 if not new_steps_text:
                     return "Error: `steps` must contain at least one non-empty step."
-                if not task_plan:
+                if not task_handle.list_steps():
                     return (
                         "Error: no task plan exists yet. "
                         "Use action=create to start a plan first."
                     )
-                next_id = max((s.id for s in task_plan.steps), default=0) + 1
                 for text in new_steps_text:
-                    task_plan.steps.append(TaskStep(id=next_id, description=text))
-                    next_id += 1
-                await task_handle.record_step(
-                    "task_plan_appended",
-                    iteration=iteration,
-                    details={"new_steps": new_steps_text},
-                )
-                await task_handle.update_metadata(
-                    task_plan=task_plan.to_checklist(),
-                    task_plan_active=task_plan.has_pending_steps(),
-                    task_plan_pending_count=len(task_plan.pending_steps()),
-                )
+                    await task_handle.add_step(text)
                 return (
                     f"Appended {len(new_steps_text)} step(s) to the plan.\n"
-                    + task_plan.format_for_model()
+                    + task_handle.format_plan()
                 )
 
             return "Error: `action` must be one of create, read, complete, skip, or append."
@@ -2701,7 +2605,7 @@ class SkillAction:
 
     @staticmethod
     def _task_plan_pending_checklist(
-        task_plan: Optional[InLoopTaskPlan],
+        task_handle: Any,
     ) -> Optional[List[Dict[str, str]]]:
         """Return checklist of non-done steps (pending, in_progress, and skipped).
 
@@ -2710,16 +2614,17 @@ class SkillAction:
         omitting them.  Returns ``None`` only when the plan is absent or every
         step is ``done``.
         """
-        if task_plan is None:
+        if task_handle is None or not getattr(task_handle, "list_steps", None):
             return None
-        non_done = [s for s in task_plan.steps if s.status != "done"]
+        steps = task_handle.list_steps()
+        non_done = [s for s in steps if s.status != "done"]
         if not non_done:
             return None
         checklist = []
         for s in non_done:
             entry: Dict[str, str] = {"item": s.description, "status": s.status}
-            if s.status == "skipped" and s.skip_reason:
-                entry["skip_reason"] = s.skip_reason
+            if s.status == "skipped" and s.data.get("skip_reason"):
+                entry["skip_reason"] = s.data["skip_reason"]
             checklist.append(entry)
         return checklist
 
@@ -2863,7 +2768,7 @@ class SkillAction:
     @staticmethod
     def _check_plan_faithfulness(
         response: str,
-        task_plan: Optional[InLoopTaskPlan],
+        task_plan: Any,
     ) -> str:
         """Deterministic backstop: detect and replace fabricated completion claims.
 
@@ -2883,9 +2788,9 @@ class SkillAction:
 
         This runs after ``_final_review_pass`` and requires no model call.
         """
-        if not task_plan:
+        if not task_plan or not getattr(task_plan, "list_steps", None):
             return response
-        non_done = [s for s in task_plan.steps if s.status != "done"]
+        non_done = [s for s in task_plan.list_steps() if s.status != "done"]
         if not non_done:
             return response
 
@@ -2984,12 +2889,12 @@ class SkillAction:
                 # stop-word removal — meaningful terms like "writeable" or
                 # "assimilate" uniquely identify the step.
                 if len(overlap) >= 1 and has_signal:
-                    reason = step.skip_reason or "this step could not be completed"
+                    reason = step.data.get("skip_reason") or "this step could not be completed"
                     segments[i] = f"(Note: {step.description} — {reason})"
                     replacements_made += 1
                     logger.warning(
                         "SkillAction._check_plan_faithfulness: replaced fabricated "
-                        "completion claim for step %d [%s] (%r). Original: %r",
+                        "completion claim for step %s [%s] (%r). Original: %r",
                         step.id,
                         step.status,
                         step.description[:60],
@@ -3236,9 +3141,21 @@ class SkillAction:
     # ---------------------------------------------------------------------------
 
     @staticmethod
-    def _initial_task_metadata(ctx: SkillRunContext) -> Dict[str, Any]:
-        from datetime import datetime, timezone
+    async def _record_event(
+        task_handle: Any,
+        event_type: str,
+        iteration: int = 0,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Record an event on the current step if one exists, else on the task."""
+        step = task_handle.current_step()
+        if step is not None:
+            await step.add_event(event_type, iteration=iteration, details=details)
+        else:
+            await task_handle.add_event(event_type, iteration=iteration, details=details)
 
+    @staticmethod
+    def _initial_task_metadata(ctx: SkillRunContext) -> Dict[str, Any]:
         cfg = ctx.config
         return {
             "skills": cfg.skills,
@@ -3250,20 +3167,6 @@ class SkillAction:
             "max_skill_activations": cfg.max_skill_activations,
             "stuck_detection_window": cfg.stuck_detection_window,
             "max_midcourse_corrections": cfg.max_midcourse_corrections,
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "iterations": 0,
-            "tools_called": [],
-            "thinking_tokens_used": 0,
-            "steps": [],
-            "completed_at": None,
-            "total_duration_seconds": None,
-            "helper_tools_called": [],
-            "meta_intent_detected": None,
-            "retry_nudges_fired": 0,
-            "task_plan": [],
-            "task_plan_active": False,
-            "task_plan_pending_count": 0,
-            "best_candidate_length": None,
         }
 
 

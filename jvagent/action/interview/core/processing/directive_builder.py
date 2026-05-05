@@ -57,37 +57,40 @@ class DirectiveBuilder:
         visitor: "InteractWalker",
         *,
         description: str,
-        action_name: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        owner_action: str,
+        data: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Start active interview task via conversation task service."""
-        task = await visitor.tasks.start(
+        """Start active interview task via conversation task store."""
+        handle = await visitor.tasks.create(
+            title=description,
             description=description,
-            metadata=metadata,
-            action_name=action_name,
+            owner_action=owner_action,
             task_type="INTERVIEW",
-            singleton_action=True,
+            data=data,
         )
-        self._task_id = getattr(task, "task_id", None)
+        await handle.start()
+        self._task_id = handle.id
 
     async def _update_task_status(
         self,
         visitor: "InteractWalker",
         *,
         status: str,
-        description: str,
-        action_name: str,
+        description: str = "",
+        action_name: str = "",
     ) -> None:
-        """Update/complete interview task via conversation task service."""
-        if self._task_id:
-            await visitor.tasks.complete(task_id=self._task_id, status=status)
+        """Update/complete interview task via conversation task store."""
+        if not self._task_id:
             return
-
-        await visitor.tasks.update_status(
-            status=status,
-            description=description,
-            action_name=action_name,
-        )
+        handle = visitor.tasks.get(self._task_id)
+        if not handle:
+            return
+        if status == "completed":
+            await handle.complete()
+        elif status == "cancelled":
+            await handle.cancel()
+        elif status == "failed":
+            await handle.fail()
 
     async def format_summary(
         self,
@@ -220,15 +223,15 @@ class DirectiveBuilder:
                             action_description=action_description,
                         )
 
-                        metadata = {
+                        data = {
                             "interview_type": session.interview_type,
                             "state": session.state.value,
                         }
                         await self._start_active_task(
                             visitor,
                             description=description,
-                            action_name=action_name,
-                            metadata=metadata,
+                            owner_action=action_name,
+                            data=data,
                         )
                 else:
                     # No session available, default to active task
@@ -246,7 +249,7 @@ class DirectiveBuilder:
                     await self._start_active_task(
                         visitor,
                         description=description,
-                        action_name=action_name,
+                        owner_action=action_name,
                     )
                 self._task_added = True
 
@@ -289,8 +292,6 @@ class DirectiveBuilder:
         await self._update_task_status(
             visitor,
             status=task_status,
-            description=description,
-            action_name=action_name,
         )
 
         if handler:

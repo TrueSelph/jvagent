@@ -1,4 +1,4 @@
-"""Tests for TaskService with typed TaskRecord integration (workstream 4)."""
+"""Tests for TaskStore with typed TaskHandle integration."""
 
 from __future__ import annotations
 
@@ -6,13 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from jvagent.memory.services.task_service import TaskService
-from jvagent.memory.task_record import (
-    ACTIVE_STATUSES,
-    TERMINAL_STATUSES,
-    InvalidTaskTransition,
-    TaskRecord,
-)
+from jvagent.memory.task_store import TaskStore
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -21,242 +16,233 @@ from jvagent.memory.task_record import (
 
 def _make_conversation():
     conv = MagicMock()
-    conv.active_tasks = []
+    conv.tasks = []
     conv.save = AsyncMock()
     return conv
 
 
-def _make_service(conversation=None):
+def _make_store(conversation=None):
     conv = conversation or _make_conversation()
-    return TaskService(conv), conv
+    return TaskStore(conv), conv
 
 
 # ---------------------------------------------------------------------------
-# TaskService.start uses TaskRecord.create
+# TaskStore.create
 # ---------------------------------------------------------------------------
 
 
-class TestTaskServiceStart:
+class TestTaskStoreCreate:
     @pytest.mark.asyncio
-    async def test_start_creates_active_task(self):
-        svc, conv = _make_service()
-        handle = await svc.start(description="test task", task_type="AGENTIC_LOOP")
-        assert handle.task_id
-        assert len(conv.active_tasks) == 1
-        task = conv.active_tasks[0]
+    async def test_create_creates_active_task(self):
+        store, conv = _make_store()
+        handle = await store.create(title="test task", description="test task")
+        await handle.start()
+        assert handle.id
+        assert len(conv.tasks) == 1
+        task = conv.tasks[0]
         assert task["status"] == "active"
         assert task["description"] == "test task"
-        assert task["task_type"] == "AGENTIC_LOOP"
 
     @pytest.mark.asyncio
-    async def test_start_with_action_name_in_id(self):
-        svc, conv = _make_service()
-        handle = await svc.start(
-            description="task", task_type="T", action_name="SkillAction"
+    async def test_create_sets_owner_action(self):
+        store, conv = _make_store()
+        handle = await store.create(
+            title="task", description="task", owner_action="SkillAction"
         )
-        assert "SkillAction" in handle.task_id
+        await handle.start()
+        task = conv.tasks[0]
+        assert task["owner_action"] == "SkillAction"
 
     @pytest.mark.asyncio
-    async def test_start_saves_conversation(self):
-        svc, conv = _make_service()
-        await svc.start(description="t", task_type="T")
+    async def test_create_saves_conversation(self):
+        store, conv = _make_store()
+        await store.create(title="t", description="t")
         conv.save.assert_called()
 
     @pytest.mark.asyncio
-    async def test_start_with_metadata(self):
-        svc, conv = _make_service()
-        meta = {"iterations": 0, "tools_called": []}
-        handle = await svc.start(description="t", task_type="T", metadata=meta)
-        task = conv.active_tasks[0]
-        assert task["metadata"]["iterations"] == 0
+    async def test_create_with_data(self):
+        store, conv = _make_store()
+        handle = await store.create(
+            title="t", description="t", data={"iterations": 0, "tools_called": []}
+        )
+        task = conv.tasks[0]
+        assert task["data"]["iterations"] == 0
 
 
 # ---------------------------------------------------------------------------
-# TaskService.complete with lifecycle validation
+# TaskHandle.complete
 # ---------------------------------------------------------------------------
 
 
-class TestTaskServiceComplete:
+class TestTaskHandleComplete:
     @pytest.mark.asyncio
     async def test_complete_transitions_to_terminal(self):
-        svc, conv = _make_service()
-        handle = await svc.start(description="t", task_type="T")
-        result = await svc.complete(handle.task_id, status="completed")
-        assert result is True
-        assert conv.active_tasks[0]["status"] == "completed"
-        assert conv.active_tasks[0]["terminal_at"] is not None
+        store, conv = _make_store()
+        handle = await store.create(title="t", description="t")
+        await handle.start()
+        await handle.complete()
+        assert conv.tasks[0]["status"] == "completed"
+        assert conv.tasks[0]["completed_at"] is not None
 
     @pytest.mark.asyncio
-    async def test_complete_idempotent_when_already_terminal(self):
-        svc, conv = _make_service()
-        handle = await svc.start(description="t", task_type="T")
-        await svc.complete(handle.task_id, status="completed")
+    async def test_complete_idempotent_when_already_completed(self):
+        store, conv = _make_store()
+        handle = await store.create(title="t", description="t")
+        await handle.start()
+        await handle.complete()
         # Completing again should be a no-op, not raise
-        result = await svc.complete(handle.task_id, status="failed")
-        assert result is True  # idempotent
-        # Status should still be "completed" (first terminal wins)
-        assert conv.active_tasks[0]["status"] == "completed"
+        await handle.complete()
+        assert conv.tasks[0]["status"] == "completed"
 
     @pytest.mark.asyncio
-    async def test_complete_invalid_status_raises(self):
-        svc, conv = _make_service()
-        handle = await svc.start(description="t", task_type="T")
-        with pytest.raises(ValueError):
-            await svc.complete(handle.task_id, status="bogus_status")
-
-    @pytest.mark.asyncio
-    async def test_complete_sets_summary(self):
-        svc, conv = _make_service()
-        handle = await svc.start(description="t", task_type="T")
-        await svc.complete(handle.task_id, status="completed", summary="Done.")
-        task = conv.active_tasks[0]
-        assert task["metadata"].get("final_summary") == "Done."
-
-    @pytest.mark.asyncio
-    async def test_complete_all_terminal_statuses(self):
-        for status in TERMINAL_STATUSES:
-            svc, conv = _make_service()
-            handle = await svc.start(description="t", task_type="T")
-            result = await svc.complete(handle.task_id, status=status)
-            assert result is True
+    async def test_complete_sets_result(self):
+        store, conv = _make_store()
+        handle = await store.create(title="t", description="t")
+        await handle.start()
+        await handle.complete(result="Done.")
+        task = conv.tasks[0]
+        assert task["data"].get("result") == "Done."
 
 
 # ---------------------------------------------------------------------------
-# TaskService.get_record (typed access)
+# TaskStore.get / list
 # ---------------------------------------------------------------------------
 
 
-class TestTaskServiceGetRecord:
+class TestTaskStoreGet:
     @pytest.mark.asyncio
-    async def test_get_record_returns_task_record(self):
-        svc, conv = _make_service()
-        handle = await svc.start(description="typed task", task_type="AGENTIC_LOOP")
-        record = svc.get_record(task_id=handle.task_id)
-        assert isinstance(record, TaskRecord)
-        assert record.description == "typed task"
-        assert record.status == "active"
+    async def test_get_returns_task_handle(self):
+        store, conv = _make_store()
+        handle = await store.create(title="typed task", description="typed task")
+        await handle.start()
+        retrieved = store.get(handle.id)
+        assert retrieved is not None
+        assert retrieved.description == "typed task"
+        assert retrieved.status == "active"
 
     @pytest.mark.asyncio
-    async def test_get_record_returns_none_when_not_found(self):
-        svc, _ = _make_service()
-        assert svc.get_record(task_id="nonexistent") is None
+    async def test_get_returns_none_when_not_found(self):
+        store, _ = _make_store()
+        assert store.get("nonexistent") is None
 
     @pytest.mark.asyncio
-    async def test_list_records_returns_typed_list(self):
-        svc, conv = _make_service()
-        await svc.start(description="t1", task_type="T", action_name="A")
-        await svc.start(description="t2", task_type="T", action_name="A")
-        records = svc.list_records(action_name="A")
-        assert len(records) == 2
-        assert all(isinstance(r, TaskRecord) for r in records)
+    async def test_list_returns_handles(self):
+        store, conv = _make_store()
+        h1 = await store.create(title="t1", description="t1", owner_action="A")
+        await h1.start()
+        h2 = await store.create(title="t2", description="t2", owner_action="A")
+        await h2.start()
+        handles = store.list(owner_action="A")
+        assert len(handles) == 2
+        assert {h.title for h in handles} == {"t1", "t2"}
 
 
 # ---------------------------------------------------------------------------
-# TaskService.fail
+# TaskHandle.fail
 # ---------------------------------------------------------------------------
 
 
-class TestTaskServiceFail:
+class TestTaskHandleFail:
     @pytest.mark.asyncio
     async def test_fail_sets_failure_reason(self):
-        svc, conv = _make_service()
-        handle = await svc.start(description="t", task_type="T")
-        await svc.fail(handle.task_id, error="tool exploded")
-        task = conv.active_tasks[0]
+        store, conv = _make_store()
+        handle = await store.create(title="t", description="t")
+        await handle.start()
+        await handle.fail(reason="tool exploded")
+        task = conv.tasks[0]
         assert task["status"] == "failed"
-        assert "tool exploded" in task["metadata"].get("failure_reason", "")
-
-    @pytest.mark.asyncio
-    async def test_fail_not_found_returns_false(self):
-        svc, _ = _make_service()
-        result = await svc.fail("nonexistent", error="err")
-        assert result is False
+        assert "tool exploded" in task["data"].get("failure_reason", "")
 
 
 # ---------------------------------------------------------------------------
-# TaskService.sweep_stale
+# TaskStore.sweep_terminal
 # ---------------------------------------------------------------------------
 
 
-class TestTaskServiceSweepStale:
+class TestTaskStoreSweepTerminal:
     @pytest.mark.asyncio
-    async def test_sweep_stale_marks_old_tasks_failed(self):
-        svc, conv = _make_service()
-        handle = await svc.start(description="stale", task_type="T")
-        # Manually backdate heartbeat
-        conv.active_tasks[0]["last_heartbeat_at"] = "2020-01-01T00:00:00+00:00"
-        count = await svc.sweep_stale(ttl_seconds=60)
+    async def test_sweep_terminal_removes_old_tasks(self):
+        store, conv = _make_store()
+        handle = await store.create(title="stale", description="stale")
+        await handle.start()
+        await handle.complete()
+        # Manually backdate completed_at
+        conv.tasks[0]["completed_at"] = "2020-01-01T00:00:00+00:00"
+        count = await store.sweep_terminal(older_than_seconds=60)
         assert count == 1
-        assert conv.active_tasks[0]["status"] == "failed"
+        assert len(conv.tasks) == 0
 
     @pytest.mark.asyncio
-    async def test_sweep_stale_ignores_terminal_tasks(self):
-        svc, conv = _make_service()
-        handle = await svc.start(description="t", task_type="T")
-        await svc.complete(handle.task_id)
-        # Backdate — terminal tasks should not be swept
-        conv.active_tasks[0]["last_heartbeat_at"] = "2020-01-01T00:00:00+00:00"
-        count = await svc.sweep_stale(ttl_seconds=60)
+    async def test_sweep_terminal_ignores_active_tasks(self):
+        store, conv = _make_store()
+        handle = await store.create(title="t", description="t")
+        await handle.start()
+        # Active tasks should not be removed
+        count = await store.sweep_terminal(older_than_seconds=60)
         assert count == 0
+        assert len(conv.tasks) == 1
+        assert conv.tasks[0]["status"] == "active"
 
     @pytest.mark.asyncio
-    async def test_sweep_stale_no_stale(self):
-        svc, conv = _make_service()
-        await svc.start(description="fresh", task_type="T")
-        count = await svc.sweep_stale(ttl_seconds=3600)
+    async def test_sweep_terminal_no_stale(self):
+        store, conv = _make_store()
+        handle = await store.create(title="fresh", description="fresh")
+        await handle.start()
+        await handle.complete()
+        count = await store.sweep_terminal(older_than_seconds=3600)
         assert count == 0
+        assert len(conv.tasks) == 1
 
 
 # ---------------------------------------------------------------------------
-# record_step with StepRecord
+# add_event
 # ---------------------------------------------------------------------------
 
 
-class TestTaskServiceRecordStep:
+class TestTaskHandleAddEvent:
     @pytest.mark.asyncio
-    async def test_record_step_appends_to_metadata(self):
-        svc, conv = _make_service()
-        handle = await svc.start(description="t", task_type="T", metadata={"steps": []})
-        await svc.record_step(
-            handle.task_id,
-            step_type="thinking",
+    async def test_add_event_appends_to_data(self):
+        store, conv = _make_store()
+        handle = await store.create(title="t", description="t", data={"steps": []})
+        await handle.start()
+        await handle.add_event(
+            event_type="thinking",
             iteration=1,
             details={"tokens": 250},
         )
-        task = conv.active_tasks[0]
-        steps = task["metadata"].get("steps", [])
-        assert len(steps) == 1
-        assert steps[0]["type"] == "thinking"
-        assert steps[0]["iteration"] == 1
+        task = conv.tasks[0]
+        events = task["data"].get("_events", [])
+        assert len(events) == 1
+        assert events[0]["type"] == "thinking"
+        assert events[0]["iteration"] == 1
 
     @pytest.mark.asyncio
-    async def test_record_step_accumulates_tool_calls(self):
-        svc, conv = _make_service()
-        handle = await svc.start(
-            description="t", task_type="T", metadata={"tools_called": []}
-        )
-        await svc.record_step(
-            handle.task_id,
-            step_type="tool_call",
+    async def test_add_event_preserves_tool_details(self):
+        store, conv = _make_store()
+        handle = await store.create(title="t", description="t")
+        await handle.start()
+        await handle.add_event(
+            event_type="tool_call",
             iteration=1,
             details={"tools": ["search", "read"]},
         )
-        task = conv.active_tasks[0]
-        tools_called = task["metadata"].get("tools_called", [])
-        assert "search" in tools_called
-        assert "read" in tools_called
+        task = conv.tasks[0]
+        events = task["data"].get("_events", [])
+        assert events[0]["details"]["tools"] == ["search", "read"]
 
     @pytest.mark.asyncio
-    async def test_record_step_thinking_accumulates_tokens(self):
-        svc, conv = _make_service()
-        handle = await svc.start(
-            description="t", task_type="T", metadata={"thinking_tokens_used": 0}
+    async def test_add_event_accumulates_multiple(self):
+        store, conv = _make_store()
+        handle = await store.create(title="t", description="t")
+        await handle.start()
+        await handle.add_event(
+            event_type="thinking", iteration=1, details={"tokens": 100}
         )
-        await svc.record_step(
-            handle.task_id, step_type="thinking", iteration=1, details={"tokens": 100}
+        await handle.add_event(
+            event_type="thinking", iteration=2, details={"tokens": 200}
         )
-        await svc.record_step(
-            handle.task_id, step_type="thinking", iteration=2, details={"tokens": 200}
-        )
-        task = conv.active_tasks[0]
-        assert task["metadata"]["thinking_tokens_used"] == 300
+        task = conv.tasks[0]
+        events = task["data"].get("_events", [])
+        assert len(events) == 2
+        assert events[0]["details"]["tokens"] == 100
+        assert events[1]["details"]["tokens"] == 200

@@ -980,7 +980,7 @@ class PersonaAction(Action):
         conversation = await Conversation.get(interaction.conversation_id)
         if not conversation:
             return []
-        tasks = conversation.get_active_tasks(status="active")
+        tasks = conversation.get_tasks(status="active")
         return [
             t
             for t in tasks
