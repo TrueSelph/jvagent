@@ -53,10 +53,19 @@ DEFER — use ONLY when:
 - NEVER DEFER: User sent media; use RESPOND.
 
 STEP 1 — ROUTE SELECTION (only when posture=RESPOND)
-Pick zero or more **skill** names from the catalog. The cockpit engine has harness tools beyond skills (memory, artifacts, task planning, conversation search), so a request that doesn't match any listed skill can still be handled — emit ``skills: []`` and the engine will figure it out. Use exact skill keys, never descriptions.
+Two route classes are available:
+
+A. **skills** — capability bundles invoked through the cockpit engine (tool-driven research / synthesis / multi-step work). Pick from the SKILLS CATALOG. Use exact skill keys, never descriptions.
+B. **interact_actions** — specialized response handlers that run AS InteractActions, without the cockpit engine. Pick from the INTERACT ACTIONS CATALOG. Use exact class names.
+
+DECISION RULES:
+- Choose **skills only** when the request needs tool-driven exploration / synthesis / data retrieval and no specialized handler matches.
+- Choose **interact_actions only** when a listed handler is purpose-built for this request type (e.g., explicit handoff, structured form-fill, dedicated workflow) and no engine-level reasoning is needed.
+- Choose **both** when the request needs research first AND a specialized handler afterward (engine produces output, then the interact_action runs).
+- The cockpit engine has harness tools beyond skills (memory, artifacts, task planning, conversation search). A request that doesn't match any listed skill or interact_action can still be handled — emit ``skills: []`` and ``interact_actions: []`` and the engine will figure it out.
 
 CORE PRINCIPLES:
-- CONVERSATIONAL intent (greetings, thanks, smalltalk) MUST have empty skills [].
+- CONVERSATIONAL intent (greetings, thanks, smalltalk) MUST have empty skills [] AND empty interact_actions [].
 - canned_response (when emitted): non-conclusive **lead-in only** — a fragment or stall that the engine's main reply will continue in the same turn; never a standalone sentence that answers, refuses, advises, redirects, or closes the topic.
 
 INTENT TYPES (when posture=RESPOND):
@@ -79,7 +88,10 @@ CURRENT USER MESSAGE:
 SKILLS CATALOG (JSON keys = only valid "skills" array entries):
 {skills_json}
 
-TASK: 1) Classify posture (RESPOND/SUPPRESS/DEFER). 2) If posture=RESPOND, classify intent and fill skills; otherwise use skills=[], canned_response="", intent_type="UNCLEAR".
+INTERACT ACTIONS CATALOG (JSON keys = only valid "interact_actions" array entries):
+{interact_actions_json}
+
+TASK: 1) Classify posture (RESPOND/SUPPRESS/DEFER). 2) If posture=RESPOND, classify intent and fill skills + interact_actions; otherwise use skills=[], interact_actions=[], canned_response="", intent_type="UNCLEAR".
 
 POSTURE RULES (recap):
 - RESPOND: greeting (always), question, request, answer to question, gratitude for help, personal-fact statement, contextually coherent message. When in doubt, RESPOND.
@@ -88,11 +100,14 @@ POSTURE RULES (recap):
 
 RULES:
 1. The ">>> USER RESPONDS NOW <<<" marker in history indicates the transition to the current user message.
-2. Output posture first; then interpretation, intent_type, skills, confidence (and canned_response when posture=RESPOND).
-3. CONVERSATIONAL intent MUST have empty skills [].
-4. Each skills array entry MUST be an exact catalog key, NOT a description or tag.
-5. If the assistant's most recent message was a question and the user answers, use INTERACTIVE.
-6. Lower confidence if ambiguous{optional_instructions}
+2. Output posture first; then interpretation, intent_type, skills, interact_actions, confidence (and canned_response when posture=RESPOND).
+3. CONVERSATIONAL intent MUST have empty skills [] AND empty interact_actions [].
+4. Each skills array entry MUST be an exact SKILLS CATALOG key, NOT a description or tag.
+5. Each interact_actions array entry MUST be an exact INTERACT ACTIONS CATALOG key (class name), NOT a description.
+6. Use interact_actions ONLY when a listed handler is purpose-built for this request and no tool-driven engine work is needed.
+7. Use both skills AND interact_actions when engine work must precede a specialized handler.
+8. If the assistant's most recent message was a question and the user answers, use INTERACTIVE.
+9. Lower confidence if ambiguous{optional_instructions}
 
 INTERPRETATION: Brief synopsis of user intent and why this posture applies. Target one sentence, ~15-30 words.
 
@@ -102,6 +117,7 @@ OUTPUT (JSON only):
   "interpretation": "Brief synopsis of user intent and why this posture applies.",
   "intent_type": "CONVERSATIONAL|INFORMATIONAL|INTERACTIVE|DIRECTIVE|UNCLEAR",
   "skills": ["SkillName1"],
+  "interact_actions": ["ClassName1"],
   "confidence": 0.0-1.0{entity_field}{canned_field}
 }}"""
 
@@ -248,6 +264,8 @@ class CockpitRouter:
             required=True, purpose="router"
         )
         skills_json = json.dumps(skill_descriptors, indent=2)
+        interact_action_descriptors = await self._collect_interact_action_descriptors()
+        interact_actions_json = json.dumps(interact_action_descriptors, indent=2)
         history_section = (
             format_interaction_history(interaction_history, conversation=conversation)
             if interaction_history
@@ -284,7 +302,7 @@ class CockpitRouter:
         prompt = routing_user_template.format(
             utterance=interaction.utterance or "",
             skills_json=skills_json,
-            interact_actions_json="{}",
+            interact_actions_json=interact_actions_json,
             active_tasks_section="",
             history_section=history_section,
             prior_fragments_section="",
@@ -307,12 +325,67 @@ class CockpitRouter:
 
         result = parse_routing_response(response)
         result.actions = self._validate_routes(result.actions, skill_descriptors)
+        result.interact_actions = self._validate_routes(
+            result.interact_actions, interact_action_descriptors
+        )
         return result
 
     def _validate_routes(
-        self, actions: List[str], skill_descriptors: Dict[str, Dict[str, Any]]
+        self, actions: List[str], descriptors: Dict[str, Dict[str, Any]]
     ) -> List[str]:
-        return [a for a in actions if a in skill_descriptors]
+        return [a for a in actions if a in descriptors]
+
+    async def _collect_interact_action_descriptors(self) -> Dict[str, Dict[str, Any]]:
+        """Build descriptor map for routable InteractActions on the agent.
+
+        Excludes:
+        - The cockpit action itself (cannot delegate to self).
+        - InteractActions with ``always_execute=True`` (they run regardless of routing).
+
+        Each entry: ``{"description": "...", "weight": int}``. The class name is the
+        key, so the router can return exact ``interact_actions`` array entries.
+        """
+        agent = await self._action.get_agent()
+        if agent is None:
+            return {}
+
+        try:
+            from jvagent.action.interact.base import InteractAction
+
+            actions_mgr = await agent.get_actions_manager()
+            if actions_mgr is None:
+                return {}
+
+            all_actions = await actions_mgr.get_all_actions(enabled_only=True)
+        except Exception as exc:
+            logger.debug("CockpitRouter: interact action enumeration failed: %s", exc)
+            return {}
+
+        cockpit_class = self._action.__class__.__name__
+        descriptors: Dict[str, Dict[str, Any]] = {}
+        for action in all_actions:
+            try:
+                if not isinstance(action, InteractAction):
+                    continue
+                cls_name = action.__class__.__name__
+                if cls_name == cockpit_class:
+                    continue
+                if bool(getattr(action, "always_execute", False)):
+                    continue
+                description = (
+                    getattr(action, "description", None)
+                    or action.__class__.__doc__
+                    or ""
+                ).strip()
+                # Trim long docstrings so the router prompt stays small.
+                short_desc = " ".join(description.split())[:240]
+                descriptors[cls_name] = {
+                    "description": short_desc,
+                    "weight": int(getattr(action, "weight", 0)),
+                }
+            except Exception:
+                continue
+        return descriptors
 
     async def _collect_skill_descriptors(
         self, agent: Any, conversation: Any = None

@@ -98,6 +98,18 @@ actions:
           tools: "-all"
           denied_tools: []
 
+  - action: jvagent/intro_interact_action
+    context:
+      enabled: true
+      directive: >-
+        Greet the user briefly and explain you can search documents, search the web,
+        and remember preferences across the conversation.
+
+  - action: jvagent/handoff_interact_action
+    context:
+      enabled: true
+      mode: direct_contact
+
   - action: jvagent/persona
     context:
       enabled: true

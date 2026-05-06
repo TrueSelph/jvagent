@@ -21,6 +21,12 @@ from jvspatial.core.annotations import attribute
 from jvagent.action.cockpit.config import CockpitConfig
 from jvagent.action.cockpit.context import CockpitContext
 from jvagent.action.cockpit.contracts import TerminationReason
+from jvagent.action.cockpit.delegation import (
+    collect_always_execute_interact_actions,
+    curate_walk_path_for_cockpit,
+    prepend_routed_interact_actions,
+    resolve_routed_interact_actions,
+)
 from jvagent.action.cockpit.delivery import (
     deliver_conversational,
     deliver_final_response,
@@ -45,6 +51,14 @@ COCKPIT_DEFAULT_SKILL_MODEL: str = "claude-sonnet-4-20250514"
 _COCKPIT_STATE_KEY = "cockpit_state"
 _COCKPIT_ENGINE_KEY = "cockpit_engine"
 _COCKPIT_INTERACTION_ID_KEY = "cockpit_interaction_id"
+# Pending routed InteractActions queued by Phase 1 to run AFTER the engine
+# reaches a terminal step. Set in "both" mode (skills + interact_actions).
+_COCKPIT_PENDING_IAS_KEY = "cockpit_pending_interact_actions"
+# Marker that cockpit has been appended to the END of the walker queue to
+# perform a persona delivery after upstream InteractActions finish.
+# Set in "interact_actions only" mode so directives accumulated by IAs
+# are handed to PersonaAction.respond() for the final user-facing response.
+_COCKPIT_FINALIZE_PENDING_KEY = "cockpit_ia_finalize_pending"
 
 
 def _routing_clarification_fallbacks_default() -> List[str]:
@@ -276,6 +290,8 @@ class CockpitInteractAction(InteractAction):
 
         On first visit: route, set up engine, run first step.
         On revisits: restore engine state, run next step.
+        On finalize-pending revisit (IA-only mode): deliver via persona using
+        directives accumulated by upstream InteractActions, then clear state.
 
         When the model returns tool calls, persist state and re-add self to
         the walk path for the next visit. When the model produces a text
@@ -295,6 +311,14 @@ class CockpitInteractAction(InteractAction):
             visitor._skill_state if hasattr(visitor, "_skill_state") else {}
         )
         visitor._skill_state.setdefault("action", self)
+
+        # Finalize-pending revisit (IA-only mode): cockpit was appended to the
+        # end of the walk path to publish a persona-shaped response after
+        # upstream IAs accumulated their directives.
+        if visitor._skill_state.get(_COCKPIT_FINALIZE_PENDING_KEY):
+            visitor._skill_state.pop(_COCKPIT_FINALIZE_PENDING_KEY, None)
+            await self._finalize_via_persona(visitor)
+            return
 
         engine = visitor._skill_state.get(_COCKPIT_ENGINE_KEY)
 
@@ -322,9 +346,17 @@ class CockpitInteractAction(InteractAction):
             await self._phase_continue(visitor)
 
     async def _phase_route_and_setup(self, visitor: InteractWalker) -> None:
-        """First visit: route, gate, set up cockpit engine, run first step."""
+        """First visit: route, gate, dispatch to engine and/or interact_actions.
+
+        Dispatch matrix (after posture + conversational gating):
+
+        - ``routing.actions`` only          → cockpit engine path (existing)
+        - ``routing.interact_actions`` only → skip engine, hand off to those IAs
+        - both                              → engine first, IAs prepended on terminal
+        - neither                           → cockpit engine path (engine handles via
+          harness tools / model decides)
+        """
         interaction = visitor.interaction
-        conversation = visitor.conversation
 
         try:
             from jvagent.action.cockpit.router import CockpitRouter
@@ -342,6 +374,20 @@ class CockpitInteractAction(InteractAction):
                 routing = RoutingResult(posture=POSTURE_RESPOND)
 
             persona = await self._require_persona()
+            agent = await self.get_agent()
+
+            # Resolve routed interact_actions and curate the walker queue so
+            # only the cockpit + classified IAs + always_execute IAs remain.
+            routed_ias = await resolve_routed_interact_actions(agent, routing)
+            always_run_ias = await collect_always_execute_interact_actions(
+                agent, exclude_class_names={self.__class__.__name__}
+            )
+            await curate_walk_path_for_cockpit(
+                visitor,
+                self,
+                routed_ias,
+                always_execute=always_run_ias,
+            )
 
             if should_use_conversational_gate(
                 routing, converse_enabled=self.converse_enabled
@@ -356,7 +402,42 @@ class CockpitInteractAction(InteractAction):
                 interaction.set_to_executed()
                 return
 
-            # Processing path: set up cockpit engine
+            has_skills = bool(routing.actions)
+            has_ias = bool(routed_ias)
+
+            # interact_actions only → skip engine, hand off to IAs.
+            # The curate above already placed the routed IAs in the walker queue
+            # in weight order; the walker will visit them after cockpit returns.
+            # We then append cockpit to the END of the walk path so it runs once
+            # more after the IAs to invoke PersonaAction with the accumulated
+            # directives — that's the user-facing response.
+            if has_ias and not has_skills:
+                logger.info(
+                    "CockpitInteractAction: dispatching to interact_actions=%s "
+                    "(skipping engine, scheduling persona finalize)",
+                    [a.__class__.__name__ for a in routed_ias],
+                )
+                visitor._skill_state[_COCKPIT_FINALIZE_PENDING_KEY] = True
+                try:
+                    await visitor.append([self])
+                except Exception as exc:
+                    logger.warning(
+                        "CockpitInteractAction: failed to append finalize step: %s",
+                        exc,
+                    )
+                # Don't mark interaction executed yet — finalize step will do it.
+                return
+
+            # both → run engine; on terminal step, the IAs run after.
+            if has_ias and has_skills:
+                visitor._skill_state[_COCKPIT_PENDING_IAS_KEY] = routed_ias
+                logger.info(
+                    "CockpitInteractAction: dispatching to engine + queued "
+                    "interact_actions=%s",
+                    [a.__class__.__name__ for a in routed_ias],
+                )
+
+            # skills only OR neither → cockpit engine path.
             await self._start_cockpit(visitor, routing, persona)
 
         except Exception as exc:
@@ -525,35 +606,82 @@ class CockpitInteractAction(InteractAction):
         visitor._skill_state.pop(_COCKPIT_ENGINE_KEY, None)
         visitor._skill_state.pop(_COCKPIT_INTERACTION_ID_KEY, None)
         visitor._skill_state.pop("cockpit_finalized", None)
+        # Pending IAs are already in the walker queue from Phase 1 curate; the
+        # walker visits them automatically after the cockpit revisit chain ends.
+        # We pop the key here for observability hygiene only.
+        pending_ias = visitor._skill_state.pop(_COCKPIT_PENDING_IAS_KEY, None) or []
+        if pending_ias:
+            logger.info(
+                "CockpitInteractAction: engine done, walker will visit queued "
+                "interact_actions=%s",
+                [a.__class__.__name__ for a in pending_ias],
+            )
         interaction.set_to_executed()
 
         final_response = getattr(step_result, "final_response", "") or ""
-        if not final_response.strip():
+
+        if final_response.strip():
+            # Build a CockpitResult-like object for delivery
+            from jvagent.action.cockpit.context import CockpitResult
+
+            result = CockpitResult(
+                final_response=final_response,
+                termination_reason=getattr(
+                    step_result, "termination_reason", TerminationReason.COMPLETED
+                ),
+                iterations=getattr(step_result, "iterations", 0),
+                duration_seconds=getattr(step_result, "duration_seconds", 0.0),
+                activated_skills=getattr(step_result, "activated_skills", []),
+            )
+
+            skill_catalog = (visitor._skill_state or {}).get("skill_catalog")
+
+            await deliver_final_response(
+                self,
+                visitor,
+                result,
+                response_mode=self.response_mode,
+                degenerate_response_max_chars=self.degenerate_response_max_chars,
+                skill_catalog=skill_catalog,
+            )
+
+    async def _finalize_via_persona(self, visitor: InteractWalker) -> None:
+        """Run a persona-shaped delivery after upstream IAs queued directives.
+
+        Used in "interact_actions only" mode. Cockpit was appended to the end
+        of the walk path; this method invokes PersonaAction.respond() so the
+        directives accumulated on the interaction are folded into the final
+        user-facing response. PersonaAction itself reads directives from
+        ``visitor.interaction``.
+        """
+        interaction = visitor.interaction
+        if not interaction:
+            await visitor.unrecord_action_execution()
             return
 
-        # Build a CockpitResult-like object for delivery
-        from jvagent.action.cockpit.context import CockpitResult
+        try:
+            persona = await self._require_persona()
+        except Exception as exc:
+            logger.warning(
+                "CockpitInteractAction: persona unavailable for finalize step: %s",
+                exc,
+            )
+            interaction.set_to_executed()
+            return
 
-        result = CockpitResult(
-            final_response=final_response,
-            termination_reason=getattr(
-                step_result, "termination_reason", TerminationReason.COMPLETED
-            ),
-            iterations=getattr(step_result, "iterations", 0),
-            duration_seconds=getattr(step_result, "duration_seconds", 0.0),
-            activated_skills=getattr(step_result, "activated_skills", []),
-        )
-
-        skill_catalog = (visitor._skill_state or {}).get("skill_catalog")
-
-        await deliver_final_response(
-            self,
-            visitor,
-            result,
-            response_mode=self.response_mode,
-            degenerate_response_max_chars=self.degenerate_response_max_chars,
-            skill_catalog=skill_catalog,
-        )
+        try:
+            # PersonaAction.respond(interaction, visitor=...) reads
+            # interaction.directives + parameters and publishes via the
+            # response bus (when visitor provided).
+            await persona.respond(interaction, visitor=visitor)
+        except Exception as exc:
+            logger.warning(
+                "CockpitInteractAction: persona finalize delivery failed: %s",
+                exc,
+                exc_info=True,
+            )
+        finally:
+            interaction.set_to_executed()
 
     def _build_publish_callback(self, visitor: InteractWalker):
         """Build the callback that routes publish/thought events to the response bus."""
