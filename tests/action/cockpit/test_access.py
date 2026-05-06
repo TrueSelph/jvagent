@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from jvagent.action.cockpit import access
-from jvagent.action.cockpit.routing_types import POSTURE_RESPOND, RoutingResult
+from jvagent.action.cockpit.registry import access
+from jvagent.action.cockpit.routing.types import POSTURE_RESPOND, RoutingResult
 from jvagent.action.interact.base import InteractAction
 from jvagent.tooling.tool import Tool
 from jvagent.tooling.tool_registry import ToolRegistry

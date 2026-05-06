@@ -746,5 +746,3 @@ def _apply_properties(
             setattr(target, key, value)
         except Exception as e:
             logger.warning(f"Could not set {type(target).__name__}.{key}: {e}")
-
-

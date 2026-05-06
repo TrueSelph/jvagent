@@ -622,7 +622,7 @@ async def reload_skills_endpoint(agent_id: str) -> Dict[str, Any]:
         )
 
     try:
-        from jvagent.action.cockpit.skill_catalog import SkillCatalog
+        from jvagent.action.cockpit.catalog.skill_catalog import SkillCatalog
 
         await SkillCatalog.invalidate_cache(
             namespace=agent.namespace,

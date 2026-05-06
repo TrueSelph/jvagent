@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from jvagent.action.cockpit.routing_types import RoutingResult
+    from jvagent.action.cockpit.routing.types import RoutingResult
 
 
 def should_use_conversational_gate(

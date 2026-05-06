@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from jvagent.action.cockpit.action_resolver import ActionResolver
+from jvagent.action.cockpit.catalog.action_resolver import ActionResolver
 
 
 class CockpitVisitorShim:

@@ -16,7 +16,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from jvagent.action.cockpit import delegation
 from jvagent.action.cockpit.cockpit_interact_action import (
     _COCKPIT_ENGINE_KEY,
     _COCKPIT_PENDING_IAS_KEY,
@@ -24,7 +23,8 @@ from jvagent.action.cockpit.cockpit_interact_action import (
 )
 from jvagent.action.cockpit.context import CockpitStepResult
 from jvagent.action.cockpit.contracts import TerminationReason
-from jvagent.action.cockpit.routing_types import POSTURE_RESPOND, RoutingResult
+from jvagent.action.cockpit.delivery import delegation
+from jvagent.action.cockpit.routing.types import POSTURE_RESPOND, RoutingResult
 from jvagent.action.interact.base import InteractAction
 
 pytestmark = pytest.mark.asyncio
@@ -234,7 +234,7 @@ async def _stub_router(monkeypatch, posture: str, routing: RoutingResult):
             return posture, routing
 
     monkeypatch.setattr(
-        "jvagent.action.cockpit.router.CockpitRouter",
+        "jvagent.action.cockpit.routing.router.CockpitRouter",
         _StubRouter,
     )
 

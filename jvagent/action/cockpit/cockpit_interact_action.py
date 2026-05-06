@@ -18,33 +18,35 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 
-from jvagent.action.cockpit.access import (
-    filter_routed_interact_actions_by_access,
-    filter_routed_skills_by_access,
+from jvagent.action.cockpit.catalog.skill_catalog import SkillCatalog
+from jvagent.action.cockpit.catalog.skill_discovery import (
+    list_always_active_skill_names,
 )
 from jvagent.action.cockpit.config import CockpitConfig
 from jvagent.action.cockpit.context import CockpitContext
 from jvagent.action.cockpit.contracts import TerminationReason
-from jvagent.action.cockpit.delegation import (
+from jvagent.action.cockpit.delivery.delegation import (
     collect_always_execute_interact_actions,
     curate_walk_path_for_cockpit,
     prepend_routed_interact_actions,
     resolve_routed_interact_actions,
 )
-from jvagent.action.cockpit.delivery import (
+from jvagent.action.cockpit.delivery.gates import should_use_conversational_gate
+from jvagent.action.cockpit.delivery.helpers import (
     deliver_conversational,
     deliver_final_response,
 )
 from jvagent.action.cockpit.engine import CockpitEngine
-from jvagent.action.cockpit.gates import should_use_conversational_gate
-from jvagent.action.cockpit.routing_types import POSTURE_RESPOND, RoutingResult
-from jvagent.action.cockpit.shim import CockpitVisitorShim
-from jvagent.action.cockpit.skill_catalog import SkillCatalog
-from jvagent.action.cockpit.skill_discovery import list_always_active_skill_names
+from jvagent.action.cockpit.registry.access import (
+    filter_routed_interact_actions_by_access,
+    filter_routed_skills_by_access,
+)
+from jvagent.action.cockpit.registry.shim import CockpitVisitorShim
+from jvagent.action.cockpit.routing.types import POSTURE_RESPOND, RoutingResult
 from jvagent.action.interact.base import InteractAction
 
 if TYPE_CHECKING:
-    from jvagent.action.cockpit.router import CockpitRouter
+    from jvagent.action.cockpit.routing.router import CockpitRouter
     from jvagent.action.interact.interact_walker import InteractWalker
 
 logger = logging.getLogger(__name__)
@@ -66,7 +68,9 @@ _COCKPIT_FINALIZE_PENDING_KEY = "cockpit_ia_finalize_pending"
 
 
 def _routing_clarification_fallbacks_default() -> List[str]:
-    from jvagent.action.cockpit.router import ROUTING_CLARIFICATION_FALLBACK_MESSAGES
+    from jvagent.action.cockpit.routing.router import (
+        ROUTING_CLARIFICATION_FALLBACK_MESSAGES,
+    )
 
     return list(ROUTING_CLARIFICATION_FALLBACK_MESSAGES)
 
@@ -385,7 +389,7 @@ class CockpitInteractAction(InteractAction):
         interaction = visitor.interaction
 
         try:
-            from jvagent.action.cockpit.router import CockpitRouter
+            from jvagent.action.cockpit.routing.router import CockpitRouter
 
             # Canned lead-in is generated INSIDE the routing LLM call (see
             # ``ROUTING_CANNED_INSTRUCTIONS_TEMPLATE`` in router.py) and
@@ -813,7 +817,9 @@ class CockpitInteractAction(InteractAction):
         new_catalog = await SkillCatalog.discover(
             visitor=visitor,
             skills_selector=getattr(action, "skills", None) if action else None,
-            skills_source=getattr(action, "skills_source", "both") if action else "both",
+            skills_source=(
+                getattr(action, "skills_source", "both") if action else "both"
+            ),
             denied_skills=getattr(action, "denied_skills", None) if action else None,
         )
         new_skills = new_catalog.skills

@@ -1,4 +1,5 @@
-from jvagent.action.cockpit.action_resolver import ActionResolver
+from jvagent.action.cockpit.catalog.action_resolver import ActionResolver
+from jvagent.action.cockpit.catalog.skill_catalog import SkillCatalog
 from jvagent.action.cockpit.cockpit_interact_action import CockpitInteractAction
 from jvagent.action.cockpit.config import CockpitConfig
 from jvagent.action.cockpit.context import (
@@ -9,7 +10,7 @@ from jvagent.action.cockpit.context import (
 )
 from jvagent.action.cockpit.contracts import TerminationReason
 from jvagent.action.cockpit.engine import CockpitEngine
-from jvagent.action.cockpit.routing_types import (
+from jvagent.action.cockpit.routing.types import (
     POSTURE_DEFER,
     POSTURE_RESPOND,
     POSTURE_SUPPRESS,
@@ -17,14 +18,13 @@ from jvagent.action.cockpit.routing_types import (
     format_interaction_history,
     parse_routing_response,
 )
-from jvagent.action.cockpit.search_tools import (
+from jvagent.action.cockpit.tools.search import (
     KIND_ACTIONS,
     KIND_ALL,
     KIND_SKILLS,
     KIND_TOOLS,
     search_for_router,
 )
-from jvagent.action.cockpit.skill_catalog import SkillCatalog
 
 __all__ = [
     "CockpitInteractAction",

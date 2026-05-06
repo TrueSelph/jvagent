@@ -28,38 +28,42 @@ It has **zero** imports from `jvagent.action.router` or `jvagent.action.persona`
 
 ## Architecture
 
-### File Inventory (24 files)
+### Layout
 
-| File | Role |
+The package is grouped into top-level entry modules and five subpackages:
+
+| Path | Role |
 |---|---|
-| `__init__.py` | Public API re‑exports (17 symbols) |
+| `__init__.py` | Public API re‑exports |
 | `cockpit_interact_action.py` | Main InteractAction entry point |
 | `engine.py` | Think‑act‑observe engine (one model call per step) |
 | `config.py` | CockpitConfig dataclass |
 | `context.py` | CockpitContext, CockpitStepResult, CockpitResult, CockpitState |
 | `contracts.py` | TerminationReason enum |
-| `router.py` | CockpitRouter (Phase 1 lightweight LLM routing) |
-| `routing_types.py` | Posture constants, RoutingResult, parse/format utilities |
-| `gates.py` | Conversational vs processing gate decisions |
-| `delivery.py` | Response delivery (conversational + final response) |
-| `registry.py` | Tool assembly (harness + action + skill layers) |
-| `action_resolver.py` | ActionResolver + inlined version_satisfies |
-| `skill_catalog.py` | SkillCatalog (discovery, rendering, search) |
-| `skill_discovery.py` | Always‑active skill detection |
-| `skill_tools.py` | skill_list, skill_search, skill_read harness tools |
-| `task_tools.py` | task_create_plan, task_update_step, task_get_status, task_add_step |
-| `memory_tools.py` | memory_get_history, memory_get_user_info, memory_update_user_model, memory_set_preference |
-| `artifact_tools.py` | artifact_search, artifact_add, artifact_get, artifact_update, artifact_delete (session‑scoped artifact CRUD) |
-| `search_tools.py` | cockpit_search — unified search across skills, actions, and tools |
-| `response_tools.py` | response_publish, response_emit_thought, response_deliver_via_persona |
-| `conversation_tools.py` | conversation_search, conversation_summarize |
-| `shim.py` | CockpitVisitorShim (minimal visitor stand‑in) |
+| `routing/router.py` | CockpitRouter (Phase 1 lightweight LLM routing) |
+| `routing/types.py` | Posture constants, RoutingResult, parse/format utilities |
+| `delivery/helpers.py` | Conversational + final-response delivery helpers |
+| `delivery/delegation.py` | Resolve and prepend routed `InteractAction`s on the walk path |
+| `delivery/gates.py` | Conversational vs processing gate decisions |
+| `registry/assembler.py` | `assemble_cockpit_tools` (harness + action + skill layers) |
+| `registry/access.py` | Per-user access filtering for skills / interact actions / tools |
+| `registry/shim.py` | CockpitVisitorShim (minimal visitor stand‑in) |
+| `catalog/skill_catalog.py` | SkillCatalog (discovery, rendering, search) |
+| `catalog/skill_discovery.py` | Always‑active skill detection |
+| `catalog/action_resolver.py` | ActionResolver + version constraint helper |
+| `tools/skill.py` | skill_list, skill_search, skill_read harness tools |
+| `tools/task.py` | task_create_plan, task_update_step, task_get_status, task_add_step |
+| `tools/memory.py` | memory_get_history, memory_get_user_info, memory_update_user_model, memory_set_preference |
+| `tools/artifact.py` | artifact_search, artifact_add, artifact_get, artifact_update, artifact_delete |
+| `tools/search.py` | cockpit_search — unified search across skills, actions, and tools |
+| `tools/response.py` | response_publish, response_emit_thought, response_deliver_via_persona |
+| `tools/conversation.py` | conversation_search, conversation_summarize |
 
 ### Dependency Graph
 
 ```
 CockpitInteractAction
-  ├── CockpitRouter ──► routing_types, SkillCatalog, CockpitVisitorShim
+  ├── CockpitRouter ──► routing.types, SkillCatalog, CockpitVisitorShim
   ├── CockpitEngine ──► CockpitContext, ToolExecutionEngine, ToolRegistry, ToolSerializer
   │       └── registry.assemble_cockpit_tools
   │             ├── _build_memory_tools    (CockpitContext)
@@ -288,7 +292,7 @@ ToolRegistry
 
 Built by factory functions (`_build_*_tools(ctx)`) that close over `CockpitContext`. Each returns `List[Tool]`. All inner functions are `async def` and return `str` — `Tool.call()` converts `str` to `ToolResult` automatically.
 
-#### Memory Tools (`memory_tools.py`)
+#### Memory Tools (`tools/memory.py`)
 
 Memory tools span two layers:
 
@@ -321,7 +325,7 @@ The legacy `memory_update_user_model` is soft-deprecated: it routes to `memory_s
 
 **Auto-write policy.** The cockpit only writes memory when the model explicitly calls `memory_set` / `memory_append`. There is no automatic distillation of facts from utterances; this keeps the contract deliberate and observable.
 
-#### Artifact Tools (`artifact_tools.py`)
+#### Artifact Tools (`tools/artifact.py`)
 
 Artifacts are arbitrary structured data (results from tools, full documents, file listings, image interpretations, etc.) stored within the **current interaction**. They provide the model with a way to persist intermediate results that can be retrieved later in the same task.
 
@@ -337,7 +341,7 @@ Artifacts are arbitrary structured data (results from tools, full documents, fil
 
 **Lifecycle**: artifacts are bound to the interaction and are automatically pruned when the interaction itself is pruned by `Conversation.interaction_limit`. Setting `interaction_limit` to 0 (limitless) means artifacts persist alongside their interactions.
 
-#### Response Tools (`response_tools.py`)
+#### Response Tools (`tools/response.py`)
 
 These tools realise the persona’s publishing capabilities. They correspond directly to the two publishing modes that the PersonaAction makes available: a light‑prompt direct send, and a full directive‑based persona‑infused delivery.
 
@@ -347,7 +351,7 @@ These tools realise the persona’s publishing capabilities. They correspond dir
 | `response_emit_thought` | Emit reasoning thought | Not shown to user; recorded for audit. |
 | `response_deliver_via_persona` | Deliver via full PersonaAction processing | "respond" mode: directive + respond(); "publish" mode: respond_slim(). |
 
-#### Task Tools (`task_tools.py`)
+#### Task Tools (`tools/task.py`)
 
 The underlying task service is referred to as the **task manager** (internally still represented by `TaskStore`). These tools give the model the instruments to plan and track multi‑step jobs.
 
@@ -385,7 +389,7 @@ Every cockpit run shares ONE trace task between the engine and the model. The en
 
 Tasks are deduplicated by `id` and ordered by `updated_at` ascending, so consumers see chronological progression. Failed and cancelled tasks now surface in the payload — they were invisible to the API consumer before (the legacy filter only matched `status == "completed"`).
 
-#### Unified Search Tool (`search_tools.py`)
+#### Unified Search Tool (`tools/search.py`)
 
 `cockpit_search` is the single discovery instrument for finding the most appropriate capability for a job. The same implementation is used in two surfaces with different `permitted_kinds`:
 
@@ -398,14 +402,14 @@ Tasks are deduplicated by `id` and ordered by `updated_at` ascending, so consume
 
 The tool is advertised prominently in the engine's system prompt only when the skill catalog is large enough that listing skills inline isn't viable.
 
-#### Conversation Tools (`conversation_tools.py`)
+#### Conversation Tools (`tools/conversation.py`)
 
 | Tool | Purpose | Key Operations |
 |---|---|---|
 | `conversation_search` | Search history by keyword | `conversation.get_interaction_history()` + keyword filter |
 | `conversation_summarize` | Brief summary of recent exchanges | `conversation.get_interaction_history()` + format |
 
-#### Skill Tools (`skill_tools.py`)
+#### Skill Tools (`tools/skill.py`)
 
 | Tool | Purpose | Key Behavior |
 |---|---|---|

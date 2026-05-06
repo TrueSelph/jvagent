@@ -472,7 +472,9 @@ class CockpitEngine:
             }
             if filtered:
                 try:
-                    from jvagent.action.cockpit.skill_catalog import SkillCatalog
+                    from jvagent.action.cockpit.catalog.skill_catalog import (
+                        SkillCatalog,
+                    )
 
                     sub = SkillCatalog(filtered)
                     skill_index = (
@@ -514,7 +516,7 @@ class CockpitEngine:
         # model has stable context about the human without spending a tool call.
         if getattr(cfg, "preload_user_memory", True):
             try:
-                from jvagent.action.cockpit.memory_tools import render_user_memory_block
+                from jvagent.action.cockpit.tools.memory import render_user_memory_block
 
                 block = await render_user_memory_block(
                     self.ctx,
@@ -847,4 +849,4 @@ class CockpitEngine:
 
 
 # Late import to avoid circular dependency
-from jvagent.action.cockpit.registry import assemble_cockpit_tools
+from jvagent.action.cockpit.registry.assembler import assemble_cockpit_tools

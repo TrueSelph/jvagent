@@ -20,8 +20,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
+from jvagent.action.cockpit.catalog.skill_catalog import SkillCatalog
 from jvagent.action.cockpit.context import CockpitContext
-from jvagent.action.cockpit.skill_catalog import SkillCatalog
 from jvagent.tooling.tool import Tool
 
 logger = logging.getLogger(__name__)

@@ -9,7 +9,10 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from jvagent.action.cockpit.routing_types import (
+from jvagent.action.cockpit.catalog.skill_catalog import SkillCatalog
+from jvagent.action.cockpit.catalog.skill_discovery import always_active_from_skill_dir
+from jvagent.action.cockpit.registry.shim import CockpitVisitorShim
+from jvagent.action.cockpit.routing.types import (
     POSTURE_DEFER,
     POSTURE_RESPOND,
     POSTURE_SUPPRESS,
@@ -17,9 +20,6 @@ from jvagent.action.cockpit.routing_types import (
     format_interaction_history,
     parse_routing_response,
 )
-from jvagent.action.cockpit.shim import CockpitVisitorShim
-from jvagent.action.cockpit.skill_catalog import SkillCatalog
-from jvagent.action.cockpit.skill_discovery import always_active_from_skill_dir
 from jvagent.core.cache import (
     get_interact_router_cache,
     interact_router_cache_key,
@@ -442,7 +442,7 @@ class CockpitRouter:
         if not utterance:
             return ""
         try:
-            from jvagent.action.cockpit.search_tools import search_for_router
+            from jvagent.action.cockpit.tools.search import search_for_router
 
             agent = await self._action.get_agent()
             conversation = getattr(self._visitor, "conversation", None)

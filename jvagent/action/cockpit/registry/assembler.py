@@ -9,20 +9,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from jvagent.action.cockpit.action_resolver import ActionResolver
-from jvagent.action.cockpit.artifact_tools import _build_artifact_tools
+from jvagent.action.cockpit.catalog.action_resolver import ActionResolver
+from jvagent.action.cockpit.catalog.skill_catalog import SkillCatalog
 from jvagent.action.cockpit.context import CockpitContext
-from jvagent.action.cockpit.conversation_tools import _build_conversation_tools
-from jvagent.action.cockpit.memory_tools import _build_memory_tools
-from jvagent.action.cockpit.response_tools import _build_response_tools
-from jvagent.action.cockpit.search_tools import (
+from jvagent.action.cockpit.tools.artifact import _build_artifact_tools
+from jvagent.action.cockpit.tools.conversation import _build_conversation_tools
+from jvagent.action.cockpit.tools.memory import _build_memory_tools
+from jvagent.action.cockpit.tools.response import _build_response_tools
+from jvagent.action.cockpit.tools.search import (
     KIND_SKILLS,
     KIND_TOOLS,
     _build_search_tools,
 )
-from jvagent.action.cockpit.skill_catalog import SkillCatalog
-from jvagent.action.cockpit.skill_tools import _build_skill_tools
-from jvagent.action.cockpit.task_tools import _build_task_tools
+from jvagent.action.cockpit.tools.skill import _build_skill_tools
+from jvagent.action.cockpit.tools.task import _build_task_tools
 from jvagent.tooling.tool import Tool
 from jvagent.tooling.tool_registry import ToolRegistry
 
@@ -81,7 +81,7 @@ async def assemble_cockpit_tools(ctx: CockpitContext) -> ToolRegistry:
     ``AccessControlAction`` (when present) so per-user policies apply
     uniformly across harness + action + skill tools.
     """
-    from jvagent.action.cockpit.access import filter_tool_registry_by_access
+    from jvagent.action.cockpit.registry.access import filter_tool_registry_by_access
 
     registry = ToolRegistry()
 

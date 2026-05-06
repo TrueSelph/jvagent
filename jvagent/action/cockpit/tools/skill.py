@@ -18,7 +18,7 @@ def _build_skill_tools(ctx: CockpitContext) -> List[Tool]:
         discovered = skill_state.get("discovered_skills", {})
         if not discovered:
             return None
-        from jvagent.action.cockpit.skill_catalog import SkillCatalog
+        from jvagent.action.cockpit.catalog.skill_catalog import SkillCatalog
 
         catalog = SkillCatalog(discovered)
         skill_state["skill_catalog"] = catalog

@@ -109,7 +109,7 @@ async def _main() -> int:
     logging.basicConfig(
         level=logging.WARNING, format="%(levelname)s %(name)s | %(message)s"
     )
-    logging.getLogger("jvagent.action.cockpit.access").setLevel(logging.INFO)
+    logging.getLogger("jvagent.action.cockpit.registry.access").setLevel(logging.INFO)
 
     from jvagent.cli.bootstrap import bootstrap_application_graph
     from jvagent.cli.server_config import _set_db_env_from_config

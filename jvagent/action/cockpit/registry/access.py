@@ -24,7 +24,7 @@ import logging
 from typing import TYPE_CHECKING, Any, List, Optional
 
 if TYPE_CHECKING:
-    from jvagent.action.cockpit.routing_types import RoutingResult
+    from jvagent.action.cockpit.routing.types import RoutingResult
     from jvagent.action.interact.base import InteractAction
     from jvagent.tooling.tool_registry import ToolRegistry
 

@@ -69,7 +69,7 @@ def test_block_raw_tool_invocation_independent_of_production_mode():
 
 def test_router_canned_response_silenced_in_production_mode():
     """Router._enable_canned_response returns False when production_mode is on."""
-    from jvagent.action.cockpit.router import CockpitRouter
+    from jvagent.action.cockpit.routing.router import CockpitRouter
 
     action = MagicMock()
     action.production_mode = True
@@ -80,7 +80,7 @@ def test_router_canned_response_silenced_in_production_mode():
 
 def test_router_canned_response_honors_setting_outside_production():
     """Outside production mode, the operator's enable_canned_response wins."""
-    from jvagent.action.cockpit.router import CockpitRouter
+    from jvagent.action.cockpit.routing.router import CockpitRouter
 
     action = MagicMock()
     action.production_mode = False

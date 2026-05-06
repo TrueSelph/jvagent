@@ -7,8 +7,8 @@ import re
 from pathlib import Path
 from typing import Any, List, Optional
 
-from jvagent.action.cockpit.shim import CockpitVisitorShim
-from jvagent.action.cockpit.skill_catalog import SkillCatalog
+from jvagent.action.cockpit.catalog.skill_catalog import SkillCatalog
+from jvagent.action.cockpit.registry.shim import CockpitVisitorShim
 
 logger = logging.getLogger(__name__)
 

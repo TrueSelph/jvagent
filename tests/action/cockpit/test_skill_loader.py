@@ -23,8 +23,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from jvagent.action.cockpit import registry as registry_mod
 from jvagent.action.cockpit.context import CockpitContext
+from jvagent.action.cockpit.registry import assembler as registry_mod
 from jvagent.tooling.tool_registry import ToolRegistry
 
 # asyncio mark applied per-function (only on async tests).
