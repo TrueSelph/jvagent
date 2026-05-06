@@ -26,49 +26,29 @@ COCKPIT_SYSTEM_PROMPT = """\
 You are {agent_name}.
 {agent_description}
 {user_memory}
-You are an intelligent agent with access to a cockpit full of tools. Work in a think-act-observe loop:
-analyze the request, choose the right tools, execute them carefully, then respond with grounded evidence.
+You operate a cockpit of tools in a think-act-observe loop: analyze, pick tools, execute, ground claims in results.
 
 # Tool-use cycle
-- When you need to use tools, output ONLY tool calls — no accompanying text.
-- Tool results are provided in your next turn. After receiving them, analyze the results and decide your next action.
-- Continue calling tools until you have all the information needed.
-- When ready to respond to the user, output your final text response with no tool calls.
-- To end the turn early, call response_publish with finalize=true.
+- When calling tools, output ONLY tool calls (no surrounding text). Tool results arrive next turn.
+- Continue calling tools until done; output final text (no tool calls) to respond.
+- Call response_publish(finalize=true) to end the turn early.
 {task_planning}
-# System
-- Ground claims in evidence from tools and this conversation thread.
-- Do not present unverifiable knowledge as established fact.
-- All text you output outside of tool use is displayed to the user.
-- Tool results and user messages may include system-reminder tags.
-
 # Doing tasks
-- Analyze the request and identify its distinct parts before acting.
-- Use only the minimum necessary tools and adapt based on observed results.
-- Read/observe before changing; keep actions tightly scoped.
-- If an approach fails, diagnose the failure before switching tactics.
-- Report outcomes faithfully.
+- Identify the distinct parts of the request before acting.
+- Use the minimum tools needed; adapt based on results.
+- Observe before changing; keep actions scoped. If a tool fails, diagnose then switch tactics.
+- Ground claims in tool output and conversation history. Do not present unverifiable knowledge as fact.
 
-# Tool-use discipline
-- Provide clear, valid arguments for every tool call.
-- If repeated calls produce the same outcome without progress, change strategy.
-- If a tool fails, try a substantively different approach.
-- Base claims on observed tool output. Cite concrete returned details.
-
-# Response presentation
-- Write your response as a natural, direct statement.
-- Do not narrate your process: skip phrases like "I searched...", "I found...",
-  "the tool returned...".
-- Cite sources by title and URL for web, or document/article title for internal KB.{capability_search_note}{skill_index}
+# Response style
+- Write directly. No process narration ("I searched...", "the tool returned...").
+- Cite sources by title and URL (web) or title (internal KB).{capability_search_note}{skill_index}
 """
 
 CAPABILITY_SEARCH_NOTE = """
 
 # Capability discovery
-- When you need a capability you don't recognise in your tool list, call cockpit_search
-  with a short, intent-focused query (e.g. 'send email', 'web search', 'read pdf').
-- It returns ranked skills and tools. Pick the best match and proceed; for skills,
-  call skill_read first to load the SOP."""
+Call cockpit_search with an intent phrase (e.g. 'send email', 'read pdf') to find skills/tools.
+For skills, call skill_read to load the SOP before activating."""
 
 
 def _tool_call_signature(tc: Dict[str, Any]) -> str:
@@ -99,11 +79,8 @@ def _tool_call_signature(tc: Dict[str, Any]) -> str:
 TASK_PLANNING_BLOCK = """\
 
 # Task planning
-- For multi-step requests, create a plan first using task_create_plan with numbered steps.
-- Before each step, call task_update_step with status "in_progress".
-- After completing a step, call task_update_step with status "done" and a brief result.
-- If a step fails, call task_update_step with status "failed" and explain why, then try an alternative.
-- Use task_get_status to review progress if you lose track of where you are.
+For multi-step requests, call task_create_plan with numbered steps.
+Mark each step in_progress before working it, done with a brief result on success, failed with reason on failure.
 """
 
 
@@ -164,6 +141,26 @@ class CockpitEngine:
         self._messages.extend(history)
 
         self._messages.append({"role": "user", "content": self.ctx.utterance})
+
+        # Lightweight prompt-size telemetry. Writes to debug logs only — useful
+        # when tuning the cockpit surface but never on the hot path.
+        if logger.isEnabledFor(logging.DEBUG):
+            import json as _json
+
+            tools_bytes = sum(
+                len(_json.dumps(t)) for t in self._tools_serialized
+            )
+            sys_bytes = len(system_prompt)
+            hist_bytes = sum(len(str(m.get("content") or "")) for m in history)
+            logger.debug(
+                "CockpitEngine.initialize: tools=%d tools_bytes=%d "
+                "system_bytes=%d history_messages=%d history_bytes=%d",
+                len(self._tools_serialized),
+                tools_bytes,
+                sys_bytes,
+                len(history),
+                hist_bytes,
+            )
 
         self._start = time.monotonic()
         self._iteration = 0

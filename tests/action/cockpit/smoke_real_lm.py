@@ -259,6 +259,8 @@ async def _main_async(args: argparse.Namespace) -> int:
     )
     if args.verbose:
         logging.getLogger("jvagent").setLevel(logging.INFO)
+    if args.debug:
+        logging.getLogger("jvagent.action.cockpit").setLevel(logging.DEBUG)
 
     print(f"App root: {app_root}")
     print("Bootstrapping...")
@@ -317,6 +319,11 @@ def main() -> int:
         help="Dump full per-utterance metrics as JSON to stdout + a file",
     )
     parser.add_argument("--verbose", action="store_true", help="Verbose logging")
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Cockpit DEBUG logging (prompt size telemetry)",
+    )
     args = parser.parse_args()
 
     return asyncio.run(_main_async(args))

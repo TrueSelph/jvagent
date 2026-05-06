@@ -91,34 +91,94 @@ async def assemble_cockpit_tools(ctx: CockpitContext) -> ToolRegistry:
     return registry
 
 
+# Tool tier whitelists. The model's prompt grows with every additional tool
+# schema, so most agents only need a curated subset. Tier values:
+#
+# - ``minimal``: bare essentials (~8 tools). Default for production cost focus.
+# - ``standard``: common workflows (~17 tools). Sensible default for most agents.
+# - ``full``: every harness tool (~23 tools). Use when in active development or
+#   when an agent specifically needs the long tail.
+#
+# Action and skill tools are NOT filtered by tier — they are always registered
+# in full (they reflect deliberate agent configuration).
+_TIER_MINIMAL = {
+    "memory_set",
+    "memory_get",
+    "response_publish",
+    "task_create_plan",
+    "task_update_step",
+    "cockpit_search",
+    "skill_search",
+    "skill_read",
+}
+
+_TIER_STANDARD = _TIER_MINIMAL | {
+    "memory_search",
+    "memory_list",
+    "memory_set_preference",
+    "task_get_status",
+    "task_add_step",
+    "conversation_search",
+    "artifact_add",
+    "artifact_get",
+    "artifact_search",
+}
+
+# ``full`` is realised by skipping the filter (no whitelist).
+_VALID_TIERS = {"minimal", "standard", "full"}
+
+
+def _resolve_tier_whitelist(tier: str) -> Optional[set]:
+    """Return the whitelist for ``tier``, or ``None`` to mean 'no filter'."""
+    if tier == "minimal":
+        return set(_TIER_MINIMAL)
+    if tier == "standard":
+        return set(_TIER_STANDARD)
+    if tier == "full":
+        return None
+    logger.warning(
+        "CockpitToolRegistry: unknown tool_tier=%r, falling back to 'standard'",
+        tier,
+    )
+    return set(_TIER_STANDARD)
+
+
 def _register_harness_tools(registry: ToolRegistry, ctx: CockpitContext) -> None:
     """Register memory, response, task, conversation, skill, artifact, and search harness tools.
 
-    Artifact + cockpit_search tools are gated by config flags (enable_artifact_tools,
-    enable_cockpit_search). The cockpit_search tool advertised at engine-time is
-    restricted to skills + tools (no interact_actions).
+    Filtered by ``cfg.tool_tier`` (``minimal``/``standard``/``full``) so the
+    model's prompt isn't bloated with tools the agent does not need. Artifact
+    tools and ``cockpit_search`` remain gated by their own enable flags so
+    operators can override the tier individually.
     """
     cfg = ctx.config
+    tier = getattr(cfg, "tool_tier", "standard") or "standard"
+    whitelist = _resolve_tier_whitelist(tier)
+
+    def _register(tool: Tool) -> None:
+        if whitelist is not None and tool.name not in whitelist:
+            return
+        registry.register(tool, prefix="harness")
 
     for tool in _build_memory_tools(ctx):
-        registry.register(tool, prefix="harness")
+        _register(tool)
     for tool in _build_response_tools(ctx):
-        registry.register(tool, prefix="harness")
+        _register(tool)
     for tool in _build_task_tools(ctx):
-        registry.register(tool, prefix="harness")
+        _register(tool)
     for tool in _build_conversation_tools(ctx):
-        registry.register(tool, prefix="harness")
+        _register(tool)
     for tool in _build_skill_tools(ctx):
-        registry.register(tool, prefix="harness")
+        _register(tool)
 
     if getattr(cfg, "enable_artifact_tools", True):
         for tool in _build_artifact_tools(ctx):
-            registry.register(tool, prefix="harness")
+            _register(tool)
 
     if getattr(cfg, "enable_cockpit_search", True):
         # Engine-context surface: skills + tools only (no interact_actions).
         for tool in _build_search_tools(ctx, permitted_kinds={KIND_SKILLS, KIND_TOOLS}):
-            registry.register(tool, prefix="harness")
+            _register(tool)
 
 
 async def _register_action_tools(registry: ToolRegistry, ctx: CockpitContext) -> None:

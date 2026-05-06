@@ -145,6 +145,7 @@ class CockpitInteractAction(InteractAction):
     enable_skill_helper_tools: bool = attribute(default=True)
     enable_artifact_tools: bool = attribute(default=True)
     enable_cockpit_search: bool = attribute(default=True)
+    tool_tier: str = attribute(default="standard")  # minimal | standard | full
     router_use_cockpit_search: bool = attribute(default=False)
     preload_user_memory: bool = attribute(default=True)
     user_memory_max_chars: int = attribute(default=4096)
@@ -211,6 +212,7 @@ class CockpitInteractAction(InteractAction):
             enable_artifact_tools=self.enable_artifact_tools,
             enable_cockpit_search=self.enable_cockpit_search,
             router_use_cockpit_search=self.router_use_cockpit_search,
+            tool_tier=self.tool_tier,
             preload_user_memory=self.preload_user_memory,
             user_memory_max_chars=self.user_memory_max_chars,
             auto_track_tasks=self.auto_track_tasks,

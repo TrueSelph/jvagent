@@ -45,6 +45,10 @@ class CockpitConfig:
     enable_artifact_tools: bool = True
     enable_cockpit_search: bool = True
     router_use_cockpit_search: bool = False
+    # Harness-tool tier: "minimal" | "standard" | "full". Trims rarely-used
+    # harness tools from the engine prompt to control token cost. Action and
+    # skill tools are not affected by this knob.
+    tool_tier: str = "standard"
     skill_index_inline_max_skills: int = 5
     enable_checkpoints: bool = True
     enable_evidence_log: bool = True

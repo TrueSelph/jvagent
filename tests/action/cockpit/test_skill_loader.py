@@ -306,6 +306,128 @@ async def test_register_skill_tools_handles_unknown_preloaded_skill(tmp_path):
     assert "not in discovered_skills" in (report.skipped()[0].reason or "")
 
 
+def test_resolve_tier_whitelist_known_tiers():
+    minimal = registry_mod._resolve_tier_whitelist("minimal")
+    standard = registry_mod._resolve_tier_whitelist("standard")
+    full = registry_mod._resolve_tier_whitelist("full")
+    assert isinstance(minimal, set) and "memory_set" in minimal
+    assert "memory_search" not in minimal
+    assert isinstance(standard, set) and "memory_search" in standard
+    assert "artifact_update" not in standard
+    assert full is None  # 'full' = no filter
+
+
+def test_resolve_tier_whitelist_unknown_falls_back_to_standard(caplog):
+    result = registry_mod._resolve_tier_whitelist("nonsense")
+    standard = registry_mod._resolve_tier_whitelist("standard")
+    assert result == standard
+
+
+def test_register_harness_tools_minimal_tier_filters_aggressively():
+    """tool_tier='minimal' registers only the 8 essential harness tools."""
+    from jvagent.action.cockpit.context import CockpitContext
+
+    cfg = MagicMock()
+    cfg.tool_tier = "minimal"
+    cfg.enable_artifact_tools = True
+    cfg.enable_cockpit_search = True
+
+    ctx = MagicMock(spec=CockpitContext)
+    ctx.config = cfg
+    ctx.visitor = MagicMock(_skill_state={})
+    ctx.response_bus = None
+    ctx.session_id = ""
+    ctx.interaction = None
+    ctx.persona = None
+    ctx.action = None
+    ctx.conversation = None
+    ctx.agent = None
+
+    tool_registry = ToolRegistry()
+    registry_mod._register_harness_tools(tool_registry, ctx)
+    names = set(tool_registry.names())
+
+    # Minimal essentials should be registered.
+    assert {
+        "memory_set",
+        "memory_get",
+        "response_publish",
+        "task_create_plan",
+        "task_update_step",
+        "cockpit_search",
+        "skill_search",
+        "skill_read",
+    }.issubset(names)
+    # Standard-only tools should NOT appear under minimal.
+    assert "memory_search" not in names
+    assert "artifact_add" not in names
+    assert "conversation_search" not in names
+    assert "task_get_status" not in names
+
+
+def test_register_harness_tools_standard_tier_default_includes_common():
+    from jvagent.action.cockpit.context import CockpitContext
+
+    cfg = MagicMock()
+    cfg.tool_tier = "standard"
+    cfg.enable_artifact_tools = True
+    cfg.enable_cockpit_search = True
+
+    ctx = MagicMock(spec=CockpitContext)
+    ctx.config = cfg
+    ctx.visitor = MagicMock(_skill_state={})
+    ctx.response_bus = None
+    ctx.session_id = ""
+    ctx.interaction = None
+    ctx.persona = None
+    ctx.action = None
+    ctx.conversation = None
+    ctx.agent = None
+
+    tool_registry = ToolRegistry()
+    registry_mod._register_harness_tools(tool_registry, ctx)
+    names = set(tool_registry.names())
+
+    # Standard adds search, list, helpers.
+    assert "memory_search" in names
+    assert "artifact_add" in names
+    assert "task_get_status" in names
+    # But NOT the rarely-used long-tail tools.
+    assert "memory_get_history" not in names
+    assert "artifact_update" not in names
+    assert "response_emit_thought" not in names
+
+
+def test_register_harness_tools_full_tier_registers_everything():
+    from jvagent.action.cockpit.context import CockpitContext
+
+    cfg = MagicMock()
+    cfg.tool_tier = "full"
+    cfg.enable_artifact_tools = True
+    cfg.enable_cockpit_search = True
+
+    ctx = MagicMock(spec=CockpitContext)
+    ctx.config = cfg
+    ctx.visitor = MagicMock(_skill_state={})
+    ctx.response_bus = None
+    ctx.session_id = ""
+    ctx.interaction = None
+    ctx.persona = None
+    ctx.action = None
+    ctx.conversation = None
+    ctx.agent = None
+
+    tool_registry = ToolRegistry()
+    registry_mod._register_harness_tools(tool_registry, ctx)
+    names = set(tool_registry.names())
+
+    # Long-tail tools should be present under 'full'.
+    assert "memory_get_history" in names
+    assert "artifact_update" in names
+    assert "response_emit_thought" in names
+    assert "conversation_summarize" in names
+
+
 @pytest.mark.asyncio
 async def test_register_skill_tools_collision_recorded_as_failed(tmp_path):
     """Two skills exporting tools that collide post-prefix → second fails."""
