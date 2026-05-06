@@ -150,6 +150,12 @@ class CockpitInteractAction(InteractAction):
     enable_artifact_tools: bool = attribute(default=True)
     enable_cockpit_search: bool = attribute(default=True)
     tool_tier: str = attribute(default="standard")  # minimal | standard | full
+
+    # Production-hygiene flags (Milestone G).
+    # production_mode is an umbrella: when True it pulls the underlying flags
+    # to safe defaults at config-build time (see _build_cockpit_config).
+    production_mode: bool = attribute(default=False)
+    block_raw_tool_invocation: bool = attribute(default=False)
     router_use_cockpit_search: bool = attribute(default=False)
     preload_user_memory: bool = attribute(default=True)
     user_memory_max_chars: int = attribute(default=4096)
@@ -186,6 +192,18 @@ class CockpitInteractAction(InteractAction):
         return bool(self.stream_internal_progress)
 
     def _build_cockpit_config(self) -> CockpitConfig:
+        # Production-mode umbrella (Milestone G): forces hygiene flags on top
+        # of operator settings. Operators who want a non-default mix should
+        # leave production_mode=False and set the underlying flags directly.
+        production = bool(self.production_mode)
+        stream_internal = self._resolve_stream_internal_progress()
+        enable_canned = bool(self.enable_canned_response)
+        block_raw_tools = bool(self.block_raw_tool_invocation)
+        if production:
+            stream_internal = False
+            enable_canned = False
+            block_raw_tools = True
+
         return CockpitConfig(
             model=self.model,
             model_temperature=self.model_temperature,
@@ -211,7 +229,9 @@ class CockpitInteractAction(InteractAction):
             denied_skills=list(self.denied_skills or []),
             skills_source=self.skills_source,
             response_mode=self.response_mode,
-            stream_internal_progress=self._resolve_stream_internal_progress(),
+            stream_internal_progress=stream_internal,
+            production_mode=production,
+            block_raw_tool_invocation=block_raw_tools,
             enable_skill_helper_tools=self.enable_skill_helper_tools,
             enable_artifact_tools=self.enable_artifact_tools,
             enable_cockpit_search=self.enable_cockpit_search,

@@ -510,6 +510,9 @@ class CockpitRouter:
 
     @property
     def _enable_canned_response(self) -> bool:
+        # Production mode (Milestone G) silences user-facing stalls.
+        if bool(getattr(self._action, "production_mode", False)):
+            return False
         return getattr(self._action, "enable_canned_response", True)
 
     @property

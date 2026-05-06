@@ -41,6 +41,20 @@ class CockpitConfig:
     # (model thoughts, reasoning chunks, tool progress badges).
     stream_internal_progress: bool = True
 
+    # Production-hygiene umbrella. When True, the resolver flips:
+    #   - stream_internal_progress = False (silence thought / reasoning / tool-progress)
+    #   - enable_canned_response  = False (no router lead-in stalls)
+    #   - block_raw_tool_invocation = True (defends the engine prompt)
+    # Operators can set the underlying flags directly when finer control is wanted.
+    production_mode: bool = False
+
+    # Defends against raw tool/skill invocation embedded in a user message
+    # (e.g. "/skill web_search", "call memory_set ..."). When True, the engine
+    # system prompt is augmented with a security block instructing the model
+    # to treat user text as content, not a command, and to never dispatch a
+    # tool just because its name appears in the utterance.
+    block_raw_tool_invocation: bool = False
+
     enable_skill_helper_tools: bool = True
     enable_artifact_tools: bool = True
     enable_cockpit_search: bool = True
