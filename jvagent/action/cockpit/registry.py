@@ -1,6 +1,7 @@
 """Cockpit tool registry: assembles harness + action + skill tools."""
 
 import importlib.util
+import inspect
 import logging
 import os
 import sys
@@ -241,6 +242,11 @@ async def _register_skill_tools(registry: ToolRegistry, ctx: CockpitContext) -> 
     action_resolver = None
     if ctx.agent:
         action_resolver = ActionResolver(ctx.agent)
+        # Attach to visitor so skill tools can find it via getattr(visitor, "action_resolver", None)
+        try:
+            setattr(ctx.visitor, "action_resolver", action_resolver)
+        except Exception:
+            pass
 
     preloaded = ctx.preloaded_skills if hasattr(ctx, "preloaded_skills") else []
 
@@ -459,8 +465,11 @@ def _load_tool_module(
     qualified_name = f"{prefix}__{raw_tool_name}"
 
     async def _wrapped_execute(**kwargs: Any) -> str:
-        result = execute_fn(kwargs)
-        import inspect
+        sig = inspect.signature(execute_fn)
+        if "visitor" in sig.parameters:
+            result = execute_fn(kwargs, visitor=ctx.visitor)
+        else:
+            result = execute_fn(kwargs)
 
         if inspect.isawaitable(result):
             result = await result
