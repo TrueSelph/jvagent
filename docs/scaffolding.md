@@ -174,7 +174,7 @@ jvagent --update
 
 ## Skill catalogs and custom skills
 
-Thinking agents support two skill sources:
+Cockpit agents support two skill sources:
 
 1. Built-in reusable skill catalog shipped with jvagent (`jvagent/skills/*`)
 2. App-local custom skills in `agents/<ns>/<id>/skills/<skill_name>/SKILL.md`
@@ -182,7 +182,7 @@ Thinking agents support two skill sources:
 When a skill name exists in both, app-local overrides built-in.
 
 Runtime exposure is controlled per agent in `agents/<ns>/<id>/agent.yaml` on
-`jvagent/skill_interact_action` via:
+`jvagent/cockpit_interact_action` via:
 
 - `skills`: `-all` or a list of names/globs (default unset = expose none)
 - `denied_skills`: optional subtractive names/globs

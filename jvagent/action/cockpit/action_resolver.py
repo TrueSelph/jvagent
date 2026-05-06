@@ -1,7 +1,4 @@
-"""Cockpit-local ActionResolver and version utilities.
-
-Self-contained — no imports from jvagent.action.skill.
-"""
+"""ActionResolver and version utilities for cockpit."""
 
 from __future__ import annotations
 
@@ -13,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Inline version_satisfies (from jvagent.action.skill.version_utils)
+# Version constraint helper
 # ---------------------------------------------------------------------------
 
 

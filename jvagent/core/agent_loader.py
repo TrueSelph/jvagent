@@ -750,36 +750,28 @@ def _apply_properties(
             logger.warning(f"Could not set {type(target).__name__}.{key}: {e}")
 
 
+_REMOVED_INTERACT_ACTION_TOKENS: Tuple[str, ...] = (
+    "agent_interact_action",
+    "skill_interact_action",
+    "interact_router",
+)
+
+
 def _validate_interact_routing_config(declared_actions: List[Dict[str, Any]]) -> None:
-    """Emit migration notices for interact-related actions.
+    """Warn when agent.yaml still references actions removed in favor of CockpitInteractAction."""
+    found: List[str] = []
+    for entry in declared_actions:
+        ref = entry.get("action", "")
+        for token in _REMOVED_INTERACT_ACTION_TOKENS:
+            if token in ref and ref not in found:
+                found.append(ref)
+                break
 
-    ``agent_interact_action`` is the unified interact stack.  Legacy actions
-    may appear alone or together; no pairing is enforced.  Warnings only —
-    never blocks registration.
-    """
-    has_new = any(
-        "agent_interact_action" in a.get("action", "") for a in declared_actions
-    )
-    has_router = any("interact_router" in a.get("action", "") for a in declared_actions)
-    has_skill = any(
-        "skill_interact_action" in a.get("action", "") for a in declared_actions
-    )
-
-    if not has_new and not has_router and not has_skill:
+    if not found:
         return
 
-    if has_new:
-        if has_router or has_skill:
-            logger.warning(
-                "Both AgentInteractAction and legacy interact actions declared; "
-                "using AgentInteractAction. Remove legacy interact_router and "
-                "skill_interact_action from agent.yaml."
-            )
-        return
-
-    if has_router and has_skill:
-        logger.warning(
-            "Using deprecated InteractRouter + SkillInteractAction. "
-            "Migrate to AgentInteractAction for lower latency and mid-loop "
-            "skill discovery. See docs/migration.md."
-        )
+    logger.warning(
+        "agent.yaml declares removed interact action(s) %s. These have been "
+        "replaced by jvagent/cockpit_interact_action. Update agent.yaml.",
+        found,
+    )

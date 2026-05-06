@@ -1,8 +1,4 @@
-"""Cockpit-local skill catalog: discovery, rendering, and search.
-
-Self-contained — imports only from core modules (jvagent.scaffold, jvagent.core),
-NOT from jvagent.action.skill.
-"""
+"""Cockpit skill catalog: discovery, rendering, and search."""
 
 from __future__ import annotations
 
@@ -23,7 +19,7 @@ from jvagent.scaffold.skill_resolve import (
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Inline prompt templates (from jvagent.action.skill.prompts)
+# Skill index prompt templates
 # ---------------------------------------------------------------------------
 
 _SKILL_INDEX_INTRO = """You have access to the following Claude-style skill bundles.
@@ -79,12 +75,7 @@ _SKILL_DISCOVERY_CACHE_TTL = 60
 
 
 class SkillCatalog:
-    """Cockpit-local skill catalog: discovery, rendering, and search.
-
-    Implements only the subset of SkillCatalog methods that the cockpit module needs.
-    Imports from core modules only (jvagent.scaffold, jvagent.core) — NOT from
-    jvagent.action.skill.
-    """
+    """Skill catalog used by cockpit for discovery, rendering, and search."""
 
     # Class-level cache: {cache_key: (discovered_skills_dict, cached_at)}
     _cache: Dict[str, Tuple[Dict[str, Dict[str, Any]], datetime]] = {}
@@ -347,6 +338,47 @@ class SkillCatalog:
                 exc_info=True,
             )
             return cls({})
+
+    @classmethod
+    async def invalidate_cache(
+        cls,
+        namespace: Optional[str] = None,
+        agent_name: Optional[str] = None,
+    ) -> None:
+        """Invalidate cached skill discovery entries.
+
+        Args:
+            namespace: If provided, invalidate only entries for this namespace.
+            agent_name: If provided with namespace, invalidate only for this agent.
+        """
+        if cls._cache_lock is None:
+            cls._cache_lock = asyncio.Lock()
+
+        async with cls._cache_lock:
+            if namespace is None:
+                cls._cache.clear()
+                logger.debug("SkillCatalog cache cleared")
+                return
+
+            keys_to_remove: List[str] = []
+            for key in cls._cache:
+                parts = key.split("|")
+                if len(parts) >= 2:
+                    key_ns = parts[0]
+                    key_agent = parts[1]
+                    if key_ns == namespace:
+                        if agent_name is None or key_agent == agent_name:
+                            keys_to_remove.append(key)
+
+            for key in keys_to_remove:
+                del cls._cache[key]
+
+            logger.debug(
+                "SkillCatalog cache invalidated for %s/%s (%d entries)",
+                namespace or "*",
+                agent_name or "*",
+                len(keys_to_remove),
+            )
 
     # ------------------------------------------------------------------
     # Internal helpers

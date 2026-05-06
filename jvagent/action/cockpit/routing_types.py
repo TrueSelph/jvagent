@@ -1,7 +1,4 @@
-"""Cockpit-local routing types and formatting utilities.
-
-Self-contained — no imports from jvagent.action.router or jvagent.action.skill.
-"""
+"""Cockpit routing types and formatting utilities."""
 
 import json
 import logging

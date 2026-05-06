@@ -1,7 +1,4 @@
-"""Cockpit-local contracts: termination reasons, phase enums, and result types.
-
-Self-contained — no imports from jvagent.action.skill or jvagent.action.router.
-"""
+"""Cockpit contracts: termination reasons, phase enums, and result types."""
 
 from __future__ import annotations
 

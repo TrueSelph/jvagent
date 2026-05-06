@@ -22,7 +22,7 @@ The cockpit module imports **only** from:
 - `jvagent.core.*` (app_context, cache, scaffold skill resolution)
 - Standard library
 
-It has **zero** imports from `jvagent.action.skill`, `jvagent.action.router`, or `jvagent.action.persona`. Utilities that would create circular dependencies (e.g., `version_satisfies`) are inlined locally. PersonaAction is accessed via duck‑typing (`hasattr(persona, "respond_slim")`) and `self.get_action("PersonaAction")`.
+It has **zero** imports from `jvagent.action.router` or `jvagent.action.persona`. Utilities that would create circular dependencies (e.g., `version_satisfies`) are inlined locally. PersonaAction is accessed via duck‑typing (`hasattr(persona, "respond_slim")`) and `self.get_action("PersonaAction")`.
 
 ---
 
@@ -617,7 +617,7 @@ Resolves graph‑persisted Actions by entity type for skill tool modules. Create
 | `validate_requirements(types)` | Validate all required actions exist and are enabled |
 | `validate_action_ref_versions(constraints)` | Validate namespace/label refs against installed versions |
 
-Uses inlined `version_satisfies()` instead of importing from `jvagent.action.skill.version_utils` to maintain self‑containment.
+Uses an inlined `version_satisfies()` helper to keep the cockpit module self‑contained.
 
 ---
 

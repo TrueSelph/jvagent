@@ -145,9 +145,11 @@ class AnthropicLanguageModelAction(LanguageModelAction):
     def prepare_messages_for_reasoning(
         self, messages: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        from jvagent.action.skill.loop_context import LoopContext
+        from jvagent.action.model.utils.message_format import (
+            convert_messages_for_provider,
+        )
 
-        return LoopContext.convert_for_provider(messages, "anthropic")
+        return convert_messages_for_provider(messages, "anthropic")
 
     def _extract_system_and_messages(
         self, messages: List[Dict[str, Any]]

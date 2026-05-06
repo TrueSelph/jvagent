@@ -101,9 +101,11 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any = None) -> Any:
     # Hot-unload from current session
     hot_unloaded = False
     try:
-        from jvagent.action.skill.skill_interact_action import SkillInteractAction
+        from jvagent.action.cockpit.cockpit_interact_action import (
+            CockpitInteractAction,
+        )
 
-        hot_unloaded = await SkillInteractAction.remove_skill(visitor, skill_name)
+        hot_unloaded = await CockpitInteractAction.remove_skill(visitor, skill_name)
     except Exception as exc:
         logger.warning(
             "Hot-unload failed (skill removed from disk but still in session): %s",

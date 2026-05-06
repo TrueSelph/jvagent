@@ -625,7 +625,7 @@ def _handle_agent_create_command(args: List[str], app_root: str = None) -> None:
         default="cockpit",
         help=(
             "Profile when spec has no @profile (default: cockpit). "
-            "Builtins: cockpit, minimal, conversational, agentic, research, "
+            "Builtins: cockpit, minimal, conversational, research, "
             "whatsapp_voice."
         ),
     )

@@ -784,3 +784,80 @@ class CockpitInteractAction(InteractAction):
         if not (getattr(persona, "persona_description", None) or "").strip():
             return False
         return True
+
+    @classmethod
+    async def refresh_skills(cls, visitor: InteractWalker) -> List[str]:
+        """Re-discover skills and merge any newly installed bundles into the live session.
+
+        The cockpit assembles its tool registry fresh on every step from
+        ``visitor._skill_state["discovered_skills"]``, so updating that dict
+        is sufficient — no per-call registration is needed.
+        """
+        state = getattr(visitor, "_skill_state", None)
+        if state is None:
+            logger.warning("refresh_skills: no _skill_state on visitor")
+            return []
+
+        agent = getattr(visitor, "_agent", None)
+        if agent is None:
+            return []
+
+        action = state.get("action")
+        discovered_skills: Dict[str, Any] = state.get("discovered_skills") or {}
+        skill_catalog = state.get("skill_catalog")
+
+        await SkillCatalog.invalidate_cache(
+            namespace=agent.namespace,
+            agent_name=agent.name,
+        )
+        new_catalog = await SkillCatalog.discover(
+            visitor=visitor,
+            skills_selector=getattr(action, "skills", None) if action else None,
+            skills_source=getattr(action, "skills_source", "both") if action else "both",
+            denied_skills=getattr(action, "denied_skills", None) if action else None,
+        )
+        new_skills = new_catalog.skills
+        newly_found = [name for name in new_skills if name not in discovered_skills]
+
+        if not newly_found and new_skills.keys() == discovered_skills.keys():
+            return []
+
+        discovered_skills.update(new_skills)
+        state["discovered_skills"] = discovered_skills
+        if skill_catalog is not None:
+            skill_catalog.skills = discovered_skills
+
+        logger.info(
+            "refresh_skills: merged %d new skill(s): %s",
+            len(newly_found),
+            newly_found,
+        )
+        return newly_found
+
+    @classmethod
+    async def remove_skill(cls, visitor: InteractWalker, skill_name: str) -> bool:
+        """Hot-unload *skill_name* from the current cockpit session."""
+        state = getattr(visitor, "_skill_state", None)
+        if state is None:
+            return False
+
+        discovered_skills = state.get("discovered_skills") or {}
+        skill_catalog = state.get("skill_catalog")
+
+        if skill_name not in discovered_skills:
+            return False
+
+        discovered_skills.pop(skill_name, None)
+        state["discovered_skills"] = discovered_skills
+        if skill_catalog and isinstance(getattr(skill_catalog, "skills", None), dict):
+            skill_catalog.skills.pop(skill_name, None)
+
+        agent = getattr(visitor, "_agent", None)
+        if agent is not None:
+            await SkillCatalog.invalidate_cache(
+                namespace=agent.namespace,
+                agent_name=agent.name,
+            )
+
+        logger.info("remove_skill: removed skill '%s' from session", skill_name)
+        return True

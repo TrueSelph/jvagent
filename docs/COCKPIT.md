@@ -127,7 +127,7 @@ The interact pipeline (`InteractWalker` → `Actions` → sorted `InteractAction
 
 ## Module Structure
 
-The cockpit module at `jvagent/action/cockpit/` is self-contained — it imports only from core modules (`jvagent.action.skill`, `jvagent.action.router`, `jvagent.tooling`, etc.) and has zero dependencies on `jvagent/action/agent_interact`.
+The cockpit module at `jvagent/action/cockpit/` is self-contained — it imports only from `jvagent.action.router`, `jvagent.tooling`, and core modules.
 
 | File | Purpose |
 |------|---------|

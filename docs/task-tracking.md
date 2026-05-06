@@ -15,10 +15,10 @@ Each entry in `tasks` uses this normalized shape:
 
 ```json
 {
-  "id": "SkillInteractAction:907b4a8af2e5",
+  "id": "CockpitInteractAction:907b4a8af2e5",
   "type": "AGENTIC_LOOP",
   "description": "Agentic task: ...",
-  "owner_action": "SkillInteractAction",
+  "owner_action": "CockpitInteractAction",
   "status": "active",
   "data": {
     "trigger_at": null,
@@ -103,7 +103,7 @@ Webhook URLs can be configured with:
 
 ## Integration notes
 
-- **SkillInteractAction** uses `visitor.tasks.track(...)` and records structured steps.
+- **CockpitInteractAction** uses `visitor.tasks.track(...)` and records structured steps via the cockpit engine.
 - **DirectiveBuilder** starts and completes/cancels interview tasks through `visitor.tasks`.
 - **TaskCreationInteractAction** creates proactive tasks via `visitor.tasks.create(...)`.
 - **TaskDispatcher** starts tasks before dispatch and completes/fails through store APIs.
@@ -114,4 +114,4 @@ Webhook URLs can be configured with:
 - [Conversation](jvagent/memory/conversation.py)
 - [TaskStore](jvagent/memory/task_store.py)
 - [InteractWalker](jvagent/action/interact/interact_walker.py)
-- [SkillInteractAction](jvagent/action/skill/skill_interact_action.py)
+- [CockpitInteractAction](jvagent/action/cockpit/cockpit_interact_action.py)

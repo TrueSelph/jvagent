@@ -62,7 +62,7 @@ Modular AI agent platform built on jvspatial's graph primitives. Declarative `ap
 
    PageIndex (document ingestion/retrieval) lists its Python packages under `package.dependencies.pip` in [`jvagent/action/pageindex/info.yaml`](jvagent/action/pageindex/info.yaml). They are installed automatically when that action loads unless `JVAGENT_DISABLE_RUNTIME_PIP_INSTALL=true` (for air-gapped or pre-baked images, install those pip lines yourself).
 
-   PDF fallback (**WeasyPrint** for `pdf_generation__pandoc_fallback`): declare `weasyprint` under `package.dependencies.pip` on your SkillInteractAction (see the proposal example’s [`proposal_skill_interact_action/info.yaml`](examples/jvagent_app/agents/jvagent/proposal_agent/actions/jvagent/proposal_skill_interact_action/info.yaml)). **LaTeX** is not a pip package—install a system TeX distribution for `pdf_generation__latex_compile`.
+   PDF fallback (**WeasyPrint** for `pdf_generation__pandoc_fallback`): declare `weasyprint` under `package.dependencies.pip` on your `CockpitInteractAction`. **LaTeX** is not a pip package—install a system TeX distribution for `pdf_generation__latex_compile`.
 
 ### Install from Distribution
 
@@ -462,7 +462,7 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
 - **Simplified API**: Pass directives and parameters directly to `respond()` method
 - **Bulk Operations**: Use `add_directives()` and `add_parameters()` for efficient batch operations
 - **Automatic Persistence**: Interactions are automatically saved after adding directives/parameters
-- **Routing Support**: Can be routed via InteractRouter based on anchor statements (legacy stack), or use **`jvagent/agent_interact_action`** ([AgentInteract](docs/agent-interact.md)) for unified LLM routing plus skills in one interact action
+- **Routing Support**: Can be routed via InteractRouter based on anchor statements, or use **`jvagent/cockpit_interact_action`** ([Cockpit](docs/COCKPIT.md)) for unified LLM routing plus skills in one interact action
 
 See the [InteractAction API Guide](jvagent/action/interact/README.md) for complete documentation.
 
@@ -1053,7 +1053,7 @@ InteractActions are actions that participate in the interact subsystem. They ser
 **Architecture:**
 - InteractActions are modular execution points in a chain
 - The InteractWalker traverses and executes the modular pipeline
-- Core actions like InteractRouter (legacy) or **AgentInteractAction** ([guide](docs/agent-interact.md)) alter/curate the walker's path based on input
+- Core actions like InteractRouter or **CockpitInteractAction** ([guide](docs/COCKPIT.md)) alter/curate the walker's path based on input
 - InteractActions may have branches of other InteractActions
 - **Top-level InteractActions** (directly connected to the Actions branch node) **must explicitly route the walker to their children** conditionally - the walker does not automatically traverse child actions from top-level actions
 
@@ -1132,8 +1132,8 @@ OpenAI actions read credentials from environment (`OPENAI_API_KEY`).
 
 **Core Action Documentation:**
 - [InteractAction API Guide](jvagent/action/interact/README.md) - Complete guide to InteractAction API including `respond()` method
-- [AgentInteract](docs/agent-interact.md) - Unified `AgentInteractAction` (routing, skills, interact-action targets, canned lead-ins, prompts)
-- [InteractRouter](jvagent/action/router/README.md) - Legacy intent-based routing (often paired with `skill_interact_action`)
+- [Cockpit](docs/COCKPIT.md) - Unified `CockpitInteractAction` (routing, skills, interact-action targets, think-act-observe loop)
+- [InteractRouter](jvagent/action/router/README.md) - Standalone intent-based routing
 - [RetrievalInteractAction](jvagent/action/retrieval/README.md) - Vector store retrieval with simplified API
 - [IntroInteractAction](jvagent/action/intro/README.md) - First-time user welcome messages
 - [InterviewInteractAction](jvagent/action/interview/README.md) - Reusable interview system for stepwise information collection with validation
@@ -2058,7 +2058,7 @@ For more details, see [jvagent/bundle/README.md](jvagent/bundle/README.md).
 ### Action Modules
 
 - [InteractAction API](jvagent/action/interact/README.md)
-- [AgentInteract package](jvagent/action/agent_interact/README.md) — `AgentInteractAction` source layout
+- [Cockpit package](docs/COCKPIT.md) — `CockpitInteractAction` source layout
 - [InteractRouter](jvagent/action/router/README.md)
 - [RetrievalInteractAction](jvagent/action/retrieval/README.md)
 - [IntroInteractAction](jvagent/action/intro/README.md)
