@@ -28,93 +28,93 @@ from jvagent.core.cache import (
 
 logger = logging.getLogger(__name__)
 
-ROUTING_SYSTEM_PROMPT = """\
-You are a routing classifier for a cockpit agent. Analyze the user's message and determine:
-1. The posture: RESPOND (default — handle normally) | SUPPRESS (ignore silently) | DEFER (accumulate for later).
-2. The intent type: CONVERSATIONAL | INFORMATIONAL | DIRECTIVE | INTERACTIVE | UNCLEAR.
-3. The interpretation: a brief summary of what the user wants.
-4. The recommended skills from the available skills list (may be empty).
+ROUTING_SYSTEM_PROMPT = """You are a unified classification and routing intelligence for a conversational cockpit agent. First classify response posture (RESPOND/SUPPRESS/DEFER), then — only when posture is RESPOND — classify intent, select skills, and (when appropriate) emit a brief canned lead-in.
 
-# Posture rules — read carefully
-- **RESPOND is the default.** Use it whenever the user is asking for something, sharing
-  information, giving an instruction, asking a question, or otherwise engaging with the
-  agent. The engine has harness tools beyond skills (memory, artifacts, task planning,
-  conversation search) so even messages that don't match any listed skill can still be
-  handled — pick RESPOND with an empty skills list and the engine will figure it out.
-- **SUPPRESS** only for clearly off-topic noise the agent should not engage with at all
-  (e.g. accidental keystrokes, spam, content unrelated to the agent's purpose). When in
-  doubt, choose RESPOND, not SUPPRESS.
-- **DEFER** only when the user message is a fragment that should accumulate with later
-  messages before responding (long-running multi-turn input mode).
+STEP 0 — POSTURE (RESPOND | SUPPRESS | DEFER)
+Trace the flow from history to the current message. What was the most recent assistant message? How does the current user message relate?
 
-# Intent rules
-- CONVERSATIONAL: greetings, small talk, social niceties.
-- INFORMATIONAL: questions seeking information ("what is...", "tell me about...").
-- DIRECTIVE: imperative requests ("do X", "remember Y", "save Z", "search for W").
-  Personal-fact statements like "my name is..." or "remember that I..." are DIRECTIVE.
-- INTERACTIVE: requires a back-and-forth interaction (forms, multi-turn flows).
-- UNCLEAR: only when the message is genuinely ambiguous.
+RESPOND — use when:
+- Greeting, opener, first contact ("Hey", "Hi", "Hello") — ALWAYS RESPOND
+- Question, request, substantive statement
+- User sent media (images, documents) — ALWAYS RESPOND; treat as request to view/interpret
+- Answer (affirmative OR negative) to assistant's direct question ("ok", "yes", "no", "no sorry", "nope", "sure" after "Would you like X?")
+- Gratitude for directly preceding assistant help ("Thanks!" after answer) — allow "you're welcome"
+- Short but contextually coherent message; when in doubt, use RESPOND
+- Personal-fact statements like "my name is..." or "remember that I..." — DIRECTIVE intent, RESPOND
 
-Respond ONLY with a JSON object:
-{
-  "posture": "RESPOND|SUPPRESS|DEFER",
-  "intent_type": "CONVERSATIONAL|INFORMATIONAL|DIRECTIVE|INTERACTIVE|UNCLEAR",
-  "interpretation": "brief summary",
-  "skills": ["skill_name_1", "skill_name_2"],
-  "confidence": 0.0-1.0,
-  "canned_response": "brief acknowledgement if appropriate"
-}
+SUPPRESS — use ONLY when:
+- Social closing (goodbye) AND exchange already concluded or same closing already exchanged
+- Redundant gratitude after assistant already said "you're welcome"
+- Hanging acknowledgment ("ok", "alright") with nothing to answer AND exchange at natural pause
+- NEVER SUPPRESS: direct answer to question ("No sorry"), greetings, "thanks" before "you're welcome", any new request, any personal-fact statement.
+
+DEFER — use ONLY when:
+- Utterance genuinely unintelligible/fragmentary ("Actually...", "wait no I") AND history lacks context
+- NEVER DEFER: User sent media; use RESPOND.
+
+STEP 1 — ROUTE SELECTION (only when posture=RESPOND)
+Pick zero or more **skill** names from the catalog. The cockpit engine has harness tools beyond skills (memory, artifacts, task planning, conversation search), so a request that doesn't match any listed skill can still be handled — emit ``skills: []`` and the engine will figure it out. Use exact skill keys, never descriptions.
+
+CORE PRINCIPLES:
+- CONVERSATIONAL intent (greetings, thanks, smalltalk) MUST have empty skills [].
+- canned_response (when emitted): non-conclusive **lead-in only** — a fragment or stall that the engine's main reply will continue in the same turn; never a standalone sentence that answers, refuses, advises, redirects, or closes the topic.
+
+INTENT TYPES (when posture=RESPOND):
+- CONVERSATIONAL: greeting, thanks, smalltalk only; no request.
+- INFORMATIONAL: question, lookup, knowledge retrieval.
+- INTERACTIVE: multi-turn (interview / form-fill / back-and-forth).
+- DIRECTIVE: direct command, imperative ("search for X", "remember that...", "save Z").
+- UNCLEAR: cannot determine.
+
+GROUNDING:
+- Use this prompt, history, the skill catalog, and any tool output as admissible evidence for posture, intent, and interpretation.
+- Do not treat general pretrained world knowledge as authoritative; when unsure, lower confidence.
 """
 
-ROUTING_USER_PROMPT_TEMPLATE = """\
-User message: {utterance}
+ROUTING_USER_PROMPT_TEMPLATE = """CONVERSATION STATE:
+{active_tasks_section}{history_section}{prior_fragments_section}
+CURRENT USER MESSAGE:
+{utterance}
 
-Available skills:
+SKILLS CATALOG (JSON keys = only valid "skills" array entries):
 {skills_json}
 
-{history_section}
-{entity_field}
-{canned_field}
-{optional_instructions}
-{prior_fragments_section}
+TASK: 1) Classify posture (RESPOND/SUPPRESS/DEFER). 2) If posture=RESPOND, classify intent and fill skills; otherwise use skills=[], canned_response="", intent_type="UNCLEAR".
 
-Classify the intent and recommend skills.
-"""
+POSTURE RULES (recap):
+- RESPOND: greeting (always), question, request, answer to question, gratitude for help, personal-fact statement, contextually coherent message. When in doubt, RESPOND.
+- SUPPRESS: closing after exchange concluded; redundant thanks; hanging "ok" with nothing to answer. NEVER for direct answers, greetings, or new requests.
+- DEFER: genuinely unintelligible fragment AND no context. NEVER for media attachments.
 
-ROUTING_CANNED_INSTRUCTIONS_TEMPLATE = """\
+RULES:
+1. The ">>> USER RESPONDS NOW <<<" marker in history indicates the transition to the current user message.
+2. Output posture first; then interpretation, intent_type, skills, confidence (and canned_response when posture=RESPOND).
+3. CONVERSATIONAL intent MUST have empty skills [].
+4. Each skills array entry MUST be an exact catalog key, NOT a description or tag.
+5. If the assistant's most recent message was a question and the user answers, use INTERACTIVE.
+6. Lower confidence if ambiguous{optional_instructions}
 
-# Canned response (filler shown immediately while the engine works)
-The ``canned_response`` field is a brief, in-character acknowledgement that the
-user sees right away — before the engine produces the real answer. Think of it
-as the human-like "let me check on that" you'd say while looking something up.
-Skip it for these intent types: {skip_intents}.
+INTERPRETATION: Brief synopsis of user intent and why this posture applies. Target one sentence, ~15-30 words.
 
-Rules:
-- Keep it under {max_words} words.
-- Sound like a person, not a chatbot. Vary phrasing across calls.
-- Reference the topic when natural ("Let me check on that quantum news",
-  "Sure, looking up Silvies Online now").
-- Acknowledge or reflect the user's framing, don't pre-empt the answer.
-- Match the persona's tone where you can{persona_tone_hint}.
-- Do NOT promise a complete answer or claim to already know it.
-- No stock phrases like "Processing your request." or "Here's what I found."
+OUTPUT (JSON only):
+{{
+  "posture": "RESPOND|SUPPRESS|DEFER",
+  "interpretation": "Brief synopsis of user intent and why this posture applies.",
+  "intent_type": "CONVERSATIONAL|INFORMATIONAL|INTERACTIVE|DIRECTIVE|UNCLEAR",
+  "skills": ["SkillName1"],
+  "confidence": 0.0-1.0{entity_field}{canned_field}
+}}"""
 
-Good examples:
-- "Sure — pulling that up now."
-- "Let me check on the latest quantum computing news."
-- "On it. Give me a moment to dig into that."
-- "Got it. Checking the docs for you."
-- "One sec — let me find that."
-- "Alright, looking into Silvies Online."
+ROUTING_CANNED_INSTRUCTIONS_TEMPLATE = """
+7. canned_response: use "" when intent_type is one of: {skip_intents}. Otherwise same language as the CURRENT USER MESSAGE; ≤{max_words} words; vary wording across turns.{persona_tone_hint}
 
-Bad examples (do not produce these):
-- "Here's what I found about it."           ← pre-empts the answer
-- "Processing your request."                 ← robotic
-- "I'll help you with that."                 ← generic, no topical reference
-- "One moment please."                       ← stock chatbot phrase
-
-If the message clearly doesn't warrant filler (greetings, very short replies,
-unclear intent), leave ``canned_response`` empty.
+   STRICT — lead-in acknowledgement ONLY (must sound incomplete; the real reply follows immediately after in the same turn):
+   - ALLOWED: hesitation, filler, or a short fragment with no full thought (e.g. "Hmm…", "One sec…", "Let me see…", "On it…", "Looking that up…" in the user's language). Reference the topic when natural ("Hmm… looking into Silvies Online…").
+   - FORBIDDEN — **no conclusive or substantive content whatsoever**: no answers, explanations, outcomes, reasons, advice, instructions to the user, refusals, limits, policy, apologies-for-limits, workarounds, redirects, or any string that could read as a finished message. If it could stand alone in chat, it is wrong.
+   - FORBIDDEN patterns (illustrative, not exhaustive): two clauses that resolve or pivot ("…, but you can…"; "…, so …"); "I can't …" / "I'm unable …" / "You should …" / "Try …" / anything that addresses the user's request without an obvious follow-on in the same bubble. Also forbidden: pre-emptive "Here's what I found…" / "Got it, here's…" — those imply the answer is already coming.
+   - BAD: "I can't check the time, but you can look at your device." — explains and concludes; belongs in the main reply only, never in canned_response.
+   - BAD: "Here's what I found about Silvies Online." — pre-empts the answer.
+   - GOOD: "Hmm…" / "Just a moment…" / "On it — pulling up Silvies Online…" — acknowledges processing only; carries zero standalone substance.
 """
 
 ROUTING_CLARIFICATION_FALLBACK_MESSAGES = [
@@ -211,7 +211,10 @@ class CockpitRouter:
             if result.is_defer() and getattr(self._action, "enable_accumulation", True):
                 return result.posture, result
 
-            # Canned response publishing
+            # Publish canned lead-in (LLM-generated by the routing call) before
+            # the engine runs. The strict lead-in-only rules in
+            # ``ROUTING_CANNED_INSTRUCTIONS_TEMPLATE`` keep this fragmentary
+            # and language-matched.
             canned = result.canned_response
             if (
                 self._enable_canned_response
@@ -220,7 +223,9 @@ class CockpitRouter:
                 and result.intent_type not in self._skip_canned_for_intents
             ):
                 try:
-                    await self._action.publish(visitor, canned.strip(), transient=True)
+                    await self._action.publish(
+                        visitor, canned.strip(), transient=True
+                    )
                     interaction.canned_response = canned.strip()
                     await interaction.save()
                 except Exception as e:
@@ -339,8 +344,8 @@ class CockpitRouter:
         """Build a short tonal hint to splice into the canned-response prompt.
 
         Returns either an empty string (no persona context available) or a
-        bracketed clause like ``: <agent_name>'s persona is "<short_desc>"``
-        that the canned-response instructions can reference for tonal match.
+        leading-space clause like `` (Tonally match the agent persona: …)``
+        that splices cleanly into the canned-response instructions.
         """
         try:
             persona = await self._action.get_action("PersonaAction")
@@ -350,11 +355,9 @@ class CockpitRouter:
             desc = (getattr(persona, "persona_description", "") or "").strip()
             if not desc:
                 return ""
-            # Compact: one line, capped, no trailing newlines.
             short = " ".join(desc.split())[:200]
-            if name:
-                return f": {name}'s persona is \"{short}\""
-            return f": persona is \"{short}\""
+            tag = f"{name} — {short}" if name else short
+            return f' (Tonally match the agent persona: "{tag}".)'
         except Exception:
             return ""
 

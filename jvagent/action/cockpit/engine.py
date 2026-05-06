@@ -577,7 +577,11 @@ class CockpitEngine:
             if store is None:
                 return
             utterance = (self.ctx.utterance or "").strip()
-            title = (utterance[:80] + "…") if len(utterance) > 80 else (utterance or "Cockpit run")
+            title = (
+                (utterance[:80] + "…")
+                if len(utterance) > 80
+                else (utterance or "Cockpit run")
+            )
             task = await store.create(
                 title=title,
                 description=utterance or "Cockpit auto-tracked run",

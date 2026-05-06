@@ -23,6 +23,32 @@ class Tool:
     def __post_init__(self) -> None:
         if not self.parameters_schema:
             self.parameters_schema = {"type": "object", "properties": {}}
+        # Validate against strict-provider rules (OpenAI gpt-4.1 etc.) so a
+        # malformed schema fails fast at construction rather than at first
+        # model call. We log + tolerate rather than raise here so a single
+        # bad tool can't take down the whole agent boot — the tool will
+        # still serialize and may fail downstream, but at least the
+        # diagnostic appears immediately and labels the offending tool.
+        try:
+            from jvagent.tooling.tool_schema_validator import (
+                validate_parameters_schema,
+            )
+
+            issues = validate_parameters_schema(self.parameters_schema)
+            if issues:
+                import logging as _logging
+
+                _log = _logging.getLogger(__name__)
+                for path, msg in issues:
+                    _log.warning(
+                        "Tool %r has invalid parameters_schema at %s: %s",
+                        self.name,
+                        path,
+                        msg,
+                    )
+        except Exception:
+            # Validator import failed (e.g. circular) — skip silently.
+            pass
 
     async def call(self, **kwargs: Any) -> ToolResult:
         result = self.execute(**kwargs)

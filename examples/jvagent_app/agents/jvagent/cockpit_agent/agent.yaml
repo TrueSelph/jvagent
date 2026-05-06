@@ -37,13 +37,17 @@ actions:
       enabled: true
       router_model: gpt-4o-mini
       router_model_action_type: OpenAILanguageModelAction
-      model_action_type: OllamaLanguageModelAction
-      model: deepseek-v4-flash:cloud
+      # model_action_type: OllamaLanguageModelAction
+      # model: deepseek-v4-flash:cloud
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4.1
       skills:
         - pageindex_search
         - pageindex_docs
         - web_search
         - research
+      tool_servers:
+        - filesystem
       skills_source: both
       max_iterations: 25
       strict_grounding: true
@@ -70,6 +74,29 @@ actions:
       temperature: 0.2
       max_tokens: 4096
       timeout: 60
+
+  - action: jvagent/mcp
+    context:
+      enabled: true
+      description: >
+        Example MCP gateway with a sandboxed filesystem server (npx). Registers tools under tool_servers
+        for SkillInteractAction; fulfills multi-server patterns alongside streamable_http MCP apps.
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      sandbox_mode: true
+      sandbox_user_scoped: true
+      servers:
+        - name: filesystem
+          enabled: true
+          transport: stdio
+          command: npx
+          args:
+            - -y
+            - "@modelcontextprotocol/server-filesystem"
+          mcp_connect_timeout: 15
+          mcp_call_timeout: 60
+          tools: "-all"
+          denied_tools: []
 
   - action: jvagent/persona
     context:

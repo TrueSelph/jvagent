@@ -329,6 +329,9 @@ class CockpitInteractAction(InteractAction):
         try:
             from jvagent.action.cockpit.router import CockpitRouter
 
+            # Canned lead-in is generated INSIDE the routing LLM call (see
+            # ``ROUTING_CANNED_INSTRUCTIONS_TEMPLATE`` in router.py) and
+            # published from CockpitRouter.route() before the engine starts.
             router = CockpitRouter(self)
             posture, routing = await router.route(visitor)
 

@@ -668,10 +668,10 @@ async def interact_endpoint(
 
                 # Log interaction using INTERACTION level
                 try:
-                    from jvagent.core.app import App
                     from jvagent.action.interact.response_builder import (
                         _consolidated_tasks_for_interaction,
                     )
+                    from jvagent.core.app import App
 
                     app = await App.get()
                     app_id = app.id if app else ""
@@ -944,10 +944,10 @@ async def _stream_interaction(
 
             # Log interaction using INTERACTION level
             try:
-                from jvagent.core.app import App
                 from jvagent.action.interact.response_builder import (
                     _consolidated_tasks_for_interaction,
                 )
+                from jvagent.core.app import App
 
                 app = await App.get()
                 app_id = app.id if app else ""
@@ -1024,10 +1024,10 @@ async def _stream_interaction(
 
             # Log interaction using INTERACTION level
             try:
-                from jvagent.core.app import App
                 from jvagent.action.interact.response_builder import (
                     _consolidated_tasks_for_interaction,
                 )
+                from jvagent.core.app import App
 
                 app = await App.get()
                 app_id = app.id if app else ""

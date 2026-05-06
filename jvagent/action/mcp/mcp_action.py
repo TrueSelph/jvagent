@@ -782,14 +782,20 @@ class MCPAction(Action):
                 )
 
                 async def _dispatch(
-                    args: Dict[str, Any],
-                    sn=server_name,
-                    tn=name,
+                    sn: str = server_name,
+                    tn: str = name,
+                    **kwargs: Any,
                 ) -> str:
+                    """Forward keyword args (the model's tool args) to the MCP server.
+
+                    ``Tool.call(**kwargs)`` invokes us with the model's arguments
+                    expanded as keyword args, so we accept ``**kwargs`` and pack
+                    them into the dict that ``client.call_tool`` expects.
+                    """
                     client = action.get_client(sn)
                     from jvagent.action.mcp.mcp_action import _normalize_call_result
 
-                    result = await client.call_tool(tn, args)
+                    result = await client.call_tool(tn, dict(kwargs))
                     n = _normalize_call_result(result, tn)
                     if n.is_error and n.text:
                         return f"Error: {n.text}"

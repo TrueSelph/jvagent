@@ -282,13 +282,16 @@ def _build_artifact_tools(ctx: CockpitContext) -> List[Tool]:
                         "description": "Unique name for this artifact within the interaction.",
                     },
                     "data": {
-                        "type": ["string", "object", "array"],
-                        "description": "The content to store. Objects/arrays will be JSON-serialized.",
+                        "type": "string",
+                        "description": (
+                            "The content to store. Pass as a string — JSON-stringify "
+                            "objects/arrays yourself before calling."
+                        ),
                     },
                     "tags": {
-                        "type": ["array", "string"],
+                        "type": "array",
                         "items": {"type": "string"},
-                        "description": "Optional tags for filtering (list or comma-separated string).",
+                        "description": "Optional tags for filtering.",
                     },
                 },
                 "required": ["key", "data"],
@@ -322,11 +325,14 @@ def _build_artifact_tools(ctx: CockpitContext) -> List[Tool]:
                 "properties": {
                     "key": {"type": "string"},
                     "data": {
-                        "type": ["string", "object", "array"],
-                        "description": "Replacement content.",
+                        "type": "string",
+                        "description": (
+                            "Replacement content. Pass as a string — JSON-stringify "
+                            "objects/arrays yourself before calling."
+                        ),
                     },
                     "tags": {
-                        "type": ["array", "string"],
+                        "type": "array",
                         "items": {"type": "string"},
                         "description": "Optional replacement tags. Omit to keep existing tags.",
                     },

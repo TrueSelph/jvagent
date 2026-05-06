@@ -323,7 +323,35 @@ async def assimilate_document(
             if not ext:
                 ext = ".pdf"
         elif isinstance(doc, (str, Path)):
-            ext = Path(doc).suffix.lower()
+            doc_str = str(doc)
+            looks_like_url = doc_str.startswith(("http://", "https://", "ftp://"))
+            # If it's not a URL and doesn't resolve to an existing file, treat
+            # it as raw content (markdown / plain text) and dump it to a temp
+            # file so the rest of the pipeline can read it as a path. This
+            # supports callers like the cockpit's ``pageindex__assimilate``
+            # tool, where the model passes content directly.
+            if not looks_like_url:
+                try:
+                    is_existing_file = Path(doc_str).is_file()
+                except (OSError, ValueError):
+                    # OSError covers "filename too long" — definitively content.
+                    is_existing_file = False
+                if not is_existing_file:
+                    inferred_ext = (
+                        Path(doc_name).suffix.lower() if doc_name else ""
+                    ) or ".md"
+                    t_content = tempfile.NamedTemporaryFile(
+                        mode="w",
+                        encoding="utf-8",
+                        suffix=inferred_ext,
+                        delete=False,
+                        dir=work_dir,
+                    )
+                    t_content.write(doc_str)
+                    t_content.close()
+                    tmp_paths.append(t_content.name)
+                    doc = t_content.name
+            ext = Path(str(doc)).suffix.lower()
         else:
             raise ValueError("doc must be str, Path, bytes, or BytesIO")
 

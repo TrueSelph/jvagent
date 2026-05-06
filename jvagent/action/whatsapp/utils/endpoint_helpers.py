@@ -308,11 +308,10 @@ async def finalize_whatsapp_interaction(
         # Log interaction
         try:
             from jvagent.action.interact.endpoints import _build_interaction_log_data
-            from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
-
             from jvagent.action.interact.response_builder import (
                 _consolidated_tasks_for_interaction,
             )
+            from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
 
             app = await App.get()
             app_id = app.id if app else ""

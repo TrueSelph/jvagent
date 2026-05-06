@@ -52,12 +52,16 @@ def _build_task_tools(ctx: CockpitContext) -> List[Tool]:
                 try:
                     pre_plan_steps = []
                     for s in task.list_steps():
-                        sd = s.to_dict() if hasattr(s, "to_dict") else {
-                            "id": getattr(s, "id", None),
-                            "description": getattr(s, "description", ""),
-                            "status": getattr(s, "status", ""),
-                            "data": getattr(s, "data", {}) or {},
-                        }
+                        sd = (
+                            s.to_dict()
+                            if hasattr(s, "to_dict")
+                            else {
+                                "id": getattr(s, "id", None),
+                                "description": getattr(s, "description", ""),
+                                "status": getattr(s, "status", ""),
+                                "data": getattr(s, "data", {}) or {},
+                            }
+                        )
                         pre_plan_steps.append(sd)
                     if pre_plan_steps:
                         await task.update(

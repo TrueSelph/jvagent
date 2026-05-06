@@ -435,7 +435,11 @@ class MicrosoftExcelAction(MicrosoftAction):
                         },
                         "values": {
                             "type": "array",
-                            "description": "2D array of values to write.",
+                            "items": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "description": "2D array of cell values (rows of strings).",
                         },
                         "worksheet_title": {
                             "type": "string",

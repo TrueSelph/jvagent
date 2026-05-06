@@ -25,7 +25,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from jvagent.action.cockpit.context import CockpitContext
 from jvagent.tooling.tool import Tool
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -329,7 +328,9 @@ def _build_memory_tools(ctx: CockpitContext) -> List[Tool]:
         q = (query or "").strip().lower()
         t = (tag or "").strip().lower()
         matches: List[Tuple[float, str, str, str, List[str]]] = []
-        seen_keys: Dict[str, str] = {}  # key → scope_label (user-scoped wins on collision)
+        seen_keys: Dict[str, str] = (
+            {}
+        )  # key → scope_label (user-scoped wins on collision)
         for scope_label, _node, mem, tag_map in await _scope_view(ctx, scope):
             for k, body in mem.items():
                 if k in seen_keys:
@@ -367,7 +368,9 @@ def _build_memory_tools(ctx: CockpitContext) -> List[Tool]:
 
         matches.sort(key=lambda x: x[0], reverse=True)
         matches = matches[: max(1, int(limit))]
-        out = [f"Found {len(matches)} memory entr{'y' if len(matches) == 1 else 'ies'}:"]
+        out = [
+            f"Found {len(matches)} memory entr{'y' if len(matches) == 1 else 'ies'}:"
+        ]
         for _, scope_label, k, body, tags in matches:
             out.append(_summary(scope_label, k, body, tags))
         return "\n".join(out)
@@ -468,9 +471,9 @@ def _build_memory_tools(ctx: CockpitContext) -> List[Tool]:
                         "default": SCOPE_USER,
                     },
                     "tags": {
-                        "type": ["array", "string"],
+                        "type": "array",
                         "items": {"type": "string"},
-                        "description": "Optional tags (list or comma-separated string).",
+                        "description": "Optional tags.",
                     },
                 },
                 "required": ["key", "content"],
@@ -613,9 +616,7 @@ def _build_memory_tools(ctx: CockpitContext) -> List[Tool]:
 # ----------------------------------------------------------------------
 
 
-async def render_user_memory_block(
-    ctx: CockpitContext, max_chars: int = 4096
-) -> str:
+async def render_user_memory_block(ctx: CockpitContext, max_chars: int = 4096) -> str:
     """Render the user's memory dict as a compact markdown block for the system prompt.
 
     Returns an empty string if there's nothing to surface or if pre-load is
@@ -637,8 +638,10 @@ async def render_user_memory_block(
             continue
         section = f"\n## {key}\n{body}"
         if used + len(section) > max_chars:
-            parts.append(f"\n_(memory truncated to {max_chars} chars; "
-                         f"use memory_search for full text)_")
+            parts.append(
+                f"\n_(memory truncated to {max_chars} chars; "
+                f"use memory_search for full text)_"
+            )
             break
         parts.append(section)
         used += len(section)
