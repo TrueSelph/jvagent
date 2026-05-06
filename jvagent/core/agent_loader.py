@@ -315,18 +315,10 @@ class AgentLoader:
         return expected
 
     async def _get_all_action_records(self, agent: Agent) -> List[Dict[str, Any]]:
-        """Return all node records for this agent from the raw DB (no entity filter).
+        """Return all node records for this agent from the raw DB (no entity filter)."""
+        from jvagent.core.jvspatial_compat import find_raw_node_records
 
-        Bypasses jvspatial's entity-type filtering so ghost nodes whose classes
-        are not imported (removed actions) are visible.
-        """
-        from jvspatial.core.context import get_default_context
-        from jvspatial.core.entities.node import Node
-
-        context = get_default_context()
-        type_code = context._get_entity_type_code(Node)
-        collection = context._get_collection_name(type_code)
-        raw = await context.database.find(collection, {"context.agent_id": agent.id})
+        raw = await find_raw_node_records("agent_id", agent.id)
         return [
             r
             for r in raw

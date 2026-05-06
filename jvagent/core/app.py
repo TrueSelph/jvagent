@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import threading
 from datetime import datetime, timezone
 from typing import Any, ClassVar, Dict, Optional, Type, Union
 
@@ -83,9 +84,37 @@ class App(Node):
     _file_interface: Any = attribute(private=True, default=None)
     _proxy_manager: Any = attribute(private=True, default=None)
 
-    # Class-level cache and lock for singleton access
+    # Class-level cache for the singleton App node.
     _cached_app: ClassVar[Optional["App"]] = None
-    _lock: ClassVar[asyncio.Lock] = asyncio.Lock()
+    # The lock is created lazily per running event loop because module-import
+    # locks bind to whichever loop happens to be current at import time and
+    # break on serverless warm starts where each invocation gets a fresh loop.
+    # ``_locks`` maps ``id(loop) -> asyncio.Lock``; ``_locks_guard`` is a
+    # threading lock so the dict access stays safe across worker threads.
+    _locks: ClassVar[Dict[int, asyncio.Lock]] = {}
+    _locks_guard: ClassVar[threading.Lock] = threading.Lock()
+
+    @classmethod
+    def _get_lock(cls) -> asyncio.Lock:
+        """Return an ``asyncio.Lock`` bound to the current running loop."""
+        loop = asyncio.get_running_loop()
+        key = id(loop)
+        with cls._locks_guard:
+            lock = cls._locks.get(key)
+            if lock is None:
+                lock = asyncio.Lock()
+                cls._locks[key] = lock
+            # Drop any stale entries whose loops are closed; otherwise the dict
+            # accumulates one entry per Lambda invocation forever.
+            for stale_key in [
+                k
+                for k, candidate in cls._locks.items()
+                if k != key
+                and getattr(candidate, "_loop", None) is not None
+                and candidate._loop.is_closed()  # type: ignore[attr-defined]
+            ]:
+                cls._locks.pop(stale_key, None)
+        return lock
 
     # ============================================================================
     # Singleton Access
@@ -120,7 +149,7 @@ class App(Node):
                 cls._cached_app = None
 
         # Use lock to prevent concurrent fetches
-        async with cls._lock:
+        async with cls._get_lock():
             # Double-check after acquiring lock
             if cls._cached_app is not None:
                 try:

@@ -58,20 +58,45 @@ class CacheManager:
 
     def __init__(self) -> None:
         self._agent_cache: Dict[str, Tuple[Any, datetime]] = {}
-        self._agent_lock = asyncio.Lock()
-
         self._action_cache: Dict[str, Tuple[List[Any], datetime]] = {}
-        self._action_lock = asyncio.Lock()
-
         self._router_cache: Dict[str, Tuple[Dict[str, Any], datetime]] = {}
-        self._router_lock = asyncio.Lock()
-
         # Action type index: {agent_id: {class_name: action_id}}
         self._action_type_index: Dict[str, Dict[str, str]] = {}
-        self._action_type_lock = asyncio.Lock()
+
+        # Locks are created lazily per running event loop. Module-import locks
+        # break on serverless warm starts where each invocation gets a fresh
+        # loop; deferring creation to first ``async with`` keeps each loop
+        # paired with its own primitive.
+        self._loop_locks: Dict[Tuple[int, str], asyncio.Lock] = {}
 
         self._config: Dict[str, Any] = {}
         self._load_defaults()
+
+    def _lock(self, name: str) -> asyncio.Lock:
+        """Return a lock for *name* bound to the current running loop."""
+        loop = asyncio.get_running_loop()
+        key = (id(loop), name)
+        lock = self._loop_locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._loop_locks[key] = lock
+        return lock
+
+    @property
+    def _agent_lock(self) -> asyncio.Lock:
+        return self._lock("agent")
+
+    @property
+    def _action_lock(self) -> asyncio.Lock:
+        return self._lock("action")
+
+    @property
+    def _router_lock(self) -> asyncio.Lock:
+        return self._lock("router")
+
+    @property
+    def _action_type_lock(self) -> asyncio.Lock:
+        return self._lock("action_type")
 
     def _load_defaults(self) -> None:
         self.agent_cache_enabled: bool = True
