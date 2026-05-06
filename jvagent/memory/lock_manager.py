@@ -32,15 +32,27 @@ class MemoryLockManager:
     def __init__(self) -> None:
         self._locks: Dict[str, asyncio.Lock] = {}
         self._timestamps: Dict[str, float] = {}
-        self._global_lock = asyncio.Lock()
+        # ``_global_lock`` is created lazily per running event loop. The class
+        # is instantiated at module import (singletons below), so pinning the
+        # lock to the import-time loop breaks on serverless warm starts.
+        self._global_locks_by_loop: Dict[int, asyncio.Lock] = {}
         self._last_cleanup = time.time()
+
+    def _global_lock_for_loop(self) -> asyncio.Lock:
+        loop = asyncio.get_running_loop()
+        key = id(loop)
+        lock = self._global_locks_by_loop.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._global_locks_by_loop[key] = lock
+        return lock
 
     async def acquire(self, key: str) -> asyncio.Lock:
         """Get or create a lock for *key* (thread-safe).
 
         Returns the lock; caller must use ``async with`` on the result.
         """
-        async with self._global_lock:
+        async with self._global_lock_for_loop():
             if key not in self._locks:
                 self._locks[key] = asyncio.Lock()
             self._timestamps[key] = time.time()

@@ -127,38 +127,46 @@ class Memory(Node):
         performance. This method serves as a consistency check — it walks the
         full graph, corrects any drift, and logs discrepancies.
 
+        The recount and the corrective save run under a Memory-scoped lock so
+        a concurrent ``add_user`` / ``purge_user_memory`` cannot interleave
+        and re-introduce drift mid-fix.
+
         Returns:
             Dict with ``drift_users`` and ``drift_conversations`` (0 = no drift).
         """
         from jvagent.memory.conversation import Conversation
+        from jvagent.memory.lock_manager import get_user_lock_manager
         from jvagent.memory.user import User
 
-        target = await Memory.get(self.id)
-        if target is None:
-            return {"drift_users": 0, "drift_conversations": 0}
-        users = await target.nodes(node=User)
-        n_users = len(users)
-        n_convs = 0
-        for user in users:
-            n_convs += await user.count_neighbors(node=Conversation)
+        lock_mgr = get_user_lock_manager()
+        lock = await lock_mgr.acquire(f"memory_counters:{self.id}")
+        async with lock:
+            target = await Memory.get(self.id)
+            if target is None:
+                return {"drift_users": 0, "drift_conversations": 0}
+            users = await target.nodes(node=User)
+            n_users = len(users)
+            n_convs = 0
+            for user in users:
+                n_convs += await user.count_neighbors(node=Conversation)
 
-        drift_users = n_users - (target.total_users or 0)
-        drift_convs = n_convs - (target.total_conversations or 0)
+            drift_users = n_users - (target.total_users or 0)
+            drift_convs = n_convs - (target.total_conversations or 0)
 
-        if drift_users != 0 or drift_convs != 0:
-            logger.warning(
-                "Memory counter drift detected for %s: users=%+d convs=%+d",
-                self.id,
-                drift_users,
-                drift_convs,
-            )
-            target.total_users = n_users
-            target.total_conversations = n_convs
-            await target.save()
+            if drift_users != 0 or drift_convs != 0:
+                logger.warning(
+                    "Memory counter drift detected for %s: users=%+d convs=%+d",
+                    self.id,
+                    drift_users,
+                    drift_convs,
+                )
+                target.total_users = n_users
+                target.total_conversations = n_convs
+                await target.save()
 
-        self.total_users = n_users
-        self.total_conversations = n_convs
-        return {"drift_users": drift_users, "drift_conversations": drift_convs}
+            self.total_users = n_users
+            self.total_conversations = n_convs
+            return {"drift_users": drift_users, "drift_conversations": drift_convs}
 
     async def users_scoped_to_this_memory(self) -> List["User"]:
         """Connected users that belong to this Memory root.
@@ -1034,8 +1042,16 @@ class Memory(Node):
                     if interaction:
                         await interaction.delete(cascade=True)
                         deleted += 1
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # Surface the failure: silently swallowing this loses both
+                    # the cleanup AND the counter-correction signal that the
+                    # repair engine relies on. Log and continue so one bad row
+                    # does not abort the rest of the page.
+                    logger.warning(
+                        "_cleanup_orphaned_interactions: delete %s failed (%s)",
+                        interaction_id,
+                        exc,
+                    )
 
             last_id = rows[-1].get("id")
             if len(rows) < BATCH:

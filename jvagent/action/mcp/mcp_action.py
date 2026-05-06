@@ -821,23 +821,23 @@ class MCPAction(Action):
                 ) -> str:
                     """Forward keyword args (the model's tool args) to the MCP server.
 
-                    Reads the active visitor from the per-task ContextVar set
-                    by ``ToolExecutionEngine.dispatch`` so the call routes to
-                    the per-user MCP subprocess (folder named after the
-                    visitor's ``user_id`` / ``session_id``). Falls back to the
-                    default subprocess only when no visitor is in scope (raw
-                    scripted tool execution, tests).
+                    Reads the immutable dispatch context set by
+                    ``ToolExecutionEngine.dispatch`` so the call routes to the
+                    per-user MCP subprocess (folder named after the caller's
+                    ``user_id`` / ``session_id``). Falls back to the default
+                    subprocess only when no context is in scope (raw scripted
+                    tool execution, tests).
                     """
                     from jvagent.action.mcp.mcp_action import _normalize_call_result
                     from jvagent.action.mcp.sandbox import effective_user_segment
-                    from jvagent.tooling.tool_executor import get_dispatch_visitor
+                    from jvagent.tooling.tool_executor import get_dispatch_context
 
-                    visitor = get_dispatch_visitor()
-                    if visitor is not None:
+                    ctx = get_dispatch_context()
+                    if ctx is not None:
                         uid = (
                             effective_user_segment(
-                                getattr(visitor, "user_id", None),
-                                getattr(visitor, "session_id", None),
+                                ctx.user_id,
+                                ctx.session_id,
                                 default="",
                             )
                             or None

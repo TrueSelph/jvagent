@@ -3,6 +3,7 @@ import contextvars
 import logging
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from jvagent.tooling.tool import Tool
@@ -13,25 +14,61 @@ from jvagent.tooling.tool_result import ToolResult
 logger = logging.getLogger(__name__)
 
 
-# Per-task slot holding the visitor for the currently-dispatched tool call.
-# Tool closures that need caller identity (notably MCP filesystem dispatch
-# which routes to per-user subprocesses) read this via
-# ``get_dispatch_visitor()`` instead of accepting a new kwarg, so the
-# ``Tool`` API stays minimal and existing tools are unaffected. Set by
-# ``ToolExecutionEngine.dispatch`` for the duration of each call and reset
-# on completion.
+@dataclass(frozen=True)
+class ToolDispatchContext:
+    """Immutable identity bundle exposed to tool closures.
+
+    Carries the small set of caller-identity fields tools actually need (e.g.
+    MCP filesystem dispatch needs a per-user subprocess key). Frozen so a
+    rogue tool cannot mutate the bundle and surprise its sibling tools, and
+    narrow so tools cannot reach into the live walker / engine state.
+    """
+
+    agent_id: Optional[str] = None
+    user_id: Optional[str] = None
+    session_id: Optional[str] = None
+    interaction_id: Optional[str] = None
+    channel: Optional[str] = None
+
+
+# Per-task slot holding the dispatch context for the currently-running tool
+# call. Set by ``ToolExecutionEngine.dispatch`` and reset on completion.
+_dispatch_context_var: contextvars.ContextVar[Optional[ToolDispatchContext]] = (
+    contextvars.ContextVar("jvagent_tool_dispatch_context", default=None)
+)
+# Backwards-compat: some tool closures and tests still want the live visitor
+# (e.g. for ``visitor.tasks``). New callers should prefer
+# ``get_dispatch_context()`` and only fall back to this when they truly need
+# mutable engine state.
 _dispatch_visitor_var: contextvars.ContextVar[Optional[Any]] = contextvars.ContextVar(
     "jvagent_tool_dispatch_visitor", default=None
 )
 
 
-def get_dispatch_visitor() -> Optional[Any]:
-    """Return the visitor (e.g. InteractWalker) of the currently-dispatched tool call.
+def get_dispatch_context() -> Optional[ToolDispatchContext]:
+    """Return the immutable identity bundle for the current tool dispatch."""
+    return _dispatch_context_var.get()
 
-    Returns ``None`` outside of a tool dispatch or when the engine was
-    constructed without a visitor (e.g. raw scripted tool runs).
-    """
+
+def get_dispatch_visitor() -> Optional[Any]:
+    """Return the live visitor (deprecated; prefer :func:`get_dispatch_context`)."""
     return _dispatch_visitor_var.get()
+
+
+def _build_context_from_visitor(
+    visitor: Optional[Any],
+) -> Optional[ToolDispatchContext]:
+    """Snapshot caller-identity fields off *visitor* into a frozen context."""
+    if visitor is None:
+        return None
+    agent = getattr(visitor, "_agent", None)
+    return ToolDispatchContext(
+        agent_id=str(getattr(agent, "id", "") or "") or None,
+        user_id=getattr(visitor, "user_id", None),
+        session_id=getattr(visitor, "session_id", None),
+        interaction_id=getattr(getattr(visitor, "interaction", None), "id", None),
+        channel=getattr(visitor, "channel", None),
+    )
 
 
 def _input_fingerprint(arguments: str) -> str:
@@ -90,16 +127,19 @@ class ToolExecutionEngine:
             async with semaphore:
                 return await self._dispatch_one(call)
 
-        # Bind the visitor for the duration of this batch via the
-        # per-task ContextVar. Concurrent ``_one`` coroutines spawned by
-        # ``asyncio.gather`` inherit the parent task's context at creation
-        # time, so each tool closure sees the same visitor without needing
-        # explicit propagation.
-        token = _dispatch_visitor_var.set(self._visitor)
+        # Bind both the immutable dispatch context (preferred for new tools)
+        # and the live visitor (legacy slot, kept for tools that still reach
+        # into walker state) for the duration of this batch. Concurrent
+        # ``_one`` coroutines spawned by ``asyncio.gather`` inherit the
+        # parent task's ContextVar bindings at creation time.
+        ctx = _build_context_from_visitor(self._visitor)
+        ctx_token = _dispatch_context_var.set(ctx)
+        visitor_token = _dispatch_visitor_var.set(self._visitor)
         try:
             return list(await asyncio.gather(*(_one(c) for c in tool_calls)))
         finally:
-            _dispatch_visitor_var.reset(token)
+            _dispatch_visitor_var.reset(visitor_token)
+            _dispatch_context_var.reset(ctx_token)
 
     async def _dispatch_one(self, call: Dict[str, Any]) -> ToolResult:
         fn = call.get("function", {})
