@@ -75,13 +75,30 @@ async def assemble_cockpit_tools(ctx: CockpitContext) -> ToolRegistry:
     """Assemble the full tool set for a cockpit run.
 
     Merges harness service tools, action tools (via ``Action.get_tools()``),
-    and skill directory tools into a single ``ToolRegistry``.
+    and skill directory tools into a single ``ToolRegistry``. After the full
+    surface is assembled, the registry is filtered against the agent's
+    ``AccessControlAction`` (when present) so per-user policies apply
+    uniformly across harness + action + skill tools.
     """
+    from jvagent.action.cockpit.access import filter_tool_registry_by_access
+
     registry = ToolRegistry()
 
     _register_harness_tools(registry, ctx)
     await _register_action_tools(registry, ctx)
     await _register_skill_tools(registry, ctx)
+
+    user_id = getattr(ctx, "user_id", None)
+    channel = getattr(ctx, "channel", "default") or "default"
+    removed = await filter_tool_registry_by_access(
+        registry, ctx.agent, user_id=user_id, channel=channel
+    )
+    if removed:
+        logger.info(
+            "CockpitToolRegistry: access control removed %d tool(s) for user=%s",
+            removed,
+            user_id,
+        )
 
     logger.info(
         "CockpitToolRegistry: %d tools registered: %s",

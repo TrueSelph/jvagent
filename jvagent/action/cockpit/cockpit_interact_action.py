@@ -18,6 +18,10 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 
+from jvagent.action.cockpit.access import (
+    filter_routed_interact_actions_by_access,
+    filter_routed_skills_by_access,
+)
 from jvagent.action.cockpit.config import CockpitConfig
 from jvagent.action.cockpit.context import CockpitContext
 from jvagent.action.cockpit.contracts import TerminationReason
@@ -377,10 +381,23 @@ class CockpitInteractAction(InteractAction):
 
             persona = await self._require_persona()
             agent = await self.get_agent()
+            user_id = getattr(visitor, "user_id", None)
+            channel = getattr(visitor, "channel", "default") or "default"
+
+            # Apply per-user access control before resolving / dispatching.
+            # Skills routed by the LLM are filtered against
+            # ``skill:{name}`` rules; interact_actions are filtered against
+            # their class names (existing access_control convention).
+            routing.actions = await filter_routed_skills_by_access(
+                agent, routing, user_id=user_id, channel=channel
+            )
 
             # Resolve routed interact_actions and curate the walker queue so
             # only the cockpit + classified IAs + always_execute IAs remain.
             routed_ias = await resolve_routed_interact_actions(agent, routing)
+            routed_ias = await filter_routed_interact_actions_by_access(
+                agent, routed_ias, user_id=user_id, channel=channel
+            )
             always_run_ias = await collect_always_execute_interact_actions(
                 agent, exclude_class_names={self.__class__.__name__}
             )
