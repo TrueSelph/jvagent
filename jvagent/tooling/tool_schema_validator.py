@@ -103,9 +103,7 @@ def validate_parameters_schema(
     return issues
 
 
-def assert_parameters_schema_clean(
-    tool_name: str, schema: Dict[str, Any]
-) -> None:
+def assert_parameters_schema_clean(tool_name: str, schema: Dict[str, Any]) -> None:
     """Raise ``ValueError`` if the schema has portability issues.
 
     Includes the ``tool_name`` in the error message so the offending tool
@@ -115,6 +113,4 @@ def assert_parameters_schema_clean(
     if not issues:
         return
     detail = "; ".join(f"{p}: {m}" for p, m in issues)
-    raise ValueError(
-        f"Tool {tool_name!r} has invalid parameters_schema: {detail}"
-    )
+    raise ValueError(f"Tool {tool_name!r} has invalid parameters_schema: {detail}")

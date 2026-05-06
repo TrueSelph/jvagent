@@ -20,7 +20,6 @@ import pytest
 
 from jvagent.tooling.tool_schema_validator import validate_parameters_schema
 
-
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 SOURCE_DIR = os.path.join(REPO_ROOT, "jvagent")
 

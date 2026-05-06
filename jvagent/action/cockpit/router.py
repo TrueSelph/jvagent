@@ -223,9 +223,7 @@ class CockpitRouter:
                 and result.intent_type not in self._skip_canned_for_intents
             ):
                 try:
-                    await self._action.publish(
-                        visitor, canned.strip(), transient=True
-                    )
+                    await self._action.publish(visitor, canned.strip(), transient=True)
                     interaction.canned_response = canned.strip()
                     await interaction.save()
                 except Exception as e:
