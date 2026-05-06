@@ -158,6 +158,16 @@ class Interaction(DeferredSaveMixin, Node):
         description="Aggregated usage (tokens, model calls) for this interaction",
     )
 
+    # Cockpit artifacts (session-scoped structured data)
+    artifacts: Dict[str, Dict[str, Any]] = attribute(
+        default_factory=dict,
+        description=(
+            "Session-scoped artifacts keyed by user-supplied name. "
+            "Each entry: {'data': str, 'tags': List[str], 'created_at': iso, 'updated_at': iso, 'source': str}. "
+            "Lifecycle is bound to the interaction; pruned by Conversation.interaction_limit."
+        ),
+    )
+
     # Timestamps
     started_at: datetime = attribute(
         indexed=True,

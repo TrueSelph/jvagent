@@ -301,7 +301,9 @@ class TestTaskTrackerHandler:
         conv.tasks = []
         conv.save = AsyncMock()
         store = TaskStore(conv)
-        task = Task(id="task_123", title="Test", description="Test", owner_action="SkillAction")
+        task = Task(
+            id="task_123", title="Test", description="Test", owner_action="SkillAction"
+        )
         task_handle = TaskHandle(store, task)
         task_handle.add_event = AsyncMock()
         task_handle.update = AsyncMock()

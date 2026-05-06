@@ -628,6 +628,35 @@ class Actions(Node):
             )
             return None
 
+    async def get_all_tools(self, enabled_only: bool = True) -> List[Any]:
+        """Collect Tool instances from all actions via ``Action.get_tools()``.
+
+        Iterates all enabled actions and calls ``get_tools()`` on each,
+        returning a flat list of ``Tool`` instances for cockpit runs.
+
+        Args:
+            enabled_only: If True, only collect from enabled actions.
+
+        Returns:
+            Flat list of Tool instances.
+        """
+        from jvagent.tooling.tool import Tool
+
+        all_tools: List[Any] = []
+        all_actions = await self.get_all_actions(enabled_only=enabled_only)
+        for action in all_actions:
+            try:
+                tools = await action.get_tools()
+                if tools:
+                    all_tools.extend(tools)
+            except Exception as exc:
+                logger.warning(
+                    "get_all_tools: %s.get_tools() failed: %s",
+                    getattr(action, "label", "?"),
+                    exc,
+                )
+        return all_tools
+
     async def list_actions(self) -> List[Dict[str, Any]]:
         """List all actions with their information.
 

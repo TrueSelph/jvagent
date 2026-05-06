@@ -755,6 +755,106 @@ class GoogleSheetsAction(GoogleAction):
             .execute()
         )
 
+    async def get_tools(self) -> List[Any]:
+        from jvagent.tooling.tool import Tool
+
+        action = self
+
+        async def _read(spreadsheet_url_or_id: str, worksheet_title: str = "") -> str:
+            import json
+
+            result = await action.read_spreadsheet(
+                spreadsheet_url_or_id,
+                worksheet_title=worksheet_title or None,
+            )
+            return json.dumps(result, indent=2)
+
+        async def _update(
+            spreadsheet_url_or_id: str,
+            values: Any,
+            worksheet_title: str = "",
+            range_name: str = "",
+        ) -> str:
+            import json
+
+            result = await action.update_spreadsheet(
+                spreadsheet_url_or_id,
+                range_name=range_name or None,
+                values=values,
+                worksheet_title=worksheet_title or None,
+            )
+            return json.dumps(result, indent=2)
+
+        async def _create(title: str) -> str:
+            import json
+
+            result = await action.create_spreadsheet(title)
+            return json.dumps(result, indent=2)
+
+        return [
+            Tool(
+                name="google_sheets__read",
+                description="Read values from a Google Sheet.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID.",
+                        },
+                        "worksheet_title": {
+                            "type": "string",
+                            "description": "Optional worksheet tab name.",
+                        },
+                    },
+                    "required": ["spreadsheet_url_or_id"],
+                },
+                execute=_read,
+            ),
+            Tool(
+                name="google_sheets__update",
+                description="Update cells in a Google Sheet.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID.",
+                        },
+                        "values": {
+                            "type": "array",
+                            "description": "2D array of values to write.",
+                        },
+                        "worksheet_title": {
+                            "type": "string",
+                            "description": "Optional worksheet tab name.",
+                        },
+                        "range_name": {
+                            "type": "string",
+                            "description": "Optional A1 range.",
+                        },
+                    },
+                    "required": ["spreadsheet_url_or_id", "values"],
+                },
+                execute=_update,
+            ),
+            Tool(
+                name="google_sheets__create",
+                description="Create a new Google Sheet spreadsheet.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "Spreadsheet title.",
+                        },
+                    },
+                    "required": ["title"],
+                },
+                execute=_create,
+            ),
+        ]
+
     async def create_worksheet(
         self,
         title: str,

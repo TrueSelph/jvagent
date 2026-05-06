@@ -263,7 +263,9 @@ class TaskDispatcher(Action):
 
                             if dry_run:
                                 logger.info(f"Dry Run: Would dispatch {description}")
-                                await t_handle.complete(result="Dry-run proactive dispatch.")
+                                await t_handle.complete(
+                                    result="Dry-run proactive dispatch."
+                                )
                                 return
 
                             # 3. Setup Walker & Persona
@@ -305,7 +307,9 @@ class TaskDispatcher(Action):
                                 walker.interaction = interaction
                                 await persona.respond(interaction, visitor=walker)
                                 await walker._finalize()
-                                await t_handle.complete(result="Proactive dispatch completed.")
+                                await t_handle.complete(
+                                    result="Proactive dispatch completed."
+                                )
                                 dispatched_count += 1
                     except Exception as e:
                         try:
@@ -321,10 +325,15 @@ class TaskDispatcher(Action):
 
             dispatch_jobs = []
             for conv in all_convs:
-                raw_tasks = getattr(conv, "tasks", None) or getattr(conv, "active_tasks", [])
+                raw_tasks = getattr(conv, "tasks", None) or getattr(
+                    conv, "active_tasks", []
+                )
                 for t in raw_tasks:
                     if t.get("status") == "active":
-                        trig = str(t.get("data", {}).get("trigger_at", "") or t.get("next_trigger_at", "")).replace(" ", "T")
+                        trig = str(
+                            t.get("data", {}).get("trigger_at", "")
+                            or t.get("next_trigger_at", "")
+                        ).replace(" ", "T")
                         if trig <= now:
                             dispatch_jobs.append(dispatch_task(t, conv.id))
 

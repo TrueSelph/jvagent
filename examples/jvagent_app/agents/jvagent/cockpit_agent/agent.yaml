@@ -1,0 +1,110 @@
+# Cockpit Agent — model-cockpit action with full tool agency
+#
+# Requires jvagent/persona (PersonaAction). The model has direct access to
+# every harness service (memory, response, task, conversation, skills) and
+# every action tool (pageindex search/assimilate, web search, drive, etc.)
+# via the think-act-observe cockpit loop.
+#
+# Architecture (multi-provider):
+#   Phase 1 — CockpitRouter: router_model_action_type → OpenAI (fast posture + skill selection)
+#   Phase 2 — CockpitEngine: model_action_type → main model with full tool agency
+#     - The model sees all harness tools (memory_get_history, task_create_plan,
+#       response_publish, skill_search, skill_read, etc.)
+#     - The model sees all action tools (pageindex__search, web_search__search,
+#       gmail__send, google_drive__list, mcp_filesystem__*, etc.)
+#     - Skills remain as Claude-style SKILL.md bundles with optional .py tool scripts
+#
+# Register one jvagent language-model action per provider; point each phase at the
+# right class name. All tuning params use sensible defaults.
+
+agent: jvagent/cockpit_agent
+version: 1.0.0
+author: V75 Inc.
+jvagent: ~0.0.1
+
+context:
+  alias: Cockpit Agent
+  description: >-
+    A full-cockpit agent giving the model access to all harness services and
+    action tools. Routes intent via OpenAI, runs agentic loop on Anthropic.
+    Pre-loaded with pageindex_search, web_search, and research skills.
+  enabled: true
+  interaction_limit: 20
+
+actions:
+  - action: jvagent/cockpit
+    context:
+      enabled: true
+      router_model: gpt-4o-mini
+      router_model_action_type: OpenAILanguageModelAction
+      model_action_type: OllamaLanguageModelAction
+      model: deepseek-v4-flash:cloud
+      skills:
+        - pageindex_search
+        - pageindex_docs
+        - web_search
+        - research
+      skills_source: both
+      max_iterations: 25
+      strict_grounding: true
+      response_mode: publish
+
+  # ── Ollama Language Model (agentic loop) ──
+  - action: jvagent/ollama_lm
+    context:
+      enabled: true
+      description: Ollama cloud endpoint for the agentic skill loop
+      api_endpoint: https://ollama.com
+      api_key: ${OLLAMA_API_KEY}
+      model: deepseek-v4-flash:cloud
+      temperature: 0.2
+      max_tokens: 16384
+      timeout: 120
+
+  - action: jvagent/openai_lm
+    context:
+      enabled: true
+      api_key: ${OPENAI_API_KEY}
+      api_endpoint: https://api.openai.com/v1
+      model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 4096
+      timeout: 60
+
+  - action: jvagent/persona
+    context:
+      enabled: true
+      persona_name: Research Assistant
+      persona_description: >-
+        You are a knowledgeable research assistant with access to internal documents
+        and the public web. For simple questions, respond directly and concisely.
+        For complex research tasks, you search internal sources first, supplement with
+        web search when needed, and synthesize clear, cited answers.
+      persona_capabilities:
+        - Answer questions from internal knowledge base
+        - Search the web for current information
+        - Ingest and manage documents
+        - Synthesize multi-source research findings
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      model_temperature: 0.2
+      model_max_tokens: 4096
+
+  - action: jvagent/pageindex_action
+    context:
+      enabled: true
+      description: Vectorless RAG — indexes documents and provides search / ingest / management APIs
+      strategy: tree_search
+      limit: 10
+      node_summary: true
+    config:
+      node_text: true
+      summary_token_threshold: 200
+
+  - action: jvagent/serper_web_search
+    context:
+      enabled: true
+      description: Serper Google Search provider
+      engine: google_light
+      hl: en
+      max_results: 10

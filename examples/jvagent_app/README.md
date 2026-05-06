@@ -11,8 +11,14 @@ jvagent_app/
 ├── app.yaml              # Application descriptor (metadata & agent list)
 ├── agents/               # Custom agent packages
 │   ├── jvagent/
+│   │   ├── cockpit_agent/   # Cockpit agent (model with full tool agency)
+│   │   │   ├── agent.yaml
+│   │   │   └── README.md
 │   │   ├── example_agent/   # Main demo agent (core + PageIndex, signup interview)
 │   │   │   ├── actions/jvagent/signup_interview_interact_action/
+│   │   │   ├── agent.yaml
+│   │   │   └── README.md
+│   │   ├── unified_agent/   # AgentInteractAction (unified routing + skill loop)
 │   │   │   ├── agent.yaml
 │   │   │   └── README.md
 │   │   └── skills_agent/   # Optional Ollama + skills (add to app.yaml to enable)

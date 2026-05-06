@@ -260,7 +260,9 @@ class SkillAction:
                     termination_reason=result.termination_reason.value,
                 )
                 await task_handle.complete(
-                    result=result.final_response[:200] if result.final_response else None
+                    result=(
+                        result.final_response[:200] if result.final_response else None
+                    )
                 )
                 return result
 
@@ -607,9 +609,7 @@ class SkillAction:
                     ctx,
                     base_model_kwargs,
                     reasoning_cfg,
-                    checklist=self._task_plan_pending_checklist(
-                        task_handle
-                    ),
+                    checklist=self._task_plan_pending_checklist(task_handle),
                     termination_cause="time_cap",
                 )
                 termination_reason = TerminationReason.TIME_CAP
@@ -709,9 +709,7 @@ class SkillAction:
                         ctx,
                         base_model_kwargs,
                         reasoning_cfg,
-                    checklist=self._task_plan_pending_checklist(
-                        task_handle
-                    ),
+                        checklist=self._task_plan_pending_checklist(task_handle),
                         termination_cause="iter_cap",
                     )
                     break
@@ -731,9 +729,7 @@ class SkillAction:
 
             tok = self._resolve_thinking_token_count(model_result)
             thinking_tokens_total += tok
-            await task_handle.update(
-                thinking_tokens_used=thinking_tokens_total
-            )
+            await task_handle.update(thinking_tokens_used=thinking_tokens_total)
             await self._record_event(
                 task_handle,
                 "thinking",
@@ -893,9 +889,7 @@ class SkillAction:
         # Catches fabricated completion claims for skipped steps that the
         # review model may have failed to remove.
         if final_response:
-            final_response = self._check_plan_faithfulness(
-                final_response, task_handle
-            )
+            final_response = self._check_plan_faithfulness(final_response, task_handle)
 
         # Layer 4 — unconditional non-done footer.
         # Regardless of what the model wrote, always append an honest accounting
@@ -982,7 +976,9 @@ class SkillAction:
 
         # Tally abandoned (pending/in_progress) and intentionally skipped steps.
         _abandoned_steps = len(task_handle.pending_steps())
-        _intentional_skips = len([s for s in task_handle.list_steps() if s.status == "skipped"])
+        _intentional_skips = len(
+            [s for s in task_handle.list_steps() if s.status == "skipped"]
+        )
 
         return SkillRunResult(
             final_response=final_response,
@@ -1742,9 +1738,7 @@ class SkillAction:
                     ctx,
                     base_model_kwargs,
                     reasoning_cfg,
-                    checklist=self._task_plan_pending_checklist(
-                        task_handle
-                    ),
+                    checklist=self._task_plan_pending_checklist(task_handle),
                     termination_cause="stuck",
                 )
                 termination_reason = TerminationReason.STUCK
@@ -1807,7 +1801,11 @@ class SkillAction:
         # Layer 2 — pre-review skipped-step suffix injection.
         # Append a grounded "could not complete" section so the reviewer sees
         # both the candidate claim AND the truth side-by-side.
-        skipped_steps = [s for s in task_plan.list_steps() if s.status == "skipped"] if task_plan else []
+        skipped_steps = (
+            [s for s in task_plan.list_steps() if s.status == "skipped"]
+            if task_plan
+            else []
+        )
         if skipped_steps:
             suffix_lines = ["\n\n**Steps that could not be completed:**"]
             for s in skipped_steps:
@@ -2889,7 +2887,10 @@ class SkillAction:
                 # stop-word removal — meaningful terms like "writeable" or
                 # "assimilate" uniquely identify the step.
                 if len(overlap) >= 1 and has_signal:
-                    reason = step.data.get("skip_reason") or "this step could not be completed"
+                    reason = (
+                        step.data.get("skip_reason")
+                        or "this step could not be completed"
+                    )
                     segments[i] = f"(Note: {step.description} — {reason})"
                     replacements_made += 1
                     logger.warning(
@@ -3152,7 +3153,9 @@ class SkillAction:
         if step is not None:
             await step.add_event(event_type, iteration=iteration, details=details)
         else:
-            await task_handle.add_event(event_type, iteration=iteration, details=details)
+            await task_handle.add_event(
+                event_type, iteration=iteration, details=details
+            )
 
     @staticmethod
     def _initial_task_metadata(ctx: SkillRunContext) -> Dict[str, Any]:

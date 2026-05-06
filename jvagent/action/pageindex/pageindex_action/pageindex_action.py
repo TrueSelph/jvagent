@@ -472,3 +472,108 @@ class PageIndexAction(Action):
             doc_name=doc_name,
             collection_name=collection_name or self._resolve_collection(),
         )
+
+    async def get_tools(self) -> List[Any]:
+        from jvagent.tooling.tool import Tool
+
+        action = self
+
+        async def _search(query: str, limit: int = 5) -> str:
+            import json
+
+            results = await action.search(query, limit=limit)
+            if not results:
+                return "No matching documents found."
+            return json.dumps(results, indent=2)
+
+        async def _assimilate(doc: str, doc_name: str = "") -> str:
+            import json
+
+            result = await action.assimilate(doc, doc_name=doc_name or None)
+            return json.dumps(result, indent=2)
+
+        async def _list_docs(collection_name: str = "") -> str:
+            import json
+
+            result = await action.list_documents(
+                collection_name=collection_name or None
+            )
+            return json.dumps(result, indent=2)
+
+        async def _delete_doc(doc_name: str, collection_name: str = "") -> str:
+            ok = await action.delete_document(
+                doc_name, collection_name=collection_name or None
+            )
+            return f"Document '{doc_name}' {'deleted' if ok else 'not found'}."
+
+        return [
+            Tool(
+                name="pageindex__search",
+                description="Search the internal knowledge base for documents matching a query.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query."},
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max results to return (default 5).",
+                            "default": 5,
+                        },
+                    },
+                    "required": ["query"],
+                },
+                execute=_search,
+            ),
+            Tool(
+                name="pageindex__assimilate",
+                description="Ingest a document into the knowledge base (text, URL, or file path).",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "doc": {
+                            "type": "string",
+                            "description": "Document content, URL, or file path to ingest.",
+                        },
+                        "doc_name": {
+                            "type": "string",
+                            "description": "Optional display name for the document.",
+                        },
+                    },
+                    "required": ["doc"],
+                },
+                execute=_assimilate,
+            ),
+            Tool(
+                name="pageindex__list",
+                description="List all documents in the knowledge base.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "collection_name": {
+                            "type": "string",
+                            "description": "Optional collection to filter by.",
+                        },
+                    },
+                },
+                execute=_list_docs,
+            ),
+            Tool(
+                name="pageindex__delete",
+                description="Delete a document from the knowledge base by name.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "doc_name": {
+                            "type": "string",
+                            "description": "Name of the document to delete.",
+                        },
+                        "collection_name": {
+                            "type": "string",
+                            "description": "Optional collection name.",
+                        },
+                    },
+                    "required": ["doc_name"],
+                },
+                execute=_delete_doc,
+            ),
+        ]

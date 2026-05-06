@@ -139,16 +139,80 @@ class OllamaLanguageModelAction(LanguageModelAction):
     def _to_ollama_messages(
         self, messages: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """Convert framework message format to Ollama-native message format."""
+        """Convert framework message format to Ollama-native message format.
+
+        Critical: preserves ``tool_calls`` on assistant turns and ``tool_call_id``
+        on tool-result turns so the model can see its own tool-use history. Without
+        this, every iteration of an agentic loop is blind to prior tool calls and
+        the model re-issues the same call on every turn (classic "stuck" pattern).
+        """
         ollama_messages: List[Dict[str, Any]] = []
         for message in messages:
             role = message.get("role", "user")
-            content, images = self._extract_images(message.get("content", ""))
+            raw_content = message.get("content", "")
+            # Tool/assistant turns may carry None content alongside tool_calls.
+            if raw_content is None:
+                content, images = "", []
+            else:
+                content, images = self._extract_images(raw_content)
             normalized: Dict[str, Any] = {"role": role, "content": content}
             if images:
                 normalized["images"] = images
+
+            # Preserve tool-call structure across turns so the model sees its
+            # own tool-use history end-to-end.
+            if role == "assistant":
+                tool_calls = message.get("tool_calls")
+                if tool_calls:
+                    normalized["tool_calls"] = self._tool_calls_for_ollama(tool_calls)
+            elif role == "tool":
+                # Ollama's native /api/chat accepts ``tool_call_id`` and/or
+                # ``name`` on tool messages — pass both when available so the
+                # model can correlate result → call.
+                tool_call_id = message.get("tool_call_id")
+                if tool_call_id:
+                    normalized["tool_call_id"] = tool_call_id
+                tool_name = message.get("name") or message.get("tool_name")
+                if tool_name:
+                    normalized["name"] = tool_name
+
             ollama_messages.append(normalized)
         return ollama_messages
+
+    @staticmethod
+    def _tool_calls_for_ollama(
+        tool_calls: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Reshape framework tool-call dicts to Ollama-native ``tool_calls`` format.
+
+        Ollama expects ``arguments`` as a parsed object, not a JSON string.
+        """
+        out: List[Dict[str, Any]] = []
+        for tc in tool_calls or []:
+            if not isinstance(tc, dict):
+                continue
+            fn = tc.get("function") or {}
+            name = fn.get("name") or tc.get("name") or ""
+            args = fn.get("arguments")
+            # Coerce JSON-string arguments back to a dict for the wire payload.
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args) if args.strip() else {}
+                except (json.JSONDecodeError, ValueError):
+                    args = {}
+            elif args is None:
+                args = {}
+            entry: Dict[str, Any] = {
+                "function": {
+                    "name": name,
+                    "arguments": args if isinstance(args, dict) else {},
+                }
+            }
+            tid = tc.get("id")
+            if tid:
+                entry["id"] = tid
+            out.append(entry)
+        return out
 
     def _extract_usage(self, data: Dict[str, Any]) -> Dict[str, int]:
         """Map Ollama usage fields to the shared usage shape."""

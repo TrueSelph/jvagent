@@ -74,9 +74,10 @@ config:
 # Agents
 # Agents are discovered from agents/{namespace}/{agent_name}/ and installed from this list.
 agents:
-  - jvagent/skills_agent
-  - jvagent/example_agent
-  - jvagent/proposal_agent
-  - jvagent/unified_agent
-  - resolv/resolv_demo
+  - jvagent/cockpit_agent
+  # - jvagent/skills_agent
+  # - jvagent/example_agent
+  # - jvagent/proposal_agent
+  # - jvagent/unified_agent
+  # - resolv/resolv_demo
   # Optional: jvagent/skills_agent (Ollama + skills; see agents/jvagent/skills_agent/)

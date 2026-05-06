@@ -759,3 +759,53 @@ class MCPAction(Action):
             List of MCP Tool objects (name, description, inputSchema).
         """
         return await self._list_tools_cached(server_name)
+
+    async def get_tools(self) -> List[Any]:
+        from jvagent.tooling.tool import Tool
+
+        action = self
+        tools: List[Tool] = []
+
+        for server_name in action.get_server_names():
+            try:
+                mcp_tools = await action.get_tools_cached(server_name)
+            except Exception:
+                continue
+
+            for mt in mcp_tools:
+                name = getattr(mt, "name", "") or ""
+                desc = getattr(mt, "description", "") or ""
+                schema = (
+                    getattr(mt, "input_schema", None)
+                    or getattr(mt, "inputSchema", None)
+                    or {"type": "object", "properties": {}}
+                )
+
+                async def _dispatch(
+                    args: Dict[str, Any],
+                    sn=server_name,
+                    tn=name,
+                ) -> str:
+                    client = action.get_client(sn)
+                    from jvagent.action.mcp.mcp_action import _normalize_call_result
+
+                    result = await client.call_tool(tn, args)
+                    n = _normalize_call_result(result, tn)
+                    if n.is_error and n.text:
+                        return f"Error: {n.text}"
+                    return n.text
+
+                tools.append(
+                    Tool(
+                        name=f"mcp_{server_name}__{name}",
+                        description=desc,
+                        parameters_schema=(
+                            schema
+                            if isinstance(schema, dict)
+                            else {"type": "object", "properties": {}}
+                        ),
+                        execute=_dispatch,
+                    )
+                )
+
+        return tools

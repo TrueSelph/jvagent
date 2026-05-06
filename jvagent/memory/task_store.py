@@ -94,11 +94,15 @@ class Step:
     def _touch(self) -> None:
         self.updated_at = _now_iso()
 
-    def transition(self, new_status: Literal["pending", "in_progress", "done", "failed", "skipped"]) -> None:
+    def transition(
+        self, new_status: Literal["pending", "in_progress", "done", "failed", "skipped"]
+    ) -> None:
         if new_status not in STEP_STATUSES:
             raise TaskError(f"Invalid step status '{new_status}'")
         if self.status in _STEP_TERMINAL and new_status != self.status:
-            raise TaskError(f"Cannot transition step from '{self.status}' -> '{new_status}' (terminal)")
+            raise TaskError(
+                f"Cannot transition step from '{self.status}' -> '{new_status}' (terminal)"
+            )
         self.status = new_status
         self._touch()
         if new_status in _STEP_TERMINAL:
@@ -158,15 +162,24 @@ class Task:
     def _touch(self) -> None:
         self.updated_at = _now_iso()
 
-    def transition(self, new_status: Literal["pending", "active", "completed", "failed", "cancelled"]) -> None:
+    def transition(
+        self,
+        new_status: Literal["pending", "active", "completed", "failed", "cancelled"],
+    ) -> None:
         if new_status not in TASK_STATUSES:
             raise TaskError(f"Invalid task status '{new_status}'")
         if self.status in _TASK_TERMINAL and new_status != self.status:
-            raise TaskError(f"Cannot transition task from '{self.status}' -> '{new_status}' (terminal)")
+            raise TaskError(
+                f"Cannot transition task from '{self.status}' -> '{new_status}' (terminal)"
+            )
         # Simple state machine enforcement
-        if self.status == "pending" and new_status not in frozenset({"active", "cancelled"}):
+        if self.status == "pending" and new_status not in frozenset(
+            {"active", "cancelled"}
+        ):
             raise TaskError(f"Cannot transition task from 'pending' -> '{new_status}'")
-        if self.status == "active" and new_status not in frozenset({"completed", "failed", "cancelled"}):
+        if self.status == "active" and new_status not in frozenset(
+            {"completed", "failed", "cancelled"}
+        ):
             raise TaskError(f"Cannot transition task from 'active' -> '{new_status}'")
         self.status = new_status
         self._touch()
@@ -399,13 +412,17 @@ class TaskHandle:
 
     # --- Steps ---
 
-    async def add_step(self, description: str, data: Optional[Dict[str, Any]] = None) -> StepHandle:
+    async def add_step(
+        self, description: str, data: Optional[Dict[str, Any]] = None
+    ) -> StepHandle:
         """Append a new step to this task."""
         step = self._task.add_step(description, data=data)
         await self._store._persist_task(self._task)
         return StepHandle(self._store, self._task.id, step)
 
-    async def set_plan(self, descriptions: List[str], data: Optional[Dict[str, Any]] = None) -> List[StepHandle]:
+    async def set_plan(
+        self, descriptions: List[str], data: Optional[Dict[str, Any]] = None
+    ) -> List[StepHandle]:
         """Replace steps with a new ordered plan.
 
         Existing steps are discarded; use ``add_step`` to append instead.
@@ -419,9 +436,7 @@ class TaskHandle:
             self._task.steps[0].status = "in_progress"
         self._task._touch()
         await self._store._persist()
-        return [
-            StepHandle(self._store, self._task.id, s) for s in self._task.steps
-        ]
+        return [StepHandle(self._store, self._task.id, s) for s in self._task.steps]
 
     def get_step(self, step_id: str) -> Optional[StepHandle]:
         step = self._task.get_step(step_id)
@@ -429,7 +444,9 @@ class TaskHandle:
             return None
         return StepHandle(self._store, self._task.id, step)
 
-    def list_steps(self, status: Optional[Union[str, List[str]]] = None) -> List[StepHandle]:
+    def list_steps(
+        self, status: Optional[Union[str, List[str]]] = None
+    ) -> List[StepHandle]:
         return [
             StepHandle(self._store, self._task.id, s)
             for s in self._task.list_steps(status=status)

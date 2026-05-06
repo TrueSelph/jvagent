@@ -1,0 +1,64 @@
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Union
+
+DEFAULT_SKILL_MODEL: str = "claude-sonnet-4-20250514"
+
+
+@dataclass
+class CockpitConfig:
+    model: str = DEFAULT_SKILL_MODEL
+    model_temperature: float = 0.3
+    model_max_tokens: int = 8192
+    model_action_type: str = "AnthropicLanguageModelAction"
+
+    router_model: str = "gpt-4o-mini"
+    router_model_action_type: str = ""
+    router_model_temperature: float = 0.1
+    router_model_max_tokens: int = 400
+
+    max_iterations: int = 25
+    max_duration_seconds: float = 300.0
+    max_concurrent_tools: int = 5
+    tool_call_timeout: float = 60.0
+    sanitize_tool_errors: bool = True
+
+    stuck_detection_window: int = 4
+    stuck_intent_jaccard_threshold: float = 0.65
+    stuck_primary_tool_repeat: int = 4
+    stuck_min_iterations: int = 4
+
+    strict_grounding: bool = True
+    plan_first: bool = True
+    max_task_plan_steps: int = 50
+
+    skills: Optional[Union[str, List[str]]] = None
+    denied_skills: List[str] = field(default_factory=list)
+    skills_source: str = "both"
+
+    response_mode: str = "publish"
+
+    # Single switch controlling all internal-progress streaming
+    # (model thoughts, reasoning chunks, tool progress badges).
+    stream_internal_progress: bool = True
+
+    enable_skill_helper_tools: bool = True
+    enable_artifact_tools: bool = True
+    enable_cockpit_search: bool = True
+    router_use_cockpit_search: bool = False
+    skill_index_inline_max_skills: int = 5
+    enable_checkpoints: bool = True
+    enable_evidence_log: bool = True
+
+    max_full_tool_results: int = 10
+    max_tool_result_tokens: int = 400
+    tool_result_truncation_chars: int = 500
+
+    history_limit: int = 5
+
+    reasoning_budget_tokens: int = 0
+    reasoning_enabled: Optional[bool] = None
+    reasoning_effort: Optional[str] = None
+    reasoning_extra: Optional[Dict[str, Any]] = None
+
+    degenerate_response_max_chars: int = 25
+    tool_servers: List[str] = field(default_factory=list)

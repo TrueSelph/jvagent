@@ -49,8 +49,10 @@ actions:
       # ── Conversational branch (Persona; publish = respond_slim / respond = full compose) ──
       converse_enabled: true
       # ── Skill loop ──
+      # model_action_type: OpenAILanguageModelAction
+      # model: gpt-4.1
       model_action_type: OllamaLanguageModelAction
-      model: deepseek-v4-flash:cloud
+      model: kimi-k2.6:cloud
       skills:
         - pageindex_search
         - pageindex_docs

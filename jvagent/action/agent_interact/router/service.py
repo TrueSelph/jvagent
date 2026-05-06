@@ -755,9 +755,7 @@ class AgentInteractRouter:
         all_allowed = list(set(routed_skills + combined_exceptions))
 
         if conversation:
-            active_task = conversation.get_task(
-                task_type="INTERVIEW", status="active"
-            )
+            active_task = conversation.get_task(task_type="INTERVIEW", status="active")
             active_interview_name = (
                 active_task.get("owner_action") if active_task else None
             )

@@ -228,7 +228,9 @@ def test_get_task_by_description():
 def test_get_task_returns_none_when_description_not_found():
     """get_task returns None when no match for description."""
     conv = Conversation(session_id="", user_id="", channel="default")
-    conv.tasks = [{"id": "1", "title": "Task1", "description": "Task1", "status": "active"}]
+    conv.tasks = [
+        {"id": "1", "title": "Task1", "description": "Task1", "status": "active"}
+    ]
     t = conv.get_task(description="Task2")
     assert t is None
 

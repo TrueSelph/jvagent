@@ -113,3 +113,39 @@ class SerperWebSearchAction(BaseWebSearchAction):
                 exc_info=True,
             )
             return []
+
+    async def get_tools(self) -> List[Any]:
+        from jvagent.tooling.tool import Tool
+
+        action = self
+
+        async def _search(query: str, limit: int = 5) -> str:
+            import json
+
+            results = await action.search(query, max_results=limit)
+            if not results:
+                return "No web search results found."
+            return json.dumps(results, indent=2)
+
+        return [
+            Tool(
+                name="web_search__search",
+                description="Search the public web for current information. Returns titles, links, and snippets.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query.",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max results to return (default 5).",
+                            "default": 5,
+                        },
+                    },
+                    "required": ["query"],
+                },
+                execute=_search,
+            ),
+        ]

@@ -24,7 +24,7 @@ from jvagent.action.skill.skill_action_contracts import (
     TerminationReason,
 )
 from jvagent.memory.evidence_log import EvidenceEntry, EvidenceLog
-from jvagent.memory.task_store import TaskStore, TaskHandle, Step, Task
+from jvagent.memory.task_store import Step, Task, TaskHandle, TaskStore
 
 # ---------------------------------------------------------------------------
 # Fixtures

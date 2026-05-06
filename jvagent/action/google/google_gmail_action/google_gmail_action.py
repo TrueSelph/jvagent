@@ -86,3 +86,66 @@ class GoogleGmailAction(GoogleAction):
             )
             .execute()
         )
+
+    async def get_tools(self) -> List[Any]:
+        from jvagent.tooling.tool import Tool
+
+        action = self
+
+        async def _send(to: str, subject: str, body: str = "") -> str:
+            import json
+
+            data: Dict[str, Any] = {"to": to, "subject": subject}
+            if body:
+                data["html_content"] = body
+            result = await action.send_email(data)
+            return json.dumps(result, indent=2)
+
+        async def _list(query: str, limit: int = 10) -> str:
+            import json
+
+            results = await action.list_messages(query, max_results=limit)
+            return json.dumps(results, indent=2)
+
+        return [
+            Tool(
+                name="gmail__send",
+                description="Send an email via Gmail.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "to": {
+                            "type": "string",
+                            "description": "Recipient email address.",
+                        },
+                        "subject": {"type": "string", "description": "Email subject."},
+                        "body": {
+                            "type": "string",
+                            "description": "HTML body of the email.",
+                        },
+                    },
+                    "required": ["to", "subject"],
+                },
+                execute=_send,
+            ),
+            Tool(
+                name="gmail__search",
+                description="Search Gmail messages matching a query.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Gmail search query.",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max results (default 10).",
+                            "default": 10,
+                        },
+                    },
+                    "required": ["query"],
+                },
+                execute=_list,
+            ),
+        ]

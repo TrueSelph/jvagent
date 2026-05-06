@@ -294,3 +294,71 @@ class GoogleDriveAction(GoogleAction):
                 modified.append({"id": fid, "old": old_map[fid], "new": new_map[fid]})
 
         return {"added": added, "removed": removed, "modified": modified}
+
+    async def get_tools(self) -> List[Any]:
+        from jvagent.tooling.tool import Tool
+
+        action = self
+
+        async def _list(folder_id: str = "") -> str:
+            import json
+
+            results = await action.list_files(folder_id=folder_id or None, depth=3)
+            return json.dumps(results, indent=2)
+
+        async def _upload(
+            name: str,
+            content: str = "",
+            source_url: str = "",
+            parent_folder_id: str = "",
+        ) -> str:
+            import json
+
+            result = await action.upload_file(
+                name=name,
+                content=content or None,
+                source_url=source_url or None,
+                parent_folder_id=parent_folder_id or None,
+            )
+            return json.dumps(result, indent=2)
+
+        return [
+            Tool(
+                name="google_drive__list",
+                description="List files and folders in Google Drive.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "folder_id": {
+                            "type": "string",
+                            "description": "Parent folder ID (empty for root).",
+                        },
+                    },
+                },
+                execute=_list,
+            ),
+            Tool(
+                name="google_drive__upload",
+                description="Upload a file to Google Drive.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "File name."},
+                        "content": {
+                            "type": "string",
+                            "description": "Base64-encoded file content.",
+                        },
+                        "source_url": {
+                            "type": "string",
+                            "description": "URL to download the file from.",
+                        },
+                        "parent_folder_id": {
+                            "type": "string",
+                            "description": "Destination folder ID.",
+                        },
+                    },
+                    "required": ["name"],
+                },
+                execute=_upload,
+            ),
+        ]

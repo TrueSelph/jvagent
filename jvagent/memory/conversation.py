@@ -875,7 +875,9 @@ class Conversation(DeferredSaveMixin, Node):
         from jvagent.memory.task_store import TaskStore
 
         store = TaskStore(self)
-        return [t.to_dict() for t in store.list(status=status, owner_action=owner_action)]
+        return [
+            t.to_dict() for t in store.list(status=status, owner_action=owner_action)
+        ]
 
     def get_task(
         self,

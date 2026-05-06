@@ -189,6 +189,18 @@ class Action(Node):
         """
         return []
 
+    async def get_tools(self) -> List[Any]:
+        """Return Tool instances this action exposes for cockpit runs.
+
+        Override in subclasses that provide executable tools callable by the
+        language model. Each Tool wraps a named function with a JSON Schema
+        for arguments.
+
+        Returns:
+            List of :class:`jvagent.tooling.tool.Tool` instances.
+        """
+        return []
+
     @property
     def config(self) -> Dict[str, Any]:
         """Get action configuration from metadata.
