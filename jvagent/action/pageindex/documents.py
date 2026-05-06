@@ -18,8 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.core.context import (
     GraphContext,
-    get_default_context,
-    set_default_context,
+    scoped_default_context_async,
 )
 from jvspatial.db import get_database_manager
 
@@ -110,18 +109,15 @@ async def _get_app_id_from_node() -> Optional[str]:
         return None
 
 
-def _safe_get_prev_context() -> Optional[GraphContext]:
-    """Return the current default context, or None if none is set."""
-    try:
-        return get_default_context()
-    except RuntimeError:
-        return None
+def _scoped_pageindex_context(context: GraphContext):
+    """Async context manager binding ``context`` as the per-task default.
 
-
-def _safe_restore_context(prev: Optional[GraphContext]) -> None:
-    """Restore a previous default context if one was captured."""
-    if prev is not None:
-        set_default_context(prev)
+    Wraps ``scoped_default_context_async`` so PageIndex operations can swap
+    in the PageIndex graph DB for the duration of the call without leaking
+    across concurrent requests. Replaces the prior manual prev/restore
+    pattern that depended on a process-global mutation.
+    """
+    return scoped_default_context_async(context)
 
 
 def _to_yes_no(value: Any, default: bool) -> str:
@@ -559,14 +555,10 @@ async def get_document_roots(
     """Get DocumentRootNodes filtered by collection and optional metadata."""
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     context = _get_pageindex_context()
-    prev = _safe_get_prev_context()
-    try:
-        set_default_context(context)
+    async with _scoped_pageindex_context(context):
         query: Dict[str, Any] = {"context.collection_name": collection_name}
         query.update(_build_metadata_query(metadata_filter or {}))
         return await DocumentRootNode.find(query)
-    finally:
-        _safe_restore_context(prev)
 
 
 async def get_document_root(
@@ -576,17 +568,13 @@ async def get_document_root(
     """Get DocumentRootNode by doc_name and collection_name."""
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     context = _get_pageindex_context()
-    prev = _safe_get_prev_context()
-    try:
-        set_default_context(context)
+    async with _scoped_pageindex_context(context):
         query: Dict[str, Any] = {
             "context.doc_name": doc_name,
             "context.collection_name": collection_name,
         }
         roots = await DocumentRootNode.find(query)
         return roots[0] if roots else None
-    finally:
-        _safe_restore_context(prev)
 
 
 async def _document_node_counts_by_doc_name(collection_name: str) -> Dict[str, int]:
@@ -613,9 +601,7 @@ async def list_documents(
     """List documents in the PageIndex graph, optionally filtered by collection and metadata."""
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     context = _get_pageindex_context()
-    prev = _safe_get_prev_context()
-    try:
-        set_default_context(context)
+    async with _scoped_pageindex_context(context):
         query: Dict[str, Any] = {"context.collection_name": collection_name}
         query.update(_build_metadata_query(metadata_filter or {}))
         roots = await DocumentRootNode.find(query)
@@ -632,8 +618,6 @@ async def list_documents(
             }
             for r in roots
         ]
-    finally:
-        _safe_restore_context(prev)
 
 
 async def delete_document(
@@ -647,10 +631,7 @@ async def delete_document(
         return False
 
     context = _get_pageindex_context()
-    prev = _safe_get_prev_context()
-    try:
-        set_default_context(context)
-
+    async with _scoped_pageindex_context(context):
         # Clean up lexical index before cascade-deleting graph nodes
         try:
             from .lexical_index import remove_document_nodes
@@ -665,16 +646,21 @@ async def delete_document(
             if nodes:
                 await remove_document_nodes([n.id for n in nodes], collection_name)
         except Exception:
-            logger.debug(
-                "Lexical index cleanup failed for document deletion",
+            # Promote to warning: orphan postings linger forever and surface as
+            # phantom candidates in subsequent BM25 retrieval. A periodic
+            # janitor (lexical_index.remove_collection then reindex_nodes)
+            # is the recovery path.
+            logger.warning(
+                "Lexical index cleanup failed for document deletion (doc=%s, "
+                "collection=%s); orphan postings may remain.",
+                doc_name,
+                collection_name,
                 exc_info=True,
             )
 
         await root.delete()
         logger.info(f"Deleted document '{doc_name}'")
         return True
-    finally:
-        _safe_restore_context(prev)
 
 
 async def export_documents(
@@ -692,10 +678,8 @@ async def export_documents(
 
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     context = _get_pageindex_context()
-    prev = _safe_get_prev_context()
     logger.debug(f"Exporting documents in collection: {collection_name}")
-    try:
-        set_default_context(context)
+    async with _scoped_pageindex_context(context):
         if root_id:
             root_entity = await DocumentRootNode.get(root_id)
             if root_entity is None or not isinstance(root_entity, DocumentRootNode):
@@ -735,8 +719,6 @@ async def export_documents(
             "nodes": [n.model_dump() for n in nodes],
             "edges": [e.model_dump() for e in edges],
         }
-    finally:
-        _safe_restore_context(prev)
 
 
 async def import_documents(
@@ -749,9 +731,7 @@ async def import_documents(
 
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     context = _get_pageindex_context()
-    prev = _safe_get_prev_context()
-    try:
-        set_default_context(context)
+    async with _scoped_pageindex_context(context):
         if purge and collection_name:
             try:
                 from .lexical_index import remove_collection
@@ -796,8 +776,6 @@ async def import_documents(
                     )
             except Exception:
                 logger.debug("Lexical indexing failed during import", exc_info=True)
-    finally:
-        _safe_restore_context(prev)
 
 
 def _document_node_to_chunk_dict(node: DocumentNode) -> Dict[str, Any]:
@@ -916,17 +894,13 @@ async def list_document_chunks(
         return {"chunks": [], "total": 0}
 
     context = _get_pageindex_context()
-    prev = _safe_get_prev_context()
-    try:
-        set_default_context(context)
+    async with _scoped_pageindex_context(context):
         nodes = await DocumentNode.find(
             {
                 "context.doc_name": doc_name,
                 "context.collection_name": collection_name,
             }
         )
-    finally:
-        _safe_restore_context(prev)
 
     filtered = [n for n in nodes if _chunk_matches_filter(q, n)]
     if enabled_filter is not None:
@@ -953,12 +927,8 @@ async def list_collection_chunks(
     """List all DocumentNode chunks in a collection (all documents)."""
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     context = _get_pageindex_context()
-    prev = _safe_get_prev_context()
-    try:
-        set_default_context(context)
+    async with _scoped_pageindex_context(context):
         nodes = await DocumentNode.find({"context.collection_name": collection_name})
-    finally:
-        _safe_restore_context(prev)
 
     filtered = [n for n in nodes if _chunk_matches_filter(q, n)]
     if enabled_filter is not None:
@@ -989,9 +959,7 @@ async def patch_document_root(
         return None
 
     context = _get_pageindex_context()
-    prev = _safe_get_prev_context()
-    try:
-        set_default_context(context)
+    async with _scoped_pageindex_context(context):
         if "metadata" in fields:
             root.metadata = fields["metadata"]
         if "doc_url" in fields:
@@ -1008,8 +976,6 @@ async def patch_document_root(
             "metadata": root.metadata,
             "doc_url": root.doc_url,
         }
-    finally:
-        _safe_restore_context(prev)
 
 
 async def update_document_metadata(
@@ -1029,12 +995,8 @@ async def get_document_chunk(
     """Return chunk dict if the node exists and belongs to doc_name/collection."""
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     context = _get_pageindex_context()
-    prev = _safe_get_prev_context()
-    try:
-        set_default_context(context)
+    async with _scoped_pageindex_context(context):
         node = await DocumentNode.get(chunk_id)
-    finally:
-        _safe_restore_context(prev)
 
     if not node:
         return None
@@ -1052,9 +1014,7 @@ async def update_document_chunk(
     """Apply whitelisted field updates; refresh lexical index for this node."""
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     context = _get_pageindex_context()
-    prev = _safe_get_prev_context()
-    try:
-        set_default_context(context)
+    async with _scoped_pageindex_context(context):
         node = await DocumentNode.get(chunk_id)
         if (
             not node
@@ -1095,14 +1055,15 @@ async def update_document_chunk(
                 prefix_summary=node.prefix_summary or "",
             )
         except Exception:
-            logger.debug(
-                "Lexical index refresh failed after chunk update",
+            logger.warning(
+                "Lexical index refresh failed after chunk update (chunk=%s, "
+                "doc=%s); subsequent BM25 retrieval may return stale entries.",
+                node.id,
+                node.doc_name,
                 exc_info=True,
             )
 
         return _document_node_to_chunk_dict(node)
-    finally:
-        _safe_restore_context(prev)
 
 
 async def delete_document_chunk(
@@ -1115,9 +1076,7 @@ async def delete_document_chunk(
     """Delete a chunk node; optionally cascade to descendants. Cleans lexical index first."""
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     context = _get_pageindex_context()
-    prev = _safe_get_prev_context()
-    try:
-        set_default_context(context)
+    async with _scoped_pageindex_context(context):
         node = await DocumentNode.get(chunk_id)
         if (
             not node
@@ -1135,8 +1094,11 @@ async def delete_document_chunk(
                 ids = [node.id]
             await remove_document_nodes(ids, collection_name)
         except Exception:
-            logger.debug(
-                "Lexical index cleanup failed before chunk delete",
+            logger.warning(
+                "Lexical index cleanup failed before chunk delete (chunk=%s, "
+                "doc=%s); orphan postings may remain.",
+                chunk_id,
+                doc_name,
                 exc_info=True,
             )
 
@@ -1148,5 +1110,3 @@ async def delete_document_chunk(
             cascade,
         )
         return True
-    finally:
-        _safe_restore_context(prev)

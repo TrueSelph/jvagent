@@ -15,11 +15,20 @@ def bm25_score(
     avg_doc_len: float,
     k1: float = 1.2,
     b: float = 0.75,
+    term_df_map: Dict[str, int] = None,
 ) -> List[Dict[str, Any]]:
     """Score nodes using Okapi BM25.
 
     Each posting dict must contain ``node_id``, ``doc_name``, ``tf``, ``dl``
     (document length in tokens).
+
+    Args:
+        term_df_map: Optional precomputed document-frequency per term, taken
+            from the FULL corpus before any allowed-doc filter. When the
+            caller filters postings by metadata/doc_name before scoring,
+            ``len(postings)`` no longer reflects the corpus df and IDF would
+            become filter-dependent. Pass the unfiltered df via this map to
+            keep IDF stable across queries.
 
     Returns a list of ``{node_id, doc_name, score}`` dicts sorted by score
     descending.
@@ -37,7 +46,11 @@ def bm25_score(
         if not postings:
             continue
 
-        df = len(postings)
+        df = (
+            term_df_map.get(term, len(postings))
+            if term_df_map is not None
+            else len(postings)
+        )
         idf = math.log((total_nodes - df + 0.5) / (df + 0.5) + 1.0)
 
         for p in postings:

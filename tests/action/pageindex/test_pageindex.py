@@ -467,15 +467,13 @@ async def test_graph_to_tree_summary_vs_text_excerpt(pageindex_temp_db):
     from jvspatial.core.context import GraphContext
 
     ctx = GraphContext(database=db)
-    prev = get_default_context()
-    try:
-        set_default_context(ctx)
+    from jvspatial.core.context import scoped_default_context_async
+
+    async with scoped_default_context_async(ctx):
         tree_s = await _graph_to_tree(root, excerpt_source="summary")
         tree_t = await _graph_to_tree(root, excerpt_source="text")
         assert tree_s and tree_s[0]["summary"] == "LLM summary line"
         assert tree_t and tree_t[0]["summary"] == "Full section body"
-    finally:
-        set_default_context(prev)
 
 
 @pytest.mark.asyncio
@@ -573,9 +571,9 @@ async def test_graph_to_tree_truncates_summaries(pageindex_temp_db):
     from jvspatial.core.context import GraphContext
 
     ctx = GraphContext(database=db)
-    prev = get_default_context()
-    try:
-        set_default_context(ctx)
+    from jvspatial.core.context import scoped_default_context_async
+
+    async with scoped_default_context_async(ctx):
         tree = await _graph_to_tree(root, max_summary_chars=50)
         assert len(tree) >= 1
         max_len = _max_summary_len_in_tree(tree)
@@ -584,8 +582,6 @@ async def test_graph_to_tree_truncates_summaries(pageindex_temp_db):
         tree_long = await _graph_to_tree(root, max_summary_chars=1000)
         max_len_long = _max_summary_len_in_tree(tree_long)
         assert max_len_long <= 1001
-    finally:
-        set_default_context(prev)
 
 
 @pytest.mark.asyncio
@@ -1083,3 +1079,312 @@ async def test_ensure_jvforge_llm_webhook_calls_when_jvforge_url_set():
         ):
             await PageIndexAction._ensure_jvforge_llm_webhook_if_configured(action)
         mock_wh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_llm_bridge_pins_temperature_zero():
+    """Bridged LLM calls must pass temperature=0 to preserve PageIndex determinism.
+
+    Regression: prior bridge implementation called ``query_sync(prompt)`` with
+    no temperature kwarg, falling through to LanguageModelAction.temperature
+    (default 0.7). PageIndex's TOC detection / JSON tree-search depend on
+    deterministic single-shot output.
+    """
+    from jvagent.action.pageindex import llm_bridge
+
+    captured: dict = {}
+
+    class _FakeResult:
+        async def get_response(self) -> str:
+            return "ok"
+
+    class _FakeAction:
+        async def query_sync(self, prompt, **kwargs):
+            captured["prompt"] = prompt
+            captured["kwargs"] = kwargs
+            return _FakeResult()
+
+    llm_bridge.set_pageindex_model_action(_FakeAction())
+    try:
+        out = await llm_bridge.llm_acompletion("gpt-4o-mini", "hello")
+    finally:
+        llm_bridge.set_pageindex_model_action(None)
+
+    assert out == "ok"
+    assert captured["kwargs"].get("temperature") == 0
+
+
+def _snapshot_cv():
+    from jvspatial.core import context as _ctx
+
+    return _ctx._default_context_var.get()
+
+
+def _restore_cv(saved):
+    from jvspatial.core import context as _ctx
+
+    if saved is None:
+        _ctx.clear_default_context()
+    else:
+        _ctx._default_context_var.set(saved)
+
+
+def test_clear_default_context_resets_per_task_slot():
+    """``clear_default_context`` must zero the per-task ContextVar slot.
+
+    Regression: previously the only restore path was ``set_default_context``
+    which required a GraphContext, so callers that had captured ``prev=None``
+    skipped restoration and leaked the swap. ``clear_default_context``
+    closes that gap by accepting "no prior" cleanly.
+    """
+    from jvspatial.core.context import (
+        GraphContext,
+        _default_context_var,
+        clear_default_context,
+        set_default_context,
+    )
+
+    saved = _snapshot_cv()
+    try:
+        sentinel = GraphContext()
+        set_default_context(sentinel)
+        assert _default_context_var.get() is sentinel
+        clear_default_context()
+        assert _default_context_var.get() is None
+    finally:
+        _restore_cv(saved)
+
+
+def test_set_default_context_isolated_per_task():
+    """ContextVar refactor: concurrent tasks must not see each other's swaps."""
+    import asyncio
+
+    from jvspatial.core.context import (
+        GraphContext,
+        _default_context_var,
+        set_default_context,
+    )
+
+    ctx_a = GraphContext()
+    ctx_b = GraphContext()
+    seen: dict = {}
+
+    async def task_a():
+        set_default_context(ctx_a)
+        await asyncio.sleep(0.01)
+        seen["a"] = _default_context_var.get()
+
+    async def task_b():
+        set_default_context(ctx_b)
+        await asyncio.sleep(0.01)
+        seen["b"] = _default_context_var.get()
+
+    async def runner():
+        await asyncio.gather(task_a(), task_b())
+
+    saved = _snapshot_cv()
+    try:
+        asyncio.run(runner())
+        assert seen["a"] is ctx_a
+        assert seen["b"] is ctx_b
+    finally:
+        _restore_cv(saved)
+
+
+# ---------------------------------------------------------------------------
+# user_groups default-deny + supporting fixes
+# ---------------------------------------------------------------------------
+
+
+def _make_visitor(user_id: str, session_id: str = "sess-x"):
+    """Lightweight visitor stand-in for _resolved_metadata_filter()."""
+
+    class _V:
+        pass
+
+    v = _V()
+    v.user_id = user_id
+    v.session_id = session_id
+    return v
+
+
+def _resolve_mf(*, user_groups, metadata_filter, visitor):
+    """Invoke _resolved_metadata_filter without instantiating the Pydantic model.
+
+    The method only reads three attributes (``self.user_groups``,
+    ``self.metadata_filter``, ``self.config``) and never calls any model
+    machinery, so we can call it on a plain stub via the unbound method.
+    """
+    from types import SimpleNamespace
+
+    from jvagent.action.pageindex.pageindex_retrieval_interact_action import (
+        PageIndexRetrievalInteractAction,
+    )
+
+    stub = SimpleNamespace(
+        user_groups=user_groups,
+        metadata_filter=metadata_filter,
+        config={},
+    )
+    return PageIndexRetrievalInteractAction._resolved_metadata_filter(stub, visitor)
+
+
+def test_user_groups_unconfigured_passes_base_filter_through():
+    out = _resolve_mf(
+        user_groups={},
+        metadata_filter={"topic": "x"},
+        visitor=_make_visitor("anyone"),
+    )
+    assert out == {"topic": "x"}
+
+
+def test_user_groups_visitor_in_group_grants_access():
+    out = _resolve_mf(
+        user_groups={"admins": ["alice"]},
+        metadata_filter=None,
+        visitor=_make_visitor("alice"),
+    )
+    assert out == {"access": ["admins"]}
+
+
+def test_user_groups_visitor_in_multiple_groups_aggregates():
+    out = _resolve_mf(
+        user_groups={"admins": ["alice"], "editors": ["alice", "bob"]},
+        metadata_filter=None,
+        visitor=_make_visitor("alice"),
+    )
+    assert out["access"] == ["admins", "editors"]
+
+
+def test_user_groups_default_deny_when_visitor_matches_none():
+    """Regression: visitor not in any configured group must get an empty
+    ``access`` list so ``$in: []`` matches no documents — NOT pass through
+    the (possibly None) base filter, which would leak restricted docs."""
+    out = _resolve_mf(
+        user_groups={"admins": ["alice"]},
+        metadata_filter=None,
+        visitor=_make_visitor("eve"),
+    )
+    assert out == {"access": []}
+
+
+def test_user_groups_default_deny_preserves_base_filter_keys():
+    """Default-deny still keeps unrelated base filter keys (e.g. topic),
+    just adds the empty ``access`` constraint."""
+    out = _resolve_mf(
+        user_groups={"admins": ["alice"]},
+        metadata_filter={"topic": "finance"},
+        visitor=_make_visitor("eve"),
+    )
+    assert out == {"topic": "finance", "access": []}
+
+
+def test_bm25_idf_uses_corpus_df_not_filtered_count():
+    """Regression: passing ``term_df_map`` keeps IDF stable even when the
+    caller filtered the posting list before scoring."""
+    from jvagent.action.pageindex.ranking import bm25_score
+
+    postings_unfiltered = [
+        {"node_id": "n1", "doc_name": "d1", "tf": 1, "dl": 100},
+        {"node_id": "n2", "doc_name": "d2", "tf": 1, "dl": 100},
+        {"node_id": "n3", "doc_name": "d3", "tf": 1, "dl": 100},
+    ]
+    # Filter down to one posting (simulating allowed_doc_names).
+    filtered = postings_unfiltered[:1]
+
+    # Without term_df_map: IDF derives df from filtered (1) -> very high score.
+    no_map = bm25_score(["foo"], {"foo": filtered}, total_nodes=10, avg_doc_len=100.0)
+    # With term_df_map: IDF derives df from full corpus (3) -> lower score.
+    with_map = bm25_score(
+        ["foo"],
+        {"foo": filtered},
+        total_nodes=10,
+        avg_doc_len=100.0,
+        term_df_map={"foo": 3},
+    )
+
+    assert no_map and with_map
+    assert no_map[0]["score"] > with_map[0]["score"]
+
+
+def test_jvforge_response_missing_roots_raises():
+    """Regression: jvforge response with no ``roots`` must NOT silently
+    yield a no-op success."""
+    import asyncio
+
+    import httpx
+    from jvspatial.api.exceptions import ValidationError
+
+    from jvagent.action.pageindex.jvforge_assimilate import assimilate_via_jvforge
+
+    class _FakeResp:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return {"meta": {"ok": True}}  # no 'roots' key
+
+    class _FakeClient:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+        async def post(self, *a, **kw):
+            return _FakeResp()
+
+    with patch("httpx.AsyncClient", _FakeClient):
+        with pytest.raises(ValidationError) as exc:
+            asyncio.run(
+                assimilate_via_jvforge(
+                    base_url="https://forge.example",
+                    agent_id="a1",
+                    doc_name="missing.pdf",
+                    model=None,
+                    if_add_node_summary="no",
+                    collection_name="c1",
+                    metadata=None,
+                    doc_description=None,
+                    doc_url=None,
+                    convert_to_markdown=False,
+                    ocr=False,
+                    docling_ocr_engine=None,
+                    normalize_bold_headings=False,
+                    llm_webhook_url="https://example/webhook",
+                    filename="x.pdf",
+                    content=b"%PDF-1.0",
+                    file_url=None,
+                )
+            )
+    assert "roots" in str(exc.value).lower()
+
+
+def test_ssrf_guard_rejects_private_addresses():
+    """Regression: _ssrf_guard_url must reject loopback/private IPs."""
+    from jvspatial.api.exceptions import ValidationError
+
+    from jvagent.action.pageindex.endpoints import _ssrf_guard_url
+
+    for url in (
+        "http://127.0.0.1/x",
+        "http://localhost/x",
+        "http://10.0.0.1/x",
+        "http://192.168.1.5/x",
+        "http://169.254.169.254/latest/meta-data/",
+        "file:///etc/passwd",
+        "ftp://example.com/x",
+    ):
+        with pytest.raises(ValidationError):
+            _ssrf_guard_url(url)
+
+
+def test_ssrf_guard_allows_public_https():
+    """Public hostnames should pass; this must not break legitimate fetches."""
+    from jvagent.action.pageindex.endpoints import _ssrf_guard_url
+
+    # google.com / cloudflare.com etc. depend on DNS — use literal public IP.
+    _ssrf_guard_url("https://1.1.1.1/")

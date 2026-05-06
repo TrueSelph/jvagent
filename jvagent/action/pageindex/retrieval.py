@@ -16,8 +16,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from jvspatial.core.context import (
     GraphContext,
-    get_default_context,
-    set_default_context,
+    scoped_default_context_async,
 )
 from jvspatial.db import get_database_manager
 from jvspatial.env import env
@@ -769,14 +768,7 @@ async def search_documents(
         return []
 
     context = GraphContext(database=db)
-    try:
-        prev = get_default_context()
-    except RuntimeError:
-        prev = None
-
-    try:
-        set_default_context(context)
-
+    async with scoped_default_context_async(context):
         if strategy == "tree_search":
             results = await _search_via_tree_search(
                 context,
@@ -820,6 +812,3 @@ async def search_documents(
             for r in results:
                 r.pop("doc_url", None)
         return results
-    finally:
-        if prev is not None:
-            set_default_context(prev)

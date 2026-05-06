@@ -116,6 +116,15 @@ async def index_node(
             postings = record.get("postings", [])
             postings.append(new_posting)
             if len(postings) > _MAX_POSTINGS_PER_TERM:
+                logger.warning(
+                    "Lexical index: posting list for term '%s' in collection "
+                    "'%s' exceeds cap (%d); truncating oldest entries. "
+                    "Recall may degrade for this high-frequency term — "
+                    "consider raising _MAX_POSTINGS_PER_TERM or sharding.",
+                    term,
+                    collection_name,
+                    _MAX_POSTINGS_PER_TERM,
+                )
                 postings = postings[-_MAX_POSTINGS_PER_TERM:]
             record["postings"] = postings
             await db.save(_POSTINGS_COLLECTION, record)
@@ -142,35 +151,31 @@ async def remove_node(node_id: str, collection_name: str) -> None:
 
     terms = meta.get("terms", [])
 
-    # Scrub postings
+    # Scrub postings; capture this node's document length on the way through
+    # so collection stats can be decremented accurately. (Reading dl AFTER the
+    # filter would always return 0 because the posting is already gone.)
+    removed_len = 0.0
     for term in terms:
         pid = _posting_id(collection_name, term)
         record = await db.get(_POSTINGS_COLLECTION, pid)
         if not record:
             continue
-        postings = [p for p in record.get("postings", []) if p["node_id"] != node_id]
-        if postings:
-            record["postings"] = postings
+        kept: List[Dict[str, Any]] = []
+        for p in record.get("postings", []):
+            if p["node_id"] == node_id:
+                if not removed_len:
+                    removed_len = p.get("dl", 0) or 0.0
+            else:
+                kept.append(p)
+        if kept:
+            record["postings"] = kept
             await db.save(_POSTINGS_COLLECTION, record)
         else:
             await db.delete(_POSTINGS_COLLECTION, pid)
 
-    # Adjust collection stats
     cs_id = _collection_stats_id(collection_name)
     stats = await db.get(_STATS_COLLECTION, cs_id)
     if stats:
-        # Estimate removed token count from first posting that carried dl
-        removed_len = 0.0
-        for term in terms:
-            pid = _posting_id(collection_name, term)
-            rec = await db.get(_POSTINGS_COLLECTION, pid)
-            if rec:
-                for p in rec.get("postings", []):
-                    if p["node_id"] == node_id:
-                        removed_len = p.get("dl", 0)
-                        break
-            if removed_len:
-                break
         stats["total_nodes"] = max(0, stats.get("total_nodes", 1) - 1)
         stats["sum_doc_len"] = max(0.0, stats.get("sum_doc_len", 0.0) - removed_len)
         await db.save(_STATS_COLLECTION, stats)
@@ -291,6 +296,9 @@ async def search(
         allowed_set = set(allowed_doc_names)
 
     postings_map: Dict[str, List[Dict[str, Any]]] = {}
+    # Capture full-corpus df per term BEFORE applying allowed_set filter so
+    # BM25 IDF stays stable when the caller scopes by doc_name / metadata.
+    term_df_map: Dict[str, int] = {}
 
     for term in unique_terms:
         pid = _posting_id(collection_name, term)
@@ -298,6 +306,7 @@ async def search(
         if not record:
             continue
         postings = record.get("postings", [])
+        term_df_map[term] = len(postings)
         if allowed_set is not None:
             postings = [p for p in postings if p["doc_name"] in allowed_set]
         if postings:
@@ -311,6 +320,7 @@ async def search(
         postings_map=postings_map,
         total_nodes=total_nodes,
         avg_doc_len=avg_doc_len,
+        term_df_map=term_df_map,
     )
 
     return ranked[:candidate_k]

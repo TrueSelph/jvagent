@@ -83,7 +83,11 @@ async def llm_acompletion(
     action = get_pageindex_model_action()
     if action:
         try:
-            result = await action.query_sync(prompt)
+            # PageIndex algorithm relies on deterministic single-shot output
+            # (TOC detection, JSON tree-search node selection, fuzzy title
+            # match). Pin temperature=0 the same way upstream litellm path
+            # does; the model action's own default is typically 0.7.
+            result = await action.query_sync(prompt, temperature=0)
             return await result.get_response() if result else ""
         except PageIndexCancelled:
             raise
@@ -116,7 +120,10 @@ def llm_completion(
     action = get_pageindex_model_action()
     if action:
         try:
-            result = _run_async_from_sync(action.query_sync(prompt))
+            # See note in llm_acompletion: pin temperature=0 to preserve
+            # PageIndex algorithm determinism when bridging to a
+            # LanguageModelAction whose default temperature is non-zero.
+            result = _run_async_from_sync(action.query_sync(prompt, temperature=0))
             if return_finish_reason:
                 if not result:
                     return "", "error"

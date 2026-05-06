@@ -227,6 +227,42 @@ async def test_remove_node_from_index(pageindex_temp_db):
 
 
 @pytest.mark.asyncio
+async def test_remove_node_decrements_collection_stats(pageindex_temp_db):
+    """remove_node must decrement sum_doc_len by the removed node's dl.
+
+    Regression: prior implementation re-read the posting record AFTER the
+    node had already been filtered out, so removed_len was always 0 and
+    BM25's avg_doc_len drifted upward over time.
+    """
+    from jvspatial.db import get_database_manager
+
+    from jvagent.action.pageindex.lexical_index import (
+        _STATS_COLLECTION,
+        _collection_stats_id,
+    )
+
+    coll = "stats_col"
+    await index_node("sn1", "doc_a", coll, title="Alpha", text="lorem ipsum dolor")
+    await index_node("sn2", "doc_a", coll, title="Beta", text="sit amet consectetur")
+
+    db = get_database_manager().get_database(PAGEINDEX_DB_NAME)
+    stats_before = await db.get(_STATS_COLLECTION, _collection_stats_id(coll))
+    assert stats_before is not None
+    assert stats_before["total_nodes"] == 2
+    sum_before = stats_before["sum_doc_len"]
+    assert sum_before > 0
+
+    await remove_node("sn1", coll)
+
+    stats_after = await db.get(_STATS_COLLECTION, _collection_stats_id(coll))
+    assert stats_after is not None
+    assert stats_after["total_nodes"] == 1
+    # sum_doc_len must shrink by exactly the removed node's dl, not stay flat.
+    assert stats_after["sum_doc_len"] < sum_before
+    assert stats_after["sum_doc_len"] >= 0
+
+
+@pytest.mark.asyncio
 async def test_remove_document_nodes_batch(pageindex_temp_db):
     await index_node("bn1", "doc_del", "b_col", title="First", text="Content one")
     await index_node("bn2", "doc_del", "b_col", title="Second", text="Content two")

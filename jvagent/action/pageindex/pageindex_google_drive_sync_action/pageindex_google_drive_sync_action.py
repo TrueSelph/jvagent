@@ -861,27 +861,25 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
 
                     for key in google_drive_documents_node.ingesting_documents:
                         if key in ingesting_documents:
-                            existing_items = {
+                            queue = google_drive_documents_node.ingesting_documents[key]
+                            existing_items: Dict[str, int] = {
                                 _queue_item_file_id(item, key): idx
-                                for idx, item in enumerate(
-                                    google_drive_documents_node.ingesting_documents[key]
-                                )
+                                for idx, item in enumerate(queue)
                                 if _queue_item_file_id(item, key)
                             }
                             for item in ingesting_documents[key]:
                                 fid = _queue_item_file_id(item, key)
                                 if not fid:
-                                    google_drive_documents_node.ingesting_documents[
-                                        key
-                                    ].append(item)
+                                    queue.append(item)
                                 elif fid in existing_items:
-                                    google_drive_documents_node.ingesting_documents[
-                                        key
-                                    ][existing_items[fid]] = item
+                                    # Replace in place; existing index stays valid.
+                                    queue[existing_items[fid]] = item
                                 else:
-                                    google_drive_documents_node.ingesting_documents[
-                                        key
-                                    ].append(item)
+                                    # Append AND track index so subsequent items
+                                    # in the same batch with the same file_id
+                                    # update rather than duplicate.
+                                    existing_items[fid] = len(queue)
+                                    queue.append(item)
 
                     filter_drive_doc_queues_for_ingestible(
                         google_drive_documents_node.ingesting_documents

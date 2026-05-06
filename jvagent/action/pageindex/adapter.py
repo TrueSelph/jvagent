@@ -9,8 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from jvspatial.core.context import (
     GraphContext,
-    get_default_context,
-    set_default_context,
+    scoped_default_context_async,
 )
 from jvspatial.db import get_database_manager
 
@@ -198,13 +197,7 @@ async def persist_structure(
         raise
 
     context = GraphContext(database=db)
-    try:
-        prev_context = get_default_context()
-    except RuntimeError:
-        prev_context = None
-    try:
-        set_default_context(context)
-
+    async with scoped_default_context_async(context):
         root = DocumentRootNode(
             doc_name=doc_name,
             doc_description=doc_description,
@@ -232,9 +225,6 @@ async def persist_structure(
             persisted_nodes,
         )
         return root.id
-    finally:
-        if prev_context is not None:
-            set_default_context(prev_context)
 
 
 async def tree_to_graph(

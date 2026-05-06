@@ -292,7 +292,6 @@ class PageIndexAction(Action):
         retrieval_excerpt_source: Optional[Any] = None,
     ) -> List[Dict[str, Any]]:
         from ..config import (
-            get_pageindex_config,
             initialize_pageindex_database,
             set_pageindex_candidate_k,
             set_pageindex_enable_lexical_index,
@@ -301,7 +300,10 @@ class PageIndexAction(Action):
             set_pageindex_max_tree_prompt_tokens,
             set_pageindex_retrieval_excerpt_source,
         )
-        from ..llm_bridge import set_pageindex_model_action
+        from ..llm_bridge import (
+            get_pageindex_model_action,
+            set_pageindex_model_action,
+        )
         from ..retrieval import search_documents
 
         app = await self.get_app()
@@ -384,7 +386,10 @@ class PageIndexAction(Action):
         prev_model_action = None
         try:
             if model_action:
-                prev_model_action = get_pageindex_config().get("_model_action")
+                # Snapshot the live contextvar (not the static config dict —
+                # which never carried this value) so concurrent / nested
+                # search calls don't clobber an already-set parent action.
+                prev_model_action = get_pageindex_model_action()
                 set_pageindex_model_action(model_action)
 
             return await search_documents(
@@ -431,15 +436,18 @@ class PageIndexAction(Action):
         ocr: bool = False,
         docling_ocr_engine: Optional[str] = None,
     ) -> Dict[str, Any]:
-        from ..config import get_pageindex_config
         from ..documents import assimilate_document
-        from ..llm_bridge import set_pageindex_model_action
+        from ..llm_bridge import (
+            get_pageindex_model_action,
+            set_pageindex_model_action,
+        )
 
         model_action = await self.get_model_action(required=False)
         prev_model_action = None
         try:
             if model_action:
-                prev_model_action = get_pageindex_config().get("_model_action")
+                # Snapshot the live contextvar (see search() for rationale).
+                prev_model_action = get_pageindex_model_action()
                 set_pageindex_model_action(model_action)
 
             return await assimilate_document(

@@ -148,11 +148,17 @@ class TestResponseBuilder:
 
             payload = build_interaction_payload(
                 interaction,
-                active_tasks=[{"description": "Guide user to complete Signup"}],
-                completed_tasks=[{"description": "Completed task"}],
+                tasks=[
+                    {
+                        "description": "Guide user to complete Signup",
+                        "status": "active",
+                    },
+                    {"description": "Completed task", "status": "completed"},
+                ],
             )
 
-            # Development should include all fields including usage
+            # Development should include all fields including usage and the
+            # unified ``tasks`` list (each entry carries its own ``status``).
             assert payload == {
                 "id": "int_123",
                 "utterance": "Hello",
@@ -161,8 +167,13 @@ class TestResponseBuilder:
                 "directives": [{"test": "directive"}],
                 "parameters": [{"test": "parameter"}],
                 "events": [{"test": "event"}],
-                "active_tasks": [{"description": "Guide user to complete Signup"}],
-                "completed_tasks": [{"description": "Completed task"}],
+                "tasks": [
+                    {
+                        "description": "Guide user to complete Signup",
+                        "status": "active",
+                    },
+                    {"description": "Completed task", "status": "completed"},
+                ],
                 "observability_metrics": [{"test": "metric"}],
                 "usage": {},
                 "streamed": False,
@@ -248,7 +259,8 @@ class TestResponseBuilder:
             assert "report" in response
             assert response["report"] == [{"test": "report"}]
             assert "interaction" in response
-            assert "completed_tasks" in response["interaction"]
+            # Unified tasks list is always present in development mode.
+            assert "tasks" in response["interaction"]
         finally:
             if original:
                 os.environ["JVSPATIAL_ENVIRONMENT"] = original
@@ -277,20 +289,24 @@ class TestResponseBuilder:
             interaction.started_at = started
             interaction.completed_at = finished
 
+            # Tasks identify themselves via ``id`` (matches Task.to_dict()
+            # produced by jvagent.memory.task_store). The consolidated tasks
+            # builder dedupes on this key, so entries without ``id`` are
+            # silently dropped.
             in_window_completed = {
-                "task_id": "t1",
+                "id": "t1",
                 "description": "done in this interaction",
                 "status": "completed",
                 "updated_at": (started + timedelta(seconds=2)).isoformat(),
             }
             out_window_completed = {
-                "task_id": "t2",
+                "id": "t2",
                 "description": "done earlier",
                 "status": "completed",
                 "updated_at": (started - timedelta(seconds=2)).isoformat(),
             }
             active_task = {
-                "task_id": "t3",
+                "id": "t3",
                 "description": "still active",
                 "status": "active",
                 "updated_at": (started + timedelta(seconds=1)).isoformat(),
@@ -321,8 +337,12 @@ class TestResponseBuilder:
                     report=None,
                 )
 
-            assert response["interaction"]["active_tasks"] == [active_task]
-            assert response["interaction"]["completed_tasks"] == [in_window_completed]
+            # Unified ``tasks`` list: active + in-window terminal, sorted by
+            # ``updated_at`` ascending; out-of-window terminal is excluded.
+            assert response["interaction"]["tasks"] == [
+                active_task,
+                in_window_completed,
+            ]
         finally:
             if original:
                 os.environ["JVSPATIAL_ENVIRONMENT"] = original

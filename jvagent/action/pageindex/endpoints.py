@@ -369,14 +369,76 @@ def _safe_pageindex_relative_path(*segments: str) -> str:
         raise ValidationError(f"Invalid storage path: {e}")
 
 
+def _ssrf_guard_url(raw: str) -> None:
+    """Reject URLs that point at non-public targets.
+
+    Blocks:
+      * non-http(s) schemes (file://, gopher://, data:, ftp://, etc.)
+      * hostnames that resolve to RFC1918, loopback, link-local (169.254/16),
+        unique-local IPv6 (fc00::/7), or carrier-grade NAT (100.64/10) ranges
+      * literal ``localhost``
+
+    Applied to the **initial** URL only; redirects are validated per-hop in
+    the response hook below.
+    """
+    parsed = urlparse(raw)
+    if parsed.scheme not in ("http", "https"):
+        raise ValidationError("URL must be http or https")
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise ValidationError("URL must include a hostname")
+    if host in {"localhost", "ip6-localhost", "ip6-loopback"}:
+        raise ValidationError("URL host is not allowed")
+    try:
+        import ipaddress
+
+        addrs: List[str] = []
+        try:
+            addrs.append(str(ipaddress.ip_address(host)))
+        except ValueError:
+            import socket
+
+            try:
+                infos = socket.getaddrinfo(host, None)
+                addrs = [info[4][0] for info in infos]
+            except socket.gaierror:
+                raise ValidationError("URL host could not be resolved")
+        for addr in addrs:
+            ip = ipaddress.ip_address(addr)
+            if (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_reserved
+                or ip.is_multicast
+                or ip.is_unspecified
+            ):
+                raise ValidationError(
+                    "URL resolves to a non-public address; refusing to fetch"
+                )
+    except ImportError:
+        pass
+
+
 async def _fetch_url_bytes_capped(
     url: str, *, read_timeout: float = 120.0
 ) -> Tuple[bytes, str, Optional[str]]:
     raw = url.strip()
-    if not raw.startswith(("http://", "https://")):
-        raise ValidationError("URL must be http or https")
+    _ssrf_guard_url(raw)
     timeout = httpx.Timeout(read_timeout, connect=30.0)
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+
+    async def _validate_redirect(response: httpx.Response) -> None:
+        loc = response.headers.get("location")
+        if loc:
+            # httpx resolves relative redirects against response.url
+            target = str(httpx.URL(response.url).join(loc))
+            _ssrf_guard_url(target)
+
+    async with httpx.AsyncClient(
+        timeout=timeout,
+        follow_redirects=True,
+        event_hooks={"response": [_validate_redirect]},
+    ) as client:
         async with client.stream("GET", raw) as resp:
             if resp.status_code != 200:
                 raise ValidationError(f"Download failed: HTTP {resp.status_code}")

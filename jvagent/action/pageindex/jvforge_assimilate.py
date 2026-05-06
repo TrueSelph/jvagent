@@ -181,6 +181,20 @@ async def assimilate_via_jvforge(
             details={"response_type": type(graph).__name__},
         )
 
+    # Schema sanity-check: a successful jvforge ingest MUST return at least one
+    # root (DocumentRootNode). Without this check a malformed response (e.g.
+    # missing or empty ``roots``) silently produces a zero-document import that
+    # downstream code reports as success — masking a real upstream failure.
+    raw_roots = graph.get("roots")
+    if not isinstance(raw_roots, list) or not raw_roots:
+        raise ValidationError(
+            "jvforge response missing 'roots' (no document produced)",
+            details={
+                "roots_type": type(raw_roots).__name__,
+                "keys": sorted(graph.keys())[:20],
+            },
+        )
+
     eff_doc_name = _eff_doc_name_from_graph(graph, doc_name)
     normalized = strip_redundant_md_suffix(eff_doc_name)
     _rewrite_pageindex_graph_doc_names(graph, eff_doc_name, normalized)
