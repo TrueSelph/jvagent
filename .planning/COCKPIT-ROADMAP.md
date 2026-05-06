@@ -16,7 +16,7 @@ Living roadmap for getting `CockpitInteractAction` to default-action quality acr
 |---|---|---|
 | A — Baseline test harness + metrics | DONE | 14 unit tests + smoke harness committed (commit `7d95904`). Baseline: 33s/6 utterances, 34K tokens. |
 | B — Interact-action delegation | DONE | `RoutingResult.interact_actions` wired (commit `1aa7d3f`). 3 modes operational: skills-only, ia-only (curate + finalize via persona), both (curate + engine + walker continues to IAs). 27 tests pass. Smoke: "speak to human" → cockpit → intro → handoff → cockpit-finalize → persona produces composed response. |
-| C — Skill delegation hardening | PENDING | `sys.modules` pollution fix; deterministic activation logging. |
+| C — Skill delegation hardening | DONE | Loader fix + observable load report (commit `c9014b9`). `sys.modules` cleanup on exec failure; explicit (tool, skip_reason) tuple; SkillLoadReport on `_skill_state`; per-skill INFO summary + per-failure WARNING; 10 new tests cover happy path, missing required attrs, exec leaks, non-dict return, raises, allowlist, reload safety, unknown preloaded skill, collision recording, end-to-end report. 37 cockpit tests pass. |
 | D — Performance | PENDING | Cache tool registry per run; trim system prompt; reduce per-step rebuild. |
 | E — Default enablement | PENDING | Add cockpit to `minimal`/`conversational` profiles; coexist with legacy at weight `-200`. |
 | F — Access control integration | PENDING | Per-user access control for skills + interact_actions inside cockpit. Currently AccessControlAction supports `(user_id, channel, resource)` for InteractAction labels — needs cockpit wiring + skill resource registration. |
