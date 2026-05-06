@@ -153,12 +153,26 @@ class ToolExecutionEngine:
             envelope.close(content=msg, is_error=True)
             return result
         except Exception as exc:
-            logger.warning(
-                "Tool dispatch '%s' failed: %s", tool_name, exc, exc_info=True
-            )
-            msg = str(exc)
+            # When sanitize_errors is on, treat the full exception (including
+            # provider response bodies, headers, partial credentials) as
+            # untrusted and never write it to the operator log. The envelope
+            # still captures the raw exception for observability hooks that
+            # opt in.
             if self.sanitize_errors:
+                logger.warning(
+                    "Tool dispatch '%s' failed: %s",
+                    tool_name,
+                    type(exc).__name__,
+                )
                 msg = f"Tool execution failed: {tool_name}"
+            else:
+                logger.warning(
+                    "Tool dispatch '%s' failed: %s",
+                    tool_name,
+                    exc,
+                    exc_info=True,
+                )
+                msg = str(exc)
             result = ToolResult.error(msg, tool_call_id=tool_call_id)
             envelope.close(content=str(exc), is_error=True, exc=exc)
             return result

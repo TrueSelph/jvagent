@@ -15,7 +15,9 @@ from datetime import datetime
 from typing import (
     TYPE_CHECKING,
     Any,
+    ClassVar,
     Dict,
+    FrozenSet,
     List,
     Optional,
     Type,
@@ -121,6 +123,11 @@ class Action(Node):
         reachable via outgoing edges are cascade-deleted.
     """
 
+    # Names of attributes that contain credentials and must be redacted from
+    # ``export()``. Subclasses extend this frozenset to mark additional secrets
+    # (e.g. webhook tokens, OAuth refresh tokens).
+    _secret_attrs: ClassVar[FrozenSet[str]] = frozenset()
+
     # Core Attributes
     agent_id: str = attribute(
         indexed=True,
@@ -176,6 +183,37 @@ class Action(Node):
             Class name as a string
         """
         return self.__class__.__name__
+
+    @classmethod
+    def _all_secret_attrs(cls) -> FrozenSet[str]:
+        """Aggregate ``_secret_attrs`` across the MRO so subclasses don't need to repeat ancestors."""
+        names: set = set()
+        for base in cls.__mro__:
+            secrets = base.__dict__.get("_secret_attrs")
+            if secrets:
+                names.update(secrets)
+        return frozenset(names)
+
+    async def export(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        """Export the action with secret attributes redacted.
+
+        Removes every name in :attr:`_secret_attrs` (aggregated across the
+        class hierarchy) from the resulting dict — both at the top level (when
+        ``flat=True``) and from the nested ``context`` dict (default node
+        format). ``Node.export`` in jvspatial discards the upstream
+        ``exclude`` parameter, so the redaction has to happen on the way out.
+        """
+        result = await super().export(*args, **kwargs)
+        secrets = self._all_secret_attrs()
+        if not secrets or not isinstance(result, dict):
+            return result
+        for key in secrets:
+            result.pop(key, None)
+        ctx = result.get("context")
+        if isinstance(ctx, dict):
+            for key in secrets:
+                ctx.pop(key, None)
+        return result
 
     def get_capabilities(self) -> List[str]:
         """Return capabilities this action contributes to PersonaAction's prompt.

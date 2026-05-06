@@ -1,15 +1,14 @@
 """In-process file I/O scoped to ``<agent_id>/<user_id>/`` under jvspatial storage.
 
-Exposes strict storage helpers for LLM tool modules and
-``*_with_local_fallback`` helpers for imperative skill code when App/storage is
-unavailable (e.g. tests). Does not spawn MCP subprocesses.
+Strict storage helpers for LLM tool modules. Every public read/write applies
+``validate_relative_path`` so a tool cannot escape the sandbox via ``..`` or
+absolute paths. Does not spawn MCP subprocesses.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -52,10 +51,16 @@ def _parse_listing_lines(listing: str) -> Tuple[List[str], List[str]]:
     return sorted(dirs), sorted(files)
 
 
-def validate_relative_write_path(path: str) -> str:
-    """Normalize *path* for writes or raise if it is not a safe sandbox-relative path."""
+def validate_relative_path(path: str, *, allow_root: bool = False) -> str:
+    """Normalize *path* or raise if it is not a safe sandbox-relative path.
+
+    Rejects absolute filesystem paths, drive letters, and any ``..`` segment.
+    Reads pass ``allow_root=True`` so the sandbox root (``""``/``.``) lists fine.
+    """
     p = (path or "").strip().replace("\\", "/")
     if not p or p == ".":
+        if allow_root:
+            return ""
         raise ValueError(
             "path must be a non-empty relative path (e.g. output/doc.md), not '.' or empty"
         )
@@ -66,7 +71,7 @@ def validate_relative_write_path(path: str) -> str:
     segments = [s for s in p.split("/") if s and s != "."]
     if any(s == ".." for s in segments):
         raise ValueError("path must not contain '..' segments")
-    return p
+    return "/".join(segments)
 
 
 def normalize_sandbox_dir_prefix(raw: Optional[str], *, default: str = "output") -> str:
@@ -78,7 +83,7 @@ def normalize_sandbox_dir_prefix(raw: Optional[str], *, default: str = "output")
         )
     segments = [s for s in p.split("/") if s and s != "."]
     joined = "/".join(segments) if segments else default
-    validate_relative_write_path(f"{joined}/.jvagent_dir_check")
+    validate_relative_path(f"{joined}/.jvagent_dir_check")
     return joined
 
 
@@ -143,17 +148,17 @@ def _join_key_parts(*parts: str) -> str:
     rel = rel.replace("//", "/")
     if not rel:
         return rel
-    try:
-        return PathSanitizer.sanitize_path(rel)
-    except Exception:
-        return rel.replace("..", "").lstrip("/")
+    return PathSanitizer.sanitize_path(rel)
 
 
 def storage_key_for_path(agent_id: str, user_id: str, user_path: str) -> str:
-    """Full storage key: ``<sanitized_agent>/<sanitized_user>/<user_path>``."""
+    """Full storage key: ``<sanitized_agent>/<sanitized_user>/<validated_user_path>``.
+
+    *user_path* must already be validated by :func:`validate_relative_path`.
+    """
     base = resolve_mcp_sandbox_relpath(agent_id, user_id)
-    up = (user_path or ".").replace("\\", "/").lstrip("/")
-    if not up or up == ".":
+    up = (user_path or "").replace("\\", "/").lstrip("/")
+    if not up:
         return _join_key_parts(base) if base else base
     return _join_key_parts(base, up)
 
@@ -199,6 +204,7 @@ async def read_text_file(
     tail: Optional[int] = None,
 ) -> str:
     """Read UTF-8 text from *path* (relative to user sandbox)."""
+    path = validate_relative_path(path)
     agent_id, user_id = await resolve_agent_user(visitor)
     await _provision_rel_prefix(visitor, agent_id, user_id)
     fi = await _get_file_interface(visitor)
@@ -217,7 +223,7 @@ async def read_text_file(
 
 async def write_text_file(visitor: Any, path: str, content: str) -> None:
     """Write UTF-8 text to *path* (relative to user sandbox)."""
-    path = validate_relative_write_path(path)
+    path = validate_relative_path(path)
     agent_id, user_id = await resolve_agent_user(visitor)
     await _provision_rel_prefix(visitor, agent_id, user_id)
     fi = await _get_file_interface(visitor)
@@ -227,7 +233,7 @@ async def write_text_file(visitor: Any, path: str, content: str) -> None:
 
 async def write_binary_file(visitor: Any, path: str, data: bytes) -> None:
     """Write binary content to *path* (relative to user sandbox)."""
-    path = validate_relative_write_path(path)
+    path = validate_relative_path(path)
     agent_id, user_id = await resolve_agent_user(visitor)
     await _provision_rel_prefix(visitor, agent_id, user_id)
     fi = await _get_file_interface(visitor)
@@ -242,7 +248,7 @@ async def copy_host_file_into_sandbox(
 
     Does not fall back to writing *dest_sandbox_path* on the host if storage fails.
     """
-    dest_sandbox_path = validate_relative_write_path(dest_sandbox_path)
+    dest_sandbox_path = validate_relative_path(dest_sandbox_path)
     parent = str(Path(dest_sandbox_path).parent).replace("\\", "/")
     if parent and parent != ".":
         await create_directory(visitor, parent)
@@ -257,6 +263,7 @@ async def read_binary_file(visitor: Any, path: str) -> Optional[bytes]:
     Returns ``None`` if the object does not exist. Raises if storage is
     unavailable (same as other strict helpers).
     """
+    path = validate_relative_path(path)
     agent_id, user_id = await resolve_agent_user(visitor)
     await _provision_rel_prefix(visitor, agent_id, user_id)
     fi = await _get_file_interface(visitor)
@@ -266,6 +273,7 @@ async def read_binary_file(visitor: Any, path: str) -> Optional[bytes]:
 
 async def create_directory(visitor: Any, path: str) -> None:
     """Ensure a directory exists (marker for object storage, makedirs for local)."""
+    path = validate_relative_path(path)
     agent_id, user_id = await resolve_agent_user(visitor)
     await _provision_rel_prefix(visitor, agent_id, user_id)
     fi = await _get_file_interface(visitor)
@@ -277,6 +285,7 @@ async def create_directory(visitor: Any, path: str) -> None:
 
 async def list_directory(visitor: Any, path: str) -> str:
     """Human-readable listing under *path* (prefix listing)."""
+    path = validate_relative_path(path, allow_root=True)
     agent_id, user_id = await resolve_agent_user(visitor)
     await _provision_rel_prefix(visitor, agent_id, user_id)
     fi = await _get_file_interface(visitor)
@@ -308,6 +317,7 @@ async def list_directory(visitor: Any, path: str) -> str:
 
 async def delete_file(visitor: Any, path: str) -> bool:
     """Delete a file at *path* (relative to user sandbox)."""
+    path = validate_relative_path(path)
     agent_id, user_id = await resolve_agent_user(visitor)
     fi = await _get_file_interface(visitor)
     key = storage_key_for_path(agent_id, user_id, path)
@@ -316,61 +326,8 @@ async def delete_file(visitor: Any, path: str) -> bool:
 
 async def file_exists(visitor: Any, path: str) -> bool:
     """Return True if *path* exists under the user sandbox."""
+    path = validate_relative_path(path)
     agent_id, user_id = await resolve_agent_user(visitor)
     fi = await _get_file_interface(visitor)
     key = storage_key_for_path(agent_id, user_id, path)
     return await fi.file_exists(key)
-
-
-async def write_text_file_with_local_fallback(
-    visitor: Any, path: str, content: str
-) -> None:
-    """Write UTF-8 text via storage, or ``Path.write_text`` if that fails."""
-    try:
-        await write_text_file(visitor, path, content)
-    except Exception as exc:
-        logger.debug(
-            "fileinterface write_text_file_with_local_fallback: %s; using local",
-            exc,
-        )
-        p = Path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content, encoding="utf-8")
-
-
-async def create_directory_with_local_fallback(visitor: Any, path: str) -> None:
-    """Create directory via storage, or ``Path.mkdir`` if that fails."""
-    try:
-        await create_directory(visitor, path)
-    except Exception as exc:
-        logger.debug(
-            "fileinterface create_directory_with_local_fallback: %s; using local",
-            exc,
-        )
-        Path(path).mkdir(parents=True, exist_ok=True)
-
-
-async def copy_binary_file_with_local_fallback(
-    visitor: Any,
-    source_local_path: str,
-    dest_sandbox_path: str,
-) -> None:
-    """Copy host file bytes into storage, or ``shutil.copy2`` to *dest_sandbox_path*."""
-    try:
-        parent = str(Path(dest_sandbox_path).parent).replace("\\", "/")
-        if parent and parent != ".":
-            try:
-                await create_directory(visitor, parent)
-            except Exception:
-                pass
-        with open(source_local_path, "rb") as f:
-            data = f.read()
-        await write_binary_file(visitor, dest_sandbox_path, data)
-    except Exception as exc:
-        logger.debug(
-            "fileinterface copy_binary_file_with_local_fallback: %s; using local",
-            exc,
-        )
-        p = Path(dest_sandbox_path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source_local_path, str(p))

@@ -11,7 +11,17 @@ import random
 import time
 from abc import ABC
 from datetime import datetime, timezone
-from typing import Any, Callable, Coroutine, Dict, List, Optional, TypeVar
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    Coroutine,
+    Dict,
+    FrozenSet,
+    List,
+    Optional,
+    TypeVar,
+)
 
 import httpx
 from jvspatial.core.annotations import attribute
@@ -41,6 +51,8 @@ class BaseModelAction(Action, ABC):
         total_duration: Cumulative query duration in seconds
     """
 
+    _secret_attrs: ClassVar[FrozenSet[str]] = frozenset({"api_key"})
+
     # Common configuration attributes
     api_endpoint: str = attribute(default="", description="API endpoint URL")
     model: str = attribute(default="", description="Model identifier")
@@ -48,7 +60,9 @@ class BaseModelAction(Action, ABC):
         default="",
         description=(
             "Optional API credential override from agent.yaml. When empty, "
-            "implementations use provider-specific environment variables."
+            "implementations use provider-specific environment variables. "
+            "Listed in ``_secret_attrs`` so ``export()`` redacts it from "
+            "graph dumps and REST responses."
         ),
     )
     timeout: int = attribute(

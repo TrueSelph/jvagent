@@ -2,8 +2,8 @@ import ipaddress
 import logging
 import os
 import socket
-from typing import Any, Dict, Optional
-from urllib.parse import urlparse
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 from jvspatial import create_task
@@ -23,8 +23,14 @@ _SSRF_BLOCKED_NETWORKS = [
 ]
 
 
-def _validate_webhook_url(webhook_url: str) -> None:
-    """Raise ValueError if *webhook_url* resolves to a private or reserved IP address."""
+def _resolve_and_validate(webhook_url: str) -> Tuple[str, List[str]]:
+    """Resolve *webhook_url*'s hostname once and reject private/reserved IPs.
+
+    Returns ``(hostname, [validated_ip, ...])`` so the caller can pin the
+    httpx connection to those exact addresses, defending against DNS
+    rebinding (the resolver can't change between validation and connect
+    if the connect uses the IP we already verified).
+    """
     parsed = urlparse(webhook_url)
     hostname = (parsed.hostname or "").strip()
     if not hostname:
@@ -33,6 +39,8 @@ def _validate_webhook_url(webhook_url: str) -> None:
         addrs = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
     except socket.gaierror as e:
         raise ValueError(f"Webhook URL hostname resolution failed: {hostname}: {e}")
+
+    safe: List[str] = []
     for _, _, _, _, sockaddr in addrs:
         ip_str = sockaddr[0]
         try:
@@ -45,6 +53,52 @@ def _validate_webhook_url(webhook_url: str) -> None:
                     f"Webhook URL resolves to blocked address range "
                     f"({ip} in {net}): {webhook_url}"
                 )
+        safe.append(ip_str)
+
+    if not safe:
+        raise ValueError(f"Webhook URL has no usable address: {webhook_url}")
+    return hostname, safe
+
+
+def _validate_webhook_url(webhook_url: str) -> None:
+    """Validate that *webhook_url* resolves to a non-private IP."""
+    _resolve_and_validate(webhook_url)
+
+
+async def _post_webhook_pinned_async(
+    webhook_url: str, payload: Dict[str, Any], *, timeout: float = 10.0
+) -> httpx.Response:
+    """POST to *webhook_url* using a connection pinned to a validated IP.
+
+    Resolves the hostname through :func:`_resolve_and_validate`, picks the
+    first safe address, then issues the request against
+    ``scheme://<ip>:port/path?query`` with the original ``Host`` header set.
+    For HTTPS the SNI server-name is forwarded via the per-request extension
+    so certificate validation still uses the original hostname.
+    """
+    hostname, safe_ips = _resolve_and_validate(webhook_url)
+    parsed = urlparse(webhook_url)
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    target_ip = safe_ips[0]
+    netloc_ip = (
+        f"[{target_ip}]:{port}"
+        if ":" in target_ip and not target_ip.startswith("[")
+        else f"{target_ip}:{port}"
+    )
+    pinned_url = urlunparse(parsed._replace(netloc=netloc_ip))
+    headers = {"Host": parsed.netloc}
+
+    extensions: Dict[str, Any] = {}
+    if parsed.scheme == "https":
+        # httpx 0.25+: forward the SNI hostname so TLS verification matches
+        # the certificate's CN/SAN even though we connect to the IP directly.
+        extensions["sni_hostname"] = hostname
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        request = client.build_request(
+            "POST", pinned_url, json=payload, headers=headers
+        )
+        return await client.send(request, extensions=extensions or None)
 
 
 def _safe_webhook_target(webhook_url: str) -> str:
@@ -137,11 +191,9 @@ async def trigger_task_created_callback(
                     f"(Session: {conversation.session_id}) to {redacted_target}. "
                     f"Session-Targeted Dispatch URL: {redacted_dispatch_target}"
                 )
-                _validate_webhook_url(webhook_url)
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    response = await client.post(webhook_url, json=payload)
-                    response.raise_for_status()
-                    logger.debug(f"Webhook response: {response.status_code}")
+                response = await _post_webhook_pinned_async(webhook_url, payload)
+                response.raise_for_status()
+                logger.debug(f"Webhook response: {response.status_code}")
             except Exception as e:
                 logger.error(f"Failed to fire task creation webhook: {e}")
 
@@ -226,10 +278,8 @@ async def _trigger_task_event_callback(
                     conversation.session_id,
                     redacted_target,
                 )
-                _validate_webhook_url(webhook_url)
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    response = await client.post(webhook_url, json=payload)
-                    response.raise_for_status()
+                response = await _post_webhook_pinned_async(webhook_url, payload)
+                response.raise_for_status()
             except Exception as e:
                 logger.error(
                     "Failed to fire %s webhook: %s",
