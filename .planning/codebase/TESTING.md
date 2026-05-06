@@ -5,28 +5,14 @@
 ## Test Framework
 
 **Runner:**
-- pytest 7.0+ (minimum version)
-- pytest-asyncio 0.21.0+ for async test support
-- Config: `pyproject.toml` [tool.pytest.ini_options]
+- `pytest >=7.0` (`minversion = "7.0"` enforced in `pyproject.toml`)
+- `pytest-asyncio >=0.21.0` for async test support
+- `pytest-cov >=4.0.0` for coverage
+- `coverage >=7.0.0` for reporting
+- Config: `pyproject.toml` `[tool.pytest.ini_options]`
 
-**Assertion Library:**
-- pytest's native assertions (no external library)
-- Simple assert statements: `assert result is False`, `assert result.get("status") == "completed"`
-- Dictionary assertion patterns: `assert "key" in result`, `assert result["field"] == expected_value`
-
-**Run Commands:**
-```bash
-pytest tests/                          # Run all tests
-pytest tests/ -v                       # Verbose output with test names
-pytest tests/ --tb=short              # Short traceback format
-pytest -k "test_name"                 # Run specific test by name
-pytest tests/core/                    # Run tests in subdirectory
-pytest -m asyncio                     # Run only asyncio-marked tests
-pytest --cov=jvagent --cov-report=html  # Generate coverage report
-```
-
-**Configuration Details:**
-```ini
+**Pytest Configuration (`pyproject.toml`):**
+```toml
 [tool.pytest.ini_options]
 minversion = "7.0"
 addopts = "-ra -q --strict-markers"
@@ -40,268 +26,280 @@ filterwarnings = [
     "ignore::DeprecationWarning:pydantic.*",
     "ignore::PendingDeprecationWarning",
     "ignore::DeprecationWarning:starlette.*",
+    "ignore:builtin type.*has no __module__:DeprecationWarning",
+    "ignore:enable_cleanup_closed ignored:DeprecationWarning:aiohttp.*",
 ]
 ```
+
+**Run Commands:**
+```bash
+pytest tests/                                  # Run full suite
+pytest tests/ -v --tb=short                    # CI invocation (verbose, short tracebacks)
+pytest tests/path/to/test_file.py              # Run single file
+pytest tests/path/to/test_file.py::TestClass   # Run a single class
+pytest --cov=jvagent --cov-report=term         # With coverage
+pre-commit run --hook-stage manual pytest      # Run via the manual pre-commit hook
+```
+
+**Run via CI:** `pytest tests/ -v --tb=short` followed by `pre-commit run --all-files` in `.github/workflows/test-jvagent.yaml`.
 
 ## Test File Organization
 
 **Location:**
-- Tests co-located with source in parallel structure
-- `tests/` directory mirrors `jvagent/` structure
-- Example: `jvagent/core/` has corresponding `tests/core/`
-
-**Directory Structure:**
-```
-tests/
-├── conftest.py                          # Shared fixtures
-├── test_env_load.py                     # Root-level tests
-├── test_interview_branch_cache.py
-├── test_comprehensive_pruning.py
-├── test_tool_schema_audit.py
-├── core/
-│   ├── __init__.py
-│   ├── test_startup.py
-│   ├── test_graph_repair.py
-│   ├── test_callback.py
-│   ├── test_agent_yaml_validator.py
-│   ├── test_config_env_coercion.py
-│   └── ... (24 test files)
-├── action/
-│   └── ... (action-specific tests)
-└── memory/
-    └── ... (memory-specific tests)
-```
+- Tests live in a top-level `tests/` directory (not co-located with source)
+- Mirrors source structure: `tests/action/skill/` mirrors `jvagent/action/skill/`, `tests/memory/` mirrors `jvagent/memory/`, `tests/core/` mirrors `jvagent/core/`
+- 151 test files totalling ~29,210 lines of test code (vs ~118,770 lines of source)
 
 **Naming:**
-- Test files: `test_*.py`
-- Test functions: `def test_*()`
-- Test classes: `class Test*:` (optional grouping)
-- Private test helpers: `def _helper_name()`
+- Files prefixed with `test_` (e.g., `test_skill_action_core.py`, `test_pruning_fix.py`)
+- Test classes prefixed with `Test` (e.g., `TestSkillRunConfig`, `TestTaskStoreCreate`)
+- Test functions prefixed with `test_` (e.g., `test_create_creates_active_task`, `test_pruning_removes_unreachable_responses`)
+
+**Directory Layout:**
+```
+tests/
+├── __init__.py                                    # "Test suite for jvagent."
+├── conftest.py                                    # Single shared conftest (root only)
+├── test_*.py                                      # Top-level cross-cutting tests
+├── action/                                        # Mirrors jvagent/action/
+│   ├── __init__.py
+│   ├── test_action_loader.py
+│   ├── test_persona_*.py
+│   ├── access_control/
+│   ├── agent_interact/
+│   ├── email_action/
+│   ├── facebook_action/
+│   ├── interact/
+│   ├── interview/
+│   ├── long_memory/
+│   ├── mcp/
+│   ├── model/                                     # LM provider integrations
+│   │   └── language/                              # OpenAI / Anthropic / Ollama / OpenRouter retry tests
+│   ├── pageindex/
+│   ├── postiz_action/
+│   ├── response/
+│   ├── router/
+│   ├── skill/                                     # Largest cluster (~25 files)
+│   ├── task_creation_interact_action/
+│   ├── task_dispatcher/
+│   └── whatsapp/
+├── bundle/                                        # Dockerfile generator tests
+├── cli/                                           # CLI entry point tests
+├── core/                                          # Mirrors jvagent/core/
+├── integration/                                   # Live-style smoke tests (test_startup_health.py)
+├── memory/                                        # Mirrors jvagent/memory/
+│   └── services/
+└── scaffold/                                      # Scaffolding & profile resolution
+```
+
+**Notable subdirectories with `__init__.py`** (treated as packages):
+`tests/action/`, `tests/action/access_control/`, `tests/action/email_action/`, `tests/action/facebook_action/`, `tests/action/interact/`, `tests/action/interview/`, `tests/action/long_memory/`, `tests/action/model/`, `tests/action/pageindex/`, `tests/action/response/`, `tests/action/skill/`, `tests/action/whatsapp/`, `tests/core/`, `tests/memory/`.
 
 ## Test Structure
 
-**Module-level docstring:**
+**Module Header:**
 ```python
-"""Tests for agent graph repair utility."""
-```
+"""Tests for SkillAction core, contracts, checkpoint/recovery, compactor, evidence log."""
 
-**Test class pattern** (grouping related tests):
+from __future__ import annotations
+
+import asyncio
+import json
+from typing import Any, Dict, List, Optional
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from jvagent.action.skill.skill_action import SkillAction
+```
+(`tests/action/skill/test_skill_action_core.py`)
+
+**Suite Organization:**
+- Tests are grouped into `class Test*` blocks separated by section banners:
 ```python
-class TestGraphRepair:
-    """Test graph repair functionality."""
+# ---------------------------------------------------------------------------
+# SkillRunConfig defaults
+# ---------------------------------------------------------------------------
 
-    @pytest.mark.asyncio
-    async def test_repair_returns_expected_structure(self, temp_dir, test_db):
-        """Repair returns dict with all expected keys including memory repair fields."""
-        await Root.get()
 
-        result = await _repair_to_completion(dry_run=False)
-
-        assert "memory_repair_agents" in result
-        assert "orphaned_interactions_deleted" in result
-        # ... more assertions
+class TestSkillRunConfig:
+    def test_defaults_sane(self):
+        cfg = SkillRunConfig()
+        assert cfg.max_iterations == 25
+        assert cfg.strict_grounding is True
 ```
+- Top-level free functions also used for cross-cutting scenarios (`tests/test_pruning_fix.py`, `tests/test_env_load.py`, `tests/core/test_startup.py`)
 
-**Function-level tests** (standalone functions):
+**Async Tests:**
+- `asyncio_mode = "auto"` means async functions are treated as coroutines automatically
+- Despite `auto` mode, the codebase still routinely marks async tests explicitly with `@pytest.mark.asyncio` (~592 occurrences) for clarity:
 ```python
 @pytest.mark.asyncio
-async def test_operator_condition_reevaluates_on_session_state():
-    """Evaluator re-runs each time; changing response changes result."""
-    session = InterviewSession()
-    session.interview_type = "TestInterview"
-    question_name = "q1"
-    
-    result1 = await QuestionBranchEvaluator.matches(condition, session)
-    assert result1 is True
-    
-    session.responses[question_name] = "no"
-    result2 = await QuestionBranchEvaluator.matches(condition, session)
-    assert result2 is False
-```
-
-**Test function pattern:**
-1. **Setup phase**: Create test data, initialize objects
-2. **Action phase**: Call the function/method being tested
-3. **Assert phase**: Verify results with explicit assertions
-4. **Docstring**: One-line description of what is being tested
-
-## Fixtures
-
-**Shared fixtures in `conftest.py`:**
-
-```python
-@pytest.fixture(autouse=True)
-def _clear_jvspatial_load_env_cache():
-    """Shared test setup hook (kept for fixture compatibility)."""
-    yield
-```
-
-**Temporary directory fixture:**
-```python
-@pytest.fixture
-def temp_dir():
-    """Create a temporary directory for test files."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        yield Path(tmpdir)
-```
-
-**Test database fixture** (async, function-scoped):
-```python
-@pytest.fixture(scope="function")
-async def test_db(temp_dir, monkeypatch):
-    """Initialize test database and GraphContext."""
-    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", "false")
-    
-    test_db_path = temp_dir / "test_jvdb"
-    test_db_path.mkdir()
-    
-    db = JsonDB(base_path=str(test_db_path))
-    ctx = GraphContext(database=db)
-    set_default_context(ctx)
-    
-    yield test_db_path
-    # Cleanup by tempfile.TemporaryDirectory
-```
-
-**Fixture usage:**
-```python
-async def test_repair_on_clean_installed_agent(self, temp_dir, test_db):
-    """Tests can inject temp_dir and test_db."""
-    agent_dir = temp_dir / "agents" / "ns" / "agent1"
-    # Use fixtures...
-```
-
-**monkeypatch fixture:**
-- Built-in pytest fixture for environment variable and attribute patching
-- Used extensively for environment variable testing
-- Example: `monkeypatch.setenv("PRIMARY_KEY", "primary")`
-
-## Parametrized Tests
-
-**Pattern using @pytest.mark.parametrize:**
-```python
-@pytest.mark.parametrize(
-    "raw,expected",
-    [
-        ("true", True),
-        ("TRUE", True),
-        ("1", True),
-        ("yes", True),
-        ("on", True),
-        ("false", False),
-        ("0", False),
-        ("no", False),
-        ("off", False),
-        ("maybe", None),
-        ("", None),
-    ],
-)
-def test_parse_env_bool(raw, expected):
-    assert parse_env_bool(raw) == expected
-```
-
-**Benefits:**
-- Single test function runs multiple times with different inputs
-- Clear documentation of expected behaviors
-- Easy to add new cases
-
-## Mocking
-
-**Framework:** unittest.mock
-
-**Patterns:**
-
-```python
-from unittest.mock import AsyncMock, patch
-
-# Mock async functions
 async def test_run_app_startup_returns_false_when_actions_fail():
+    startup._startup_completed = False
     app = SimpleNamespace(
         initialize_actions=AsyncMock(return_value={"A": True, "B": False})
     )
-    
     with patch("jvagent.core.app.App.get", AsyncMock(return_value=app)):
         result = await startup.run_app_startup()
-    
     assert result is False
 ```
+(`tests/core/test_startup.py`)
+
+**Assertion Style:**
+- Plain `assert` statements (no custom assertion library)
+- Multi-line assertions broken across lines for readability
+- Both positive and negative assertions enforced (`assert ...`, `assert not ...`, `assert X is None`)
+
+## Fixtures
+
+**Shared Conftest (`tests/conftest.py`):**
+- Single root-level `conftest.py`; no per-subdirectory conftests
+- Three shared fixtures:
+  ```python
+  @pytest.fixture(autouse=True)
+  def _clear_jvspatial_load_env_cache():
+      """Shared test setup hook (kept for fixture compatibility)."""
+      yield
+
+  @pytest.fixture
+  def temp_dir():
+      """Create a temporary directory for test files."""
+      with tempfile.TemporaryDirectory() as tmpdir:
+          yield Path(tmpdir)
+
+  @pytest.fixture(scope="function")
+  async def test_db(temp_dir, monkeypatch):
+      """Initialize test database and GraphContext."""
+      monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", "false")
+      test_db_path = temp_dir / "test_jvdb"
+      test_db_path.mkdir()
+      db = JsonDB(base_path=str(test_db_path))
+      ctx = GraphContext(database=db)
+      set_default_context(ctx)
+      yield test_db_path
+  ```
+
+**Per-File Fixtures:**
+- Tests define module-private factories prefixed with `_make_` (e.g., `_make_conversation`, `_make_task_handle`, `_make_task_store`, `_make_model_result` in `tests/action/skill/test_skill_action_core.py`)
+- These return preconfigured `MagicMock` / `AsyncMock` objects with the contracts expected by the unit under test
+- `@pytest.fixture` and `@pytest.fixture(autouse=True)` used selectively in test modules (~43 occurrences) for setup that is hard to express as a factory
+
+## Mocking
+
+**Framework:** `unittest.mock` from the standard library — `MagicMock`, `AsyncMock`, `patch` (~75 import sites; ~1,677 mock-related references across the suite).
+
+**Patterns:**
+1. **AsyncMock for coroutine-returning APIs:**
+   ```python
+   th.add_event = AsyncMock(return_value=True)
+   th.complete = AsyncMock(return_value=True)
+   ```
+2. **MagicMock with attribute pre-population:**
+   ```python
+   conv = MagicMock()
+   conv.context = {}
+   conv.tasks = []
+   conv.save = AsyncMock()
+   ```
+3. **Async context manager mocking:**
+   ```python
+   def _tracking_ctx():
+       ctx = MagicMock()
+       handle = _make_task_handle()
+       ctx.__aenter__ = AsyncMock(return_value=handle)
+       ctx.__aexit__ = AsyncMock(return_value=False)
+       return ctx
+   ```
+4. **Patch context for module-level callables:**
+   ```python
+   with patch("jvagent.core.app.App.get", AsyncMock(return_value=app)):
+       result = await startup.run_app_startup()
+   ```
+5. **Async generator helpers:**
+   ```python
+   async def _aiter(items):
+       for item in items:
+           yield item
+   ```
+6. **`monkeypatch` fixture for environment + attribute mutation:** preferred over manual `os.environ` manipulation. Used pervasively in `tests/test_env_load.py` and `tests/conftest.py`.
 
 **What to Mock:**
-- External service calls (APIs, databases)
-- AsyncMock for async dependencies
-- patch() context manager for temporary patches
-- SimpleNamespace for creating stub objects with attributes
+- External SDKs and HTTP clients (OpenAI, Anthropic, Ollama, OpenRouter providers — `tests/action/model/`)
+- Network IO (`httpx`, `aiohttp`)
+- The graph database when isolating a unit (`MagicMock` `Conversation`, `User` for `TaskStore`/`SkillAction` tests)
+- Module-level singletons via `patch("module.path.symbol")` (e.g., `patch("jvagent.core.app.App.get", ...)`)
 
 **What NOT to Mock:**
-- The core business logic being tested
-- Database operations when using test_db fixture
-- Graph traversal logic (use real objects)
-- Helper functions in the same module
+- The real `jvspatial` graph store when running scenarios involving traversal (`test_db` fixture provisions a real `JsonDB`)
+- Pure data transforms (`SkillAction._reorder_task_calls_dependency_first` is exercised with real lists/dicts)
+- YAML loading (validated against actual fixture YAML files in `examples/jvagent_app`)
 
-**Mock verification:**
+## Real-DB Tests
+
+**`test_db` fixture (`tests/conftest.py`):**
+- Creates a temporary directory + `JsonDB` instance
+- Wraps it in a `GraphContext` and sets it as default via `set_default_context(ctx)`
+- Forces `JVSPATIAL_ENABLE_DEFERRED_SAVES=false` so `Interaction`/`Conversation` writes flush immediately (deferred saves break tests that re-load entities through `Interaction.get()`)
+- Cleanup is automatic via `tempfile.TemporaryDirectory` context
+
+**Tests that use `test_db`:** memory/conversation/interaction tests (`tests/memory/test_*.py`), interview branch and pruning tests (`tests/test_pruning_fix.py`, `tests/action/interview/test_*.py`), graph repair (`tests/core/test_graph_repair*.py`).
+
+## Test Data and Fixtures
+
+**Inline Construction:**
+- Most test data is constructed in-place inside the test or in a `_make_*` helper at module scope
+- Domain objects often built via dict literals matching the production schema:
 ```python
-async_mock = AsyncMock(return_value=expected_result)
-# After calling function...
-# async_mock.assert_called_once()
-# async_mock.assert_called_with(arg1, arg2)
+session.question_graph = [
+    {
+        "name": "q1",
+        "question": "What is your choice?",
+        "constraints": {"type": "string"},
+        "branches": [...],
+        "default_next": "REVIEW",
+    },
+    ...
+]
 ```
 
-## Test Data and Factories
+**No Centralized Fixture Library:**
+- No `tests/fixtures/` directory; no separate factory module shared across suites
+- Each test file builds the minimal mock graph it needs
 
-**Inline test data:**
-```python
-session = InterviewSession()
-session.interview_type = "TestInterview"
-session.question_name = "q1"
-session.responses[question_name] = "yes"
+**Example Apps:**
+- `examples/jvagent_app/` referenced by CI's `python -m jvagent.cli validate examples/jvagent_app` step
+- Used as ground-truth YAML for validator tests in `tests/core/test_agent_yaml_validator.py`, `tests/core/test_app_yaml_validator.py`
 
-dead_edge = _dead_edge_data(
-    "e.Edge.dead_edge_test",
-    "n.Node.nonexistent_source",
-    "n.Node.nonexistent_target",
-)
-```
+## Test Categories
 
-**Test helper functions:**
-```python
-def _dead_edge_data(edge_id: str, source: str, target: str) -> dict:
-    """Build edge data in persistence format (includes context for deserialization)."""
-    return {
-        "id": edge_id,
-        "entity": "Edge",
-        "type_code": "e",
-        "context": {},
-        "source": source,
-        "target": target,
-        "bidirectional": True,
-    }
+**Unit Tests:**
+- The bulk of the suite — exercise individual classes in isolation with mocked collaborators
+- Examples: `tests/action/skill/test_skill_action_core.py` (helpers, contracts, checkpoint, recovery, evidence log), `tests/memory/test_task_service_typed.py` (TaskStore), `tests/core/test_startup.py`
 
-async def _repair_to_completion(**kwargs: Any) -> Dict[str, Any]:
-    """Synchronous engine: re-invoke until the pipeline reports completed."""
-    last: Dict[str, Any] = {}
-    for _ in range(_REPAIR_MAX_STEPS):
-        last = await repair_agent_graph(**kwargs)
-        if last.get("status") == "completed":
-            return last
-    raise AssertionError("repair did not complete within %d steps" % _REPAIR_MAX_STEPS)
-```
+**Component / Behavior Tests:**
+- Use `test_db` to exercise multi-class flows against a real `JsonDB`
+- Examples: `tests/test_pruning_fix.py`, `tests/action/interview/test_branching.py`, `tests/core/test_graph_repair.py`
 
-**File system fixtures:**
-```python
-agent_dir = temp_dir / "agents" / "ns" / "agent1"
-agent_dir.mkdir(parents=True)
-(agent_dir / "agent.yaml").write_text(
-    """agent: ns/agent1
-version: 1.0.0
-author: Test
-"""
-)
-```
+**Integration Tests:**
+- `tests/integration/test_startup_health.py` — boots the app and exercises health endpoints
+- `tests/action/agent_interact/test_agent_interact_integration.py` — agent-interact pipeline end-to-end
+
+**Validator Tests:**
+- `tests/core/test_agent_yaml_validator.py`, `tests/core/test_app_yaml_validator.py`, `tests/core/test_validate_command.py` — verify YAML schema and CLI `validate` command
+
+**Provider/Adapter Tests:**
+- `tests/action/model/test_openai_actions.py`, `test_anthropic_actions.py`, `test_ollama_actions.py`, `test_openrouter_actions.py`, `test_streaming_tool_calls.py`, `test_multimodal.py`
+- `tests/action/model/language/test_lm_retry.py` — retry semantics for `BaseModelAction` / `LanguageModelAction`
+
+**CLI / Bundle Tests:**
+- `tests/cli/test_server_config_env_alignment.py`
+- `tests/bundle/test_dockerfile_generator.py`
 
 ## Coverage
 
-**Configuration in pyproject.toml:**
-```ini
+**Configuration (`pyproject.toml`):**
+```toml
 [tool.coverage.run]
 source = ["jvagent"]
 omit = ["*/tests/*"]
@@ -316,177 +314,89 @@ exclude_lines = [
 ]
 ```
 
-**Generate coverage report:**
-```bash
-pytest --cov=jvagent tests/
-pytest --cov=jvagent --cov-report=html tests/
-pytest --cov=jvagent --cov-report=term-missing tests/
-```
+**Tooling:**
+- `pytest-cov >=4.0.0` and `coverage >=7.0.0` declared in both `[project.optional-dependencies].dev` and `[project.optional-dependencies].test`
 
-**Requirements:** No coverage percentage enforced (not in CI/CD)
-
-**Excluded from coverage:**
-- `__repr__` methods
-- AssertionError/NotImplementedError raises
-- `if __name__ == "__main__"` guards
-- Lines marked with `# pragma: no cover`
-
-## Test Types
-
-**Unit Tests:**
-- Scope: Individual functions and methods
-- Isolation: Mock external dependencies
-- Examples:
-  - `test_env_single_key_read`: Tests env variable reading
-  - `test_parse_env_bool`: Tests boolean parsing with multiple inputs
-  - `test_operator_condition_reevaluates_on_session_state`: Tests condition evaluation logic
-
-**Integration Tests:**
-- Scope: Multiple components working together
-- Isolation: Uses real test_db fixture
-- Examples:
-  - `test_repair_returns_expected_structure`: Tests full graph repair pipeline
-  - `test_repair_on_clean_installed_agent`: Tests agent installation + repair
-  - `test_repair_dead_edge_removal`: Tests database cleanup in context
-
-**E2E/Smoke Tests:**
-- Not formally structured as separate category
-- Some tests use full app initialization
-- Example file: `cockpit_phaseA_smoke.py` (outside test suite)
+**Enforcement:**
+- No coverage threshold gate in CI — coverage is opt-in for local runs (`pytest --cov=jvagent`)
 
 ## Common Patterns
 
-**Async Test Pattern:**
+**Async Testing:**
 ```python
 @pytest.mark.asyncio
-async def test_async_operation(self, test_db):
-    """Async tests use @pytest.mark.asyncio decorator."""
-    result = await some_async_function()
-    assert result is not None
+async def test_create_creates_active_task():
+    store, conv = _make_store()
+    handle = await store.create(title="test task", description="test task")
+    await handle.start()
+    assert handle.id
+    assert len(conv.tasks) == 1
+    task = conv.tasks[0]
+    assert task["status"] == "active"
 ```
+(`tests/memory/test_task_service_typed.py`)
 
-**Error Testing:**
+**Patching Class Methods:**
 ```python
-def test_env_returns_default_for_blank(monkeypatch):
-    """Test fallback when value is blank/whitespace."""
-    monkeypatch.setenv("PRIMARY_KEY", "   ")
-    assert env("PRIMARY_KEY", default="fallback") == "fallback"
-
-def test_repair_dry_run_no_changes(self, temp_dir, test_db):
-    """Test dry-run mode doesn't modify state."""
-    # Setup
-    ctx = get_default_context()
-    dead_edge = _dead_edge_data(...)
-    await ctx.database.save("edge", dead_edge)
-    
-    # Action
-    result = await _repair_to_completion(dry_run=True)
-    
-    # Assert dry_run flag and no changes
-    assert result["dry_run"] is True
-    retrieved = await ctx.database.get("edge", dead_edge["id"])
-    assert retrieved is not None  # Not deleted in dry-run
+with patch("jvagent.core.app.App.get", AsyncMock(return_value=app)):
+    result = await startup.run_app_startup()
 ```
 
-**State Mutation Testing:**
+**Environment Manipulation:**
 ```python
-@pytest.mark.asyncio
-async def test_branch_cache_invalidate_clears_entry():
-    """BranchCache invalidate(question_name) clears that question's cached target."""
-    session = InterviewSession()
-    session.context = {}
-    branch_cache = BranchCache(session)
-    
-    branch_cache.set("a", "target_a")
-    assert branch_cache.get("a") == "target_a"
-    
-    branch_cache.invalidate("a")
-    assert branch_cache.get("a") is None
+def test_env_bool_parsing(monkeypatch):
+    from jvspatial.env import env, parse_bool
+    monkeypatch.setenv("FEATURE_FLAG", "on")
+    assert env("FEATURE_FLAG", default=False, parse=parse_bool) is True
 ```
+(`tests/test_env_load.py`)
 
-**Database Transaction Testing:**
+**Parametrize / Multiple Cases:**
+- Parametrize is supported (markers + decorators counted in 633 places) but most tests prefer one explicit `test_*` per case for readability
+- Test classes group related cases (e.g., `TestRecoveryPolicy.test_non_recoverable_returns_terminate`, `test_recoverable_within_budget_returns_retry`, `test_budget_exhaustion_returns_terminate`)
+
+**Error / Branch Testing:**
 ```python
-@pytest.mark.asyncio
-async def test_repair_dead_edge_removal(self, temp_dir, test_db):
-    """Repair removes edges whose source or target nodes do not exist."""
-    await Root.get()
-    
-    ctx = get_default_context()
-    dead_edge = _dead_edge_data(...)
-    await ctx.database.save("edge", dead_edge)
-    
-    result = await _repair_to_completion(dry_run=False)
-    
-    assert result["dead_edges_removed"] == 1
-    retrieved = await ctx.database.get("edge", dead_edge["id"])
-    assert retrieved is None  # Deleted
+def test_apply_plan_first_tool_gate_blocks_substantive_without_plan(self):
+    d, syn, blocked = SkillAction._apply_plan_first_tool_gate(...)
+    assert d == []
+    assert len(syn) == 1
+    assert "mcp_x" in blocked
 ```
 
-## Test Markers
-
-**Built-in markers:**
-- `@pytest.mark.asyncio`: Marks async test functions
-  - Enables asyncio_mode = "auto" behavior
-  - Function scope loop as per config
-
-**Custom markers:**
-- Only "asyncio" defined in pyproject.toml
-- No other custom markers in use currently
-
-## Pre-commit Hook
-
-**From `.pre-commit-config.yaml`:**
-```yaml
-- repo: local
-  hooks:
-    - id: pytest
-      name: pytest
-      entry: pytest
-      language: system
-      pass_filenames: false
-      always_run: true
-      args: [tests/, -v, --tb=short]
-      stages: [manual]
+**Round-Trip Testing for Serialization:**
+```python
+def test_round_trip(self):
+    ckpt = LoopCheckpoint(iteration=3, phase="model_call", elapsed_seconds=12.5, ...)
+    d = ckpt.to_dict()
+    restored = LoopCheckpoint.from_dict(d)
+    assert restored.iteration == 3
 ```
+(`tests/action/skill/test_skill_action_core.py`)
 
-**Usage:** Run pre-commit hook manually with `pre-commit run pytest --hook-stage manual`
+## Warning Suppression
 
-**Note:** Tests run manually (not on every commit). To check before pushing:
-```bash
-pytest tests/ -v --tb=short
-```
+The suite explicitly silences known-noisy deprecation warnings to keep test output focused:
+- `DeprecationWarning:pydantic.*` (Pydantic v1 → v2 transitional warnings)
+- `PendingDeprecationWarning`
+- `DeprecationWarning:starlette.*`
+- `DeprecationWarning:aiohttp.*` (the `enable_cleanup_closed ignored` message)
+- A specific message about `builtin type.*has no __module__`
 
-## Test Statistics
+If you see these warnings come back, check `[tool.pytest.ini_options].filterwarnings` in `pyproject.toml`.
 
-**Test count:** 135 test files in `tests/` directory
+## Adding New Tests
 
-**Test distribution:**
-- Root level tests: ~15 files (env, pruning, schema audit, etc.)
-- Core tests: 25+ files in `tests/core/`
-- Action tests: scattered in `tests/action/`
-- Memory tests: in `tests/memory/`
-
-**File sizes:**
-- Most test files: 50-200 lines
-- Complex tests: `test_graph_repair.py` (350+ lines with multiple test classes)
-- Parametrized tests: 30-50 lines each
-
-## Key Testing Challenges
-
-**Async Coordination:**
-- Tests use pytest-asyncio with function-scoped loops
-- Database persistence must be immediate (not deferred) for test assertions to work
-- Fixture config: `monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", "false")`
-
-**Graph Structure Testing:**
-- Tests verify complex graph repair operations
-- Use _repair_to_completion helper to handle multiple ticks
-- Assertions verify counts of different repair types
-
-**Isolation:**
-- test_db fixture ensures clean database per test
-- monkeypatch ensures environment variables don't leak
-- No shared module-level state between tests
+1. **Place the test file** mirroring the source path:
+   - Source `jvagent/action/foo/bar.py` → test `tests/action/foo/test_bar.py`
+2. **Add `__init__.py`** if creating a new package directory
+3. **Open with a docstring** describing the area under test (`"""Tests for ..."""`)
+4. **Import order:** `__future__`, stdlib, third-party (`pytest`, `unittest.mock`), then `jvagent.*`
+5. **Group cases under `class Test*`** for related scenarios; otherwise use top-level `test_*` functions
+6. **Use `@pytest.mark.asyncio`** even though `asyncio_mode = "auto"` is set — this is the project convention
+7. **Use `MagicMock` / `AsyncMock`** for collaborators; reach for `test_db` only when the test must exercise real graph traversal
+8. **Keep mock factories module-private** (`_make_*`) and place them above the test classes
+9. **Assert against the public contract** — observable state, return values, mock call assertions (`mock.save.assert_called()`)
 
 ---
 

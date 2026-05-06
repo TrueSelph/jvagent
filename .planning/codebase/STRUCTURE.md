@@ -5,391 +5,429 @@
 ## Directory Layout
 
 ```
-jvagent/
-├── cli/                              # CLI entry point and commands
-│   ├── main.py                       # Main CLI dispatcher
-│   ├── bootstrap.py                  # Bootstrap initialization logic
-│   ├── commands.py                   # CLI subcommand handlers
-│   ├── app_commands.py               # App-specific CLI commands
-│   └── server_config.py              # Server configuration
-│
-├── core/                             # Core domain entities and bootstrap
-│   ├── app.py                        # App node (root application)
-│   ├── agent.py                      # Agent node (individual agent)
-│   ├── agents.py                     # Agents node (structural branchpoint)
-│   ├── app_loader.py                 # Bootstrap App from app.yaml
-│   ├── agent_loader.py               # Bootstrap Agent from agent.yaml
-│   ├── app_yaml_validator.py         # Validate app.yaml schema
-│   ├── agent_yaml_validator.py       # Validate agent.yaml schema
-│   ├── cache.py                      # Application-level caching (agents, actions)
-│   ├── config.py                     # Configuration resolution (env vars, defaults)
-│   ├── env_resolver.py               # Environment variable resolution for actions
-│   ├── endpoints.py                  # Agent CRUD REST endpoints
-│   ├── graph_repair.py               # Graph consistency repair logic
-│   ├── graph_repair_job.py           # Graph repair job execution
-│   ├── graph_repair_handlers.py      # Graph repair repair phases
-│   ├── repair_scratch.py             # Temporary storage for repair state
-│   ├── repair_state.py               # Repair state tracking
-│   ├── callback.py                   # Event callbacks for lifecycle hooks
-│   ├── channel.py                    # Channel definitions
-│   ├── startup.py                    # App startup hooks
-│   ├── bootstrap_logger.py           # Bootstrap-time logging
-│   ├── bootstrap_update_mode.py      # Bootstrap update mode logic
-│   ├── app_context.py                # App context storage
-│   ├── observability.py              # Observability hook system
-│   ├── graph_traversal.py            # Graph traversal helpers
-│   ├── profiling.py                  # Performance profiling utilities
-│   ├── index_bootstrap.py            # Index creation during bootstrap
-│   ├── dependency_installer.py       # Install action dependencies
-│   ├── benchmark.py                  # Benchmarking utilities
-│   ├── public_url.py                 # Public URL resolution
-│   └── repair_phases/                # Graph repair phases
-│       └── *.py                      # Individual repair phase implementations
-│
-├── action/                           # Action framework and built-in actions
-│   ├── base.py                       # Base Action class (all actions extend)
-│   ├── actions.py                    # Actions node (action manager per agent)
-│   ├── endpoints.py                  # Action CRUD endpoints
-│   ├── plugin_contracts.py           # Plugin interface contracts
-│   ├── streaming.py                  # Streaming helpers
-│   │
-│   ├── interact/                     # Interact subsystem (user interaction pipeline)
-│   │   ├── base.py                   # InteractAction base class
-│   │   ├── interact_walker.py        # InteractWalker (main execution engine)
-│   │   ├── endpoints.py              # Interact HTTP endpoints (POST /interact)
-│   │   ├── response_builder.py       # Response formatting and building
-│   │   ├── rate_limiter.py           # Rate limiting per user/agent
-│   │   └── utils/                    # Interact utilities
-│   │
-│   ├── agent_interact/               # Unified skill-routing interact action
-│   │   ├── agent_interact_action.py  # AgentInteractAction (router + skill loop)
-│   │   ├── router/                   # Routing logic (intent classification)
-│   │   │   ├── gates.py              # Routing decision gates
-│   │   │   └── prompts.py            # Routing prompts/templates
-│   │   └── skill/                    # Skill execution within agent interact
-│   │       ├── agentic_loop.py       # Think-act-observe loop
-│   │       ├── context.py            # Skill run context
-│   │       ├── contracts.py          # Skill contracts
-│   │       ├── converse_delivery.py  # Conversational response delivery
-│   │       ├── hot_reload.py         # Dynamic skill (re)loading
-│   │       ├── run_config.py         # Skill run configuration
-│   │       └── shim.py               # Walker visitor adapter
-│   │
-│   ├── router/                       # Legacy routing action
-│   │   └── *.py                      # Legacy router implementation
-│   │
-│   ├── skill/                        # Skill loop action (agentic think-act-observe)
-│   │   ├── skill_action.py           # SkillAction main execution
-│   │   ├── skill_action_contracts.py # Skill action contracts
-│   │   ├── skill_catalog.py          # Skill discovery and catalog
-│   │   ├── skill_interact_action.py  # Legacy skill-only interact action
-│   │   ├── tool_executor.py          # Execute tool calls from LM
-│   │   ├── tool_registry.py          # Register skills as tools
-│   │   ├── loop_context.py           # Skill loop execution context
-│   │   ├── loop_checkpoint.py        # Loop state checkpoint
-│   │   ├── stuck_detector.py         # Detect infinite loops
-│   │   ├── recovery_policy.py        # Loop recovery strategies
-│   │   ├── context_compactor.py      # Compress loop context for LM
-│   │   ├── prompts.py                # Skill loop system prompts
-│   │   ├── README.md                 # Skill system documentation
-│   │   └── version_utils.py          # Version checking utilities
-│   │
-│   ├── converse/                     # Conversational (persona-based) action
-│   │   └── *.py
-│   │
-│   ├── persona/                      # Persona action (format responses per persona)
-│   │   └── persona_action.py
-│   │
-│   ├── model/                        # Language models and embeddings
-│   │   ├── base.py                   # Base model action class
-│   │   ├── language/                 # Language model actions
-│   │   │   ├── anthropic/            # Anthropic Claude
-│   │   │   ├── openai/               # OpenAI GPT
-│   │   │   ├── ollama/               # Ollama local models
-│   │   │   ├── openrouter/           # OpenRouter multi-provider
-│   │   │   └── base.py               # LanguageModelAction base class
-│   │   ├── embedding/                # Embedding model actions
-│   │   │   ├── openai/               # OpenAI embeddings
-│   │   │   ├── huggingface/          # HuggingFace embeddings
-│   │   │   ├── ollama/               # Ollama embeddings
-│   │   │   ├── openrouter/           # OpenRouter embeddings
-│   │   │   └── generic/              # Generic HTTP embedding service
-│   │   └── utils/                    # Model utilities
-│   │
-│   ├── retrieval/                    # Retrieval and context building
-│   │   ├── base.py
-│   │   ├── endpoints.py
-│   │   └── utils/
-│   │
-│   ├── vectorstore/                  # Vector database abstraction
-│   │   ├── base.py                   # VectorStore base class
-│   │   └── typesense/                # Typesense vector store
-│   │
-│   ├── long_memory/                  # Long-term memory storage
-│   ├── long_memory_store/            # Long-term memory persistence
-│   ├── long_memory_retrieval/        # Long-term memory retrieval
-│   │
-│   ├── pageindex/                    # Document indexing and retrieval
-│   │   ├── core/                     # Core pageindex logic
-│   │   ├── pageindex_action/         # Main pageindex action
-│   │   ├── pageindex_google_drive_sync_action/  # Google Drive sync
-│   │   └── pageindex_retrieval_interact_action/ # Retrieval interact
-│   │
-│   ├── response/                     # Response bus and publishing
-│   │   └── response_bus.py
-│   │
-│   ├── google/                       # Google Workspace integrations
-│   │   ├── google_calendar_action/
-│   │   ├── google_docs_action/
-│   │   ├── google_drive_action/
-│   │   ├── google_gmail_action/
-│   │   └── google_sheets_action/
-│   │
-│   ├── microsoft/                    # Microsoft 365 integrations
-│   │   ├── microsoft_excel_action/
-│   │   ├── microsoft_onedrive_action/
-│   │   ├── microsoft_outlook_calendar_action/
-│   │   └── microsoft_outlook_mail_action/
-│   │
-│   ├── email_action/                 # Email handling
-│   │   ├── inbound/                  # Inbound email processing
-│   │   ├── modules/                  # Email modules
-│   │   └── utils/                    # Email utilities
-│   │
-│   ├── web_search/                   # Web search integrations
-│   │   ├── brave/                    # Brave Search
-│   │   ├── serper/                   # Serper
-│   │   └── serpapi/                  # SerpAPI
-│   │
-│   ├── web_search_retrieval/         # Web search + retrieval integration
-│   ├── interview/                    # Interview/questionnaire action
-│   │   ├── core/                     # Core interview logic
-│   │   │   ├── foundation/
-│   │   │   ├── session/
-│   │   │   ├── classification/
-│   │   │   ├── processing/
-│   │   │   ├── graph/
-│   │   │   └── utils/
-│   │   └── docs/
-│   │
-│   ├── stt_action/                   # Speech-to-text
-│   │   ├── deepgram/
-│   │   └── modules/
-│   │
-│   ├── tts_action/                   # Text-to-speech
-│   │   ├── elevenlabs/
-│   │   └── modules/
-│   │
-│   ├── task_creation_interact_action/  # Task creation within interaction
-│   ├── task_trigger_interact_action/   # Task triggering
-│   ├── task_dispatcher/                # Task distribution
-│   ├── handoff_interact_action/        # Handoff to external service
-│   ├── access_control/                 # Access control checks
-│   ├── loader/                         # Action loading
-│   ├── avatar_action/                  # User avatar/profile action
-│   ├── intro/                          # Intro/onboarding action
-│   ├── cockpit/                        # Agent cockpit/dashboard
-│   ├── postiz_action/                  # Postiz social media integration
-│   ├── facebook_action/                # Facebook integration
-│   ├── whatsapp/                       # WhatsApp integration
-│   ├── video_generation/               # Video generation
-│   ├── mcp/                            # Model Context Protocol
-│   ├── agent_utils/                    # Agent utility actions
-│   └── utils/                          # Action utilities
-│
-├── memory/                           # Memory system (users, conversations, interactions)
-│   ├── manager.py                    # Memory node (root for user/conversation tree)
-│   ├── user.py                       # User node
-│   ├── conversation.py               # Conversation node (session)
-│   ├── interaction.py                # Interaction node (single exchange)
-│   ├── endpoints.py                  # Memory REST endpoints
-│   ├── evidence_log.py               # Evidence/audit logging
-│   ├── task_store.py                 # Task tracking within conversation
-│   ├── user_long_memory.py           # User long-term memory
-│   ├── services/                     # Memory services
-│   ├── lock_manager.py               # Distributed locking for concurrent operations
-│   ├── distributed_conversation_lock.py # Conversation-level locks
-│   └── long_memory_retrieval_utils.py # Long-term memory retrieval
-│
-├── scaffold/                         # Project scaffolding and initialization
-│   ├── operations.py                 # Scaffold operations
-│   ├── profile_resolve.py            # Resolve agent profiles
-│   ├── skill_resolve.py              # Resolve skills
-│   ├── resource_io.py                # Resource file I/O
-│   ├── yaml_io.py                    # YAML file handling
-│   ├── builtin_profiles/             # Built-in agent profiles
-│   └── static/                       # Static scaffold templates
-│
-├── skills/                           # Built-in skills (used by skill loop)
-│   ├── answer/                       # Answer/knowledge skill
-│   ├── calendar/                     # Calendar skill
-│   ├── code_review/                  # Code review skill
-│   ├── fileinterface/                # File interface skill
-│   ├── gmail/                        # Gmail skill
-│   ├── google_drive/                 # Google Drive skill
-│   ├── google_sheets/                # Google Sheets skill
-│   ├── microsoft_excel/              # Excel skill
-│   ├── microsoft_onedrive/           # OneDrive skill
-│   ├── outlook_calendar/             # Outlook Calendar skill
-│   ├── outlook_mail/                 # Outlook Mail skill
-│   ├── pageindex_docs/               # Document retrieval skill
-│   ├── pageindex_search/             # Document search skill
-│   ├── pdf_generation/               # PDF generation skill
-│   ├── research/                     # Research skill
-│   ├── skill_hub/                    # Skill hub (discover/list skills)
-│   ├── triage/                       # Issue triage skill
-│   └── web_search/                   # Web search skill
-│
-├── tooling/                          # Tool registry and execution (low-level)
-│   ├── tool.py                       # Tool definition
-│   ├── tool_registry.py              # Register tools
-│   ├── tool_executor.py              # Execute tool calls
-│   ├── tool_result.py                # Tool result handling
-│   ├── tool_schema_validator.py      # Validate tool schemas
-│   ├── tool_serializer.py            # Serialize/deserialize tools
-│   └── tool_observability.py         # Tool observability hooks
-│
-├── logging/                          # Logging system
-│   ├── service.py                    # Logging service
-│   └── endpoints.py                  # Logging endpoints
-│
-├── bundle/                           # Docker bundle generation
-│   ├── bundler.py                    # Bundle creator
-│   └── dockerfile_generator.py       # Dockerfile generation
-│
-├── utils/                            # Shared utilities
-│   └── *.py                          # Various utility modules
-│
-├── env.py                            # Environment configuration
-├── version.py                        # Version information
-├── __init__.py                       # Package initialization
-├── __main__.py                       # Module entry point
-└── stress_seed_graph.py              # Stress testing utilities
+jvagent/                                    # Repository root
+├── jvagent/                                # Main Python package (importable as `jvagent`)
+│   ├── __init__.py                         # Exports __version__
+│   ├── __main__.py                         # `python -m jvagent` shim
+│   ├── env.py                              # App-id env helpers
+│   ├── version.py                          # __version__ constant
+│   ├── stress_seed_graph.py                # Synthetic memory-graph seeder for stress tests
+│   ├── cli/                                # CLI subcommands + dispatch
+│   │   ├── main.py                         # `jvagent` entry: argv parsing, subcommand dispatch
+│   │   ├── commands.py                     # CLI handlers (run/status/agent/skill/action/...)
+│   │   ├── app_commands.py                 # `jvagent app create` / `app profile new`
+│   │   ├── bootstrap.py                    # Graph bootstrap orchestration + admin user
+│   │   └── server_config.py                # Server build from app.yaml; endpoint module imports
+│   ├── core/                               # Graph nodes + bootstrap + cross-cutting infra
+│   │   ├── app.py                          # App node (singleton root)
+│   │   ├── agents.py                       # Agents branchpoint + counters
+│   │   ├── agent.py                        # Agent node + cached lookup
+│   │   ├── app_loader.py / agent_loader.py # YAML descriptor loaders
+│   │   ├── *_yaml_validator.py             # Validation issues for `jvagent validate`
+│   │   ├── config.py                       # Centralized env/yaml/default resolution
+│   │   ├── env_resolver.py                 # ${ENV} placeholder substitution in YAML
+│   │   ├── cache.py                        # TTL caches (agent/actions/router)
+│   │   ├── graph_repair*.py                # Distributed-lock graph repair
+│   │   ├── repair_phases/                  # Repair pipeline engine
+│   │   ├── observability.py                # Hookable event emitter
+│   │   ├── public_url.py / channel.py      # URL building / channel normalization
+│   │   ├── callback.py                     # SSRF-safe outbound webhooks
+│   │   ├── startup.py                      # Lifecycle / scheduler bootstrap
+│   │   ├── bootstrap_logger.py             # Phased status logger
+│   │   ├── bootstrap_update_mode.py        # `App.update_mode` resolution + reset
+│   │   ├── index_bootstrap.py              # MongoDB index creation
+│   │   ├── dependency_installer.py         # info.yaml pip dependency installer
+│   │   └── endpoints.py                    # Agent CRUD + admin repair endpoints
+│   ├── memory/                             # User/Conversation/Interaction subgraph
+│   │   ├── manager.py                      # Memory hub
+│   │   ├── user.py / conversation.py / interaction.py
+│   │   ├── task_store.py                   # Conversation-scoped Task/Step lifecycle
+│   │   ├── evidence_log.py                 # Per-interaction evidence storage
+│   │   ├── user_long_memory.py             # Long-memory node + retrieval helpers
+│   │   ├── long_memory_retrieval_utils.py
+│   │   ├── lock_manager.py / distributed_conversation_lock.py
+│   │   ├── services/long_memory_service.py
+│   │   └── endpoints.py                    # Memory admin endpoints
+│   ├── action/                             # Pluggable action runtime (38 action packages)
+│   │   ├── base.py                         # Action base class + lifecycle hooks
+│   │   ├── actions.py                      # Actions manager node + register_action
+│   │   ├── plugin_contracts.py             # Static plugin protocol shapes
+│   │   ├── streaming.py                    # Stream helper utilities
+│   │   ├── endpoints.py                    # Action CRUD admin endpoints
+│   │   ├── loader/                         # Filesystem discovery + dynamic import
+│   │   │   ├── action_loader.py            # ActionLoader (discover + instantiate)
+│   │   │   ├── importer.py                 # `sys.meta_path` finder for `jvagent.actions.*`
+│   │   │   ├── core_discovery.py           # Built-in action enumeration
+│   │   │   ├── factory.py / metadata.py    # Metadata payload + ActionMetadata/ActionRegistry
+│   │   │   ├── module_loading.py / info_yaml.py
+│   │   ├── interact/                       # Walker + base + endpoints (interact subsystem)
+│   │   │   ├── interact_walker.py          # InteractWalker (the execution engine)
+│   │   │   ├── base.py                     # InteractAction base class
+│   │   │   ├── endpoints.py                # POST /interact, /interact/stream
+│   │   │   ├── rate_limiter.py / response_builder.py
+│   │   │   └── utils/                      # Vision prompt builders + image interpretation
+│   │   ├── cockpit/                        # CockpitInteractAction (current default)
+│   │   │   ├── cockpit_interact_action.py  # Walker-revisit loop entry
+│   │   │   ├── engine.py                   # Single-step think-act-observe iteration
+│   │   │   ├── router.py / routing_types.py # Posture+skill classifier
+│   │   │   ├── registry.py                 # Tool assembly (harness+action+skill)
+│   │   │   ├── *_tools.py                  # Harness tool builders (memory/task/response/...)
+│   │   │   ├── skill_catalog.py / skill_discovery.py
+│   │   │   └── delivery.py / gates.py / shim.py / context.py / contracts.py
+│   │   ├── agent_interact/                 # Legacy unified router+converse+skill
+│   │   │   ├── agent_interact_action.py
+│   │   │   ├── router/                     # Sub-router prompts + gates
+│   │   │   └── skill/                      # Agentic loop helpers
+│   │   ├── router/                         # InteractRouter (CoVe-prompted classifier)
+│   │   ├── skill/                          # SkillAction + SkillInteractAction agentic loop
+│   │   ├── persona/                        # PersonaAction (prompt + response generation)
+│   │   ├── access_control/                 # Per-action gating + endpoints
+│   │   ├── intro/                          # First-time-user intro action
+│   │   ├── converse/                       # Conversational fallback
+│   │   ├── interview/                      # Interview/branching action
+│   │   ├── handoff_interact_action/        # Channel/agent handoff
+│   │   ├── task_creation_interact_action/  # Task creation branch
+│   │   ├── task_trigger_interact_action/   # Task trigger branch
+│   │   ├── task_dispatcher/                # Background task dispatcher
+│   │   ├── response/                       # ResponseBus + adapters + filters + chunking
+│   │   ├── model/                          # Language + Embedding model providers
+│   │   │   ├── base.py / context.py / cost_estimator.py / utils/
+│   │   │   ├── language/                   # Anthropic, OpenAI, Ollama, OpenRouter
+│   │   │   └── embedding/                  # Generic, HuggingFace, Ollama, OpenAI, OpenRouter
+│   │   ├── google/                         # Google Calendar/Docs/Drive/Gmail/Sheets + OAuth
+│   │   ├── microsoft/                      # Outlook Calendar/Mail, OneDrive, Excel + OAuth
+│   │   ├── whatsapp/ facebook_action/      # IM channel adapters with webhooks
+│   │   ├── postiz_action/ email_action/    # Outbound channels
+│   │   ├── pageindex/                      # Vectorless tree-search RAG (Docling pipeline)
+│   │   ├── vectorstore/                    # Vector store abstraction + Typesense
+│   │   ├── retrieval/ web_search/ web_search_retrieval/
+│   │   ├── long_memory/ long_memory_store/ long_memory_retrieval/
+│   │   ├── mcp/                            # MCP client + sandboxed FS server
+│   │   ├── stt_action/ tts_action/ avatar_action/ video_generation/
+│   │   ├── agent_utils/ utils/             # Shared helpers
+│   │   └── persona/, etc.
+│   ├── skills/                             # Built-in Claude-style SKILL.md bundles (18)
+│   │   ├── skill_hub/                      # Registry browser + installer
+│   │   ├── research/ web_search/ answer/   # Reasoning + retrieval skills
+│   │   ├── calendar/ gmail/ google_drive/ google_sheets/
+│   │   ├── outlook_calendar/ outlook_mail/ microsoft_excel/ microsoft_onedrive/
+│   │   ├── pageindex_docs/ pageindex_search/
+│   │   ├── fileinterface/ pdf_generation/ triage/ code_review/
+│   │   └── (each: SKILL.md + optional scripts/)
+│   ├── tooling/                            # Provider-agnostic tool primitives
+│   │   ├── tool.py                         # Tool dataclass
+│   │   ├── tool_registry.py / tool_executor.py / tool_result.py / tool_serializer.py
+│   │   ├── tool_observability.py / tool_schema_validator.py
+│   ├── scaffold/                           # `jvagent app create` / `agent create` scaffolders
+│   │   ├── operations.py / yaml_io.py / resource_io.py
+│   │   ├── profile_resolve.py / skill_resolve.py / profile_stub.py
+│   │   ├── builtin_profiles/               # minimal/conversational/agentic/research/whatsapp_voice
+│   │   └── static/env.example.txt
+│   ├── bundle/                             # Per-app Dockerfile generator
+│   │   ├── bundler.py / dockerfile_generator.py / Dockerfile.base / README.md
+│   ├── logging/                            # Custom INTERACTION level + log query endpoints
+│   │   ├── service.py / endpoints.py
+│   └── utils/                              # Internal misc helpers
+├── jvchat/                                 # React + Vite + Tailwind frontend (separate package)
+│   ├── src/{App.tsx,components,context,hooks,lib,types,utils,test}
+│   ├── package.json / vite.config.ts / tsconfig.json / tailwind.config.js
+│   └── README.md / config.yaml
+├── jvdb/                                   # Auxiliary DB tooling (sibling project tree)
+├── docs/                                   # Markdown documentation
+│   ├── COCKPIT.md / agent-interact.md / configuration.md
+│   ├── language-models.md / scaffolding.md / database-indexing.md
+│   ├── interaction-logging.md / error-logging.md / logging.md
+│   ├── task-tracking.md / security-review.md
+│   ├── environment-keys-reference.md / integrations-environment.md
+├── tests/                                  # Pytest suite (unit + integration)
+│   ├── conftest.py
+│   ├── action/                             # Per-action tests (sub-folders by action)
+│   │   ├── access_control/ agent_interact/ email_action/ facebook_action/
+│   │   ├── gating/ google/ interact/ interview/ long_memory/ mcp/ model/
+│   │   ├── pageindex/ postiz_action/ response/ router/ skill/
+│   │   ├── task_creation_interact_action/ task_dispatcher/ whatsapp/
+│   │   └── test_action_endpoints.py / test_action_loader.py / test_persona_*.py / ...
+│   ├── core/ memory/ scaffold/ skills/ cli/ bundle/ integration/
+│   └── test_comprehensive_pruning.py / test_env_load.py / ...
+├── examples/jvagent_app/                   # Reference application tree
+│   ├── app.yaml
+│   ├── agents/{jvagent,resolv}/.../agent.yaml
+│   ├── README.md / SETUP.md / STRUCTURE.md / CHANGELOG.md
+│   └── docs/ jvagent_db/ jvagent_logs/
+├── pyproject.toml                          # Build, deps, pytest, mypy, black, isort
+├── setup.py                                # Legacy setup hook
+├── requirements*.txt                       # Pip lockfiles for full / dev / runtime
+├── Dockerfile.base                         # Base image consumed by `jvagent bundle`
+├── MANIFEST.in / .pre-commit-config.yaml / .flake8
+├── README.md (76KB) / CHANGELOG.md / LICENSE / CLAUDE.md
+├── cockpit_phaseA_smoke.py                 # Smoke test harness for cockpit phase A
+├── .env.example                            # Documented env var template
+└── .planning/codebase/                     # Generated codebase analysis (this directory)
 ```
 
 ## Directory Purposes
 
-**cli/**: Command-line interface entry point; handles bootstrap, server startup, agent/skill management, and admin commands. Entry point: `cli/main.py::main()`
+**`jvagent/cli/`:**
+- Purpose: Console-script entry, argv parsing, subcommand dispatch, server bootstrap
+- Contains: dispatcher (`main.py`), CLI handlers (`commands.py`, `app_commands.py`), server build (`server_config.py`), bootstrap orchestration (`bootstrap.py`)
+- Key files: `main.py` (dispatcher), `commands.py` (~1257 lines: handlers for run/status/agent/skill/action/bundle/validate)
 
-**core/**: Core domain entities (App, Agent, Agents) and bootstrap system. Handles app/agent initialization from YAML, caching, configuration, graph repair, and REST endpoints.
+**`jvagent/core/`:**
+- Purpose: Graph node definitions for the application root, plus all cross-cutting infrastructure
+- Contains: `App`/`Agents`/`Agent` nodes; YAML loaders + validators; centralized config; cache; graph-repair; observability; channel + URL helpers; admin endpoints
+- Key files: `app.py`, `agent.py`, `agents.py`, `app_loader.py`, `agent_loader.py`, `config.py`, `cache.py`, `graph_repair.py`, `endpoints.py`
 
-**action/**: Action framework and all built-in actions. BaseAction defines plugin interface; InteractAction extends it for interact subsystem. Organized by capability (model providers, integrations, interact components).
+**`jvagent/memory/`:**
+- Purpose: Per-agent user/conversation/interaction state machine
+- Contains: `Memory` hub, `User`/`Conversation`/`Interaction` nodes, `TaskStore`, `EvidenceLog`, long-memory primitives, conversation locking
+- Key files: `manager.py`, `conversation.py`, `interaction.py`, `task_store.py`, `endpoints.py`
 
-**memory/**: User/conversation/interaction management. Implements bidirectional chaining of interactions, cascade delete behavior, task tracking, and distributed locking for concurrent access.
+**`jvagent/action/`:**
+- Purpose: All pluggable Action implementations + the loader that discovers them
+- Contains: 38 action packages organized by domain (interact / model / persona / response / channels / retrieval / RAG / AV / tooling glue) plus a `loader/` subpackage and shared `base.py` / `actions.py` / `endpoints.py` / `streaming.py` / `plugin_contracts.py`
+- Key files: `base.py` (Action base class), `actions.py` (registration manager), `endpoints.py` (action CRUD), `loader/action_loader.py`, `interact/interact_walker.py`, `cockpit/cockpit_interact_action.py`
 
-**scaffold/**: Project creation and agent profile scaffolding. Resolves built-in profiles, skill resolution, YAML template generation.
+**`jvagent/skills/`:**
+- Purpose: Built-in Claude-style skill bundles shipped with jvagent
+- Contains: 18 directories each with `SKILL.md` (frontmatter + workflow) and optional `scripts/` for tool implementations
+- Key files: `skill_hub/SKILL.md` (registry browsing), `research/SKILL.md`, `web_search/SKILL.md`
 
-**skills/**: Built-in skills (registered in SkillCatalog) that can be invoked as tools during agentic loops. Each skill defines tool schema and handler.
+**`jvagent/tooling/`:**
+- Purpose: Provider-agnostic tool primitives consumed by cockpit / skill loops
+- Contains: `Tool` dataclass, `ToolRegistry`, `ToolExecutionEngine`, `ToolResult`, schema validator, observability envelopes, serializer
+- Key files: `tool.py`, `tool_registry.py`, `tool_executor.py`
 
-**tooling/**: Low-level tool definition, registration, and execution. Used by SkillAction to invoke tools. Separate from action.skill to decouple tool execution from skill loop logic.
+**`jvagent/scaffold/`:**
+- Purpose: Filesystem operations for `jvagent app create` / `agent create` / `skill add`
+- Contains: profile resolution, YAML I/O, resource extraction, builtin profile templates, env example
+- Key files: `operations.py`, `profile_resolve.py`, `skill_resolve.py`, `builtin_profiles/*.yaml`
 
-**logging/**: Centralized logging service; integrates with jvspatial logging framework.
+**`jvagent/bundle/`:**
+- Purpose: Generate per-app Dockerfile from discovered action `info.yaml` dependencies
+- Contains: bundler, Dockerfile generator, base image template, README
 
-**bundle/**: Docker containerization utilities; generates Dockerfile and bundle artifacts for deployment.
+**`jvagent/logging/`:**
+- Purpose: Custom INTERACTION log level registration + log query API
+- Contains: `service.py`, `endpoints.py`, `__init__.py` (registers level 22)
 
-**utils/**: Miscellaneous shared utilities.
+**`jvchat/`:**
+- Purpose: TypeScript React frontend (chat UI + admin console)
+- Contains: Vite + React + Tailwind project; consumes jvagent HTTP endpoints
+- Generated build: `jvchat/dist/` (committed)
+
+**`tests/`:**
+- Purpose: Pytest suite (unit + integration); mirrors `jvagent/` package layout
+- Contains: per-action subdirectories under `tests/action/`, plus `core/`, `memory/`, `scaffold/`, `skills/`, `cli/`, `bundle/`, `integration/`
+
+**`examples/jvagent_app/`:**
+- Purpose: Reference application tree usable as `jvagent /path/to/examples/jvagent_app`
+- Contains: `app.yaml`, `agents/<ns>/<name>/agent.yaml`, sample DB / logs directories
+
+**`docs/`:**
+- Purpose: Long-form Markdown documentation referenced from README + agent.yaml
+- Key files: `COCKPIT.md`, `agent-interact.md`, `language-models.md`, `scaffolding.md`, `task-tracking.md`
+
+**`.planning/codebase/`:**
+- Purpose: Auto-generated codebase analysis (this directory) consumed by GSD planning commands
+- Contains: STACK.md, INTEGRATIONS.md, ARCHITECTURE.md, STRUCTURE.md, CONVENTIONS.md, TESTING.md, CONCERNS.md
 
 ## Key File Locations
 
 **Entry Points:**
-- `cli/main.py`: CLI dispatcher (entry point for `jvagent` command)
-- `__main__.py`: Module entry point (python -m jvagent)
-- `action/interact/endpoints.py::interact()`: HTTP POST /interact endpoint
+- `jvagent/__main__.py`: `python -m jvagent` shim → `jvagent.cli.main`
+- `jvagent/cli/main.py`: console-script `main()` (declared in `pyproject.toml [project.scripts]`)
+- `jvagent/cli/server_config.py:create_server_from_config`: HTTP server construction
+- `jvagent/action/interact/endpoints.py`: `POST /interact` + streaming variant
+- `jvagent/core/endpoints.py`: agent CRUD + graph repair
+- `jvagent/action/endpoints.py`: action CRUD
+- Per-channel webhooks: `jvagent/action/whatsapp/endpoints.py`, `jvagent/action/facebook_action/endpoints.py`, `jvagent/action/postiz_action/endpoints.py`, `jvagent/action/pageindex/endpoints.py`
+- OAuth callbacks: `jvagent/action/google/endpoints.py`, `jvagent/action/microsoft/endpoints.py`
 
 **Configuration:**
-- `core/app.yaml` (loaded by AppLoader)
-- `core/agent.yaml` (loaded by AgentLoader)
-- `action/{namespace}/{action_name}/info.yaml` (action metadata)
-- `skills/{skill_name}/SKILL.md` (skill definition)
+- `pyproject.toml`: build (setuptools), deps, pytest, mypy, black, isort
+- `.pre-commit-config.yaml`: black + isort + flake8 + detect-secrets hooks
+- `.flake8`: lint config (88-col line length, plugins for docstrings/comprehensions/bugbear/etc.)
+- `requirements.txt` / `requirements-dev.txt` / `requirements-all.txt`: pinned deps
+- `.env.example`: documented runtime env keys (~12.6KB)
+- `Dockerfile.base`: base image consumed by `jvagent bundle`
+- `examples/jvagent_app/app.yaml`: reference application descriptor
+- `jvagent/scaffold/builtin_profiles/{minimal,conversational,agentic,research,whatsapp_voice}.yaml`: action profile templates
 
 **Core Logic:**
-- `core/app_loader.py`: Bootstrap App from app.yaml
-- `core/agent_loader.py`: Bootstrap Agent from agent.yaml and discover/register actions
-- `action/interact/interact_walker.py`: Main interaction execution engine
-- `action/agent_interact/agent_interact_action.py`: Unified router + skill loop
-- `action/skill/skill_action.py`: Agentic loop (think-act-observe)
-- `action/skill/tool_executor.py`: Execute tool calls
-- `action/skill/skill_catalog.py`: Skill discovery and registry
+- `jvagent/core/app.py`: App singleton node
+- `jvagent/core/agent.py`, `agents.py`: Agent + Agents structural nodes
+- `jvagent/action/base.py`: Action base class
+- `jvagent/action/interact/interact_walker.py`: Walker that drives every interaction
+- `jvagent/action/interact/base.py`: InteractAction base class
+- `jvagent/action/cockpit/cockpit_interact_action.py`: current default interact action (model cockpit)
+- `jvagent/action/cockpit/engine.py`: think-act-observe single-step engine
+- `jvagent/action/agent_interact/agent_interact_action.py`: legacy unified router+converse+skill loop
+- `jvagent/action/router/interact_router.py`: standalone CoVe routing classifier
+- `jvagent/action/skill/skill_action.py`: programmatic agentic loop (used outside the interact subsystem)
+- `jvagent/action/persona/persona_action.py`: persona prompt + response generation
+- `jvagent/action/response/response_bus.py`: ResponseBus pub/sub for streaming
+- `jvagent/memory/manager.py`: Memory hub
+- `jvagent/memory/task_store.py`: conversation-scoped Task / Step lifecycle
+- `jvagent/tooling/tool_executor.py`: tool dispatch engine
+
+**Loader / bootstrap:**
+- `jvagent/cli/bootstrap.py`: `bootstrap_application_graph` orchestration
+- `jvagent/core/app_loader.py`: `AppLoader` (app.yaml → App + Agents)
+- `jvagent/core/agent_loader.py`: `AgentLoader` (agent.yaml → Agent + Actions)
+- `jvagent/action/loader/action_loader.py`: filesystem discovery + dynamic import
+- `jvagent/action/loader/importer.py`: `sys.meta_path` finder for `jvagent.actions.*`
 
 **Testing:**
-- `tests/`: Mirror structure of `jvagent/`; test files co-located with implementations
+- `tests/conftest.py`: shared fixtures
+- `tests/action/<action>/`: per-action behavior tests
+- `tests/core/`: validators, env resolver, graph repair, callbacks, secrets, startup
+- `tests/memory/`: memory subgraph behavior
+- `tests/integration/`: cross-component integration tests
 
 ## Naming Conventions
 
 **Files:**
-- `*_action.py`: Action class implementation (e.g., `persona_action.py`)
-- `*_walker.py`: Walker class implementation (e.g., `interact_walker.py`)
-- `endpoints.py`: REST API endpoints module
-- `base.py`: Base class definitions
-- `*.py`: Most other modules use snake_case with no suffix
+- Snake_case Python modules: `interact_walker.py`, `task_store.py`
+- One archetype class per `*_action.py` file matching `info.yaml:package.archetype`
+- Endpoint registries always named `endpoints.py` (auto-discovered by `_import_core_endpoint_modules`)
+- Validators suffix: `*_yaml_validator.py`
+- Tool builders suffix: `*_tools.py` (cockpit harness builders)
 
 **Directories:**
-- `{action_name}/`: Action packages (e.g., `persona/`, `skill/`, `google/`)
-- `{namespace}/`: Namespace groupings (e.g., `google/`, `microsoft/`)
-- `{module_name}/`: Feature modules (e.g., `memory/`, `core/`, `action/`)
-- Singular/plural: Use singular for conceptual groupings (`action/`, `skill/`), plural for collections when semantically correct
+- Action package = single directory under `jvagent/action/<action_dir>/` with `__init__.py` + `<action_name>.py` + `endpoints.py?` + `info.yaml`
+- Provider sub-actions nest under their parent: `jvagent/action/google/google_calendar_action/`, `jvagent/action/model/language/anthropic/`
+- Skill bundle directory contains `SKILL.md` and optional `scripts/`
 
-**Classes:**
-- `{ActionName}Action`: All Action subclasses (e.g., `PersonaAction`, `AgentInteractAction`, `SkillAction`)
-- `{EntityName}`: Domain entities (e.g., `User`, `Conversation`, `Interaction`)
-- `{OperationName}Walker`: Walker subclasses (e.g., `InteractWalker`)
+**Action labels:** `<namespace>/<action_name>` (e.g., `jvagent/cockpit`, `jvagent/persona`, `contrib/<x>`, `custom/<x>`)
+**Agent refs:** `<namespace>/<agent_name>` (e.g., `jvagent/cockpit_agent`, `acme/bot`)
 
-**Variables/Functions:**
-- `snake_case`: Functions, variables, module names
-- `UPPER_CASE`: Module-level constants
-- `_private_name`: Private module-level or method-level items
+**Class names:**
+- Nodes: PascalCase singular (`App`, `Agent`, `Action`, `Memory`, `User`, `Conversation`, `Interaction`)
+- Walkers: `<Subject>Walker` (`InteractWalker`)
+- Actions: `<Name>Action` (`PersonaAction`, `CockpitInteractAction`, `OpenAILanguageModelAction`)
+- InteractActions: `<Name>InteractAction` suffix when interact-only (`IntroInteractAction`, `ConverseInteractAction`)
 
 ## Where to Add New Code
 
-**New Feature (end-to-end):**
-- Primary code: `action/{namespace}/{feature_name}/` (new Action subclass)
-- REST endpoints: `action/{namespace}/{feature_name}/endpoints.py`
-- Metadata: `action/{namespace}/{feature_name}/info.yaml`
-- Tests: `tests/action/{namespace}/{feature_name}/`
-- Export: Update `action/{namespace}/{feature_name}/__init__.py` to export Action class
+**New built-in Action:**
+- Primary code: `jvagent/action/<action_name>/`
+  - `<action_name>.py` (subclass `Action`, `InteractAction`, `LanguageModelAction`, etc.)
+  - `info.yaml` (declare `package.archetype` matching the class name)
+  - `__init__.py` (export the class; import `endpoints.py` if any)
+  - `endpoints.py` (optional `@endpoint`-decorated handlers)
+- Tests: `tests/action/<action_name>/test_*.py`
+- Profile reference (optional): add to `jvagent/scaffold/builtin_profiles/*.yaml`
+- Documentation: `docs/<action_name>.md` if user-facing
 
-**New Interact Action (user-facing):**
-- Implementation: `action/interact/{action_name}/base.py` or `action/{namespace}/{action_name}/interact_action.py`
-- Extend: `InteractAction` base class
-- Implement: `execute(visitor)` method to handle interaction
-- Register: Declare in `agent.yaml` under `actions:`
-- Weight: Set `weight` attribute for top-tier execution ordering
+**New custom (app-local) Action:**
+- Primary code: `<app_root>/agents/<agent_ns>/<agent_name>/actions/<action_ns>/<action_name>/` (matches `JvagentActionsImporter` layout)
+- Reference in `<app_root>/agents/<agent_ns>/<agent_name>/agent.yaml` under `actions:`
+- Run `jvagent <app_root> --update` (merge) or `jvagent <app_root> bootstrap --update`
 
-**New Skill (for skill loop):**
-- Definition: `skills/{skill_name}/SKILL.md` (declare tool schema, handler, metadata)
-- Handler: `action/skill/` (or action-specific skill module)
-- Registration: Discovered automatically by SkillCatalog at startup
-- Tool schema: Define via Pydantic model or dict in `SKILL.md`
+**New InteractAction (participates in walker pipeline):**
+- Subclass `jvagent/action/interact/base.py:InteractAction`
+- Implement `async def execute(walker)`; call `walker.visit([...])` or `walker.prepend([...])` to route
+- Set `weight` (lower = earlier; negative for high precedence)
+- Set `always_execute=True` for routing exceptions; `run_in_background=True` for post-response work
+- Set `is_singleton=True` if only one instance per agent (enforced in `Actions.register_action()`)
 
-**New Domain Entity:**
-- Class definition: `core/{entity_name}.py` or `memory/{entity_name}.py`
-- Extend: `jvspatial.core.Node`
-- Attributes: Use `attribute()` descriptors
-- CRUD: Implement static methods (`get()`, `find_one()`, `delete()`)
-- Relationships: Connect via edges using `connect()`, `node()`, `nodes()`
+**New cockpit harness tool:**
+- Add a `_build_<area>_tools(ctx)` function in `jvagent/action/cockpit/<area>_tools.py` returning `List[Tool]`
+- Register it in `jvagent/action/cockpit/registry.py:_register_harness_tools`
 
-**New Utility Module:**
-- Location: `utils/{feature_name}.py` (for shared utilities)
-- Or: Create within feature package if only used there
-- Import: Export from `utils/__init__.py`
+**New skill bundle (built-in):**
+- Directory: `jvagent/skills/<skill_name>/`
+- Files: `SKILL.md` (frontmatter `name`, `description`, `allowed-tools`, `tags`, `version` + workflow body), `scripts/<tool>.py` for executable tools
+- Register tags as needed in `SkillCatalog`; available via `skills_source: builtin` or `both` in agent.yaml
 
-**New Configuration:**
-- App-level: Add to `app.yaml` under app context or top-level
-- Agent-level: Add to `agent.yaml` under agent context or action context
-- Validation: Update `core/app_yaml_validator.py` or `core/agent_yaml_validator.py`
+**New skill bundle (per-agent):**
+- Directory: `<app_root>/agents/<agent_ns>/<agent_name>/skills/<skill_name>/SKILL.md`
+- Created via `jvagent skill add <agent_ref> <skill_name>`
+
+**New endpoint:**
+- Add inside the relevant module's `endpoints.py` using `@endpoint(path, methods=[...], auth=..., roles=[...], tags=[...], response=success_response(...))`
+- Add module to `_import_core_endpoint_modules` in `jvagent/cli/server_config.py:51` if it's a new core module
+- Action-local endpoints are auto-imported when the action's `__init__.py` imports them
+
+**New CLI subcommand:**
+- Add command name to `DISPATCH` in `jvagent/cli/main.py:42`
+- Add handler dispatch branch in `main()` (`jvagent/cli/main.py:201`)
+- Implement handler in `jvagent/cli/commands.py` (or a new module)
+- Update `print_usage()` (`jvagent/cli/commands.py:236`)
+
+**New Node type (graph entity):**
+- File: `jvagent/<domain>/<node_name>.py`
+- Subclass `jvspatial.core.Node`; declare typed fields with `attribute(...)`; add `@compound_index` for query patterns
+- Wire creation in the appropriate manager node's helpers; ensure cascade-delete semantics via edge connections
+
+**New language model provider:**
+- Directory: `jvagent/action/model/language/<provider>/`
+- Subclass `jvagent/action/model/language/base.py:LanguageModelAction`
+- Add provider to `model_action_type` examples in profile YAMLs
+- Tests: `tests/action/model/<provider>/`
+
+**New tests:**
+- Mirror the source tree under `tests/`
+- Use `pytest-asyncio` (`asyncio_mode = "auto"` in `pyproject.toml`)
+- Shared fixtures live in `tests/conftest.py`
+
+**New documentation:**
+- User-facing: `docs/<topic>.md` and link from `README.md`
+- Developer-facing: docstrings at module + class + public method level
 
 ## Special Directories
 
-**tests/**: Test suite mirroring main codebase structure. Run via `pytest tests/`. Tests are unit (mocked dependencies) and integration (real database).
+**`jvagent/scaffold/builtin_profiles/`:**
+- Purpose: Action profile templates used by `jvagent app create` / `jvagent agent create`
+- Generated: No (committed source)
+- Committed: Yes
+- Includes: `minimal.yaml`, `conversational.yaml`, `agentic.yaml`, `research.yaml`, `whatsapp_voice.yaml`
 
-**.planning/**: Planning artifacts (generated by GSD commands)
-- `codebase/`: Codebase analysis documents (ARCHITECTURE.md, STRUCTURE.md, etc.)
+**`jvagent/skills/`:**
+- Purpose: Built-in Claude-style skill bundles
+- Generated: No
+- Committed: Yes
+- Includes: 18 bundles; each has `SKILL.md` + optional `scripts/`
 
-**.files/**: Default file storage root (configurable via app.yaml `file_storage_root_dir`). Not committed; local data only.
+**`examples/jvagent_app/jvagent_db/` and `jvagent_logs/`:**
+- Purpose: Example app's local JSON databases (created at first run)
+- Generated: Yes (at runtime by jvspatial JSONDatabase)
+- Committed: Partial (sample data may be checked in for examples)
 
-**docs/**: Documentation (user guides, API reference, architecture deep-dives).
+**`jvchat/dist/`:**
+- Purpose: Built frontend assets
+- Generated: Yes (`npm run build`)
+- Committed: Yes (per repo convention; check git history)
 
-**examples/**: Example applications and configurations.
+**`build/`, `jvagent.egg-info/`, `.mypy_cache/`, `.pytest_cache/`, `.pycache_sandbox/`, `__pycache__/`:**
+- Purpose: Build / cache artifacts
+- Generated: Yes
+- Committed: No (in `.gitignore`)
+
+**`.venv/`:**
+- Purpose: Local Python virtualenv
+- Committed: No
+
+**`.files/`:**
+- Purpose: Default file-storage root for local provider (configurable via `JVSPATIAL_FILES_ROOT_PATH`)
+- Generated: Yes
+- Committed: No
+
+**`jvagent_demo_app_pageindex_db/`:**
+- Purpose: PageIndex sample database for the demo app
+- Generated: Yes (at runtime)
+- Committed: Partial (test fixture data)
+
+**`.planning/codebase/`:**
+- Purpose: Auto-generated codebase analysis (this directory)
+- Generated: Yes (by `/gsd-map-codebase`)
+- Committed: Yes
+
+**`agents/` (within an app root):**
+- Purpose: Per-app agent + custom-action tree consumed by `AgentLoader`
+- Layout: `agents/<agent_ns>/<agent_name>/{agent.yaml, actions/<action_ns>/<action_name>/...}`
+- Generated: Created by `jvagent agent create` then hand-edited
+- Committed: Yes (project-specific)
 
 ---
 

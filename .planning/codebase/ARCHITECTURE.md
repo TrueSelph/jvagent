@@ -1,316 +1,368 @@
+<!-- refreshed: 2026-05-06 -->
 # Architecture
 
 **Analysis Date:** 2026-05-06
 
 ## System Overview
 
-jvagent is a modular AI agent platform built on `jvspatial`'s graph-based node-and-edge primitives. The architecture uses a declarative YAML configuration system to define applications, agents, and actions. The system follows a hierarchical graph structure where all entities (App, Agent, Actions, Memory) are Nodes connected via edges.
+jvagent is a modular, declarative AI agent platform built on `jvspatial`'s graph-based Node/Edge/Walker primitives. Applications, agents, and actions are defined in YAML descriptors (`app.yaml`, `agent.yaml`, `info.yaml`) and bootstrapped into a persistent object-spatial graph. Agent execution is mediated by a single `InteractWalker` that traverses pluggable `InteractAction` nodes connected to each `Agent`. The `CockpitInteractAction` (current default) gives the language model full agency over harness services and action tools through a think-act-observe loop with walker-revisit iteration.
 
 ```text
-┌──────────────────────────────────────────────────────────────────┐
-│                          Entry Point (CLI)                        │
-│                     `jvagent.cli.main.py`                         │
-├──────────────────────────────────────────────────────────────────┤
-│                      Bootstrap / Server Init                      │
-│           AppLoader → AgentLoader → ActionRegistration            │
-├──────────────────────────────────────────────────────────────────┤
-│                    Root Node Graph Hierarchy                      │
-│  Root → App → [Agents → Agent → [Actions → Action, Memory]]     │
-│                                     ↓                             │
-│                    [User → Conversation → Interaction]            │
-└──────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                         CLI / HTTP Entry Layer                        │
+│  `jvagent/cli/main.py`        `jvagent/action/interact/endpoints.py`  │
+│  (jvagent / bootstrap /        (POST /interact, /interact/stream      │
+│   bundle / agent / skill)       via @endpoint decorators)             │
+├──────────────────────────────────────────────────────────────────────┤
+│                    Bootstrap / Server Composition                     │
+│  AppLoader → AgentLoader → ActionLoader → register_action             │
+│  `jvagent/core/app_loader.py`  `jvagent/core/agent_loader.py`         │
+│  `jvagent/action/loader/action_loader.py`                             │
+├──────────────────────────────────────────────────────────────────────┤
+│                    Persistent Graph (jvspatial Nodes)                 │
+│  Root → App → Agents ─► Agent ─► Actions ─► Action(s)                 │
+│                            └──► Memory ─► User ─► Conversation        │
+│                                                  └─► Interaction (↔)  │
+├──────────────────────────────────────────────────────────────────────┤
+│                       Interaction Execution                           │
+│  InteractWalker (Walker) traverses InteractActions in weight order;   │
+│  CockpitInteractAction / AgentInteractAction → ToolRegistry +         │
+│  ToolExecutionEngine drive the model loop;                            │
+│  ResponseBus streams adhoc / final messages to channel adapters.      │
+└──────────────────────────────────────────────────────────────────────┘
          │
          ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                    Agent Interaction Pipeline                     │
-│            HTTP POST /interact (InteractAction endpoints)         │
-├──────────────────────────────────────────────────────────────────┤
-│  1. InteractWalker Spawn (starts on Agent node)                   │
-│  2. User/Conversation Resolution (Memory lookup)                  │
-│  3. Interaction Node Creation (persisted in DB)                   │
-│  4. Access Control Check (AccessControlAction)                    │
-│  5. Top-Level InteractAction Execution (weight-ordered):          │
-│     - InteractRouter (if enabled) → routes posture/intent        │
-│     - PersonaAction/Converse/SkillAction → executes main logic   │
-│     - Background Actions (post-interaction async tasks)           │
-│  6. Response Building & Streaming                                 │
-│  7. Response Publishing (saves Interaction, publishes to bus)     │
-└──────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│         Storage (jvspatial pluggable backends + jvagent stores)       │
+│  app DB (json | sqlite | mongodb | dynamodb)  · log DB · file storage │
+│  PageIndex store · response queues (in-process) · graph repair lock   │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Component Responsibilities
 
 | Component | Responsibility | File |
 |-----------|----------------|------|
-| **App** | Root application node; manages app-level settings, timezones, file storage, logging | `jvagent/core/app.py` |
-| **Agents** | Structural branchpoint for agent collection; maintains aggregate counters | `jvagent/core/agents.py` |
-| **Agent** | Individual agent node; CRUD interface for agent operations; relationship hub | `jvagent/core/agent.py` |
-| **Actions** | Central manager for action registration, discovery, statistics | `jvagent/action/actions.py` |
-| **Action** | Base class for all pluggable actions; defines lifecycle hooks and configuration pattern | `jvagent/action/base.py` |
-| **InteractAction** | Specialized Action for interact subsystem participation (routing, execution) | `jvagent/action/interact/base.py` |
-| **InteractWalker** | Walker that traverses InteractActions; entry point for interactions | `jvagent/action/interact/interact_walker.py` |
-| **Memory** | Root node for user/conversation/interaction management; handles user creation and retrieval | `jvagent/memory/manager.py` |
-| **User** | User node; represents end-users interacting with agent | `jvagent/memory/user.py` |
-| **Conversation** | Conversation session node; groups interactions under a session | `jvagent/memory/conversation.py` |
-| **Interaction** | Single user-agent exchange; stores utterance, response, action trace, metrics | `jvagent/memory/interaction.py` |
-| **AppLoader** | Bootstraps App from app.yaml; handles YAML validation and graph initialization | `jvagent/core/app_loader.py` |
-| **AgentLoader** | Bootstraps Agent(s) from agent.yaml; handles action registration and config resolution | `jvagent/core/agent_loader.py` |
-| **AgentInteractAction** | Unified skill-routing action; combines router + agentic loop in single walker visit | `jvagent/action/agent_interact/agent_interact_action.py` |
-| **SkillCatalog** | Registry and discovery for available skills; handles dynamic skill loading | `jvagent/action/skill/skill_catalog.py` |
+| **CLI dispatcher** | Parse argv, resolve app root, dispatch to subcommands or default server | `jvagent/cli/main.py` |
+| **Server config** | Build `jvspatial.api.Server` from `app.yaml` + env, register endpoint modules | `jvagent/cli/server_config.py` |
+| **Bootstrap** | Idempotent graph construction: App + Agents + Memory + admin user | `jvagent/cli/bootstrap.py`, `jvagent/core/app_loader.py` |
+| **App** | Singleton root application node (id, version, file storage, timezone, update_mode) | `jvagent/core/app.py` |
+| **Agents** | Structural branchpoint; aggregate counters over child Agent nodes | `jvagent/core/agents.py` |
+| **Agent** | Per-agent identity, configuration, memory + actions hubs, ResponseBus owner | `jvagent/core/agent.py` |
+| **Actions** | Central manager for an agent's actions; registration / lookup / counters | `jvagent/action/actions.py` |
+| **Action** | Base node for all pluggable actions; lifecycle hooks, get_tools(), get_action() | `jvagent/action/base.py` |
+| **InteractAction** | Action subclass that participates in the interact pipeline | `jvagent/action/interact/base.py` |
+| **InteractWalker** | Walker that traverses agent → Actions → InteractActions in weight order | `jvagent/action/interact/interact_walker.py` |
+| **CockpitInteractAction** | Model-cockpit walker-revisit loop; full harness + action tool agency | `jvagent/action/cockpit/cockpit_interact_action.py` |
+| **CockpitEngine** | Single-step think-act-observe iteration; persists state on visitor | `jvagent/action/cockpit/engine.py` |
+| **AgentInteractAction** | Legacy unified router + converse + skill loop (single visit) | `jvagent/action/agent_interact/agent_interact_action.py` |
+| **InteractRouter** | Posture/intent classifier (CoVe prompting); used by legacy and cockpit | `jvagent/action/router/interact_router.py`, `jvagent/action/cockpit/router.py` |
+| **SkillInteractAction** | Interact-subsystem facade over `SkillAction` agentic loop | `jvagent/action/skill/skill_interact_action.py` |
+| **PersonaAction** | Tool-based persona / prompt action; converse delivery target | `jvagent/action/persona/persona_action.py` |
+| **AccessControlAction** | Per-action gating; consulted by walker before each visit | `jvagent/action/access_control/access_control_action.py` |
+| **ResponseBus** | Agent-scoped publish/subscribe for streaming + final messages | `jvagent/action/response/response_bus.py` |
+| **Memory** | Manager hub for User/Conversation/Interaction subgraph | `jvagent/memory/manager.py` |
+| **TaskStore** | Conversation-scoped task / step lifecycle (typed dataclasses on Conversation) | `jvagent/memory/task_store.py` |
+| **ActionLoader** | Filesystem discovery, dependency install, dynamic import, archetype check | `jvagent/action/loader/action_loader.py` |
+| **JvagentActionsImporter** | `sys.meta_path` finder mapping `jvagent.actions.*` → app `agents/...` paths | `jvagent/action/loader/importer.py` |
+| **ToolRegistry / ToolExecutionEngine** | Provider-agnostic tool registration + concurrent dispatch | `jvagent/tooling/tool_registry.py`, `jvagent/tooling/tool_executor.py` |
+| **BaseModelAction / LanguageModelAction** | LM provider abstraction with HTTP retries + streaming | `jvagent/action/model/base.py`, `jvagent/action/model/language/base.py` |
+| **PageIndex** | Vectorless tree-search RAG over assimilated documents | `jvagent/action/pageindex/` |
+| **MCP** | MCP client + sandboxed servers (stdio / streamable_http) for tool federation | `jvagent/action/mcp/` |
+| **Cache layer** | TTL caches for Agent/Action/router decisions | `jvagent/core/cache.py` |
+| **Graph repair** | Distributed-locked structural repair scheduler | `jvagent/core/graph_repair.py`, `jvagent/core/repair_phases/engine.py` |
+| **Bundler** | Generates per-app `Dockerfile` from discovered `info.yaml` deps | `jvagent/bundle/bundler.py` |
+| **Scaffold** | `jvagent app create` / `agent create` / `skill add` profile resolution | `jvagent/scaffold/operations.py`, `jvagent/scaffold/builtin_profiles/` |
 
 ## Pattern Overview
 
-**Overall:** Hierarchical graph-based object-spatial arrangement (jvspatial) with pluggable, declaratively-configured action pipeline
+**Overall:** Object-Spatial Programming (OSP) on a persistent graph, with a pluggable plugin/registry system layered on top. Walker-driven traversal supplies the execution model; YAML descriptors supply the wiring.
 
 **Key Characteristics:**
-- **Node-centric**: All domain entities (App, Agent, Action, User, Conversation, Interaction) are jvspatial Nodes
-- **Edge relationships**: Parent-child and sibling relationships established via jvspatial edges (enables cascade delete, traversal)
-- **Declarative YAML**: Actions and agents defined in machine-readable YAML (app.yaml, agent.yaml); property overrides via context blocks
-- **Pluggable architecture**: Actions are self-contained packages with metadata, lifecycle hooks, endpoints, and tool definitions
-- **Walker-based traversal**: InteractWalker and other custom walkers traverse the graph to execute modular logic
-- **Async/await**: Fully async architecture built on asyncio and FastAPI
-- **Multi-provider support**: Language models, embeddings, vector stores, and external services abstracted behind common interfaces
+- **Graph-first:** Every long-lived entity (App, Agent, Actions, Action, Memory, User, Conversation, Interaction) is a `jvspatial.core.Node`; relationships are explicit edges with cascade-delete semantics.
+- **Walker-driven execution:** `InteractWalker` (a `jvspatial.core.Walker`) is the only execution engine; visits to Action nodes invoke `@on_visit` handlers.
+- **Declarative configuration:** `app.yaml` declares the app + agents list; per-agent `agent.yaml` declares actions + context overrides; per-action `info.yaml` declares archetype + dependencies.
+- **Three-namespace plugin system:** `jvagent/`, `contrib/`, `custom/` namespaces partition action identifiers (`namespace/action_name`) to prevent collision.
+- **Lifecycle hooks:** `on_register`, `on_reload`, `post_register`, `on_startup`, `on_enable`, `on_disable`, `on_deregister`, `healthcheck` give actions full control over their lifecycle.
+- **Provider-agnostic tools:** `Tool` dataclass wraps any async callable with a JSON Schema; `ToolRegistry` dispatches concurrently with timeout/error sanitization.
+- **Skill bundles:** Claude-style `SKILL.md` markdown bundles ship under `jvagent/skills/` (built-in) and `agents/<ns>/<id>/skills/` (per-agent), discovered/merged at runtime.
+- **Walker-revisit pattern (cockpit):** Each `CockpitInteractAction` visit executes one model call; when tool calls remain, state is persisted on `visitor._skill_state` and the action re-prepends itself to the walk path.
 
 ## Layers
 
-**Configuration Layer:**
-- Purpose: Parse and validate declarative configuration (YAML files)
-- Location: `jvagent/core/app_loader.py`, `jvagent/core/agent_loader.py`, `jvagent/core/app_yaml_validator.py`, `jvagent/core/agent_yaml_validator.py`
-- Contains: YAML parsing, validation, environment variable resolution, dependency installation
-- Depends on: jvspatial, pyyaml, Python standard library
-- Used by: Bootstrap process, CLI, startup handlers
+**CLI layer:**
+- Purpose: Parse argv, route to subcommand or HTTP server, set up env / DB / logging
+- Location: `jvagent/cli/`
+- Contains: `main.py` (dispatcher), `commands.py` (subcommand handlers), `app_commands.py` (`jvagent app create / profile new`), `bootstrap.py`, `server_config.py`
+- Depends on: jvspatial Server, dotenv, internal `core.config`
+- Used by: `jvagent` console script (entry point), `python -m jvagent`
 
-**Graph/Persistence Layer:**
-- Purpose: Manage Node/Edge relationships, database I/O, caching
-- Location: jvspatial library (external dependency); local extensions in `jvagent/core/cache.py`, `jvagent/core/graph_repair.py`
-- Contains: Node definition, attribute management, indexing, query execution, cascade deletes
-- Depends on: MongoDB backend, jvspatial
-- Used by: All domain entities
+**Server / HTTP layer:**
+- Purpose: FastAPI server (jvspatial.api.Server) with `@endpoint`-decorated handlers
+- Location: endpoint modules across `jvagent/core/endpoints.py`, `jvagent/memory/endpoints.py`, `jvagent/action/endpoints.py`, `jvagent/logging/endpoints.py`, plus per-action `endpoints.py`
+- Contains: agent CRUD, action CRUD, interact, memory admin, auth, OAuth callbacks (Google/Microsoft), webhooks (whatsapp/postiz/facebook/page-index)
+- Depends on: jvspatial.api endpoint registry
+- Used by: external HTTP clients, jvchat frontend
 
-**Domain Layer:**
-- Purpose: Represent core business entities (App, Agent, Action, Memory, User, Conversation, Interaction)
-- Location: `jvagent/core/`, `jvagent/action/`, `jvagent/memory/`
-- Contains: Node class definitions, CRUD operations, relationship management, lifecycle hooks
-- Depends on: jvspatial, configuration layer, graph layer
-- Used by: API endpoints, interaction handlers, loaders
+**Core layer (graph + bootstrap):**
+- Purpose: Define App/Agent/Agents nodes, descriptor loaders, configuration resolution, caching, repair
+- Location: `jvagent/core/`
+- Contains: 30+ modules covering bootstrap (`app_loader`, `agent_loader`), validation (`*_yaml_validator`), env resolution (`env_resolver`), graph repair (`graph_repair*`, `repair_phases/`), public URL generation, observability hooks
+- Depends on: jvspatial.core (Node, Walker, Root), pyyaml
+- Used by: CLI, HTTP layer, action subsystem
 
-**Action/Plugin Layer:**
-- Purpose: Provide pluggable, composable units of functionality
-- Location: `jvagent/action/` (base classes and built-in actions)
-- Contains: Action base class, InteractAction base class, lifecycle hooks, action-to-action communication
-- Depends on: Domain layer, external SDKs (e.g., OpenAI, Google APIs, Stripe)
-- Used by: Bootstrap (registration), InteractWalker (execution), skill system
+**Action layer (plugin runtime):**
+- Purpose: Pluggable execution units with strict directory contract
+- Location: `jvagent/action/<namespace?>/<action_name>/`
+- Contains: ~38 actions including interact (`interact/`, `agent_interact/`, `cockpit/`, `router/`, `skill/`, `intro/`, `converse/`, `interview/`, `task_*`, `handoff_interact_action/`), models (`model/language/{anthropic,openai,ollama,openrouter}`, `model/embedding/...`), integrations (`google/`, `microsoft/`, `whatsapp/`, `facebook_action/`, `email_action/`, `postiz_action/`, `mcp/`), retrieval (`pageindex/`, `vectorstore/`, `web_search/`, `web_search_retrieval/`, `retrieval/`, `long_memory*/`), AV (`avatar_action/`, `tts_action/`, `stt_action/`, `video_generation/`), and the `loader/` subpackage that imports them
+- Depends on: jvspatial.core, `jvagent.action.base`, `jvagent.tooling`
+- Used by: agent.yaml-driven bootstrap; runtime via `Agent.get_action()` / `Action.get_action(...)`
 
-**Interaction/Execution Layer:**
-- Purpose: Execute interactions through modular pipeline of InteractActions
-- Location: `jvagent/action/interact/`, `jvagent/action/agent_interact/`, `jvagent/action/skill/`
-- Contains: InteractWalker, routing logic, skill catalog, tool execution, agentic think-act-observe loop
-- Depends on: Action layer, domain layer, LM providers
-- Used by: HTTP API, response bus
+**Memory layer:**
+- Purpose: User, conversation, and interaction state persistence
+- Location: `jvagent/memory/`
+- Contains: `Memory`, `User`, `Conversation`, `Interaction` nodes; `TaskStore`, `EvidenceLog`, `UserLongMemory`, `lock_manager`, `distributed_conversation_lock`, services
+- Depends on: jvspatial Node + DeferredSaveMixin
+- Used by: every interact path
 
-**API/HTTP Layer:**
-- Purpose: Expose functionality via RESTful endpoints
-- Location: `jvagent/core/endpoints.py`, `jvagent/action/endpoints.py`, `jvagent/action/interact/endpoints.py`, `jvagent/memory/endpoints.py`
-- Contains: FastAPI endpoint decorators, request/response handling, auth/RBAC
-- Depends on: FastAPI, jvspatial API framework, domain/action layers
-- Used by: External clients, CLI commands
+**Tooling layer:**
+- Purpose: Provider-agnostic tool primitives consumed by cockpit / skill loops
+- Location: `jvagent/tooling/`
+- Contains: `Tool` (dataclass), `ToolRegistry`, `ToolExecutionEngine`, `ToolResult`, `ToolSerializer`, `ToolSchemaValidator`, `ToolObservability`
+- Depends on: stdlib only (no jvspatial coupling)
+- Used by: `cockpit/registry.py`, `skill/tool_executor.py`, MCP
+
+**Skills layer (built-in catalog):**
+- Purpose: Claude-style `SKILL.md` bundles bundled with jvagent
+- Location: `jvagent/skills/`
+- Contains: 18 bundles (`skill_hub`, `research`, `web_search`, `answer`, `calendar`, `gmail`, `google_drive`, `google_sheets`, `outlook_calendar`, `outlook_mail`, `microsoft_excel`, `microsoft_onedrive`, `fileinterface`, `triage`, `code_review`, `pageindex_docs`, `pageindex_search`, `pdf_generation`)
+- Depends on: scaffold resolver + `SKILL.md` parser
+- Used by: cockpit / skill_interact_action via `SkillCatalog`
+
+**Scaffold layer:**
+- Purpose: Project / agent / skill creation; profile resolution
+- Location: `jvagent/scaffold/`
+- Contains: `operations.py`, `profile_resolve.py`, `skill_resolve.py`, `yaml_io.py`, `resource_io.py`, `builtin_profiles/{minimal,conversational,agentic,research,whatsapp_voice}.yaml`, `static/env.example.txt`
+- Depends on: pyyaml, importlib.resources
+- Used by: `jvagent app create`, `jvagent agent create`, `jvagent skill add`
+
+**Bundling layer:**
+- Purpose: Per-app Dockerfile generation discovering action dependencies
+- Location: `jvagent/bundle/`
+- Contains: `bundler.py`, `dockerfile_generator.py`, base `Dockerfile.base`
+- Used by: `jvagent bundle [app_root]`
 
 ## Data Flow
 
-### Primary Request Path (User Interaction)
+### Bootstrap (server start)
 
-1. **HTTP POST /agents/{agent_id}/interact** (`jvagent/action/interact/endpoints.py`)
-   - Parses request body (utterance, user_id, channel, session_id, data)
-   - Validates user/agent existence
-   - Initiates InteractWalker for the agent
+1. `jvagent/__main__.py` or console script → `jvagent.cli.main:main()` (`jvagent/cli/main.py:118`).
+2. `_first_app_root_path()` strips the directory token; `load_app_env()` loads `<app_root>/.env`; `set_app_root()` records the path globally (`jvagent/core/app_context.py`).
+3. `_set_db_env_from_config()` resolves DB type/path from `app.yaml` and exports `JVSPATIAL_DB_TYPE` / `JVSPATIAL_DB_PATH`.
+4. `run_server()` creates the `jvspatial.api.Server` via `create_server_from_config()` (`jvagent/cli/server_config.py:63`).
+5. Endpoint modules are imported for `@endpoint` registration (`_import_core_endpoint_modules`).
+6. `pre_startup_bootstrap()` runs `bootstrap_application_graph()`:
+   - `AppLoader.bootstrap_application()` ensures Root → App, syncs context (`jvagent/core/app_loader.py`).
+   - `AgentLoader` discovers `agents/<ns>/<name>/agent.yaml`, registers `Agents` branchpoint, creates/updates each `Agent`, then `ActionLoader` walks each `actions:` entry and calls `Actions.register_action()`.
+   - `Action.on_register()` / `on_reload()` / `post_register()` lifecycle hooks fire.
+7. `run_app_startup()` invokes every action's `on_startup()` so runtime components (channel adapters, MCP clients, model HTTP pools) initialize.
+8. `ensure_admin_user()` creates the admin from `JVAGENT_ADMIN_PASSWORD` if missing.
+9. `server.run()` hands off to uvicorn.
 
-2. **InteractWalker Initialization** (`jvagent/action/interact/interact_walker.py`)
-   - Resolves or creates User in Memory
-   - Resolves or creates Conversation (session-scoped)
-   - Initializes Interaction node in graph
-   - Populates walker state (utterance, user, conversation, etc.)
+### Interaction request (default path)
 
-3. **Walker Spawn on Agent** (`jvagent/action/interact/interact_walker.py::spawn()`)
-   - Traverses Agent → Actions → InteractActions
-   - Fetches top-level InteractActions from Actions node
-   - Sorts by weight (lower = earlier execution)
+1. Client → `POST /interact` (or `/interact/stream`) handled by `jvagent/action/interact/endpoints.py:interact()`.
+2. Rate limiter checks (`jvagent/action/interact/rate_limiter.py`); auth + agent_id validated; `Agent.get(agent_id)` (cached).
+3. `InteractWalker(agent_id, utterance, channel, session_id, user_id, ...)` is constructed; `initialize_interaction()` resolves user → conversation → new `Interaction` (`jvagent/action/interact/interact_walker.py:50`).
+4. `walker.spawn(agent)` jumps directly to the Agent node (skipping Root traversal).
+5. Walker traverses `Agent → Actions → InteractAction[]` in `weight` order. For each top-level `InteractAction`:
+   - `AccessControlAction` (if any) gates the visit.
+   - `@on_visit(InteractAction)` invokes `InteractAction.execute(walker)`.
+   - Top-level actions explicitly route to children via `visitor.visit(...)` or `visitor.prepend([...])`.
+6. **Cockpit path** (`CockpitInteractAction.execute`):
+   - Phase 1 — `CockpitRouter.route()` classifies posture (RESPOND/SUPPRESS/DEFER) + selects skills via a fast LM call; canned lead-in optionally streamed.
+   - Phase 2 — On first visit, `CockpitEngine` is constructed; `assemble_cockpit_tools()` (`jvagent/action/cockpit/registry.py`) merges harness tools (memory, response, task, conversation, skill, search, artifact) + action tools (`Action.get_tools()`) + skill bundle tools.
+   - `engine.step()` executes ONE model call. If tool calls returned: `ToolExecutionEngine.execute(...)` runs them concurrently; engine state persisted on `visitor._skill_state`; action re-prepends itself via `visitor.prepend([self])` and walker re-visits.
+   - When step returns a final text response: `deliver_final_response()` / `deliver_conversational()` publish via `ResponseBus`.
+7. `ResponseBus` (`jvagent/action/response/response_bus.py`) streams adhoc chunks during the loop and the final `ResponseMessage` to channel adapter subscribers.
+8. After walker completes, `_finalize_usage()` computes per-interaction usage from `observability_metrics`, updates user totals, and `flush_deferred_entities()` persists Conversation/Interaction snapshots.
+9. `build_interact_response()` assembles the HTTP response (or SSE stream).
 
-4. **Access Control Check** (`jvagent/action/access_control/`)
-   - AccessControlAction verifies user/agent permissions
-   - Returns early if denied; logs access denied event
+### Background actions
 
-5. **Core InteractAction Execution** (multiple actions in sequence)
-   - **InteractRouter** (if enabled) (`jvagent/action/agent_interact/router/`)
-     - Calls LM to classify user intent/posture (task, clarification, banter, etc.)
-     - Records routing result on interaction
-     - Sets anchors/routing flags for downstream actions
-   
-   - **AgentInteractAction** (unified router+skill) (`jvagent/action/agent_interact/agent_interact_action.py`)
-     - If conversational (banter/greeting): calls PersonaAction.respond_slim for fast path
-     - If task: enters agentic skill loop (AgentInteractSkillAction)
-   
-   - **SkillAction Loop** (`jvagent/action/skill/skill_action.py`)
-     - Initializes skill loop context (goals, current step, checkpoint)
-     - Repeatedly:
-       1. Builds system prompt with persona + skill catalog
-       2. Calls LM with available tools (skills as tool definitions)
-       3. Parses tool calls from LM response
-       4. Executes tools via ToolExecutor (`jvagent/action/skill/tool_executor.py`)
-       5. Records tool results, stuck detection, loop checkpoint
-     - Exits when goal achieved or max iterations reached
-   
-   - **PersonaAction** (if needed) (`jvagent/action/persona/persona_action.py`)
-     - Formats response according to persona description
-     - Applies voice/tone directives from router
-   
-   - **Background Actions** (deferred execution)
-     - Collected during walk; executed after response published
+InteractActions with `run_in_background = True` are deferred. After the user-facing response is sent, they execute via `jvspatial.create_task` so analytics, model updates, and long-memory writes do not block the client.
 
-6. **Response Publishing**
-   - Interaction node saved to database with all action results, metrics, usage
-   - Response published to ResponseBus (if present)
-   - Streamed or batch-returned to client
+### State Management
 
-### Secondary Flows
-
-**Agent Bootstrap:**
-1. AppLoader reads app.yaml → creates App node, sets up storage, logging
-2. AgentLoader reads agent.yaml → creates Agent node
-3. Action discovery: scan declared actions, resolve dependencies
-4. Action registration: create Action nodes, call on_register() hooks
-5. Skill discovery: populate SkillCatalog from filesystem and action metadata
-
-**Background Task Execution:**
-1. Interaction marked as closed; response sent to client
-2. Background actions executed asynchronously (fire-and-forget)
-3. Examples: model fine-tuning, analytics, database cleanup
-
-**Graph Repair (Maintenance):**
-1. Triggered via `/admin/graph-repair` endpoint
-2. Runs memory repair (user/conversation/interaction tree consistency)
-3. Runs structural repair (orphaned nodes, broken edges)
-4. Runs interaction limit pruning (rolling window per user)
-
-**State Management:**
-- **Transient state**: Walker state (utterance, user, conversation, action results) held in InteractWalker instance during interaction
-- **Persistent state**: Interaction, User, Conversation, Action, Agent nodes persisted to MongoDB
-- **Cache state**: AgentCache (agent lookups), ActionCache (action resolution), SkillCatalog (in-memory skill index)
-- **Runtime singletons**: App instance (per-process), ResponseBus (per-agent), LM action instances
+- **Graph state:** persisted as jvspatial nodes/edges in the configured DB backend.
+- **Per-interaction transient state:** carried on the walker (`visitor._skill_state`, `visitor.context`) and discarded when the walker terminates.
+- **Streaming state:** held in `ResponseBus._session_queues` / `_message_buffers` keyed by `interaction_id`; cleared after delivery.
+- **Caches:** `cache_manager` (Agent/Actions/Action by id, TTL configurable in `app.yaml.config.performance`); `interact_router_cache` for routing decisions.
 
 ## Key Abstractions
 
-**Action:**
-- Purpose: Pluggable unit of functionality attached to an agent
-- Examples: `jvagent/action/agent_interact/agent_interact_action.py`, `jvagent/action/persona/persona_action.py`, `jvagent/action/model/language/openai/` (OpenAI language model)
-- Pattern: Extends `Action` base class; defines attributes via `attribute()` descriptors; implements lifecycle hooks (`on_register`, `on_enable`, `on_disable`, etc.)
+**Node hierarchy:**
+- Purpose: Persistent, edge-connected entities with cascade-delete semantics
+- Examples: `jvagent/core/app.py`, `jvagent/core/agent.py`, `jvagent/memory/manager.py`, `jvagent/action/base.py`
+- Pattern: Subclass `jvspatial.core.Node`; declare typed fields with `attribute(...)`; declare `@compound_index` for query patterns
 
-**InteractAction:**
-- Purpose: Action that participates in the interact subsystem (walker traversal)
-- Examples: `jvagent/action/agent_interact/agent_interact_action.py`, `jvagent/action/converse/converse_action.py`
-- Pattern: Extends `InteractAction`; implements `execute(visitor)` method; weight-ordered at top tier
+**Walker:**
+- Purpose: Stateful traversal engine with `@on_visit` dispatch
+- Examples: `jvagent/action/interact/interact_walker.py:InteractWalker`
+- Pattern: Subclass `jvspatial.core.Walker`; declare walker state as Pydantic fields; spawn on a starting node; visit handlers receive both walker and visited node
 
-**Skill:**
-- Purpose: Reusable capability invoked as tool in agentic loop
-- Examples: `jvagent/skills/gmail/`, `jvagent/skills/google_drive/`, `jvagent/skills/web_search/`
-- Pattern: Defined in SKILL.md file (YAML); discovered at startup; registered in SkillCatalog; executed via ToolExecutor
+**Action archetype:**
+- Purpose: Plugin contract — every action declares an archetype class in `info.yaml` matching the Python class
+- Examples: every `<action>/info.yaml` lists `package.archetype: <ClassName>`
+- Pattern: `class FooAction(Action)` (or `InteractAction`, `LanguageModelAction`, etc.); typed `attribute(...)` defaults overridden by `agent.yaml` `context:` block
 
-**Visitor/Walker:**
-- Purpose: Traversal mechanism for graph-based logic
-- Examples: `jvagent/action/interact/interact_walker.py` (InteractWalker)
-- Pattern: Extends `jvspatial.core.Walker`; implements `on_visit()` hooks; carries execution state through traversal
+**Tool:**
+- Purpose: Provider-agnostic callable wrapped with metadata + JSON schema
+- Examples: `jvagent/tooling/tool.py:Tool`, harness tools in `jvagent/action/cockpit/{memory,task,response,skill,search,artifact,conversation}_tools.py`
+- Pattern: `Tool(name, description, parameters_schema, execute)`; `await tool.call(**args) -> ToolResult`; registered in a `ToolRegistry`
 
-**Memory Hierarchy:**
-- **Memory**: Root node for agent's conversational memory
-- **User**: Represents an end-user; connected to Memory via edge
-- **Conversation**: Session for grouped interactions; connected to User via edge
-- **Interaction**: Single user-agent exchange; chained bidirectionally; connected to Conversation via edge
+**Skill bundle:**
+- Purpose: Claude-style markdown SOP + tool scripts loadable at runtime
+- Examples: `jvagent/skills/research/SKILL.md`, `jvagent/skills/skill_hub/_skills_cli.py`
+- Pattern: `SKILL.md` frontmatter (`name`, `description`, `allowed-tools`, `tags`) + workflow body + sibling `*.py` tool scripts; resolved by `jvagent/scaffold/skill_resolve.py`
 
-**Tool/Skill Execution:**
-- Purpose: Execute tool calls issued by LM within skill loop
-- Examples: `jvagent/action/skill/tool_executor.py`
-- Pattern: Registered tools have schema (via jvspatial.tooling); executor parses tool calls, invokes registered handlers, captures results
+**ResponseMessage / Channel adapter:**
+- Purpose: Outbound message envelope with channel-specific filtering
+- Examples: `jvagent/action/response/message.py`, `jvagent/action/response/channel_adapter.py`, `jvagent/action/whatsapp/`, `jvagent/action/facebook_action/`
+- Pattern: Adapter actions register with `ResponseBus.subscribe()`; messages flow through `ChannelFilter` chain before delivery
+
+**TaskStore / Task / Step:**
+- Purpose: Conversation-scoped progress tracking exposed to the model
+- Examples: `jvagent/memory/task_store.py`
+- Pattern: `await store.create(...)`, `task.start()`, `task.add_step(...)`, `step.complete(result=...)`
 
 ## Entry Points
 
-**CLI Entry Point:**
-- Location: `jvagent.cli.main.main()`
-- Triggers: `jvagent` command, `python -m jvagent`
-- Responsibilities: Parse CLI arguments, dispatch to subcommands (bootstrap, server, agent admin, skill admin), handle app initialization
+**Console script `jvagent`:**
+- Location: declared in `pyproject.toml` `[project.scripts]` → `jvagent.cli:main`
+- Triggers: terminal invocation
+- Responsibilities: full CLI dispatcher (run / status / agent / skill / action / bootstrap / bundle / app / validate / stress-seed)
 
-**HTTP Entry Point (Agent Interaction):**
-- Location: `jvagent/action/interact/endpoints.py::interact()` (POST `/agents/{agent_id}/interact`)
-- Triggers: HTTP POST request
-- Responsibilities: Parse request, spawn InteractWalker, execute interaction pipeline, return response
+**Module `python -m jvagent`:**
+- Location: `jvagent/__main__.py`
+- Triggers: `python -m jvagent ...`
+- Responsibilities: thin shim into `jvagent.cli.main`
 
-**HTTP Entry Point (Admin):**
-- Location: `jvagent/core/endpoints.py` (agent CRUD), `jvagent/memory/endpoints.py` (memory admin)
-- Triggers: HTTP GET/PUT/DELETE requests
-- Responsibilities: Manage agents, repair graph, list interactions
+**HTTP server (default subcommand):**
+- Location: `jvagent/cli/main.py:run_server` → `jvagent/cli/server_config.py:create_server_from_config`
+- Triggers: `jvagent` with no subcommand, `jvagent run`
+- Responsibilities: build `jvspatial.api.Server`, register all `@endpoint` modules, run uvicorn
 
-**Bootstrap Entry Point:**
-- Location: `jvagent/cli/bootstrap.py`
-- Triggers: `jvagent [app_path] bootstrap` or implicit on first run
-- Responsibilities: Initialize app from app.yaml, register agents/actions from agent.yaml, create initial graph structure
+**Interact endpoint:**
+- Location: `jvagent/action/interact/endpoints.py`
+- Triggers: `POST /interact`, `POST /interact/stream`
+- Responsibilities: rate-limit → InteractWalker spawn → response delivery
+
+**OAuth callback endpoints:**
+- Location: `jvagent/action/google/endpoints.py`, `jvagent/action/microsoft/endpoints.py`
+- Triggers: provider redirect URI
+- Responsibilities: complete OAuth flow, persist tokens on the agent
+
+**Webhook endpoints:**
+- Location: `jvagent/action/whatsapp/endpoints.py`, `jvagent/action/facebook_action/endpoints.py`, `jvagent/action/postiz_action/endpoints.py`, `jvagent/action/pageindex/endpoints.py`
+- Triggers: external service callbacks
+- Responsibilities: verify signature, transform payload into an interaction or domain event
+
+**Repair / admin endpoints:**
+- Location: `jvagent/core/endpoints.py`, `jvagent/memory/endpoints.py`, `jvagent/action/endpoints.py`, `jvagent/action/access_control/endpoints.py`, `jvagent/logging/endpoints.py`
+- Triggers: admin clients
+- Responsibilities: agent CRUD, action CRUD, memory admin, graph repair, log queries
 
 ## Architectural Constraints
 
-- **Threading:** Single-threaded event loop (asyncio); all I/O is async; blocking calls prohibited
-- **Global state:** App singleton per process (cached via AppLoader); ResponseBus singleton per agent; SkillCatalog singleton per agent
-- **Circular imports:** AgentLoader delays import of AgentDescriptor; InteractAction delays import of InteractWalker via try/except; core/__init__.py uses `__getattr__` for lazy imports
-- **Cascade deletes:** Deleting User → cascades to all Conversations → cascades to all Interactions; enables clean memory pruning
-- **Node uniqueness:** Actions are uniquely identified by (agent_id, namespace, label); singleton actions enforced at registration time
-- **Configuration resolution:** Attributes defined in Action class; overridden in agent.yaml context block; validated by Pydantic at runtime
-- **Interaction closure:** Once interaction.closed=True, no further modifications allowed; background actions executed post-closure
-- **Memory pruning:** Interaction limit per user (rolling window); oldest interactions deleted when limit exceeded; configured per agent
+- **Threading:** Single-process, asyncio-based; uvicorn workers may be > 1 (configurable). Serverless mode (`--serverless`) forces `workers=1` and disables background tasks (`os.environ["SERVERLESS_MODE"]=true`). Long-running scheduled jobs (graph repair) are skipped under serverless and must be triggered externally.
+- **Global state:** Several module-level singletons exist — `jvagent/core/cache.py:cache_manager`, `jvagent/core/app_context.py` (app-root global), action `loader/importer.py:_actions_importer_base_path`, `App._cached_app` ClassVar. Tests that switch app roots must reset these.
+- **Circular imports:** `Agent` ↔ `Actions` ↔ `Action` ↔ `InteractAction` ↔ `InteractWalker` are mediated by `TYPE_CHECKING` guards and string-typed imports inside methods. New code must follow the same pattern (defer concrete imports to function bodies when crossing layers).
+- **Plugin namespace:** Every Action lives at `<root>/agents/<agent_ns>/<agent_name>/actions/<action_ns>/<action_name>/` (app-local) or `jvagent/action/<action_dir>/` (built-in). The `JvagentActionsImporter` finder enforces this layout.
+- **Singleton actions:** Actions with `is_singleton = True` (e.g., `IntroInteractAction`, `PersonaAction`) reject duplicate registration per agent; enforced in `Actions.register_action()`.
+- **Top-level routing:** Top-level `InteractAction` nodes connected directly to `Actions` MUST explicitly traverse children via `visitor.visit(...)` — the walker does not auto-recurse from the top tier (only top-tier weight ordering is honored).
+- **Update modes:** `--update` + `--source` is destructive (deletes and recreates Action nodes — child nodes are lost); `--update --merge` (default) is non-destructive and preserves DB state. The `App.update_mode` attribute is `protected=True` and may only be mutated through `set_app_update_mode()`.
+- **Cockpit walker-revisit:** Each `CockpitInteractAction.execute()` performs ONE model call; iteration is achieved by re-prepending `self` to the walk path and persisting state on `visitor._skill_state`. Engines must be JSON-serializable on the visitor.
 
 ## Anti-Patterns
 
-### Over-Persistence of Transient State
+### Importing concrete InteractWalker / InteractAction at module top of cross-layer files
 
-**What happens:** Storing walker state (current action, temporary flags, loop checkpoints) as Action attributes on disk, then querying them later
-**Why it's wrong:** Walker state is ephemeral and interaction-scoped; persisting it couples the walker to storage, makes concurrent interactions conflict, pollutes the action's permanent state
-**Do this instead:** Keep all transient state in the walker instance or a scoped context object (e.g., `AgentInteractSkillRunContext` in `jvagent/action/agent_interact/skill/context.py`); save only the final result to Interaction
+**What happens:** Tests and runtime crash on circular import (Action → InteractAction → InteractWalker → InteractAction).
+**Why it's wrong:** The interact subsystem is intentionally a leaf consumer of the Action base; pulling it upstream creates a cycle.
+**Do this instead:** Use `TYPE_CHECKING` for type hints (`jvagent/action/interact/interact_walker.py:24`) and lazy-import inside methods (e.g., `jvagent/action/__init__.py:13` `__getattr__`).
 
-### Blocking I/O in Action Methods
+### Calling `Action.save()` mid-walker without flushing
 
-**What happens:** Calling `requests.get()` or `time.sleep()` directly in action methods
-**Why it's wrong:** Blocks the event loop; other interactions starve; entire server becomes unresponsive
-**Do this instead:** Use `httpx.AsyncClient`, `asyncio.sleep()`, or other async libraries; all action methods must be `async def`
+**What happens:** Conversation/Interaction snapshots inconsistent with walker outcome; deferred saves lost.
+**Why it's wrong:** `Conversation` and `Interaction` use `DeferredSaveMixin`; explicit saves must coordinate with `flush_deferred_entities()` (called in `_finalize_usage`).
+**Do this instead:** Mutate state through the provided helpers (`walker.record_action(...)`, `interaction.compute_usage()`); let the endpoint's `_finalize_usage()` handle persistence (`jvagent/action/interact/endpoints.py:39`).
 
-### Hardcoding Namespace/Label Assumptions
+### Manually instantiating `Action` subclasses outside the loader
 
-**What happens:** Assuming action labels like `"my_action"` will always exist, or hardcoding namespace paths
-**Why it's wrong:** Actions can be disabled, renamed, or removed; hardcoded assumptions break under refactoring
-**Do this instead:** Use `get_action(ActionClass)` or `get_action("ClassName")` to resolve actions dynamically; check for None return; provide fallback behavior
+**What happens:** Action lacks `metadata`, never has `on_register()` called, fails singleton check.
+**Why it's wrong:** `ActionLoader.factory.build_action_metadata_payload()` builds the metadata payload from `info.yaml`; bypassing it produces inconsistent state.
+**Do this instead:** Add the action to `agent.yaml` `actions:` and run `jvagent --update` (or `jvagent bootstrap --update`); for ad-hoc programmatic use, instantiate via `ActionLoader.load_action(...)`.
 
-### Bypassing the Walker for Interaction Logic
+### Reading raw `os.environ` for `app.yaml`-derived config
 
-**What happens:** Directly instantiating and calling interact actions from non-walker contexts
-**Why it's wrong:** Loses walker state management, access control checks, response bus subscription, background action collection
-**Do this instead:** Always use InteractWalker for user-facing interactions; use walker visitor methods to route/execute actions within the walker context
+**What happens:** Config drift between CLI subcommands and HTTP server; `_set_db_env_from_config` overrides ignored.
+**Why it's wrong:** `app.yaml.config.*` resolution is centralized in `jvagent/core/config.py:get_config_value` with priority env > yaml > default.
+**Do this instead:** Always go through `load_app_config(app_root)` + `get_config_value(...)`.
+
+### Putting heavy logic in module bodies of action packages
+
+**What happens:** Every `from jvagent.action.X` import pays the cost; bootstrap slows; circular import risk grows.
+**Why it's wrong:** The `ActionLoader` imports modules during agent bootstrap; module-level side effects (HTTP clients, model loads) break startup ordering.
+**Do this instead:** Defer to `on_register` / `on_startup` lifecycle hooks (`jvagent/action/base.py:85`).
+
+### Storing skill state on the action node itself
+
+**What happens:** Concurrent interactions corrupt each other; persistence keeps stale state across requests.
+**Why it's wrong:** Action nodes are shared across all interactions for an agent.
+**Do this instead:** Stash per-interaction state on the walker (`visitor._skill_state[<key>]`) — it lives only for that walk.
 
 ## Error Handling
 
-**Strategy:** Layered error handling with early returns and logging
+**Strategy:** Layered. Endpoint layer raises `jvspatial.api.exceptions.*` (`ValidationError`, `ResourceNotFoundError`, `RateLimitError`, `JVSpatialAPIException`) which the server translates into HTTP responses. Domain layer catches and logs with context. Tool execution layer sanitizes errors to avoid leaking provider internals (`ToolExecutionEngine.sanitize_errors=True` default).
 
 **Patterns:**
-- Bootstrap errors: Logged and printed to console; app may start in degraded mode
-- Graph query errors: Returned as None (lookup failures); caller checks and handles
-- Action execution errors: Caught by InteractWalker; recorded in interaction.actions; response builder handles gracefully
-- Validation errors: Raised as `ValidationError` at parse time (YAML, config); prevents bad state
-- Database errors: Propagated as StorageError; logged; interaction marked as failed
+- LM HTTP retries: configurable `max_retries`, `retry_initial_delay`, `retry_max_delay`, `retry_backoff_multiplier`, `retry_jitter`, `retry_on_status_codes` on every `BaseModelAction` (`jvagent/action/model/base.py`).
+- Validation: pydantic field validation at Node load + `validate_app_yaml_descriptor` / `validate_agent_yaml` warnings during `jvagent validate` (`jvagent/cli/commands.py:150`).
+- Bootstrap: `BootstrapLogger` + `StartupLogCounter` aggregate WARNING/ERROR/CRITICAL counts and surface them post-startup (`jvagent/cli/commands.py:324`).
+- Walker: `try/except` around each `@on_visit` handler in jvspatial; `InteractWalker.initialize_interaction()` returns a typed `InteractionInitResult` with machine-readable codes.
+- Graph repair: `repair_agent_graph(max_seconds=...)` runs under a distributed lock with grace-period safeguards.
 
 ## Cross-Cutting Concerns
 
-**Logging:** Configured via `jvspatial.logging.configure_standard_logging()`; routed to DB (DBLogHandler) and console; level controlled by `JVSPATIAL_LOG_LEVEL` env var (`jvagent/logging/`)
+**Logging:**
+- Standard `logging` configured by `jvspatial.logging.configure_standard_logging()` in `jvagent/cli/main.py:31`.
+- Custom `INTERACTION` level (22) registered in `jvagent/logging/__init__.py`.
+- `DBLogHandler` writes structured logs to the configured log DB (json/sqlite/mongo/dynamo); endpoints expose querying (`jvagent/logging/endpoints.py`).
+- Observability hooks: `jvagent/core/observability.py` lets actions emit structured events; tool calls emit `ToolExecutionEnvelope` / `SkillActivationEnvelope` (`jvagent/tooling/tool_observability.py`).
 
-**Validation:** Pydantic models for request/response bodies; YAML schema validation for app.yaml/agent.yaml; attribute typing enforced at Node creation
+**Validation:**
+- `jvagent/core/app_yaml_validator.py` and `jvagent/core/agent_yaml_validator.py` produce typed `ValidationIssue` warnings consumed by `jvagent validate` (CI-friendly exit code).
+- Pydantic models on every Node enforce field types at construction.
+- Tool parameter schemas validated by `jvagent/tooling/tool_schema_validator.py` against OpenAI strict-mode rules at `Tool.__post_init__`.
 
-**Authentication:** Auth layer provided by jvspatial API framework; roles-based access control (RBAC) in endpoints; AccessControlAction provides custom per-action auth logic
+**Authentication:**
+- jvspatial.api.auth provides JWT auth; admin user bootstrapped from `JVAGENT_ADMIN_PASSWORD`.
+- `@endpoint(auth=True, roles=["admin"])` decorator gates admin endpoints; per-action `AccessControlAction` (jvagent/action/access_control/) gates execution within the walker.
+- OAuth providers (Google, Microsoft) handled in `jvagent/action/google/google_token.py`, `jvagent/action/microsoft/microsoft_token.py`.
 
-**Observability:** Hooks registered via `register_observability_hook()`; events emitted for model calls, tool executions, action state changes; aggregated in Interaction node as observability_metrics
+**Configuration:**
+- Priority everywhere: env var > `app.yaml`/`agent.yaml` > hardcoded default. Implemented uniformly in `jvagent/core/config.py:get_config_value`.
+- `${ENV_VAR}` placeholders in YAML resolved by `jvagent/core/env_resolver.py:resolve_env_placeholders`.
 
-**Metrics & Usage:** Tracked per interaction (token counts, LM calls, tool calls); aggregated in Interaction.usage; queried via memory endpoints
+**Performance:**
+- TTL caches: agent/actions/action/router (`jvagent/core/cache.py`).
+- Deferred saves: `DeferredSaveMixin` on `Conversation` and `Interaction` (`flush_deferred_entities` at end of walker).
+- Profiling: `jvagent/core/profiling.py` with `JVSPATIAL_*_PROFILING` env keys; controlled per app.
+
+**Background work:**
+- `jvspatial.create_task` schedules background coroutines (used by `_finalize_usage`, callbacks, run-in-background InteractActions).
+- `apscheduler` cron jobs for graph repair when `JVAGENT_REPAIR_SCHEDULE_CRON` set (skipped in serverless mode).
 
 ---
 
