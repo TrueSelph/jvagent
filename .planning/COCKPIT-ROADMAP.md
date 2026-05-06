@@ -15,7 +15,7 @@ Living roadmap for getting `CockpitInteractAction` to default-action quality acr
 | Milestone | State | Notes |
 |---|---|---|
 | A — Baseline test harness + metrics | DONE | 14 unit tests + smoke harness committed (commit `7d95904`). Baseline: 33s/6 utterances, 34K tokens. |
-| B — Interact-action delegation | IN PROGRESS | Wire `RoutingResult.interact_actions` to walker dispatch. Three modes (skills-only, ia-only, both). |
+| B — Interact-action delegation | DONE | `RoutingResult.interact_actions` wired (commit `1aa7d3f`). 3 modes operational: skills-only, ia-only (curate + finalize via persona), both (curate + engine + walker continues to IAs). 27 tests pass. Smoke: "speak to human" → cockpit → intro → handoff → cockpit-finalize → persona produces composed response. |
 | C — Skill delegation hardening | PENDING | `sys.modules` pollution fix; deterministic activation logging. |
 | D — Performance | PENDING | Cache tool registry per run; trim system prompt; reduce per-step rebuild. |
 | E — Default enablement | PENDING | Add cockpit to `minimal`/`conversational` profiles; coexist with legacy at weight `-200`. |
