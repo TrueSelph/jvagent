@@ -261,8 +261,6 @@ class AgentLoader:
             if descriptor.actions or update_mode is not None:
                 self.action_loader.invalidate_core_cache()
 
-                _validate_interact_routing_config(descriptor.actions)
-
                 await self._install_actions(
                     agent,
                     descriptor,
@@ -750,28 +748,3 @@ def _apply_properties(
             logger.warning(f"Could not set {type(target).__name__}.{key}: {e}")
 
 
-_REMOVED_INTERACT_ACTION_TOKENS: Tuple[str, ...] = (
-    "agent_interact_action",
-    "skill_interact_action",
-    "interact_router",
-)
-
-
-def _validate_interact_routing_config(declared_actions: List[Dict[str, Any]]) -> None:
-    """Warn when agent.yaml still references actions removed in favor of CockpitInteractAction."""
-    found: List[str] = []
-    for entry in declared_actions:
-        ref = entry.get("action", "")
-        for token in _REMOVED_INTERACT_ACTION_TOKENS:
-            if token in ref and ref not in found:
-                found.append(ref)
-                break
-
-    if not found:
-        return
-
-    logger.warning(
-        "agent.yaml declares removed interact action(s) %s. These have been "
-        "replaced by jvagent/cockpit_interact_action. Update agent.yaml.",
-        found,
-    )
