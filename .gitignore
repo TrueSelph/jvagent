@@ -100,3 +100,4 @@ Dockerfile
 .tectonic_*
 
 ollama_app/
+cockpit_smoke_last_run.json
