@@ -27,7 +27,6 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-
 # ---------------------------------------------------------------------------
 # Default utterance suite — covers the routing/dispatch surface
 # ---------------------------------------------------------------------------
@@ -123,9 +122,10 @@ async def _run_one(
     session_id: Optional[str],
     user_id: Optional[str],
 ) -> Dict[str, Any]:
+    from jvspatial import flush_deferred_entities
+
     from jvagent.action.interact.interact_walker import InteractWalker
     from jvagent.action.model.context import set_interaction
-    from jvspatial import flush_deferred_entities
 
     walker = InteractWalker(
         agent_id=agent.id,

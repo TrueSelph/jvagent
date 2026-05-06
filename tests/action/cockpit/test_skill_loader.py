@@ -27,7 +27,6 @@ from jvagent.action.cockpit import registry as registry_mod
 from jvagent.action.cockpit.context import CockpitContext
 from jvagent.tooling.tool_registry import ToolRegistry
 
-
 # asyncio mark applied per-function (only on async tests).
 
 
@@ -85,9 +84,7 @@ def test_load_tool_module_happy_path(tmp_path):
         },
     )
     file_path = skill_dir / "echo.py"
-    tool, reason = registry_mod._load_tool_module(
-        file_path, "demo", set(), MagicMock()
-    )
+    tool, reason = registry_mod._load_tool_module(file_path, "demo", set(), MagicMock())
     assert reason is None
     assert tool is not None
     assert tool.name == "demo__echo_tool"
@@ -121,9 +118,7 @@ def test_load_tool_module_exec_failure_does_not_leak_sys_modules(tmp_path):
         },
     )
     with pytest.raises(ValueError, match="exec broke"):
-        registry_mod._load_tool_module(
-            skill_dir / "bad.py", "boom", set(), MagicMock()
-        )
+        registry_mod._load_tool_module(skill_dir / "bad.py", "boom", set(), MagicMock())
     # The crucial bit: no partial module left in sys.modules.
     assert "jvagent_cockpit_skill_boom_bad" not in sys.modules
 

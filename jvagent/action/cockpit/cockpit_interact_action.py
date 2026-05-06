@@ -297,7 +297,7 @@ class CockpitInteractAction(InteractAction):
 
     async def _require_persona(self) -> Any:
         """Resolve and validate the persona action (duck-typed, no PersonaAction import)."""
-        persona = await self.get_action("PersonaAction")
+        persona: Any = await self.get_action("PersonaAction")
         agent = await self.get_agent()
         aid = getattr(agent, "id", None) or "unknown"
         if persona is None or not getattr(persona, "enabled", True):
@@ -778,7 +778,7 @@ class CockpitInteractAction(InteractAction):
         agent = await self.get_agent()
         if not agent:
             return True
-        persona = await self.get_action("PersonaAction")
+        persona: Any = await self.get_action("PersonaAction")
         if not persona or not getattr(persona, "enabled", True):
             return False
         if not (getattr(persona, "persona_description", None) or "").strip():

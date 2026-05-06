@@ -22,7 +22,6 @@ from jvagent.action.cockpit.cockpit_interact_action import (
 from jvagent.action.cockpit.context import CockpitStepResult
 from jvagent.action.cockpit.contracts import TerminationReason
 
-
 pytestmark = pytest.mark.asyncio
 
 
@@ -142,7 +141,9 @@ async def test_handle_step_result_tool_calls_prepends_self_for_revisit(monkeypat
     result = CockpitStepResult(status="tool_calls", iterations=1, duration_seconds=0.1)
     await action._handle_step_result(visitor, engine, result)
 
-    assert visitor._skill_state.get(_COCKPIT_STATE_KEY) is engine.save_state.return_value
+    assert (
+        visitor._skill_state.get(_COCKPIT_STATE_KEY) is engine.save_state.return_value
+    )
     visitor.prepend.assert_awaited_with([action])
     visitor.interaction.set_to_executed.assert_not_called()
 

@@ -157,9 +157,7 @@ class CockpitEngine:
         if logger.isEnabledFor(logging.DEBUG):
             import json as _json
 
-            tools_bytes = sum(
-                len(_json.dumps(t)) for t in self._tools_serialized
-            )
+            tools_bytes = sum(len(_json.dumps(t)) for t in self._tools_serialized)
             sys_bytes = len(system_prompt)
             hist_bytes = sum(len(str(m.get("content") or "")) for m in history)
             logger.debug(
@@ -827,7 +825,7 @@ class CockpitEngine:
                 )
                 else "ok"
             )
-            content = f"[{status}] {fn.get('name','')}"
+            content = f"[{status}] {fn.get('name', '')}"
             await ctx.response_bus.publish(
                 session_id=ctx.session_id,
                 content=content,

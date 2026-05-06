@@ -18,7 +18,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 APP_ROOT = REPO_ROOT / "examples" / "jvagent_app"
 
@@ -66,9 +65,10 @@ async def _attach_access_control(agent: Any, *, denied_user: str) -> Any:
 
 
 async def _run(agent: Any, *, utterance: str, user_id: str) -> dict:
+    from jvspatial import flush_deferred_entities
+
     from jvagent.action.interact.interact_walker import InteractWalker
     from jvagent.action.model.context import set_interaction
-    from jvspatial import flush_deferred_entities
 
     walker = InteractWalker(
         agent_id=agent.id,
@@ -85,7 +85,9 @@ async def _run(agent: Any, *, utterance: str, user_id: str) -> dict:
         try:
             interaction.streamed = False
             await interaction.close_interaction()
-            await flush_deferred_entities(interaction, walker.conversation, strict=False)
+            await flush_deferred_entities(
+                interaction, walker.conversation, strict=False
+            )
         except Exception:
             pass
         set_interaction(None)
@@ -94,7 +96,9 @@ async def _run(agent: Any, *, utterance: str, user_id: str) -> dict:
         "utterance": utterance,
         "user_id": user_id,
         "response": (interaction.response if interaction else "") or "",
-        "actions": list(getattr(interaction, "actions", []) or []) if interaction else [],
+        "actions": (
+            list(getattr(interaction, "actions", []) or []) if interaction else []
+        ),
     }
 
 
@@ -102,7 +106,9 @@ async def _main() -> int:
     from dotenv import load_dotenv
 
     load_dotenv(APP_ROOT / ".env", override=True)
-    logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s | %(message)s")
+    logging.basicConfig(
+        level=logging.WARNING, format="%(levelname)s %(name)s | %(message)s"
+    )
     logging.getLogger("jvagent.action.cockpit.access").setLevel(logging.INFO)
 
     from jvagent.cli.bootstrap import bootstrap_application_graph
@@ -130,7 +136,9 @@ async def _main() -> int:
         utterance="Search the web for the most recent Python release.",
         user_id=denied_user,
     )
-    print(f"DENIED USER (web_search skill blocked): response_chars={len(deny_skill['response'])}")
+    print(
+        f"DENIED USER (web_search skill blocked): response_chars={len(deny_skill['response'])}"
+    )
     print(f"  actions executed: {deny_skill['actions']}")
     print(f"  response preview: {deny_skill['response'][:160]}")
 

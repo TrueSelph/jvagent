@@ -27,7 +27,6 @@ from jvagent.action.cockpit.contracts import TerminationReason
 from jvagent.action.cockpit.routing_types import POSTURE_RESPOND, RoutingResult
 from jvagent.action.interact.base import InteractAction
 
-
 pytestmark = pytest.mark.asyncio
 
 
@@ -141,7 +140,9 @@ async def test_collect_always_execute_filters_correctly():
     assert "CleanupAction" in names
     assert "HandoffInteractAction" not in names
     # Weight ordering preserved
-    assert names == sorted(names, key=lambda n: {"IntroInteractAction": -101, "CleanupAction": 200}[n])
+    assert names == sorted(
+        names, key=lambda n: {"IntroInteractAction": -101, "CleanupAction": 200}[n]
+    )
 
 
 async def test_collect_always_execute_excludes_named_classes():

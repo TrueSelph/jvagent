@@ -17,10 +17,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from jvagent.action.cockpit.cockpit_interact_action import CockpitInteractAction
-from jvagent.action.cockpit.engine import CockpitEngine, SECURITY_BLOCK
+from jvagent.action.cockpit.engine import SECURITY_BLOCK, CockpitEngine
 
 from .conftest import ScriptedModelAction, make_lm_result
-
 
 # asyncio mark applied per-function (only on async tests).
 
@@ -104,9 +103,7 @@ async def test_security_block_present_when_block_raw_tool_invocation(
     cockpit_ctx, patch_assemble_cockpit_tools
 ):
     cockpit_ctx.config.block_raw_tool_invocation = True
-    cockpit_ctx.model_action = ScriptedModelAction(
-        [make_lm_result(response="ok")]
-    )
+    cockpit_ctx.model_action = ScriptedModelAction([make_lm_result(response="ok")])
     engine = CockpitEngine(cockpit_ctx)
     await engine.initialize()
 
@@ -122,9 +119,7 @@ async def test_security_block_absent_when_block_raw_tool_invocation_off(
     cockpit_ctx, patch_assemble_cockpit_tools
 ):
     cockpit_ctx.config.block_raw_tool_invocation = False
-    cockpit_ctx.model_action = ScriptedModelAction(
-        [make_lm_result(response="ok")]
-    )
+    cockpit_ctx.model_action = ScriptedModelAction([make_lm_result(response="ok")])
     engine = CockpitEngine(cockpit_ctx)
     await engine.initialize()
 

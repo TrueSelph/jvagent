@@ -45,13 +45,12 @@ actions:
         - pageindex_search
         - pageindex_docs
         - web_search
-        - research
       tool_servers:
         - filesystem
       skills_source: both
       max_iterations: 25
       strict_grounding: true
-      response_mode: publish
+      response_mode: respond
 
   # ── Ollama Language Model (agentic loop) ──
   - action: jvagent/ollama_lm

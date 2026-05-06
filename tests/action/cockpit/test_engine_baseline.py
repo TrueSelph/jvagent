@@ -16,7 +16,6 @@ from jvagent.action.cockpit.engine import CockpitEngine
 
 from .conftest import ScriptedModelAction, make_lm_result, make_tool_call
 
-
 pytestmark = pytest.mark.asyncio
 
 
@@ -126,9 +125,7 @@ async def test_finalize_flag_terminates_after_dispatch(
 # ---------------------------------------------------------------------------
 
 
-async def test_iter_cap_terminates(
-    cockpit_ctx, patch_assemble_cockpit_tools
-):
+async def test_iter_cap_terminates(cockpit_ctx, patch_assemble_cockpit_tools):
     """Looping tool_calls past max_iterations → ITER_CAP termination."""
     cockpit_ctx.config.max_iterations = 3
     # Script enough loops to exceed the cap.
@@ -174,9 +171,7 @@ async def test_time_cap_terminates(
     assert result.termination_reason == TerminationReason.TIME_CAP
 
 
-async def test_all_errors_short_circuit(
-    cockpit_ctx, patch_assemble_cockpit_tools
-):
+async def test_all_errors_short_circuit(cockpit_ctx, patch_assemble_cockpit_tools):
     """Every tool call in the batch errors → ERROR termination."""
     cockpit_ctx.model_action = ScriptedModelAction(
         [
