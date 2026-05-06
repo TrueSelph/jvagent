@@ -290,14 +290,36 @@ Built by factory functions (`_build_*_tools(ctx)`) that close over `CockpitConte
 
 #### Memory Tools (`memory_tools.py`)
 
-All memory tools operate strictly within the **current user session** (`ctx.conversation`). They cannot leak data across sessions or access global agent memory directly.
+Memory tools span two layers:
+
+**Legacy stable reads** (kept verbatim for stability):
 
 | Tool | Purpose | Key Operations |
 |---|---|---|
 | `memory_get_history` | Recent interaction history | `conversation.get_interaction_history()` |
-| `memory_get_user_info` | Current user profile | `conversation.user` attributes |
-| `memory_update_user_model` | Store user fact/preference | `preference.X` keys → preferences dict; other → facts list |
-| `memory_set_preference` | Set conversation‑scoped preference | `conversation.set_preference()` |
+| `memory_get_user_info` | Current user profile | `User` node attributes |
+| `memory_set_preference` | Set conversation‑scoped preference | `Conversation.context["preferences"]` |
+
+**Phase B: general-purpose key→markdown memory** with two scopes:
+- `user`: cross-session, persists with the `User` node (`User.memory: Dict[str, str]`).
+- `conversation`: session-scoped, persists with the `Conversation` node (`Conversation.memory: Dict[str, str]`). Auto-cleaned with the conversation.
+
+Each scope has a parallel `memory_tags: Dict[str, List[str]]` for filtered retrieval. Reads default to `auto` scope, which searches user-first then conversation; user-scope wins on key collision.
+
+| Tool | Purpose | Notes |
+|---|---|---|
+| `memory_set(key, content, scope, tags?)` | Create/overwrite a markdown entry | Caller picks scope explicitly |
+| `memory_get(key, scope='auto')` | Retrieve an entry's full body | Falls back to legacy `user_model` for back-compat |
+| `memory_append(key, content, scope, separator?)` | Append text to an existing entry | Useful for journals / evolving notes |
+| `memory_search(query?, tag?, scope='auto', limit?)` | Token search across keys/body/tags | Tag filter is exclusive |
+| `memory_list(scope='auto')` | Brief preview of all keys | |
+| `memory_delete(key, scope)` | Remove an entry | Scope must be explicit |
+
+The legacy `memory_update_user_model` is soft-deprecated: it routes to `memory_set(scope='user')` so existing callers continue to work. The legacy `User.user_model` remains read-through-only for back-compat (no new writes).
+
+**System-prompt pre-load.** When `preload_user_memory=True` (default), the engine renders the user's `memory` dict as a `# What I remember about you` markdown block and injects it into the system prompt (capped at `user_memory_max_chars`, default 4096). The model gets stable user context for free without spending a tool call. Conversation-scope memory is *not* auto-injected — it's small enough to fetch on demand via `memory_get`/`memory_search`.
+
+**Auto-write policy.** The cockpit only writes memory when the model explicitly calls `memory_set` / `memory_append`. There is no automatic distillation of facts from utterances; this keeps the contract deliberate and observable.
 
 #### Artifact Tools (`artifact_tools.py`)
 
@@ -337,6 +359,31 @@ The underlying task service is referred to as the **task manager** (internally s
 | `task_add_step` | Add step mid‑execution | `task.add_step(description)` |
 
 **Important**: `TaskStore.list()` is synchronous (`def`, not `async def`). The task tools must NOT `await` it.
+
+#### Trace Task Design (dual-purpose: model tracking + observability)
+
+Every cockpit run shares ONE trace task between the engine and the model. The engine creates it at `initialize()`, stores its ID on `visitor._skill_state["cockpit_trace_task_id"]`, and finalises it on terminal step result. All four model-facing task tools (`task_create_plan`, `task_update_step`, `task_add_step`, `task_get_status`) resolve to this task — there are no parallel "shadow" tasks.
+
+**Step shape (best practices for dual use):**
+- `description` — concise, scannable. For engine-trace steps: `iter N: tool_a(args); tool_b(args); +K more`. For model-authored plan steps: whatever the model named them.
+- `result` — short summary on `complete` (`"3/3 ok"`) or `failure_reason` on `fail` (`"all_errors"`).
+- `data` (structured bag) — full forensic detail: `{iteration, source, tool_calls: [{tool_call_id, name, arguments, result_preview, result_length, is_error}, …], summary: {ok, errored, total}}`. Tool args are kept full (truncated only in description).
+- `data._events` — sub-event log. The engine appends `tool_calls` events here when the model has planned and a step is in-progress, so each model step gathers all the tool calls executed under it.
+
+**Two operational modes:**
+
+1. **Auto mode (model has not called `task_create_plan`).** The engine appends one step per iteration with full tool detail in `data.tool_calls`. The step is `done` if all calls succeeded, `failed` otherwise. Result: a complete chronological execution trace, no model action required.
+
+2. **Plan mode (model has called `task_create_plan`).** The engine preserves all engine-trace steps from before the plan into `task.data.engine_pre_plan_trace` (so observability isn't lost), then `set_plan` installs the model's intentional steps. From this point, the engine no longer appends new steps; instead it attaches each iteration's tool calls as a `tool_calls` sub-event on the model's currently `in_progress` step (via `step.add_event`). The model's plan stays clean (one description per step) while every step accumulates full tool-call detail under `_events`. If no step is in-progress (model planned but hasn't yet marked one in_progress), the engine falls back to appending an `engine_trace` step so observability is never lost.
+
+**Termination:** the engine completes or fails the trace task on every terminal exit path (natural completion, `response_publish(finalize=true)`, time cap, iteration cap, stuck detection, all-errors short-circuit). The result line names the cause (`"completed"`, `"time_cap"`, `"iter_cap"`, `"stuck"`, `"all_errors"`) for forensic clarity.
+
+**Response payload shape — consolidated `tasks` field.** The interact endpoint exposes a single `tasks` array on the interaction payload. Each entry carries its own `status` (`active`, `completed`, `failed`, or `cancelled`) — consumers differentiate by reading the task itself, not by which array it lives in. The consolidation includes:
+
+- All **active** tasks on the conversation.
+- Tasks that reached any **terminal** status (completed, failed, cancelled) within this interaction's `started_at` → `completed_at` window.
+
+Tasks are deduplicated by `id` and ordered by `updated_at` ascending, so consumers see chronological progression. Failed and cancelled tasks now surface in the payload — they were invisible to the API consumer before (the legacy filter only matched `status == "completed"`).
 
 #### Unified Search Tool (`search_tools.py`)
 
@@ -593,6 +640,9 @@ Dataclass mirroring all `CockpitInteractAction` attribute fields. Created by `_b
 | `enable_artifact_tools` | `True` | Expose artifact CRUD tools |
 | `enable_cockpit_search` | `True` | Expose unified search tool to the engine (skills + tools) |
 | `router_use_cockpit_search` | `False` | Run cockpit_search in the router (skills + interact_actions + tools) — opt-in, latency-sensitive |
+| `preload_user_memory` | `True` | Inject `User.memory` into the system prompt as a "What I remember about you" block |
+| `user_memory_max_chars` | `4096` | Cap on the pre-loaded memory block size |
+| `auto_track_tasks` | `True` | Auto-create a single shared trace Task per cockpit run. The task is the dual-purpose backbone for both model task tracking and post-hoc observability. See "Trace task design" below. |
 | `stream_internal_progress` | `True` | Single switch for streaming model thoughts, reasoning, and tool progress |
 | `stuck_detection_window` | `4` | Sliding window for stuck check |
 | `stuck_intent_jaccard_threshold` | `0.65` | Jaccard threshold for stuck detection |

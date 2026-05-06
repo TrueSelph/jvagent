@@ -99,7 +99,7 @@ class CockpitInteractAction(InteractAction):
 
     router_model_temperature: float = attribute(default=0.1)
     router_model_max_tokens: int = attribute(default=400)
-    canned_response_max_words: int = attribute(default=8)
+    canned_response_max_words: int = attribute(default=15)
     skip_canned_for_intents: List[str] = attribute(
         default_factory=lambda: ["CONVERSATIONAL", "UNCLEAR", "INTERACTIVE"],
     )
@@ -132,6 +132,9 @@ class CockpitInteractAction(InteractAction):
     enable_artifact_tools: bool = attribute(default=True)
     enable_cockpit_search: bool = attribute(default=True)
     router_use_cockpit_search: bool = attribute(default=False)
+    preload_user_memory: bool = attribute(default=True)
+    user_memory_max_chars: int = attribute(default=4096)
+    auto_track_tasks: bool = attribute(default=True)
     skill_index_inline_max_skills: int = attribute(default=5)
     plan_first: bool = attribute(default=True)
     max_task_plan_steps: int = attribute(default=50)
@@ -194,6 +197,9 @@ class CockpitInteractAction(InteractAction):
             enable_artifact_tools=self.enable_artifact_tools,
             enable_cockpit_search=self.enable_cockpit_search,
             router_use_cockpit_search=self.router_use_cockpit_search,
+            preload_user_memory=self.preload_user_memory,
+            user_memory_max_chars=self.user_memory_max_chars,
+            auto_track_tasks=self.auto_track_tasks,
             skill_index_inline_max_skills=self.skill_index_inline_max_skills,
             history_limit=self.history_limit,
             reasoning_budget_tokens=self.reasoning_budget_tokens,

@@ -1,9 +1,37 @@
-"""Task harness tools for cockpit (using TaskStore consistently)."""
+"""Task harness tools for cockpit.
 
-from typing import Any, List
+The cockpit engine auto-creates one **trace task** per run (see
+``CockpitEngine._auto_task_start``) and stores its ID on
+``visitor._skill_state["cockpit_trace_task_id"]``. The model's task tools
+below resolve to that shared trace task whenever it exists, so model-authored
+plans live on the same task the engine is auto-recording. This keeps a single
+task per run with both engine observability and model intent in one place.
+
+Once the model calls ``task_create_plan`` the engine flips
+``cockpit_model_planned=True`` and stops auto-appending iteration steps —
+the model's plan drives from then on.
+"""
+
+from typing import Any, List, Optional
 
 from jvagent.action.cockpit.context import CockpitContext
 from jvagent.tooling.tool import Tool
+
+
+def _resolve_trace_task(ctx: CockpitContext) -> Optional[Any]:
+    """Return the engine's auto-created trace task, if any."""
+    sk = getattr(ctx.visitor, "_skill_state", None) or {}
+    task_id = sk.get("cockpit_trace_task_id")
+    if not task_id:
+        return None
+    try:
+        store = ctx.visitor.tasks
+        for task in store.list():
+            if getattr(task, "id", None) == task_id:
+                return task
+    except Exception:
+        pass
+    return None
 
 
 def _build_task_tools(ctx: CockpitContext) -> List[Tool]:
@@ -14,16 +42,55 @@ def _build_task_tools(ctx: CockpitContext) -> List[Tool]:
             return "Error: no conversation available for task tracking."
         try:
             task_store = ctx.visitor.tasks
-            task = await task_store.create(
-                title=title,
-                description=description or title,
-                owner_action="CockpitEngine",
-            )
-            await task.start()
-            await task.set_plan(steps)
+            # Prefer re-purposing the engine's auto-created trace task so
+            # there's one shared task per cockpit run.
+            task = _resolve_trace_task(ctx)
+            if task is not None:
+                # Preserve any engine-trace steps that were recorded before
+                # the model planned, so post-hoc observability isn't lost
+                # when set_plan replaces the step list.
+                try:
+                    pre_plan_steps = []
+                    for s in task.list_steps():
+                        sd = s.to_dict() if hasattr(s, "to_dict") else {
+                            "id": getattr(s, "id", None),
+                            "description": getattr(s, "description", ""),
+                            "status": getattr(s, "status", ""),
+                            "data": getattr(s, "data", {}) or {},
+                        }
+                        pre_plan_steps.append(sd)
+                    if pre_plan_steps:
+                        await task.update(
+                            engine_pre_plan_trace=pre_plan_steps,
+                            title=title,
+                            description=description or title,
+                        )
+                    else:
+                        await task.update(
+                            title=title,
+                            description=description or title,
+                        )
+                except Exception:
+                    pass
+                await task.set_plan(steps)
+            else:
+                task = await task_store.create(
+                    title=title,
+                    description=description or title,
+                    owner_action="CockpitEngine",
+                )
+                await task.start()
+                await task.set_plan(steps)
+            # Flip the "model has planned" flag so the engine stops appending
+            # iteration steps and instead attaches tool-call detail as
+            # sub-events on the in-progress model step.
+            sk = getattr(ctx.visitor, "_skill_state", None)
+            if isinstance(sk, dict):
+                sk["cockpit_model_planned"] = True
             return (
                 f'Plan "{title}" created with {len(steps)} step(s). '
-                "Execute steps one at a time; call task_update_step when each completes."
+                "Execute steps one at a time; call task_update_step when each completes. "
+                "Tool calls you make will be attached to the active step's _events for observability."
             )
         except Exception as exc:
             return f"Error creating plan: {exc}"
@@ -33,10 +100,13 @@ def _build_task_tools(ctx: CockpitContext) -> List[Tool]:
             return "Error: no conversation available."
         try:
             task_store = ctx.visitor.tasks
-            tasks = task_store.list(status="active")
-            if not tasks:
-                return "Error: no active task plan. Create one with task_create_plan first."
-            task = tasks[0]
+            # Prefer the shared trace task; fall back to first active.
+            task = _resolve_trace_task(ctx)
+            if task is None:
+                tasks = task_store.list(status="active")
+                if not tasks:
+                    return "Error: no active task plan. Create one with task_create_plan first."
+                task = tasks[0]
             steps = task.list_steps()
             if step_index < 0 or step_index >= len(steps):
                 return f"Error: step {step_index} out of range (0-{len(steps) - 1})."
@@ -69,10 +139,12 @@ def _build_task_tools(ctx: CockpitContext) -> List[Tool]:
             return "Error: no conversation available."
         try:
             task_store = ctx.visitor.tasks
-            tasks = task_store.list(status="active")
-            if not tasks:
-                return "No active task plan. Create one with task_create_plan."
-            task = tasks[0]
+            task = _resolve_trace_task(ctx)
+            if task is None:
+                tasks = task_store.list(status="active")
+                if not tasks:
+                    return "No active task plan. Create one with task_create_plan."
+                task = tasks[0]
             steps = task.list_steps()
             if not steps:
                 return f'Plan "{task.title}" has no steps defined.'
@@ -85,10 +157,28 @@ def _build_task_tools(ctx: CockpitContext) -> List[Tool]:
                     "failed": "✗",
                     "skipped": "→",
                 }.get(step.status, "?")
-                lines.append(
-                    f"{status_icon} Step {i}: {step.description}"
-                    + (f" [result: {step.result}]" if step.result else "")
-                )
+                line = f"{status_icon} Step {i}: {step.description}"
+                if step.result:
+                    line += f" [result: {step.result}]"
+                # Surface engine-trace tool-call summary if present
+                data = step.data or {}
+                summary = data.get("summary")
+                if isinstance(summary, dict) and summary.get("total"):
+                    line += (
+                        f" [tools: {summary.get('ok', 0)}/{summary['total']} ok"
+                        + (
+                            f", {summary['errored']} errored"
+                            if summary.get("errored")
+                            else ""
+                        )
+                        + "]"
+                    )
+                # Surface event count for sub-attached tool calls (plan mode)
+                events = data.get("_events") or []
+                tool_events = [e for e in events if e.get("type") == "tool_calls"]
+                if tool_events:
+                    line += f" [tool_call_events: {len(tool_events)}]"
+                lines.append(line)
             return "\n".join(lines)
         except Exception as exc:
             return f"Error getting status: {exc}"
@@ -98,12 +188,13 @@ def _build_task_tools(ctx: CockpitContext) -> List[Tool]:
             return "Error: no conversation available."
         try:
             task_store = ctx.visitor.tasks
-            tasks = task_store.list(status="active")
-            if not tasks:
-                return "Error: no active task plan."
-
-            task = tasks[0]
-            step = await task.add_step(description)
+            task = _resolve_trace_task(ctx)
+            if task is None:
+                tasks = task_store.list(status="active")
+                if not tasks:
+                    return "Error: no active task plan."
+                task = tasks[0]
+            await task.add_step(description)
             return f"Added step {len(task.steps) - 1}: {description}"
         except Exception as exc:
             return f"Error adding step: {exc}"

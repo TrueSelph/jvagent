@@ -29,11 +29,31 @@ from jvagent.core.cache import (
 logger = logging.getLogger(__name__)
 
 ROUTING_SYSTEM_PROMPT = """\
-You are a routing classifier. Analyze the user's message and determine:
-1. The posture: RESPOND (handle normally), SUPPRESS (ignore silently), or DEFER (accumulate for later).
-2. The intent type: CONVERSATIONAL, INFORMATIONAL, DIRECTIVE, INTERACTIVE, or UNCLEAR.
+You are a routing classifier for a cockpit agent. Analyze the user's message and determine:
+1. The posture: RESPOND (default — handle normally) | SUPPRESS (ignore silently) | DEFER (accumulate for later).
+2. The intent type: CONVERSATIONAL | INFORMATIONAL | DIRECTIVE | INTERACTIVE | UNCLEAR.
 3. The interpretation: a brief summary of what the user wants.
-4. The recommended skills from the available skills list.
+4. The recommended skills from the available skills list (may be empty).
+
+# Posture rules — read carefully
+- **RESPOND is the default.** Use it whenever the user is asking for something, sharing
+  information, giving an instruction, asking a question, or otherwise engaging with the
+  agent. The engine has harness tools beyond skills (memory, artifacts, task planning,
+  conversation search) so even messages that don't match any listed skill can still be
+  handled — pick RESPOND with an empty skills list and the engine will figure it out.
+- **SUPPRESS** only for clearly off-topic noise the agent should not engage with at all
+  (e.g. accidental keystrokes, spam, content unrelated to the agent's purpose). When in
+  doubt, choose RESPOND, not SUPPRESS.
+- **DEFER** only when the user message is a fragment that should accumulate with later
+  messages before responding (long-running multi-turn input mode).
+
+# Intent rules
+- CONVERSATIONAL: greetings, small talk, social niceties.
+- INFORMATIONAL: questions seeking information ("what is...", "tell me about...").
+- DIRECTIVE: imperative requests ("do X", "remember Y", "save Z", "search for W").
+  Personal-fact statements like "my name is..." or "remember that I..." are DIRECTIVE.
+- INTERACTIVE: requires a back-and-forth interaction (forms, multi-turn flows).
+- UNCLEAR: only when the message is genuinely ambiguous.
 
 Respond ONLY with a JSON object:
 {
@@ -63,7 +83,38 @@ Classify the intent and recommend skills.
 
 ROUTING_CANNED_INSTRUCTIONS_TEMPLATE = """\
 
-If the intent is suitable for a brief canned response (greetings, simple questions), provide one in the "canned_response" field. Keep it under {max_words} words. Skip canned responses for: {skip_intents}.
+# Canned response (filler shown immediately while the engine works)
+The ``canned_response`` field is a brief, in-character acknowledgement that the
+user sees right away — before the engine produces the real answer. Think of it
+as the human-like "let me check on that" you'd say while looking something up.
+Skip it for these intent types: {skip_intents}.
+
+Rules:
+- Keep it under {max_words} words.
+- Sound like a person, not a chatbot. Vary phrasing across calls.
+- Reference the topic when natural ("Let me check on that quantum news",
+  "Sure, looking up Silvies Online now").
+- Acknowledge or reflect the user's framing, don't pre-empt the answer.
+- Match the persona's tone where you can{persona_tone_hint}.
+- Do NOT promise a complete answer or claim to already know it.
+- No stock phrases like "Processing your request." or "Here's what I found."
+
+Good examples:
+- "Sure — pulling that up now."
+- "Let me check on the latest quantum computing news."
+- "On it. Give me a moment to dig into that."
+- "Got it. Checking the docs for you."
+- "One sec — let me find that."
+- "Alright, looking into Silvies Online."
+
+Bad examples (do not produce these):
+- "Here's what I found about it."           ← pre-empts the answer
+- "Processing your request."                 ← robotic
+- "I'll help you with that."                 ← generic, no topical reference
+- "One moment please."                       ← stock chatbot phrase
+
+If the message clearly doesn't warrant filler (greetings, very short replies,
+unclear intent), leave ``canned_response`` empty.
 """
 
 ROUTING_CLARIFICATION_FALLBACK_MESSAGES = [
@@ -205,9 +256,11 @@ class CockpitRouter:
         if self._enable_canned_response:
             canned_field = ',\n  "canned_response": ""'
             skip_intents = ", ".join(self._skip_canned_for_intents)
+            persona_tone_hint = await self._build_persona_tone_hint()
             optional_instructions += ROUTING_CANNED_INSTRUCTIONS_TEMPLATE.format(
                 max_words=self._canned_response_max_words,
                 skip_intents=skip_intents,
+                persona_tone_hint=persona_tone_hint,
             )
 
         # Optional: enrich prompt with cockpit_search results (skills + interact_actions + tools).
@@ -281,6 +334,29 @@ class CockpitRouter:
                 or bool(always_active_from_skill_dir(skill_data.get("dir", ""))),
             }
         return descriptors
+
+    async def _build_persona_tone_hint(self) -> str:
+        """Build a short tonal hint to splice into the canned-response prompt.
+
+        Returns either an empty string (no persona context available) or a
+        bracketed clause like ``: <agent_name>'s persona is "<short_desc>"``
+        that the canned-response instructions can reference for tonal match.
+        """
+        try:
+            persona = await self._action.get_action("PersonaAction")
+            if not persona or not getattr(persona, "enabled", True):
+                return ""
+            name = (getattr(persona, "persona_name", "") or "").strip()
+            desc = (getattr(persona, "persona_description", "") or "").strip()
+            if not desc:
+                return ""
+            # Compact: one line, capped, no trailing newlines.
+            short = " ".join(desc.split())[:200]
+            if name:
+                return f": {name}'s persona is \"{short}\""
+            return f": persona is \"{short}\""
+        except Exception:
+            return ""
 
     async def _build_capability_search_section(self, utterance: str) -> str:
         """Run a unified cockpit_search across skills + interact_actions + tools.

@@ -13,13 +13,14 @@ def _build_conversation_tools(ctx: CockpitContext) -> List[Tool]:
         if not ctx.conversation:
             return "Error: no conversation available."
         try:
+            # formatted=True returns {role, content} pairs we can read directly.
             history = await ctx.conversation.get_interaction_history(
                 limit=50,
                 with_utterance=True,
                 with_response=True,
                 with_interpretation=False,
                 with_event=False,
-                formatted=False,
+                formatted=True,
             )
         except Exception as exc:
             return f"Error: {exc}"
@@ -55,7 +56,7 @@ def _build_conversation_tools(ctx: CockpitContext) -> List[Tool]:
                 with_response=True,
                 with_interpretation=False,
                 with_event=False,
-                formatted=False,
+                formatted=True,
             )
         except Exception as exc:
             return f"Error: {exc}"

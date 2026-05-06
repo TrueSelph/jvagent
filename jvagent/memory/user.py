@@ -63,7 +63,23 @@ class User(Node):
     )
     user_model: Dict[str, Any] = attribute(
         default_factory=dict,
-        description="Compressed collection of facts and preferences about the user",
+        description=(
+            "[DEPRECATED — use ``memory`` instead] Compressed collection of facts "
+            "and preferences about the user. Read paths still resolve here for "
+            "back-compat; new writes go to ``memory`` (markdown-keyed)."
+        ),
+    )
+    memory: Dict[str, str] = attribute(
+        default_factory=dict,
+        description=(
+            "General-purpose user-scoped memory: a flat key→markdown map. "
+            "Cross-session, persists with the user. Used by the cockpit's "
+            "memory_set / memory_get / memory_append / memory_search tools."
+        ),
+    )
+    memory_tags: Dict[str, List[str]] = attribute(
+        default_factory=dict,
+        description="Tags per memory key (key→list[str]) for filtering and retrieval.",
     )
     usage: Dict[str, Any] = attribute(
         default_factory=dict,

@@ -167,8 +167,7 @@ def _build_interaction_log_data(
     interaction,
     app_id,
     agent_id=None,
-    active_tasks=None,
-    completed_tasks=None,
+    tasks: Optional[List[Dict[str, Any]]] = None,
     visitor_data: Optional[Dict[str, Any]] = None,
 ):
     """Build comprehensive log data dictionary for interaction logging.
@@ -180,7 +179,9 @@ def _build_interaction_log_data(
         interaction: Interaction node instance
         app_id: Application ID
         agent_id: Optional agent ID
-        active_tasks: Optional list of active tasks from conversation (conversation-level)
+        tasks: Consolidated list of conversation tasks (each carrying ``status``).
+            Includes active + terminal-in-window tasks; failed and cancelled
+            included alongside completed.
         visitor_data: Optional visitor.data dict (walker.data) for inclusion in logs
 
     Returns:
@@ -291,8 +292,7 @@ def _build_interaction_log_data(
         "directives": directives,
         "parameters": parameters,
         "events": events,
-        "active_tasks": active_tasks if active_tasks is not None else [],
-        "completed_tasks": completed_tasks if completed_tasks is not None else [],
+        "tasks": tasks if tasks is not None else [],
         "interpretation": interpretation,
         "anchors": anchors,
         "streamed": streamed,
@@ -413,7 +413,8 @@ _initialize_rate_limiter_from_config()
                 description=(
                     "Interaction details (development mode only). Excluded in production mode. "
                     "Includes: id, utterance, response, actions, directives, parameters, "
-                    "events, active_tasks, completed_tasks, observability_metrics, streamed."
+                    "events, tasks (each carrying status: active|completed|failed|cancelled), "
+                    "observability_metrics, streamed."
                 ),
                 example={
                     "id": "int_123",
@@ -424,8 +425,14 @@ _initialize_rate_limiter_from_config()
                     "directives": [],
                     "parameters": [],
                     "events": [],
-                    "active_tasks": [],
-                    "completed_tasks": [],
+                    "tasks": [
+                        {
+                            "id": "task_001",
+                            "title": "Hello",
+                            "status": "completed",
+                            "steps": [],
+                        }
+                    ],
                     "observability_metrics": [],
                 },
                 default=None,
@@ -662,22 +669,23 @@ async def interact_endpoint(
                 # Log interaction using INTERACTION level
                 try:
                     from jvagent.core.app import App
+                    from jvagent.action.interact.response_builder import (
+                        _consolidated_tasks_for_interaction,
+                    )
 
                     app = await App.get()
                     app_id = app.id if app else ""
-                    active_tasks = []
-                    completed_tasks = []
+                    tasks: List[Dict[str, Any]] = []
                     if walker.conversation:
-                        active_tasks = walker.conversation.get_tasks(status="active")
-                        completed_tasks = walker.conversation.get_tasks(
-                            status="completed"
+                        active = walker.conversation.get_tasks(status="active")
+                        tasks = _consolidated_tasks_for_interaction(
+                            interaction, walker.conversation, active
                         )
                     log_data, message = _build_interaction_log_data(
                         interaction,
                         app_id,
                         agent_id,
-                        active_tasks=active_tasks,
-                        completed_tasks=completed_tasks,
+                        tasks=tasks,
                         visitor_data=walker.data,
                     )
                     logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
@@ -937,14 +945,18 @@ async def _stream_interaction(
             # Log interaction using INTERACTION level
             try:
                 from jvagent.core.app import App
+                from jvagent.action.interact.response_builder import (
+                    _consolidated_tasks_for_interaction,
+                )
 
                 app = await App.get()
                 app_id = app.id if app else ""
-                active_tasks = []
-                completed_tasks = []
+                tasks: List[Dict[str, Any]] = []
                 if walker.conversation:
-                    active_tasks = walker.conversation.get_tasks(status="active")
-                    completed_tasks = walker.conversation.get_tasks(status="completed")
+                    active = walker.conversation.get_tasks(status="active")
+                    tasks = _consolidated_tasks_for_interaction(
+                        interaction, walker.conversation, active
+                    )
                 agent_id_for_logging = (
                     walker.agent_id if hasattr(walker, "agent_id") else agent.id
                 )
@@ -952,8 +964,7 @@ async def _stream_interaction(
                     interaction,
                     app_id,
                     agent_id_for_logging,
-                    active_tasks=active_tasks,
-                    completed_tasks=completed_tasks,
+                    tasks=tasks,
                     visitor_data=walker.data,
                 )
                 logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
@@ -1014,14 +1025,18 @@ async def _stream_interaction(
             # Log interaction using INTERACTION level
             try:
                 from jvagent.core.app import App
+                from jvagent.action.interact.response_builder import (
+                    _consolidated_tasks_for_interaction,
+                )
 
                 app = await App.get()
                 app_id = app.id if app else ""
-                active_tasks = []
-                completed_tasks = []
+                tasks: List[Dict[str, Any]] = []
                 if walker.conversation:
-                    active_tasks = walker.conversation.get_tasks(status="active")
-                    completed_tasks = walker.conversation.get_tasks(status="completed")
+                    active = walker.conversation.get_tasks(status="active")
+                    tasks = _consolidated_tasks_for_interaction(
+                        interaction, walker.conversation, active
+                    )
                 agent_id_from_walker = (
                     walker.agent_id if hasattr(walker, "agent_id") else None
                 )
@@ -1029,8 +1044,7 @@ async def _stream_interaction(
                     interaction,
                     app_id,
                     agent_id_from_walker,
-                    active_tasks=active_tasks,
-                    completed_tasks=completed_tasks,
+                    tasks=tasks,
                     visitor_data=walker.data,
                 )
                 logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)

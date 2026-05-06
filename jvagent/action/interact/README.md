@@ -69,7 +69,7 @@ The `/agents/{agent_id}/interact` endpoint response format varies based on envir
 - `interaction.directives` - Directives issued
 - `interaction.parameters` - Parameters applied
 - `interaction.events` - System events
-- `interaction.active_tasks` - Active tasks from conversation
+- `interaction.tasks` - Consolidated task list (each entry carries status: active/completed/failed/cancelled)
 - `interaction.observability_metrics` - Model calls, token counts, etc.
 - `interaction.streamed` - Streaming flag
 
@@ -88,7 +88,14 @@ The `/agents/{agent_id}/interact` endpoint response format varies based on envir
     "response": "Hello! How can I help you today?",
     "actions": ["InteractRouter", "ConverseInteractAction"],
     "directives": [],
-    "active_tasks": [],
+    "tasks": [
+      {
+        "id": "task_001",
+        "title": "Hello",
+        "status": "completed",
+        "steps": []
+      }
+    ],
     "parameters": [],
     "events": [],
     "observability_metrics": [
@@ -305,7 +312,7 @@ await handle.complete()
 tasks = visitor.tasks.list(status="active")
 ```
 
-Tasks are stored on the **Conversation** (not per-interaction). In development mode, `interaction.active_tasks` in the response payload shows the conversation's active tasks for debugging.
+Tasks are stored on the **Conversation** (not per-interaction). In development mode, `interaction.tasks` in the response payload shows the consolidated task list — currently active tasks plus any tasks that reached a terminal status (completed, failed, cancelled) within this interaction's window. Each entry carries its own `status` field.
 
 See [Task Tracking](../../../docs/task-tracking.md) for full documentation.
 

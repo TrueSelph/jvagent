@@ -135,16 +135,23 @@ async def finalize_email_interaction(
         await _finalize_usage(interaction)
 
         try:
+            from jvagent.action.interact.response_builder import (
+                _consolidated_tasks_for_interaction,
+            )
+
             app = await App.get()
             app_id = app.id if app else ""
-            active_tasks = []
+            tasks = []
             if walker.conversation:
-                active_tasks = walker.conversation.get_tasks(status="active")
+                active = walker.conversation.get_tasks(status="active")
+                tasks = _consolidated_tasks_for_interaction(
+                    interaction, walker.conversation, active
+                )
             log_data, message = _build_interaction_log_data(
                 interaction,
                 app_id,
                 agent_id,
-                active_tasks=active_tasks,
+                tasks=tasks,
                 visitor_data=walker.data,
             )
             logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)

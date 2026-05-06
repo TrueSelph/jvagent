@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 COCKPIT_SYSTEM_PROMPT = """\
 You are {agent_name}.
 {agent_description}
-
+{user_memory}
 You are an intelligent agent with access to a cockpit full of tools. Work in a think-act-observe loop:
 analyze the request, choose the right tools, execute them carefully, then respond with grounded evidence.
 
@@ -135,6 +135,10 @@ class CockpitEngine:
         # different args" (legitimate refinement) from "same call over and over"
         # (genuine stuck pattern).
         self._recent_tool_signatures: List[List[str]] = []
+        # Auto-tracked trace task: created at initialize, updated per step,
+        # completed/failed at termination. Surfaces in active_tasks /
+        # completed_tasks on the interaction response.
+        self._trace_task: Any = None
         self._initialized: bool = False
 
     async def initialize(self) -> None:
@@ -152,7 +156,7 @@ class CockpitEngine:
 
         self._tools_serialized = ToolSerializer.serialize_all(self._registry.list())
 
-        system_prompt = self._build_system_prompt()
+        system_prompt = await self._build_system_prompt()
         self._messages = []
         self._messages.append({"role": "system", "content": system_prompt})
 
@@ -165,6 +169,14 @@ class CockpitEngine:
         self._iteration = 0
         self._activated_skills = list(self.ctx.preloaded_skills)
         self._recent_tool_names = []
+        self._recent_tool_signatures = []
+
+        # Auto-track this run as a Task so observability sees structured
+        # progress (active_tasks / completed_tasks on the interaction response)
+        # even when the model doesn't explicitly call task_create_plan.
+        if getattr(self.ctx.config, "auto_track_tasks", True):
+            await self._auto_task_start()
+
         self._initialized = True
 
     async def step(self) -> CockpitStepResult:
@@ -184,6 +196,11 @@ class CockpitEngine:
 
         # Budget checks
         if elapsed >= cfg.max_duration_seconds:
+            await self._auto_task_finalize(
+                success=False,
+                result_summary="time budget exceeded",
+                reason="time_cap",
+            )
             return CockpitStepResult(
                 status="timeout",
                 final_response="I was unable to complete the task within the time limit.",
@@ -194,6 +211,11 @@ class CockpitEngine:
             )
 
         if self._iteration > cfg.max_iterations:
+            await self._auto_task_finalize(
+                success=False,
+                result_summary="iteration budget exceeded",
+                reason="iter_cap",
+            )
             return CockpitStepResult(
                 status="budget_exhausted",
                 final_response=(
@@ -248,11 +270,18 @@ class CockpitEngine:
                 [_tool_call_signature(tc) for tc in result.tool_calls]
             )
 
+            # Record this iteration as a step on the auto-tracked trace task.
+            await self._auto_task_record_step(result.tool_calls, tool_results)
+
             # Check for finalized flag AFTER dispatching — response_publish
             # already published the content, but other tools in the batch
             # must still execute their side effects.
             visitor_state = getattr(self.ctx.visitor, "_skill_state", None) or {}
             if visitor_state.get("cockpit_finalized"):
+                await self._auto_task_finalize(
+                    success=True,
+                    result_summary="response_publish(finalize=true) called",
+                )
                 return CockpitStepResult(
                     status="final_response",
                     final_response="",  # Content already published via response_publish
@@ -270,6 +299,11 @@ class CockpitEngine:
                     f"- {tc.get('function', {}).get('name', '?')}: {getattr(tr, 'content', '')[:200]}"
                     for tc, tr in zip(result.tool_calls, tool_results)
                 )
+                await self._auto_task_finalize(
+                    success=False,
+                    result_summary="all tool calls in batch errored",
+                    reason="all_errors",
+                )
                 return CockpitStepResult(
                     status="final_response",
                     final_response=(
@@ -284,6 +318,11 @@ class CockpitEngine:
 
             # Stuck detection
             if self._check_stuck():
+                await self._auto_task_finalize(
+                    success=False,
+                    result_summary="stuck detection fired",
+                    reason="stuck",
+                )
                 return CockpitStepResult(
                     status="stuck",
                     final_response=(
@@ -314,6 +353,14 @@ class CockpitEngine:
             "CockpitEngine [%d]: model produced final response (%d chars)",
             self._iteration,
             len(response_text),
+        )
+        # Auto-task finalize on natural completion. Summarise with the first
+        # ~120 chars of the final response to preserve grep-ability without
+        # bloating the task data bag.
+        summary = (response_text or "")[:120].replace("\n", " ").strip()
+        await self._auto_task_finalize(
+            success=True,
+            result_summary=summary or "completed",
         )
         return CockpitStepResult(
             status="final_response",
@@ -392,10 +439,11 @@ class CockpitEngine:
 
         return False
 
-    def _build_system_prompt(self) -> str:
+    async def _build_system_prompt(self) -> str:
         skill_index = ""
         task_planning = ""
         capability_search_note = ""
+        user_memory = ""
 
         skill_state = getattr(self.ctx.visitor, "_skill_state", None) or {}
         catalog = skill_state.get("skill_catalog")
@@ -451,15 +499,38 @@ class CockpitEngine:
         if cfg.plan_first:
             task_planning = TASK_PLANNING_BLOCK
 
+        # Phase B: pre-load user-scoped memory into the system prompt so the
+        # model has stable context about the human without spending a tool call.
+        if getattr(cfg, "preload_user_memory", True):
+            try:
+                from jvagent.action.cockpit.memory_tools import render_user_memory_block
+
+                block = await render_user_memory_block(
+                    self.ctx,
+                    max_chars=getattr(cfg, "user_memory_max_chars", 4096),
+                )
+                if block:
+                    user_memory = "\n\n" + block + "\n"
+            except Exception as exc:
+                logger.debug("user memory preload failed: %s", exc)
+
         return COCKPIT_SYSTEM_PROMPT.format(
             agent_name=self.ctx.agent_name,
             agent_description=self.ctx.agent_description,
             skill_index=skill_index,
             task_planning=task_planning,
             capability_search_note=capability_search_note,
+            user_memory=user_memory,
         )
 
     async def _build_history(self) -> List[Dict[str, Any]]:
+        """Build the prior-turn history that primes the engine's message list.
+
+        Uses ``formatted=True`` so the conversation node returns ``{role,
+        content}`` pairs ready for the model. (``formatted=False`` returns
+        ``{interaction_id, utterance, response}`` instead — that shape was
+        silently dropping every entry here when read as role/content.)
+        """
         if not self.ctx.conversation or self.ctx.config.history_limit <= 0:
             return []
 
@@ -469,7 +540,7 @@ class CockpitEngine:
                 excluded=self.ctx.interaction.id if self.ctx.interaction else None,
                 with_utterance=True,
                 with_response=True,
-                formatted=False,
+                formatted=True,
             )
             messages: List[Dict[str, Any]] = []
             for entry in raw or []:
@@ -481,11 +552,210 @@ class CockpitEngine:
                         for p in content
                         if isinstance(p, dict) and p.get("type") == "text"
                     )
-                if content:
+                if role and content:
                     messages.append({"role": role, "content": content})
             return messages
-        except Exception:
+        except Exception as exc:
+            logger.debug("CockpitEngine._build_history failed: %s", exc)
             return []
+
+    # ------------------------------------------------------------------
+    # Auto-task tracking
+    # ------------------------------------------------------------------
+
+    async def _auto_task_start(self) -> None:
+        """Create the trace task at the start of a cockpit run.
+
+        The trace task is shared with the model: if it calls
+        ``task_create_plan`` / ``task_update_step`` etc., those tools resolve
+        to this same task (via ``visitor._skill_state["cockpit_trace_task_id"]``).
+        Once the model has planned, ``_auto_task_record_step`` stops appending
+        iteration steps so the model's plan steps drive the trace.
+        """
+        try:
+            store = getattr(self.ctx.visitor, "tasks", None)
+            if store is None:
+                return
+            utterance = (self.ctx.utterance or "").strip()
+            title = (utterance[:80] + "…") if len(utterance) > 80 else (utterance or "Cockpit run")
+            task = await store.create(
+                title=title,
+                description=utterance or "Cockpit auto-tracked run",
+                owner_action="CockpitInteractAction",
+            )
+            await task.start()
+            self._trace_task = task
+            # Expose the task ID so model-facing task tools can resolve to it.
+            sk = getattr(self.ctx.visitor, "_skill_state", None)
+            if isinstance(sk, dict):
+                sk["cockpit_trace_task_id"] = getattr(task, "id", None)
+                sk["cockpit_model_planned"] = False
+        except Exception as exc:
+            logger.debug("auto-task start failed: %s", exc)
+            self._trace_task = None
+
+    async def _auto_task_record_step(
+        self,
+        tool_calls: List[Dict[str, Any]],
+        tool_results: List[Any],
+    ) -> None:
+        """Record this iteration's tool calls on the trace task.
+
+        Two modes:
+
+        - **Auto mode (no model plan).** Append a new step to the trace task with
+          a human-readable description (truncated tool-call list) and a
+          structured ``data`` bag holding the full tool-call detail (name,
+          arguments, result preview, error state, tool_call_id). The step is
+          marked ``done`` if all tool calls succeeded, ``failed`` otherwise.
+
+        - **Plan mode (model has planned).** Find the currently in-progress
+          model step and attach the iteration as a ``tool_calls`` sub-event on
+          its ``_events`` list. This keeps the model's intentional plan steps
+          clean while preserving full tool-call observability under each step.
+          If no step is in-progress (model planned but hasn't called
+          ``task_update_step(in_progress)`` yet), fall back to appending a
+          fresh ``engine_trace`` step so observability is never lost.
+        """
+        if self._trace_task is None:
+            return
+        try:
+            tool_details = self._build_tool_details(tool_calls, tool_results)
+            ok = sum(1 for t in tool_details if not t["is_error"])
+            errored = len(tool_details) - ok
+            summary = (
+                f"{ok}/{len(tool_details)} ok"
+                + (f", {errored} errored" if errored > 0 else "")
+                if tool_details
+                else "no tool results"
+            )
+            description = self._iteration_description(tool_details)
+
+            sk = getattr(self.ctx.visitor, "_skill_state", None) or {}
+            model_planned = bool(sk.get("cockpit_model_planned"))
+
+            # Plan mode → attach as a sub-event on the active model step
+            # (preserves model's clean plan steps; full detail under _events).
+            if model_planned:
+                active = self._find_in_progress_step()
+                if active is not None:
+                    await active.add_event(
+                        event_type="tool_calls",
+                        iteration=self._iteration,
+                        details={
+                            "summary": summary,
+                            "tool_calls": tool_details,
+                        },
+                    )
+                    return
+
+            # Auto mode (or plan mode with no active step) → append a step.
+            step = await self._trace_task.add_step(
+                description,
+                data={
+                    "iteration": self._iteration,
+                    "source": "engine_trace",
+                    "tool_calls": tool_details,
+                    "summary": {
+                        "ok": ok,
+                        "errored": errored,
+                        "total": len(tool_details),
+                    },
+                },
+            )
+            await step.start()
+            if errored > 0:
+                await step.fail(reason=summary)
+            else:
+                await step.complete(result=summary)
+        except Exception as exc:
+            logger.debug("auto-task record step failed: %s", exc)
+
+    def _find_in_progress_step(self) -> Any:
+        """Return the first in_progress StepHandle on the trace task, or None."""
+        if self._trace_task is None:
+            return None
+        try:
+            for step in self._trace_task.list_steps(status="in_progress"):
+                return step
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _build_tool_details(
+        tool_calls: List[Dict[str, Any]], tool_results: List[Any]
+    ) -> List[Dict[str, Any]]:
+        """Build structured tool-call detail for the step data bag.
+
+        Captures (name, arguments, result_preview, result_length, is_error,
+        tool_call_id) for each call. Arguments are kept full (they are part of
+        the observable trace); result preview is capped at 500 chars with
+        result_length recording the original size.
+        """
+        import json as _json
+
+        out: List[Dict[str, Any]] = []
+        for tc, tr in zip(tool_calls, tool_results):
+            fn = (tc or {}).get("function") or {}
+            name = fn.get("name") or "?"
+            args_raw = fn.get("arguments")
+            if isinstance(args_raw, dict):
+                try:
+                    args_str = _json.dumps(args_raw, default=str)
+                except Exception:
+                    args_str = str(args_raw)
+            else:
+                args_str = str(args_raw or "")
+            result_content = str(getattr(tr, "content", "") or "")
+            preview = (
+                result_content[:500] + "…"
+                if len(result_content) > 500
+                else result_content
+            )
+            out.append(
+                {
+                    "tool_call_id": (tc or {}).get("id"),
+                    "name": name,
+                    "arguments": args_str,
+                    "result_preview": preview,
+                    "result_length": len(result_content),
+                    "is_error": bool(getattr(tr, "is_error", False)),
+                }
+            )
+        return out
+
+    def _iteration_description(self, tool_details: List[Dict[str, Any]]) -> str:
+        """Build a scannable description: ``iter N: tool1(args); tool2(args); …``."""
+        parts: List[str] = []
+        for d in tool_details[:4]:
+            args = d["arguments"]
+            if len(args) > 60:
+                args = args[:57] + "…"
+            parts.append(f"{d['name']}({args})")
+        if len(tool_details) > 4:
+            parts.append(f"+{len(tool_details) - 4} more")
+        if not parts:
+            return f"iter {self._iteration}"
+        return f"iter {self._iteration}: " + "; ".join(parts)
+
+    async def _auto_task_finalize(
+        self,
+        *,
+        success: bool,
+        result_summary: str,
+        reason: str = "",
+    ) -> None:
+        """Close out the trace task on terminal step result."""
+        if self._trace_task is None:
+            return
+        try:
+            if success:
+                await self._trace_task.complete(result=result_summary or None)
+            else:
+                await self._trace_task.fail(reason=reason or result_summary or None)
+        except Exception as exc:
+            logger.debug("auto-task finalize failed: %s", exc)
 
     async def _emit_thinking_thought(self, result: Any) -> None:
         """Publish the model's thinking/reasoning text as a transient thought.

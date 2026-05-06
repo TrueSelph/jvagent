@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from jvagent.core.config import is_production_mode
 from jvagent.memory.interaction import Interaction
 
-_TERMINAL_COMPLETED_STATUSES = {"completed"}
+_TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 
 
 def _parse_interaction_timestamp(value: Any) -> Optional[datetime]:
@@ -31,11 +31,14 @@ def _parse_interaction_timestamp(value: Any) -> Optional[datetime]:
     return dt
 
 
-def _completed_tasks_for_interaction(
+def _terminal_tasks_for_interaction(
     interaction: Interaction,
     conversation: Any,
 ) -> List[Dict[str, Any]]:
-    """Return tasks completed during this interaction window."""
+    """Return tasks reaching any terminal status during this interaction window.
+
+    Terminal statuses: ``completed``, ``failed``, ``cancelled``.
+    """
     started_at = _parse_interaction_timestamp(getattr(interaction, "started_at", None))
     completed_at = _parse_interaction_timestamp(
         getattr(interaction, "completed_at", None)
@@ -43,9 +46,9 @@ def _completed_tasks_for_interaction(
     if not started_at:
         return []
 
-    completed: List[Dict[str, Any]] = []
+    out: List[Dict[str, Any]] = []
     for task in getattr(conversation, "tasks", []):
-        if task.get("status") not in _TERMINAL_COMPLETED_STATUSES:
+        if task.get("status") not in _TERMINAL_STATUSES:
             continue
         updated_at = _parse_interaction_timestamp(task.get("updated_at"))
         if not updated_at:
@@ -54,26 +57,61 @@ def _completed_tasks_for_interaction(
             continue
         if completed_at and updated_at > completed_at:
             continue
-        completed.append(task)
-    return completed
+        out.append(task)
+    return out
+
+
+def _consolidated_tasks_for_interaction(
+    interaction: Interaction,
+    conversation: Any,
+    active_tasks: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Build the consolidated ``tasks`` array with status on each entry.
+
+    Includes:
+    - Currently active tasks on the conversation.
+    - Tasks reaching any terminal status (completed, failed, cancelled) within
+      this interaction's window.
+
+    Deduplicated by ``id`` (active wins on overlap), ordered by ``updated_at``
+    ascending so consumers see chronological progression.
+    """
+    seen: Dict[str, Dict[str, Any]] = {}
+    for t in active_tasks or []:
+        tid = t.get("id")
+        if tid:
+            seen[tid] = t
+    for t in _terminal_tasks_for_interaction(interaction, conversation):
+        tid = t.get("id")
+        if tid and tid not in seen:
+            seen[tid] = t
+
+    def _sort_key(t: Dict[str, Any]) -> Any:
+        ts = _parse_interaction_timestamp(
+            t.get("updated_at")
+        ) or _parse_interaction_timestamp(t.get("created_at"))
+        return ts or datetime.min
+
+    return sorted(seen.values(), key=_sort_key)
 
 
 def build_interaction_payload(
     interaction: Interaction,
-    active_tasks: Optional[List[Dict[str, Any]]] = None,
-    completed_tasks: Optional[List[Dict[str, Any]]] = None,
+    tasks: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Build interaction payload, filtering debug data in production.
 
     In production mode (JVSPATIAL_ENVIRONMENT=production), returns
     minimal payload with only: id, utterance, response.
 
-    In development mode, returns full payload with: id, utterance, response,
-    actions, directives, parameters, events, active_tasks, observability_metrics, streamed.
+    In development mode, returns full payload including a consolidated
+    ``tasks`` array. Each entry carries ``status`` (``active``,
+    ``completed``, ``failed``, ``cancelled``) so consumers differentiate
+    by inspecting the task itself rather than reading separate arrays.
 
     Args:
         interaction: Interaction node instance
-        active_tasks: Optional list of active tasks from conversation (dev mode only)
+        tasks: Consolidated tasks list (active + terminal in this window)
 
     Returns:
         Dictionary with interaction data (filtered based on environment)
@@ -85,24 +123,20 @@ def build_interaction_payload(
             "utterance": interaction.utterance,
             "response": interaction.response,
         }
-    else:
-        # Full development payload - includes all debug/observability data
-        payload = {
-            "id": interaction.id,
-            "utterance": interaction.utterance,
-            "response": interaction.response,
-            "actions": interaction.actions,
-            "directives": interaction.directives,
-            "active_tasks": active_tasks if active_tasks is not None else [],
-            "completed_tasks": completed_tasks if completed_tasks is not None else [],
-            "parameters": interaction.parameters,
-            "events": interaction.events,
-            "observability_metrics": interaction.observability_metrics,
-            "usage": getattr(interaction, "usage", None) or {},
-            "streamed": interaction.streamed,
-        }
-
-        return payload
+    return {
+        "id": interaction.id,
+        "utterance": interaction.utterance,
+        "response": interaction.response,
+        "actions": interaction.actions,
+        "directives": interaction.directives,
+        # Unified canonical tasks list — each entry carries its own status.
+        "tasks": tasks if tasks is not None else [],
+        "parameters": interaction.parameters,
+        "events": interaction.events,
+        "observability_metrics": interaction.observability_metrics,
+        "usage": getattr(interaction, "usage", None) or {},
+        "streamed": interaction.streamed,
+    }
 
 
 async def build_interact_response(
@@ -135,25 +169,17 @@ async def build_interact_response(
         "response": interaction.response,
     }
     if not is_production_mode():
-        active_tasks: List[Dict[str, Any]] = []
+        tasks: List[Dict[str, Any]] = []
         if interaction.conversation_id:
             from jvagent.memory.conversation import Conversation
 
             conversation = await Conversation.get(interaction.conversation_id)
             if conversation:
                 active_tasks = conversation.get_tasks(status="active")
-                completed_tasks = _completed_tasks_for_interaction(
-                    interaction, conversation
+                tasks = _consolidated_tasks_for_interaction(
+                    interaction, conversation, active_tasks
                 )
-            else:
-                completed_tasks = []
-        else:
-            completed_tasks = []
-        response["interaction"] = build_interaction_payload(
-            interaction,
-            active_tasks=active_tasks,
-            completed_tasks=completed_tasks,
-        )
+        response["interaction"] = build_interaction_payload(interaction, tasks=tasks)
 
     # Include report only in development mode
     # In production mode, omit the field entirely (not set to None)

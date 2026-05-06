@@ -49,6 +49,15 @@ class CockpitConfig:
     enable_checkpoints: bool = True
     enable_evidence_log: bool = True
 
+    # Phase B: general-purpose memory pre-load
+    preload_user_memory: bool = True
+    user_memory_max_chars: int = 4096
+
+    # Auto-track each cockpit run as a Task so observability sees structured
+    # progress (active_tasks / completed_tasks on the interaction response)
+    # even when the model doesn't explicitly call task_create_plan.
+    auto_track_tasks: bool = True
+
     max_full_tool_results: int = 10
     max_tool_result_tokens: int = 400
     tool_result_truncation_chars: int = 500

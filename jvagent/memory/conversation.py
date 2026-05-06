@@ -91,6 +91,18 @@ class Conversation(DeferredSaveMixin, Node):
     context: Dict[str, Any] = attribute(
         default_factory=dict, description="Conversation context dictionary"
     )
+    memory: Dict[str, str] = attribute(
+        default_factory=dict,
+        description=(
+            "Conversation-scoped general-purpose memory: a flat key→markdown map "
+            "for working notes that should persist across interactions in this "
+            "conversation but not beyond it. Auto-cleaned with the conversation."
+        ),
+    )
+    memory_tags: Dict[str, List[str]] = attribute(
+        default_factory=dict,
+        description="Tags per memory key (key→list[str]) for filtering and retrieval.",
+    )
     tasks: List[Dict[str, Any]] = attribute(
         default_factory=list,
         description="Tasks for this conversation (task tracker)",
