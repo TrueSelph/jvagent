@@ -1031,7 +1031,21 @@ class ToolExecutor:
             Tool result as string.
         """
         mcp_action, server_name = mcp_handler
-        user_id = getattr(visitor, "user_id", None) if visitor is not None else None
+        # Per-user sandbox routing: prefer authenticated user_id, fall back
+        # to session_id so anonymous visitors still land in their own folder
+        # (rather than the shared system default). ``effective_user_segment``
+        # centralizes the priority so file storage and MCP dispatch agree.
+        from jvagent.action.mcp.sandbox import effective_user_segment
+
+        if visitor is not None:
+            uid_or_session = effective_user_segment(
+                getattr(visitor, "user_id", None),
+                getattr(visitor, "session_id", None),
+                default="",
+            )
+            user_id = uid_or_session or None
+        else:
+            user_id = None
         gcfu = getattr(mcp_action, "get_client_for_user", None)
 
         if gcfu is not None and inspect.iscoroutinefunction(gcfu):

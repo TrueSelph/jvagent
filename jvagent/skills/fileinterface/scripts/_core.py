@@ -17,6 +17,7 @@ from jvspatial.storage.security import PathSanitizer
 
 from jvagent.action.mcp.sandbox import (
     absolute_under_files_root,
+    effective_user_segment,
     is_local_file_interface,
     provision_sandbox_dir,
     resolve_mcp_sandbox_relpath,
@@ -111,18 +112,29 @@ async def describe_write_workspace(visitor: Any) -> Dict[str, Any]:
 
 
 async def resolve_agent_user(visitor: Any) -> Tuple[str, str]:
-    """Return ``(agent_id, user_id)`` for sandbox path construction."""
+    """Return ``(agent_id, user_id_segment)`` for sandbox path construction.
+
+    The user segment follows ``effective_user_segment``:
+    ``visitor.user_id`` when authenticated, otherwise ``visitor.session_id``
+    (per-session sandbox for anonymous callers), otherwise the
+    ``MCP_FILESYSTEM_SANDBOX_DEFAULT_USER`` sentinel (default ``_default``).
+    Sanitization is applied downstream by ``resolve_mcp_sandbox_relpath``.
+    """
     agent = getattr(visitor, "_agent", None)
     raw_agent_id = ""
     if agent is not None:
         raw_agent_id = str(getattr(agent, "id", "") or "").strip()
     if not raw_agent_id:
         raw_agent_id = "unknown"
-    user_id = (getattr(visitor, "user_id", None) or "").strip()
-    if not user_id:
-        user_id = (
-            os.getenv("MCP_FILESYSTEM_SANDBOX_DEFAULT_USER") or "_default"
-        ).strip() or "_default"
+
+    default_seg = (
+        os.getenv("MCP_FILESYSTEM_SANDBOX_DEFAULT_USER") or "_default"
+    ).strip() or "_default"
+    user_id = effective_user_segment(
+        getattr(visitor, "user_id", None),
+        getattr(visitor, "session_id", None),
+        default=default_seg,
+    )
     return raw_agent_id, user_id
 
 

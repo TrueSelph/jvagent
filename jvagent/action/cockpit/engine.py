@@ -139,6 +139,11 @@ class CockpitEngine:
             call_timeout=self.ctx.config.tool_call_timeout,
             max_concurrent=self.ctx.config.max_concurrent_tools,
             sanitize_errors=self.ctx.config.sanitize_tool_errors,
+            # Forward the visitor so per-user routing fires for tools that
+            # need caller identity — notably MCP filesystem dispatch, which
+            # otherwise binds to the default ``_default`` subprocess and
+            # writes every user's files into the same shared folder.
+            visitor=self.ctx.visitor,
         )
 
         self._tools_serialized = ToolSerializer.serialize_all(self._registry.list())

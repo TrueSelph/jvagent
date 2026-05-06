@@ -37,12 +37,25 @@ Per-server config (`servers[]`):
 | `mcp_call_timeout` | Tool call timeout (seconds) | `30.0` |
 | `tools` | Tool selector: `"-all"` or list of names/globs | `"-all"` |
 | `denied_tools` | Subtractive tool filter (supports globs) | `[]` |
-| `sandbox_mode` | Confine stdio filesystem MCP to ``<files_root>/<agentId>/<userId>/`` | unset (see env) |
-| `sandbox_user_scoped` | Separate MCP subprocess per ``user_id`` when not the default user (see env) | unset (see env) |
+| `sandbox_mode` | Confine stdio filesystem MCP to ``<files_root>/<agentId>/<userId>/`` | **`true`** (per-server can override) |
+| `sandbox_user_scoped` | Separate MCP subprocess per ``user_id`` when not the default user (see env) | **`true`** (per-server can override) |
 | `sandbox_root` | Optional override for files root (else ``JVSPATIAL_FILES_ROOT_PATH``) | unset |
 | `type` | Optional. For sandboxed stdio filesystem: ``jvspatial_fs`` (Python ``jvspatial_fs_server``), ``npx_filesystem`` (force ``npx`` + npm server). If omitted, S3 storage auto-selects ``jvspatial_fs``; local storage defaults to ``npx``. | unset |
 
-Top-level MCP action context may set ``sandbox_mode`` / ``sandbox_user_scoped`` / ``sandbox_root`` as defaults; per-server entries can override.
+**Per-user file scoping is on by default.** Filesystem MCP servers (any
+stdio entry that runs ``@modelcontextprotocol/server-filesystem`` or the
+built-in ``jvspatial_fs_server``) are confined to
+``<files_root>/<agent_id>/<user_id>/`` out of the box, and a separate
+subprocess is spawned per real ``user_id``. Calls from the LLM-driven
+``fulfill()`` and the skill-system ``ToolExecutor`` both pass the visitor's
+``user_id`` so each user gets an isolated workspace folder named for their
+``user_id``. Set ``sandbox_mode: false`` (or
+``MCP_FILESYSTEM_SANDBOX_MODE=false``) to opt out of confinement, and
+``sandbox_user_scoped: false`` to share one subprocess across users
+(rooted at the default-user folder, ``MCP_FILESYSTEM_SANDBOX_DEFAULT_USER``,
+default ``_default``).
+
+Top-level MCP action context may set ``sandbox_mode`` / ``sandbox_user_scoped`` / ``sandbox_root`` as overrides; per-server entries can override again.
 
 When ``JVSPATIAL_FILE_STORAGE_PROVIDER=s3`` and ``sandbox_mode`` is true, the agent uses ``python -m jvagent.action.mcp.jvspatial_fs_server`` (stdio) instead of ``npx`` + ``@modelcontextprotocol/server-filesystem``, unless ``type: npx_filesystem`` is set (not recommended for S3).
 

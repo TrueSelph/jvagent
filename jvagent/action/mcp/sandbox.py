@@ -37,13 +37,44 @@ def resolve_sandbox_root(configured: str = "") -> str:
 
 
 def sanitize_segment(segment: str, *, default: str = "_default") -> str:
-    """Make a single path component safe for storage keys and directory names."""
+    """Make a single path component safe for storage keys and directory names.
+
+    Strips only leading/trailing dots (object-storage hostility, hidden-file
+    semantics). Underscores are preserved so sentinel values like
+    ``_default`` survive intact and remain distinguishable from real IDs.
+    """
     s = (segment or "").strip()
     if not s:
         return default
     s = _SAFE_SEGMENT.sub("_", s)
-    s = s.strip("._")
+    s = s.strip(".")
     return s[:200] if s else default
+
+
+def effective_user_segment(
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    *,
+    default: str = "_default",
+) -> str:
+    """Resolve the per-user sandbox segment.
+
+    Priority:
+        1. ``user_id`` when set (authenticated caller).
+        2. ``session_id`` when set (anonymous caller with a session — keeps
+           that visitor's files isolated from other anonymous visitors).
+        3. ``default`` (typically ``_default``) for system / no-context calls.
+
+    The returned value is NOT sanitized; pass it to ``sanitize_segment`` (or
+    ``resolve_mcp_sandbox_relpath``) which already handles unsafe characters.
+    """
+    uid = (user_id or "").strip()
+    if uid:
+        return uid
+    sid = (session_id or "").strip()
+    if sid:
+        return sid
+    return default
 
 
 def resolve_mcp_sandbox_relpath(agent_id: str, user_id: str) -> str:

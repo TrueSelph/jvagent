@@ -251,12 +251,27 @@ class MCPAction(Action):
         default=30.0, description="MCP tool call timeout (s)"
     )
     sandbox_mode: Optional[bool] = attribute(
-        default=None,
-        description="When set, confine STDIO filesystem MCP to jvspatial file root (per-server can override).",
+        default=True,
+        description=(
+            "Default True: confine STDIO filesystem MCP to "
+            "``<files_root>/<agent_id>/<user_id>/`` so files are automatically "
+            "scoped per agent + user. Set False to expose the raw filesystem "
+            "root (e.g. for shared content). Per-server config can override; "
+            "env fallback ``MCP_FILESYSTEM_SANDBOX_MODE``."
+        ),
     )
     sandbox_user_scoped: Optional[bool] = attribute(
-        default=None,
-        description="Per-user subprocess sandbox under agents/<ns>/<name>/users/<id> (per-server can override).",
+        default=True,
+        description=(
+            "Default True: spawn a separate filesystem MCP subprocess per "
+            "real ``user_id`` (each rooted at "
+            "``<files_root>/<agent_id>/<user_id>/``) so files written by one "
+            "user are not visible to another. The shared default-user "
+            "subprocess is reserved for system / no-user calls. Set False "
+            "to share one subprocess across users (rooted at the default "
+            "user's folder). Per-server config can override; env fallback "
+            "``MCP_FILESYSTEM_SANDBOX_USER_SCOPED``."
+        ),
     )
     sandbox_root: Optional[str] = attribute(
         default=None,
@@ -330,17 +345,22 @@ class MCPAction(Action):
             sroot = (raw.get("sandbox_root") or "").strip() or action_sandbox
             files_root = resolve_sandbox_root(sroot or "")
 
+            # Defaults align with attribute defaults (both True): filesystem
+            # MCP servers are sandboxed per agent + per user out of the box.
+            # The fourth arg is the floor when both server-level and
+            # action-level values are None and the env var is also unset; it
+            # mirrors the attribute default for consistency.
             sb_mode = _coalesce_bool(
                 raw.get("sandbox_mode"),
                 self.sandbox_mode,
                 "MCP_FILESYSTEM_SANDBOX_MODE",
-                False,
+                True,
             )
             sb_user = _coalesce_bool(
                 raw.get("sandbox_user_scoped"),
                 self.sandbox_user_scoped,
                 "MCP_FILESYSTEM_SANDBOX_USER_SCOPED",
-                False,
+                True,
             )
             use_jvfs = use_jvfs_for_sandboxed_fs(raw, sb_mode)
             is_fs = transport == "stdio" and is_filesystem_mcp_server(
@@ -553,15 +573,28 @@ class MCPAction(Action):
         self,
         natural_language_command: str,
         user_id: Optional[str] = None,
+        *,
+        session_id: Optional[str] = None,
     ) -> MCPFulfillResult:
         """Map NL command to one tool across configured servers and execute it.
 
         Args:
             natural_language_command: The natural language request to fulfill.
-            user_id: Optional caller identity. When ``sandbox_user_scoped`` is
-                enabled the per-user sandbox client is used instead of the
-                shared default (_default) client.
+            user_id: Optional authenticated caller identity. Routed to the
+                per-user sandbox subprocess (``<files_root>/<agent_id>/<user_id>/``)
+                when ``sandbox_user_scoped`` is enabled.
+            session_id: Optional session identifier used as a fallback when
+                ``user_id`` is not provided, so anonymous callers still land
+                in their own per-session sandbox folder rather than the
+                shared system-default folder.
         """
+        from jvagent.action.mcp.sandbox import effective_user_segment
+
+        # Resolve the segment used for sandbox routing. ``default=""`` so we
+        # surface "no caller identity" to ``get_client_for_user`` as None,
+        # which then falls back to the default-user subprocess.
+        effective = effective_user_segment(user_id, session_id, default="")
+        user_id = effective or None
         try:
             inventory = await self._resolve_tool_inventory()
         except Exception as e:
@@ -788,12 +821,40 @@ class MCPAction(Action):
                 ) -> str:
                     """Forward keyword args (the model's tool args) to the MCP server.
 
-                    ``Tool.call(**kwargs)`` invokes us with the model's arguments
-                    expanded as keyword args, so we accept ``**kwargs`` and pack
-                    them into the dict that ``client.call_tool`` expects.
+                    Reads the active visitor from the per-task ContextVar set
+                    by ``ToolExecutionEngine.dispatch`` so the call routes to
+                    the per-user MCP subprocess (folder named after the
+                    visitor's ``user_id`` / ``session_id``). Falls back to the
+                    default subprocess only when no visitor is in scope (raw
+                    scripted tool execution, tests).
                     """
-                    client = action.get_client(sn)
                     from jvagent.action.mcp.mcp_action import _normalize_call_result
+                    from jvagent.action.mcp.sandbox import effective_user_segment
+                    from jvagent.tooling.tool_executor import get_dispatch_visitor
+
+                    visitor = get_dispatch_visitor()
+                    if visitor is not None:
+                        uid = (
+                            effective_user_segment(
+                                getattr(visitor, "user_id", None),
+                                getattr(visitor, "session_id", None),
+                                default="",
+                            )
+                            or None
+                        )
+                        try:
+                            client = await action.get_client_for_user(sn, uid)
+                        except Exception as e:
+                            logger.warning(
+                                "MCP get_client_for_user failed (server=%s, "
+                                "user=%s); falling back to default client: %s",
+                                sn,
+                                uid,
+                                e,
+                            )
+                            client = action.get_client(sn)
+                    else:
+                        client = action.get_client(sn)
 
                     result = await client.call_tool(tn, dict(kwargs))
                     n = _normalize_call_result(result, tn)

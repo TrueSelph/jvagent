@@ -1,4 +1,5 @@
 import asyncio
+import contextvars
 import logging
 import time
 import uuid
@@ -10,6 +11,27 @@ from jvagent.tooling.tool_registry import ToolRegistry
 from jvagent.tooling.tool_result import ToolResult
 
 logger = logging.getLogger(__name__)
+
+
+# Per-task slot holding the visitor for the currently-dispatched tool call.
+# Tool closures that need caller identity (notably MCP filesystem dispatch
+# which routes to per-user subprocesses) read this via
+# ``get_dispatch_visitor()`` instead of accepting a new kwarg, so the
+# ``Tool`` API stays minimal and existing tools are unaffected. Set by
+# ``ToolExecutionEngine.dispatch`` for the duration of each call and reset
+# on completion.
+_dispatch_visitor_var: contextvars.ContextVar[Optional[Any]] = contextvars.ContextVar(
+    "jvagent_tool_dispatch_visitor", default=None
+)
+
+
+def get_dispatch_visitor() -> Optional[Any]:
+    """Return the visitor (e.g. InteractWalker) of the currently-dispatched tool call.
+
+    Returns ``None`` outside of a tool dispatch or when the engine was
+    constructed without a visitor (e.g. raw scripted tool runs).
+    """
+    return _dispatch_visitor_var.get()
 
 
 def _input_fingerprint(arguments: str) -> str:
@@ -40,12 +62,18 @@ class ToolExecutionEngine:
         call_timeout: float = 60.0,
         max_concurrent: int = 5,
         sanitize_errors: bool = True,
+        visitor: Optional[Any] = None,
     ) -> None:
         self._registry = registry
         self.call_timeout = call_timeout
         self.max_concurrent = max_concurrent
         self.sanitize_errors = sanitize_errors
         self.envelopes: List[ToolExecutionEnvelope] = []
+        # Visitor (e.g. InteractWalker) shared across all tool calls in this
+        # engine instance; surfaced to tool closures via ``get_dispatch_visitor``
+        # so per-user routing (MCP filesystem subprocess, etc.) works without
+        # changing the Tool API.
+        self._visitor = visitor
 
     async def dispatch(
         self,
@@ -62,7 +90,16 @@ class ToolExecutionEngine:
             async with semaphore:
                 return await self._dispatch_one(call)
 
-        return list(await asyncio.gather(*(_one(c) for c in tool_calls)))
+        # Bind the visitor for the duration of this batch via the
+        # per-task ContextVar. Concurrent ``_one`` coroutines spawned by
+        # ``asyncio.gather`` inherit the parent task's context at creation
+        # time, so each tool closure sees the same visitor without needing
+        # explicit propagation.
+        token = _dispatch_visitor_var.set(self._visitor)
+        try:
+            return list(await asyncio.gather(*(_one(c) for c in tool_calls)))
+        finally:
+            _dispatch_visitor_var.reset(token)
 
     async def _dispatch_one(self, call: Dict[str, Any]) -> ToolResult:
         fn = call.get("function", {})
