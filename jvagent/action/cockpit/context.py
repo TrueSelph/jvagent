@@ -1,7 +1,10 @@
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 from jvagent.action.cockpit.contracts import TerminationReason
+
+if TYPE_CHECKING:
+    from jvagent.action.cockpit.config import CockpitConfig
 
 
 @dataclass

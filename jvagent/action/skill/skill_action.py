@@ -1412,7 +1412,7 @@ class SkillAction:
                     ctx,
                     base_model_kwargs,
                     reasoning_cfg,
-                    checklist=self._task_plan_pending_checklist(task_plan),
+                    checklist=self._task_plan_pending_checklist(task_handle),
                     termination_cause="stuck",
                 )
                 termination_reason = TerminationReason.STUCK

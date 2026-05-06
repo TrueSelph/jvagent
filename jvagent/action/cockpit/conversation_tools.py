@@ -36,7 +36,7 @@ def _build_conversation_tools(ctx: CockpitContext) -> List[Tool]:
                     if isinstance(p, dict) and p.get("type") == "text"
                 )
             if kw in content.lower():
-                matches.append(f"[{entry.get('role','')}] {content[:300]}")
+                matches.append(f"[{entry.get('role', '')}] {content[:300]}")
             if len(matches) >= limit:
                 break
 
