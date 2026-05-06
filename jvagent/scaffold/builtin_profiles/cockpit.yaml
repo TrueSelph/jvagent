@@ -1,0 +1,57 @@
+# Cockpit-default profile.
+# Newly-scaffolded agents get this layout: cockpit interact action driving a
+# think-act-observe loop, plus persona for response shaping. Intro and handoff
+# are included as routable interact actions so the cockpit router has real
+# choices beyond skills.
+#
+# This profile is a STARTER for new agents. It is never injected into existing
+# agents — the bootstrap layer treats agents declaratively from their own
+# agent.yaml. Edit this profile (or extend it) to change the cockpit defaults.
+actions:
+  - action: jvagent/cockpit
+    context:
+      enabled: true
+      router_model: gpt-4o-mini
+      router_model_action_type: OpenAILanguageModelAction
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      tool_tier: standard
+      max_iterations: 25
+      strict_grounding: true
+      response_mode: publish
+      skills_source: both
+
+  - action: jvagent/openai_lm
+    context:
+      enabled: true
+      description: OpenAI language model (OPENAI_API_KEY in .env)
+      api_endpoint: https://api.openai.com/v1
+      model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 4096
+      timeout: 60
+
+  - action: jvagent/persona
+    context:
+      enabled: true
+      description: Agent persona — shapes final responses with directives from cockpit and other actions
+      persona_name: __JVAGENT_SCAFFOLD_AGENT_TITLE__
+      persona_description: __JVAGENT_SCAFFOLD_AGENT_DESCRIPTION__
+      persona_capabilities:
+        - Answer user questions helpfully and concisely
+        - Search and synthesize information using available tools
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      model_temperature: 0.1
+      model_max_tokens: 8192
+
+  - action: jvagent/intro_interact_action
+    context:
+      enabled: true
+      description: First-time-user intro (always_execute) — adds a persona directive on first interaction
+
+  - action: jvagent/handoff_interact_action
+    context:
+      enabled: true
+      description: Hands off to a human — routed by the cockpit when the user asks for support
+      mode: direct_contact

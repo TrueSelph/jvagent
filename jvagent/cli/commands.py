@@ -622,8 +622,12 @@ def _handle_agent_create_command(args: List[str], app_root: str = None) -> None:
     )
     parser.add_argument(
         "--profile",
-        default="minimal",
-        help="Profile when spec has no @profile (default: minimal)",
+        default="cockpit",
+        help=(
+            "Profile when spec has no @profile (default: cockpit). "
+            "Builtins: cockpit, minimal, conversational, agentic, research, "
+            "whatsapp_voice."
+        ),
     )
     parser.add_argument(
         "--action",

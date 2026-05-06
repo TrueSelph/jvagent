@@ -404,7 +404,7 @@ class CreateAppContext:
     jvagent_spec: str = field(default_factory=lambda: f"~{jvagent_package_version}")
     deployment: str = "local"  # local | aws-lambda | azure-functions
     agent_specs: List[str] = field(default_factory=list)
-    default_profile: str = "minimal"
+    default_profile: str = "cockpit"
     extra_action_flags: List[str] = field(default_factory=list)
     copy_builtin_profiles: bool = True
     force: bool = False
@@ -506,7 +506,7 @@ def create_app(ctx: CreateAppContext) -> None:
 class CreateAgentContext:
     app_root: Path
     agent_spec: str
-    default_profile: str = "minimal"
+    default_profile: str = "cockpit"
     extra_action_flags: List[str] = field(default_factory=list)
     force: bool = False
     author: Optional[str] = None

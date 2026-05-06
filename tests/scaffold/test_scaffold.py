@@ -46,6 +46,50 @@ def test_resolve_conversational_extends(tmp_path: Path) -> None:
     assert "jvagent/intro_interact_action" in ids
 
 
+def test_resolve_cockpit_profile_includes_cockpit_and_persona() -> None:
+    """The new cockpit profile produces a complete starter agent.
+
+    Cockpit hard-requires PersonaAction (raises if absent) so the profile
+    must ship persona alongside it. Intro and handoff are included so the
+    cockpit router has real interact_action choices to demonstrate.
+    """
+    actions = resolve_profile_actions(None, "cockpit")
+    ids = {x["action"] for x in actions}
+    assert "jvagent/cockpit" in ids
+    assert "jvagent/persona" in ids
+    assert "jvagent/openai_lm" in ids
+    assert "jvagent/intro_interact_action" in ids
+    assert "jvagent/handoff_interact_action" in ids
+
+
+def test_create_app_default_profile_is_cockpit(tmp_path: Path) -> None:
+    """Calling create_app with no explicit default_profile picks cockpit.
+
+    Existing apps (those that already have agent.yaml files) are NOT
+    affected — the default_profile only governs newly-scaffolded agents.
+    """
+    out = tmp_path / "cockpit_app"
+    create_app(
+        CreateAppContext(
+            output_dir=out,
+            app_id="cp_app",
+            title="Cp App",
+            description="Desc",
+            author="Tester",
+            agent_specs=["jvagent/bot"],  # no @profile → default kicks in
+            copy_builtin_profiles=False,
+            init_git=False,
+        )
+    )
+    agent_yaml_path = out / "agents" / "jvagent" / "bot" / "agent.yaml"
+    assert agent_yaml_path.is_file()
+    with open(agent_yaml_path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    action_ids = {a.get("action") for a in (data.get("actions") or [])}
+    assert "jvagent/cockpit" in action_ids
+    assert "jvagent/persona" in action_ids
+
+
 def test_create_app_minimal(tmp_path: Path) -> None:
     out = tmp_path / "app1"
     create_app(
