@@ -5,11 +5,26 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict
 
-from jvagent.skills.fileinterface._core import (
+from jvagent.skills.fileinterface.scripts._core import (
     create_directory,
     normalize_sandbox_dir_prefix,
     write_text_file,
 )
+
+
+async def _resolve_pipeline_attr(visitor: Any, attr: str) -> Any:
+    """Look up an attribute on _current_action or peer ProposalPipelineAction."""
+    action = getattr(visitor, "_current_action", None)
+    if action is not None and getattr(action, attr, None):
+        return getattr(action, attr)
+    if action is not None and hasattr(action, "get_action"):
+        try:
+            pipeline = await action.get_action("ProposalPipelineAction")
+            if pipeline and getattr(pipeline, attr, None):
+                return getattr(pipeline, attr)
+        except Exception:
+            return None
+    return None
 
 
 def get_tool_definition() -> Dict[str, Any]:
@@ -64,8 +79,7 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Dict[str, Any]:
     title = arguments.get("title", "Untitled Proposal")
     client_name = arguments.get("client_name", "Client")
     content = arguments.get("content", "")
-    action = getattr(visitor, "_current_action", None)
-    configured = getattr(action, "output_dir", None) if action else None
+    configured = await _resolve_pipeline_attr(visitor, "output_dir")
     try:
         sandbox_dir = normalize_sandbox_dir_prefix(
             arguments.get("output_dir") or configured,

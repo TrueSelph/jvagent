@@ -5,6 +5,21 @@ from __future__ import annotations
 from typing import Any, Dict
 
 
+async def _resolve_pipeline_attr(visitor: Any, attr: str) -> Any:
+    """Look up an attribute on _current_action or peer ProposalPipelineAction."""
+    action = getattr(visitor, "_current_action", None)
+    if action is not None and getattr(action, attr, None):
+        return getattr(action, attr)
+    if action is not None and hasattr(action, "get_action"):
+        try:
+            pipeline = await action.get_action("ProposalPipelineAction")
+            if pipeline and getattr(pipeline, attr, None):
+                return getattr(pipeline, attr)
+        except Exception:
+            return None
+    return None
+
+
 def get_tool_definition() -> Dict[str, Any]:
     return {
         "name": "authoring__google_docs_write",
@@ -68,9 +83,8 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Dict[str, Any]:
     placeholders = arguments.get("placeholders", {}) or {}
     replace_body = arguments.get("replace_body", True)
     doc_id = arguments.get("doc_id")
-    action_config = getattr(visitor, "_current_action", None)
-    configured_template_id = getattr(action_config, "google_docs_template_id", None) if action_config else None
-    configured_folder_id = getattr(action_config, "drive_output_folder_id", None) if action_config else None
+    configured_template_id = await _resolve_pipeline_attr(visitor, "google_docs_template_id")
+    configured_folder_id = await _resolve_pipeline_attr(visitor, "drive_output_folder_id")
     template_document_id = arguments.get("template_document_id") or configured_template_id
     folder_id = arguments.get("folder_id") or configured_folder_id
 

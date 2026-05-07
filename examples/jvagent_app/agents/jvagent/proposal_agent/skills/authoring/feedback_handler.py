@@ -146,7 +146,7 @@ async def _poll_google_doc(document_id: str, visitor: Any) -> Dict[str, Any]:
 
 
 async def _poll_markdown(file_path: str, visitor: Any) -> Dict[str, Any]:
-    from jvagent.skills.fileinterface import _core
+    from jvagent.skills.fileinterface.scripts import _core
 
     try:
         path = _core.validate_relative_write_path(file_path.strip())

@@ -66,8 +66,13 @@ class CockpitRouter:
                 return POSTURE_RESPOND, None
 
             if conversation:
-                skill_descriptors, interaction_history = await asyncio_gather_router(
+                (
+                    skill_descriptors,
+                    interact_action_descriptors,
+                    interaction_history,
+                ) = await asyncio_gather_router(
                     self._collect_skill_descriptors(agent, conversation),
+                    self._collect_interact_action_descriptors(),
                     conversation.get_interaction_history(
                         limit=getattr(self._action, "history_limit", 3),
                         excluded=interaction.id,
@@ -81,18 +86,23 @@ class CockpitRouter:
                 )
             else:
                 skill_descriptors = await self._collect_skill_descriptors(agent, None)
+                interact_action_descriptors = (
+                    await self._collect_interact_action_descriptors()
+                )
                 interaction_history = []
 
-            if not skill_descriptors:
+            if not skill_descriptors and not interact_action_descriptors:
                 logger.warning("CockpitRouter: no routes available")
                 result = RoutingResult.error_result(
-                    "No skills available for routing", interaction.utterance or ""
+                    "No skills or interact_actions available for routing",
+                    interaction.utterance or "",
                 )
                 return result.posture, result
 
             result = await self._run_llm_route(
                 interaction,
                 skill_descriptors,
+                interact_action_descriptors,
                 interaction_history or [],
                 conversation,
             )
@@ -146,6 +156,7 @@ class CockpitRouter:
         self,
         interaction: Any,
         skill_descriptors: Dict[str, Dict[str, Any]],
+        interact_action_descriptors: Dict[str, Dict[str, Any]],
         interaction_history: List[Dict[str, Any]],
         conversation: Any,
     ) -> RoutingResult:
@@ -153,7 +164,6 @@ class CockpitRouter:
             required=True, purpose="router"
         )
         skills_json = json.dumps(skill_descriptors, indent=2)
-        interact_action_descriptors = await self._collect_interact_action_descriptors()
         interact_actions_json = json.dumps(interact_action_descriptors, indent=2)
         history_section = (
             format_interaction_history(interaction_history, conversation=conversation)
@@ -217,6 +227,22 @@ class CockpitRouter:
         result.interact_actions = self._validate_routes(
             result.interact_actions, interact_action_descriptors
         )
+        # Promote ``converse`` to a structural skill route. ``parse_routing_response``
+        # clears actions on CONVERSATIONAL intent; if the catalog has ``converse``
+        # we inject it so the dispatch is skill-driven instead of intent-driven.
+        # Cockpit's gate checks for ``actions == ["converse"]`` and takes the
+        # persona-only fast path.
+        from jvagent.action.cockpit.delivery.gates import CONVERSE_SKILL_NAMES
+
+        if (
+            result.intent_type == "CONVERSATIONAL"
+            and not result.actions
+            and not result.interact_actions
+        ):
+            for converse_name in CONVERSE_SKILL_NAMES:
+                if converse_name in skill_descriptors:
+                    result.actions = [converse_name]
+                    break
         return result
 
     def _validate_routes(

@@ -16,7 +16,7 @@ Generates professional client proposals from meeting transcripts or RFP context.
 ## PDF stack (LaTeX vs WeasyPrint)
 
 - **LaTeX** (optional, best quality): install a **system** TeX distribution so `xelatex` (or `pdflatex` / `lualatex`) is available; this is not a Python package.
-- **WeasyPrint** (fallback when LaTeX is missing): the example declares `weasyprint` in `actions/jvagent/proposal_skill_interact_action/info.yaml`, so jvagent installs it when the action loads (unless `JVAGENT_DISABLE_RUNTIME_PIP_INSTALL` is set). You can also `pip install weasyprint` or `pip install -r` the skill’s `requirements.txt` from the jvagent repo.
+- **WeasyPrint** (fallback when LaTeX is missing): the example declares `weasyprint` in `actions/jvagent/proposal_pipeline_action/info.yaml`, so jvagent installs it when the action loads (unless `JVAGENT_DISABLE_RUNTIME_PIP_INSTALL` is set). You can also `pip install weasyprint` or `pip install -r` the skill’s `requirements.txt` from the jvagent repo.
 
 ## Specimen Corpus
 
@@ -33,7 +33,9 @@ specimens/
 
 ## Configuration
 
-Key settings in `agent.yaml` under `proposal_skill_interact_action`:
+Key settings in `agent.yaml` under `proposal_pipeline_action` (the cockpit
+drives the loop; this action carries the configuration that skill scripts
+and the cockpit tool surface read at runtime):
 
 | Setting | Description |
 |---------|-------------|

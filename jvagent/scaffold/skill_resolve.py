@@ -271,6 +271,7 @@ def parse_skill_bundle(
         frontmatter.get("response-mode"), skill_file
     )
     verbatim_final = bool(frontmatter.get("verbatim-final"))
+    always_active = bool(frontmatter.get("always-active"))
     plan_steps = _normalize_plan_steps(frontmatter.get("plan-steps"), skill_file)
     dispatch = _normalize_dispatch(frontmatter.get("dispatch"), skill_file)
     tags = frontmatter.get("tags") or []
@@ -311,6 +312,7 @@ def parse_skill_bundle(
         "requires_action_versions": requires_action_versions,
         "response_mode": response_mode,
         "verbatim_final": verbatim_final,
+        "always_active": always_active,
         "plan_steps": plan_steps,
         "dispatch": dispatch,
         "exports": exports,
@@ -428,11 +430,22 @@ def apply_skill_selector(
     - ``"-all"``: keep all bundles
     - ``list[str]``: keep bundles whose names match any pattern via fnmatch
     - ``None`` / ``[]`` / ``""``: keep none
-    """
-    if selector is None or selector == [] or selector == "":
-        return {}
 
-    if selector == SELECTOR_ALL:
+    Skills whose frontmatter declares ``always-active: true`` slip through
+    every selector branch (including ``None``/empty) so foundational skills
+    like ``converse`` are always available to the agent regardless of the
+    operator's explicit selector list. ``denied`` still applies to them —
+    operators can opt out by adding the skill name to the deny list.
+    """
+    always_active = {
+        name: data
+        for name, data in bundles.items()
+        if bool(data.get("always_active", False))
+    }
+
+    if selector is None or selector == [] or selector == "":
+        kept = dict(always_active)
+    elif selector == SELECTOR_ALL:
         kept = dict(bundles)
     elif isinstance(selector, list):
         patterns = [
@@ -442,8 +455,12 @@ def apply_skill_selector(
         for pattern in patterns:
             names.update(fnmatch.filter(list(bundles.keys()), pattern))
         kept = {name: data for name, data in bundles.items() if name in names}
+        # Always-active skills slip past selector filtering.
+        for name, data in always_active.items():
+            if name not in kept:
+                kept[name] = data
     else:
-        return {}
+        kept = dict(always_active)
 
     for pattern in denied or []:
         denied_names = fnmatch.filter(list(kept.keys()), str(pattern))

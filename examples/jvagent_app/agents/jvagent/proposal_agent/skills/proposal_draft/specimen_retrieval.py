@@ -107,17 +107,32 @@ def get_tool_definition() -> Dict[str, Any]:
     }
 
 
+async def _resolve_specimens_path(visitor: Any) -> Optional[str]:
+    """Find the specimens path on a peer ProposalPipelineAction (or _current_action)."""
+    action = getattr(visitor, "_current_action", None)
+    if action is not None and getattr(action, "specimens_path", None):
+        return action.specimens_path
+    if action is not None and hasattr(action, "get_action"):
+        try:
+            pipeline = await action.get_action("ProposalPipelineAction")
+            if pipeline and getattr(pipeline, "specimens_path", None):
+                return pipeline.specimens_path
+        except Exception:
+            return None
+    return None
+
+
 async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Dict[str, Any]:
     """Load template, guide, and select relevant specimens from the corpus."""
     corpus_dir = None
     client_tags: List[str] = arguments.get("client_tags", [])
     max_specimens: int = arguments.get("max_specimens", 3)
 
-    # Try to resolve specimens path from the action config
+    # Try to resolve specimens path from the pipeline action config
     try:
-        action = getattr(visitor, "_current_action", None)
-        if action and hasattr(action, "specimens_path") and action.specimens_path:
-            corpus_dir = Path(action.specimens_path)
+        configured = await _resolve_specimens_path(visitor)
+        if configured:
+            corpus_dir = Path(configured)
     except Exception:
         pass
 

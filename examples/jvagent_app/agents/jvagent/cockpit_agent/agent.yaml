@@ -1,21 +1,20 @@
 # Cockpit Agent — model-cockpit action with full tool agency
 #
-# Requires jvagent/persona (PersonaAction). The model has direct access to
-# every harness service (memory, response, task, conversation, skills) and
-# every action tool (pageindex search/assimilate, web search, drive, etc.)
-# via the think-act-observe cockpit loop.
-#
 # Architecture (multi-provider):
 #   Phase 1 — CockpitRouter: router_model_action_type → OpenAI (fast posture + skill selection)
-#   Phase 2 — CockpitEngine: model_action_type → main model with full tool agency
+#   Phase 2 — CockpitEngine: model_action_type → Ollama (agentic loop)
 #     - The model sees all harness tools (memory_get_history, task_create_plan,
 #       response_publish, skill_search, skill_read, etc.)
 #     - The model sees all action tools (pageindex__search, web_search__search,
 #       gmail__send, google_drive__list, mcp_filesystem__*, etc.)
-#     - Skills remain as Claude-style SKILL.md bundles with optional .py tool scripts
+#     - Skills remain Claude-style SKILL.md bundles with optional .py tool scripts
 #
-# Register one jvagent language-model action per provider; point each phase at the
-# right class name. All tuning params use sensible defaults.
+# The cockpit replaces the legacy interact_router; intro, handoff, and persona
+# interact actions still run in the chain (cockpit weight is -200 so it routes
+# first, then defers to specialised actions when appropriate).
+#
+# Register one jvagent language-model action per provider; point each phase at
+# the right class name. All tuning params use sensible defaults.
 
 agent: jvagent/cockpit_agent
 version: 1.0.0
@@ -26,8 +25,8 @@ context:
   alias: Cockpit Agent
   description: >-
     A full-cockpit agent giving the model access to all harness services and
-    action tools. Routes intent via OpenAI, runs agentic loop on Anthropic.
-    Pre-loaded with pageindex_search, web_search, and research skills.
+    action tools. Routes intent via OpenAI, runs the agentic loop on Ollama.
+    Pre-loaded with pageindex_search, pageindex_docs, and web_search skills.
   enabled: true
   interaction_limit: 20
 
@@ -38,9 +37,7 @@ actions:
       router_model: gpt-4o-mini
       router_model_action_type: OpenAILanguageModelAction
       model_action_type: OllamaLanguageModelAction
-      model: glm-5.1:cloud
-      # model_action_type: OpenAILanguageModelAction
-      # model: gpt-4.1
+      model: deepseek-v4-flash:cloud
       skills:
         - pageindex_search
         - pageindex_docs
@@ -58,18 +55,19 @@ actions:
   - action: jvagent/ollama_lm
     context:
       enabled: true
-      description: Ollama cloud endpoint for the agentic skill loop
+      description: Ollama cloud endpoint for the cockpit agentic loop
       api_endpoint: https://ollama.com
-      api_key: ${OLLAMA_API_KEY}
+      # API key is env-only — set OLLAMA_API_KEY in your environment.
       model: deepseek-v4-flash:cloud
       temperature: 0.2
       max_tokens: 16384
       timeout: 120
 
+  # ── OpenAI Language Model (router + persona) ──
   - action: jvagent/openai_lm
     context:
       enabled: true
-      api_key: ${OPENAI_API_KEY}
+      # API key is env-only — set OPENAI_API_KEY in your environment.
       api_endpoint: https://api.openai.com/v1
       model: gpt-4o-mini
       temperature: 0.2
@@ -80,8 +78,9 @@ actions:
     context:
       enabled: true
       description: >
-        Example MCP gateway with a sandboxed filesystem server (npx). Registers tools under tool_servers
-        for SkillInteractAction; fulfills multi-server patterns alongside streamable_http MCP apps.
+        Example MCP gateway with a sandboxed filesystem server (npx). Registers
+        tools under tool_servers for the cockpit; fulfills multi-server patterns
+        alongside streamable_http MCP apps.
       model_action_type: OpenAILanguageModelAction
       model: gpt-4o-mini
       sandbox_mode: true
@@ -109,7 +108,7 @@ actions:
   - action: jvagent/handoff_interact_action
     context:
       enabled: true
-      mode: direct_contact
+      handoff_mode: direct_contact
 
   - action: jvagent/persona
     context:

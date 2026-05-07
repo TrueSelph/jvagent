@@ -509,21 +509,51 @@ class CockpitEngine:
 
                     if sop_sections:
                         skill_names = ", ".join(filtered.keys())
+                        # Build peer-skill quick index so the model can pivot
+                        # without calling skill_search when the recommendation
+                        # is a poor fit.
+                        peer_lines: List[str] = []
+                        for s_name, s_data in catalog.skills.items():
+                            if s_name in filtered:
+                                continue
+                            desc = (s_data.get("description") or "").strip()
+                            short = " ".join(desc.split())[:200]
+                            peer_lines.append(f"- **{s_name}** — {short}")
+                        peer_index = (
+                            "\n\n**Other skills available** (call `skill_read` "
+                            "to load full SOP if any of these fits better):\n"
+                            + "\n".join(peer_lines)
+                            if peer_lines
+                            else ""
+                        )
                         skill_index = (
                             "\n\n# Router-selected skill(s) — SOP pre-loaded\n"
                             f"The router classified this request and selected: **{skill_names}**. "
-                            "The full SOP is inlined below. Do NOT call `skill_read` "
-                            "for these skills — proceed directly to the tools and "
-                            "workflow described in their SOP. Only call "
-                            "`skill_search`/`skill_read` if you need a DIFFERENT "
-                            "skill not listed here.\n\n"
+                            "The full SOP is inlined below.\n\n"
+                            "**Engagement rule (course-correction expected):**\n"
+                            "- If the SOP fits the user's actual request, proceed "
+                            "directly to its tools and workflow. Do NOT call "
+                            "`skill_read` for the listed skill(s).\n"
+                            "- If you judge the recommendation is a wrong fit, "
+                            "treat it as a router miss: pick a better skill from "
+                            "the **Other skills available** list below, call "
+                            "`skill_read` on it, and use its tools. Course-"
+                            "correction is expected when the recommendation "
+                            "doesn't match — the router is fast but fallible.\n"
+                            "- Do NOT answer from your own world knowledge while "
+                            "any catalog skill could plausibly satisfy the "
+                            "request. World-knowledge replies are only "
+                            "acceptable when no listed skill fits.\n\n"
                             + "\n\n---\n\n".join(sop_sections)
+                            + peer_index
                         )
                     else:
                         skill_index = (
                             "\n\n# Available skills\n"
                             + sub.render_catalog()
                             + "\n\nUse skill_read with the exact skill name before activating any skill."
+                            + " Do NOT answer from your own world knowledge before"
+                            " consulting the catalog."
                         )
                 except Exception:
                     pass
@@ -535,6 +565,8 @@ class CockpitEngine:
                         "\n\n# Available skills\n"
                         + catalog.render_catalog()
                         + "\n\nUse skill_read with the exact skill name before activating any skill."
+                        + " Do NOT answer from your own world knowledge before"
+                        " consulting the catalog."
                     )
                 except Exception:
                     pass
@@ -543,7 +575,9 @@ class CockpitEngine:
                     "\n\n"
                     + "You have access to multiple Claude-style skill bundles. "
                     + "Use skill_search with keywords from the user's request, "
-                    + "then call skill_read to load the full instructions."
+                    + "then call skill_read to load the full instructions. "
+                    + "Do NOT answer from your own world knowledge before "
+                    + "consulting the catalog."
                 )
 
         # Advertise cockpit_search prominently when the catalog is large or the

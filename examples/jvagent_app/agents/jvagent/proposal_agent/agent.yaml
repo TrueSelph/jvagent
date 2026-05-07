@@ -2,12 +2,23 @@
 # Generates professional client proposals from meeting transcripts or RFP context.
 # Pipeline: draft → price → author → review → PDF
 #
+# Architecture:
+#   - jvagent/cockpit drives the agentic loop and routing.
+#   - jvagent/proposal_pipeline_action holds pipeline configuration
+#     (specimens path, output dir, branding, LaTeX command, Google Docs
+#     template). The cockpit exposes its config as a tool, and skill
+#     scripts read it via Action.get_action("ProposalPipelineAction").
+#   - jvagent/pricing_action manages pricing rubrics.
+#   - jvagent/google_docs_action authors proposals in Google Docs.
+#   - jvagent/persona handles conversational replies.
+#
 # Skills used:
 #   proposal_orchestrator — meta-skill orchestrating the full pipeline
 #   proposal_draft        — generates the proposal draft from transcript + specimens
 #   pricing               — assesses pricing via PricingAction and rubrics
 #   authoring             — writes to Google Doc or Markdown
 #   pdf_generation        — final PDF (LaTeX or WeasyPrint fallback, optional Drive)
+#   fileinterface         — user-scoped file I/O
 #
 # To run: jvagent examples/jvagent_app
 
@@ -20,56 +31,81 @@ context:
   alias: Proposal Agent
   description: >
     Generates professional client proposals from meeting transcripts
-    or RFP context. Uses a pipeline of sub-skills: draft generation
-    (with specimen-based RAG), pricing assessment (via configurable
-    rubrics), document authoring (Google Doc or Markdown), and final
-    PDF generation (LaTeX or WeasyPrint).
+    or RFP context. The cockpit drives a five-stage pipeline (draft →
+    price → author → review → PDF), reading configuration from a
+    dedicated proposal_pipeline_action.
   enabled: true
 
 actions:
-  # ── Routing ──────────────────────────────────────────────
-  - action: jvagent/interact_router
-    context:
-      enabled: false
-      description: "Routes utterances to the skill interact action for proposal generation"
-      model_action_type: OpenAILanguageModelAction
-      history_limit: 3
-      enable_routing_cache: true
-
-  # ── Language Models ──────────────────────────────────────
-  - action: jvagent/openai_lm
+  # ── Cockpit (router + agentic loop) ──────────────────────
+  - action: jvagent/cockpit
     context:
       enabled: true
-      description: "OpenAI model for proposal generation and skill loop execution"
-      api_key: ${OPENAI_API_KEY}
-      api_endpoint: https://api.openai.com/v1
-      model: gpt-4.1           # 200K context window — handles large transcripts + specimens
-      temperature: 0.5         # Low temp for consistent proposal output
-      max_tokens: 32768        # Max output tokens for gpt-4.1 (not 64K)
-      timeout: 300             # 5 min — generation can be slow with large context
+      description: >
+        Cockpit drives the proposal pipeline. Routes intent (Phase 1)
+        and runs the agentic loop (Phase 2) over the proposal skills.
+      router_model: gpt-4o-mini
+      router_model_action_type: OpenAILanguageModelAction
+      model_action_type: OllamaLanguageModelAction
+      model: deepseek-v4-flash:cloud
+      model_max_tokens: 16384
+      reasoning_enabled: true
+      max_iterations: 80              # 5 pipeline stages × revisions + overhead
+      max_duration_seconds: 1200      # 20 minutes
+      response_mode: respond
+      skills:
+        - fileinterface
+        - proposal_orchestrator
+        - proposal_draft
+        - pricing
+        - authoring
+        - pdf_generation
+      skills_source: both
+      denied_skills: []
+      plan_first: true
+      stuck_detection_window: 3
+      history_limit: 10
+      stream_internal_progress: true
 
+  # ── Proposal Pipeline Configuration ──────────────────────
+  - action: jvagent/proposal_pipeline_action
+    context:
+      enabled: true
+      description: "Carries proposal pipeline configuration (paths, branding, LaTeX, Google Docs template)."
+      specimens_path: "{{ APP_DIR }}/agents/jvagent/proposal_agent/specimens"
+      output_dir: "output"
+      latex_command: xelatex
+      # Optional Google Drive integration:
+      # google_docs_template_id: ""
+      # drive_output_folder_id: ""
+      # Optional branding:
+      # brand_logo_path: ""
+      # brand_primary_color: "#1a237e"
+      # brand_accent_color: "#0d47a1"
+      # company_letterhead: ""
+
+  # ── Language Models ──────────────────────────────────────
   - action: jvagent/ollama_lm
     context:
       enabled: true
-      description: Optional Ollama endpoint — switch skill_interact_action to OllamaLanguageModelAction
-        and set model to use this provider instead of OpenAI.
+      description: "Ollama cloud endpoint — primary engine for the cockpit agentic loop"
       api_endpoint: https://ollama.com
-      api_key: ${OLLAMA_API_KEY}
-      model: kimi-k2.6:cloud
-      temperature: 0.2
+      # API key is env-only — set OLLAMA_API_KEY in your environment.
+      model: deepseek-v4-flash:cloud
+      temperature: 0.3
       max_tokens: 16384
-      timeout: 120
-  # Optional: Anthropic model (preferred for long-form writing)
-  # - action: jvagent/anthropic_lm
-  #   context:
-  #     enabled: true
-  #     description: "Anthropic Claude for proposal generation (preferred for long-form writing)"
-  #     api_key: ${ANTHROPIC_API_KEY}
-  #     api_endpoint: https://api.anthropic.com/v1
-  #     model: claude-sonnet-4-20250514
-  #     temperature: 0.5
-  #     max_tokens: 32768
-  #     timeout: 180
+      timeout: 300
+
+  - action: jvagent/openai_lm
+    context:
+      enabled: true
+      description: "OpenAI model for cockpit router and persona replies"
+      # API key is env-only — set OPENAI_API_KEY in your environment.
+      api_endpoint: https://api.openai.com/v1
+      model: gpt-4.1-mini
+      temperature: 0.2
+      max_tokens: 4096
+      timeout: 60
 
   # ── Pricing Rubric Management ────────────────────────────
   - action: jvagent/pricing_action
@@ -79,99 +115,14 @@ actions:
       rubric_namespace: proposals
       active_rubric: standard
 
-  # ── Google Docs Authoring (Optional) ────────────────────
+  # ── Google Docs Authoring (Optional) ─────────────────────
   # Requires GOOGLE_CLIENT_SECRETS_JSON env var and OAuth consent.
   # Remove this block if Google Docs is not needed (falls back to Markdown).
   - action: jvagent/google_docs_action
     context:
       enabled: true
       description: "Google Docs API for authoring proposals with rich formatting and comments"
-      output_format: google_doc   # 'google_doc' or 'markdown'
-
-  # ── MCP (optional) ─────────────────────────────────────
-  # File I/O for this agent uses the built-in `fileinterface` skill (in-process
-  # jvspatial storage). Re-add `jvagent/mcp` here when you need external MCP
-  # servers (e.g. weather, fetch, custom streamable_http tools).
-
-  # ── Specimen Index (Optional — for large corpora) ──────
-  # Enable if the specimen corpus grows beyond ~20 documents.
-  # - action: jvagent/pageindex_action
-  #   context:
-  #     enabled: true
-  #     name: specimen_index
-  #     description: "Vector search over the specimen proposal corpus"
-  #     pageindex_dir: "{{ APP_DIR }}/agents/jvagent/proposal_agent/specimens"
-  #     strategy: tree_search
-  #     limit: 10
-
-  # ── Web Search (Optional) ───────────────────────────────
-  # For supplementing proposals with market/competitor research.
-  # - action: jvagent/serper_web_search
-  #   context:
-  #     enabled: true
-  #     description: "Web search for market research during proposal drafting"
-  #     engine: google_light
-  #     max_results: 5
-
-  # ── Skill Interact Action (Proposal Pipeline) ───────────
-  - action: jvagent/proposal_skill_interact_action
-    context:
-      enabled: true
-      description: >
-        Agentic loop that orchestrates the proposal generation pipeline:
-        draft → price → author → review → PDF. Activates sub-skills
-        in sequence using the proposal_orchestrator meta-skill.
-      weight: -60
-      anchors:
-        - "User wants to generate a proposal from a meeting transcript"
-        - "User submits an RFP or RFP context for proposal generation"
-        - "User asks to create a client proposal"
-        - "User wants to draft a proposal for a client"
-        - "User needs pricing assessed for a project"
-        - "User wants to generate a PDF proposal from an approved document"
-      model_action_type: OllamaLanguageModelAction
-      model: deepseek-v4-flash:cloud
-      reasoning_enabled: true
-      model_max_tokens: 32768       # gpt-4.1 max output (not 64K)
-      stream_thinking: true
-      max_iterations: 80            # 5 pipeline stages × up to 3 revisions + overhead
-      max_duration_seconds: 1200    # 20 minutes — full pipeline with revisions
-      response_mode: respond
-      skills:
-        - fileinterface          # User-scoped file I/O (jvspatial local/S3)
-        - proposal_orchestrator  # Meta-skill: orchestrates the pipeline
-        - proposal_draft         # Stage 1: draft generation
-        - pricing                # Stage 2: pricing assessment
-        - authoring              # Stage 3: document authoring + review
-        - pdf_generation         # Stage 4: final PDF output
-      skills_source: both
-      denied_skills: []
-      strict_grounding: true
-      plan_first: true
-      enable_skill_helper_tools: true
-      max_skill_activations: 10
-      stuck_detection_window: 3
-      max_midcourse_corrections: 2
-      task_nudge_retry_limit: 4
-      final_review: true
-      stream_tool_progress: true
-
-      # ── Proposal Pipeline Configuration ──────────────────
-      specimens_path: "{{ APP_DIR }}/agents/jvagent/proposal_agent/specimens"
-      output_dir: "output"
-      latex_command: xelatex
-
-      # ── Context Window Management ──────────────────────────
-      # Proposal transcripts and specimen docs are large; these
-      # settings prevent context overflow while preserving signal.
-      history_limit: 10              # Keep more conversation history across pipeline stages
-      max_full_tool_results: 15      # More tool results fit across 5 stages
-      max_tool_result_tokens: 2000   # Cap per-result tokens to avoid flooding the context
-      tool_result_truncation_chars: 1500  # Truncate very long tool outputs
-
-      # Optional: Google Drive integration
-      # drive_specimens_folder_id: ""   # Set to a Drive folder ID to load specimens from Drive
-      # drive_output_folder_id: ""      # Set to upload final PDFs to Drive
+      output_format: google_doc       # 'google_doc' or 'markdown'
 
   # ── Persona ──────────────────────────────────────────────
   - action: jvagent/persona

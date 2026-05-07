@@ -563,15 +563,17 @@ class Actions(Node):
                 continue
 
             processed_ids.add(current_action_node.id)
-            all_actions.append(current_action_node)
+            if isinstance(current_action_node, Action):
+                all_actions.append(current_action_node)
 
             # Get subactions for this action
             subactions = await current_action_node.nodes(node=entity)
             if not subactions:
                 continue
 
-            # Add to stack
-            stack.extend(subactions)
+            # Only recurse into Action descendants — interview state machines
+            # and other non-Action children should be skipped.
+            stack.extend(n for n in subactions if isinstance(n, Action))
         return all_actions
 
     async def get_action_by_label(self, label: str) -> Optional[Action]:

@@ -527,49 +527,96 @@ class RoutingResult:
 
 ## Gates
 
-### `should_use_conversational_gate(routing, converse_enabled)`
+### `should_use_conversational_gate(routing, converse_enabled, conversational_fast_path=True)`
 
-Returns `True` (use PersonaAction‑only path) when:
-- `converse_enabled` is True AND
-- Intent is CONVERSATIONAL OR no actions were recommended
+Returns `True` (use PersonaAction‑only path — no engine LLM call) when
+`converse_enabled` is True and any of these triggers fires:
 
-Returns `False` (use cockpit engine) when:
-- `converse_enabled` is False OR
-- Intent is INFORMATIONAL or DIRECTIVE
+1. **Skill-driven (preferred).** The router selected the `converse` skill (or
+   one of its aliases in `gates.CONVERSE_SKILL_NAMES`) as the only routed
+   skill, with no `interact_actions` queued. The dispatch is structural —
+   the converse skill exists precisely to mean "no tools, no engine, talk to
+   PersonaAction".
+2. **Intent fallback.** Router classified the utterance as `CONVERSATIONAL`
+   and no `interact_actions` were queued. Kept for back-compat with router
+   versions that don't surface `converse` in their skill descriptors.
+3. **Empty-route fast-path.** Router recommended no skills, no
+   `interact_actions`, and `conversational_fast_path=True` (default). The
+   engine has nothing specific to do — saves a heavy LLM round-trip on
+   greetings, smalltalk, and unclassifiable utterances.
 
-### `should_enter_processing_gate(routing, converse_enabled)`
+Returns `False` (use cockpit engine) otherwise. Set
+`conversational_fast_path=False` to fall through to the engine for
+UNCLEAR / INFORMATIONAL utterances that have no specific handler — useful
+when the engine's harness tools (memory, artifacts, conversation search)
+should still get a chance to act.
+
+### `should_enter_processing_gate(routing, converse_enabled, conversational_fast_path=True)`
 
 Logical inverse of `should_use_conversational_gate`.
 
 ---
 
+## The converse skill
+
+`converse` is a built-in, **always-active** skill bundle
+(`jvagent/skills/converse/SKILL.md`). It has no tool files and declares
+`always-active: true` in its frontmatter. Always-active skills slip past
+selector filtering in `apply_skill_selector` so they appear in the catalog
+regardless of the operator's `skills:` list (operators can still opt out
+via `denied_skills`).
+
+The router treats `converse` like any other skill — it appears in the skill
+descriptors passed to the routing LLM. When the router classifies a request
+as `CONVERSATIONAL` and the catalog has `converse`, `CockpitRouter` injects
+`actions = ["converse"]` into the routing result. The conversational gate
+then fires on the structural skill check and dispatches to PersonaAction.
+
+The cockpit's `_start_cockpit` filters `converse` out of the engine's
+`preloaded_skills` list — if the engine ever starts (because other skills
+or interact_actions were also routed), surfacing `converse` in the inline
+SOP would be incoherent context (it's a routing alias, not an engine
+workflow). The catalog still contains it for router visibility.
+
+---
+
 ## Response Delivery
 
-### Conversational Delivery (`deliver_conversational`)
+All persona handoffs route through `delivery/persona_delivery.py` →
+`deliver_via_persona`. The historical helpers (`deliver_conversational`,
+`deliver_final_response`, and the action's `_finalize_via_persona`) are now
+thin shims over this single entrypoint.
 
-| Mode | Behavior |
-|---|---|
-| `"respond"` | Add directive to interaction, call `action.respond()` |
-| `"publish"` | Build prompt from history, call `persona.respond_slim()` |
+### `deliver_via_persona`
 
-Falls back to `action.respond()` if PersonaAction is unavailable.
-
-### Final Response Delivery (`deliver_final_response`)
-
-Delivery matrix (evaluated in priority order):
+Decision matrix (evaluated in order):
 
 | Condition | Delivery Method |
 |---|---|
-| Verbatim override + not degenerate | Publish raw content |
-| `"respond"` mode + not degenerate | Add directive, call `action.respond()` |
-| Degenerate (<=25 chars) | Publish raw content |
-| Default (`"publish"` + not degenerate) | `persona.respond_slim()` |
+| `force_raw=True` or skill `verbatim_final` | `action.publish(content)` |
+| Content present and ≤ `degenerate_response_max_chars` | `action.publish(content)` |
+| Effective mode `"respond"` | `visitor.add_directive(...)` (if directive or content) → `action.respond()` |
+| Effective mode `"publish"` + content | `persona.respond_slim(prompt=content)` |
+| `"publish"` mode + persona unavailable | `action.publish(content)` (fallback) |
 
 **Verbatim override**: Any activated skill can declare `verbatim_final: true` in its metadata, forcing the raw engine output to be published without persona rewording.
 
 **Degenerate response**: If the final response is shorter than `degenerate_response_max_chars` (default 25), it's published raw — too short for persona rewording to add value.
 
 **Effective response mode**: Resolved from `SkillCatalog.get_response_mode_override()` if skills are activated, otherwise defaults to `response_mode` config value.
+
+### Conversational delivery (`deliver_conversational`)
+
+Thin shim over `deliver_via_persona` with `mode="respond"` and a directive
+sourced from the cockpit's `converse_persona_prompt` (default: "Reply
+briefly in character; match the user's tone."). Used when the conversational
+gate triggers — single PersonaAction call, no engine round-trip.
+
+### Final response delivery (`deliver_final_response`)
+
+Thin shim over `deliver_via_persona` with the engine's `CockpitResult`,
+applying per-skill `response_mode` and `verbatim_final` overrides via the
+supplied `skill_catalog`.
 
 ---
 

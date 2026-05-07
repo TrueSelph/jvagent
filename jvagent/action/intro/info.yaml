@@ -11,4 +11,4 @@ package:
   config:
     singleton: true
     order:
-      weight: -101
+      weight: -300

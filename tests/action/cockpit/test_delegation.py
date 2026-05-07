@@ -353,7 +353,8 @@ async def test_phase_route_dispatches_both_queues_pending_ias(monkeypatch):
 
 
 async def test_finalize_pending_runs_persona_respond(monkeypatch):
-    """Finalize-pending revisit (IA-only mode): cockpit calls PersonaAction.respond()."""
+    """Finalize-pending revisit (IA-only mode): cockpit dispatches via the
+    unified persona delivery (which routes through ``action.respond()``)."""
     monkeypatch.setattr(
         CockpitInteractAction, "_ensure_interaction", lambda self, v: True
     )
@@ -365,16 +366,25 @@ async def test_finalize_pending_runs_persona_respond(monkeypatch):
         CockpitInteractAction, "_require_persona", AsyncMock(return_value=persona)
     )
 
+    # The unified delivery now goes through ``action.respond()`` (which
+    # itself resolves PersonaAction at runtime). Stub it to assert the
+    # finalize path engages the persona handoff exactly once.
+    respond_mock = AsyncMock(return_value="final response")
+    monkeypatch.setattr(CockpitInteractAction, "respond", respond_mock)
+
     action = CockpitInteractAction()
     visitor = _make_visitor()
     visitor._skill_state["cockpit_ia_finalize_pending"] = True
 
     await action.execute(visitor)
 
-    persona.respond.assert_awaited_once()
+    respond_mock.assert_awaited_once()
     # Flag cleared
     assert "cockpit_ia_finalize_pending" not in visitor._skill_state
     visitor.interaction.set_to_executed.assert_called_once()
+    # Finalize-pending revisit is a delivery shim — must unrecord to avoid
+    # showing CockpitInteractAction twice in the actions trace.
+    visitor.unrecord_action_execution.assert_awaited()
 
 
 async def test_handle_step_result_terminal_clears_pending_ias(monkeypatch):

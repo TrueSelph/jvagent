@@ -1,38 +1,76 @@
+# Resolv Demo Agent
+#
+# Demonstrates the cockpit-driven pattern combined with multi-channel access
+# control: jvagent/cockpit replaces the legacy jvagent/interact_router and
+# coexists with the resolv interview/onboarding/subscription actions, the
+# pageindex retrieval action, the access_control_action, and the WhatsApp
+# adapter.
+#
+# See docs/COCKPIT.md for cockpit architecture.
+
 agent: resolv/resolv_demo
 version: 1.0.0
 author: V75 Inc.
 jvagent: ~0.0.1
+
 context:
   alias: Resolv Demo Agent
-  description: A demo agent for Resolv
+  description: A demo agent for Resolv on the cockpit pattern
   enabled: true
-  interaction_limit: 10 # Optional limit on number of interactions (resets after reaching limit)
+  interaction_limit: 10  # Optional limit on number of interactions (resets after reaching limit)
+
 actions:
-  # InteractRouter - Unified posture classification + routing
-  - action: jvagent/interact_router
-    context:
-      enabled: true
-      description: "Intent-based routing action that analyzes utterances and routes to appropriate InteractActions"
-      # Model Configuration
-      model_action_type: "OpenAILanguageModelAction"
-      history_limit: 3
-      model: "gpt-4.1"
-      # Routing cache - skip LLM for repeated context (requires enable_interact_router_cache in app.yaml)
-      enable_routing_cache: true
 
-  - action: jvagent/openai_embedding
+  - action: resolv/onboarding_interact_action
     context:
       enabled: true
-      description: "OpenAI embeddings API for generating vector embeddings"
-      # API Configuration
-      api_key: ${OPENAI_API_KEY}
+      description: "Onboarding action is used to register user and subscribe them to default groups."
+      weight: -200
+
+  # ── Cockpit (router + agentic loop) ──────────────────────
+  - action: jvagent/cockpit
+    context:
+      enabled: true
+      description: >
+        Cockpit drives intent routing (Phase 1) and the agentic loop
+        (Phase 2). Replaces the legacy interact_router. Resolv interview
+        and onboarding actions remain in the chain and are invoked when
+        the cockpit defers to them.
+      router_model: gpt-4o-mini
+      router_model_action_type: OpenAILanguageModelAction
+      model_action_type: OllamaLanguageModelAction
+      model: deepseek-v4-flash:cloud
+      skills: []
+      skills_source: both
+      max_iterations: 25
+      history_limit: 5
+      response_mode: respond
+      stream_internal_progress: true
+
+  # ── Language Models ──────────────────────────────────────
+  - action: jvagent/ollama_lm
+    context:
+      enabled: true
+      description: "Ollama cloud endpoint — primary engine for the cockpit agentic loop"
+      api_endpoint: https://ollama.com
+      # API key is env-only — set OLLAMA_API_KEY in your environment.
+      model: deepseek-v4-flash:cloud
+      temperature: 0.2
+      max_tokens: 16384
+      timeout: 120
+
+  - action: jvagent/openai_lm
+    context:
+      enabled: true
+      description: "OpenAI model — used by router, persona, and resolv interviews"
+      # API key is env-only — set OPENAI_API_KEY in your environment.
       api_endpoint: "https://api.openai.com/v1"
-      # Model Configuration
-      model: text-embedding-3-small
-      embedding_dimensions: 1536
-      timeout: 30
+      model: "gpt-4.1-mini"
+      temperature: 0.2
+      max_tokens: 4096
+      timeout: 60
 
-  # Core PageIndex + interact retrieval (chat RAG calls core ``search``).
+  # ── PageIndex (RAG) ──────────────────────────────────────
   # Documents must be ingested first via POST /pageindex/documents
   - action: jvagent/pageindex_action
     context:
@@ -47,37 +85,11 @@ actions:
       max_token_num_each_node: 20000
       summary_token_threshold: 200
 
-  - action: jvagent/pageindex_retrieval_interact_action
-    context:
-      enabled: true
-      description: "Vectorless RAG - retrieves context from indexed documents via PageIndex graph"
-      weight: -75
-      anchors:
-        - "User asks a question about indexed documents"
-        - "User requests information from document index"
-        - "User wants to search or find information in documents"
-    config:
-      limit: 10
-      strategy: "tree_search"
-
-  - action: jvagent/openai_lm
-    context:
-      enabled: true
-      description: "OpenAI GPT-4o model action with vision support"
-      # API Configuration
-      api_key: ${OPENAI_API_KEY}
-      api_endpoint: "https://api.openai.com/v1"
-      # Model Configuration
-      model: "gpt-4.1-mini"
-      temperature: 0.2
-      max_tokens: 4096
-      timeout: 60
-
+  # ── Persona ──────────────────────────────────────────────
   - action: jvagent/persona
     context:
       enabled: true
       description: "Persona action with LLM-driven behavioral parameters"
-      # Persona Identity
       persona_name: "RESOLV DEMO AI"
       persona_description: |
         You are a friendly and knowledgeable assistant that helps users
@@ -87,12 +99,12 @@ actions:
         - "Submit report for a project"
         - "Submit feedback for an incident or project"
         - "Provide subscription link to opt in and out"
-      # Model Configuration
       model_action_type: "OpenAILanguageModelAction"
       model: "gpt-4.1-mini"
       model_temperature: 0.1
       model_max_tokens: 8192
 
+  # ── Resolv Interviews ────────────────────────────────────
   - action: resolv/report_interview_interact_action
     context:
       enabled: true
@@ -129,18 +141,7 @@ actions:
       description: "Subscription action is used to present a link to the user to subscribe and unsubscribe from channels and groups."
       weight: -50
 
-  - action: jvagent/converse_interact_action
-    context:
-      enabled: true
-      description: "Fallback action for smalltalk and casual conversation"
-      weight: 100 # Runs last as a safety net
-
-  - action: resolv/onboarding_interact_action
-    context:
-      enabled: true
-      description: "Onboarding action is used to register user and subscribe them to default groups."
-      weight: -100
-
+  # ── Resolv API credentials ───────────────────────────────
   - action: resolv/resolv_api_action
     context:
       enabled: true
@@ -152,6 +153,7 @@ actions:
       project_id: ${RESOLV_TEST_PROJECT_ID}
       # agent_identifier: ${RESOLV_TEST_AGENT_IDENTIFIER}
 
+  # ── Access control + WhatsApp ────────────────────────────
   - action: jvagent/access_control_action
     context:
       enabled: true

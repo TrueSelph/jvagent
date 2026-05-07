@@ -31,11 +31,15 @@ from jvagent.action.cockpit.delivery.delegation import (
     prepend_routed_interact_actions,
     resolve_routed_interact_actions,
 )
-from jvagent.action.cockpit.delivery.gates import should_use_conversational_gate
+from jvagent.action.cockpit.delivery.gates import (
+    CONVERSE_SKILL_NAMES,
+    should_use_conversational_gate,
+)
 from jvagent.action.cockpit.delivery.helpers import (
     deliver_conversational,
     deliver_final_response,
 )
+from jvagent.action.cockpit.delivery.persona_delivery import deliver_via_persona
 from jvagent.action.cockpit.engine import CockpitEngine
 from jvagent.action.cockpit.registry.access import (
     filter_routed_interact_actions_by_access,
@@ -113,6 +117,15 @@ class CockpitInteractAction(InteractAction):
             "Task-style asks: acknowledge and hand off to skills/tools."
         ),
     )
+    # When True, bypass the cockpit engine and reply via PersonaAction whenever
+    # the router recommends no skills and no interact_actions (in addition to
+    # the strict CONVERSATIONAL-intent path). Saves a heavy engine LLM call on
+    # greetings, smalltalk, and any utterance the router classifies as having
+    # no work to do. Set False to fall through to the engine for UNCLEAR /
+    # INFORMATIONAL intents that have no specific handler — useful when the
+    # engine's harness tools (memory, artifacts, conversation search) should
+    # still get a chance to act.
+    conversational_fast_path: bool = attribute(default=True)
 
     history_limit: int = attribute(default=3)
     enable_accumulation: bool = attribute(default=True)
@@ -299,9 +312,13 @@ class CockpitInteractAction(InteractAction):
 
         # Finalize-pending revisit (IA-only mode): cockpit was appended to the
         # end of the walk path to publish a persona-shaped response after
-        # upstream IAs accumulated their directives.
+        # upstream IAs accumulated their directives. This visit is purely a
+        # delivery shim — unrecord so the action trace shows cockpit only
+        # once (the meaningful Phase 1 visit), with PersonaAction following
+        # naturally as the renderer.
         if visitor._skill_state.get(_COCKPIT_FINALIZE_PENDING_KEY):
             visitor._skill_state.pop(_COCKPIT_FINALIZE_PENDING_KEY, None)
+            await visitor.unrecord_action_execution()
             await self._finalize_via_persona(visitor)
             return
 
@@ -388,7 +405,9 @@ class CockpitInteractAction(InteractAction):
             )
 
             if should_use_conversational_gate(
-                routing, converse_enabled=self.converse_enabled
+                routing,
+                converse_enabled=self.converse_enabled,
+                conversational_fast_path=self.conversational_fast_path,
             ):
                 await deliver_conversational(
                     self,
@@ -494,6 +513,13 @@ class CockpitInteractAction(InteractAction):
             if name not in preloaded:
                 preloaded.append(name)
 
+        # The converse skill is a routing alias — it has no tools and no
+        # engine workflow. If the engine is starting, the gate already let
+        # this through because OTHER skills are also routed; surfacing
+        # converse in the engine's preloaded list would be incoherent
+        # context. Strip it from the engine's view (catalog still has it).
+        preloaded = [s for s in preloaded if s not in CONVERSE_SKILL_NAMES]
+
         if routing.actions:
             skills_csv = ", ".join(routing.actions)
             intent = routing.intent_type or "UNCLEAR"
@@ -503,14 +529,22 @@ class CockpitInteractAction(InteractAction):
                 else ""
             )
             guidance = (
-                "\n\n# Routing decision (authoritative)\n"
+                "\n\n# Routing decision (advisory — verify before committing)\n"
                 f"Intent: {intent}.{interp_line} "
-                f"Pre-selected skill(s): **{skills_csv}**. "
-                "The SOP for these skills is inlined under '# Router-selected skill(s)' below. "
-                "Begin work using their tools and workflow immediately. Do NOT "
-                "call `skill_read` for them. Do NOT spend turns on memory_set, "
+                f"Router pre-selected skill(s): **{skills_csv}**. "
+                "The SOP for these skills is inlined under '# Router-selected skill(s)' below, "
+                "alongside a quick index of the other catalog skills.\n"
+                "- If the recommended SOP fits the actual request, begin work with "
+                "its tools and workflow immediately. Do NOT call `skill_read` for "
+                "the recommended skill, and do NOT spend turns on memory_set, "
                 "task_create_plan, or other harness scaffolding before invoking "
-                "the skill's primary tools — go straight to the work."
+                "its primary tools.\n"
+                "- If the recommendation is the wrong fit (e.g. user actually "
+                "asked something the listed SOP does not cover), treat the "
+                "router as fallible: pick a better skill from the peer index, "
+                "call `skill_read` on it, and use ITS tools. Do NOT answer from "
+                "world knowledge while a catalog skill could plausibly satisfy "
+                "the request."
             )
             agent_description += guidance
 
@@ -653,10 +687,9 @@ class CockpitInteractAction(InteractAction):
         """Run a persona-shaped delivery after upstream IAs queued directives.
 
         Used in "interact_actions only" mode. Cockpit was appended to the end
-        of the walk path; this method invokes PersonaAction.respond() so the
-        directives accumulated on the interaction are folded into the final
-        user-facing response. PersonaAction itself reads directives from
-        ``visitor.interaction``.
+        of the walk path; this routes through the unified ``deliver_via_persona``
+        in ``"respond"`` mode (no content, no directive — directives accumulated
+        by upstream IAs are read straight off the interaction by PersonaAction).
         """
         interaction = visitor.interaction
         if not interaction:
@@ -664,7 +697,7 @@ class CockpitInteractAction(InteractAction):
             return
 
         try:
-            persona = await self._require_persona()
+            await self._require_persona()
         except Exception as exc:
             logger.warning(
                 "CockpitInteractAction: persona unavailable for finalize step: %s",
@@ -674,10 +707,14 @@ class CockpitInteractAction(InteractAction):
             return
 
         try:
-            # PersonaAction.respond(interaction, visitor=...) reads
-            # interaction.directives + parameters and publishes via the
-            # response bus (when visitor provided).
-            await persona.respond(interaction, visitor=visitor)
+            await deliver_via_persona(
+                self,
+                visitor,
+                content=None,
+                response_mode="respond",
+                history_limit=max(1, int(self.history_limit or 0) or 4),
+                use_history=True,
+            )
         except Exception as exc:
             logger.warning(
                 "CockpitInteractAction: persona finalize delivery failed: %s",
