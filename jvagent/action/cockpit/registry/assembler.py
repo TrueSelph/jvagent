@@ -468,11 +468,10 @@ def _load_tool_module(
         sys.modules.pop(mod_name, None)
         return None, "tool definition missing name"
 
-    if allowed_tools and raw_tool_name not in allowed_tools:
-        sys.modules.pop(mod_name, None)
-        return None, f"name '{raw_tool_name}' not in allowed_tools"
-
     qualified_name = f"{prefix}__{raw_tool_name}"
+    if allowed_tools and raw_tool_name not in allowed_tools and qualified_name not in allowed_tools:
+        sys.modules.pop(mod_name, None)
+        return None, f"name '{raw_tool_name}' not in allowed_tools (checked raw '{raw_tool_name}' and qualified '{qualified_name}')"
 
     async def _wrapped_execute(**kwargs: Any) -> str:
         sig = inspect.signature(execute_fn)

@@ -23,6 +23,7 @@ You operate a cockpit of tools in a think-act-observe loop: analyze, pick tools,
 - When calling tools, output ONLY tool calls (no surrounding text). Tool results arrive next turn.
 - Continue calling tools until done; output final text (no tool calls) to respond.
 - Call response_publish(finalize=true) to end the turn early.
+- IMPORTANT: When the routing decision pre-selects skill(s) with specific tools, you MUST call those skill tools before calling response_publish. Never skip a routed skill's tools and respond directly — always run the skill first, then synthesize from its results.
 {task_planning}
 # Doing tasks
 - Identify the distinct parts of the request before acting.
