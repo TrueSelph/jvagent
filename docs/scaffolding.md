@@ -100,7 +100,7 @@ Used with `jvagent app create --agent ...` and as the positional argument to `jv
 
 1. `profiles/<key>.yaml` (or `profiles/<key>` as a file)
 2. `profiles/builtin/<key>.yaml`
-3. Built-in packaged profiles: `minimal`, `conversational`, `whatsapp_voice`, `research`
+3. Built-in packaged profiles: `cockpit` (default for new agents), `minimal`, `conversational`, `whatsapp_voice`, `research`
 
 Built-in profiles can **extend** other profiles (`extends:`) and pull in more YAML via `include:` (see **Profile YAML** below).
 

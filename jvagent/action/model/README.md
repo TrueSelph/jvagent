@@ -59,7 +59,7 @@ This structure provides clear separation between:
 
 ### Core Components
 
-1. **BaseModelAction**: Generic base class with common attributes and operations (api_key, api_endpoint, model, timeout, metrics)
+1. **BaseModelAction**: Generic base class with common attributes and operations (api_endpoint, model, timeout, retry policy, metrics). Provider credentials resolve from environment variables only — see ``api_key_from_context()``.
 2. **ModelActionResult**: Standardized result object supporting both sync and streaming (language models only)
 3. **LanguageModelAction**: Base class for language model actions (text generation and multimodal) extending BaseModelAction
 4. **EmbeddingModelAction**: Base class for embedding model actions extending BaseModelAction
@@ -457,12 +457,16 @@ In `agent.yaml`:
 actions:
   - action: jvagent/model_openai
     context:
-      api_key: ${OPENAI_API_KEY}
       model: gpt-4o-mini
       temperature: 0.7
       max_tokens: 1000
       timeout: 30
 ```
+
+The ``OPENAI_API_KEY`` env var (and provider equivalents — ``ANTHROPIC_API_KEY``,
+``OPENROUTER_API_KEY``, ``HUGGINGFACE_API_KEY``, ``OLLAMA_API_KEY``,
+``GENERIC_EMBEDDING_API_KEY``) supplies credentials. Keys are no longer
+configurable via ``agent.yaml``.
 
 ## Templates
 
@@ -548,12 +552,11 @@ Models:
 - `gpt-4o-mini` - Fast and cost-effective (default)
 - `gpt-3.5-turbo` - Older model (still supported)
 
-Configuration:
+Configuration (key resolved from ``OPENAI_API_KEY`` env var):
 ```yaml
 actions:
   - action: jvagent/model_openai
     context:
-      api_key: ${OPENAI_API_KEY}
       model: gpt-4o-mini
 ```
 
@@ -570,12 +573,11 @@ Models:
 Use this provider when you want OpenRouter routing. For direct Anthropic API
 integration and native message semantics, use `jvagent/anthropic_lm`.
 
-Configuration:
+Configuration (key resolved from ``OPENROUTER_API_KEY``, falling back to ``OPENAI_API_KEY``):
 ```yaml
 actions:
   - action: jvagent/model_openrouter
     context:
-      api_key: ${OPENROUTER_API_KEY}
       model: anthropic/claude-3.5-sonnet
       http_referer: https://yoursite.com
       site_name: YourApp
@@ -590,12 +592,11 @@ Models:
 - `claude-3-5-haiku-latest`
 - `claude-3-opus-latest`
 
-Configuration:
+Configuration (key resolved from ``ANTHROPIC_API_KEY`` env var):
 ```yaml
 actions:
   - action: jvagent/anthropic_lm
     context:
-      api_key: ${ANTHROPIC_API_KEY}
       model: claude-3-5-sonnet-latest
       temperature: 0.7
       max_tokens: 1000

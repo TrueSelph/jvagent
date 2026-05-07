@@ -144,7 +144,21 @@ These are commonly used by `jvagent` and should be configured in `jvagent` deplo
 ## 3) Integration and Vendor Keys (non-prefixed)
 
 ### Model / search APIs
-- `OPENAI_API_KEY`
+
+Model action credentials are resolved from environment variables exclusively
+(no ``api_key`` attribute on ``BaseModelAction`` / Ollama). Each provider
+falls back to a sibling env var when its primary key is unset:
+
+- `OPENAI_API_KEY` — OpenAI language + embedding actions; also used as a
+  fallback by OpenRouter actions.
+- `ANTHROPIC_API_KEY` — Anthropic language action.
+- `OPENROUTER_API_KEY` — OpenRouter language + embedding actions
+  (falls back to `OPENAI_API_KEY`).
+- `HUGGINGFACE_API_KEY` / `HF_API_KEY` — HuggingFace embedding action.
+- `OLLAMA_API_KEY` — only required for hosted/cloud Ollama deployments;
+  local `ollama serve` does not need a key.
+- `GENERIC_EMBEDDING_API_KEY` — default env var for the generic embedding
+  action; override per-instance via the ``api_key_env`` attribute.
 - `PAGEINDEX_TREE_SEARCH_MODEL`
 - `SERPER_API_KEY`
 - `TYPESENSE_API_KEY`

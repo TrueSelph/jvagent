@@ -28,11 +28,13 @@ tags:
 - Listing or creating directories in the user’s workspace.
 - Any file operation that must respect **multi-user isolation** (`<agent_id>/<user_id>/…`).
 
-**Skill authors:** imperative Python in other bundles should use
-`jvagent.skills.fileinterface.scripts._core` (strict helpers or `*_with_local_fallback` for
-optional tests/offline). Do not write user artifacts with raw `Path`/`open` to
-relative paths unless you are only using a **process-local temp dir** (e.g. LaTeX
-build) and then copying results into the sandbox.
+**Skill authors:** imperative Python in other bundles should use the strict
+helpers in `jvagent.skills.fileinterface.scripts._core` (`read_text_file`,
+`write_text_file`, `list_directory`, etc.). Every helper validates the path
+against the sandbox; raw `Path` / `open` calls against relative paths are not
+permitted because they resolve against the process cwd, not the per-user
+sandbox root. Use a **process-local temp dir** only for staging (e.g. LaTeX
+build), then copy results into the sandbox via `copy_host_file_into_sandbox`.
 
 Do **not** use these tools to access arbitrary host paths outside the sandbox. Storage backend (local vs S3) is configured at the jvagent/jvspatial level and is transparent here.
 

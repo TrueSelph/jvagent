@@ -1,9 +1,31 @@
 # Security Review: jvagent
 
-**Date:** 2026-05-02
+**Date:** 2026-05-02 (initial); 2026-05-06 hardening pass
 **Scope:** jvagent package and jvchat frontend (excluding jvspatial, which has been separately reviewed)
 **Reviewer:** Automated security analysis
-**Status:** Review complete; 4 of 5 medium findings remediated in code
+**Status:** Review complete; 4 of 5 original medium findings remediated. A
+follow-up code review on 2026-05-06 surfaced five additional critical-severity
+items (C1–C5) — all remediated. See "Hardening Pass — 2026-05-06" below.
+
+---
+
+## Hardening Pass — 2026-05-06
+
+A second-pass review identified five critical findings that the original
+audit missed. All are now closed.
+
+| Item | Issue | Resolution |
+|------|-------|-----------|
+| C1 — Sandbox escape via fallback | `*_with_local_fallback` helpers in `skills/fileinterface/scripts/_core.py` silently wrote sandbox-scoped content to the process cwd when storage failed, bypassing per-user isolation. | Helpers removed (no external callers). Strict variants only. |
+| C2 — `api_key` exported in graph dumps | `BaseModelAction.api_key` was a plain attribute that round-tripped through `Action.export()`, REST responses, and repair scratch documents. | Attribute removed from `BaseModelAction` and `OllamaLanguageModelAction`. Credentials now resolved from environment variables only via `api_key_from_context()`. |
+| C3 — Weak `..` traversal fallback | `_join_key_parts` fell back to `rel.replace("..", "")` when `PathSanitizer` raised; reads bypassed validation entirely. | `validate_relative_path` applied to every read and write; the fallback now raises. |
+| C4 — Tool error logs leaked provider response bodies | `tooling/tool_executor.py` always logged `exc_info=True`, so OpenAI 401 bodies, MCP stderr, and `httpx` URLs with auth surfaced even with `sanitize_errors=True`. | Sanitized branch now logs only the exception class name; the raw exception remains on the `ToolExecutionEnvelope` for opt-in observability. |
+| C5 — Webhook DNS-rebinding TOCTOU | `_validate_webhook_url` resolved DNS once for SSRF screening, then `httpx` resolved again at request time, opening a TOCTOU window. | New `_post_webhook_pinned_async()` resolves once, validates, then issues the request against `scheme://<ip>:port/...` with the original `Host` header (and SNI hostname forwarded for HTTPS). Both task webhook call sites use it. |
+
+The same review also flagged a set of high-severity reliability items
+(class-level `asyncio.Lock` at module import, jvspatial private-API
+coupling, memory counter races, log redaction in distributed locks); see
+the project changelog under "Unreleased" for the corresponding fixes.
 
 ---
 
