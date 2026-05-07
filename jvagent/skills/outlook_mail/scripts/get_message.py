@@ -28,13 +28,11 @@ def get_tool_definition() -> Dict[str, Any]:
 
 async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Any:
     """Get an Outlook message by delegating to MicrosoftOutlookMailAction."""
-    resolver = getattr(visitor, "action_resolver", None)
-    if resolver is None:
-        return {"error": "ActionResolver not available"}
+    from jvagent.skills._action_helpers import resolve_action
 
-    action = await resolver.resolve("MicrosoftOutlookMailAction")
-    if action is None:
-        return {"error": "MicrosoftOutlookMailAction not found on this agent"}
+    action, err = await resolve_action(visitor, "MicrosoftOutlookMailAction")
+    if err:
+        return err
 
     return await action.get_message(
         message_id=arguments["message_id"],

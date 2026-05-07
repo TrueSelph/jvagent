@@ -32,14 +32,11 @@ def get_tool_definition() -> Dict[str, Any]:
 
 async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Any:
     """Get a Gmail message by delegating to GoogleGmailAction."""
-    resolver = getattr(visitor, "action_resolver", None)
-    if resolver is None:
-        return {"error": "ActionResolver not available"}
+    from jvagent.skills._action_helpers import resolve_action
 
-    action = await resolver.resolve("GoogleGmailAction")
-    if action is None:
-        return {"error": "GoogleGmailAction not found on this agent"}
-
+    action, err = await resolve_action(visitor, "GoogleGmailAction")
+    if err:
+        return err
     return await action.get_message(
         message_id=arguments["message_id"],
         user_id=arguments.get("user_id", "me"),

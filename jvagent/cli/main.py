@@ -162,15 +162,19 @@ def main() -> None:
     has_source = "--source" in args
     has_merge = "--merge" in args
 
+    # ``--source`` / ``--merge`` only have meaning when paired with ``--update``.
+    # Silently warning here masked typos; refuse to start so the user knows.
+    if (has_source or has_merge) and not has_update:
+        logger.error("--source and --merge require --update; aborting.")
+        sys.exit(2)
+    if has_source and has_merge:
+        logger.error("--source and --merge are mutually exclusive; aborting.")
+        sys.exit(2)
+
     if has_update:
-        if has_source:
-            update_mode = "source"
-        else:
-            update_mode = "merge"
+        update_mode = "source" if has_source else "merge"
     else:
         update_mode = None
-        if has_source or has_merge:
-            logger.warning("--source/--merge flags have no effect without --update")
 
     args = [arg for arg in args if arg not in ["--update", "--source", "--merge"]]
 

@@ -28,13 +28,11 @@ def get_tool_definition() -> Dict[str, Any]:
 
 async def execute(arguments: Dict[str, Any], *, visitor: Any) -> Any:
     """Delete an Outlook Calendar event by delegating to MicrosoftOutlookCalendarAction."""
-    resolver = getattr(visitor, "action_resolver", None)
-    if resolver is None:
-        return {"error": "ActionResolver not available"}
+    from jvagent.skills._action_helpers import resolve_action
 
-    action = await resolver.resolve("MicrosoftOutlookCalendarAction")
-    if action is None:
-        return {"error": "MicrosoftOutlookCalendarAction not found on this agent"}
+    action, err = await resolve_action(visitor, "MicrosoftOutlookCalendarAction")
+    if err:
+        return err
 
     result = await action.delete_event(
         calendar_id=arguments["calendar_id"],

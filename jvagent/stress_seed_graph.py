@@ -122,6 +122,10 @@ def _match_agent(
 
 
 def _select_default_agent(agents: List[Agent]) -> Agent:
+    if not agents:
+        raise SystemExit(
+            "No agents available; install at least one before stress-seeding."
+        )
     enabled = [a for a in agents if a.enabled]
     if enabled:
         return enabled[0]

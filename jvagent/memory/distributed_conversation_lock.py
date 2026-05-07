@@ -114,9 +114,14 @@ async def _redis_conversation_lock(
     finally:
         try:
             await client.eval(unlock_script, 1, key, token)
-        except Exception:
+        except Exception as exc:
+            # Redis client exception ``repr`` can echo the connection URL
+            # (with credentials) when configured that way. Log only the
+            # exception type to keep credentials out of the operator log.
             logger.debug(
-                "Redis lock release failed for %s", conversation_id, exc_info=True
+                "Redis lock release failed for %s (%s)",
+                conversation_id,
+                type(exc).__name__,
             )
         try:
             await client.close()
@@ -186,10 +191,13 @@ async def _dynamo_conversation_lock(
                 e.response.get("Error", {}).get("Code")
                 != "ConditionalCheckFailedException"
             ):
+                # AWS error responses may echo request IDs / partial creds.
+                # Log only the error code to keep them out of operator logs.
+                code = e.response.get("Error", {}).get("Code", "Unknown")
                 logger.debug(
-                    "DynamoDB lock release failed for %s",
+                    "DynamoDB lock release failed for %s (%s)",
                     conversation_id,
-                    exc_info=True,
+                    code,
                 )
 
     try:
