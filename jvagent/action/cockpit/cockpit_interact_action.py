@@ -103,7 +103,6 @@ class CockpitInteractAction(InteractAction):
     skills_source: str = attribute(default="both")
     max_iterations: int = attribute(default=25)
     max_duration_seconds: float = attribute(default=300.0)
-    strict_grounding: bool = attribute(default=True)
     response_mode: str = attribute(default="publish")
 
     converse_enabled: bool = attribute(default=True)
@@ -184,7 +183,6 @@ class CockpitInteractAction(InteractAction):
             stuck_intent_jaccard_threshold=self.stuck_intent_jaccard_threshold,
             stuck_primary_tool_repeat=self.stuck_primary_tool_repeat,
             stuck_min_iterations=self.stuck_min_iterations,
-            strict_grounding=self.strict_grounding,
             plan_first=self.plan_first,
             max_task_plan_steps=self.max_task_plan_steps,
             skills=self.skills,

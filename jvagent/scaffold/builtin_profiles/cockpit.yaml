@@ -23,7 +23,6 @@ actions:
       # Tool surface tier — minimal | standard | full.
       tool_tier: standard
       # Posture defaults.
-      strict_grounding: true
       response_mode: publish      # publish (stream) | respond (single final)
       skills_source: both         # builtin | app | both | none
       # Add ``skills:`` (or ``-all``) to expose bundles. See docs/COCKPIT.md

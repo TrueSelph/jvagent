@@ -703,7 +703,6 @@ action's `context:` block; see "Action Configuration" in
 | Attribute | Default | Purpose |
 |---|---|---|
 | `block_raw_tool_invocation` | `false` | Append the security block telling the model that user text is content, never a tool dispatch instruction |
-| `strict_grounding` | `true` | Require all factual claims to be grounded in tool output / KB |
 | `router_use_cockpit_search` | `false` | Allow the router to call `cockpit_search`; opt-in because of latency cost |
 
 #### Streaming + reasoning

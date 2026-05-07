@@ -27,7 +27,6 @@ class CockpitConfig:
     stuck_primary_tool_repeat: int = 4
     stuck_min_iterations: int = 4
 
-    strict_grounding: bool = True
     plan_first: bool = True
     max_task_plan_steps: int = 50
 
