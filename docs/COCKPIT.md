@@ -109,7 +109,7 @@ The `ToolExecutionEngine` is the single dispatch point for all tool calls. It:
 
 ## Plugging Into the Interact Pipeline
 
-`CockpitInteractAction` is a standard `InteractAction` (weight: -200) that plugs into the `InteractWalker` pipeline:
+`CockpitInteractAction` is a standard `InteractAction` (weight: -200) that plugs into the `InteractWalker` pipeline. Minimal `agent.yaml` declaration:
 
 ```yaml
 actions:
@@ -125,27 +125,135 @@ actions:
 
 The interact pipeline (`InteractWalker` → `Actions` → sorted `InteractAction` chain by weight) is fully preserved. Other actions (access control, WhatsApp adapters, etc.) continue to compose in the chain.
 
+## Action Configuration
+
+Cockpit ships with safe defaults; almost every deployment only overrides
+`model`, `skills`, and the provider class. The full attribute matrix lives
+in [SPEC.md → Operator Configuration Reference](../jvagent/action/cockpit/SPEC.md#operator-configuration-reference). The recipes below show the
+common shapes.
+
+### Recipe 1 — Default conversational agent (Anthropic + selected skills)
+
+```yaml
+- action: jvagent/cockpit
+  context:
+    enabled: true
+    model_action_type: AnthropicLanguageModelAction
+    model: claude-sonnet-4-20250514
+    skills: [web_search, research]
+    skills_source: both         # builtin + app-local
+    response_mode: publish      # stream via response bus
+```
+
+### Recipe 2 — OpenAI engine, deterministic loop
+
+```yaml
+- action: jvagent/cockpit
+  context:
+    enabled: true
+    model_action_type: OpenAILanguageModelAction
+    model: gpt-4o-mini
+    model_temperature: 0.1
+    max_iterations: 12          # tighter loop
+    max_duration_seconds: 60
+    skills: [pageindex_search]  # narrow surface
+    enable_canned_response: false
+```
+
+### Recipe 3 — Hardened production posture
+
+Each hygiene flag is independent — set the ones you want.
+
+```yaml
+- action: jvagent/cockpit
+  context:
+    enabled: true
+    model: claude-sonnet-4-20250514
+    skills: -all                # everything available
+    block_raw_tool_invocation: true   # defend prompt against /skill commands
+    stream_internal_progress: false   # silence thoughts + tool badges
+    enable_canned_response: false     # no router lead-in stalls
+    sanitize_tool_errors: true        # already default; redacts provider error bodies
+    plan_first: true                  # require task_create_plan for multi-step work
+```
+
+### Recipe 4 — Reasoning-model-friendly
+
+```yaml
+- action: jvagent/cockpit
+  context:
+    enabled: true
+    model_action_type: AnthropicLanguageModelAction
+    model: claude-sonnet-4-20250514
+    reasoning_enabled: true
+    reasoning_budget_tokens: 8000
+    reasoning_effort: medium       # OpenAI; ignored by other providers
+    model_max_tokens: 16384         # ensure ≥ budget + 1
+```
+
+### Recipe 5 — Skill subset with denylist
+
+```yaml
+- action: jvagent/cockpit
+  context:
+    enabled: true
+    skills: -all
+    denied_skills: [skill_hub, code_review]
+    skills_source: both
+    skill_index_inline_max_skills: 8
+```
+
+### Configuration groups (cheat sheet)
+
+| Group | Tunable when … |
+|---|---|
+| Engine model | Provider / model / temperature / max tokens |
+| Router model | Phase-1 routing LLM is different from the engine, or a different temperature is desired |
+| Loop bounds | Tighter or looser ceilings on iterations / duration / parallel tool calls |
+| Stuck detection | False positives during long tool chains, or too-aggressive trapping |
+| Skills | Choosing which bundles, source, denylist, prompt budget |
+| Posture / canned | Conversational gate behavior, lead-in replies, history depth |
+| Hygiene + security | Hardening for production: prompt defense, error sanitization |
+| Streaming + reasoning | Latency vs verbosity, provider reasoning passthrough |
+| Tools surface | Trim harness tools, opt out of cockpit_search, allowlist MCP servers |
+| Memory + tasks | Inject user memory, auto-track per-run trace task, enforce planning |
+
+### Gotchas
+
+- `skills` defaults to `null` (no skills exposed). Use `"-all"` or a list to enable bundles.
+- `enable_canned_response` and `stream_internal_progress` are independent — turn them off separately for a quiet production posture; there is no umbrella mode.
+- `skill_index_inline_max_skills` controls **prompt size**: above the cap the engine is told to use `cockpit_search` rather than seeing the full index inline. Raise this only when the catalog is small.
+- API keys are env-only. There is no `api_key` attribute on the cockpit or model actions — set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, etc. See [docs/environment-keys-reference.md](environment-keys-reference.md).
+
 ## Module Structure
 
-The cockpit module at `jvagent/action/cockpit/` is self-contained — it imports only from `jvagent.action.router`, `jvagent.tooling`, and core modules.
+The cockpit module at `jvagent/action/cockpit/` is grouped into role-based subpackages and imports only from `jvagent.action.router`, `jvagent.tooling`, and core modules.
 
-| File | Purpose |
+| Path | Purpose |
 |------|---------|
-| `cockpit_interact_action.py` | Main action (extends InteractAction) |
-| `engine.py` | CockpitEngine: initialize() + step() |
-| `context.py` | CockpitContext, CockpitResult, CockpitStepResult, CockpitState |
-| `config.py` | CockpitConfig |
-| `registry.py` | assemble_cockpit_tools() |
-| `router.py` | CockpitRouter |
-| `gates.py` | Conversational vs processing gate |
-| `delivery.py` | Conversational and final response delivery |
-| `shim.py` | CockpitVisitorShim |
-| `skill_discovery.py` | Always-active skill detection |
-| `memory_tools.py` | Memory harness tools (read + write) |
-| `response_tools.py` | Response harness tools |
-| `task_tools.py` | Task harness tools (TaskStore-backed) |
-| `conversation_tools.py` | Conversation harness tools |
-| `skill_tools.py` | Skill harness tools |
+| `cockpit_interact_action.py` | Main action (extends InteractAction) — entry point |
+| `engine.py` | `CockpitEngine`: `initialize()` + `step()` |
+| `context.py` | `CockpitContext`, `CockpitResult`, `CockpitStepResult`, `CockpitState` |
+| `config.py` | `CockpitConfig` dataclass |
+| `contracts.py` | `TerminationReason` |
+| `routing/router.py` | `CockpitRouter` (Phase 1 lightweight LLM routing) |
+| `routing/types.py` | Posture constants, `RoutingResult`, parse/format utilities |
+| `delivery/helpers.py` | Conversational + final-response delivery helpers |
+| `delivery/delegation.py` | Resolve and prepend routed `InteractAction`s on the walk path |
+| `delivery/gates.py` | Conversational vs processing gate decisions |
+| `registry/assembler.py` | `assemble_cockpit_tools` (harness + action + skill layers) |
+| `registry/access.py` | Per-user access filtering for skills / interact actions / tools |
+| `registry/shim.py` | `CockpitVisitorShim` (minimal visitor stand-in) |
+| `catalog/skill_catalog.py` | `SkillCatalog` (discovery, rendering, search) |
+| `catalog/skill_discovery.py` | Always-active skill detection |
+| `catalog/action_resolver.py` | `ActionResolver` + version constraint helper |
+| `tools/skill.py` | `skill_list`, `skill_search`, `read_skill` harness tools |
+| `tools/task.py` | `task_create_plan`, `task_update_step`, `task_get_status`, `task_add_step` |
+| `tools/memory.py` | `memory_get_history`, `memory_get_user_info`, `memory_update_user_model`, `memory_set_preference` |
+| `tools/artifact.py` | `artifact_search`, `artifact_add`, `artifact_get`, `artifact_update`, `artifact_delete` |
+| `tools/search.py` | `cockpit_search` — unified search across skills, actions, and tools |
+| `tools/response.py` | `response_publish`, `response_emit_thought`, `response_deliver_via_persona` |
+| `tools/conversation.py` | `conversation_search`, `conversation_summarize` |
 
 ## Implementing New Action Tools
 

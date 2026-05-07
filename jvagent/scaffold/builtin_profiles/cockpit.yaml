@@ -11,15 +11,23 @@ actions:
   - action: jvagent/cockpit
     context:
       enabled: true
-      router_model: gpt-4o-mini
-      router_model_action_type: OpenAILanguageModelAction
+      # Engine model — the cockpit's main think-act-observe LLM.
       model_action_type: OpenAILanguageModelAction
       model: gpt-4o-mini
-      tool_tier: standard
+      # Phase-1 routing LLM (intent + skill selection). Cheaper / faster
+      # than the engine model is fine here.
+      router_model: gpt-4o-mini
+      router_model_action_type: OpenAILanguageModelAction
+      # Loop bounds.
       max_iterations: 25
+      # Tool surface tier — minimal | standard | full.
+      tool_tier: standard
+      # Posture defaults.
       strict_grounding: true
-      response_mode: publish
-      skills_source: both
+      response_mode: publish      # publish (stream) | respond (single final)
+      skills_source: both         # builtin | app | both | none
+      # Add ``skills:`` (or ``-all``) to expose bundles. See docs/COCKPIT.md
+      # → "Action Configuration" for the full attribute matrix.
 
   - action: jvagent/openai_lm
     context:

@@ -623,37 +623,124 @@ Uses an inlined `version_satisfies()` helper to keep the cockpit module self‑c
 
 ## CockpitConfig
 
-Dataclass mirroring all `CockpitInteractAction` attribute fields. Created by `_build_cockpit_config()` which copies every attribute value from the action instance.
+`CockpitConfig` is a frozen runtime dataclass populated from
+`CockpitInteractAction` attribute values via `_build_cockpit_config()`. Every
+operator-tunable below appears on **both** the Action (for `agent.yaml`
+configuration) and the dataclass (for engine consumption). The two stay in
+lock-step — there are no internal-only fields.
 
-### Key Configuration Fields
+### Operator Configuration Reference
 
-| Field | Default | Purpose |
+The matrix is grouped by concern. Defaults shown reflect the shipped
+`CockpitInteractAction`. Set values in `agent.yaml` under the cockpit
+action's `context:` block; see "Action Configuration" in
+[docs/COCKPIT.md](../../../docs/COCKPIT.md) for worked examples.
+
+#### Engine model
+
+| Attribute | Default | Purpose |
 |---|---|---|
-| `model` | `claude-sonnet-4-20250514` | Main engine LLM |
+| `model` | `claude-sonnet-4-20250514` | Main engine LLM identifier |
+| `model_action_type` | `AnthropicLanguageModelAction` | Class name of the resolved language-model action |
+| `model_temperature` | `0.3` | Engine sampling temperature |
+| `model_max_tokens` | `8192` | Engine response cap |
+
+#### Router model
+
+| Attribute | Default | Purpose |
+|---|---|---|
 | `router_model` | `gpt-4o-mini` | Lightweight routing LLM |
-| `max_iterations` | `25` | Think‑act‑observe loop cap |
-| `max_duration_seconds` | `300.0` | Time budget |
-| `max_concurrent_tools` | `5` | Parallel tool call cap |
-| `tool_call_timeout` | `60.0` | Per‑tool timeout |
-| `sanitize_tool_errors` | `True` | Sanitize detailed error tracebacks |
-| `plan_first` | `True` | Inject task planning instructions |
-| `enable_artifact_tools` | `True` | Expose artifact CRUD tools |
-| `enable_cockpit_search` | `True` | Expose unified search tool to the engine (skills + tools) |
-| `router_use_cockpit_search` | `False` | Run cockpit_search in the router (skills + interact_actions + tools) — opt-in, latency-sensitive |
-| `preload_user_memory` | `True` | Inject `User.memory` into the system prompt as a "What I remember about you" block |
-| `user_memory_max_chars` | `4096` | Cap on the pre-loaded memory block size |
-| `auto_track_tasks` | `True` | Auto-create a single shared trace Task per cockpit run. The task is the dual-purpose backbone for both model task tracking and post-hoc observability. See "Trace task design" below. |
-| `stream_internal_progress` | `True` | Single switch for streaming model thoughts, reasoning, and tool progress |
-| `stuck_detection_window` | `4` | Sliding window for stuck check |
-| `stuck_intent_jaccard_threshold` | `0.65` | Jaccard threshold for stuck detection |
-| `stuck_min_iterations` | `4` | Minimum iterations before stuck detection engages (avoids false positives during early multi-step work) |
-| `stuck_primary_tool_repeat` | `4` | Consecutive same‑tool threshold |
-| `response_mode` | `"publish"` | Delivery mode (publish/respond) |
-| `skills_source` | `"both"` | Skill bundle source (builtin/app/both) |
-| `enable_skill_helper_tools` | `True` | Expose skill_list/search/read |
-| `skill_index_inline_max_skills` | `5` | Max skills inlined in prompt |
-| `history_limit` | `5` | Conversation history depth |
-| `degenerate_response_max_chars` | `25` | Short‑response threshold |
+| `router_model_action_type` | `""` (auto-resolve) | Class name of the routing language-model action; empty falls back to `model_action_type` |
+| `router_model_temperature` | `0.1` | Router sampling temperature |
+| `router_model_max_tokens` | `400` | Router response cap |
+
+#### Loop bounds + safety
+
+| Attribute | Default | Purpose |
+|---|---|---|
+| `max_iterations` | `25` | Hard cap on think→act→observe cycles per run |
+| `max_duration_seconds` | `300.0` | Wall-clock budget per run |
+| `max_concurrent_tools` | `5` | Bounded parallelism for tool dispatch |
+| `tool_call_timeout` | `60.0` | Per-tool timeout |
+| `sanitize_tool_errors` | `true` | Replace detailed tool errors with a generic message; raw exception still recorded on the envelope |
+
+#### Stuck detection (anti-loop)
+
+| Attribute | Default | Purpose |
+|---|---|---|
+| `stuck_detection_window` | `4` | Sliding window of recent tool calls examined |
+| `stuck_intent_jaccard_threshold` | `0.65` | Jaccard threshold for recent-utterance similarity |
+| `stuck_primary_tool_repeat` | `4` | Consecutive identical (name, args) tool-calls that trip the trap |
+| `stuck_min_iterations` | `4` | Warmup iterations before the detector engages |
+
+#### Skills
+
+| Attribute | Default | Purpose |
+|---|---|---|
+| `skills` | `null` | Selector — `null` exposes none, `"-all"` exposes all, list of names enables specific skills |
+| `denied_skills` | `[]` | Subtractive deny list applied after `skills` |
+| `skills_source` | `"both"` | Where to discover bundles: `builtin`, `app`, `both`, or `none` |
+| `enable_skill_helper_tools` | `true` | Expose `skill_list`, `skill_search`, `read_skill` to the engine |
+| `skill_index_inline_max_skills` | `5` | Cap on skills inlined into the system prompt; above this the index is search-only |
+
+#### Routing posture + canned response
+
+| Attribute | Default | Purpose |
+|---|---|---|
+| `enable_canned_response` | `true` | Allow router to emit a brief lead-in (max words below) before deferring to the engine |
+| `canned_response_max_words` | `15` | Word limit for the router's canned reply |
+| `skip_canned_for_intents` | `[CONVERSATIONAL, UNCLEAR, INTERACTIVE]` | Intents that bypass the canned reply |
+| `converse_enabled` | `true` | Allow the conversational gate to short-circuit when no skill is needed |
+| `converse_context_limit` | `2` | History depth used by the conversational gate |
+| `converse_persona_prompt` | (built-in default) | Prompt fragment forwarded to PersonaAction's brief reply |
+| `response_mode` | `"publish"` | Delivery mode — `publish` streams via the response bus, `respond` writes a single final message |
+| `degenerate_response_max_chars` | `25` | Below-threshold replies trigger the engine to retry/reroute |
+| `enable_accumulation` | `true` | Carry deferred routing context across walker revisits |
+| `history_limit` | `3` | Engine system-prompt context depth |
+
+#### Hygiene + security
+
+| Attribute | Default | Purpose |
+|---|---|---|
+| `block_raw_tool_invocation` | `false` | Append the security block telling the model that user text is content, never a tool dispatch instruction |
+| `strict_grounding` | `true` | Require all factual claims to be grounded in tool output / KB |
+| `router_use_cockpit_search` | `false` | Allow the router to call `cockpit_search`; opt-in because of latency cost |
+
+#### Streaming + reasoning
+
+| Attribute | Default | Purpose |
+|---|---|---|
+| `stream_internal_progress` | `true` | Single switch for thoughts, reasoning chunks, and tool-progress badges |
+| `reasoning_budget_tokens` | `0` | Provider reasoning budget (Anthropic thinking token allowance, etc.) |
+| `reasoning_enabled` | `null` | Force reasoning on/off; `null` lets the provider decide |
+| `reasoning_effort` | `null` | Provider reasoning-effort hint (`minimal` / `low` / `medium` / `high`) |
+| `reasoning_extra` | `null` | Provider-native escape hatch passed through unchanged |
+
+#### Tools surface
+
+| Attribute | Default | Purpose |
+|---|---|---|
+| `enable_artifact_tools` | `true` | Expose artifact CRUD tools (artifact_*) |
+| `enable_cockpit_search` | `true` | Expose `cockpit_search` to the engine |
+| `tool_tier` | `"standard"` | Trim rarely-used harness tools — `minimal`, `standard`, or `full` |
+| `tool_servers` | `[]` | Allowlist of MCP servers to expose to the engine; empty = all enabled |
+
+#### Memory + tasks
+
+| Attribute | Default | Purpose |
+|---|---|---|
+| `preload_user_memory` | `true` | Inject `User.memory` into the system prompt as a "What I remember about you" block |
+| `user_memory_max_chars` | `4096` | Cap on the preloaded memory block |
+| `auto_track_tasks` | `true` | Auto-create a single trace Task per run for observability |
+| `plan_first` | `true` | Inject task-planning instructions encouraging `task_create_plan` for multi-step requests |
+| `max_task_plan_steps` | `50` | Upper bound enforced on plans created by the engine |
+
+#### Action identity (jvspatial-level)
+
+| Attribute | Default | Purpose |
+|---|---|---|
+| `weight` | `-200` | Execution weight — runs first among InteractActions |
+| `description` | (cockpit blurb) | Human-readable description shown in introspection
 
 ---
 
