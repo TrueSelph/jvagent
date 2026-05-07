@@ -22,11 +22,12 @@ class GenericEmbeddingModelAction(EmbeddingModelAction):
     Useful for integrating with custom embedding services or OpenAI-compatible APIs.
 
     Configuration:
-        api_key: API key for authentication
         api_endpoint: Base API endpoint URL
         model: Model identifier
         embedding_dimensions: Expected dimensions (0 = auto-detect)
         api_format: API format - "openai", "huggingface", or "generic"
+        api_key_env: Environment variable name holding the bearer token
+            (default: ``GENERIC_EMBEDDING_API_KEY``).
         request_path: API path (defaults based on format)
         request_key: Key for text in request payload (defaults based on format)
         response_path: JSON path to embedding in response (defaults based on format)
@@ -40,6 +41,10 @@ class GenericEmbeddingModelAction(EmbeddingModelAction):
     api_format: str = attribute(
         default="openai",
         description="API format: 'openai', 'huggingface', or 'generic'",
+    )
+    api_key_env: str = attribute(
+        default="GENERIC_EMBEDDING_API_KEY",
+        description="Environment variable holding the bearer token for this endpoint",
     )
     provider: str = attribute(default="generic", description="Provider name")
     request_path: str = attribute(
@@ -63,10 +68,12 @@ class GenericEmbeddingModelAction(EmbeddingModelAction):
         """
         await super().on_register()
 
-        # Validate API key
-        if not self.api_key:
+        # Validate API key (env-only)
+        if not self.api_key_from_context(self.api_key_env):
             logger.warning(
-                f"Generic embedding action {self.label} has no API key configured"
+                "Generic embedding action %s has no API key in env (%s)",
+                self.label,
+                self.api_key_env,
             )
 
     def _get_request_path(self) -> str:
@@ -147,11 +154,12 @@ class GenericEmbeddingModelAction(EmbeddingModelAction):
         url = f"{self.api_endpoint.rstrip('/')}{path}"
 
         try:
+            api_key = self.api_key_from_context(self.api_key_env)
             response = await self._http_client.post(  # type: ignore[union-attr]
                 url,
                 json=payload,
                 headers={
-                    "Authorization": f"Bearer {self.api_key}",
+                    "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
             )

@@ -47,7 +47,8 @@ def _success_chat_response(content: str = "hi") -> Dict[str, Any]:
 
 
 @pytest.mark.asyncio
-async def test_reasoning_model_payload():
+async def test_reasoning_model_payload(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     captured: Dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -56,7 +57,6 @@ async def test_reasoning_model_payload():
 
     transport = httpx.MockTransport(handler)
     action = OpenAILanguageModelAction()
-    action.api_key = "sk-test"
     async with httpx.AsyncClient(transport=transport) as client:
         action._http_client = client
         result = await action.query_messages(
@@ -81,7 +81,8 @@ async def test_reasoning_model_payload():
 
 
 @pytest.mark.asyncio
-async def test_reasoning_effort_from_nested_reasoning_kwarg():
+async def test_reasoning_effort_from_nested_reasoning_kwarg(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     captured: Dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -90,7 +91,6 @@ async def test_reasoning_effort_from_nested_reasoning_kwarg():
 
     transport = httpx.MockTransport(handler)
     action = OpenAILanguageModelAction()
-    action.api_key = "sk-test"
     async with httpx.AsyncClient(transport=transport) as client:
         action._http_client = client
         await action.query_messages(
@@ -107,7 +107,8 @@ async def test_reasoning_effort_from_nested_reasoning_kwarg():
 
 
 @pytest.mark.asyncio
-async def test_non_reasoning_model_unchanged():
+async def test_non_reasoning_model_unchanged(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     captured: Dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -116,7 +117,6 @@ async def test_non_reasoning_model_unchanged():
 
     transport = httpx.MockTransport(handler)
     action = OpenAILanguageModelAction()
-    action.api_key = "sk-test"
     async with httpx.AsyncClient(transport=transport) as client:
         action._http_client = client
         await action.query_messages(
@@ -136,7 +136,8 @@ async def test_non_reasoning_model_unchanged():
 
 
 @pytest.mark.asyncio
-async def test_openrouter_reasoning_preserved():
+async def test_openrouter_reasoning_preserved(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
     captured: Dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -145,7 +146,6 @@ async def test_openrouter_reasoning_preserved():
 
     transport = httpx.MockTransport(handler)
     action = OpenRouterLanguageModelAction()
-    action.api_key = "sk-test"
     async with httpx.AsyncClient(transport=transport) as client:
         action._http_client = client
         await action.query_messages(
@@ -167,7 +167,8 @@ async def test_openrouter_reasoning_preserved():
 
 
 @pytest.mark.asyncio
-async def test_is_reasoning_model_explicit_override():
+async def test_is_reasoning_model_explicit_override(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     captured: Dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -176,7 +177,6 @@ async def test_is_reasoning_model_explicit_override():
 
     transport = httpx.MockTransport(handler)
     action = OpenAILanguageModelAction()
-    action.api_key = "sk-test"
     async with httpx.AsyncClient(transport=transport) as client:
         action._http_client = client
         await action.query_messages(

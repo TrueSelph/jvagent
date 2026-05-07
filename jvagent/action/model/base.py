@@ -11,17 +11,7 @@ import random
 import time
 from abc import ABC
 from datetime import datetime, timezone
-from typing import (
-    Any,
-    Callable,
-    ClassVar,
-    Coroutine,
-    Dict,
-    FrozenSet,
-    List,
-    Optional,
-    TypeVar,
-)
+from typing import Any, Callable, Coroutine, Dict, List, Optional, TypeVar
 
 import httpx
 from jvspatial.core.annotations import attribute
@@ -51,20 +41,11 @@ class BaseModelAction(Action, ABC):
         total_duration: Cumulative query duration in seconds
     """
 
-    _secret_attrs: ClassVar[FrozenSet[str]] = frozenset({"api_key"})
-
-    # Common configuration attributes
+    # Common configuration attributes. API credentials are resolved
+    # exclusively from environment variables via ``api_key_from_context()``;
+    # the legacy ``api_key`` attribute is no longer accepted on Model actions.
     api_endpoint: str = attribute(default="", description="API endpoint URL")
     model: str = attribute(default="", description="Model identifier")
-    api_key: str = attribute(
-        default="",
-        description=(
-            "Optional API credential override from agent.yaml. When empty, "
-            "implementations use provider-specific environment variables. "
-            "Listed in ``_secret_attrs`` so ``export()`` redacts it from "
-            "graph dumps and REST responses."
-        ),
-    )
     timeout: int = attribute(
         default=120, description="Request timeout in seconds", ge=1
     )
@@ -209,10 +190,7 @@ class BaseModelAction(Action, ABC):
                 await asyncio.sleep(delay)
 
     def api_key_from_context(self, *environment_variable_names: str) -> str:
-        """Resolve API key: explicit ``api_key`` attribute, then env vars in order."""
-        configured = (self.api_key or "").strip()
-        if configured:
-            return configured
+        """Resolve an API key from the first matching environment variable."""
         if not environment_variable_names:
             return ""
         from jvspatial.env import env

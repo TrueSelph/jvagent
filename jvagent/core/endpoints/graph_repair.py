@@ -19,29 +19,72 @@ from jvagent.core.graph_repair import repair_agent_graph
     tags=["App"],
     response=success_response(
         data={
-            "memory_repair_agents": ResponseField(field_type=int, description="Agents whose memory was repaired"),
-            "orphaned_interactions_deleted": ResponseField(field_type=int, description="Orphan interactions deleted"),
-            "orphaned_users_reconnected": ResponseField(field_type=int, description="Orphan users reconnected"),
-            "dual_edges_removed": ResponseField(field_type=int, description="Duplicate chain edges removed"),
-            "conversation_first_edges_restored": ResponseField(field_type=int, description="Conv→first-interaction edges restored"),
-            "conversation_branch_edges_removed": ResponseField(field_type=int, description="Conv→interaction branch edges removed"),
-            "dead_edges_removed": ResponseField(field_type=int, description="Dead edges removed"),
-            "orphaned_nodes_reattached": ResponseField(field_type=int, description="Orphan nodes reattached"),
-            "orphaned_nodes_deleted": ResponseField(field_type=int, description="Orphan nodes deleted"),
-            "node_edge_ids_synced": ResponseField(field_type=int, description="Nodes with edge_ids synced"),
-            "duplicate_edges_removed": ResponseField(field_type=int, description="Duplicate edges removed"),
-            "interactions_pruned": ResponseField(field_type=int, description="Interactions removed by rolling-window prune"),
+            "memory_repair_agents": ResponseField(
+                field_type=int, description="Agents whose memory was repaired"
+            ),
+            "orphaned_interactions_deleted": ResponseField(
+                field_type=int, description="Orphan interactions deleted"
+            ),
+            "orphaned_users_reconnected": ResponseField(
+                field_type=int, description="Orphan users reconnected"
+            ),
+            "dual_edges_removed": ResponseField(
+                field_type=int, description="Duplicate chain edges removed"
+            ),
+            "conversation_first_edges_restored": ResponseField(
+                field_type=int, description="Conv→first-interaction edges restored"
+            ),
+            "conversation_branch_edges_removed": ResponseField(
+                field_type=int, description="Conv→interaction branch edges removed"
+            ),
+            "dead_edges_removed": ResponseField(
+                field_type=int, description="Dead edges removed"
+            ),
+            "orphaned_nodes_reattached": ResponseField(
+                field_type=int, description="Orphan nodes reattached"
+            ),
+            "orphaned_nodes_deleted": ResponseField(
+                field_type=int, description="Orphan nodes deleted"
+            ),
+            "node_edge_ids_synced": ResponseField(
+                field_type=int, description="Nodes with edge_ids synced"
+            ),
+            "duplicate_edges_removed": ResponseField(
+                field_type=int, description="Duplicate edges removed"
+            ),
+            "interactions_pruned": ResponseField(
+                field_type=int,
+                description="Interactions removed by rolling-window prune",
+            ),
             "message": ResponseField(field_type=str, description="Success message"),
-            "status": ResponseField(field_type=str, description="completed or in_progress"),
-            "phase": ResponseField(field_type=str, description="Current phase when in_progress"),
-            "dry_run": ResponseField(field_type=Optional[bool], description="True when running in dry-run mode", default=None),
-            "started_at": ResponseField(field_type=Optional[str], description="ISO timestamp when session started", default=None),
-            "elapsed_seconds": ResponseField(field_type=Optional[float], description="Wall-clock seconds since started_at", default=None),
+            "status": ResponseField(
+                field_type=str, description="completed or in_progress"
+            ),
+            "phase": ResponseField(
+                field_type=str, description="Current phase when in_progress"
+            ),
+            "dry_run": ResponseField(
+                field_type=Optional[bool],
+                description="True when running in dry-run mode",
+                default=None,
+            ),
+            "started_at": ResponseField(
+                field_type=Optional[str],
+                description="ISO timestamp when session started",
+                default=None,
+            ),
+            "elapsed_seconds": ResponseField(
+                field_type=Optional[float],
+                description="Wall-clock seconds since started_at",
+                default=None,
+            ),
         }
     ),
 )
 async def repair_graph(
-    dry_run: bool = Query(False, description="If True, report issues without making changes"),
+    dry_run: bool = Query(
+        False, description="If True, report issues without making changes"
+    ),
     recent_minutes: Optional[int] = Query(
         None,
         description="Only clean orphan interactions from last N minutes (None = all)",
@@ -72,14 +115,38 @@ async def repair_graph(
     tags=["App"],
     response=success_response(
         data={
-            "status": ResponseField(field_type=str, description="no_app, idle, or active"),
-            "phase": ResponseField(field_type=Optional[str], description="Current phase", default=None),
-            "started_at": ResponseField(field_type=Optional[str], description="ISO timestamp", default=None),
-            "age_seconds": ResponseField(field_type=Optional[float], description="Seconds since updated_at", default=None),
-            "stall_count": ResponseField(field_type=Optional[int], description="Stall counter", default=None),
-            "run_id": ResponseField(field_type=Optional[str], description="Scratch / repair run id", default=None),
-            "scratch_row_count": ResponseField(field_type=Optional[int], description="Total scratch rows for run", default=None),
-            "version": ResponseField(field_type=Optional[str], description="RepairState version", default=None),
+            "status": ResponseField(
+                field_type=str, description="no_app, idle, or active"
+            ),
+            "phase": ResponseField(
+                field_type=Optional[str], description="Current phase", default=None
+            ),
+            "started_at": ResponseField(
+                field_type=Optional[str], description="ISO timestamp", default=None
+            ),
+            "age_seconds": ResponseField(
+                field_type=Optional[float],
+                description="Seconds since updated_at",
+                default=None,
+            ),
+            "stall_count": ResponseField(
+                field_type=Optional[int], description="Stall counter", default=None
+            ),
+            "run_id": ResponseField(
+                field_type=Optional[str],
+                description="Scratch / repair run id",
+                default=None,
+            ),
+            "scratch_row_count": ResponseField(
+                field_type=Optional[int],
+                description="Total scratch rows for run",
+                default=None,
+            ),
+            "version": ResponseField(
+                field_type=Optional[str],
+                description="RepairState version",
+                default=None,
+            ),
         }
     ),
 )
@@ -137,7 +204,9 @@ async def graph_repair_state() -> Dict[str, Any]:
     response=success_response(
         data={
             "status": ResponseField(field_type=str, description="no_app or aborted"),
-            "removed": ResponseField(field_type=int, description="RepairState records removed"),
+            "removed": ResponseField(
+                field_type=int, description="RepairState records removed"
+            ),
             "scratch_runs_dropped": ResponseField(
                 field_type=Optional[int],
                 description="Scratch runs dropped (when status is aborted)",

@@ -21,7 +21,7 @@ class HuggingFaceEmbeddingModelAction(EmbeddingModelAction):
     Supports sentence-transformers and other embedding models.
 
     Configuration:
-        api_key: HuggingFace API key (from environment or config)
+        HUGGINGFACE_API_KEY (env): HuggingFace API key. Falls back to HF_API_KEY.
         api_endpoint: API endpoint (defaults to https://api-inference.huggingface.co)
         model: Model identifier (e.g., 'sentence-transformers/all-MiniLM-L6-v2')
         embedding_dimensions: Expected dimensions (0 = auto-detect)
@@ -60,10 +60,12 @@ class HuggingFaceEmbeddingModelAction(EmbeddingModelAction):
         """
         await super().on_register()
 
-        # Validate API key
-        if not self.api_key:
+        # Validate API key (env-only)
+        if not self.api_key_from_context("HUGGINGFACE_API_KEY", "HF_API_KEY"):
             logger.warning(
-                f"HuggingFace embedding action {self.label} has no API key configured"
+                "HuggingFace embedding action %s has no API key in env "
+                "(HUGGINGFACE_API_KEY / HF_API_KEY)",
+                self.label,
             )
 
         # Auto-detect dimensions from model if not set
@@ -85,11 +87,12 @@ class HuggingFaceEmbeddingModelAction(EmbeddingModelAction):
         payload = {"inputs": text}
 
         try:
+            api_key = self.api_key_from_context("HUGGINGFACE_API_KEY", "HF_API_KEY")
             response = await self._http_client.post(  # type: ignore[union-attr]
                 f"{self.api_endpoint}/pipeline/feature-extraction/{self.model}",
                 json=payload,
                 headers={
-                    "Authorization": f"Bearer {self.api_key}",
+                    "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
             )

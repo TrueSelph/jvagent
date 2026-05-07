@@ -22,7 +22,7 @@ class OpenRouterEmbeddingModelAction(EmbeddingModelAction):
     OpenAI-compatible. Supports OpenAI embedding models through OpenRouter.
 
     Configuration:
-        api_key: OpenRouter API key (from environment or config)
+        OPENROUTER_API_KEY (env): OpenRouter API key. Falls back to OPENAI_API_KEY.
         api_endpoint: OpenRouter API endpoint (defaults to https://openrouter.ai/api/v1)
         model: Model identifier (e.g., 'openai/text-embedding-3-small')
         embedding_dimensions: Expected dimensions (0 = auto-detect)
@@ -59,10 +59,12 @@ class OpenRouterEmbeddingModelAction(EmbeddingModelAction):
         """
         await super().on_register()
 
-        # Validate API key
-        if not self.api_key:
+        # Validate API key (env-only)
+        if not self.api_key_from_context("OPENROUTER_API_KEY", "OPENAI_API_KEY"):
             logger.warning(
-                f"OpenRouter embedding action {self.label} has no API key configured"
+                "OpenRouter embedding action %s has no API key in env "
+                "(OPENROUTER_API_KEY / OPENAI_API_KEY)",
+                self.label,
             )
 
     async def _embed(self, text: str) -> List[float]:
@@ -87,8 +89,9 @@ class OpenRouterEmbeddingModelAction(EmbeddingModelAction):
             payload["dimensions"] = self.embedding_dimensions
 
         # Build headers
+        api_key = self.api_key_from_context("OPENROUTER_API_KEY", "OPENAI_API_KEY")
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
 

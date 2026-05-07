@@ -168,7 +168,9 @@ async def delete_agent(agent_id: str) -> Dict[str, Any]:
                 field_type=List[Dict[str, Any]],
                 description="List of agents",
             ),
-            "total": ResponseField(field_type=int, description="Total number of agents"),
+            "total": ResponseField(
+                field_type=int, description="Total number of agents"
+            ),
             "page": ResponseField(field_type=int, description="Current page number"),
             "per_page": ResponseField(
                 field_type=int, description="Number of agents per page"

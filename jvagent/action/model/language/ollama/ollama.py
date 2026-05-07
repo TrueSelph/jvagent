@@ -62,10 +62,6 @@ class OllamaLanguageModelAction(LanguageModelAction):
             "may also be set to the docs-style API base ending in /api"
         ),
     )
-    api_key: str = attribute(
-        default="",
-        description="Optional Ollama API key for hosted/cloud deployments",
-    )
     model: str = attribute(default="llama3.1", description="Ollama model identifier")
     provider: str = attribute(default="ollama", description="Provider name")
     reasoning_enabled: Optional[bool] = attribute(
@@ -94,12 +90,13 @@ class OllamaLanguageModelAction(LanguageModelAction):
     def _build_headers(self) -> Dict[str, str]:
         """Build request headers.
 
-        Local Ollama generally does not require auth.
-        Hosted/cloud Ollama deployments may require bearer auth.
+        Local Ollama generally does not require auth. Hosted/cloud Ollama
+        deployments may require bearer auth via ``OLLAMA_API_KEY``.
         """
         headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        api_key = self.api_key_from_context("OLLAMA_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         return headers
 
     def _extract_images(self, content: Any) -> tuple[str, List[str]]:

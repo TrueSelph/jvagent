@@ -259,13 +259,12 @@ async def test_anthropic_lm_query_sync_normalizes_openai_tool_messages():
     assert payload_messages[2]["content"][0]["type"] == "tool_result"
 
 
-def test_anthropic_headers_use_api_key_attribute(monkeypatch):
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+def test_anthropic_headers_use_env_api_key(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "env-token")
     action = AnthropicLanguageModelAction()
-    action.api_key = "attr-token"
 
     headers = action._headers()
-    assert headers["x-api-key"] == "attr-token"
+    assert headers["x-api-key"] == "env-token"
 
 
 @pytest.mark.asyncio
