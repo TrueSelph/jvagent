@@ -16,7 +16,9 @@ from jvagent.action.cockpit.tools.memory import _build_memory_tools
 
 
 def _unwrap(result) -> str:
-    return result if isinstance(result, str) else getattr(result, "content", str(result))
+    return (
+        result if isinstance(result, str) else getattr(result, "content", str(result))
+    )
 
 
 def _wire_user_scope(cockpit_ctx) -> MagicMock:

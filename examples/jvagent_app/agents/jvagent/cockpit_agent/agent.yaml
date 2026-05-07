@@ -37,10 +37,10 @@ actions:
       enabled: true
       router_model: gpt-4o-mini
       router_model_action_type: OpenAILanguageModelAction
-      # model_action_type: OllamaLanguageModelAction
-      # model: deepseek-v4-flash:cloud
-      model_action_type: OpenAILanguageModelAction
-      model: gpt-4.1
+      model_action_type: OllamaLanguageModelAction
+      model: glm-5.1:cloud
+      # model_action_type: OpenAILanguageModelAction
+      # model: gpt-4.1
       skills:
         - pageindex_search
         - pageindex_docs
@@ -49,7 +49,9 @@ actions:
         - filesystem
       skills_source: both
       max_iterations: 25
-      strict_grounding: true
+      stream_internal_progress: true
+      block_raw_tool_invocation: false
+      history_limit: 5
       response_mode: respond
 
   # ── Ollama Language Model (agentic loop) ──
