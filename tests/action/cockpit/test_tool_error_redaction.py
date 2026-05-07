@@ -27,7 +27,9 @@ async def test_all_errors_short_circuit_emits_thought_not_reply(
     cockpit_ctx.model_action = ScriptedModelAction(
         [
             make_lm_result(
-                tool_calls=[make_tool_call("memory_set", {"key": "name", "value": "Eldon"})]
+                tool_calls=[
+                    make_tool_call("memory_set", {"key": "name", "value": "Eldon"})
+                ]
             ),
         ]
     )
@@ -38,7 +40,9 @@ async def test_all_errors_short_circuit_emits_thought_not_reply(
     # The user-facing reply must be neutral — no "Tool execution failed",
     # no tool name, no "all tools returned errors".
     reply = (step_result.final_response or "").lower()
-    assert "tool" not in reply, f"reply leaked tool language: {step_result.final_response!r}"
+    assert (
+        "tool" not in reply
+    ), f"reply leaked tool language: {step_result.final_response!r}"
     assert "memory_set" not in reply
     assert "error" not in reply
     assert "fail" not in reply
@@ -47,9 +51,7 @@ async def test_all_errors_short_circuit_emits_thought_not_reply(
 
     # The per-tool detail must have been published as a thought.
     publish_calls = cockpit_ctx.response_bus.publish.await_args_list
-    thought_calls = [
-        c for c in publish_calls if c.kwargs.get("category") == "thought"
-    ]
+    thought_calls = [c for c in publish_calls if c.kwargs.get("category") == "thought"]
     assert thought_calls, "expected at least one category=thought publish"
     tool_error_thoughts = [
         c for c in thought_calls if c.kwargs.get("thought_type") == "tool_error"
@@ -77,8 +79,6 @@ async def test_all_errors_short_circuit_skips_thought_when_streaming_off(
 
     publish_calls = cockpit_ctx.response_bus.publish.await_args_list
     tool_error_thoughts = [
-        c
-        for c in publish_calls
-        if c.kwargs.get("thought_type") == "tool_error"
+        c for c in publish_calls if c.kwargs.get("thought_type") == "tool_error"
     ]
     assert not tool_error_thoughts, "thought must be suppressed when streaming off"

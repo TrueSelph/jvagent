@@ -12,7 +12,9 @@ from jvagent.action.cockpit.tools.identity import _build_identity_tools
 
 
 def _unwrap(result) -> str:
-    return result if isinstance(result, str) else getattr(result, "content", str(result))
+    return (
+        result if isinstance(result, str) else getattr(result, "content", str(result))
+    )
 
 
 # ---------------------------------------------------------------------------

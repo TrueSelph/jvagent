@@ -210,13 +210,22 @@ def _build_memory_tools(ctx: CockpitContext) -> List[Tool]:
     # ------------------------------------------------------------------
 
     async def _set(
-        key: str,
-        content: str,
+        key: str = "",
+        content: Optional[str] = None,
         scope: str = SCOPE_USER,
         tags: Any = None,
+        # ``value`` is accepted as an alias for ``content`` because models
+        # frequently mirror ``memory_set_preference``'s parameter name when
+        # writing to ``memory_set``. Either is accepted; ``content`` wins
+        # when both are provided.
+        value: Optional[str] = None,
+        **_extra: Any,
     ) -> str:
         if not key or not str(key).strip():
             return "Error: 'key' is required."
+        body_source = content if content is not None else value
+        if body_source is None:
+            return "Error: 'content' (or 'value') is required."
         s = (scope or SCOPE_USER).strip().lower()
         if s not in (SCOPE_USER, SCOPE_CONVERSATION):
             return f"Error: scope must be 'user' or 'conversation'; got '{scope}'."
@@ -224,7 +233,7 @@ def _build_memory_tools(ctx: CockpitContext) -> List[Tool]:
         if not views:
             return f"Error: scope '{s}' is unavailable in this run."
         scope_label, node, mem, tag_map = views[0]
-        body = _ensure_str(content)
+        body = _ensure_str(body_source)
         mem[str(key).strip()] = body
         tag_list = _normalize_tags(tags)
         if tag_list:
@@ -260,13 +269,19 @@ def _build_memory_tools(ctx: CockpitContext) -> List[Tool]:
         return f"Memory '{key}' not found in scope '{scope}'."
 
     async def _append(
-        key: str,
-        content: str,
+        key: str = "",
+        content: Optional[str] = None,
         scope: str = SCOPE_USER,
         separator: str = "\n\n",
+        # ``value`` accepted as alias for ``content`` (see ``_set`` for rationale).
+        value: Optional[str] = None,
+        **_extra: Any,
     ) -> str:
         if not key or not str(key).strip():
             return "Error: 'key' is required."
+        addition_source = content if content is not None else value
+        if addition_source is None:
+            return "Error: 'content' (or 'value') is required."
         s = (scope or SCOPE_USER).strip().lower()
         if s not in (SCOPE_USER, SCOPE_CONVERSATION):
             return f"Error: scope must be 'user' or 'conversation'; got '{scope}'."
@@ -276,7 +291,7 @@ def _build_memory_tools(ctx: CockpitContext) -> List[Tool]:
         scope_label, node, mem, _tags = views[0]
         target = str(key).strip()
         existing = mem.get(target, "")
-        addition = _ensure_str(content)
+        addition = _ensure_str(addition_source)
         new_body = (existing + separator + addition) if existing else addition
         mem[target] = new_body
         try:
@@ -447,22 +462,24 @@ def _build_memory_tools(ctx: CockpitContext) -> List[Tool]:
         Tool(
             name="memory_set",
             description=(
-                "Create or overwrite a memory entry under a key. Values are "
+                "Create or overwrite a memory entry under a key. The body is "
                 "markdown — write natural prose. Choose scope deliberately: "
                 "'user' for stable facts about the human (cross-session); "
-                "'conversation' for working notes that should persist only "
-                "within this session."
+                "'conversation' for working notes that persist only within "
+                "this session. Pass the body as ``content`` (canonical) — "
+                "``value`` is also accepted as an alias for compatibility "
+                "with memory_set_preference."
             ),
             parameters_schema={
                 "type": "object",
                 "properties": {
                     "key": {
                         "type": "string",
-                        "description": "Stable identifier for this entry (e.g. 'profile', 'project_alpha_notes').",
+                        "description": "Stable identifier for this entry (e.g. 'name', 'profile', 'project_alpha_notes').",
                     },
                     "content": {
                         "type": "string",
-                        "description": "Markdown body for this memory entry.",
+                        "description": "Markdown body for this memory entry. (Canonical name; ``value`` is accepted as alias.)",
                     },
                     "scope": {
                         "type": "string",

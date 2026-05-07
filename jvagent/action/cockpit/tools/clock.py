@@ -38,9 +38,7 @@ def _build_clock_tools(ctx: CockpitContext) -> List[Tool]:
             str(now.tzinfo) if now.tzinfo else "naive"
         )
         return (
-            f"{now.isoformat()} "
-            f"(weekday={now.strftime('%A')}, "
-            f"timezone={tz})"
+            f"{now.isoformat()} " f"(weekday={now.strftime('%A')}, " f"timezone={tz})"
         )
 
     return [

@@ -128,8 +128,8 @@ class CockpitInteractAction(InteractAction):
     model_max_tokens: int = attribute(default=8192)
 
     reasoning_budget_tokens: int = attribute(default=0)
-    reasoning_enabled: Optional[bool] = attribute(default=None)
-    reasoning_effort: Optional[str] = attribute(default=None)
+    reasoning_enabled: Optional[bool] = attribute(default=True)
+    reasoning_effort: Optional[str] = attribute(default="medium")
     reasoning_extra: Optional[Dict[str, Any]] = attribute(default=None)
 
     # Single switch for internal-progress streaming
