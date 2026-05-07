@@ -8,6 +8,11 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from jvagent.action.cockpit.catalog.prompts import (
+    SKILL_INDEX_ENTRY_TEMPLATE,
+    SKILL_INDEX_INTRO,
+    SKILL_INDEX_SEARCH_MODE_INTRO,
+)
 from jvagent.core.app_context import get_app_root
 from jvagent.scaffold.skill_resolve import (
     apply_skill_selector,
@@ -17,53 +22,6 @@ from jvagent.scaffold.skill_resolve import (
 )
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Skill index prompt templates
-# ---------------------------------------------------------------------------
-
-_SKILL_INDEX_INTRO = """You have access to the following Claude-style skill bundles.
-Each skill is a specialized workflow with dedicated tools and an SOP.
-
-When to use a skill:
-- Call `read_skill` with the exact `skill_name` when the request clearly matches the skill's scope.
-
-When NOT to use a skill:
-- If the request is general conversation, can be answered without a skill workflow,
-  or does not match any skill's scope, answer directly without calling `read_skill`.
-- Do not activate a skill "just in case."
-
-Multi-skill orchestration:
-- Some requests span multiple skills (e.g., "review this code AND search for CVEs").
-- If you identify a multi-skill task, plan the sequence, then activate skills ONE AT A TIME.
-- Complete each skill's workflow before activating the next.
-- Carry forward relevant results (file paths, IDs, findings) between skills.
-
-Disambiguation:
-- If multiple skills appear relevant, pick the one whose tools and scope most directly match intent.
-- Prefer activating only one skill per interaction unless multiple are clearly needed.
-
-Available skills:"""
-
-_SKILL_INDEX_SEARCH_MODE_INTRO = """You have access to {n_skills} Claude-style skill bundles
-(specialized workflows with dedicated tools and an SOP each).
-
-The full per-skill index (name, description, tags) is not listed here to keep the system
-prompt small. Before choosing a skill:
-
-- Call `skill_search` with a short query derived from the user's request (and optional
-  `plan_skills` if the task may span multiple skills), or `list_skills` to see the whole
-  local catalog.
-- Then call `read_skill` with the exact `skill_name` for the SOP and tool rules.
-
-When NOT to use a skill: general conversation, or requests that do not match any
-skill's scope—answer directly without `read_skill`. Do not activate a skill "just in case."
-For multi-skill work, activate skills ONE AT A TIME and complete each workflow before
-the next."""
-
-_SKILL_INDEX_ENTRY_TEMPLATE = (
-    "- {name}: {description}{tag_suffix}{requires_suffix}{tools_suffix}"
-)
 
 # TTL for skill discovery cache (seconds)
 _SKILL_DISCOVERY_CACHE_TTL = 60
@@ -125,7 +83,7 @@ class SkillCatalog:
         )
         tool_count = len(skill_data.get("tool_files", []) or [])
         tools_suffix = f" | tools={tool_count}"
-        return _SKILL_INDEX_ENTRY_TEMPLATE.format(
+        return SKILL_INDEX_ENTRY_TEMPLATE.format(
             name=skill_name,
             description=description,
             tag_suffix=tag_suffix,
@@ -142,14 +100,14 @@ class SkillCatalog:
 
     def render_system_prompt_section(self) -> str:
         """Build the skill index section for the system prompt."""
-        skill_index = [_SKILL_INDEX_INTRO]
+        skill_index = [SKILL_INDEX_INTRO]
         for s_name, s_data in self._skills.items():
             skill_index.append(self.format_index_entry(s_name, s_data))
         return "\n".join(skill_index)
 
     def render_search_mode_system_prompt_section(self) -> str:
         """Compact system prompt section when the catalog is large."""
-        return _SKILL_INDEX_SEARCH_MODE_INTRO.format(n_skills=len(self._skills))
+        return SKILL_INDEX_SEARCH_MODE_INTRO.format(n_skills=len(self._skills))
 
     # ------------------------------------------------------------------
     # Response mode overrides
