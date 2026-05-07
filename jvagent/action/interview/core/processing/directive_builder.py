@@ -60,7 +60,35 @@ class DirectiveBuilder:
         owner_action: str,
         data: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Start active interview task via conversation task store."""
+        """Start (or adopt) the active interview task for this owner_action.
+
+        Deduplication: if an existing active task with the same
+        ``owner_action`` is already on the conversation, adopt it rather than
+        creating a new one. This prevents the conversation task list from
+        accumulating one entry per interaction touch (which is what produced
+        the duplicate-task traces).
+
+        When an existing active task is found, its ``data`` block is merged
+        with the incoming ``data`` — newer values (current interview state,
+        for instance) win — and the task is persisted. The handle's
+        ``description`` / ``title`` are NOT overwritten so the original
+        registration text stays stable across the flow.
+        """
+        existing = self._find_existing_active_task(visitor, owner_action)
+        if existing is not None:
+            # Refresh state metadata so the router sees the latest interview
+            # state (active → review → ...). Other data fields are preserved.
+            if isinstance(data, dict) and data:
+                try:
+                    await existing.update(**data)
+                except Exception as exc:
+                    logger.debug(
+                        "DirectiveBuilder: failed to refresh task data: %s",
+                        exc,
+                    )
+            self._task_id = existing.id
+            return
+
         handle = await visitor.tasks.create(
             title=description,
             description=description,
@@ -70,6 +98,21 @@ class DirectiveBuilder:
         )
         await handle.start()
         self._task_id = handle.id
+
+    @staticmethod
+    def _find_existing_active_task(
+        visitor: "InteractWalker", owner_action: str
+    ) -> Optional[Any]:
+        """Return the first active task matching ``owner_action``, or None."""
+        try:
+            store = visitor.tasks
+        except Exception:
+            return None
+        try:
+            existing = store.list(status="active", owner_action=owner_action)
+        except Exception:
+            return None
+        return existing[0] if existing else None
 
     async def _update_task_status(
         self,

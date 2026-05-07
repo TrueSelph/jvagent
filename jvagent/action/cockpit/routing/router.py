@@ -195,6 +195,8 @@ class CockpitRouter:
             except Exception as exc:
                 logger.debug("CockpitRouter: cockpit_search enrich failed: %s", exc)
 
+        active_tasks_section = self._build_active_tasks_section()
+
         routing_user_template = getattr(
             self._action, "routing_user_prompt_template", ROUTING_USER_PROMPT_TEMPLATE
         )
@@ -202,7 +204,7 @@ class CockpitRouter:
             utterance=interaction.utterance or "",
             skills_json=skills_json,
             interact_actions_json=interact_actions_json,
-            active_tasks_section="",
+            active_tasks_section=active_tasks_section,
             history_section=history_section,
             prior_fragments_section="",
             entity_field="",
@@ -346,6 +348,75 @@ class CockpitRouter:
             return f' (Tonally match the agent persona: "{tag}".)'
         except Exception:
             return ""
+
+    def _build_active_tasks_section(self) -> str:
+        """Render active tasks on the conversation for the routing prompt.
+
+        Surfaces every task with status ``active`` on the current conversation,
+        grouped by ``owner_action``. The router uses this to:
+
+        - Route fragments (``"Yes"``, ``"No"``, single tokens) back to the
+          owning interact_action when an interview / multi-step flow is in
+          progress.
+        - Avoid spawning parallel handlers for the same flow type
+          (e.g. don't pick ``FeedbackInterviewInteractAction`` while a
+          ``ReportInterviewInteractAction`` is already active).
+
+        Returns an empty string when there's no visitor / conversation, no
+        TaskStore, or no active tasks — keeps the prompt clean for fresh
+        conversations.
+        """
+        visitor = self._visitor
+        if visitor is None or getattr(visitor, "conversation", None) is None:
+            return ""
+        try:
+            store = visitor.tasks
+        except Exception:
+            return ""
+        try:
+            active = store.list(status="active")
+        except Exception as exc:
+            logger.debug("CockpitRouter: tasks.list failed: %s", exc)
+            return ""
+        if not active:
+            return ""
+
+        # Group by owner_action so the model sees one entry per ongoing flow.
+        # Multiple tasks under the same owner are unusual but can happen
+        # if dedup didn't fire — collapse to one line so the prompt isn't
+        # noisy.
+        seen_owners: Dict[str, Dict[str, Any]] = {}
+        for handle in active:
+            owner = (handle.owner_action or "").strip() or "(unspecified)"
+            if owner in seen_owners:
+                continue
+            seen_owners[owner] = {
+                "id": handle.id,
+                "title": (handle.title or "").strip(),
+                "task_type": handle.task_type or "",
+                "data": handle.data or {},
+            }
+
+        lines = [
+            "ACTIVE TASKS (the user is mid-flow on these — fragments and"
+            " short answers should route back to the owning handler):"
+        ]
+        for owner, info in seen_owners.items():
+            data = info.get("data") or {}
+            state = ""
+            if isinstance(data, dict):
+                state = str(data.get("state") or "").strip()
+            type_label = info.get("task_type") or ""
+            type_part = f" [{type_label}]" if type_label else ""
+            state_part = f" (state: {state})" if state else ""
+            lines.append(f"- owner_action={owner}{type_part}{state_part}")
+
+        lines.append(
+            "Routing rule: if the current message is a fragment / short reply "
+            "(yes/no/value) and an owner_action above matches a listed "
+            "INTERACT ACTION, prefer that owner over starting a parallel one."
+        )
+        return "\n".join(lines) + "\n\n"
 
     async def _build_capability_search_section(self, utterance: str) -> str:
         """Run a unified cockpit_search across skills + interact_actions + tools.

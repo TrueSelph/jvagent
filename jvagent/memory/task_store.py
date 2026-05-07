@@ -376,6 +376,14 @@ class TaskHandle:
     def data(self) -> Dict[str, Any]:
         return self._task.data
 
+    @property
+    def task_type(self) -> str:
+        return self._task.task_type
+
+    @property
+    def owner_action(self) -> Optional[str]:
+        return self._task.owner_action
+
     # --- Task lifecycle ---
 
     async def start(self) -> None:

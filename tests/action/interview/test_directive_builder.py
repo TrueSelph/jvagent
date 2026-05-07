@@ -68,6 +68,8 @@ class TestDirectiveBuilderEventOncePerRun:
         visitor = MagicMock()
         visitor.tasks = MagicMock()
         visitor.tasks.create = AsyncMock(return_value=mock_handle)
+        # No prior active task → list returns empty so create() runs.
+        visitor.tasks.list = MagicMock(return_value=[])
         visitor.add_directive = AsyncMock()
         visitor.interview_session = MagicMock()
         visitor.interview_session.state = InterviewState.ACTIVE
@@ -88,18 +90,30 @@ class TestDirectiveBuilderEventOncePerRun:
         assert visitor.add_directive.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_reset_allows_active_task_on_next_run(self):
-        """After reset_task_tracking, active task is added again."""
+    async def test_reset_allows_active_task_on_next_run_only_when_none_exists(self):
+        """After reset, a NEW active task is created only if none already exists.
+
+        Dedup: when an active task with the same owner_action is still on
+        the conversation, ``_start_active_task`` adopts it instead of
+        creating a duplicate. Without this guard, every new interaction
+        would append another task to the conversation's task list.
+        """
         action = MagicMock()
         action.get_class_name.return_value = "TestInterview"
         action.metadata = {"title": "TestInterview InteractAction"}
         action.description = ""
 
         mock_handle = _make_mock_handle("t-1")
+        existing_handle = _make_mock_handle("t-1")
+        existing_handle.owner_action = "TestInterview"
+        existing_handle.update = AsyncMock()
 
         visitor = MagicMock()
         visitor.tasks = MagicMock()
         visitor.tasks.create = AsyncMock(return_value=mock_handle)
+        # Run 1: no existing active task → create fires.
+        # Run 2: existing active task present → create skipped, adopt instead.
+        visitor.tasks.list = MagicMock(side_effect=[[], [existing_handle]])
         visitor.add_directive = AsyncMock()
         visitor.interview_session = MagicMock()
         visitor.interview_session.state = InterviewState.ACTIVE
@@ -112,7 +126,12 @@ class TestDirectiveBuilderEventOncePerRun:
 
         builder.reset_task_tracking()
         await builder.queue_directive(visitor, "Second run")
-        assert visitor.tasks.create.call_count == 2
+        # Still 1 — second run adopted the existing task instead of creating.
+        assert visitor.tasks.create.call_count == 1
+        # The adopted handle's data was refreshed with the new state metadata.
+        existing_handle.update.assert_awaited()
+        # _task_id now points at the adopted task.
+        assert builder._task_id == "t-1"
 
 
 class TestDirectiveBuilderGenerateCancelledDirective:
