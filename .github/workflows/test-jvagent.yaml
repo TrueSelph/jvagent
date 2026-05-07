@@ -31,10 +31,9 @@ jobs:
                   python -m pip install --force-reinstall --no-deps \
                     "git+https://github.com/TrueSelph/jvspatial.git@dev"
 
-            - name: Record jvspatial version and compound_index signature
+            - name: Record jvspatial version
               run: |
                   python -c "import importlib.metadata as m; print('jvspatial', m.version('jvspatial'))"
-                  python -c "import inspect; from jvspatial.core.annotations import compound_index; print(inspect.signature(compound_index))"
 
             - name: Validate example app YAML
               run: python -m jvagent.cli validate examples/jvagent_app
