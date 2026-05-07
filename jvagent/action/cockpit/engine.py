@@ -270,6 +270,11 @@ class CockpitEngine:
                     f"- {tc.get('function', {}).get('name', '?')}: {getattr(tr, 'content', '')[:200]}"
                     for tc, tr in zip(result.tool_calls, tool_results)
                 )
+                # Emit the per-tool error trace as a transient thought so
+                # operators / observability see the failure detail. The
+                # user-facing reply stays generic — tool-error language
+                # belongs in thoughts, never in a chat bubble.
+                await self._emit_tool_error_thought(error_details)
                 await self._auto_task_finalize(
                     success=False,
                     result_summary="all tool calls in batch errored",
@@ -278,8 +283,8 @@ class CockpitEngine:
                 return CockpitStepResult(
                     status="final_response",
                     final_response=(
-                        f"All tools returned errors:\n{error_details}\n\n"
-                        "Please try a different approach."
+                        "Sorry — I ran into an issue completing that. "
+                        "Could you rephrase or try again?"
                     ),
                     termination_reason=TerminationReason.ERROR,
                     iterations=self._iteration,
@@ -776,6 +781,35 @@ class CockpitEngine:
                 await self._trace_task.fail(reason=reason or result_summary or None)
         except Exception as exc:
             logger.debug("auto-task finalize failed: %s", exc)
+
+    async def _emit_tool_error_thought(self, error_details: str) -> None:
+        """Publish a per-tool error trace as a transient thought.
+
+        Used by the all-errors short-circuit so the operator-facing detail
+        is captured on the response bus without leaking tool internals into
+        the user's chat reply.
+        """
+        ctx = self.ctx
+        if not getattr(ctx.config, "stream_internal_progress", True):
+            return
+        if not ctx.response_bus or not ctx.session_id or not ctx.interaction:
+            return
+        body = (error_details or "").strip()
+        if not body:
+            return
+        await ctx.response_bus.publish(
+            session_id=ctx.session_id,
+            content=f"Tool batch failed:\n{body}",
+            channel=ctx.channel,
+            stream=ctx.stream,
+            interaction_id=ctx.interaction.id,
+            interaction=ctx.interaction,
+            user_id=ctx.user_id,
+            streaming_complete=True,
+            transient=True,
+            category="thought",
+            thought_type="tool_error",
+        )
 
     async def _emit_thinking_thought(self, result: Any) -> None:
         """Publish the model's thinking/reasoning text as a transient thought.

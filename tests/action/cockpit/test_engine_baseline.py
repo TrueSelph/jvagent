@@ -190,7 +190,13 @@ async def test_all_errors_short_circuit(cockpit_ctx, patch_assemble_cockpit_tool
 
     assert result.status == "final_response"
     assert result.termination_reason == TerminationReason.ERROR
-    assert "All tools returned errors" in (result.final_response or "")
+    # Reply must be neutral — never leak tool names or developer-facing
+    # error language. Detailed trace is published as a thought; see
+    # ``test_tool_error_redaction.py`` for that side of the contract.
+    reply_lower = (result.final_response or "").lower()
+    assert "tool" not in reply_lower
+    assert "error" not in reply_lower
+    assert "rephrase" in reply_lower or "try again" in reply_lower
 
 
 # ---------------------------------------------------------------------------

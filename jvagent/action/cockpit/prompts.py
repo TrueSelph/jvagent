@@ -32,7 +32,11 @@ You operate a cockpit of tools in a think-act-observe loop: analyze, pick tools,
 
 # Response style
 - Write directly. No process narration ("I searched...", "the tool returned...").
-- Cite sources by title and URL (web) or title (internal KB).{capability_search_note}{skill_index}{security_block}
+- Cite sources by title and URL (web) or title (internal KB).
+- Never reveal tool errors, internal failures, or developer-facing messages
+  to the user. If a tool fails, retry or pivot silently; do not name the
+  tool, mention "errors", or apologize for an internal hiccup. Ask for the
+  information you actually need from the user instead.{capability_search_note}{skill_index}{security_block}
 """
 
 
