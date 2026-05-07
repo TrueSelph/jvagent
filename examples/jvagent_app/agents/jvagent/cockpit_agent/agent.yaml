@@ -36,8 +36,8 @@ actions:
       enabled: true
       router_model: gpt-4o-mini
       router_model_action_type: OpenAILanguageModelAction
-      model_action_type: OllamaLanguageModelAction
-      model: deepseek-v4-flash:cloud
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4.1
       skills:
         - pageindex_search
         - pageindex_docs
@@ -48,8 +48,28 @@ actions:
       max_iterations: 25
       stream_internal_progress: true
       block_raw_tool_invocation: false
-      history_limit: 5
+      # Router context depth. Smaller → faster routing prompt.
+      history_limit: 3
       response_mode: respond
+      # Latency knobs.
+      # ``enable_router_preclassifier``: smalltalk skips the router LLM entirely.
+      # ``enable_interact_router_cache``: identical utterances within TTL skip the LLM.
+      # ``conversational_fast_path``: empty-route classifications take the
+      # persona-only path instead of running the heavy engine.
+      enable_router_preclassifier: true
+      enable_interact_router_cache: true
+      converse_enabled: true
+      conversational_fast_path: true
+      # Conversational gate context depth. 2 turns is enough for "Hi" /
+      # acknowledgment threading without bloating the persona prompt.
+      converse_context_limit: 2
+      # Directive folded into the persona system prompt on the converse
+      # fast-path. Keeps replies short + closers off so the persona
+      # doesn't tail-trail with "let me know if…" style invitations.
+      converse_persona_prompt: >-
+        Brief, in-character replies. Greetings and smalltalk: natural and short.
+        Keep replies under 30 words unless the user asks for detail.
+        Do not append invitation closers ("let me know if…", "feel free to ask…").
 
   # ── Ollama Language Model (agentic loop) ──
   - action: jvagent/ollama_lm
@@ -127,13 +147,17 @@ actions:
       model_action_type: OpenAILanguageModelAction
       model: gpt-4o-mini
       model_temperature: 0.2
-      model_max_tokens: 4096
+      # Output cap. 1024 is plenty for greetings, smalltalk, and the
+      # synthesis paragraph the engine produces; smaller cap → faster
+      # generation + less time-to-last-token. Raise if you need long
+      # cited research summaries.
+      model_max_tokens: 1024
 
   - action: jvagent/pageindex_action
     context:
       enabled: true
       description: Vectorless RAG — indexes documents and provides search / ingest / management APIs
-      strategy: tree_search
+      strategy: direct
       limit: 10
       node_summary: true
     config:

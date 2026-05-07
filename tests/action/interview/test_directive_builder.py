@@ -217,3 +217,215 @@ class TestDirectiveBuilderGenerateCompletedDirective:
             await builder.generate_completed_directive(session, visitor)
 
         mock_handle.complete.assert_called_once()
+
+
+class TestDirectiveBuilderTaskRemoval:
+    """Test that interview tasks are transitioned + removed on terminal events."""
+
+    @pytest.mark.asyncio
+    async def test_cancel_transitions_and_deletes_task(self):
+        """``generate_cancelled_directive`` transitions task to cancelled then deletes it."""
+        action = MagicMock()
+        action.get_class_name.return_value = "ReportInterviewInteractAction"
+        action.metadata = {"title": "ReportInterviewInteractAction InteractAction"}
+        action.description = ""
+        action.get_cancelled_handler.return_value = None
+        action.get_state_event_message.return_value = "Task cancelled"
+        action.cancellation_message = "OK, cancelled."
+
+        mock_handle = _make_mock_handle("t-1")
+
+        visitor = MagicMock()
+        visitor.add_event = AsyncMock()
+        visitor.add_directive = AsyncMock()
+        visitor.tasks = MagicMock()
+        visitor.tasks.get = MagicMock(return_value=mock_handle)
+        visitor.tasks.list = MagicMock(return_value=[])  # no stragglers
+        visitor.tasks.delete = AsyncMock(return_value=True)
+
+        session = MagicMock()
+        session.interview_type = "default"
+        session.delete = AsyncMock()
+
+        builder = DirectiveBuilder(action)
+        builder._task_id = "t-1"
+
+        with patch(
+            "jvagent.action.interview.core.utils.session_utils.cleanup_session",
+            new_callable=AsyncMock,
+        ):
+            await builder.generate_cancelled_directive(session, visitor)
+
+        mock_handle.cancel.assert_called_once()
+        visitor.tasks.delete.assert_awaited_once_with("t-1")
+        # _task_id cleared so subsequent runs don't try to act on the dead id.
+        assert builder._task_id is None
+
+    @pytest.mark.asyncio
+    async def test_complete_transitions_and_deletes_task(self):
+        """Completion path also deletes the task after transition."""
+        action = MagicMock()
+        action.get_class_name.return_value = "ReportInterviewInteractAction"
+        action.metadata = {"title": "ReportInterviewInteractAction InteractAction"}
+        action.description = ""
+        action.get_completion_handler.return_value = None
+        action.get_state_event_message.return_value = "Task completed"
+        action.completion_message = "Done."
+
+        mock_handle = _make_mock_handle("t-1")
+
+        visitor = MagicMock()
+        visitor.add_event = AsyncMock()
+        visitor.add_directive = AsyncMock()
+        visitor.tasks = MagicMock()
+        visitor.tasks.get = MagicMock(return_value=mock_handle)
+        visitor.tasks.list = MagicMock(return_value=[])
+        visitor.tasks.delete = AsyncMock(return_value=True)
+
+        session = MagicMock()
+        session.interview_type = "default"
+        session.delete = AsyncMock()
+
+        builder = DirectiveBuilder(action)
+        builder._task_id = "t-1"
+
+        with patch(
+            "jvagent.action.interview.core.utils.session_utils.cleanup_session",
+            new_callable=AsyncMock,
+        ):
+            await builder.generate_completed_directive(session, visitor)
+
+        mock_handle.complete.assert_called_once()
+        visitor.tasks.delete.assert_awaited_once_with("t-1")
+        assert builder._task_id is None
+
+    @pytest.mark.asyncio
+    async def test_cancel_sweeps_straggler_active_tasks_for_same_owner(self):
+        """Stale active tasks under the same owner_action all get transitioned + deleted."""
+        action = MagicMock()
+        action.get_class_name.return_value = "ReportInterviewInteractAction"
+        action.metadata = {"title": "ReportInterviewInteractAction InteractAction"}
+        action.description = ""
+        action.get_cancelled_handler.return_value = None
+        action.get_state_event_message.return_value = "Task cancelled"
+        action.cancellation_message = "OK, cancelled."
+
+        primary = _make_mock_handle("t-primary")
+        primary.id = "t-primary"
+        straggler_1 = _make_mock_handle("t-stale-1")
+        straggler_1.id = "t-stale-1"
+        straggler_2 = _make_mock_handle("t-stale-2")
+        straggler_2.id = "t-stale-2"
+
+        visitor = MagicMock()
+        visitor.add_event = AsyncMock()
+        visitor.add_directive = AsyncMock()
+        visitor.tasks = MagicMock()
+        visitor.tasks.get = MagicMock(return_value=primary)
+        # Sweep returns the stragglers (primary is excluded since dedup happens
+        # in the helper).
+        visitor.tasks.list = MagicMock(return_value=[straggler_1, straggler_2])
+        visitor.tasks.delete = AsyncMock(return_value=True)
+
+        session = MagicMock()
+        session.interview_type = "default"
+        session.delete = AsyncMock()
+
+        builder = DirectiveBuilder(action)
+        builder._task_id = "t-primary"
+
+        with patch(
+            "jvagent.action.interview.core.utils.session_utils.cleanup_session",
+            new_callable=AsyncMock,
+        ):
+            await builder.generate_cancelled_directive(session, visitor)
+
+        # Every handle transitioned + deleted.
+        primary.cancel.assert_called_once()
+        straggler_1.cancel.assert_called_once()
+        straggler_2.cancel.assert_called_once()
+        delete_ids = {call.args[0] for call in visitor.tasks.delete.await_args_list}
+        assert delete_ids == {"t-primary", "t-stale-1", "t-stale-2"}
+
+    @pytest.mark.asyncio
+    async def test_failed_transition_preserves_evidence_does_not_delete(self):
+        """If ``handle.cancel()`` raises, the task is NOT deleted — preserve trail."""
+        action = MagicMock()
+        action.get_class_name.return_value = "ReportInterviewInteractAction"
+        action.metadata = {"title": "ReportInterviewInteractAction InteractAction"}
+        action.description = ""
+        action.get_cancelled_handler.return_value = None
+        action.get_state_event_message.return_value = "Task cancelled"
+        action.cancellation_message = "OK, cancelled."
+
+        mock_handle = _make_mock_handle("t-1")
+        # Simulate a transition failure.
+        mock_handle.cancel = AsyncMock(side_effect=RuntimeError("DB error"))
+
+        visitor = MagicMock()
+        visitor.add_event = AsyncMock()
+        visitor.add_directive = AsyncMock()
+        visitor.tasks = MagicMock()
+        visitor.tasks.get = MagicMock(return_value=mock_handle)
+        visitor.tasks.list = MagicMock(return_value=[])
+        visitor.tasks.delete = AsyncMock(return_value=True)
+
+        session = MagicMock()
+        session.interview_type = "default"
+        session.delete = AsyncMock()
+
+        builder = DirectiveBuilder(action)
+        builder._task_id = "t-1"
+
+        with patch(
+            "jvagent.action.interview.core.utils.session_utils.cleanup_session",
+            new_callable=AsyncMock,
+        ):
+            await builder.generate_cancelled_directive(session, visitor)
+
+        # Transition was attempted, then delete was NOT called.
+        mock_handle.cancel.assert_awaited_once()
+        visitor.tasks.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_task_id_but_active_tasks_exist_still_swept(self):
+        """``_task_id`` unset but active tasks for the owner_action exist → still cleaned up.
+
+        Edge case: cancellation arrives before any directive was queued (so
+        ``_task_id`` is None), but a task was created in a previous interaction
+        and remained active. The sweep must still transition + delete it.
+        """
+        action = MagicMock()
+        action.get_class_name.return_value = "ReportInterviewInteractAction"
+        action.metadata = {"title": "ReportInterviewInteractAction InteractAction"}
+        action.description = ""
+        action.get_cancelled_handler.return_value = None
+        action.get_state_event_message.return_value = "Task cancelled"
+        action.cancellation_message = "OK, cancelled."
+
+        leftover = _make_mock_handle("t-leftover")
+        leftover.id = "t-leftover"
+
+        visitor = MagicMock()
+        visitor.add_event = AsyncMock()
+        visitor.add_directive = AsyncMock()
+        visitor.tasks = MagicMock()
+        visitor.tasks.get = MagicMock(return_value=None)
+        visitor.tasks.list = MagicMock(return_value=[leftover])
+        visitor.tasks.delete = AsyncMock(return_value=True)
+
+        session = MagicMock()
+        session.interview_type = "default"
+        session.delete = AsyncMock()
+
+        builder = DirectiveBuilder(action)
+        builder._task_id = None  # No tracked task
+
+        with patch(
+            "jvagent.action.interview.core.utils.session_utils.cleanup_session",
+            new_callable=AsyncMock,
+        ):
+            await builder.generate_cancelled_directive(session, visitor)
+
+        leftover.cancel.assert_called_once()
+        visitor.tasks.delete.assert_awaited_once_with("t-leftover")

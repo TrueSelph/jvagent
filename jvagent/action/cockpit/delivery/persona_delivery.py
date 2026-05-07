@@ -113,7 +113,55 @@ async def deliver_via_persona(
         return
 
     if effective_mode == "respond":
-        # Compose directive for the respond() path.
+        # Converse fast-path: when the caller supplied a directive but no
+        # content (signature of the cockpit conversational gate), bypass the
+        # full ``PersonaAction.respond()`` compose + parameter-injection path
+        # and call ``respond_slim`` with the directive folded into the system
+        # prompt. Saves ~100-300ms of CPU + ~1 DB write before the LLM call,
+        # and shrinks the system prompt the LLM has to encode.
+        if directive and not text:
+            persona = await action.get_action("PersonaAction")
+            if (
+                persona
+                and getattr(persona, "enabled", True)
+                and hasattr(persona, "respond_slim")
+            ):
+                interaction = visitor.interaction
+                history: list = []
+                if use_history and getattr(visitor, "conversation", None) is not None:
+                    try:
+                        raw = await visitor.conversation.get_interaction_history(
+                            limit=max(1, history_limit),
+                            excluded=interaction.id if interaction else None,
+                            with_utterance=True,
+                            with_response=True,
+                            formatted=True,
+                        )
+                        # Normalize to ``[{role, content}, ...]`` strings.
+                        for entry in raw or []:
+                            role = entry.get("role")
+                            ctn = entry.get("content")
+                            if isinstance(ctn, list):
+                                ctn = " ".join(
+                                    p.get("text", "")
+                                    for p in ctn
+                                    if isinstance(p, dict) and p.get("type") == "text"
+                                )
+                            if role and ctn:
+                                history.append({"role": role, "content": ctn})
+                    except Exception:
+                        history = []
+                await persona.respond_slim(
+                    interaction,
+                    visitor,
+                    history=history,
+                    extra_system=directive,
+                )
+                return
+
+        # Default respond path: when content is set OR PersonaAction unavailable,
+        # fall back to ``action.respond()`` so accumulated directives + parameters
+        # on the interaction still get composed by PersonaAction.respond().
         if directive:
             await visitor.add_directive(directive)
         elif text:

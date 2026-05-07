@@ -54,6 +54,40 @@ class CockpitRouter:
             logger.debug("CockpitRouter: already routed, skipping")
             return POSTURE_RESPOND, None
 
+        # Local pre-classifier — cheap heuristic that fires BEFORE any
+        # agent / model resolution. When the utterance is unambiguous
+        # smalltalk and no active task is in flight, we synthesise a
+        # converse-skill route and skip the router LLM call entirely.
+        # See ``preclassifier.py`` for the rules and bucket definitions.
+        if getattr(self._action, "enable_router_preclassifier", True):
+            from jvagent.action.cockpit.routing.preclassifier import maybe_preclassify
+
+            preclassified = maybe_preclassify(
+                visitor,
+                interaction.utterance or "",
+                enabled=True,
+            )
+            if preclassified is not None:
+                interaction.response_posture = preclassified.posture
+                interp = (preclassified.interpretation or "").strip()
+                if interp and not getattr(interaction, "interpretation", ""):
+                    try:
+                        interaction.interpretation = interp
+                    except Exception:
+                        pass
+                try:
+                    await interaction.save()
+                except Exception as exc:
+                    logger.debug(
+                        "CockpitRouter: preclassifier interaction.save failed: %s",
+                        exc,
+                    )
+                logger.debug(
+                    "CockpitRouter: pre-classifier short-circuit (%s) — skipping LLM",
+                    preclassified.raw_response,
+                )
+                return preclassified.posture, preclassified
+
         try:
             agent = await self._action.get_agent()
             conversation = getattr(visitor, "conversation", None)
@@ -160,6 +194,27 @@ class CockpitRouter:
         interaction_history: List[Dict[str, Any]],
         conversation: Any,
     ) -> RoutingResult:
+        # Cache check — skip LLM call when an identical (utterance,
+        # active-task fingerprint) pair was routed within the cache TTL.
+        # Operator-controlled by ``enable_interact_router_cache`` perf knob;
+        # default off. Hits return a re-validated RoutingResult; misses
+        # fall through to the LLM call below and write the result back.
+        cache_enabled = bool(
+            getattr(self._action, "enable_interact_router_cache", False)
+        )
+        cache_key = (
+            self._build_cache_key(interaction, conversation) if cache_enabled else None
+        )
+        if cache_key:
+            cached = await get_interact_router_cache(cache_key, caller_enabled=True)
+            if cached:
+                cached_result = self._restore_cached_routing_result(
+                    cached, skill_descriptors, interact_action_descriptors
+                )
+                if cached_result is not None:
+                    logger.debug("CockpitRouter: cache hit (key=%s…)", cache_key[:12])
+                    return cached_result
+
         model_action = await self._action.get_model_action(
             required=True, purpose="router"
         )
@@ -245,6 +300,17 @@ class CockpitRouter:
                 if converse_name in skill_descriptors:
                     result.actions = [converse_name]
                     break
+
+        # Cache write — store the validated, post-injection result so a
+        # repeat utterance within the TTL window skips the LLM round-trip.
+        if cache_key:
+            try:
+                await set_interact_router_cache(
+                    cache_key, result.to_dict(), caller_enabled=True
+                )
+            except Exception as exc:
+                logger.debug("CockpitRouter: cache write failed: %s", exc)
+
         return result
 
     def _validate_routes(
@@ -348,6 +414,73 @@ class CockpitRouter:
             return f' (Tonally match the agent persona: "{tag}".)'
         except Exception:
             return ""
+
+    def _build_cache_key(self, interaction: Any, conversation: Any) -> Optional[str]:
+        """Build the router cache key for the current routing call.
+
+        Returns None when there's not enough context (no conversation, no
+        utterance) — caller treats None as "skip cache". Active tasks are
+        folded into the fingerprint so a fragment routed when an interview
+        is in flight gets a different key than the same fragment after the
+        interview completes.
+        """
+        if conversation is None:
+            return None
+        utterance = (interaction.utterance or "").strip()
+        if not utterance:
+            return None
+        conv_id = getattr(conversation, "id", "") or ""
+        if not conv_id:
+            return None
+        active_fp = ""
+        try:
+            store = self._visitor.tasks
+            active = store.list(status="active")
+            parts: List[str] = []
+            for handle in active:
+                owner = (handle.owner_action or "").strip()
+                state = ""
+                data = handle.data or {}
+                if isinstance(data, dict):
+                    state = str(data.get("state") or "").strip()
+                if owner:
+                    parts.append(f"{owner}:{state}")
+            active_fp = ",".join(sorted(parts))
+        except Exception:
+            active_fp = ""
+        return interact_router_cache_key(
+            conversation_id=conv_id,
+            utterance=utterance,
+            last_interaction_ids=(),
+            buffer_fingerprint="",
+            active_task_fingerprint=active_fp,
+        )
+
+    def _restore_cached_routing_result(
+        self,
+        cached: Dict[str, Any],
+        skill_descriptors: Dict[str, Dict[str, Any]],
+        interact_action_descriptors: Dict[str, Dict[str, Any]],
+    ) -> Optional[RoutingResult]:
+        """Rebuild a RoutingResult from a cached dict, re-validating routes.
+
+        Re-validation guards against catalog drift between cache write and
+        read (a skill removed from the agent's selector, an interact_action
+        disabled, etc.). Returns None if reconstruction fails — caller
+        falls through to the live LLM path.
+        """
+        try:
+            result = RoutingResult.from_dict(
+                cached, raw_response=cached.get("raw_response", "<cache>")
+            )
+        except Exception as exc:
+            logger.debug("CockpitRouter: cache deserialise failed: %s", exc)
+            return None
+        result.actions = self._validate_routes(result.actions, skill_descriptors)
+        result.interact_actions = self._validate_routes(
+            result.interact_actions, interact_action_descriptors
+        )
+        return result
 
     def _build_active_tasks_section(self) -> str:
         """Render active tasks on the conversation for the routing prompt.

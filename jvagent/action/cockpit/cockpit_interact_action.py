@@ -47,6 +47,12 @@ from jvagent.action.cockpit.registry.access import (
 )
 from jvagent.action.cockpit.registry.shim import CockpitVisitorShim
 from jvagent.action.cockpit.routing.types import POSTURE_RESPOND, RoutingResult
+from jvagent.action.cockpit.session import (
+    CockpitSession,
+    clear_session,
+    get_session,
+    get_session_optional,
+)
 from jvagent.action.interact.base import InteractAction
 
 if TYPE_CHECKING:
@@ -57,18 +63,9 @@ logger = logging.getLogger(__name__)
 
 COCKPIT_DEFAULT_SKILL_MODEL: str = "claude-sonnet-4-20250514"
 
-# Keys in visitor._skill_state for cockpit iteration persistence
-_COCKPIT_STATE_KEY = "cockpit_state"
-_COCKPIT_ENGINE_KEY = "cockpit_engine"
-_COCKPIT_INTERACTION_ID_KEY = "cockpit_interaction_id"
-# Pending routed InteractActions queued by Phase 1 to run AFTER the engine
-# reaches a terminal step. Set in "both" mode (skills + interact_actions).
-_COCKPIT_PENDING_IAS_KEY = "cockpit_pending_interact_actions"
-# Marker that cockpit has been appended to the END of the walker queue to
-# perform a persona delivery after upstream InteractActions finish.
-# Set in "interact_actions only" mode so directives accumulated by IAs
-# are handed to PersonaAction.respond() for the final user-facing response.
-_COCKPIT_FINALIZE_PENDING_KEY = "cockpit_ia_finalize_pending"
+# Cockpit-owned per-run state (engine reference, dispatch flags, etc.)
+# lives on a single ``CockpitSession`` object accessed via ``get_session``.
+# See ``jvagent.action.cockpit.session`` for the field catalog and lifecycle.
 
 
 def _routing_clarification_fallbacks_default() -> List[str]:
@@ -158,6 +155,20 @@ class CockpitInteractAction(InteractAction):
     enable_artifact_tools: bool = attribute(default=True)
     enable_cockpit_search: bool = attribute(default=True)
     tool_tier: str = attribute(default="standard")  # minimal | standard | full
+
+    # Phase 1 latency knobs.
+    # ``enable_router_preclassifier``: cheap local heuristic that fires
+    # before the router LLM call. When the utterance is unambiguous
+    # smalltalk (greeting / thanks / goodbye / pleasantry) and no active
+    # task is in flight, the router synthesises a converse-skill route
+    # and skips the LLM round-trip. See routing/preclassifier.py.
+    # ``enable_interact_router_cache``: opt into the in-process router
+    # cache. Cache keys fold active-task fingerprints so fragments routed
+    # mid-interview don't share keys with the same fragment after the
+    # interview completes. TTL is governed by perf config
+    # ``interact_router_cache_ttl`` (default 45s).
+    enable_router_preclassifier: bool = attribute(default=True)
+    enable_interact_router_cache: bool = attribute(default=False)
 
     # Hygiene flags. Each one is independently tunable; there is no umbrella
     # toggle. ``block_raw_tool_invocation`` defends the engine prompt against
@@ -310,36 +321,32 @@ class CockpitInteractAction(InteractAction):
         )
         visitor._skill_state.setdefault("action", self)
 
+        session = get_session(visitor)
+
         # Finalize-pending revisit (IA-only mode): cockpit was appended to the
         # end of the walk path to publish a persona-shaped response after
         # upstream IAs accumulated their directives. This visit is purely a
         # delivery shim — unrecord so the action trace shows cockpit only
         # once (the meaningful Phase 1 visit), with PersonaAction following
         # naturally as the renderer.
-        if visitor._skill_state.get(_COCKPIT_FINALIZE_PENDING_KEY):
-            visitor._skill_state.pop(_COCKPIT_FINALIZE_PENDING_KEY, None)
+        if session.ia_finalize_pending:
+            session.ia_finalize_pending = False
             await visitor.unrecord_action_execution()
             await self._finalize_via_persona(visitor)
             return
 
-        engine = visitor._skill_state.get(_COCKPIT_ENGINE_KEY)
-
         # Stale-state guard: if the engine is from a different interaction,
-        # clear it so routing runs on the fresh user message.
-        stored_interaction_id = visitor._skill_state.get(_COCKPIT_INTERACTION_ID_KEY)
-        if engine is not None and stored_interaction_id != interaction.id:
+        # reset the session so routing runs on the fresh user message.
+        if session.engine is not None and session.interaction_id != interaction.id:
             logger.debug(
                 "CockpitInteractAction: stale engine from interaction %s, "
                 "current interaction %s — clearing and re-routing",
-                stored_interaction_id,
+                session.interaction_id,
                 interaction.id,
             )
-            visitor._skill_state.pop(_COCKPIT_ENGINE_KEY, None)
-            visitor._skill_state.pop(_COCKPIT_STATE_KEY, None)
-            visitor._skill_state.pop(_COCKPIT_INTERACTION_ID_KEY, None)
-            engine = None
+            session.reset()
 
-        if engine is None:
+        if session.engine is None:
             # Fresh visit: Phase 1 (routing) + Phase 2 setup
             await self._phase_route_and_setup(visitor)
         else:
@@ -428,13 +435,15 @@ class CockpitInteractAction(InteractAction):
             # We then append cockpit to the END of the walk path so it runs once
             # more after the IAs to invoke PersonaAction with the accumulated
             # directives — that's the user-facing response.
+            session = get_session(visitor)
+
             if has_ias and not has_skills:
                 logger.info(
                     "CockpitInteractAction: dispatching to interact_actions=%s "
                     "(skipping engine, scheduling persona finalize)",
                     [a.__class__.__name__ for a in routed_ias],
                 )
-                visitor._skill_state[_COCKPIT_FINALIZE_PENDING_KEY] = True
+                session.ia_finalize_pending = True
                 try:
                     await visitor.append([self])
                 except Exception as exc:
@@ -447,7 +456,7 @@ class CockpitInteractAction(InteractAction):
 
             # both → run engine; on terminal step, the IAs run after.
             if has_ias and has_skills:
-                visitor._skill_state[_COCKPIT_PENDING_IAS_KEY] = routed_ias
+                session.pending_interact_actions = routed_ias
                 logger.info(
                     "CockpitInteractAction: dispatching to engine + queued "
                     "interact_actions=%s",
@@ -467,10 +476,11 @@ class CockpitInteractAction(InteractAction):
 
     async def _phase_continue(self, visitor: InteractWalker) -> None:
         """Revisit: reuse engine instance and run next step."""
-        engine = visitor._skill_state.get(_COCKPIT_ENGINE_KEY)
+        session = get_session(visitor)
+        engine = session.engine
         if engine is None:
             logger.warning("CockpitInteractAction: revisit without engine, skipping")
-            visitor._skill_state.pop(_COCKPIT_STATE_KEY, None)
+            session.debug_state = None
             return
 
         try:
@@ -604,9 +614,10 @@ class CockpitInteractAction(InteractAction):
         engine = CockpitEngine(ctx)
         await engine.initialize()
 
-        # Persist engine instance and interaction ID for revisit detection
-        visitor._skill_state[_COCKPIT_ENGINE_KEY] = engine
-        visitor._skill_state[_COCKPIT_INTERACTION_ID_KEY] = interaction.id
+        # Persist engine instance and interaction ID for revisit detection.
+        session = get_session(visitor)
+        session.engine = engine
+        session.interaction_id = interaction.id
 
         step_result = await engine.step()
         await self._handle_step_result(visitor, engine, step_result)
@@ -622,38 +633,34 @@ class CockpitInteractAction(InteractAction):
         if not interaction:
             return
 
+        session = get_session(visitor)
         status = getattr(step_result, "status", "")
 
         if status == "tool_calls":
             # Model called tools — persist state and revisit
-            visitor._skill_state[_COCKPIT_STATE_KEY] = engine.save_state()
+            session.debug_state = engine.save_state()
             # Check if response_publish set the finalized flag
-            skill_state = visitor._skill_state
-            if skill_state.get("cockpit_finalized"):
+            if session.finalized:
                 # Tool already delivered the response — conclude
-                skill_state.pop(_COCKPIT_STATE_KEY, None)
-                skill_state.pop("cockpit_finalized", None)
+                session.reset()
                 interaction.set_to_executed()
                 return
             # Re-add self to walk path for next iteration
             await visitor.prepend([self])
             return
 
-        # Terminal state: final_response, timeout, budget_exhausted, stuck
-        visitor._skill_state.pop(_COCKPIT_STATE_KEY, None)
-        visitor._skill_state.pop(_COCKPIT_ENGINE_KEY, None)
-        visitor._skill_state.pop(_COCKPIT_INTERACTION_ID_KEY, None)
-        visitor._skill_state.pop("cockpit_finalized", None)
+        # Terminal state: final_response, timeout, budget_exhausted, stuck.
         # Pending IAs are already in the walker queue from Phase 1 curate; the
         # walker visits them automatically after the cockpit revisit chain ends.
-        # We pop the key here for observability hygiene only.
-        pending_ias = visitor._skill_state.pop(_COCKPIT_PENDING_IAS_KEY, None) or []
+        # We log them for observability before resetting the session.
+        pending_ias = list(session.pending_interact_actions)
         if pending_ias:
             logger.info(
                 "CockpitInteractAction: engine done, walker will visit queued "
                 "interact_actions=%s",
                 [a.__class__.__name__ for a in pending_ias],
             )
+        session.reset()
         interaction.set_to_executed()
 
         final_response = getattr(step_result, "final_response", "") or ""
@@ -757,9 +764,7 @@ class CockpitInteractAction(InteractAction):
 
     async def _handle_error(self, visitor: InteractWalker, exc: Exception) -> None:
         """Handle errors during execution."""
-        visitor._skill_state.pop(_COCKPIT_ENGINE_KEY, None)
-        visitor._skill_state.pop(_COCKPIT_STATE_KEY, None)
-        visitor._skill_state.pop(_COCKPIT_INTERACTION_ID_KEY, None)
+        clear_session(visitor)
         interaction = visitor.interaction
         if interaction:
             if not interaction.response:

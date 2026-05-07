@@ -1,29 +1,30 @@
 """Task harness tools for cockpit.
 
 The cockpit engine auto-creates one **trace task** per run (see
-``CockpitEngine._auto_task_start``) and stores its ID on
-``visitor._skill_state["cockpit_trace_task_id"]``. The model's task tools
-below resolve to that shared trace task whenever it exists, so model-authored
-plans live on the same task the engine is auto-recording. This keeps a single
-task per run with both engine observability and model intent in one place.
+``CockpitEngine._auto_task_start``) and stores its ID on the visitor's
+``CockpitSession.trace_task_id``. The model's task tools below resolve to
+that shared trace task whenever it exists, so model-authored plans live
+on the same task the engine is auto-recording. This keeps a single task
+per run with both engine observability and model intent in one place.
 
 Once the model calls ``task_create_plan`` the engine flips
-``cockpit_model_planned=True`` and stops auto-appending iteration steps —
-the model's plan drives from then on.
+``CockpitSession.model_planned=True`` and stops auto-appending iteration
+steps — the model's plan drives from then on.
 """
 
 from typing import Any, List, Optional
 
 from jvagent.action.cockpit.context import CockpitContext
+from jvagent.action.cockpit.session import get_session, get_session_optional
 from jvagent.tooling.tool import Tool
 
 
 def _resolve_trace_task(ctx: CockpitContext) -> Optional[Any]:
     """Return the engine's auto-created trace task, if any."""
-    sk = getattr(ctx.visitor, "_skill_state", None) or {}
-    task_id = sk.get("cockpit_trace_task_id")
-    if not task_id:
+    session = get_session_optional(ctx.visitor)
+    if session is None or not session.trace_task_id:
         return None
+    task_id = session.trace_task_id
     try:
         store = ctx.visitor.tasks
         for task in store.list():
@@ -96,9 +97,7 @@ def _build_task_tools(ctx: CockpitContext) -> List[Tool]:
             # Flip the "model has planned" flag so the engine stops appending
             # iteration steps and instead attaches tool-call detail as
             # sub-events on the in-progress model step.
-            sk = getattr(ctx.visitor, "_skill_state", None)
-            if isinstance(sk, dict):
-                sk["cockpit_model_planned"] = True
+            get_session(ctx.visitor).model_planned = True
             return (
                 f'Plan "{title}" created with {len(steps)} step(s). '
                 "Execute steps one at a time; call task_update_step when each completes. "

@@ -16,15 +16,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from jvagent.action.cockpit.cockpit_interact_action import (
-    _COCKPIT_ENGINE_KEY,
-    _COCKPIT_PENDING_IAS_KEY,
-    CockpitInteractAction,
-)
+from jvagent.action.cockpit.cockpit_interact_action import CockpitInteractAction
 from jvagent.action.cockpit.context import CockpitStepResult
 from jvagent.action.cockpit.contracts import TerminationReason
 from jvagent.action.cockpit.delivery import delegation
 from jvagent.action.cockpit.routing.types import POSTURE_RESPOND, RoutingResult
+from jvagent.action.cockpit.session import get_session, get_session_optional
 from jvagent.action.interact.base import InteractAction
 
 pytestmark = pytest.mark.asyncio
@@ -280,7 +277,7 @@ async def test_phase_route_dispatches_ia_only_skips_engine(monkeypatch):
     visitor.append.assert_awaited()
     args, _ = visitor.append.call_args
     assert args[0] == [action]
-    assert visitor._skill_state.get("cockpit_ia_finalize_pending") is True
+    assert get_session(visitor).ia_finalize_pending is True
 
 
 async def test_phase_route_dispatches_skills_only_runs_engine(monkeypatch):
@@ -311,8 +308,9 @@ async def test_phase_route_dispatches_skills_only_runs_engine(monkeypatch):
     await action._phase_route_and_setup(visitor)
 
     assert start_called["v"] is True
-    # No pending IAs queued in skills-only mode
-    assert _COCKPIT_PENDING_IAS_KEY not in visitor._skill_state
+    # No pending IAs queued in skills-only mode.
+    sess = get_session_optional(visitor)
+    assert sess is None or sess.pending_interact_actions == []
 
 
 async def test_phase_route_dispatches_both_queues_pending_ias(monkeypatch):
@@ -343,7 +341,7 @@ async def test_phase_route_dispatches_both_queues_pending_ias(monkeypatch):
     await action._phase_route_and_setup(visitor)
 
     assert start_called["v"] is True
-    pending = visitor._skill_state.get(_COCKPIT_PENDING_IAS_KEY) or []
+    pending = get_session(visitor).pending_interact_actions
     assert [a.__class__.__name__ for a in pending] == ["HandoffInteractAction"]
 
 
@@ -374,13 +372,13 @@ async def test_finalize_pending_runs_persona_respond(monkeypatch):
 
     action = CockpitInteractAction()
     visitor = _make_visitor()
-    visitor._skill_state["cockpit_ia_finalize_pending"] = True
+    get_session(visitor).ia_finalize_pending = True
 
     await action.execute(visitor)
 
     respond_mock.assert_awaited_once()
     # Flag cleared
-    assert "cockpit_ia_finalize_pending" not in visitor._skill_state
+    assert get_session(visitor).ia_finalize_pending is False
     visitor.interaction.set_to_executed.assert_called_once()
     # Finalize-pending revisit is a delivery shim — must unrecord to avoid
     # showing CockpitInteractAction twice in the actions trace.
@@ -400,8 +398,9 @@ async def test_handle_step_result_terminal_clears_pending_ias(monkeypatch):
 
     handoff = _make_ia_double("HandoffInteractAction", weight=10)
     visitor = _make_visitor()
-    visitor._skill_state[_COCKPIT_ENGINE_KEY] = MagicMock()
-    visitor._skill_state[_COCKPIT_PENDING_IAS_KEY] = [handoff]
+    sess = get_session(visitor)
+    sess.engine = MagicMock()
+    sess.pending_interact_actions = [handoff]
 
     monkeypatch.setattr(
         "jvagent.action.cockpit.cockpit_interact_action.deliver_final_response",
@@ -418,8 +417,9 @@ async def test_handle_step_result_terminal_clears_pending_ias(monkeypatch):
 
     await action._handle_step_result(visitor, MagicMock(), result)
 
-    # State cleared
-    assert _COCKPIT_ENGINE_KEY not in visitor._skill_state
-    assert _COCKPIT_PENDING_IAS_KEY not in visitor._skill_state
+    # Session reset.
+    s_after = get_session(visitor)
+    assert s_after.engine is None
+    assert s_after.pending_interact_actions == []
     # No prepend at terminal — IAs are already in walker queue from curate.
     visitor.prepend.assert_not_called()

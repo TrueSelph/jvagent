@@ -22,6 +22,7 @@ from jvagent.action.cockpit.prompts import (
     SECURITY_BLOCK,
     TASK_PLANNING_BLOCK,
 )
+from jvagent.action.cockpit.session import get_session, get_session_optional
 from jvagent.tooling.tool_executor import ToolExecutionEngine
 from jvagent.tooling.tool_registry import ToolRegistry
 from jvagent.tooling.tool_serializer import ToolSerializer
@@ -256,8 +257,8 @@ class CockpitEngine:
             # Check for finalized flag AFTER dispatching — response_publish
             # already published the content, but other tools in the batch
             # must still execute their side effects.
-            visitor_state = getattr(self.ctx.visitor, "_skill_state", None) or {}
-            if visitor_state.get("cockpit_finalized"):
+            session = get_session_optional(self.ctx.visitor)
+            if session is not None and session.finalized:
                 await self._auto_task_finalize(
                     success=True,
                     result_summary="response_publish(finalize=true) called",
@@ -398,7 +399,7 @@ class CockpitEngine:
         """Capture engine state for observability/debugging.
 
         The engine instance is persisted across walker visits via
-        ``visitor._skill_state["cockpit_engine"]``, so state restoration
+        ``CockpitSession.engine`` on the visitor, so state restoration
         is handled by reusing the same engine rather than deserializing.
         """
         return CockpitState(
@@ -822,7 +823,7 @@ class CockpitEngine:
 
         The trace task is shared with the model: if it calls
         ``task_create_plan`` / ``task_update_step`` etc., those tools resolve
-        to this same task (via ``visitor._skill_state["cockpit_trace_task_id"]``).
+        to this same task (via ``CockpitSession.trace_task_id`` on the visitor).
         Once the model has planned, ``_auto_task_record_step`` stops appending
         iteration steps so the model's plan steps drive the trace.
         """
@@ -844,10 +845,9 @@ class CockpitEngine:
             await task.start()
             self._trace_task = task
             # Expose the task ID so model-facing task tools can resolve to it.
-            sk = getattr(self.ctx.visitor, "_skill_state", None)
-            if isinstance(sk, dict):
-                sk["cockpit_trace_task_id"] = getattr(task, "id", None)
-                sk["cockpit_model_planned"] = False
+            session = get_session(self.ctx.visitor)
+            session.trace_task_id = getattr(task, "id", None)
+            session.model_planned = False
         except Exception as exc:
             logger.debug("auto-task start failed: %s", exc)
             self._trace_task = None
@@ -889,8 +889,8 @@ class CockpitEngine:
             )
             description = self._iteration_description(tool_details)
 
-            sk = getattr(self.ctx.visitor, "_skill_state", None) or {}
-            model_planned = bool(sk.get("cockpit_model_planned"))
+            session = get_session_optional(self.ctx.visitor)
+            model_planned = bool(session.model_planned) if session else False
 
             # Plan mode → attach as a sub-event on the active model step
             # (preserves model's clean plan steps; full detail under _events).

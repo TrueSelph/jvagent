@@ -80,11 +80,13 @@ async def test_finalize_flag_terminates_after_dispatch(
 ):
     """response_publish(finalize=true) in batch with another tool → both dispatched, then completed."""
 
-    # Inject a finalize tool that flips the cockpit_finalized flag mid-dispatch.
+    # Inject a finalize tool that flips the session.finalized flag mid-dispatch.
     visitor = cockpit_ctx.visitor
 
     def _set_finalized(**_kwargs):
-        visitor._skill_state["cockpit_finalized"] = True
+        from jvagent.action.cockpit.session import get_session
+
+        get_session(visitor).finalized = True
         return "published"
 
     stub_registry.register(

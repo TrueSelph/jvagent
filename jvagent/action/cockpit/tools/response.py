@@ -3,6 +3,7 @@
 from typing import Any, List, Optional
 
 from jvagent.action.cockpit.context import CockpitContext
+from jvagent.action.cockpit.session import get_session
 from jvagent.tooling.tool import Tool
 
 
@@ -37,8 +38,7 @@ def _build_response_tools(ctx: CockpitContext) -> List[Tool]:
         )
 
         if finalize:
-            visitor_state = getattr(ctx.visitor, "_skill_state", None) or {}
-            visitor_state["cockpit_finalized"] = True
+            get_session(ctx.visitor).finalized = True
 
         return "Final response delivered." if finalize else "Response published."
 

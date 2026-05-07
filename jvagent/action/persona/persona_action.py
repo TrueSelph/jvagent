@@ -329,6 +329,7 @@ class PersonaAction(Action):
         *,
         prompt: Optional[str] = None,
         history: Optional[List[Dict[str, Any]]] = None,
+        extra_system: Optional[str] = None,
         transient: bool = False,
     ) -> Optional[str]:
         """Single LM turn with ``system`` = ``persona_description`` only (no full compose).
@@ -337,11 +338,18 @@ class PersonaAction(Action):
         same model, streaming / ``_pipe_response``, voice formatting, and optional
         image interpretation as the main respond path where applicable.
 
+        ``extra_system`` is appended to ``persona_description`` so callers (notably
+        the cockpit's converse fast-path) can inject a brief instruction (for
+        example, "Reply briefly in character; match the user's tone.") without
+        paying the full ``respond()`` compose / parameter-injection cost.
+
         Args:
             interaction: Active interaction (utterance used if ``prompt`` is omitted).
             visitor: Optional walker for bus / streaming.
             prompt: User-facing prompt text; defaults to ``interaction.utterance``.
             history: Optional formatted history list for ``generate`` (default none).
+            extra_system: Optional additional system instruction appended after
+                ``persona_description``. Single string; whitespace is trimmed.
             transient: Passed through to ``generate`` / ``_pipe_response``.
 
         Returns:
@@ -357,6 +365,8 @@ class PersonaAction(Action):
                 message="PersonaAction.respond_slim requires non-empty persona_description.",
                 details={"reason": "empty_persona_description"},
             )
+        if extra_system and extra_system.strip():
+            system = f"{system}\n\n{extra_system.strip()}"
 
         model_action = await self.get_model_action(required=True)
 

@@ -122,18 +122,81 @@ class DirectiveBuilder:
         description: str = "",
         action_name: str = "",
     ) -> None:
-        """Update/complete interview task via conversation task store."""
-        if not self._task_id:
+        """Transition the interview task to a terminal status, then remove it.
+
+        Two-phase cleanup so the conversation's task list reflects the
+        cancellation / completion exactly:
+
+        1. **Transition**: walk the primary tracked task plus any other
+           active tasks under the same ``owner_action`` (defensive sweep
+           against stragglers from pre-dedup eras or out-of-band creation)
+           and call ``complete`` / ``cancel`` / ``fail`` on each.
+        2. **Delete**: hard-remove every transitioned handle from the store.
+           The cancellation / completion is captured in
+           ``interaction.events`` already, so removing the task itself
+           prevents stale terminal entries from accumulating on the
+           conversation across future interactions.
+        """
+        owner = self.action.get_class_name()
+        store = getattr(visitor, "tasks", None)
+        if store is None:
             return
-        handle = visitor.tasks.get(self._task_id)
-        if not handle:
-            return
-        if status == "completed":
-            await handle.complete()
-        elif status == "cancelled":
-            await handle.cancel()
-        elif status == "failed":
-            await handle.fail()
+
+        handles_to_close: List[Any] = []
+        seen_ids = set()
+
+        # Primary handle from ``_task_id`` (may be the only one).
+        if self._task_id:
+            primary = store.get(self._task_id)
+            if primary is not None:
+                handles_to_close.append(primary)
+                seen_ids.add(primary.id)
+
+        # Defensive sweep: any other active task with the same owner_action.
+        try:
+            for handle in store.list(status="active", owner_action=owner):
+                hid = getattr(handle, "id", None)
+                if hid and hid not in seen_ids:
+                    handles_to_close.append(handle)
+                    seen_ids.add(hid)
+        except Exception as exc:
+            logger.debug(
+                "DirectiveBuilder: active-task sweep failed for %s: %s",
+                owner,
+                exc,
+            )
+
+        for handle in handles_to_close:
+            handle_id = getattr(handle, "id", None) or "?"
+            try:
+                if status == "completed":
+                    await handle.complete()
+                elif status == "cancelled":
+                    await handle.cancel()
+                elif status == "failed":
+                    await handle.fail()
+                else:
+                    # Unknown status — skip transition, leave intact.
+                    continue
+            except Exception as exc:
+                logger.warning(
+                    "DirectiveBuilder: failed to transition task %s to %s: %s",
+                    handle_id,
+                    status,
+                    exc,
+                )
+                # Don't delete a task we couldn't transition — preserve evidence.
+                continue
+            try:
+                await store.delete(handle_id)
+            except Exception as exc:
+                logger.debug(
+                    "DirectiveBuilder: post-transition delete of %s failed: %s",
+                    handle_id,
+                    exc,
+                )
+
+        self._task_id = None
 
     async def format_summary(
         self,

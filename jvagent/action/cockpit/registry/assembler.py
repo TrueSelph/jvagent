@@ -5,9 +5,10 @@ import inspect
 import logging
 import os
 import sys
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from jvagent.action.cockpit.catalog.action_resolver import ActionResolver
 from jvagent.action.cockpit.catalog.skill_catalog import SkillCatalog
@@ -398,42 +399,87 @@ async def _load_one_skill(
             )
 
 
-def _load_tool_module(
-    file_path: Any,
-    prefix: str,
-    allowed_tools: set,
-    ctx: CockpitContext,
-) -> "tuple[Optional[Tool], Optional[str]]":
-    """Import a single .py tool file and extract a ``Tool`` from it.
+@dataclass(frozen=True)
+class _CachedSkillModule:
+    """Per-file load result; reused across cockpit runs while file mtime is unchanged.
 
-    Returns ``(tool, skip_reason)`` — exactly one is populated. ``tool`` is
-    None when the file does not provide a usable cockpit tool (missing
-    ``get_tool_definition`` / ``execute``, malformed schema, or filtered by
-    ``allowed_tools``); ``skip_reason`` describes why for the load report.
+    The expensive parts of skill-tool loading — file I/O, ``importlib`` exec,
+    ``inspect.signature`` introspection — are stable for a given source file.
+    We cache them keyed on ``(absolute_path, mtime)`` so subsequent calls only
+    rebuild the lightweight per-call wrapper closure that captures the
+    current ``CockpitContext.visitor``.
 
-    Module loading uses ``importlib.util`` and POPS ``sys.modules`` on any
-    exec failure so a partially-initialised module never persists. Re-loads
-    of the same skill replace any prior copy in ``sys.modules`` cleanly.
+    ``skip_reason`` is non-None when the file does NOT yield a usable tool
+    (missing ``get_tool_definition`` / ``execute``, malformed schema,
+    spec_from_file_location returned None). Cached "skip" entries avoid
+    repeating the same diagnostic work on every cockpit run.
     """
-    name = file_path.stem
-    mod_name = f"jvagent_cockpit_skill_{prefix}_{name}"
 
+    raw_tool_name: Optional[str]
+    description: str
+    parameters_schema: Dict[str, Any]
+    execute_fn: Optional[Callable[..., Any]]
+    execute_takes_visitor: bool
+    skip_reason: Optional[str]
+
+
+# Process-wide cache of loaded skill modules. Keyed on ``(absolute_path, mtime)``
+# so a file edit produces a fresh entry automatically (mtime changes → cache
+# miss → cold load). A simple dict is fine: modules don't accumulate (typical
+# agents have <100 skill files) and entries cost ~1KB each.
+_SKILL_MODULE_CACHE: Dict[Tuple[str, float], _CachedSkillModule] = {}
+_SKILL_MODULE_CACHE_LOCK = threading.Lock()
+
+
+def _file_mtime(file_path: Path) -> float:
+    """Return file mtime, or 0.0 when stat fails."""
+    try:
+        return file_path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _import_skill_module(file_path: Path, mod_name: str) -> Any:
+    """Import a single skill source file as a Python module.
+
+    Wraps ``importlib.util`` so callers get a fresh module on cold load
+    without leaving a partially-initialised module in ``sys.modules`` if
+    exec fails.
+    """
     spec = importlib.util.spec_from_file_location(mod_name, str(file_path))
     if not spec or not spec.loader:
-        return None, "spec_from_file_location returned None"
-
-    # Drop any stale module under this key from a prior load — re-loads must
-    # see the current file contents, not a cached previous version.
+        raise ImportError(f"spec_from_file_location returned None for {file_path}")
     sys.modules.pop(mod_name, None)
-
     module = importlib.util.module_from_spec(spec)
     sys.modules[mod_name] = module
     try:
         spec.loader.exec_module(module)
     except Exception:
-        # Critical: do not leave a partially-initialised module in sys.modules.
         sys.modules.pop(mod_name, None)
         raise
+    return module
+
+
+def _load_or_get_cached_module(file_path: Path, prefix: str) -> _CachedSkillModule:
+    """Resolve a skill source file to a ``_CachedSkillModule`` (cached).
+
+    Cache key includes ``mtime`` so editing the file produces a fresh load
+    on the next cockpit run without operator intervention. Errors raised
+    during exec / ``get_tool_definition()`` propagate to the caller for
+    the load report; everything else is captured as a ``skip_reason`` on
+    the cached entry so the diagnostic work isn't repeated.
+    """
+    abs_path = str(file_path)
+    mtime = _file_mtime(file_path)
+    cache_key = (abs_path, mtime)
+    cached = _SKILL_MODULE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    name = file_path.stem
+    mod_name = f"jvagent_cockpit_skill_{prefix}_{name}"
+
+    module = _import_skill_module(file_path, mod_name)
 
     tool_def_fn = getattr(module, "get_tool_definition", None)
     execute_fn = getattr(module, "execute", None)
@@ -445,17 +491,36 @@ def _load_tool_module(
             missing.append("get_tool_definition")
         if execute_fn is None:
             missing.append("execute")
-        return None, f"module missing: {', '.join(missing)}"
+        cached = _CachedSkillModule(
+            raw_tool_name=None,
+            description="",
+            parameters_schema={},
+            execute_fn=None,
+            execute_takes_visitor=False,
+            skip_reason=f"module missing: {', '.join(missing)}",
+        )
+        _SKILL_MODULE_CACHE[cache_key] = cached
+        return cached
 
     try:
         tool_def_dict = tool_def_fn()
     except Exception as exc:
         sys.modules.pop(mod_name, None)
+        # Don't cache exec failures — author may fix and reload.
         raise RuntimeError(f"get_tool_definition() raised: {exc}") from exc
 
     if not isinstance(tool_def_dict, dict):
         sys.modules.pop(mod_name, None)
-        return None, "get_tool_definition() did not return a dict"
+        cached = _CachedSkillModule(
+            raw_tool_name=None,
+            description="",
+            parameters_schema={},
+            execute_fn=None,
+            execute_takes_visitor=False,
+            skip_reason="get_tool_definition() did not return a dict",
+        )
+        _SKILL_MODULE_CACHE[cache_key] = cached
+        return cached
 
     fn_block = tool_def_dict.get("function", {})
     raw_tool_name = fn_block.get("name") or tool_def_dict.get("name")
@@ -463,23 +528,95 @@ def _load_tool_module(
     parameters = fn_block.get("parameters") or tool_def_dict.get(
         "parameters", {"type": "object", "properties": {}}
     )
+    if not isinstance(parameters, dict):
+        parameters = {"type": "object", "properties": {}}
 
     if not raw_tool_name:
         sys.modules.pop(mod_name, None)
-        return None, "tool definition missing name"
+        cached = _CachedSkillModule(
+            raw_tool_name=None,
+            description="",
+            parameters_schema={},
+            execute_fn=None,
+            execute_takes_visitor=False,
+            skip_reason="tool definition missing name",
+        )
+        _SKILL_MODULE_CACHE[cache_key] = cached
+        return cached
 
+    # Pre-resolve the visitor-capability check so the per-call wrapper
+    # doesn't have to call ``inspect.signature`` on every dispatch.
+    try:
+        sig = inspect.signature(execute_fn)
+        execute_takes_visitor = "visitor" in sig.parameters
+    except (TypeError, ValueError):
+        execute_takes_visitor = False
+
+    cached = _CachedSkillModule(
+        raw_tool_name=str(raw_tool_name),
+        description=str(description or ""),
+        parameters_schema=parameters,
+        execute_fn=execute_fn,
+        execute_takes_visitor=execute_takes_visitor,
+        skip_reason=None,
+    )
+    _SKILL_MODULE_CACHE[cache_key] = cached
+    return cached
+
+
+def clear_skill_module_cache() -> None:
+    """Drop all cached skill-module load results.
+
+    Call from test setup and from operator-triggered reload paths so the
+    next cockpit run does a fresh import. Production code shouldn't need
+    this — file mtime changes invalidate cache entries automatically.
+    """
+    with _SKILL_MODULE_CACHE_LOCK:
+        _SKILL_MODULE_CACHE.clear()
+
+
+def _load_tool_module(
+    file_path: Any,
+    prefix: str,
+    allowed_tools: set,
+    ctx: CockpitContext,
+) -> "tuple[Optional[Tool], Optional[str]]":
+    """Resolve a skill source file to a ``Tool`` instance for this cockpit run.
+
+    Wraps the module-load cache so subsequent runs avoid the importlib /
+    ``inspect.signature`` cost. Returns ``(tool, skip_reason)`` with
+    exactly one populated.
+    """
+    cached = _load_or_get_cached_module(Path(file_path), prefix)
+
+    if cached.skip_reason is not None:
+        return None, cached.skip_reason
+
+    raw_tool_name = cached.raw_tool_name or ""
     qualified_name = f"{prefix}__{raw_tool_name}"
-    if allowed_tools and raw_tool_name not in allowed_tools and qualified_name not in allowed_tools:
-        sys.modules.pop(mod_name, None)
-        return None, f"name '{raw_tool_name}' not in allowed_tools (checked raw '{raw_tool_name}' and qualified '{qualified_name}')"
+    # ``allowed_tools`` accepts either the raw frontmatter tool name or the
+    # qualified ``{prefix}__{name}`` so skill authors can declare entries
+    # in either form. The cached module data is shared across allowlists
+    # (different bundles using the same file see the same cache entry);
+    # the filter therefore lives here, in the per-call wrapper.
+    if (
+        allowed_tools
+        and raw_tool_name not in allowed_tools
+        and qualified_name not in allowed_tools
+    ):
+        return None, (
+            f"name '{raw_tool_name}' not in allowed_tools "
+            f"(checked raw '{raw_tool_name}' and qualified '{qualified_name}')"
+        )
+
+    execute_fn = cached.execute_fn
+    takes_visitor = cached.execute_takes_visitor
 
     async def _wrapped_execute(**kwargs: Any) -> str:
-        sig = inspect.signature(execute_fn)
-        if "visitor" in sig.parameters:
+        if takes_visitor:
             result = execute_fn(kwargs, visitor=ctx.visitor)
         else:
             result = execute_fn(kwargs)
-
         if inspect.isawaitable(result):
             result = await result
         return str(result) if not isinstance(result, str) else result
@@ -487,12 +624,8 @@ def _load_tool_module(
     return (
         Tool(
             name=qualified_name,
-            description=str(description or ""),
-            parameters_schema=(
-                parameters
-                if isinstance(parameters, dict)
-                else {"type": "object", "properties": {}}
-            ),
+            description=cached.description,
+            parameters_schema=cached.parameters_schema,
             execute=_wrapped_execute,
         ),
         None,

@@ -106,7 +106,12 @@ class RoutingResult:
             "skills" in data and "actions" not in data
         )
         if has_split_schema:
-            parsed_actions = cls._parse_actions(data.get("skills", []))
+            # Prefer "skills" (LLM canonical key); fall back to "actions"
+            # so cache roundtrips through ``to_dict`` (which uses
+            # "actions") deserialise correctly.
+            parsed_actions = cls._parse_actions(
+                data.get("skills", data.get("actions", []))
+            )
             parsed_interact_actions = cls._parse_actions(
                 data.get("interact_actions", [])
             )

@@ -13,14 +13,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from jvagent.action.cockpit.cockpit_interact_action import (
-    _COCKPIT_ENGINE_KEY,
-    _COCKPIT_INTERACTION_ID_KEY,
-    _COCKPIT_STATE_KEY,
-    CockpitInteractAction,
-)
+from jvagent.action.cockpit.cockpit_interact_action import CockpitInteractAction
 from jvagent.action.cockpit.context import CockpitStepResult
 from jvagent.action.cockpit.contracts import TerminationReason
+from jvagent.action.cockpit.session import SESSION_KEY, get_session
 
 pytestmark = pytest.mark.asyncio
 
@@ -68,22 +64,23 @@ def _make_visitor(interaction_id: str = "int_1") -> Any:
 
 
 async def test_stale_interaction_clears_state_and_reroutes(monkeypatch):
-    """Engine in state from a different interaction_id → state cleared, route rerun."""
+    """Engine in state from a different interaction_id → session reset, route rerun."""
     action = _make_action(monkeypatch)
     visitor = _make_visitor("int_NEW")
-    stale_engine = MagicMock()
-    visitor._skill_state[_COCKPIT_ENGINE_KEY] = stale_engine
-    visitor._skill_state[_COCKPIT_INTERACTION_ID_KEY] = "int_OLD"
-    visitor._skill_state[_COCKPIT_STATE_KEY] = MagicMock()
+    sess = get_session(visitor)
+    sess.engine = MagicMock()
+    sess.interaction_id = "int_OLD"
+    sess.debug_state = MagicMock()
 
     route_called = {"v": False}
 
     async def _fake_phase_route(self, v):
         route_called["v"] = True
-        # Verify state was cleared by the guard before route fires.
-        assert _COCKPIT_ENGINE_KEY not in v._skill_state
-        assert _COCKPIT_STATE_KEY not in v._skill_state
-        assert _COCKPIT_INTERACTION_ID_KEY not in v._skill_state
+        # Verify session was reset by the guard before route fires.
+        s = get_session(v)
+        assert s.engine is None
+        assert s.debug_state is None
+        assert s.interaction_id is None
 
     monkeypatch.setattr(
         CockpitInteractAction,
@@ -99,8 +96,9 @@ async def test_revisit_with_engine_skips_routing_and_runs_continue(monkeypatch):
     """Engine present + interaction_id matches → _phase_continue, not _phase_route_and_setup."""
     action = _make_action(monkeypatch)
     visitor = _make_visitor("int_1")
-    visitor._skill_state[_COCKPIT_ENGINE_KEY] = MagicMock()
-    visitor._skill_state[_COCKPIT_INTERACTION_ID_KEY] = "int_1"
+    sess = get_session(visitor)
+    sess.engine = MagicMock()
+    sess.interaction_id = "int_1"
 
     calls = []
 
@@ -141,18 +139,17 @@ async def test_handle_step_result_tool_calls_prepends_self_for_revisit(monkeypat
     result = CockpitStepResult(status="tool_calls", iterations=1, duration_seconds=0.1)
     await action._handle_step_result(visitor, engine, result)
 
-    assert (
-        visitor._skill_state.get(_COCKPIT_STATE_KEY) is engine.save_state.return_value
-    )
+    assert get_session(visitor).debug_state is engine.save_state.return_value
     visitor.prepend.assert_awaited_with([action])
     visitor.interaction.set_to_executed.assert_not_called()
 
 
 async def test_handle_step_result_finalize_flag_terminates_without_revisit(monkeypatch):
-    """tool_calls + cockpit_finalized=True → no revisit, interaction set to executed."""
+    """tool_calls + session.finalized=True → no revisit, interaction set to executed."""
     action = _make_action(monkeypatch)
     visitor = _make_visitor()
-    visitor._skill_state["cockpit_finalized"] = True
+    sess = get_session(visitor)
+    sess.finalized = True
     engine = MagicMock()
     engine.save_state.return_value = MagicMock()
 
@@ -161,18 +158,20 @@ async def test_handle_step_result_finalize_flag_terminates_without_revisit(monke
 
     visitor.prepend.assert_not_called()
     visitor.interaction.set_to_executed.assert_called_once()
-    # cockpit_finalized + cockpit_state cleared
-    assert "cockpit_finalized" not in visitor._skill_state
-    assert _COCKPIT_STATE_KEY not in visitor._skill_state
+    # session reset → finalized + debug_state cleared
+    s_after = get_session(visitor)
+    assert s_after.finalized is False
+    assert s_after.debug_state is None
 
 
 async def test_handle_step_result_terminal_clears_engine_state(monkeypatch):
-    """Terminal status (final_response) → engine + state keys cleared, delivery invoked."""
+    """Terminal status (final_response) → session reset, delivery invoked."""
     action = _make_action(monkeypatch)
     visitor = _make_visitor()
-    visitor._skill_state[_COCKPIT_ENGINE_KEY] = MagicMock()
-    visitor._skill_state[_COCKPIT_INTERACTION_ID_KEY] = "int_1"
-    visitor._skill_state[_COCKPIT_STATE_KEY] = MagicMock()
+    sess = get_session(visitor)
+    sess.engine = MagicMock()
+    sess.interaction_id = "int_1"
+    sess.debug_state = MagicMock()
     engine = MagicMock()
 
     delivery_called = {"v": False}
@@ -200,10 +199,11 @@ async def test_handle_step_result_terminal_clears_engine_state(monkeypatch):
 
     await action._handle_step_result(visitor, engine, result)
 
-    # All cockpit state keys cleared.
-    assert _COCKPIT_ENGINE_KEY not in visitor._skill_state
-    assert _COCKPIT_INTERACTION_ID_KEY not in visitor._skill_state
-    assert _COCKPIT_STATE_KEY not in visitor._skill_state
+    # Session reset — all cockpit-owned fields are back to defaults.
+    s_after = get_session(visitor)
+    assert s_after.engine is None
+    assert s_after.interaction_id is None
+    assert s_after.debug_state is None
     visitor.interaction.set_to_executed.assert_called_once()
     assert delivery_called["v"] is True
 
@@ -212,7 +212,8 @@ async def test_handle_step_result_terminal_empty_response_skips_delivery(monkeyp
     """Terminal with empty/whitespace final_response → state cleared, delivery skipped."""
     action = _make_action(monkeypatch)
     visitor = _make_visitor()
-    visitor._skill_state[_COCKPIT_ENGINE_KEY] = MagicMock()
+    sess = get_session(visitor)
+    sess.engine = MagicMock()
     engine = MagicMock()
 
     delivery_called = {"v": False}
