@@ -145,9 +145,7 @@ def test_parse_stress_seed_errors_when_n_m_missing(monkeypatch) -> None:
 
 def test_parse_stress_seed_picks_up_env_defaults(monkeypatch) -> None:
     monkeypatch.setenv("JVAGENT_STRESS_SEED_USER_MEMORY_NODES", "7")
-    monkeypatch.setenv(
-        "JVAGENT_STRESS_SEED_INTERACTIONS_PER_USER_MEMORY_NODE", "11"
-    )
+    monkeypatch.setenv("JVAGENT_STRESS_SEED_INTERACTIONS_PER_USER_MEMORY_NODE", "11")
     cfg, _residual = parse_stress_seed_for_run(
         ["--stress-seed"], allow_env_defaults=True
     )

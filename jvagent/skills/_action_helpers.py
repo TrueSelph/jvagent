@@ -12,7 +12,9 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Tuple
 
 
-async def resolve_action(visitor: Any, class_name: str) -> Tuple[Optional[Any], Optional[Dict[str, str]]]:
+async def resolve_action(
+    visitor: Any, class_name: str
+) -> Tuple[Optional[Any], Optional[Dict[str, str]]]:
     """Resolve *class_name* via the visitor's action resolver.
 
     Returns ``(action, None)`` on success or ``(None, error_dict)`` so the
