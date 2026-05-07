@@ -95,7 +95,6 @@ class CockpitInteractAction(InteractAction):
     router_model: str = attribute(default="gpt-4o-mini")
     router_model_action_type: str = attribute(default="")
     enable_canned_response: bool = attribute(default=True)
-    enable_routing_cache: bool = attribute(default=False)
 
     model_action_type: str = attribute(default="AnthropicLanguageModelAction")
     model: str = attribute(default=COCKPIT_DEFAULT_SKILL_MODEL)
@@ -125,9 +124,6 @@ class CockpitInteractAction(InteractAction):
     skip_canned_for_intents: List[str] = attribute(
         default_factory=lambda: ["CONVERSATIONAL", "UNCLEAR", "INTERACTIVE"],
     )
-    confidence_threshold: float = attribute(default=0.7)
-    enable_clarification: bool = attribute(default=False)
-    max_fragment_buffer: int = attribute(default=5)
 
     model_temperature: float = attribute(default=0.3)
     model_max_tokens: int = attribute(default=8192)
@@ -137,13 +133,9 @@ class CockpitInteractAction(InteractAction):
     reasoning_effort: Optional[str] = attribute(default=None)
     reasoning_extra: Optional[Dict[str, Any]] = attribute(default=None)
 
-    # Unified streaming flag for internal progress (thoughts, reasoning, tool progress).
-    # The legacy stream_thinking / stream_reasoning / stream_tool_progress fields are
-    # accepted as deprecated aliases (see _resolve_stream_internal_progress below).
+    # Single switch for internal-progress streaming
+    # (model thoughts, reasoning chunks, tool progress badges).
     stream_internal_progress: bool = attribute(default=True)
-    stream_thinking: Optional[bool] = attribute(default=None)
-    stream_reasoning: Optional[bool] = attribute(default=None)
-    stream_tool_progress: Optional[bool] = attribute(default=None)
 
     max_concurrent_tools: int = attribute(default=5)
     tool_call_timeout: float = attribute(default=60.0)
@@ -155,10 +147,9 @@ class CockpitInteractAction(InteractAction):
     enable_cockpit_search: bool = attribute(default=True)
     tool_tier: str = attribute(default="standard")  # minimal | standard | full
 
-    # Production-hygiene flags (Milestone G).
-    # production_mode is an umbrella: when True it pulls the underlying flags
-    # to safe defaults at config-build time (see _build_cockpit_config).
-    production_mode: bool = attribute(default=False)
+    # Hygiene flags. Each one is independently tunable; there is no umbrella
+    # toggle. ``block_raw_tool_invocation`` defends the engine prompt against
+    # users naming tools by name; the other three keep the loop predictable.
     block_raw_tool_invocation: bool = attribute(default=False)
     router_use_cockpit_search: bool = attribute(default=False)
     preload_user_memory: bool = attribute(default=True)
@@ -174,40 +165,7 @@ class CockpitInteractAction(InteractAction):
     stuck_primary_tool_repeat: int = attribute(default=4)
     stuck_min_iterations: int = attribute(default=4)
 
-    def _resolve_stream_internal_progress(self) -> bool:
-        """Resolve the unified streaming flag, honoring legacy aliases.
-
-        If any of the deprecated stream_thinking/stream_reasoning/stream_tool_progress
-        fields are set explicitly (non-None), the unified flag is True iff *any* of
-        them is True. Otherwise we use stream_internal_progress directly.
-        """
-        legacy = [
-            self.stream_thinking,
-            self.stream_reasoning,
-            self.stream_tool_progress,
-        ]
-        explicit = [v for v in legacy if v is not None]
-        if explicit:
-            logger.debug(
-                "CockpitInteractAction: stream_thinking/reasoning/tool_progress are "
-                "deprecated; use stream_internal_progress instead."
-            )
-            return any(bool(v) for v in explicit)
-        return bool(self.stream_internal_progress)
-
     def _build_cockpit_config(self) -> CockpitConfig:
-        # Production-mode umbrella (Milestone G): forces hygiene flags on top
-        # of operator settings. Operators who want a non-default mix should
-        # leave production_mode=False and set the underlying flags directly.
-        production = bool(self.production_mode)
-        stream_internal = self._resolve_stream_internal_progress()
-        enable_canned = bool(self.enable_canned_response)
-        block_raw_tools = bool(self.block_raw_tool_invocation)
-        if production:
-            stream_internal = False
-            enable_canned = False
-            block_raw_tools = True
-
         return CockpitConfig(
             model=self.model,
             model_temperature=self.model_temperature,
@@ -233,9 +191,8 @@ class CockpitInteractAction(InteractAction):
             denied_skills=list(self.denied_skills or []),
             skills_source=self.skills_source,
             response_mode=self.response_mode,
-            stream_internal_progress=stream_internal,
-            production_mode=production,
-            block_raw_tool_invocation=block_raw_tools,
+            stream_internal_progress=bool(self.stream_internal_progress),
+            block_raw_tool_invocation=bool(self.block_raw_tool_invocation),
             enable_skill_helper_tools=self.enable_skill_helper_tools,
             enable_artifact_tools=self.enable_artifact_tools,
             enable_cockpit_search=self.enable_cockpit_search,

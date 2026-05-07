@@ -37,16 +37,9 @@ class CockpitConfig:
 
     response_mode: str = "publish"
 
-    # Single switch controlling all internal-progress streaming
+    # Single switch for internal-progress streaming
     # (model thoughts, reasoning chunks, tool progress badges).
     stream_internal_progress: bool = True
-
-    # Production-hygiene umbrella. When True, the resolver flips:
-    #   - stream_internal_progress = False (silence thought / reasoning / tool-progress)
-    #   - enable_canned_response  = False (no router lead-in stalls)
-    #   - block_raw_tool_invocation = True (defends the engine prompt)
-    # Operators can set the underlying flags directly when finer control is wanted.
-    production_mode: bool = False
 
     # Defends against raw tool/skill invocation embedded in a user message
     # (e.g. "/skill web_search", "call memory_set ..."). When True, the engine
@@ -64,8 +57,6 @@ class CockpitConfig:
     # skill tools are not affected by this knob.
     tool_tier: str = "standard"
     skill_index_inline_max_skills: int = 5
-    enable_checkpoints: bool = True
-    enable_evidence_log: bool = True
 
     # Phase B: general-purpose memory pre-load
     preload_user_memory: bool = True
@@ -75,10 +66,6 @@ class CockpitConfig:
     # progress (active_tasks / completed_tasks on the interaction response)
     # even when the model doesn't explicitly call task_create_plan.
     auto_track_tasks: bool = True
-
-    max_full_tool_results: int = 10
-    max_tool_result_tokens: int = 400
-    tool_result_truncation_chars: int = 500
 
     history_limit: int = 5
 

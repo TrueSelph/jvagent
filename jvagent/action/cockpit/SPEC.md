@@ -493,10 +493,6 @@ Lightweight LLM‑based classifier that determines posture, intent, and skill re
 
 If `enable_canned_response=True` and the intent is not in `skip_canned_for_intents` (default: CONVERSATIONAL, UNCLEAR, INTERACTIVE), the router may produce a brief canned response (max 8 words). This is published directly as the interaction response, bypassing the cockpit engine.
 
-### Routing Cache
-
-If `enable_routing_cache=True`, results are cached per `(agent, utterance)` key. Disabled by default.
-
 ---
 
 ## RoutingResult
