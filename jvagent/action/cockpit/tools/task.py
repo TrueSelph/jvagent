@@ -40,6 +40,14 @@ def _build_task_tools(ctx: CockpitContext) -> List[Tool]:
     async def _create_plan(title: str, steps: List[str], description: str = "") -> str:
         if not ctx.visitor or not ctx.conversation:
             return "Error: no conversation available for task tracking."
+        # Cap step count from the operator config so the model can't blow
+        # past the prompt budget with a thousand-step plan.
+        max_steps = max(1, int(getattr(ctx.config, "max_task_plan_steps", 50) or 50))
+        if len(steps) > max_steps:
+            return (
+                f"Error: plan has {len(steps)} steps but max_task_plan_steps={max_steps}. "
+                "Reduce the plan size or break the work into multiple plans."
+            )
         try:
             task_store = ctx.visitor.tasks
             # Prefer re-purposing the engine's auto-created trace task so

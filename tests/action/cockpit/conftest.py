@@ -71,7 +71,9 @@ class ScriptedModelAction:
         tools: Optional[List[Dict[str, Any]]] = None,
         **kwargs: Any,
     ) -> ModelActionResult:
-        self.calls.append({"messages": list(messages), "tools": tools})
+        self.calls.append(
+            {"messages": list(messages), "tools": tools, "kwargs": dict(kwargs)}
+        )
         if not self._results:
             raise AssertionError(
                 "ScriptedModelAction exhausted; engine called more times than scripted"

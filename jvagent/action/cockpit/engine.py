@@ -202,6 +202,7 @@ class CockpitEngine:
             self._messages,
             stream=False,
             tools=self._tools_serialized,
+            **self._model_query_kwargs(),
         )
 
         # Surface model thinking / extended-reasoning content as a reasoning
@@ -340,6 +341,44 @@ class CockpitEngine:
             duration_seconds=time.monotonic() - self._start,
             activated_skills=list(self._activated_skills),
         )
+
+    def _model_query_kwargs(self) -> Dict[str, Any]:
+        """Build per-call kwargs for ``model_action.query_messages``.
+
+        Forwards the cockpit's engine-model knobs (``model``,
+        ``model_temperature``, ``model_max_tokens``) plus the provider-specific
+        reasoning translation, so operator settings on the cockpit override
+        the underlying model action's defaults rather than being silently
+        ignored.
+        """
+        from jvagent.action.model.language.base import ReasoningModelConfig
+
+        cfg = self.ctx.config
+        kwargs: Dict[str, Any] = {
+            "temperature": cfg.model_temperature,
+            "max_tokens": cfg.model_max_tokens,
+        }
+        if cfg.model:
+            kwargs["model"] = cfg.model
+
+        reasoning_cfg = ReasoningModelConfig(
+            reasoning_effort=cfg.reasoning_effort,
+            reasoning_budget_tokens=cfg.reasoning_budget_tokens,
+            reasoning_enabled=cfg.reasoning_enabled,
+            reasoning_extra=cfg.reasoning_extra,
+        )
+        translate = getattr(self.ctx.model_action, "translate_reasoning_config", None)
+        if callable(translate):
+            try:
+                translated = translate(reasoning_cfg)
+                if isinstance(translated, dict):
+                    kwargs.update(translated)
+            except Exception as exc:
+                logger.debug(
+                    "translate_reasoning_config failed (%s); skipping reasoning kwargs",
+                    type(exc).__name__,
+                )
+        return kwargs
 
     def save_state(self) -> CockpitState:
         """Capture engine state for observability/debugging.
