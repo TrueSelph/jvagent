@@ -500,7 +500,8 @@ class TestAlwaysActiveIntegration:
         ctx = captured_ctx[0]
         assert "research" in ctx.preloaded_skills
         assert "triage" in ctx.preloaded_skills
-        assert ctx.agent_description == persona.persona_description
+        assert ctx.agent_description.startswith(persona.persona_description)
+        assert "[Router guidance]" in ctx.agent_description
         assert ctx.agent_name == persona.persona_name
 
 

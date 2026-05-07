@@ -566,9 +566,24 @@ class AgentInteractAction(InteractAction):
                 if name not in preloaded:
                     preloaded.append(name)
 
-            visitor._skill_state["interact_walker"] = visitor
+            if routing.actions:
+                _intent = routing.intent_type or "UNCLEAR"
+                _interp = (routing.interpretation or "").strip()
+                _guidance = (
+                    f"\n\n[Router guidance] Intent: {_intent}."
+                    f" Recommended skill: {', '.join(routing.actions)}."
+                    " Use the available tools to address this request."
+                )
+                if _interp:
+                    _guidance = (
+                        f"\n\n[Router guidance] Intent: {_intent}."
+                        f" Interpretation: {_interp}"
+                        f" Recommended skill: {', '.join(routing.actions)}."
+                        " Use the available tools to address this request."
+                    )
+                agent_description += _guidance
 
-            # Build AgentInteract-only run context (preload names are not on shared SkillRunContext).
+            visitor._skill_state["interact_walker"] = visitor
             ctx = AgentInteractSkillRunContext(
                 utterance=visitor.utterance or "",
                 conversation=conversation,
