@@ -138,6 +138,62 @@ def _normalize_response_mode(raw_value: Any, skill_path: Path) -> Optional[str]:
     return None
 
 
+def _normalize_dispatch(raw_value: Any, skill_path: Path) -> Optional[Dict[str, Any]]:
+    """Normalize the optional ``dispatch`` frontmatter block.
+
+    Schema (all keys optional except ``tool``)::
+
+        dispatch:
+          tool: pageindex__search   # required: registered tool name
+          arg: query                # parameter name to fill (default: "query")
+          source: utterance         # utterance | interpretation (default: utterance)
+          extra:                    # optional fixed kwargs merged into the call
+            limit: 5
+
+    Returns ``None`` when the block is absent or malformed; the engine then
+    falls back to the standard model-driven loop. A non-empty ``tool`` is the
+    only mandatory field — everything else has safe defaults so a one-line
+    ``dispatch: { tool: foo }`` works.
+    """
+    if raw_value is None or raw_value == "":
+        return None
+    if not isinstance(raw_value, dict):
+        logger.warning(
+            "Skill bundle %s has invalid dispatch type: %s (expected mapping)",
+            skill_path,
+            type(raw_value).__name__,
+        )
+        return None
+    tool = str(raw_value.get("tool") or "").strip()
+    if not tool:
+        logger.warning(
+            "Skill bundle %s: dispatch.tool is required when dispatch is set",
+            skill_path,
+        )
+        return None
+    arg = str(raw_value.get("arg") or "query").strip() or "query"
+    source = str(raw_value.get("source") or "utterance").strip().lower()
+    if source not in {"utterance", "interpretation"}:
+        logger.warning(
+            "Skill bundle %s: dispatch.source must be 'utterance' or "
+            "'interpretation' (got %r); defaulting to 'utterance'",
+            skill_path,
+            source,
+        )
+        source = "utterance"
+    raw_extra = raw_value.get("extra")
+    if isinstance(raw_extra, dict):
+        extra: Dict[str, Any] = {str(k): v for k, v in raw_extra.items() if k}
+    else:
+        if raw_extra is not None:
+            logger.warning(
+                "Skill bundle %s: dispatch.extra must be a mapping; ignoring",
+                skill_path,
+            )
+        extra = {}
+    return {"tool": tool, "arg": arg, "source": source, "extra": extra}
+
+
 def _normalize_plan_steps(raw_value: Any, skill_path: Path) -> List[str]:
     """Normalize plan-steps into a list of non-empty step descriptions."""
     if raw_value is None:
@@ -216,6 +272,7 @@ def parse_skill_bundle(
     )
     verbatim_final = bool(frontmatter.get("verbatim-final"))
     plan_steps = _normalize_plan_steps(frontmatter.get("plan-steps"), skill_file)
+    dispatch = _normalize_dispatch(frontmatter.get("dispatch"), skill_file)
     tags = frontmatter.get("tags") or []
     if isinstance(tags, str):
         tags = [tags]
@@ -255,6 +312,7 @@ def parse_skill_bundle(
         "response_mode": response_mode,
         "verbatim_final": verbatim_final,
         "plan_steps": plan_steps,
+        "dispatch": dispatch,
         "exports": exports,
         "imports": imports,
         "scope_hint": scope_hint,

@@ -60,6 +60,12 @@ class CockpitContext:
     action: Any
     visitor: Any
     preloaded_skills: List[str]
+    # Subset of ``preloaded_skills`` that came directly from the router
+    # (excludes always-active skills). Used by the engine's pre-dispatch
+    # path to gate structural skill invocation: only fire when the router
+    # was confident enough to return exactly ONE skill. Multi-skill routes
+    # are ambiguous and defer to the model.
+    routed_skills: List[str] = field(default_factory=list)
     publish_callback: Optional[Callable] = None
 
     @property

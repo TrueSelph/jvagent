@@ -98,6 +98,16 @@ class CockpitRouter:
             )
 
             interaction.response_posture = result.posture
+            # Persist the router's interpretation so downstream stages
+            # (engine pre-dispatch with ``source: interpretation``, audit
+            # tooling, history rendering) can read it without re-running
+            # the router. Empty strings are tolerated.
+            interp = getattr(result, "interpretation", "") or ""
+            if interp and not getattr(interaction, "interpretation", ""):
+                try:
+                    interaction.interpretation = interp.strip()
+                except Exception:
+                    pass
             await interaction.save()
 
             if result.is_suppress():

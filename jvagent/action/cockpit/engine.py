@@ -147,6 +147,15 @@ class CockpitEngine:
         if getattr(self.ctx.config, "auto_track_tasks", True):
             await self._auto_task_start()
 
+        # Structural router→skill dispatch. When the router pre-selected a
+        # skill that declares `dispatch:` in its frontmatter, run that tool
+        # NOW and inject the synthetic assistant(tool_calls)+tool(result)
+        # pair into the message history. The model's first step() then
+        # synthesizes from real data instead of being asked to plan and
+        # possibly hallucinating or wandering. Runs after _auto_task_start
+        # so the synthetic call is recorded on the trace task.
+        await self._maybe_pre_dispatch()
+
         self._initialized = True
 
     async def step(self) -> CockpitStepResult:
@@ -481,11 +490,41 @@ class CockpitEngine:
                     )
 
                     sub = SkillCatalog(filtered)
-                    skill_index = (
-                        "\n\n# Available skills\n"
-                        + sub.render_catalog()
-                        + "\n\nUse skill_read with the exact skill name before activating any skill."
-                    )
+
+                    sop_sections: List[str] = []
+                    for skill_name, data in filtered.items():
+                        content = (data.get("content") or "").strip()
+                        description = (data.get("description") or "").strip()
+                        if not content and not description:
+                            continue
+                        section = [f"## Skill: {skill_name}"]
+                        if description:
+                            section.append(f"**Description:** {description}")
+                        if content:
+                            section.append(content)
+                        allowed = data.get("allowed_tools", []) or []
+                        if allowed:
+                            section.append(f"**Available tools:** {', '.join(allowed)}")
+                        sop_sections.append("\n\n".join(section))
+
+                    if sop_sections:
+                        skill_names = ", ".join(filtered.keys())
+                        skill_index = (
+                            "\n\n# Router-selected skill(s) — SOP pre-loaded\n"
+                            f"The router classified this request and selected: **{skill_names}**. "
+                            "The full SOP is inlined below. Do NOT call `skill_read` "
+                            "for these skills — proceed directly to the tools and "
+                            "workflow described in their SOP. Only call "
+                            "`skill_search`/`skill_read` if you need a DIFFERENT "
+                            "skill not listed here.\n\n"
+                            + "\n\n---\n\n".join(sop_sections)
+                        )
+                    else:
+                        skill_index = (
+                            "\n\n# Available skills\n"
+                            + sub.render_catalog()
+                            + "\n\nUse skill_read with the exact skill name before activating any skill."
+                        )
                 except Exception:
                     pass
         elif catalog:
@@ -543,6 +582,166 @@ class CockpitEngine:
             user_memory=user_memory,
             security_block=security_block,
         )
+
+    async def _maybe_pre_dispatch(self) -> None:
+        """Auto-invoke each preloaded skill's declared dispatch tool.
+
+        When the router pre-selects a skill whose frontmatter declares a
+        ``dispatch`` block, run that tool synchronously and inject the
+        resulting ``assistant(tool_calls)`` + ``tool(result)`` pair into the
+        message history. This converts a soft hint ("recommended skill: X")
+        into a structural fait accompli — the model's first ``step()`` sees
+        real tool output and synthesizes directly, with no opportunity to
+        skip the skill, freelance, or hallucinate.
+
+        Silently no-ops when:
+          - the router returned ≠1 skills (single-skill routes only — see
+            below);
+          - the catalog is missing, no preloaded skills, or none declare
+            ``dispatch``;
+          - the dispatch tool name is not registered (router routed to a
+            skill whose tools aren't bound for this run);
+          - the executor isn't ready (defensive — initialize() ordering).
+
+        Multi-skill gating: when the router returns more than one skill it
+        is hedging across capabilities; pre-dispatching one of them risks
+        running a tool that doesn't match the user's actual intent (e.g.
+        firing ``pageindex__search`` for a product-catalog request when the
+        router routed ``[pageindex_search, product_recommendations]``). In
+        those cases the standard model-driven loop is the correct arbiter.
+        Always-active skills appearing in ``preloaded_skills`` do not count
+        toward this gate; only direct router selections do.
+        """
+        routed = list(getattr(self.ctx, "routed_skills", []) or [])
+        if len(routed) != 1:
+            return
+        executor = self._tool_executor
+        registry = self._registry
+        if executor is None or registry is None:
+            return
+
+        skill_state = getattr(self.ctx.visitor, "_skill_state", None) or {}
+        catalog = skill_state.get("skill_catalog")
+        if catalog is None:
+            return
+        skills = getattr(catalog, "skills", {}) or {}
+
+        utterance = (self.ctx.utterance or "").strip()
+        interpretation = ""
+        interaction = getattr(self.ctx, "interaction", None)
+        if interaction is not None:
+            interpretation = (getattr(interaction, "interpretation", "") or "").strip()
+
+        registered_names = set(registry.names())
+
+        for skill_name in routed:
+            data = skills.get(skill_name)
+            if not data:
+                continue
+            dispatch = data.get("dispatch")
+            # Implicit-dispatch fallback: when a skill declares no
+            # ``dispatch:`` block but exposes exactly ONE entry under
+            # ``allowed-tools``, infer dispatch from that sole tool. Avoids
+            # forcing every retrieval-style skill to repeat the tool name
+            # in two places. Skills with multiple allowed tools (or none)
+            # do not auto-dispatch — author must declare ``dispatch:``
+            # explicitly to opt in.
+            if not isinstance(dispatch, dict):
+                allowed = data.get("allowed_tools") or []
+                if isinstance(allowed, list) and len(allowed) == 1:
+                    inferred = str(allowed[0]).strip()
+                    if inferred:
+                        dispatch = {
+                            "tool": inferred,
+                            "arg": "query",
+                            "source": "utterance",
+                            "extra": {},
+                        }
+                        logger.debug(
+                            "Pre-dispatch: inferred dispatch for skill %s "
+                            "from sole allowed-tools entry %r",
+                            skill_name,
+                            inferred,
+                        )
+                if not isinstance(dispatch, dict):
+                    continue
+            tool_name = str(dispatch.get("tool") or "").strip()
+            if not tool_name or tool_name not in registered_names:
+                if tool_name:
+                    logger.debug(
+                        "Pre-dispatch: skill %s declared tool %s but it is "
+                        "not registered for this run; skipping",
+                        skill_name,
+                        tool_name,
+                    )
+                continue
+            arg_name = str(dispatch.get("arg") or "query").strip() or "query"
+            source = str(dispatch.get("source") or "utterance").strip().lower()
+            value = interpretation if source == "interpretation" else utterance
+            if not value:
+                value = utterance or interpretation
+            if not value:
+                continue
+
+            args: Dict[str, Any] = {arg_name: value}
+            extra = dispatch.get("extra")
+            if isinstance(extra, dict):
+                for k, v in extra.items():
+                    if k and k not in args:
+                        args[k] = v
+
+            import json as _json
+            import uuid as _uuid
+
+            tool_call_id = f"call_predispatch_{_uuid.uuid4().hex[:12]}"
+            tool_call = {
+                "id": tool_call_id,
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "arguments": _json.dumps(args, ensure_ascii=False),
+                },
+            }
+
+            try:
+                tool_results = await executor.dispatch([tool_call])
+            except Exception as exc:
+                logger.warning(
+                    "Pre-dispatch %s for skill %s raised: %s",
+                    tool_name,
+                    skill_name,
+                    exc,
+                )
+                continue
+
+            if not tool_results:
+                continue
+            tr = tool_results[0]
+            if getattr(tr, "is_error", False):
+                logger.debug(
+                    "Pre-dispatch %s for skill %s returned error; skipping injection",
+                    tool_name,
+                    skill_name,
+                )
+                continue
+
+            self._messages.append(
+                {"role": "assistant", "content": None, "tool_calls": [tool_call]}
+            )
+            self._messages.append(tr.tool_result_message())
+
+            self._recent_tool_names.append([tool_name])
+            self._recent_tool_signatures.append([_tool_call_signature(tool_call)])
+
+            await self._auto_task_record_step([tool_call], tool_results)
+
+            logger.info(
+                "Pre-dispatch: ran %s for skill %s (utterance=%r, %d chars result)",
+                tool_name,
+                skill_name,
+                value[:60],
+                len(getattr(tr, "content", "") or ""),
+            )
 
     async def _build_history(self) -> List[Dict[str, Any]]:
         """Build the prior-turn history that primes the engine's message list.

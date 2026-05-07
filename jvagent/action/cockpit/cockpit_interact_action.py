@@ -495,18 +495,23 @@ class CockpitInteractAction(InteractAction):
                 preloaded.append(name)
 
         if routing.actions:
-            guidance = (
-                f"\n\n[Router guidance] Intent: {routing.intent_type or 'UNCLEAR'}."
-                f" Recommended skill(s): {', '.join(routing.actions)}."
-                " Use the available tools to address this request."
+            skills_csv = ", ".join(routing.actions)
+            intent = routing.intent_type or "UNCLEAR"
+            interp_line = (
+                f" Interpretation: {routing.interpretation}"
+                if routing.interpretation
+                else ""
             )
-            if routing.interpretation:
-                guidance = (
-                    f"\n\n[Router guidance] Intent: {routing.intent_type or 'UNCLEAR'}."
-                    f" Interpretation: {routing.interpretation}"
-                    f" Recommended skill(s): {', '.join(routing.actions)}."
-                    " Use the available tools to address this request."
-                )
+            guidance = (
+                "\n\n# Routing decision (authoritative)\n"
+                f"Intent: {intent}.{interp_line} "
+                f"Pre-selected skill(s): **{skills_csv}**. "
+                "The SOP for these skills is inlined under '# Router-selected skill(s)' below. "
+                "Begin work using their tools and workflow immediately. Do NOT "
+                "call `skill_read` for them. Do NOT spend turns on memory_set, "
+                "task_create_plan, or other harness scaffolding before invoking "
+                "the skill's primary tools — go straight to the work."
+            )
             agent_description += guidance
 
         model_action = await self.get_model_action(required=True)
@@ -558,6 +563,7 @@ class CockpitInteractAction(InteractAction):
             action=self,
             visitor=visitor,
             preloaded_skills=preloaded,
+            routed_skills=list(routing.actions or []),
             publish_callback=self._build_publish_callback(visitor),
         )
 
