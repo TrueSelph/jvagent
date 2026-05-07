@@ -13,7 +13,9 @@ from jvagent.action.cockpit.catalog.action_resolver import ActionResolver
 from jvagent.action.cockpit.catalog.skill_catalog import SkillCatalog
 from jvagent.action.cockpit.context import CockpitContext
 from jvagent.action.cockpit.tools.artifact import _build_artifact_tools
+from jvagent.action.cockpit.tools.clock import _build_clock_tools
 from jvagent.action.cockpit.tools.conversation import _build_conversation_tools
+from jvagent.action.cockpit.tools.identity import _build_identity_tools
 from jvagent.action.cockpit.tools.memory import _build_memory_tools
 from jvagent.action.cockpit.tools.response import _build_response_tools
 from jvagent.action.cockpit.tools.search import (
@@ -128,6 +130,10 @@ _TIER_MINIMAL = {
     "cockpit_search",
     "skill_search",
     "skill_read",
+    # Identity + clock are always included — cheap, frequently needed, and
+    # the model otherwise hallucinates the time or guesses at the user's name.
+    "get_current_datetime",
+    "get_user_name",
 }
 
 _TIER_STANDARD = _TIER_MINIMAL | {
@@ -187,6 +193,10 @@ def _register_harness_tools(registry: ToolRegistry, ctx: CockpitContext) -> None
     for tool in _build_conversation_tools(ctx):
         _register(tool)
     for tool in _build_skill_tools(ctx):
+        _register(tool)
+    for tool in _build_clock_tools(ctx):
+        _register(tool)
+    for tool in _build_identity_tools(ctx):
         _register(tool)
 
     if getattr(cfg, "enable_artifact_tools", True):

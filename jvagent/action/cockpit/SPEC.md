@@ -58,6 +58,8 @@ The package is grouped into top-level entry modules and five subpackages:
 | `tools/search.py` | cockpit_search — unified search across skills, actions, and tools |
 | `tools/response.py` | response_publish, response_emit_thought, response_deliver_via_persona |
 | `tools/conversation.py` | conversation_search, conversation_summarize |
+| `tools/clock.py` | get_current_datetime — current date/time/weekday in app timezone |
+| `tools/identity.py` | get_user_name — preferred name (display_name → name → "unknown") |
 
 ### Dependency Graph
 

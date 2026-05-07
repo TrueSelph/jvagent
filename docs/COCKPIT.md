@@ -254,6 +254,8 @@ The cockpit module at `jvagent/action/cockpit/` is grouped into role-based subpa
 | `tools/search.py` | `cockpit_search` — unified search across skills, actions, and tools |
 | `tools/response.py` | `response_publish`, `response_emit_thought`, `response_deliver_via_persona` |
 | `tools/conversation.py` | `conversation_search`, `conversation_summarize` |
+| `tools/clock.py` | `get_current_datetime` — current date/time/weekday in the app timezone |
+| `tools/identity.py` | `get_user_name` — caller's preferred name, or `unknown` if not on file |
 
 ## Implementing New Action Tools
 

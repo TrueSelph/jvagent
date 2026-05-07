@@ -23,9 +23,7 @@ async def test_engine_forwards_model_temperature_max_tokens(
     cockpit_ctx.config.model = "claude-sonnet-test"
     cockpit_ctx.config.model_temperature = 0.42
     cockpit_ctx.config.model_max_tokens = 1234
-    cockpit_ctx.model_action = ScriptedModelAction(
-        [make_lm_result(response="ok")]
-    )
+    cockpit_ctx.model_action = ScriptedModelAction([make_lm_result(response="ok")])
     engine = CockpitEngine(cockpit_ctx)
     await engine.initialize()
     await engine.step()
@@ -37,13 +35,9 @@ async def test_engine_forwards_model_temperature_max_tokens(
 
 
 @pytest.mark.asyncio
-async def test_engine_omits_model_when_unset(
-    cockpit_ctx, patch_assemble_cockpit_tools
-):
+async def test_engine_omits_model_when_unset(cockpit_ctx, patch_assemble_cockpit_tools):
     cockpit_ctx.config.model = ""
-    cockpit_ctx.model_action = ScriptedModelAction(
-        [make_lm_result(response="ok")]
-    )
+    cockpit_ctx.model_action = ScriptedModelAction([make_lm_result(response="ok")])
     engine = CockpitEngine(cockpit_ctx)
     await engine.initialize()
     await engine.step()
@@ -93,7 +87,9 @@ async def test_task_create_plan_caps_steps_at_max_task_plan_steps(cockpit_ctx):
 
     too_many = ["s1", "s2", "s3", "s4"]
     result = await create_plan.call(title="big", steps=too_many)
-    text = result if isinstance(result, str) else getattr(result, "content", str(result))
+    text = (
+        result if isinstance(result, str) else getattr(result, "content", str(result))
+    )
     assert "max_task_plan_steps=3" in text
     assert "Reduce" in text
 
@@ -105,7 +101,9 @@ async def test_task_create_plan_accepts_within_cap(cockpit_ctx):
     create_plan = next(t for t in tools if t.name == "task_create_plan")
 
     result = await create_plan.call(title="ok", steps=["a", "b", "c"])
-    text = result if isinstance(result, str) else getattr(result, "content", str(result))
+    text = (
+        result if isinstance(result, str) else getattr(result, "content", str(result))
+    )
     # Either created successfully or surfaced an internal error — but never
     # rejected on the cap.
     assert "max_task_plan_steps" not in text
