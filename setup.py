@@ -37,7 +37,7 @@ setup(
     include_package_data=True,
     install_requires=[
         "aiohttp>=3.9.0",
-        "jvspatial>=0.0.6",
+        "jvspatial>=0.0.7",
         "python-dotenv>=1.0.0",
         "pyyaml>=6.0.0",
         "httpx>=0.27.0",

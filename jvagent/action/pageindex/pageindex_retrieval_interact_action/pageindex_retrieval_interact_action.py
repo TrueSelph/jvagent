@@ -130,7 +130,6 @@ class PageIndexRetrievalInteractAction(InteractAction):
             or "default"
         )
 
-    
     def _retrieval_runtime_config(self, visitor: InteractWalker) -> Dict[str, Any]:
         cfg = self.config or {}
         max_summary_chars = (

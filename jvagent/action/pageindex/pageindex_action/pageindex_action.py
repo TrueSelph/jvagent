@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import copy
 import logging
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.api.auth.api_key_service import APIKeyService
 from jvspatial.api.exceptions import ValidationError
@@ -30,6 +30,9 @@ from ..webhook_auth import (
     WEBHOOK_PERMISSION,
     get_or_create_system_user,
 )
+
+if TYPE_CHECKING:
+    from jvagent.action.interact.interact_walker import InteractWalker
 
 logger = logging.getLogger(__name__)
 
@@ -396,7 +399,9 @@ class PageIndexAction(Action):
                 set_pageindex_model_action(model_action)
 
             if visitor is not None:
-                metadata_filter = await self.resolved_metadata_filter(visitor, metadata_filter)
+                metadata_filter = await self.resolved_metadata_filter(
+                    visitor, metadata_filter
+                )
 
             return await search_documents(
                 query=query,
@@ -593,7 +598,9 @@ class PageIndexAction(Action):
             ),
         ]
 
-    async def resolved_metadata_filter(self, visitor: InteractWalker, metadata_filter: Optional[Dict[str, Any]] = None) -> Any:
+    async def resolved_metadata_filter(
+        self, visitor: InteractWalker, metadata_filter: Optional[Dict[str, Any]] = None
+    ) -> Any:
         """Resolve effective metadata_filter applying ``user_groups`` access control.
 
         Delegates to the agent's ``AccessControlAction.user_groups`` to determine
@@ -629,7 +636,7 @@ class PageIndexAction(Action):
             elif existing is not None:
                 mf["access"] = [existing, *matched_groups]
             else:
-                mf["access"] = matched_groups            
+                mf["access"] = matched_groups
             return mf
 
         return mf

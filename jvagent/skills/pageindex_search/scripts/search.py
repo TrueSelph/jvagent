@@ -72,6 +72,6 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any) -> List[Dict[str, 
         strategy=arguments.get("strategy"),
         limit=arguments.get("limit"),
         collection_name=arguments.get("collection_name"),
-        visitor=visitor
+        visitor=visitor,
     )
     return _tag_results(results)
