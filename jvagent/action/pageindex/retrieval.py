@@ -46,6 +46,39 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
+def _root_matches_metadata(
+    root: DocumentRootNode, metadata_filter: Dict[str, Any]
+) -> bool:
+    """Check whether a DocumentRootNode's metadata satisfies the filter."""
+    root_meta = getattr(root, "metadata", None) or {}
+    if not isinstance(root_meta, dict):
+        root_meta = {}
+    for key, value in metadata_filter.items():
+        root_val = root_meta.get(key)
+        if isinstance(value, list):
+            if root_val is None:
+                return False
+            if isinstance(root_val, list):
+                if not any(v in root_val for v in value):
+                    return False
+            elif root_val not in value:
+                return False
+        else:
+            if root_val != value:
+                return False
+    return True
+
+
+def _filter_roots_by_metadata(
+    roots: List[DocumentRootNode],
+    metadata_filter: Optional[Dict[str, Any]],
+) -> List[DocumentRootNode]:
+    """Filter document roots to only those matching the metadata filter."""
+    if not metadata_filter:
+        return roots
+    return [r for r in roots if _root_matches_metadata(r, metadata_filter)]
+
+
 def _row_from_node(
     node: DocumentNode,
     include: Optional[List[str]],
@@ -169,13 +202,15 @@ async def _lexical_candidates(
     from .lexical_index import search as lex_search
 
     allowed_doc_names: Optional[List[str]] = None
-    if metadata_filter and not doc_name:
+    if metadata_filter:
         roots = await get_document_roots(
             collection_name=collection_name,
             metadata_filter=metadata_filter,
         )
         allowed_doc_names = [r.doc_name for r in roots]
         if not allowed_doc_names:
+            return []
+        if doc_name and doc_name not in allowed_doc_names:
             return []
 
     k = candidate_k if candidate_k is not None else get_pageindex_candidate_k()
@@ -325,6 +360,8 @@ async def _search_via_tree_search(
             metadata_filter=metadata_filter,
         )
         roots = roots[:max_docs]
+
+    roots = _filter_roots_by_metadata(roots, metadata_filter)
 
     if not roots:
         return []
@@ -657,6 +694,8 @@ async def _search_via_walker(
                 collection_name=collection_name,
                 metadata_filter=metadata_filter,
             )
+
+    roots = _filter_roots_by_metadata(roots, metadata_filter)
     if not roots:
         return []
 

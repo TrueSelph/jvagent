@@ -91,10 +91,19 @@ For multi-step requests, call task_create_plan with numbered steps.
 Mark each step in_progress before working it, done with a brief result on success, failed with reason on failure.
 """
 
+CITATION_INSTRUCTION = (
+    "\n\nCitation rules:\n"
+    "- When you use information from an excerpt, cite its [N] reference number inline.\n"
+    "- At the end of your response, include a References section listing ONLY the "
+    "references you cited — copy each cited line verbatim from the directive.\n"
+    "- Do not omit or shorten any URLs from cited reference lines."
+)
+
 
 __all__ = [
     "COCKPIT_SYSTEM_PROMPT",
     "CAPABILITY_SEARCH_NOTE",
     "SECURITY_BLOCK",
     "TASK_PLANNING_BLOCK",
+    "CITATION_INSTRUCTION",
 ]

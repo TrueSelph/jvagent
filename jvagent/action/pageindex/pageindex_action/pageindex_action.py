@@ -24,6 +24,12 @@ from jvagent.env import get_jvagent_jvforge_base_url
 
 from .. import llm_bridge
 from ..core import utils as pageindex_core_utils
+from ..prompts import (
+    DIRECTIVE_TEMPLATE,
+    DIRECTIVE_TEMPLATE_NO_REFS,
+    DIRECTIVE_TEMPLATE_PLAIN,
+)
+from .runtime_config import format_page_range
 from ..webhook_auth import (
     ALLOWED_WEBHOOK_ENDPOINT_GLOB,
     PAGEINDEX_WEBHOOK_ROUTE_PREFIX,
@@ -96,6 +102,18 @@ class PageIndexAction(Action):
     metadata_filter: Optional[Dict[str, Any]] = attribute(
         default=None,
         description="Optional key-value filter to narrow search by document metadata",
+    )
+    directive: str = attribute(
+        default=DIRECTIVE_TEMPLATE.template,
+        description="Template for formatting the directive. Placeholders: {results}, {references}",
+    )
+    directive_no_refs: str = attribute(
+        default=DIRECTIVE_TEMPLATE_NO_REFS.template,
+        description="Template for formatting the directive without reference metadata. Placeholder: {results}",
+    )
+    directive_plain: str = attribute(
+        default=DIRECTIVE_TEMPLATE_PLAIN.template,
+        description="Template for formatting the directive in plain text. Placeholder: {results}",
     )
 
     async def _maybe_migrate_legacy_webhook_from_retrieval(self) -> None:
@@ -458,7 +476,7 @@ class PageIndexAction(Action):
         prev_model_action = None
         try:
             if model_action:
-                # Snapshot the live contextvar (see search() for rationale).
+                # Snapshot the live context var (see search() for rationale).
                 prev_model_action = get_pageindex_model_action()
                 set_pageindex_model_action(model_action)
 
@@ -637,6 +655,78 @@ class PageIndexAction(Action):
                 mf["access"] = [existing, *matched_groups]
             else:
                 mf["access"] = matched_groups
-            return mf
-
         return mf
+
+    def _resolve_include_references(self) -> bool:
+        cfg = self.config or {}
+        if "include_references" in cfg and cfg["include_references"] is not None:
+            from .runtime_config import bool_from_config
+
+            return bool_from_config(cfg["include_references"], self.include_references)
+        return self.include_references
+
+    def format_directive(self, results: List[Dict[str, Any]]) -> str:
+        """Format search results into a directive string with references.
+
+        When ``include_references`` is True and results have reference metadata,
+        produces numbered excerpts with a references block. When True but no
+        reference metadata, produces numbered excerpts without a references
+        block. When False, produces a plain bullet list.
+        """
+        if not self._resolve_include_references():
+            return self._format_directive_plain(results)
+        return self._format_directive_with_references(results)
+
+    def _format_directive_plain(self, results: List[Dict[str, Any]]) -> str:
+        parts = []
+        for r in results:
+            content = r.get("content", r.get("text", r.get("title", "")))
+            title = r.get("title", "")
+            doc = r.get("doc_name", "")
+            prefix = f"[{doc}] {title}: " if doc or title else ""
+            parts.append(f"- {prefix}{content}")
+        return self.directive_plain.format(results="\n".join(parts))
+
+    def _format_directive_with_references(self, results: List[Dict[str, Any]]) -> str:
+        source_to_ref: Dict[tuple, int] = {}
+        ref_entries: List[str] = []
+        has_ref_metadata = False
+
+        for r in results:
+            page_range = format_page_range(r)
+            url = r.get("doc_url")
+            doc = r.get("doc_name", "")
+            if page_range or url:
+                has_ref_metadata = True
+
+            ref_key = (doc or "", page_range or "", url or "")
+            if ref_key not in source_to_ref:
+                ref_num = len(source_to_ref) + 1
+                source_to_ref[ref_key] = ref_num
+                ref_str = f"[{ref_num}]"
+                if doc:
+                    ref_str += f" {doc}"
+                if page_range:
+                    ref_str += f", {page_range}"
+                if url:
+                    ref_str += f". {url}" if doc or page_range else f" {url}"
+                ref_entries.append(ref_str)
+
+        excerpt_lines: List[str] = []
+        for r in results:
+            content = r.get("content", r.get("text", r.get("title", "")))
+            title = r.get("title", "")
+            doc = r.get("doc_name", "")
+            page_range = format_page_range(r)
+            url = r.get("doc_url")
+            ref_key = (doc or "", page_range or "", url or "")
+            ref_num = source_to_ref[ref_key]
+            label = f"[{doc}] {title}" if doc or title else "Excerpt"
+            excerpt_lines.append(f"[{ref_num}] {label}: {content}")
+
+        results_str = "\n".join(excerpt_lines)
+        if has_ref_metadata and ref_entries:
+            return self.directive.format(
+                results=results_str, references="\n".join(ref_entries)
+            )
+        return self.directive_no_refs.format(results=results_str)
