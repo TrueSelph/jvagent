@@ -45,7 +45,7 @@ actions:
       max_iterations: 25
       history_limit: 5
       response_mode: respond
-      conversation_enabled: true
+      converse_enabled: true
       stream_internal_progress: true
 
   # ── Language Models ──────────────────────────────────────

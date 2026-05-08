@@ -165,9 +165,9 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
                     prompt=user_prompt,
                     stream=False,
                     system=system_prompt,
-                    model=self.config.model.model,
-                    temperature=self.config.model.model_temperature,
-                    max_tokens=self.config.model.model_max_tokens,
+                    model=self.model,
+                    temperature=self.model_temperature,
+                    max_tokens=self.model_max_tokens,
                     response_format={"type": "json_object"}
                 )
 
@@ -186,9 +186,9 @@ class FeedbackInterviewInteractAction(InterviewInteractAction):
                     prompt=user_prompt,
                     stream=False,
                     system=system_prompt,
-                    model=self.config.model.model,
-                    temperature=self.config.model.model_temperature,
-                    max_tokens=self.config.model.model_max_tokens,
+                    model=self.model,
+                    temperature=self.model_temperature,
+                    max_tokens=self.model_max_tokens,
                 )
         except Exception as e:
             logger.error(f"Error in LLM helper: {e}")

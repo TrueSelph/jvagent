@@ -571,8 +571,14 @@ class AgentLoader:
                     pass
 
             for mod_name, action_label in modules_to_reload.items():
+                mod = sys.modules[mod_name]
+                if getattr(mod, "__spec__", None) is None:
+                    # Synthetic namespace package (e.g. ``jvagent.actions``) created by
+                    # ``ensure_action_parent_packages``. No spec, no source — nothing to
+                    # reload. The leaf action module carries the code that changes.
+                    continue
                 try:
-                    importlib.reload(sys.modules[mod_name])
+                    importlib.reload(mod)
                     logger.debug("Reloaded module %s (from %s)", mod_name, action_label)
                 except Exception as e:
                     logger.warning(
