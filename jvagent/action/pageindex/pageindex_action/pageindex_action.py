@@ -2,13 +2,11 @@
 
 Includes the inbound **jvforge LLM webhook** URL and completions
 (``get_webhook_url``, ``handle_webhook_payload``, persisted webhook credentials).
-
-Interact-time retrieval (directives, ``user_groups``) lives in
-``PageIndexRetrievalInteractAction``, which calls this action's ``search`` method.
 """
 
 from __future__ import annotations
 
+import copy
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -91,6 +89,10 @@ class PageIndexAction(Action):
     webhook_api_key_id: Optional[str] = attribute(
         default=None,
         description="API key row id for LLM webhook auth",
+    )
+    metadata_filter: Optional[Dict[str, Any]] = attribute(
+        default=None,
+        description="Optional key-value filter to narrow search by document metadata",
     )
 
     async def _maybe_migrate_legacy_webhook_from_retrieval(self) -> None:
@@ -290,6 +292,7 @@ class PageIndexAction(Action):
         candidate_k: Optional[Any] = None,
         max_docs_for_tree_search: Optional[Any] = None,
         retrieval_excerpt_source: Optional[Any] = None,
+        visitor: Optional[InteractWalker] = None,
     ) -> List[Dict[str, Any]]:
         from ..config import (
             initialize_pageindex_database,
@@ -392,6 +395,9 @@ class PageIndexAction(Action):
                 prev_model_action = get_pageindex_model_action()
                 set_pageindex_model_action(model_action)
 
+            if visitor is not None:
+                metadata_filter = await self.resolved_metadata_filter(visitor, metadata_filter)
+
             return await search_documents(
                 query=query,
                 doc_name=doc_name or cfg.get("doc_name"),
@@ -406,6 +412,7 @@ class PageIndexAction(Action):
                 only_enabled=resolved_only_enabled,
                 include=include,
             )
+
         finally:
             if model_action:
                 set_pageindex_model_action(prev_model_action)
@@ -585,3 +592,44 @@ class PageIndexAction(Action):
                 execute=_delete_doc,
             ),
         ]
+
+    async def resolved_metadata_filter(self, visitor: InteractWalker, metadata_filter: Optional[Dict[str, Any]] = None) -> Any:
+        """Resolve effective metadata_filter applying ``user_groups`` access control.
+
+        Delegates to the agent's ``AccessControlAction.user_groups`` to determine
+        which groups the visitor belongs to, then merges matching group names into
+        the metadata filter under the ``access`` key so retrieval scopes to documents
+        whose ``access`` metadata includes at least one of those groups.
+
+        **Default-deny**: if ``AccessControlAction.user_groups`` is non-empty and the
+        visitor matches no group, the filter is set to ``access=[]`` (Mongo ``$in``
+        matches nothing) so all documents — including those with no ``access``
+        metadata — are excluded for unauthorized visitors.
+        """
+        base = metadata_filter or self.metadata_filter
+        access_control_action = await self.get_action("AccessControlAction")
+        if not access_control_action:
+            logger.warning("access_control_action is not available")
+            return base
+
+        if not access_control_action.user_groups:
+            return base
+
+        mf: Dict[str, Any] = copy.deepcopy(base) if isinstance(base, dict) else {}
+
+        matched_groups: List[str] = [
+            group
+            for group, users in access_control_action.user_groups.items()
+            if visitor.user_id in users or visitor.session_id in users
+        ]
+        if matched_groups:
+            existing = mf.get("access")
+            if isinstance(existing, list):
+                existing.extend(matched_groups)
+            elif existing is not None:
+                mf["access"] = [existing, *matched_groups]
+            else:
+                mf["access"] = matched_groups            
+            return mf
+
+        return mf

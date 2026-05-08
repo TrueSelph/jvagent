@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -116,10 +115,6 @@ class PageIndexRetrievalInteractAction(InteractAction):
         default=None,
         description="Optional extra fields per hit (same as REST search body `include`).",
     )
-    user_groups: Dict[str, List[str]] = attribute(
-        default_factory=dict,
-        description="User groups for document access filtering.",
-    )
 
     async def _get_pageindex_core(self) -> Optional[PageIndexAction]:
         action = await self.get_action("PageIndexAction")
@@ -135,52 +130,7 @@ class PageIndexRetrievalInteractAction(InteractAction):
             or "default"
         )
 
-    def _resolved_metadata_filter(self, visitor: InteractWalker) -> Any:
-        """Resolve effective metadata_filter applying ``user_groups`` access control.
-
-        Semantics:
-        - ``user_groups`` is a configured access policy; an empty mapping means
-          no group-based access control, so the base metadata_filter passes
-          through unchanged.
-        - When ``user_groups`` is non-empty, the visitor's user_id or
-          session_id must appear in at least one group's member list. Matching
-          groups are merged into the metadata_filter under the ``access`` key
-          so retrieval scopes to documents whose ``access`` metadata includes
-          one of those groups.
-        - **Default-deny**: if ``user_groups`` is configured and the visitor
-          matches NO group, the filter is set to ``access=[]`` (Mongo ``$in``
-          matches nothing). All documents — including those with no ``access``
-          metadata — are excluded for un-authorized visitors. Without this,
-          restrictive ``access`` metadata leaks to non-grouped users because
-          the filter is never applied.
-        """
-        cfg = self.config or {}
-        base = self.metadata_filter or cfg.get("metadata_filter")
-        if not self.user_groups:
-            return base
-
-        mf: Dict[str, Any] = copy.deepcopy(base) if isinstance(base, dict) else {}
-
-        matched_groups: List[str] = [
-            group
-            for group, users in self.user_groups.items()
-            if visitor.user_id in users or visitor.session_id in users
-        ]
-
-        if matched_groups:
-            existing = mf.get("access")
-            if isinstance(existing, list):
-                existing.extend(matched_groups)
-            elif existing is not None:
-                mf["access"] = [existing, *matched_groups]
-            else:
-                mf["access"] = matched_groups
-            return mf
-
-        # Default-deny path: visitor in no configured group.
-        mf["access"] = []
-        return mf
-
+    
     def _retrieval_runtime_config(self, visitor: InteractWalker) -> Dict[str, Any]:
         cfg = self.config or {}
         max_summary_chars = (
@@ -211,7 +161,7 @@ class PageIndexRetrievalInteractAction(InteractAction):
             "model": cfg.get("model") or self.model,
             "doc_name": self.doc_name or cfg.get("doc_name"),
             "collection_name": self._resolve_collection(),
-            "metadata_filter": self._resolved_metadata_filter(visitor),
+            "metadata_filter": self.metadata_filter,
             "max_summary_chars": max_summary_chars,
             "max_tree_prompt_tokens": max_tree_prompt_tokens,
             "retrieval_excerpt_source": self._resolve_retrieval_excerpt_source(),
@@ -304,6 +254,7 @@ class PageIndexRetrievalInteractAction(InteractAction):
                 candidate_k=rtc["candidate_k"],
                 max_docs_for_tree_search=rtc["max_docs_for_tree_search"],
                 retrieval_excerpt_source=rtc["retrieval_excerpt_source"],
+                visitor=visitor,
             )
 
             if results:

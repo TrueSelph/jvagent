@@ -1,22 +1,8 @@
 """PageIndex document ingestion and management endpoints.
 
 Vectorless RAG: ingest PDF, Markdown/text, and office documents; list, search, delete,
-export/import, and manage retrieval access via ``user_groups`` on
-``PageIndexRetrievalInteractAction``.
+export/import documents.
 All routes are agent-scoped (collection = agent_id from path unless noted).
-
-``user_groups`` routes:
-
-- GET ``/agents/{agent_id}/pageindex/user_groups`` — read map group → user ids.
-- POST ``/agents/{agent_id}/pageindex/user_groups/members`` — body: ``group``, optional ``user_session``.
-  With a non-empty ``user_session``, appends that id (deduped). With ``user_session`` omitted or blank, sets the
-  group to an empty list (blank group).
-- DELETE ``/agents/{agent_id}/pageindex/user_groups/members`` — remove a member from a group
-  (query: ``group``, ``user_session``, optional ``can_delete_group``, default false). If the last
-  member is removed, the group stays as ``[]`` unless ``can_delete_group`` is true, then the group
-  key is removed.
-- DELETE ``/agents/{agent_id}/pageindex/user_groups/groups`` — remove a group key
-  (query: ``group``).
 """
 
 import asyncio
@@ -73,7 +59,6 @@ from .pageindex_action import (
     PageIndexAction,
     ensure_ingestion_config_for_agent,
 )
-from .pageindex_retrieval_interact_action import PageIndexRetrievalInteractAction
 from .retrieval import search_documents
 
 logger = logging.getLogger(__name__)
@@ -92,14 +77,6 @@ def _strip_nonempty(label: str, value: Optional[str]) -> str:
     return s
 
 
-def _copy_user_groups_map(
-    action: PageIndexRetrievalInteractAction,
-) -> Dict[str, List[str]]:
-    """Shallow copy of user_groups with list copies per group."""
-    raw = getattr(action, "user_groups", {})
-    return {str(k): list(v) for k, v in raw.items()}
-
-
 async def _get_pageindex_action(agent_id: str) -> PageIndexAction:
     """Load the agent's PageIndexAction or raise."""
     agent = await Agent.get(agent_id)
@@ -112,27 +89,6 @@ async def _get_pageindex_action(agent_id: str) -> PageIndexAction:
     if not action or not isinstance(action, PageIndexAction):
         raise ResourceNotFoundError(
             message=f"No PageIndexAction found for agent '{agent_id}'",
-            details={"agent_id": agent_id},
-        )
-    return action
-
-
-async def _get_pageindex_retrieval_action(
-    agent_id: str,
-) -> PageIndexRetrievalInteractAction:
-    """Load the agent's PageIndexRetrievalInteractAction or raise (``user_groups``)."""
-    agent = await Agent.get(agent_id)
-    if not agent:
-        raise ResourceNotFoundError(
-            message=f"Agent with ID '{agent_id}' not found",
-            details={"agent_id": agent_id},
-        )
-    action = await agent.get_action_by_type("PageIndexRetrievalInteractAction")
-    if not action or not isinstance(action, PageIndexRetrievalInteractAction):
-        raise ResourceNotFoundError(
-            message=(
-                f"No PageIndexRetrievalInteractAction found for agent '{agent_id}'"
-            ),
             details={"agent_id": agent_id},
         )
     return action
@@ -1950,225 +1906,6 @@ async def import_documents_endpoint(
         raise ValidationError(f"Import failed: {str(e)}")
     finally:
         await _delete_staged_file(staged_path)
-
-
-_USER_GROUPS_FIELD = ResponseField(
-    field_type=Dict[str, Any],
-    description="Map of access group name to list of user ids",
-    example={"finance": ["usr_1", "usr_2"]},
-)
-
-
-@endpoint(
-    "/agents/{agent_id}/pageindex/user_groups",
-    methods=["GET"],
-    auth=True,
-    roles=["admin"],
-    tags=["PageIndex"],
-    response=success_response(
-        data={
-            "user_groups": _USER_GROUPS_FIELD,
-        }
-    ),
-)
-async def get_user_groups_endpoint(agent_id: str) -> Dict[str, Any]:
-    """Return ``user_groups`` for the agent's PageIndex retrieval action.
-
-    Args:
-        agent_id: Agent id (must have a PageIndexRetrievalInteractAction).
-
-    Returns:
-        Dict with key ``user_groups`` (empty dict if unset).
-
-    Raises:
-        ResourceNotFoundError: If the agent or PageIndex retrieval action is missing.
-    """
-    action = await _get_pageindex_retrieval_action(agent_id)
-    return {"user_groups": _copy_user_groups_map(action)}
-
-
-@endpoint(
-    "/agents/{agent_id}/pageindex/user_groups/members",
-    methods=["POST"],
-    auth=True,
-    roles=["admin"],
-    tags=["PageIndex"],
-    response=success_response(
-        data={
-            "user_groups": _USER_GROUPS_FIELD,
-            "message": ResponseField(
-                field_type=str,
-                description="Outcome message",
-                example="User added to group",
-            ),
-        }
-    ),
-)
-async def add_user_group_member_endpoint(
-    agent_id: str,
-    group: str = EndpointField(description="Access group name"),
-    user_session: Optional[str] = EndpointField(
-        default=None,
-        description=(
-            "User session id to add to the group (deduped). Omit or leave blank to set the group "
-            "to an empty member list (blank group). Use ``user_session``, not "
-            "``user_id`` (reserved for auth injection on authenticated routes)."
-        ),
-    ),
-) -> Dict[str, Any]:
-    """Add a member to ``group``, or clear the group to an empty list when ``user_session`` is absent.
-
-    If ``user_session`` is non-empty after stripping, appends that id to the group (deduplicated).
-    If ``user_session`` is omitted or blank, sets ``group`` to ``[]`` (other groups unchanged).
-
-    Args:
-        agent_id: Agent id.
-        group: Group key in ``user_groups``.
-        user_session: Member id to add, or empty/omitted for a blank group.
-
-    Returns:
-        Updated ``user_groups`` and a short message.
-
-    Raises:
-        ResourceNotFoundError: If the agent or PageIndex retrieval action is missing.
-        ValidationError: If ``group`` is empty.
-    """
-    group_key = _strip_nonempty("group", group)
-    action = await _get_pageindex_retrieval_action(agent_id)
-    ug = _copy_user_groups_map(action)
-    if user_session is not None and str(user_session).strip():
-        uid = _strip_nonempty("user_session", user_session)
-        members = list(ug.get(group_key, []))
-        if uid in members:
-            return {"user_groups": ug, "message": "User already in group"}
-        members.append(uid)
-        ug[group_key] = members
-        action.user_groups = ug
-        await action.save()
-        return {"user_groups": ug, "message": "User added to group"}
-    prior = list(ug.get(group_key, []))
-    ug[group_key] = []
-    if prior == []:
-        return {"user_groups": ug, "message": "Group already blank"}
-    action.user_groups = ug
-    await action.save()
-    return {"user_groups": ug, "message": "Group cleared to empty list"}
-
-
-@endpoint(
-    "/agents/{agent_id}/pageindex/user_groups/members",
-    methods=["DELETE"],
-    auth=True,
-    roles=["admin"],
-    tags=["PageIndex"],
-    response=success_response(
-        data={
-            "user_groups": _USER_GROUPS_FIELD,
-            "message": ResponseField(
-                field_type=str,
-                description="Outcome message",
-                example="User removed from group",
-            ),
-        }
-    ),
-)
-async def remove_user_group_member_endpoint(
-    agent_id: str,
-    group: str = Query(..., description="Access group name"),
-    user_session: str = Query(
-        ..., description="User session id to remove from the group"
-    ),
-    can_delete_group: bool = Query(
-        default=False,
-        description="If true, remove the group key when the last member is removed; "
-        "if false (default), keep the group as an empty list",
-    ),
-) -> Dict[str, Any]:
-    """Remove ``user_session`` from ``group``.
-
-    If that was the last member: by default the group is kept as ``[]``. When
-    ``can_delete_group`` is true, the group key is deleted instead.
-
-    Args:
-        agent_id: Agent id.
-        group: Group key in ``user_groups``.
-        user_session: User session id to remove.
-        can_delete_group: When true, drop the group key if it becomes empty after removal.
-
-    Returns:
-        Updated ``user_groups`` and a short message.
-
-    Raises:
-        ResourceNotFoundError: If the agent or PageIndex retrieval action is missing.
-        ValidationError: If ``group`` or ``user_session`` is empty.
-    """
-    group_key = _strip_nonempty("group", group)
-    uid = _strip_nonempty("user_session", user_session)
-    action = await _get_pageindex_retrieval_action(agent_id)
-    ug = _copy_user_groups_map(action)
-    if group_key not in ug:
-        return {"user_groups": ug, "message": "Group not present; nothing removed"}
-    old_members = ug[group_key]
-    filtered = [u for u in old_members if u != uid]
-    if len(filtered) == len(old_members):
-        return {"user_groups": ug, "message": "User not in group; nothing removed"}
-    if filtered:
-        ug[group_key] = filtered
-        msg = "User removed from group"
-    elif can_delete_group:
-        del ug[group_key]
-        msg = "User removed; empty group deleted"
-    else:
-        ug[group_key] = []
-        msg = "User removed from group"
-    action.user_groups = ug
-    await action.save()
-    return {"user_groups": ug, "message": msg}
-
-
-@endpoint(
-    "/agents/{agent_id}/pageindex/user_groups/groups",
-    methods=["DELETE"],
-    auth=True,
-    roles=["admin"],
-    tags=["PageIndex"],
-    response=success_response(
-        data={
-            "user_groups": _USER_GROUPS_FIELD,
-            "message": ResponseField(
-                field_type=str,
-                description="Outcome message",
-                example="Group removed",
-            ),
-        }
-    ),
-)
-async def delete_user_group_endpoint(
-    agent_id: str,
-    group: str = Query(..., description="Access group name to remove entirely"),
-) -> Dict[str, Any]:
-    """Remove a group key and its member list from ``user_groups``.
-
-    Args:
-        agent_id: Agent id.
-        group: Group key to delete.
-
-    Returns:
-        Updated ``user_groups`` and a short message.
-
-    Raises:
-        ResourceNotFoundError: If the agent or PageIndex retrieval action is missing.
-        ValidationError: If ``group`` is empty.
-    """
-    group_key = _strip_nonempty("group", group)
-    action = await _get_pageindex_retrieval_action(agent_id)
-    ug = _copy_user_groups_map(action)
-    if group_key in ug:
-        del ug[group_key]
-        action.user_groups = ug
-        await action.save()
-        return {"user_groups": ug, "message": "Group removed"}
-    return {"user_groups": ug, "message": "Group not present; nothing removed"}
 
 
 @endpoint(
