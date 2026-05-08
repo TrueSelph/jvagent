@@ -23,7 +23,7 @@ def _unwrap(result) -> str:
 
 
 @pytest.mark.asyncio
-async def test_get_current_datetime_returns_iso_with_weekday_and_tz(cockpit_ctx):
+async def test_get_current_datetime_returns_multi_format_block(cockpit_ctx):
     fixed = datetime(2026, 5, 6, 14, 30, tzinfo=timezone.utc)
 
     fake_app = MagicMock()
@@ -36,9 +36,49 @@ async def test_get_current_datetime_returns_iso_with_weekday_and_tz(cockpit_ctx)
         get_dt = next(t for t in tools if t.name == "get_current_datetime")
         text = _unwrap(await get_dt.call())
 
-    assert "2026-05-06T14:30" in text
-    assert "weekday=Wednesday" in text
-    assert "timezone=" in text
+    # Multi-format block: ISO + human date + time + timezone + epoch.
+    assert "ISO 8601: 2026-05-06T14:30" in text
+    assert "Date: Wednesday, May 06, 2026" in text
+    assert "Time: 14:30:00" in text
+    assert "Timezone: UTC" in text
+    assert "Unix epoch (seconds): " in text
+
+
+@pytest.mark.asyncio
+async def test_get_current_datetime_converts_to_requested_timezone(cockpit_ctx):
+    fixed = datetime(2026, 5, 6, 14, 30, tzinfo=timezone.utc)
+
+    fake_app = MagicMock()
+    fake_app.now = AsyncMock(return_value=fixed)
+    with patch(
+        "jvagent.core.app.App.get",
+        new=AsyncMock(return_value=fake_app),
+    ):
+        tools = _build_clock_tools(cockpit_ctx)
+        get_dt = next(t for t in tools if t.name == "get_current_datetime")
+        text = _unwrap(await get_dt.call(timezone="Asia/Tokyo"))
+
+    # 14:30 UTC = 23:30 in Tokyo (JST = UTC+9).
+    assert "Time: 23:30:00" in text
+    assert "Timezone: Asia/Tokyo" in text
+
+
+@pytest.mark.asyncio
+async def test_get_current_datetime_invalid_timezone_returns_error(cockpit_ctx):
+    fixed = datetime(2026, 5, 6, 14, 30, tzinfo=timezone.utc)
+
+    fake_app = MagicMock()
+    fake_app.now = AsyncMock(return_value=fixed)
+    with patch(
+        "jvagent.core.app.App.get",
+        new=AsyncMock(return_value=fake_app),
+    ):
+        tools = _build_clock_tools(cockpit_ctx)
+        get_dt = next(t for t in tools if t.name == "get_current_datetime")
+        text = _unwrap(await get_dt.call(timezone="Mars/Olympus_Mons"))
+
+    assert "Error" in text
+    assert "Mars/Olympus_Mons" in text
 
 
 @pytest.mark.asyncio
@@ -51,8 +91,21 @@ async def test_get_current_datetime_falls_back_to_utc_without_app(cockpit_ctx):
         get_dt = next(t for t in tools if t.name == "get_current_datetime")
         text = _unwrap(await get_dt.call())
 
-    # ISO output with timezone field — must not crash without an App.
-    assert "T" in text and "timezone=" in text
+    # Multi-format block — must not crash without an App.
+    assert "ISO 8601:" in text
+    assert "Timezone:" in text
+
+
+@pytest.mark.asyncio
+async def test_get_current_datetime_schema_advertises_timezone_argument(cockpit_ctx):
+    """Tool schema must surface the optional ``timezone`` arg so the
+    routing/engine LLM knows it can pass an IANA zone name."""
+    tools = _build_clock_tools(cockpit_ctx)
+    get_dt = next(t for t in tools if t.name == "get_current_datetime")
+    schema = get_dt.parameters_schema
+    assert "timezone" in schema.get("properties", {})
+    # Stays optional — required is empty (or absent).
+    assert "timezone" not in schema.get("required", [])
 
 
 # ---------------------------------------------------------------------------

@@ -469,6 +469,8 @@ class CockpitEngine:
         capability_search_note = ""
         user_memory = ""
         security_block = ""
+        current_datetime = ""
+        user_identity = ""
 
         skill_state = getattr(self.ctx.visitor, "_skill_state", None) or {}
         catalog = skill_state.get("skill_catalog")
@@ -608,6 +610,35 @@ class CockpitEngine:
         if getattr(cfg, "block_raw_tool_invocation", False):
             security_block = SECURITY_BLOCK
 
+        # Inject current date / time / timezone so the model has a temporal
+        # anchor without needing to call ``get_current_datetime`` for every
+        # trivial reference. The tool remains the source of truth for any
+        # arithmetic, alternate timezones, or up-to-the-second precision.
+        try:
+            from jvagent.action.cockpit.tools.clock import (
+                _format_datetime_block,
+                _resolve_now,
+            )
+
+            now = await _resolve_now()
+            current_datetime = (
+                "\n\n# Current date / time (your point of reference for 'now')\n"
+                + _format_datetime_block(now)
+                + "\nFor alternate timezones or post-anchor precision, "
+                "call ``get_current_datetime``."
+            )
+        except Exception as exc:
+            logger.debug("current-datetime preload failed: %s", exc)
+
+        # Inject the caller's preferred name so the model addresses the
+        # user correctly without calling ``get_user_name`` first. Falls
+        # through to a "no name on file — ask the user" stub when the
+        # User node has neither display_name nor name.
+        try:
+            user_identity = await self._render_user_identity_block()
+        except Exception as exc:
+            logger.debug("user-identity preload failed: %s", exc)
+
         return COCKPIT_SYSTEM_PROMPT.format(
             agent_name=self.ctx.agent_name,
             agent_description=self.ctx.agent_description,
@@ -616,6 +647,59 @@ class CockpitEngine:
             capability_search_note=capability_search_note,
             user_memory=user_memory,
             security_block=security_block,
+            current_datetime=current_datetime,
+            user_identity=user_identity,
+        )
+
+    async def _render_user_identity_block(self) -> str:
+        """Resolve caller name from the User node and render a prompt block.
+
+        Returns an empty string when no user_id / agent / memory subsystem
+        is available (test setups, anonymous flows). The full ``respond()``
+        path mirrors this contract via ``PersonaAction._render_user_context_block``.
+        """
+        user_id = getattr(self.ctx, "user_id", None)
+        agent = getattr(self.ctx, "agent", None)
+        if not user_id or agent is None:
+            return ""
+        try:
+            memory = await agent.get_memory()
+            user = await memory.get_user(user_id) if memory is not None else None
+        except Exception as exc:
+            logger.debug("user-identity lookup failed: %s", exc)
+            return ""
+
+        display_name = ""
+        canonical_name = ""
+        if user is not None:
+            try:
+                display_name = (getattr(user, "display_name", "") or "").strip()
+            except Exception:
+                display_name = ""
+            try:
+                canonical_name = (getattr(user, "name", "") or "").strip()
+            except Exception:
+                canonical_name = ""
+
+        chosen = display_name or canonical_name
+        if chosen:
+            extra = ""
+            if display_name and canonical_name and display_name != canonical_name:
+                extra = f"\nCanonical name: {canonical_name}"
+            return (
+                "\n\n# Current user (your authoritative reference for who you are speaking to)\n"
+                f"Preferred name: {chosen}"
+                f"{extra}\n"
+                "Address the user by this name. Never invent or alter it. "
+                "If the user offers a different name, persist via "
+                "``memory_update_user_model`` (key=``name``)."
+            )
+        return (
+            "\n\n# Current user\n"
+            "No name is on file for this user. If a greeting needs a "
+            "name, ask politely how they would like to be addressed; "
+            "persist the answer via ``memory_update_user_model`` "
+            "(key=``name``). Never invent a name."
         )
 
     async def _maybe_pre_dispatch(self) -> None:

@@ -16,7 +16,7 @@ from __future__ import annotations
 COCKPIT_SYSTEM_PROMPT = """\
 You are {agent_name}.
 {agent_description}
-{user_memory}
+{user_memory}{current_datetime}{user_identity}
 You operate a cockpit of tools in a think-act-observe loop: analyze, pick tools, execute, ground claims in results.
 
 # Tool-use cycle

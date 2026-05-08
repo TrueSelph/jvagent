@@ -365,6 +365,21 @@ class PersonaAction(Action):
                 message="PersonaAction.respond_slim requires non-empty persona_description.",
                 details={"reason": "empty_persona_description"},
             )
+
+        # Bake current date / time / timezone + user identity into the system
+        # prompt so the model has authoritative anchors without resorting to
+        # its training-cutoff date or hallucinating a name. The full
+        # ``respond()`` path injects these via the persona prompt template;
+        # ``respond_slim`` callers (notably the cockpit converse fast-path)
+        # need the same context inline.
+        datetime_block = await self._render_datetime_context_block()
+        if datetime_block:
+            system = f"{system}\n\n{datetime_block}"
+
+        user_block = await self._render_user_context_block(interaction)
+        if user_block:
+            system = f"{system}\n\n{user_block}"
+
         if extra_system and extra_system.strip():
             system = f"{system}\n\n{extra_system.strip()}"
 
@@ -461,6 +476,96 @@ class PersonaAction(Action):
         except Exception as e:
             logger.debug(f"PersonaAction: failed to resolve user display name: {e}")
         return "user"
+
+    async def _render_user_context_block(self, interaction: Interaction) -> str:
+        """Build a user-identity block for the system prompt.
+
+        Resolves the caller's preferred name from the User node
+        (``display_name`` then ``name``). When the name is unknown the
+        block tells the model to ask politely rather than guess. Empty
+        string when there's no interaction context to read from.
+        """
+        if interaction is None:
+            return ""
+        try:
+            user = await interaction.get_user()
+        except Exception as exc:
+            logger.debug("PersonaAction: failed to resolve user node: %s", exc)
+            user = None
+
+        display_name = ""
+        canonical_name = ""
+        if user is not None:
+            try:
+                display_name = (getattr(user, "display_name", "") or "").strip()
+            except Exception:
+                display_name = ""
+            try:
+                canonical_name = (getattr(user, "name", "") or "").strip()
+            except Exception:
+                canonical_name = ""
+
+        chosen = display_name or canonical_name
+        if chosen:
+            lines = [
+                "### USER IDENTITY (your authoritative reference for who you are speaking to)",
+                f"Preferred name: {chosen}",
+            ]
+            if display_name and canonical_name and display_name != canonical_name:
+                lines.append(f"Canonical name: {canonical_name}")
+            lines.append(
+                "Use this name when addressing the user. Do not invent or "
+                "alter it. If the user offers a different name, persist the "
+                "update via ``memory_update_user_model`` (key=``name``)."
+            )
+            return "\n".join(lines)
+
+        return (
+            "### USER IDENTITY\n"
+            "No name is on file for this user. If a greeting needs a name, "
+            "ask politely how they would like to be addressed; persist the "
+            "answer via ``memory_update_user_model`` (key=``name``). "
+            "Never invent a name."
+        )
+
+    async def _render_datetime_context_block(self) -> str:
+        """Build a temporal-anchor block for the system prompt.
+
+        Returns the same multi-format datetime view exposed by the cockpit
+        ``get_current_datetime`` tool so the model treats both surfaces as
+        the single source of truth. Empty string on resolution failure —
+        the caller's prompt stays valid; the model will fall back to the
+        tool when temporal precision matters.
+        """
+        try:
+            from datetime import datetime, timezone
+
+            from jvagent.core.app import App
+
+            app = await App.get()
+            now = await app.now() if app is not None else None
+            if not isinstance(now, datetime):
+                now = datetime.now(timezone.utc)
+        except Exception as exc:
+            logger.debug("PersonaAction: failed to resolve current datetime: %s", exc)
+            return ""
+
+        tz_label = getattr(now.tzinfo, "key", None) or (
+            str(now.tzinfo) if now.tzinfo else "naive"
+        )
+        epoch = int(now.timestamp()) if now.tzinfo is not None else 0
+        return (
+            "### CURRENT DATE / TIME (your authoritative temporal anchor)\n"
+            f"ISO 8601: {now.isoformat()}\n"
+            f"Date: {now.strftime('%A, %B %d, %Y')}\n"
+            f"Time: {now.strftime('%H:%M:%S')}\n"
+            f"Timezone: {tz_label}\n"
+            f"Unix epoch (seconds): {epoch}\n"
+            "Use these values for any 'today' / 'now' / scheduling reference. "
+            "Never substitute your training-cutoff date. For alternate "
+            "timezones or post-anchor precision, the agent has a "
+            "``get_current_datetime`` tool available."
+        )
 
     async def _get_vision_model_action(self) -> Optional[Any]:
         """Resolve the optional LanguageModelAction for the vision-analysis pass.
