@@ -1,5 +1,8 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+# setuptools >=62.6 — required for `**` glob recursion in
+# [tool.setuptools.package-data] (used below to ship every action's
+# `info.yaml`, every skill's `SKILL.md`, etc.).
+requires = ["setuptools>=62.6", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -98,6 +101,15 @@ Repository = "https://github.com/trueselph/jvagent"
 Issues = "https://github.com/trueselph/jvagent/issues"
 Documentation = "https://github.com/trueselph/jvagent/blob/main/README.md"
 
+[tool.setuptools]
+# Mirror MANIFEST.in entries that fall inside packages into the wheel.
+# Without this, non-editable installs (`pip install jvagent`) ship the
+# Python code but drop every `info.yaml`, `SKILL.md`, and per-action
+# requirements file — the action loader then cannot discover any core
+# action and emits "Action jvagent/<x> not found locally or in core
+# library" warnings on startup.
+include-package-data = true
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["jvagent*"]
@@ -106,9 +118,29 @@ include = ["jvagent*"]
 version = {attr = "jvagent.version.__version__"}
 
 [tool.setuptools.package-data]
-"jvagent.scaffold.builtin_profiles" = ["*.yaml"]
-"jvagent.scaffold.static" = ["*.txt"]
-"jvagent.skills.pdf_generation" = ["requirements.txt"]
+# Belt-and-suspenders: even if MANIFEST.in drifts or include-package-data
+# is disabled, these explicit globs guarantee the runtime data ships.
+# `**` recursion requires setuptools >=62.6 (declared in build-system).
+"jvagent" = [
+    # Per-action descriptors + READMEs + per-action pip pins.
+    "action/**/info.yaml",
+    "action/**/*.yaml",
+    "action/**/*.yml",
+    "action/**/*.md",
+    "action/**/requirements.txt",
+    "action/**/*.json",
+    # Claude-style skill bundles + their per-skill docs and pip pins.
+    "skills/**/SKILL.md",
+    "skills/**/*.md",
+    "skills/**/*.yaml",
+    "skills/**/*.yml",
+    "skills/**/requirements.txt",
+    # Scaffold templates (kept from the previous narrow rule).
+    "scaffold/builtin_profiles/*.yaml",
+    "scaffold/static/*.txt",
+    "scaffold/**/*.yaml",
+    "scaffold/**/*.txt",
+]
 
 [tool.pytest.ini_options]
 minversion = "7.0"

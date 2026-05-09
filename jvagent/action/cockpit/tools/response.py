@@ -75,7 +75,9 @@ def _build_response_tools(ctx: CockpitContext) -> List[Tool]:
         try:
             effective_mode = ctx.config.response_mode
             if effective_mode == "respond":
-                await ctx.visitor.add_directive(f"Tell the user: {content}{CITATION_INSTRUCTION}")
+                await ctx.visitor.add_directive(
+                    f"Tell the user: {content}{CITATION_INSTRUCTION}"
+                )
                 await ctx.action.respond(ctx.visitor)
             else:
                 await ctx.persona.respond_slim(

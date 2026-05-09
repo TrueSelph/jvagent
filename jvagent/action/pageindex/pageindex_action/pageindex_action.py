@@ -29,13 +29,13 @@ from ..prompts import (
     DIRECTIVE_TEMPLATE_NO_REFS,
     DIRECTIVE_TEMPLATE_PLAIN,
 )
-from .runtime_config import format_page_range
 from ..webhook_auth import (
     ALLOWED_WEBHOOK_ENDPOINT_GLOB,
     PAGEINDEX_WEBHOOK_ROUTE_PREFIX,
     WEBHOOK_PERMISSION,
     get_or_create_system_user,
 )
+from .runtime_config import format_page_range
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
