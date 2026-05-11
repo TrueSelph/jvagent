@@ -94,15 +94,15 @@ Username: {username}
 
 Output Format (strict JSON):
 
-{
+{{
   "mode": "direct_contact | agent_escalation | scheduled_callback",
   "message": "<internal handoff summary including reason/context>",
-  "contact": {
+  "contact": {{
     "phone_numbers": ["<extracted or empty>"],
     "emails": ["<extracted or empty>"],
     "missing": ["phone_number" | "email" | null]
-  }
-}
+  }}
+}}
 """
 
 
@@ -322,7 +322,7 @@ class HandoffInteractAction(InteractAction):
         username = "Unknown"
         if user:
             username = user.get_display_name()
-        user_prompt = visitor.utterance
+        user_prompt = visitor.utterance 
         system_prompt = self.handoff_system_prompt.format(username=username)
 
         handoff_result = await self._call_model(
