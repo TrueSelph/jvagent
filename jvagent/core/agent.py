@@ -30,7 +30,18 @@ class Agent(Node):
     name: str = attribute(
         indexed=True,
         index_unique=True,
-        index_partial_filter_expression={"context.name": {"$gt": ""}},
+        # Scope uniqueness to Agent entities only. Without the entity
+        # discriminator, embedded jvagent deployments that share the
+        # ``node`` collection with the host's nodes hit E11000 the moment
+        # any non-Agent node carries ``context.name`` (e.g. integral has
+        # nodes named "Default"). The partial filter must match every
+        # row that the unique constraint applies to — adding
+        # ``entity == "Agent"`` keeps the constraint correct without
+        # leaking into the host's domain rows.
+        index_partial_filter_expression={
+            "entity": "Agent",
+            "context.name": {"$gt": ""},
+        },
         description="Unique machine name for the agent",
     )
     alias: str = attribute(description="Human-readable display name")

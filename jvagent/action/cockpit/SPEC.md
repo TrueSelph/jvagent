@@ -907,12 +907,75 @@ Every cockpit run emits observability metrics to `interaction.observability_metr
 
 ### Tool Progress Streaming
 
-When `config.stream_internal_progress=True`, each tool call result emits a transient thought to the response bus:
+When `config.stream_internal_progress=True`, the engine emits THREE
+flavours of thought messages around every tool call. All are
+``category=thought`` and ride the response_bus alongside the model's
+final reply, so streaming consumers (UIs, audit logs, observability
+sinks) see them inline in the SSE stream.
+
+#### 1. `thought_type=tool_call` (pre-execution, structured)
+
+Published by ``CockpitEngine._emit_tool_call`` BEFORE
+``ToolExecutor.dispatch`` runs. One per planned tool call. Lets
+consumers render "calling X with Y" the moment the model decides,
+without waiting for execution.
+
+```
+{
+  "category": "thought",
+  "thought_type": "tool_call",
+  "content": "calling <tool_name>",       # human-readable line
+  "segment_id": "<openai tool_call_id>",  # pairs with tool_result
+  "metadata": {
+    "tool_call_id": "<openai tool_call_id>",
+    "tool_name":    "<dotted skill / tool name>",
+    "tool_args":    { ... parsed kwargs dict ... },
+    "iteration":    <int>,
+  },
+}
+```
+
+#### 2. `thought_type=tool_result` (post-execution, structured)
+
+Published by ``CockpitEngine._emit_tool_result`` AFTER dispatch
+returns. One per completed call. The ``segment_id`` matches the
+prior ``tool_call`` envelope's ``segment_id`` so consumers can
+stitch the call/result pair together.
+
+```
+{
+  "category": "thought",
+  "thought_type": "tool_result",
+  "content": "ok: <tool_name>" | "error: <tool_name>",
+  "segment_id": "<same as the matching tool_call>",
+  "metadata": {
+    "tool_call_id": "<same as the matching tool_call>",
+    "tool_name":    "<dotted skill / tool name>",
+    "tool_result":  <the actual tool return value — JSON-serializable>,
+    "is_error":     <bool>,
+    "iteration":    <int>,
+  },
+}
+```
+
+#### 3. `thought_type=tool_progress` (post-execution, summary)
+
+Published by ``CockpitEngine._emit_tool_progress``. Cheap one-line
+summary kept for back-compat with log scrapers and any consumer
+that doesn't want the full structured payload:
 
 ```
 [ok] tool_name        # success
 [failed] tool_name    # error
 ```
+
+All three are emitted on every tool call when
+``stream_internal_progress=True`` — they're additive, not
+mutually exclusive. Consumers can subscribe to any subset.
+
+The Integral AI-chat SPEC §7.3 structured-envelope requirement is
+satisfied by (1) and (2). Older consumers keying off (3) are
+unaffected.
 
 ### Engine State Capture
 

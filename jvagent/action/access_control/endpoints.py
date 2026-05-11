@@ -343,7 +343,9 @@ async def agent_add_users_to_group_endpoint(
     """
     action = await _get_access_control(agent_id)
     await action.add_users_to_group(group, user_ids, action_label=action_label)
-    return {"message": f"Added {len(user_ids)} user(s) to group '{group}' under '{action_label}'"}
+    return {
+        "message": f"Added {len(user_ids)} user(s) to group '{group}' under '{action_label}'"
+    }
 
 
 @endpoint(

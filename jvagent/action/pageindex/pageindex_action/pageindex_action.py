@@ -641,7 +641,9 @@ class PageIndexAction(Action):
         if not access_control_action.user_groups:
             return base
 
-        page_index_groups = access_control_action._resolve_user_groups("PageIndexAction")
+        page_index_groups = access_control_action._resolve_user_groups(
+            "PageIndexAction"
+        )
         if not page_index_groups:
             return base
 

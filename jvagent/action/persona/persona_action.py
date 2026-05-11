@@ -292,7 +292,6 @@ class PersonaAction(Action):
             ):
                 await interaction.save()
 
-
         # Validate that there are directives and/or parameters to proceed
         # applicable_parameters now includes persona parameters from the interaction
         if not (applicable_directives or applicable_parameters):

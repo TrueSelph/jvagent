@@ -5,6 +5,7 @@ controls iteration by checking the step result and re-adding itself to the
 walker walk path when more steps are needed (walker-revisit pattern).
 """
 
+import json
 import logging
 import time
 from typing import Any, Dict, List, Optional
@@ -88,6 +89,14 @@ class CockpitEngine:
         # completed_tasks on the interaction response.
         self._trace_task: Any = None
         self._initialized: bool = False
+        # Idempotency guard for structured tool envelopes (SPEC §7.3).
+        # Tracks (tool_call_id, thought_type) pairs we've already
+        # published so a single logical envelope is never emitted
+        # twice — even if the surrounding loop accidentally calls
+        # _emit_tool_call / _emit_tool_result more than once for the
+        # same tc.id (walker re-walks, retry paths, parallel tasks,
+        # etc.). Membership-only set; never queried for content.
+        self._emitted_envelopes: set = set()
 
     async def initialize(self) -> None:
         """Set up registry, system prompt, history, and initial user message.
@@ -233,7 +242,22 @@ class CockpitEngine:
                     tc_name,
                 )
 
+            # Pre-execution structured emit (Integral SPEC §7.3 #1).
+            # Lets streaming consumers render "calling X with Y" as
+            # soon as the model decides — no waiting for execution.
+            # Same gating as ``_emit_tool_progress``.
+            if cfg.stream_internal_progress and self.ctx.stream:
+                await self._emit_tool_call(result.tool_calls, self._iteration)
+
             tool_results = await self._tool_executor.dispatch(result.tool_calls)
+
+            # Post-execution structured emit. Same id pairs each
+            # result with its prior tool_call envelope so consumers
+            # can stitch them together.
+            if cfg.stream_internal_progress and self.ctx.stream:
+                await self._emit_tool_result(
+                    result.tool_calls, tool_results, self._iteration
+                )
 
             self._messages.append(
                 {"role": "assistant", "content": None, "tool_calls": result.tool_calls}
@@ -297,6 +321,55 @@ class CockpitEngine:
                         "Could you rephrase or try again?"
                     ),
                     termination_reason=TerminationReason.ERROR,
+                    iterations=self._iteration,
+                    duration_seconds=time.monotonic() - self._start,
+                    activated_skills=list(self._activated_skills),
+                )
+
+            # Staging short-circuit. When every tool call in this
+            # iteration is a ``prepare_*`` skill (the cockpit's
+            # confirmation-card pattern), the staged-change card IS
+            # the user-facing response — there is nothing useful for
+            # the model to add in a follow-up text turn. Re-prompting
+            # the model produces one of three failure modes:
+            #   1. A truncated junk fragment (we observed gpt-5-mini
+            #      emitting "OnSt" — the model began "On staging…"
+            #      then stopped, leaving 4 chars of garbage in the
+            #      chat history).
+            #   2. A redundant "Filed X in Y" prose line that
+            #      duplicates what the StagedChangeCard's deterministic
+            #      consumed-state confirmation will say.
+            #   3. A "Let me know if you need anything else" closer
+            #      that violates the persona's "composer is the
+            #      implicit invitation" rule.
+            # Returning ``final_response=""`` here ends the turn
+            # cleanly — no extra model round-trip, no risk of stray
+            # text. The staging cards (rendered inline by the FE's
+            # ``StagedChangeToolUI``) already carry the full
+            # information the user needs.
+            #
+            # ``prepare_*`` is the established cockpit naming
+            # convention — checked against the bare tool name
+            # (after the ``namespace__`` prefix) so any namespace
+            # works (``integral_filing__prepare_file_content`` →
+            # bare ``prepare_file_content``).
+            def _is_prepare_call(tc: Dict[str, Any]) -> bool:
+                fn = tc.get("function") if isinstance(tc, dict) else None
+                name = (fn or {}).get("name", "") if isinstance(fn, dict) else ""
+                bare = str(name or "").split("__")[-1]
+                return bare.startswith("prepare_")
+
+            if result.tool_calls and all(
+                _is_prepare_call(tc) for tc in result.tool_calls
+            ):
+                await self._auto_task_finalize(
+                    success=True,
+                    result_summary="prepare_* tool calls; card carries the response",
+                )
+                return CockpitStepResult(
+                    status="final_response",
+                    final_response="",
+                    termination_reason=TerminationReason.COMPLETED,
                     iterations=self._iteration,
                     duration_seconds=time.monotonic() - self._start,
                     activated_skills=list(self._activated_skills),
@@ -1171,6 +1244,8 @@ class CockpitEngine:
             return
         for tc, tr in zip(tool_calls, results):
             fn = tc.get("function", {})
+            tool_name = fn.get("name", "")
+            tool_call_id = tc.get("id") or ""
             status = (
                 "failed"
                 if (
@@ -1182,7 +1257,7 @@ class CockpitEngine:
                 )
                 else "ok"
             )
-            content = f"[{status}] {fn.get('name', '')}"
+            content = f"[{status}] {tool_name}"
             await ctx.response_bus.publish(
                 session_id=ctx.session_id,
                 content=content,
@@ -1195,6 +1270,188 @@ class CockpitEngine:
                 transient=True,
                 category="thought",
                 thought_type="tool_progress",
+                # Use the SAME segment_id pattern as _emit_tool_call /
+                # _emit_tool_result so downstream consumers can dedupe
+                # this human-readable summary against the structured
+                # envelopes for the same call. Without this the bus
+                # auto-generates a random segment_id and consumers
+                # double-count the same call.
+                segment_id=tool_call_id or f"iter{iteration}-{tool_name}",
+            )
+
+    # ------------------------------------------------------------------
+    # Structured tool envelopes (Integral SPEC §7.3 #1)
+    #
+    # ``_emit_tool_progress`` above is a HUMAN-READABLE post-hoc
+    # summary ("[ok] tool_name"). Downstream consumers that want the
+    # actual args + results (so they can render rich tool UIs, count
+    # tokens per tool, audit calls, etc.) need structured envelopes
+    # instead. The two methods below provide them:
+    #
+    #   ``_emit_tool_call``   — published BEFORE dispatch. Carries the
+    #     tool's name, its id (OpenAI tool_call_id, used to pair with
+    #     the matching result), and the parsed args dict. Lets
+    #     consumers render "Calling X with Y" the moment the model
+    #     decides — no waiting for execution.
+    #
+    #   ``_emit_tool_result`` — published AFTER dispatch. Carries the
+    #     same id (so consumers can match it with the prior call),
+    #     plus the actual return value and an is_error flag.
+    #
+    # Both are gated on the same ``stream_internal_progress`` flag as
+    # ``_emit_tool_progress`` and are ADDITIVE — existing consumers
+    # of ``tool_progress`` keep working unchanged. Keeping all three
+    # is intentional: ``tool_progress`` is the cheapest one-line
+    # summary for log scrapers; the structured pair is for rich UIs.
+    # ------------------------------------------------------------------
+
+    async def _emit_tool_call(
+        self,
+        tool_calls: List[Dict[str, Any]],
+        iteration: int,
+    ) -> None:
+        """Publish one ``thought_type=tool_call`` envelope per planned
+        tool, BEFORE dispatch. Lets the FE render an inline
+        "calling X" affordance the moment the model decides.
+
+        Structured payload travels in the message's ``metadata`` dict
+        (see ``ResponseMessage.to_dict`` — it surfaces ``metadata``
+        in the SSE envelope). The ``segment_id`` is set to the
+        OpenAI tool_call_id so the matching ``tool_result`` envelope
+        can be paired by the consumer without ambiguity.
+        """
+        ctx = self.ctx
+        if not ctx.response_bus or not ctx.session_id or not ctx.interaction:
+            return
+        for tc in tool_calls:
+            fn = tc.get("function", {})
+            tool_name = fn.get("name") or "unknown"
+            tool_call_id = tc.get("id") or ""
+            # Idempotency: skip if we've already published this
+            # tool_call envelope. Guards against any upstream cause
+            # of duplicate emission — walker re-walks, parallel
+            # tasks holding stale tool_call lists, etc. Each (id,
+            # kind) pair produces exactly one wire envelope.
+            dedupe_key = (tool_call_id, "tool_call")
+            if dedupe_key in self._emitted_envelopes:
+                continue
+            self._emitted_envelopes.add(dedupe_key)
+            # Args arrive from OpenAI as a JSON string; decode for
+            # downstream consumers so they don't have to parse.
+            raw_args = fn.get("arguments")
+            try:
+                tool_args = (
+                    json.loads(raw_args)
+                    if isinstance(raw_args, str) and raw_args
+                    else (raw_args if isinstance(raw_args, dict) else {})
+                )
+            except (json.JSONDecodeError, TypeError):
+                # Fall back to raw string if it isn't valid JSON —
+                # the consumer can still display it.
+                tool_args = {"_raw": raw_args}
+            await ctx.response_bus.publish(
+                session_id=ctx.session_id,
+                # ``content`` is a human-readable line so log scrapers
+                # see something useful; the structured payload rides
+                # in ``metadata`` (surfaced via ResponseMessage.to_dict).
+                content=f"calling {tool_name}",
+                channel=ctx.channel,
+                # stream=False — these envelopes are DISCRETE, not
+                # streaming text. Under stream=True the response_bus
+                # chunks the content string into many SSE events per
+                # publish (we hit this pathology earlier with
+                # tool_progress). One emit → one event.
+                stream=False,
+                interaction_id=ctx.interaction.id,
+                interaction=ctx.interaction,
+                user_id=ctx.user_id,
+                streaming_complete=True,
+                transient=True,
+                category="thought",
+                thought_type="tool_call",
+                # ``segment_id`` lets the downstream consumer pair
+                # this call with its matching ``tool_result`` event.
+                segment_id=tool_call_id or f"iter{iteration}-{tool_name}",
+                metadata={
+                    "tool_call_id": tool_call_id,
+                    "tool_name": tool_name,
+                    "tool_args": tool_args,
+                    "iteration": iteration,
+                },
+            )
+
+    async def _emit_tool_result(
+        self,
+        tool_calls: List[Dict[str, Any]],
+        results: List[Any],
+        iteration: int,
+    ) -> None:
+        """Publish one ``thought_type=tool_result`` envelope per
+        completed tool, AFTER dispatch. The ``segment_id`` matches
+        the prior ``tool_call`` envelope so consumers can pair them.
+        """
+        ctx = self.ctx
+        if not ctx.response_bus or not ctx.session_id or not ctx.interaction:
+            return
+        for tc, tr in zip(tool_calls, results):
+            fn = tc.get("function", {})
+            tool_name = fn.get("name") or "unknown"
+            tool_call_id = tc.get("id") or ""
+            # Idempotency: skip if we've already published this
+            # tool_result envelope. Pairs with the matching guard
+            # in ``_emit_tool_call``. See the doc-comment on
+            # ``_emitted_envelopes``.
+            dedupe_key = (tool_call_id, "tool_result")
+            if dedupe_key in self._emitted_envelopes:
+                continue
+            self._emitted_envelopes.add(dedupe_key)
+            raw_content = getattr(tr, "content", None)
+            if raw_content is None and isinstance(tr, dict):
+                raw_content = tr.get("content")
+            # ToolExecutor JSON-stringifies non-string returns before
+            # storing them on ``ToolResult.content`` (see
+            # ``jvagent/tooling/tool_executor.py``). Reverse that for
+            # streaming consumers so they receive the original dict
+            # / list / scalar — much more useful than a string they
+            # have to re-parse, and lets type-safe consumers (e.g.
+            # the FE's StagedChange shape check) actually inspect
+            # the value. Falls back to the raw string when parse
+            # fails (error envelopes, plain text returns, etc.).
+            tool_result: Any = raw_content
+            if isinstance(raw_content, str) and raw_content:
+                try:
+                    tool_result = json.loads(raw_content)
+                except (json.JSONDecodeError, ValueError):
+                    tool_result = raw_content
+            is_error = bool(
+                getattr(tr, "is_error", False)
+                or (
+                    isinstance(tr, dict)
+                    and isinstance(tr.get("content"), str)
+                    and tr["content"].startswith("Error:")
+                )
+            )
+            await ctx.response_bus.publish(
+                session_id=ctx.session_id,
+                content=("error" if is_error else "ok") + f": {tool_name}",
+                channel=ctx.channel,
+                # stream=False — discrete envelope, see _emit_tool_call.
+                stream=False,
+                interaction_id=ctx.interaction.id,
+                interaction=ctx.interaction,
+                user_id=ctx.user_id,
+                streaming_complete=True,
+                transient=True,
+                category="thought",
+                thought_type="tool_result",
+                segment_id=tool_call_id or f"iter{iteration}-{tool_name}",
+                metadata={
+                    "tool_call_id": tool_call_id,
+                    "tool_name": tool_name,
+                    "tool_result": tool_result,
+                    "is_error": is_error,
+                    "iteration": iteration,
+                },
             )
 
 

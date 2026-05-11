@@ -240,9 +240,7 @@ class AccessControlAction(Action):
             scope[group] = [u for u in scope[group] if u != user_id]
         await self.save()
 
-    async def remove_user_group(
-        self, name: str, action_label: str = "default"
-    ) -> None:
+    async def remove_user_group(self, name: str, action_label: str = "default") -> None:
         """Remove user group."""
         scope = self.user_groups.get(action_label)
         if scope and name in scope:
@@ -376,9 +374,7 @@ class AccessControlAction(Action):
         try:
             if purge:
                 self.permissions = config.get("permissions", {})
-                raw_groups = config.get(
-                    "user_groups", config.get("session_groups", {})
-                )
+                raw_groups = config.get("user_groups", config.get("session_groups", {}))
                 self.user_groups = self._migrate_user_groups(raw_groups)
                 self.exceptions = list(config.get("exceptions", []))
                 self.default_deny = bool(config.get("default_deny", False))

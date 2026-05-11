@@ -541,10 +541,31 @@ async def interact_stream(
         # Stream messages off the response bus until the walker finishes.
         if walker.response_bus and walker.session_id:
             message_queue: asyncio.Queue[Any] = asyncio.Queue()
+            # Per-stream dedupe ONLY for non-streaming-chunk
+            # message types. ``ResponseBus`` deliberately re-uses
+            # one ``acc.message_id`` across every ``stream_chunk``
+            # of a single logical assistant turn (they're parts of
+            # the same message, not independent emits) — so
+            # deduping stream_chunks by id would drop every chunk
+            # after the first and the FE would see a truncated
+            # 3-5 char reply. ADHOC/FINAL messages do carry
+            # one-shot unique ids, so deduping THOSE is the
+            # actual defense (against duplicate publishes from
+            # leaked subscribers or session-queue replay on
+            # reconnect). See the ``message_type`` taxonomy in
+            # ``response/message.py``.
+            seen_message_ids: set = set()
 
             async def _on_message(message: Any) -> None:
                 if getattr(message, "interaction_id", None) != interaction.id:
                     return
+                mtype = getattr(message, "message_type", "")
+                if mtype != "stream_chunk":
+                    mid = getattr(message, "id", None)
+                    if mid:
+                        if mid in seen_message_ids:
+                            return
+                        seen_message_ids.add(mid)
                 await message_queue.put(message)
 
             await walker.response_bus.subscribe(

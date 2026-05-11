@@ -612,14 +612,25 @@ def _load_tool_module(
     execute_fn = cached.execute_fn
     takes_visitor = cached.execute_takes_visitor
 
-    async def _wrapped_execute(**kwargs: Any) -> str:
+    async def _wrapped_execute(**kwargs: Any) -> Any:
         if takes_visitor:
             result = execute_fn(kwargs, visitor=ctx.visitor)
         else:
             result = execute_fn(kwargs)
         if inspect.isawaitable(result):
             result = await result
-        return str(result) if not isinstance(result, str) else result
+        # Return the raw result. ``Tool.call`` (jvagent/tooling/tool.py)
+        # handles serialization centrally — strings pass through, dicts
+        # / lists / other JSON-compatible values get json.dumps'd, and
+        # ToolResult instances pass through. Doing ``str(result)`` here
+        # produces a Python repr (single-quoted ``{'key': 'value'}``)
+        # which is NOT valid JSON, breaks downstream consumers that
+        # try to json.loads the tool output (notably the SPEC §7.3
+        # tool_result envelope path on the cockpit, which now feeds
+        # the actual dict to streaming consumers), and bloats the
+        # model's context with quoted gibberish. Centralised
+        # serialization in Tool.call is the right layer.
+        return result
 
     return (
         Tool(
