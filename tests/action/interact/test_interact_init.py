@@ -31,7 +31,7 @@ async def test_initialize_interaction_access_denied_at_entry():
                 "interact": {"deny": [], "allow": [{"group": "admins"}]},
             },
         },
-        user_groups={"admins": ["admin_1"]},
+        user_groups={"default": {"admins": ["admin_1"]}},
         default_deny=True,
         enforce=True,
         enabled=True,

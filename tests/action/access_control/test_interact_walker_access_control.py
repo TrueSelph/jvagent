@@ -39,7 +39,7 @@ async def test_enforce_interact_action_access_denies_and_reports():
                 },
             },
         },
-        user_groups={"admins": ["user_abc"]},
+        user_groups={"default": {"admins": ["user_abc"]}},
         default_deny=True,
         enforce=True,
         enabled=True,

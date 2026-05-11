@@ -3,9 +3,20 @@
 This module exposes admin routes scoped under ``/agents/{agent_id}/access_control``.
 Handlers resolve the agent's ``AccessControlAction`` and mutate or read its
 permissions, user groups, and allow/deny rules.
+
+``user_groups`` are nested by action label::
+
+    {
+        "default": {"public": [], "private": []},
+        "PageIndexAction": {"reviewers": ["user_1"]},
+    }
+
+The ``default`` scope is used when evaluating group membership for actions
+that lack their own entry.  Endpoints accept an ``action_label`` parameter
+(default ``"default"``) to scope group operations.
 """
 
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import Query
 from jvspatial.api import endpoint
@@ -65,7 +76,9 @@ async def _get_access_control(agent_id: str) -> AccessControlAction:
                             }
                         }
                     },
-                    "user_groups": {"staff": ["user_1", "user_2"]},
+                    "user_groups": {
+                        "default": {"staff": ["user_1", "user_2"]},
+                    },
                     "enforce": True,
                 },
             ),
@@ -265,6 +278,10 @@ async def agent_create_user_group_endpoint(
     agent_id: str,
     name: str,
     user_ids: List[str] = EndpointField(default_factory=list),
+    action_label: str = EndpointField(
+        default="default",
+        description="Action label scope for the group (default: 'default')",
+    ),
 ) -> Dict[str, Any]:
     """Create a named user group (optional initial member ids).
 
@@ -272,6 +289,7 @@ async def agent_create_user_group_endpoint(
         agent_id: Agent id from the path.
         name: Group name (JSON body).
         user_ids: Initial member ids (body; may be empty).
+        action_label: Action label scope (body; default ``default``).
 
     Returns:
         A short confirmation message.
@@ -280,8 +298,8 @@ async def agent_create_user_group_endpoint(
         ResourceNotFoundError: If the agent or access control action is missing.
     """
     action = await _get_access_control(agent_id)
-    await action.add_user_group(name, user_ids or None)
-    return {"message": f"Group '{name}' created"}
+    await action.add_user_group(name, user_ids or None, action_label=action_label)
+    return {"message": f"Group '{name}' created under '{action_label}'"}
 
 
 @endpoint(
@@ -304,6 +322,10 @@ async def agent_add_users_to_group_endpoint(
     agent_id: str,
     group: str,
     user_ids: List[str] = EndpointField(),
+    action_label: str = EndpointField(
+        default="default",
+        description="Action label scope for the group (default: 'default')",
+    ),
 ) -> Dict[str, Any]:
     """Add users to an existing group.
 
@@ -311,6 +333,7 @@ async def agent_add_users_to_group_endpoint(
         agent_id: Agent id from the path.
         group: Group name from the path.
         user_ids: User ids to add (JSON body).
+        action_label: Action label scope (body; default ``default``).
 
     Returns:
         A short confirmation message.
@@ -319,8 +342,8 @@ async def agent_add_users_to_group_endpoint(
         ResourceNotFoundError: If the agent or access control action is missing.
     """
     action = await _get_access_control(agent_id)
-    await action.add_users_to_group(group, user_ids)
-    return {"message": f"Added {len(user_ids)} user(s) to group '{group}'"}
+    await action.add_users_to_group(group, user_ids, action_label=action_label)
+    return {"message": f"Added {len(user_ids)} user(s) to group '{group}' under '{action_label}'"}
 
 
 @endpoint(
@@ -343,6 +366,10 @@ async def agent_remove_users_from_group_endpoint(
     agent_id: str,
     group: str,
     user_ids: List[str] = EndpointField(),
+    action_label: str = EndpointField(
+        default="default",
+        description="Action label scope for the group (default: 'default')",
+    ),
 ) -> Dict[str, Any]:
     """Remove users from a group (one removal per id in ``user_ids``).
 
@@ -350,6 +377,7 @@ async def agent_remove_users_from_group_endpoint(
         agent_id: Agent id from the path.
         group: Group name from the path.
         user_ids: User ids to remove (JSON body).
+        action_label: Action label scope (body; default ``default``).
 
     Returns:
         A short confirmation message.
@@ -359,8 +387,8 @@ async def agent_remove_users_from_group_endpoint(
     """
     action = await _get_access_control(agent_id)
     for uid in user_ids:
-        await action.remove_user_from_group(group, uid)
-    return {"message": f"Removed user(s) from group '{group}'"}
+        await action.remove_user_from_group(group, uid, action_label=action_label)
+    return {"message": f"Removed user(s) from group '{group}' under '{action_label}'"}
 
 
 @endpoint(
@@ -382,12 +410,17 @@ async def agent_remove_users_from_group_endpoint(
 async def agent_remove_user_group_endpoint(
     agent_id: str,
     group: str,
+    action_label: str = EndpointField(
+        default="default",
+        description="Action label scope for the group (default: 'default')",
+    ),
 ) -> Dict[str, Any]:
     """Delete a user group.
 
     Args:
         agent_id: Agent id from the path.
         group: Group name from the path.
+        action_label: Action label scope (body; default ``default``).
 
     Returns:
         A short confirmation message.
@@ -396,8 +429,8 @@ async def agent_remove_user_group_endpoint(
         ResourceNotFoundError: If the agent or access control action is missing.
     """
     action = await _get_access_control(agent_id)
-    await action.remove_user_group(group)
-    return {"message": f"Group '{group}' removed"}
+    await action.remove_user_group(group, action_label=action_label)
+    return {"message": f"Group '{group}' removed from '{action_label}'"}
 
 
 @endpoint(
@@ -409,27 +442,44 @@ async def agent_remove_user_group_endpoint(
     response=success_response(
         data={
             "user_groups": ResponseField(
-                field_type=Dict[str, List[str]],
-                description="Map of group name to member user ids",
-                example={"staff": ["user_7b2", "user_9aa"], "beta": ["user_1"]},
+                field_type=Union[str, Dict],
+                description=(
+                    "When action_label is provided: group name to member user ids "
+                    "for that scope. Otherwise: full nested structure keyed by "
+                    "action label."
+                ),
+                example={
+                    "default": {"staff": ["user_7b2", "user_9aa"], "beta": ["user_1"]},
+                },
             ),
         }
     ),
 )
-async def agent_list_user_groups_endpoint(agent_id: str) -> Dict[str, Any]:
-    """List all user groups and their members.
+async def agent_list_user_groups_endpoint(
+    agent_id: str,
+    action_label: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional action label scope. When provided, returns the merged "
+            "groups for that scope (action-specific + default). Omit for the "
+            "full nested structure."
+        ),
+    ),
+) -> Dict[str, Any]:
+    """List user groups and their members.
 
     Args:
         agent_id: Agent id from the path.
+        action_label: Optional scope filter (query param).
 
     Returns:
-        ``user_groups`` mapping.
+        ``user_groups`` — flat dict when action_label given, nested otherwise.
 
     Raises:
         ResourceNotFoundError: If the agent or access control action is missing.
     """
     action = await _get_access_control(agent_id)
-    return {"user_groups": action.get_user_groups()}
+    return {"user_groups": action.get_user_groups(action_label=action_label)}
 
 
 @endpoint(

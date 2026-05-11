@@ -622,9 +622,10 @@ class PageIndexAction(Action):
         """Resolve effective metadata_filter applying ``user_groups`` access control.
 
         Delegates to the agent's ``AccessControlAction.user_groups`` to determine
-        which groups the visitor belongs to, then merges matching group names into
-        the metadata filter under the ``access`` key so retrieval scopes to documents
-        whose ``access`` metadata includes at least one of those groups.
+        which groups the visitor belongs to under the ``PageIndexAction`` scope,
+        then merges matching group names into the metadata filter under the
+        ``access`` key so retrieval scopes to documents whose ``access`` metadata
+        includes at least one of those groups.
 
         **Default-deny**: if ``AccessControlAction.user_groups`` is non-empty and the
         visitor matches no group, the filter is set to ``access=[]`` (Mongo ``$in``
@@ -640,11 +641,15 @@ class PageIndexAction(Action):
         if not access_control_action.user_groups:
             return base
 
+        page_index_groups = access_control_action._resolve_user_groups("PageIndexAction")
+        if not page_index_groups:
+            return base
+
         mf: Dict[str, Any] = copy.deepcopy(base) if isinstance(base, dict) else {}
 
         matched_groups: List[str] = [
             group
-            for group, users in access_control_action.user_groups.items()
+            for group, users in page_index_groups.items()
             if visitor.user_id in users or visitor.session_id in users
         ]
         if matched_groups:

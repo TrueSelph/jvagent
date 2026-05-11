@@ -29,7 +29,7 @@ def access_control_action():
             },
         },
         user_groups={
-            "admins": ["user_abc", "user_def"],
+            "default": {"admins": ["user_abc", "user_def"]},
         },
         exceptions=["ConverseInteractAction"],
         default_deny=True,  # Deny unless explicitly allowed
@@ -202,8 +202,8 @@ async def test_default_deny_when_no_rule_matches(mock_save):
 async def test_add_user_group(mock_save, access_control_action):
     """add_user_group creates group and optionally seeds users."""
     await access_control_action.add_user_group("support", ["u1", "u2"])
-    assert "support" in access_control_action.user_groups
-    assert access_control_action.user_groups["support"] == ["u1", "u2"]
+    assert "support" in access_control_action.user_groups["default"]
+    assert access_control_action.user_groups["default"]["support"] == ["u1", "u2"]
     mock_save.assert_called()
 
 
@@ -212,7 +212,7 @@ async def test_add_user_group(mock_save, access_control_action):
 async def test_add_user_to_group(mock_save, access_control_action):
     """add_user_to_group appends user."""
     await access_control_action.add_user_to_group("admins", "user_new")
-    assert "user_new" in access_control_action.user_groups["admins"]
+    assert "user_new" in access_control_action.user_groups["default"]["admins"]
     mock_save.assert_called()
 
 
@@ -221,7 +221,7 @@ async def test_add_user_to_group(mock_save, access_control_action):
 async def test_add_user_to_group_idempotent(mock_save, access_control_action):
     """add_user_to_group is no-op if user already in group."""
     await access_control_action.add_user_to_group("admins", "user_abc")
-    assert access_control_action.user_groups["admins"].count("user_abc") == 1
+    assert access_control_action.user_groups["default"]["admins"].count("user_abc") == 1
 
 
 @pytest.mark.asyncio
@@ -229,7 +229,7 @@ async def test_add_user_to_group_idempotent(mock_save, access_control_action):
 async def test_remove_user_from_group(mock_save, access_control_action):
     """remove_user_from_group removes user."""
     await access_control_action.remove_user_from_group("admins", "user_abc")
-    assert "user_abc" not in access_control_action.user_groups["admins"]
+    assert "user_abc" not in access_control_action.user_groups["default"]["admins"]
     mock_save.assert_called()
 
 
@@ -238,7 +238,7 @@ async def test_remove_user_from_group(mock_save, access_control_action):
 async def test_remove_user_group(mock_save, access_control_action):
     """remove_user_group deletes group."""
     await access_control_action.remove_user_group("admins")
-    assert "admins" not in access_control_action.user_groups
+    assert "admins" not in access_control_action.user_groups["default"]
     mock_save.assert_called()
 
 
@@ -290,9 +290,9 @@ async def test_remove_user_from_permission(mock_save, access_control_action):
 async def test_get_user_groups_returns_copy(mock_save, access_control_action):
     """get_user_groups returns copy, not reference."""
     groups = access_control_action.get_user_groups()
-    assert groups == {"admins": ["user_abc", "user_def"]}
-    groups["admins"].append("mutate")
-    assert "mutate" not in access_control_action.user_groups["admins"]
+    assert groups == {"default": {"admins": ["user_abc", "user_def"]}}
+    groups["default"]["admins"].append("mutate")
+    assert "mutate" not in access_control_action.user_groups["default"]["admins"]
 
 
 @pytest.mark.asyncio
@@ -302,7 +302,7 @@ async def test_export_config_includes_user_groups(mock_save, access_control_acti
     config = access_control_action.export_config()
     assert "user_groups" in config
     assert "session_groups" not in config
-    assert config["user_groups"] == {"admins": ["user_abc", "user_def"]}
+    assert config["user_groups"] == {"default": {"admins": ["user_abc", "user_def"]}}
     assert "default_deny" in config
     assert "action_aliases" in config
     assert "enforce" in config

@@ -1,7 +1,7 @@
 """Access Control action."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from jvspatial.core.annotations import attribute
 
@@ -47,8 +47,9 @@ class AccessControlAction(Action):
         description="Channel/resource/user permissions structure",
     )
 
-    user_groups: Dict[str, List[str]] = attribute(
-        default_factory=dict, description="Group name to user IDs mapping"
+    user_groups: Dict[str, Dict[str, List[str]]] = attribute(
+        default_factory=dict,
+        description="Action label to group name to user IDs mapping",
     )
 
     default_deny: bool = attribute(
@@ -121,13 +122,17 @@ class AccessControlAction(Action):
         # Check deny rules first
         for deny_rule in resource_perms.get("deny", []):
             rule = self._normalize_rule(deny_rule)
-            if rule.get("enabled", True) and self._matches_rule(user_id, rule):
+            if rule.get("enabled", True) and self._matches_rule(
+                user_id, rule, resource
+            ):
                 return False
 
         # Check allow rules
         for allow_rule in resource_perms.get("allow", []):
             rule = self._normalize_rule(allow_rule)
-            if rule.get("enabled", True) and self._matches_rule(user_id, rule):
+            if rule.get("enabled", True) and self._matches_rule(
+                user_id, rule, resource
+            ):
                 return True
 
         return not self.default_deny
@@ -140,7 +145,23 @@ class AccessControlAction(Action):
             return {"group": rule, "enabled": True}
         return {}
 
-    def _matches_rule(self, user_id: str, rule: Dict) -> bool:
+    def _resolve_user_groups(self, action_label: str) -> Dict[str, List[str]]:
+        """Resolve user groups for an action label.
+
+        Looks up ``action_label`` first, then falls back to ``"default"``.
+        Returns an empty dict when neither key exists.
+        """
+        if action_label in self.user_groups:
+            groups = self.user_groups[action_label]
+            default_groups = self.user_groups.get("default", {})
+            merged = dict(default_groups)
+            merged.update(groups)
+            return merged
+        return dict(self.user_groups.get("default", {}))
+
+    def _matches_rule(
+        self, user_id: str, rule: Dict, action_label: str = "default"
+    ) -> bool:
         """Check if user matches permission rule."""
         rule_user = rule.get("user")
         if rule_user is not None:
@@ -153,10 +174,8 @@ class AccessControlAction(Action):
         if rule_group:
             if rule_group in ["all", "any"]:
                 return True
-            if (
-                rule_group in self.user_groups
-                and user_id in self.user_groups[rule_group]
-            ):
+            groups = self._resolve_user_groups(action_label)
+            if rule_group in groups and user_id in groups[rule_group]:
                 return True
 
         return False
@@ -174,51 +193,79 @@ class AccessControlAction(Action):
             entry["allow"] = []
 
     async def add_user_group(
-        self, name: str, user_ids: Optional[List[str]] = None
+        self,
+        name: str,
+        user_ids: Optional[List[str]] = None,
+        action_label: str = "default",
     ) -> None:
         """Create user group, optionally with initial user_ids. Idempotent if exists."""
-        if name not in self.user_groups:
-            self.user_groups[name] = []
+        scope = self.user_groups.setdefault(action_label, {})
+        if name not in scope:
+            scope[name] = []
         if user_ids:
             for uid in user_ids:
-                if uid not in self.user_groups[name]:
-                    self.user_groups[name].append(uid)
+                if uid not in scope[name]:
+                    scope[name].append(uid)
         await self.save()
 
-    async def add_user_to_group(self, group: str, user_id: str) -> None:
+    async def add_user_to_group(
+        self, group: str, user_id: str, action_label: str = "default"
+    ) -> None:
         """Add user to group. No-op if already in group."""
-        if group not in self.user_groups:
-            self.user_groups[group] = []
-        if user_id not in self.user_groups[group]:
-            self.user_groups[group].append(user_id)
+        scope = self.user_groups.setdefault(action_label, {})
+        if group not in scope:
+            scope[group] = []
+        if user_id not in scope[group]:
+            scope[group].append(user_id)
         await self.save()
 
-    async def add_users_to_group(self, group: str, user_ids: List[str]) -> None:
+    async def add_users_to_group(
+        self, group: str, user_ids: List[str], action_label: str = "default"
+    ) -> None:
         """Add users to group. No-op for users already in group."""
-        if group not in self.user_groups:
-            self.user_groups[group] = []
+        scope = self.user_groups.setdefault(action_label, {})
+        if group not in scope:
+            scope[group] = []
         for uid in user_ids:
-            if uid not in self.user_groups[group]:
-                self.user_groups[group].append(uid)
+            if uid not in scope[group]:
+                scope[group].append(uid)
         await self.save()
 
-    async def remove_user_from_group(self, group: str, user_id: str) -> None:
+    async def remove_user_from_group(
+        self, group: str, user_id: str, action_label: str = "default"
+    ) -> None:
         """Remove user from group."""
-        if group in self.user_groups:
-            self.user_groups[group] = [
-                u for u in self.user_groups[group] if u != user_id
-            ]
+        scope = self.user_groups.get(action_label)
+        if scope and group in scope:
+            scope[group] = [u for u in scope[group] if u != user_id]
         await self.save()
 
-    async def remove_user_group(self, name: str) -> None:
+    async def remove_user_group(
+        self, name: str, action_label: str = "default"
+    ) -> None:
         """Remove user group."""
-        if name in self.user_groups:
-            del self.user_groups[name]
+        scope = self.user_groups.get(action_label)
+        if scope and name in scope:
+            del scope[name]
         await self.save()
 
-    def get_user_groups(self) -> Dict[str, List[str]]:
-        """Return copy of user groups."""
-        return {k: list(v) for k, v in self.user_groups.items()}
+    def get_user_groups(
+        self, action_label: Optional[str] = None
+    ) -> Union[Dict[str, Dict[str, List[str]]], Dict[str, List[str]]]:
+        """Return copy of user groups.
+
+        When action_label is provided, returns the groups dict for that
+        action label (merged with default).  Otherwise returns the full
+        nested structure.
+        """
+        if action_label is not None:
+            return {
+                k: list(v) for k, v in self._resolve_user_groups(action_label).items()
+            }
+        return {
+            outer_k: {inner_k: list(inner_v) for inner_k, inner_v in outer_v.items()}
+            for outer_k, outer_v in self.user_groups.items()
+        }
 
     async def add_user_to_allow(
         self, channel: str, action_label: str, user_id: str
@@ -292,6 +339,21 @@ class AccessControlAction(Action):
         ]
         await self.save()
 
+    @staticmethod
+    def _migrate_user_groups(ug: Any) -> Dict[str, Dict[str, List[str]]]:
+        """Migrate flat user_groups to nested format.
+
+        If any top-level value is a list (legacy flat format), the entire
+        dict is wrapped under a ``"default"`` key.  Already-nested dicts
+        are returned unchanged.
+        """
+        if not isinstance(ug, dict) or not ug:
+            return {}
+        first_value = next(iter(ug.values()), None)
+        if isinstance(first_value, list):
+            return {"default": {k: list(v) for k, v in ug.items()}}
+        return ug
+
     def export_config(self) -> Dict[str, Any]:
         """Export access control configuration."""
         return {
@@ -314,9 +376,10 @@ class AccessControlAction(Action):
         try:
             if purge:
                 self.permissions = config.get("permissions", {})
-                self.user_groups = config.get(
+                raw_groups = config.get(
                     "user_groups", config.get("session_groups", {})
                 )
+                self.user_groups = self._migrate_user_groups(raw_groups)
                 self.exceptions = list(config.get("exceptions", []))
                 self.default_deny = bool(config.get("default_deny", False))
                 self.action_aliases = dict(config.get("action_aliases", {}))
@@ -326,9 +389,19 @@ class AccessControlAction(Action):
                 if "permissions" in config:
                     self.permissions.update(config["permissions"])
                 if "user_groups" in config:
-                    self.user_groups.update(config["user_groups"])
+                    migrated = self._migrate_user_groups(config["user_groups"])
+                    for scope, groups in migrated.items():
+                        if scope in self.user_groups:
+                            self.user_groups[scope].update(groups)
+                        else:
+                            self.user_groups[scope] = groups
                 elif "session_groups" in config:
-                    self.user_groups.update(config["session_groups"])
+                    migrated = self._migrate_user_groups(config["session_groups"])
+                    for scope, groups in migrated.items():
+                        if scope in self.user_groups:
+                            self.user_groups[scope].update(groups)
+                        else:
+                            self.user_groups[scope] = groups
                 if "exceptions" in config:
                     for ex in config["exceptions"]:
                         if ex not in self.exceptions:
