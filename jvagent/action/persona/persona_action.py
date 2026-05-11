@@ -265,22 +265,9 @@ class PersonaAction(Action):
         # Get model action (required=True raises error if not found)
         model_action = await self.get_model_action(required=True)
 
-        # Add all persona parameters to the interaction (like interact actions do)
-        # This allows accurate recording of persona-level parameters applied to each response
-        # Duplicate prevention is handled by interaction.add_parameters()
         persona_action_name = self.get_class_name()
-        persona_parameters_to_add = (
-            list(self.parameters) if self.parameters is not None else []
-        )
 
-        if persona_parameters_to_add:
-            # Only save if parameters were actually added (not duplicates)
-            if interaction.add_parameters(
-                persona_parameters_to_add, persona_action_name
-            ):
-                await interaction.save()
-
-        # Get unexecuted directives and parameters (now includes persona parameters)
+        # Get unexecuted directives and parameters
         applicable_directives = interaction.get_unexecuted_directives()
         applicable_parameters = interaction.get_unexecuted_parameters()
 
@@ -292,6 +279,19 @@ class PersonaAction(Action):
                     f"({len(interaction.response)} chars) and no new directives/parameters."
                 )
                 return interaction.response
+
+        persona_parameters_to_add = (
+            list(self.parameters) if self.parameters is not None else []
+        )
+
+        # There are unexecuted directives and parameters or no response has been generated so add persona parameters to the interaction
+        if persona_parameters_to_add:
+            # Only save if parameters were actually added (not duplicates)
+            if interaction.add_parameters(
+                persona_parameters_to_add, persona_action_name
+            ):
+                await interaction.save()
+
 
         # Validate that there are directives and/or parameters to proceed
         # applicable_parameters now includes persona parameters from the interaction
