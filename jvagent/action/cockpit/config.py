@@ -75,3 +75,11 @@ class CockpitConfig:
 
     degenerate_response_max_chars: int = 25
     tool_servers: List[str] = field(default_factory=list)
+
+    # Overridable prompt templates (passed through from CockpitInteractAction).
+    # Empty string = use module-level constant from cockpit/prompts.py.
+    system_prompt: str = ""
+    task_planning_prompt: str = ""
+    security_prompt: str = ""
+    capability_search_prompt: str = ""
+    citation_instruction: str = ""

@@ -188,6 +188,16 @@ class CockpitInteractAction(InteractAction):
     stuck_primary_tool_repeat: int = attribute(default=4)
     stuck_min_iterations: int = attribute(default=4)
 
+    # Overridable prompt templates (mirrors PersonaAction.system_prompt pattern).
+    # Defaults are empty strings — engine falls back to module-level constants
+    # in cockpit/prompts.py when the override is blank.  Set in agent.yaml to
+    # customise engine behaviour without forking the framework.
+    system_prompt: str = attribute(default="")
+    task_planning_prompt: str = attribute(default="")
+    security_prompt: str = attribute(default="")
+    capability_search_prompt: str = attribute(default="")
+    citation_instruction: str = attribute(default="")
+
     def _build_cockpit_config(self) -> CockpitConfig:
         return CockpitConfig(
             model=self.model,
@@ -231,6 +241,11 @@ class CockpitInteractAction(InteractAction):
             reasoning_extra=self.reasoning_extra,
             degenerate_response_max_chars=self.degenerate_response_max_chars,
             tool_servers=list(self.tool_servers or []),
+            system_prompt=self.system_prompt or "",
+            task_planning_prompt=self.task_planning_prompt or "",
+            security_prompt=self.security_prompt or "",
+            capability_search_prompt=self.capability_search_prompt or "",
+            citation_instruction=self.citation_instruction or "",
         )
 
     @staticmethod

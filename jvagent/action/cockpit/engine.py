@@ -660,10 +660,14 @@ class CockpitEngine:
         # agent has many action tools — these are the cases where listing
         # everything inline isn't viable.
         if cfg.enable_cockpit_search and large_catalog:
-            capability_search_note = CAPABILITY_SEARCH_NOTE
+            capability_search_note = (
+                getattr(cfg, "capability_search_prompt", "") or CAPABILITY_SEARCH_NOTE
+            )
 
         if cfg.plan_first:
-            task_planning = TASK_PLANNING_BLOCK
+            task_planning = (
+                getattr(cfg, "task_planning_prompt", "") or TASK_PLANNING_BLOCK
+            )
 
         # Phase B: pre-load user-scoped memory into the system prompt so the
         # model has stable context about the human without spending a tool call.
@@ -681,7 +685,7 @@ class CockpitEngine:
                 logger.debug("user memory preload failed: %s", exc)
 
         if getattr(cfg, "block_raw_tool_invocation", False):
-            security_block = SECURITY_BLOCK
+            security_block = getattr(cfg, "security_prompt", "") or SECURITY_BLOCK
 
         # Inject current date / time / timezone so the model has a temporal
         # anchor without needing to call ``get_current_datetime`` for every
@@ -712,7 +716,10 @@ class CockpitEngine:
         except Exception as exc:
             logger.debug("user-identity preload failed: %s", exc)
 
-        return COCKPIT_SYSTEM_PROMPT.format(
+        system_prompt_template = (
+            getattr(cfg, "system_prompt", "") or COCKPIT_SYSTEM_PROMPT
+        )
+        return system_prompt_template.format(
             agent_name=self.ctx.agent_name,
             agent_description=self.ctx.agent_description,
             skill_index=skill_index,
