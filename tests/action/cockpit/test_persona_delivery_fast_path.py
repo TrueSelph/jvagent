@@ -1,19 +1,19 @@
-"""Tests for the converse fast-path in ``deliver_via_persona``.
+"""Tests for ``deliver_via_persona``'s mode/content decision matrix.
 
-When the cockpit's conversational gate fires it calls
-``deliver_via_persona`` with ``mode="respond"``, ``content=None``, and a
-short directive. Pre-Phase-5 this routed through ``action.respond()`` →
-``PersonaAction.respond()`` (full compose with parameter injection +
-directive composition + DB write). The fast path now routes through
-``PersonaAction.respond_slim`` with the directive folded into the system
-prompt — saving ~100-300ms of CPU + ~95% of the system prompt size.
+Decision matrix (see ``persona_delivery.py`` for the canonical version):
 
-These tests verify:
-
-- Directive without content → respond_slim with extra_system=directive
-- Content present → falls back to legacy ``action.respond()`` path
-  (so engine final-response delivery is unaffected)
-- No directive, no content → still falls back to ``action.respond()``
+- ``response_mode="respond"`` → ``visitor.add_directive(...)`` (either the
+  caller-supplied directive or a synthesized ``Tell the user: ...``) then
+  ``action.respond(visitor, ...)``. ``persona.respond_slim`` is NOT used —
+  the full ``PersonaAction.respond()`` compose path is required so any
+  directives accumulated on the interaction are honored.
+- ``response_mode="publish"`` + non-degenerate ``content`` →
+  ``persona.respond_slim(prompt=user_utterance, extra_system=<delivery
+  instruction wrapping the content>, history=[])``. The content is folded
+  into ``extra_system`` so the persona reshapes it for natural delivery
+  instead of treating it as the user's request.
+- ``response_mode="respond"`` + neither directive nor content →
+  ``action.respond()`` drives from interaction-accumulated directives only.
 """
 
 from __future__ import annotations
@@ -52,8 +52,13 @@ def _make_persona():
     return persona
 
 
-async def test_converse_fast_path_calls_respond_slim_with_directive() -> None:
-    """Directive + no content → respond_slim path with extra_system=directive."""
+async def test_respond_mode_with_directive_adds_directive_and_calls_respond() -> None:
+    """Directive + no content → ``add_directive(directive)`` then ``action.respond()``.
+
+    ``respond_slim`` is not used: respond mode requires the full
+    PersonaAction.respond() compose so directives accumulated on the
+    interaction (this one plus any prior ones) all drive the final reply.
+    """
     persona = _make_persona()
     action = _make_action(persona)
     visitor = _make_visitor()
@@ -68,26 +73,25 @@ async def test_converse_fast_path_calls_respond_slim_with_directive() -> None:
         use_history=True,
     )
 
-    # respond_slim called once, action.respond() never reached.
-    persona.respond_slim.assert_awaited_once()
-    action.respond.assert_not_called()
-    # Directive is passed via extra_system kwarg (not as a directive on the interaction).
-    kwargs = persona.respond_slim.await_args.kwargs
-    assert kwargs.get("extra_system") == "Reply briefly in character."
-    # No directive added to the interaction — the legacy path would have done that.
-    visitor.add_directive.assert_not_called()
+    visitor.add_directive.assert_awaited_once_with("Reply briefly in character.")
+    action.respond.assert_awaited_once()
+    persona.respond_slim.assert_not_called()
+    # ``action.respond()`` is invoked with the caller's history flags.
+    kwargs = action.respond.await_args.kwargs
+    assert kwargs.get("use_history") is True
+    assert kwargs.get("history_limit") == 2
 
 
-async def test_converse_fast_path_loads_history_when_use_history_true() -> None:
+async def test_respond_mode_forwards_history_flags_to_action_respond() -> None:
+    """``use_history`` + ``history_limit`` flow through to ``action.respond()``.
+
+    ``persona.respond_slim`` is not part of the respond-mode path, so
+    history is loaded by ``PersonaAction.respond()`` itself rather than
+    by this helper.
+    """
     persona = _make_persona()
     action = _make_action(persona)
     visitor = _make_visitor()
-    visitor.conversation.get_interaction_history = AsyncMock(
-        return_value=[
-            {"role": "user", "content": "hi earlier"},
-            {"role": "assistant", "content": "hey"},
-        ]
-    )
 
     await deliver_via_persona(
         action,
@@ -99,13 +103,11 @@ async def test_converse_fast_path_loads_history_when_use_history_true() -> None:
         use_history=True,
     )
 
-    persona.respond_slim.assert_awaited_once()
-    history = persona.respond_slim.await_args.kwargs.get("history")
-    assert isinstance(history, list)
-    assert len(history) == 2
-    # Pair preserved as (role, content).
-    assert history[0]["role"] == "user"
-    assert history[0]["content"] == "hi earlier"
+    action.respond.assert_awaited_once()
+    kwargs = action.respond.await_args.kwargs
+    assert kwargs.get("use_history") is True
+    assert kwargs.get("history_limit") == 4
+    persona.respond_slim.assert_not_called()
 
 
 async def test_converse_fast_path_skipped_when_persona_unavailable() -> None:
@@ -125,24 +127,38 @@ async def test_converse_fast_path_skipped_when_persona_unavailable() -> None:
     visitor.add_directive.assert_awaited_once()
 
 
-async def test_publish_mode_with_content_uses_respond_slim_existing_path() -> None:
-    """Content + publish mode → respond_slim called with prompt=content (legacy slim path)."""
+async def test_publish_mode_with_content_uses_respond_slim_delivery_path() -> None:
+    """Content + publish mode → ``respond_slim`` with content folded into ``extra_system``.
+
+    The user's utterance becomes ``prompt`` (so the model still sees what
+    they asked); the engine-produced ``content`` is wrapped in a delivery
+    instruction and passed via ``extra_system`` so the persona reshapes it
+    naturally instead of treating it as a fresh user message.
+    """
     persona = _make_persona()
     action = _make_action(persona)
     visitor = _make_visitor()
+    visitor.interaction.utterance = "Why is 6 times 7 special?"
 
+    content = "The answer is 42 because of the long calculation."
     await deliver_via_persona(
         action,
         visitor,
-        content="The answer is 42 because of the long calculation.",
+        content=content,
         response_mode="publish",
     )
 
     persona.respond_slim.assert_awaited_once()
     kwargs = persona.respond_slim.await_args.kwargs
-    assert kwargs.get("prompt") == "The answer is 42 because of the long calculation."
-    # The publish path does NOT pass extra_system (only the converse path does).
-    assert kwargs.get("extra_system") is None
+    # ``prompt`` is the user's utterance, not the engine's content.
+    assert kwargs.get("prompt") == "Why is 6 times 7 special?"
+    # ``extra_system`` carries the delivery instruction with the content appended.
+    extra_system = kwargs.get("extra_system")
+    assert isinstance(extra_system, str)
+    assert content in extra_system
+    assert "Deliver it naturally in your voice" in extra_system
+    # No directive added — publish path does not route through ``add_directive``.
+    visitor.add_directive.assert_not_called()
 
 
 async def test_respond_mode_with_content_uses_legacy_action_respond() -> None:

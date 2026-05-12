@@ -97,7 +97,9 @@ class OllamaLanguageModelAction(LanguageModelAction):
         api_key = self.api_key_from_context("OLLAMA_API_KEY")
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
-        logger.debug("Ollama headers: auth=%s, endpoint=%s", bool(api_key), self.api_endpoint)
+        logger.debug(
+            "Ollama headers: auth=%s, endpoint=%s", bool(api_key), self.api_endpoint
+        )
         return headers
 
     def _extract_images(self, content: Any) -> tuple[str, List[str]]:
