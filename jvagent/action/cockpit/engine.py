@@ -962,6 +962,7 @@ class CockpitEngine:
                 with_utterance=True,
                 with_response=True,
                 formatted=True,
+                max_statement_length=self.ctx.config.max_statement_length,
             )
             messages: List[Dict[str, Any]] = []
             for entry in raw or []:

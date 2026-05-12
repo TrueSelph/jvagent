@@ -125,6 +125,7 @@ class CockpitInteractAction(InteractAction):
     conversational_fast_path: bool = attribute(default=True)
 
     history_limit: int = attribute(default=3)
+    max_statement_length: Optional[int] = attribute(default=None)
     enable_accumulation: bool = attribute(default=True)
 
     router_model_temperature: float = attribute(default=0.1)
@@ -235,6 +236,7 @@ class CockpitInteractAction(InteractAction):
             auto_track_tasks=self.auto_track_tasks,
             skill_index_inline_max_skills=self.skill_index_inline_max_skills,
             history_limit=self.history_limit,
+            max_statement_length=self.max_statement_length,
             reasoning_budget_tokens=self.reasoning_budget_tokens,
             reasoning_enabled=self.reasoning_enabled,
             reasoning_effort=self.reasoning_effort,

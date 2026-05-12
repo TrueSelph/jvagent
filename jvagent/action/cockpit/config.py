@@ -67,6 +67,7 @@ class CockpitConfig:
     auto_track_tasks: bool = True
 
     history_limit: int = 5
+    max_statement_length: Optional[int] = None
 
     reasoning_budget_tokens: int = 0
     reasoning_enabled: Optional[bool] = None

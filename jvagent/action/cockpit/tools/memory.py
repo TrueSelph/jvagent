@@ -149,6 +149,7 @@ def _build_memory_tools(ctx: CockpitContext) -> List[Tool]:
                 with_interpretation=False,
                 with_event=False,
                 formatted=True,
+                max_statement_length=ctx.config.max_statement_length,
             )
         except Exception as exc:
             return f"Error retrieving history: {exc}"

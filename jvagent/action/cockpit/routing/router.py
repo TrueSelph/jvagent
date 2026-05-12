@@ -116,6 +116,9 @@ class CockpitRouter:
                         with_event=True,
                         with_posture=True,
                         formatted=False,
+                        max_statement_length=getattr(
+                            self._action, "max_statement_length", None
+                        ),
                     ),
                 )
             else:

@@ -746,6 +746,7 @@ action's `context:` block; see "Action Configuration" in
 | `degenerate_response_max_chars` | `25` | Below-threshold replies trigger the engine to retry/reroute |
 | `enable_accumulation` | `true` | Carry deferred routing context across walker revisits |
 | `history_limit` | `3` | Engine system-prompt context depth |
+| `max_statement_length` | `null` | Truncate utterances/responses in cockpit-rendered history (engine, router, `memory_get_history` tool). `null` falls back to `Agent.max_statement_length` via `Conversation.truncate_statement`'s agent fallback. |
 
 #### Hygiene + security
 
