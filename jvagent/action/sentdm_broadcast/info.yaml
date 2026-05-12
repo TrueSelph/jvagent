@@ -1,0 +1,17 @@
+package:
+  name: jvagent/sentdm_broadcast_action
+  author: V75 Inc.
+  archetype: SentDMBroadcastAction
+  version: 1.0.0
+  meta:
+    title: SentDM Broadcast
+    description: Send SMS/WhatsApp broadcast messages via the SentDM v3 API.
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - httpx>=0.27.0
