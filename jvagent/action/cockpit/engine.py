@@ -5,6 +5,7 @@ controls iteration by checking the step result and re-adding itself to the
 walker walk path when more steps are needed (walker-revisit pattern).
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -217,17 +218,18 @@ class CockpitEngine:
                 activated_skills=list(self._activated_skills),
             )
 
+        use_stream = bool(self.ctx.stream)
         result = await self.ctx.model_action.query_messages(
             self._messages,
-            stream=False,
+            stream=use_stream,
             tools=self._tools_serialized,
             **self._model_query_kwargs(),
         )
 
-        # Surface model thinking / extended-reasoning content as a reasoning
-        # thought so users (or downstream observers) can see how the model is
-        # reasoning between tool calls. Gated by stream_internal_progress.
-        await self._emit_thinking_thought(result)
+        if use_stream and result.is_streaming:
+            await self._consume_stream_with_live_reasoning(result)
+        else:
+            await self._emit_thinking_thought(result)
 
         if result.tool_calls:
             # Dispatch all tool calls first — side effects must execute
@@ -1208,14 +1210,71 @@ class CockpitEngine:
             thought_type="tool_error",
         )
 
-    async def _emit_thinking_thought(self, result: Any) -> None:
-        """Publish the model's thinking/reasoning text as a transient thought.
+    async def _consume_stream_with_live_reasoning(self, result: Any) -> None:
+        """Drain a streaming result while emitting reasoning deltas live.
 
-        Honors ``stream_internal_progress``. Many providers (Anthropic
-        extended thinking, OpenAI reasoning models, Ollama thinking-capable
-        models) populate ``result.thinking_content`` after the call completes;
-        this surfaces that text on the response bus so users can see how the
-        model reasoned between tool calls.
+        Runs two concurrent consumers:
+        1. ``result.stream`` — text chunks accumulated into ``result.response``;
+           tool_calls are populated on the result by the provider when the
+           stream finishes.
+        2. ``result.iter_thinking()`` — reasoning deltas published to the
+           response bus as they arrive, giving the UI real-time visibility
+           into the model's chain of thought.
+
+        After both complete the result object is fully populated (response,
+        tool_calls, thinking_content, metrics) and the caller can proceed
+        exactly as if ``stream=False`` had been used.
+        """
+        ctx = self.ctx
+        cfg = ctx.config
+        can_emit = (
+            getattr(cfg, "stream_internal_progress", True)
+            and ctx.response_bus
+            and ctx.session_id
+            and ctx.interaction
+        )
+
+        async def _drain_text() -> None:
+            stream = getattr(result, "stream", None)
+            if not stream:
+                return
+            chunks: list[str] = []
+            async for chunk in stream:
+                chunks.append(chunk)
+            if chunks and not getattr(result, "response", None):
+                result.response = "".join(chunks)
+
+        async def _drain_thinking() -> None:
+            if not can_emit:
+                return
+            iter_thinking = getattr(result, "iter_thinking", None)
+            if not iter_thinking:
+                return
+            seg_id = f"reasoning-{self._iteration}"
+            async for delta in iter_thinking():
+                await ctx.response_bus.publish(
+                    session_id=ctx.session_id,
+                    content=delta,
+                    channel=ctx.channel,
+                    stream=ctx.stream,
+                    interaction_id=ctx.interaction.id,
+                    interaction=ctx.interaction,
+                    user_id=ctx.user_id,
+                    segment_id=seg_id,
+                    streaming_complete=False,
+                    transient=True,
+                    category="thought",
+                    thought_type="reasoning",
+                )
+
+        await asyncio.gather(_drain_text(), _drain_thinking())
+
+    async def _emit_thinking_thought(self, result: Any) -> None:
+        """Publish the model's thinking/reasoning text as a single thought.
+
+        Fallback for non-streaming queries. When streaming is active,
+        ``_consume_stream_with_live_reasoning`` handles reasoning deltas
+        incrementally instead.
         """
         ctx = self.ctx
         cfg = ctx.config
