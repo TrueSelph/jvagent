@@ -100,3 +100,5 @@ Dockerfile
 .tectonic_*
 
 ollama_app/
+
+jvspatial/
