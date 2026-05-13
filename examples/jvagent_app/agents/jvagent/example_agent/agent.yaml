@@ -116,7 +116,7 @@ actions:
     context:
       enabled: true
       description: "SentDM broadcast — template-based SMS / WhatsApp messages"
-      default_channels: ["sms"]
+      default_channels: ["whatsapp"]
       # Uncomment to set an account-wide fallback template:
       # default_template_name: "order_confirmation"
       # default_template_id: ""
@@ -128,6 +128,12 @@ actions:
       webhook_event_types: ["messages"]
       webhook_retry_count: 3
       webhook_timeout_seconds: 30
+      # Graph persistence — each send creates a SentDMBroadcastRecord node
+      # (one per recipient/channel), and the inbound webhook handler folds
+      # delivery events into it. Disable persist_records to skip entirely.
+      persist_records: true
+      persist_sandbox_sends: false   # sandbox sends are not recorded by default
+      record_event_history_limit: 25
 
   # ── Signup interview (local custom action) ───────────────
   - action: jvagent/signup_interview_interact_action

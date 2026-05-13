@@ -20,7 +20,9 @@ import httpx
 from fastapi import HTTPException, Request
 from jvspatial.api import endpoint
 from jvspatial.api.exceptions import ResourceNotFoundError
+from jvspatial.exceptions import ValidationError
 
+from .models import SentDMBroadcastRecord
 from .sentdm_broadcast_action import SentDMBroadcastAction
 
 logger = logging.getLogger(__name__)
@@ -75,6 +77,30 @@ def _httpx_error_to_http(exc: httpx.HTTPStatusError) -> HTTPException:
         status_code=exc.response.status_code,
         detail={"upstream": body, "message": str(exc)},
     )
+
+
+def _extract_message_id_from_event(event_payload: Any) -> str:
+    """Pull a SentDM message id out of a webhook event payload.
+
+    SentDM's webhook event shape isn't fully nailed down in the public docs,
+    so we probe a handful of likely paths and return the first non-empty
+    string. Returns ``""`` when nothing was found.
+    """
+    if not isinstance(event_payload, dict):
+        return ""
+    direct_keys = ("id", "message_id", "messageId")
+    for key in direct_keys:
+        value = event_payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    for nested_key in ("message", "data"):
+        nested = event_payload.get(nested_key)
+        if isinstance(nested, dict):
+            for key in direct_keys:
+                value = nested.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+    return ""
 
 
 @endpoint(
@@ -256,6 +282,175 @@ async def sentdm_register_webhook(action_id: str) -> Dict[str, Any]:
 
 
 @endpoint(
+    "/actions/{action_id}/sentdm/webhook",
+    methods=["GET"],
+    auth=True,
+    roles=["admin"],
+    tags=["SentDM"],
+    summary="Show the currently registered SentDM webhook URL",
+)
+async def sentdm_get_webhook(action_id: str) -> Dict[str, Any]:
+    """Return the persisted webhook URL + SentDM webhook id (read-only).
+
+    Does not contact SentDM. To force a reconcile, POST
+    ``/actions/{action_id}/sentdm/webhook/register``.
+    """
+    action = await _get_sentdm_action(action_id)
+    return {
+        "configured": action.is_configured(),
+        "webhook_url": action.webhook_url,
+        "sentdm_webhook_id": action.sentdm_webhook_id,
+        "has_signing_secret": bool((action.sentdm_webhook_secret or "").strip()),
+        "event_types": list(action.webhook_event_types or []),
+        "display_name": action.webhook_display_name,
+    }
+
+
+@endpoint(
+    "/actions/{action_id}/sentdm/broadcasts",
+    methods=["GET"],
+    auth=True,
+    roles=["admin"],
+    tags=["SentDM"],
+    summary="List persisted SentDM broadcast records",
+)
+async def sentdm_list_broadcasts(
+    action_id: str,
+    status: Optional[str] = None,
+    to: Optional[str] = None,
+    sentdm_message_id: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> Dict[str, Any]:
+    """Return broadcast records persisted for this action.
+
+    Filters:
+
+    - ``status`` (e.g. ``delivered``, ``failed``)
+    - ``to`` — exact recipient match (E.164)
+    - ``sentdm_message_id`` — direct id lookup
+
+    Pagination is client-side (in-memory) for now — fine for the volumes
+    these records target.
+    """
+    action = await _get_sentdm_action(action_id)
+
+    query: Dict[str, Any] = {"action_id": str(action.id)}
+    if status:
+        query["status"] = status.strip().lower()
+    if to:
+        query["to"] = to.strip()
+    if sentdm_message_id:
+        query["sentdm_message_id"] = sentdm_message_id.strip()
+
+    try:
+        records = await SentDMBroadcastRecord.find(**query)
+    except Exception as exc:
+        logger.warning("SentDM list broadcasts query failed: %s", exc)
+        raise HTTPException(status_code=500, detail="broadcast record query failed")
+
+    records_sorted = sorted(
+        records,
+        key=lambda r: getattr(r, "created_at", None) or 0,
+        reverse=True,
+    )
+
+    safe_page = max(1, int(page or 1))
+    safe_page_size = max(1, min(int(page_size or 50), 500))
+    start = (safe_page - 1) * safe_page_size
+    end = start + safe_page_size
+    page_records = records_sorted[start:end]
+
+    return {
+        "total": len(records_sorted),
+        "page": safe_page,
+        "page_size": safe_page_size,
+        "records": [_record_to_dict(r) for r in page_records],
+    }
+
+
+@endpoint(
+    "/actions/{action_id}/sentdm/broadcasts/{record_id}",
+    methods=["GET"],
+    auth=True,
+    roles=["admin"],
+    tags=["SentDM"],
+    summary="Show a single SentDM broadcast record (with full event history)",
+)
+async def sentdm_get_broadcast(action_id: str, record_id: str) -> Dict[str, Any]:
+    """Return one broadcast record by its node id, including the full audit log."""
+    action = await _get_sentdm_action(action_id)
+    record = await SentDMBroadcastRecord.get(record_id)
+    if record is None or not isinstance(record, SentDMBroadcastRecord):
+        raise ResourceNotFoundError(f"Broadcast record not found: {record_id}")
+    if str(getattr(record, "action_id", "")) != str(action.id):
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Broadcast record {record_id} does not belong to action {action_id}"
+            ),
+        )
+    return _record_to_dict(record, include_events=True)
+
+
+@endpoint(
+    "/actions/{action_id}/sentdm/broadcasts/{record_id}/refresh",
+    methods=["POST"],
+    auth=True,
+    roles=["admin"],
+    tags=["SentDM"],
+    summary="Re-fetch a broadcast's status from SentDM and update the record",
+)
+async def sentdm_refresh_broadcast(action_id: str, record_id: str) -> Dict[str, Any]:
+    """Force-refresh a record's status from SentDM (recovers from missed webhooks)."""
+    action = await _get_sentdm_action(action_id)
+    try:
+        return await action.refresh_record(record_id)
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except httpx.HTTPStatusError as exc:
+        raise _httpx_error_to_http(exc)
+
+
+def _record_to_dict(
+    record: SentDMBroadcastRecord, *, include_events: bool = False
+) -> Dict[str, Any]:
+    """Serialize a broadcast record for HTTP responses."""
+
+    def _iso(value: Any) -> Optional[str]:
+        try:
+            return value.isoformat() if value is not None else None
+        except AttributeError:
+            return str(value) if value is not None else None
+
+    data: Dict[str, Any] = {
+        "id": record.id,
+        "action_id": record.action_id,
+        "agent_id": record.agent_id,
+        "sentdm_message_id": record.sentdm_message_id,
+        "to": record.to,
+        "channel": record.channel,
+        "template_id": record.template_id,
+        "template_name": record.template_name,
+        "parameters": record.parameters,
+        "idempotency_key": record.idempotency_key,
+        "profile_id": record.profile_id,
+        "sandbox": record.sandbox,
+        "status": record.status,
+        "last_event_field": record.last_event_field,
+        "last_status_at": _iso(record.last_status_at),
+        "error": record.error,
+        "created_at": _iso(record.created_at),
+        "updated_at": _iso(record.updated_at),
+        "event_count": len(record.events or []),
+    }
+    if include_events:
+        data["events"] = list(record.events or [])
+        data["last_event_payload"] = record.last_event_payload
+    return data
+
+
+@endpoint(
     "/sentdm/webhook/{action_id}",
     methods=["POST"],
     webhook=True,
@@ -312,16 +507,56 @@ async def sentdm_webhook_receive(request: Request, action_id: str) -> Dict[str, 
         field = str(payload.get("field") or "")
         event_payload = payload.get("payload")
 
+    sentdm_message_id = _extract_message_id_from_event(event_payload)
+
     logger.info(
-        "SentDM webhook received: action=%s webhook_id=%s field=%s",
+        "SentDM webhook received: action=%s webhook_id=%s field=%s message_id=%s",
         action_id,
         webhook_id or "(none)",
         field or "(unknown)",
+        sentdm_message_id or "(none)",
     )
     logger.debug("SentDM webhook payload (action=%s): %r", action_id, event_payload)
+
+    record_id: Optional[str] = None
+    record_status: Optional[str] = None
+    if sentdm_message_id:
+        try:
+            record = await action._record_for_message_id(sentdm_message_id)
+        except Exception as exc:  # pragma: no cover - DB hiccup, best effort
+            logger.warning(
+                "SentDM webhook (action=%s) record lookup failed: %s",
+                action_id,
+                exc,
+            )
+            record = None
+        if record is not None:
+            try:
+                updated = await action._apply_webhook_event_to_record(
+                    record, field, event_payload
+                )
+                record_id = updated.id
+                record_status = updated.status
+            except Exception as exc:  # pragma: no cover - best effort
+                logger.warning(
+                    "SentDM webhook (action=%s) record update failed for %s: %s",
+                    action_id,
+                    sentdm_message_id,
+                    exc,
+                )
+        else:
+            logger.info(
+                "SentDM webhook (action=%s): no local record for message_id=%s "
+                "(broadcast may have been sent elsewhere or persist_records=False)",
+                action_id,
+                sentdm_message_id,
+            )
 
     return {
         "status": "received",
         "webhook_id": webhook_id or None,
         "field": field or None,
+        "sentdm_message_id": sentdm_message_id or None,
+        "record_id": record_id,
+        "record_status": record_status,
     }

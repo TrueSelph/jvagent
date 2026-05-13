@@ -5,6 +5,7 @@ SMS / WhatsApp broadcasts and receiving delivery-status webhooks.
 """
 
 from . import endpoints  # noqa: F401  (import for endpoint registration)
+from .models import SentDMBroadcastRecord
 from .sentdm_broadcast_action import SentDMBroadcastAction
 
-__all__ = ["SentDMBroadcastAction"]
+__all__ = ["SentDMBroadcastAction", "SentDMBroadcastRecord"]

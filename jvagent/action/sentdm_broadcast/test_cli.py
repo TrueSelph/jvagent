@@ -414,11 +414,7 @@ def pick_agent(client: JvAgentClient) -> Optional[Dict[str, Any]]:
             except RuntimeError:
                 continue
             if find_sentdm_action(actions):
-                name = (
-                    agent.get("name")
-                    or _agent_field(agent, "name")
-                    or "(unnamed)"
-                )
+                name = agent.get("name") or _agent_field(agent, "name") or "(unnamed)"
                 print(
                     f"(auto-selected agent {name} ({agent_id}) "
                     f"— has SentDMBroadcastAction)"
@@ -466,21 +462,15 @@ def find_sentdm_action(
          embeds the archetype, so this is the most reliable signal.
     """
     for action in actions:
-        archetype = (
-            action.get("archetype") or _agent_field(action, "archetype") or ""
-        )
+        archetype = action.get("archetype") or _agent_field(action, "archetype") or ""
         if str(archetype).strip() == ACTION_LABEL:
             return action
 
-        label = str(
-            action.get("label") or _agent_field(action, "label") or ""
-        ).strip()
+        label = str(action.get("label") or _agent_field(action, "label") or "").strip()
         if label in ACTION_NAMES:
             return action
 
-        action_id = str(
-            action.get("id") or _agent_field(action, "id") or ""
-        ).strip()
+        action_id = str(action.get("id") or _agent_field(action, "id") or "").strip()
         if action_id.startswith(ACTION_ID_PREFIX):
             return action
 
@@ -637,6 +627,76 @@ def do_reconcile_webhook(client: JvAgentClient, action: Dict[str, Any]) -> None:
     _dump_json(_unwrap_data(body))
 
 
+def do_show_webhook(client: JvAgentClient, action: Dict[str, Any]) -> None:
+    _print_header("Webhook URL (currently registered)")
+    body = client.request(
+        "GET",
+        f"/api/actions/{_action_id(action)}/sentdm/webhook",
+    )
+    _dump_json(_unwrap_data(body))
+
+
+def do_list_broadcasts(client: JvAgentClient, action: Dict[str, Any]) -> None:
+    _print_header("List broadcasts (graph records)")
+    status_filter = _prompt_optional(
+        "filter by status (e.g. delivered/failed; blank for any)"
+    )
+    to_filter = _prompt_optional("filter by recipient (E.164; blank for any)")
+    msg_id_filter = _prompt_optional("filter by sentdm_message_id (blank for any)")
+    page = _prompt("page", "1")
+    page_size = _prompt("page_size", "20")
+    params: Dict[str, Any] = {"page": page, "page_size": page_size}
+    if status_filter:
+        params["status"] = status_filter
+    if to_filter:
+        params["to"] = to_filter
+    if msg_id_filter:
+        params["sentdm_message_id"] = msg_id_filter
+    body = client.request(
+        "GET",
+        f"/api/actions/{_action_id(action)}/sentdm/broadcasts",
+        params=params,
+    )
+    data = _unwrap_data(body)
+    if isinstance(data, dict):
+        total = data.get("total")
+        records = data.get("records") or []
+        print(f"  total={total}  page={data.get('page')}  size={data.get('page_size')}")
+        if not records:
+            print("  (no records)")
+            return
+        for rec in records:
+            print(
+                f"  - id={rec.get('id')}  "
+                f"status={rec.get('status')}  "
+                f"to={rec.get('to')}  "
+                f"channel={rec.get('channel')}  "
+                f"message_id={rec.get('sentdm_message_id')}"
+            )
+    else:
+        _dump_json(data)
+
+
+def do_show_broadcast(client: JvAgentClient, action: Dict[str, Any]) -> None:
+    _print_header("Broadcast record (full event history)")
+    record_id = _prompt("record id (the node id, e.g. n.SentDMBroadcastRecord.xxx)")
+    body = client.request(
+        "GET",
+        f"/api/actions/{_action_id(action)}/sentdm/broadcasts/{record_id}",
+    )
+    _dump_json(_unwrap_data(body))
+
+
+def do_refresh_broadcast(client: JvAgentClient, action: Dict[str, Any]) -> None:
+    _print_header("Refresh broadcast (re-fetch status from SentDM)")
+    record_id = _prompt("record id")
+    body = client.request(
+        "POST",
+        f"/api/actions/{_action_id(action)}/sentdm/broadcasts/{record_id}/refresh",
+    )
+    _dump_json(_unwrap_data(body))
+
+
 # ---------------------------------------------------------------------------
 # Top-level loop
 # ---------------------------------------------------------------------------
@@ -652,6 +712,10 @@ SentDM Broadcast Tester
   5) Get message activities
   6) Reconcile webhook
   7) Pick a different agent / action
+  8) Show webhook URL
+  9) List broadcasts (graph records)
+ 10) Show broadcast record by id
+ 11) Refresh broadcast record (re-fetch from SentDM)
   0) Quit
 """
 
@@ -792,6 +856,14 @@ def menu_loop(client: JvAgentClient) -> None:
                 new_sel = select_action(client)
                 if new_sel:
                     _, action = new_sel
+            elif choice == "8":
+                do_show_webhook(client, action)
+            elif choice == "9":
+                do_list_broadcasts(client, action)
+            elif choice == "10":
+                do_show_broadcast(client, action)
+            elif choice == "11":
+                do_refresh_broadcast(client, action)
             elif choice == "0":
                 return
             else:
@@ -856,9 +928,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     cached = load_cached_defaults()
 
     has_password = bool(_env_value(env, "JVAGENT_ADMIN_PASSWORD"))
-    has_email = bool(
-        _env_value(env, "JVAGENT_ADMIN_EMAIL", "JVAGENT_ADMIN_USERNAME")
-    )
+    has_email = bool(_env_value(env, "JVAGENT_ADMIN_EMAIL", "JVAGENT_ADMIN_USERNAME"))
     has_api_key = bool(_env_value(env, "JVAGENT_API_KEY"))
     env_can_auth = has_api_key or (has_password and has_email)
 

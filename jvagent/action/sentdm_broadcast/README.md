@@ -43,6 +43,47 @@ actions:
 | `webhook_event_types` | `List[str]` | `["messages"]` | Event categories to subscribe to. Valid values: `messages`, `templates`. |
 | `webhook_retry_count` | `int` | `3` | SentDM webhook retry count. |
 | `webhook_timeout_seconds` | `int` | `30` | SentDM webhook delivery timeout. |
+| `persist_records` | `bool` | `true` | Persist a `SentDMBroadcastRecord` per `(recipient, channel)` on each send so webhook events update the graph. |
+| `persist_sandbox_sends` | `bool` | `false` | Persist sandbox sends as well (off by default to keep the graph free of test traffic). |
+| `record_event_history_limit` | `int` | `25` | Bound on the `events[]` audit log per record (FIFO eviction). |
+
+## Graph data model
+
+When `persist_records` is on, every successful `POST /v3/messages` writes one
+`SentDMBroadcastRecord` node per `(message_id, recipient, channel)` and
+connects it to the action node, so the graph layout is:
+
+```
+Agent -> Actions -> SentDMBroadcastAction -> SentDMBroadcastRecord (one per message)
+```
+
+Indexed fields (cheap lookups):
+
+| Field | Purpose |
+| --- | --- |
+| `action_id` | Filter records belonging to a specific action node. |
+| `agent_id` | Cross-action queries scoped to one agent. |
+| `sentdm_message_id` | Primary key used by the webhook handler to reconcile delivery status into the local record. |
+
+Mutable fields:
+
+| Field | Notes |
+| --- | --- |
+| `status` | Normalized: `accepted` / `processing` / `sent` / `delivered` / `read` / `failed` / `rejected` / `undelivered`. |
+| `last_event_field`, `last_event_payload`, `last_status_at` | Snapshot of the most recent webhook (or refresh) event. |
+| `events` | Bounded audit log (newest last); cap from `record_event_history_limit`. |
+| `error` | Populated when `status in {failed, rejected, undelivered}`. |
+| `to`, `channel`, `template_id`, `template_name`, `parameters`, `idempotency_key`, `profile_id`, `sandbox`, `created_at`, `updated_at` | Captured at send time. |
+
+Status derivation when a webhook arrives:
+
+1. If `payload.status` (or `payload.data.status`) matches a known token, use it.
+2. Else if `payload.event` looks like `message.delivered` / `message.sent` / `message.failed`, use the suffix.
+3. Else keep the prior status; only `last_event_field` / `events` are updated.
+
+If no local record exists for the inbound `sentdm_message_id` (e.g.
+`persist_records=false`, or the send was made from a different node), the
+handler still returns `200` so SentDM stops retrying and logs an `info` line.
 
 ## Usage from another action
 
@@ -69,11 +110,15 @@ All admin endpoints require auth (admin role) and are scoped by the action id:
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/actions/{action_id}/sentdm/broadcast` | Send a broadcast. Body: `{to, template?, channels?, parameters?, sandbox?, idempotency_key?, profile_id?}`. |
-| `GET` | `/api/actions/{action_id}/sentdm/messages/{message_id}` | Get current status. |
-| `GET` | `/api/actions/{action_id}/sentdm/messages/{message_id}/activities` | Get delivery activity log. |
+| `GET` | `/api/actions/{action_id}/sentdm/messages/{message_id}` | Get current status (SentDM-truth). |
+| `GET` | `/api/actions/{action_id}/sentdm/messages/{message_id}/activities` | Get delivery activity log (SentDM-truth). |
 | `GET` | `/api/actions/{action_id}/sentdm/templates` | List templates (forwards `page`, `page_size`, `search`, `status`, `category`). |
 | `GET` | `/api/actions/{action_id}/sentdm/status` | Healthcheck (`/v3/me`). |
-| `POST` | `/api/actions/{action_id}/sentdm/webhook/register` | Force webhook reconcile. |
+| `POST` | `/api/actions/{action_id}/sentdm/webhook/register` | Force webhook reconcile (re-creates SentDM webhook to point at us). |
+| `GET` | `/api/actions/{action_id}/sentdm/webhook` | Read-only view of the currently registered webhook URL + signing-secret status. |
+| `GET` | `/api/actions/{action_id}/sentdm/broadcasts` | List persisted broadcast records. Query params: `status`, `to`, `sentdm_message_id`, `page`, `page_size`. |
+| `GET` | `/api/actions/{action_id}/sentdm/broadcasts/{record_id}` | Single broadcast record including full `events[]` audit log. |
+| `POST` | `/api/actions/{action_id}/sentdm/broadcasts/{record_id}/refresh` | Re-fetch a record's status from SentDM (recovers from missed webhooks). |
 
 Public webhook receiver (api_key auth via query/header — registered with SentDM
 automatically on startup):
@@ -83,8 +128,10 @@ automatically on startup):
 | `POST` | `/api/sentdm/webhook/{action_id}?api_key=...` |
 
 The handler verifies the `X-Webhook-Signature` HMAC against the stored signing
-secret and de-duplicates by `X-Webhook-ID`. Events are logged; downstream
-dispatch can be added later.
+secret, de-duplicates by `X-Webhook-ID`, looks up the matching
+`SentDMBroadcastRecord` (by `sentdm_message_id` parsed out of the event
+payload), and folds the event into the record's `status`, `last_status_at`,
+`last_event_payload` and `events[]` audit log.
 
 ## Interactive test CLI
 
@@ -120,7 +167,8 @@ What it does:
 4. Lists agents, lets you pick one, and locates its `SentDMBroadcastAction`.
 5. Opens a menu: healthcheck, send broadcast (sandbox-on by default),
    list templates, get message status, get message activities, reconcile
-   webhook, switch agent, quit.
+   webhook, switch agent, show registered webhook URL, list / show / refresh
+   persisted broadcast records, quit.
 
 ### Env vars used as defaults
 

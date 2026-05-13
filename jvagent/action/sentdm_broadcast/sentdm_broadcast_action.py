@@ -1,7 +1,8 @@
 """SentDM Broadcast Action implementation."""
 
 import logging
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 import httpx
 from jvspatial.api.auth.api_key_service import APIKeyService
@@ -14,6 +15,7 @@ from jvspatial.exceptions import DatabaseError, ValidationError
 from jvagent.action.base import Action
 from jvagent.core.public_url import get_public_base_url
 
+from .models import SentDMBroadcastRecord
 from .webhook_auth import get_or_create_system_user
 
 logger = logging.getLogger(__name__)
@@ -104,6 +106,30 @@ class SentDMBroadcastAction(Action):
         description="Delivery timeout (seconds) for SentDM webhook calls",
         ge=1,
         le=300,
+    )
+
+    persist_records: bool = attribute(
+        default=True,
+        description=(
+            "Persist a SentDMBroadcastRecord per (recipient, channel) on each "
+            "send so webhook events can be folded back into the graph."
+        ),
+    )
+    persist_sandbox_sends: bool = attribute(
+        default=False,
+        description=(
+            "Persist records for sandbox sends too. Off by default to keep the "
+            "graph free of test traffic."
+        ),
+    )
+    record_event_history_limit: int = attribute(
+        default=25,
+        description=(
+            "Maximum entries kept in SentDMBroadcastRecord.events. Older entries "
+            "are dropped FIFO."
+        ),
+        ge=1,
+        le=500,
     )
 
     webhook_url: Optional[str] = attribute(
@@ -310,20 +336,337 @@ class SentDMBroadcastAction(Action):
                 "(action.default_channels is empty and none were passed)"
             )
 
+        resolved_template = self._resolve_template(template, parameters)
+        effective_sandbox = bool(self.sandbox if sandbox is None else sandbox)
+
         payload: Dict[str, Any] = {
             "to": recipients,
             "channel": channel_list,
-            "template": self._resolve_template(template, parameters),
-            "sandbox": bool(self.sandbox if sandbox is None else sandbox),
+            "template": resolved_template,
+            "sandbox": effective_sandbox,
         }
 
-        return await self._request(
+        response = await self._request(
             "POST",
             "/v3/messages",
             json_body=payload,
             idempotency_key=idempotency_key,
             profile_id=profile_id,
         )
+
+        try:
+            await self._persist_send_records(
+                response=response,
+                recipients=recipients,
+                channels=channel_list,
+                template=resolved_template,
+                sandbox=effective_sandbox,
+                idempotency_key=idempotency_key,
+                profile_id=profile_id,
+            )
+        except Exception as exc:  # pragma: no cover - best-effort persistence
+            logger.warning(
+                "SentDM send_broadcast succeeded but record persistence failed: %s",
+                exc,
+                exc_info=True,
+            )
+
+        return response
+
+    # --- broadcast record helpers -----------------------------------------
+
+    @staticmethod
+    def _extract_sent_message_descriptors(
+        response: Any,
+    ) -> List[Dict[str, Any]]:
+        """Extract per-message descriptors from a ``POST /v3/messages`` response.
+
+        SentDM's response shape is not fully documented and may evolve, so we
+        probe a few candidate locations and collect anything that looks like a
+        message descriptor (i.e. has an ``id`` / ``message_id``). The
+        descriptors are returned verbatim so callers can read ``id``, ``to``,
+        ``channel``, ``status`` etc. with whatever names SentDM uses.
+        """
+        candidates: List[Any] = []
+        if isinstance(response, list):
+            candidates = response
+        elif isinstance(response, dict):
+            for key in ("messages", "data", "results", "items"):
+                value = response.get(key)
+                if isinstance(value, list):
+                    candidates = value
+                    break
+                if isinstance(value, dict):
+                    inner = value.get("messages")
+                    if isinstance(inner, list):
+                        candidates = inner
+                        break
+            if not candidates:
+                if response.get("id") or response.get("message_id"):
+                    candidates = [response]
+        descriptors: List[Dict[str, Any]] = []
+        for entry in candidates:
+            if isinstance(entry, dict) and (entry.get("id") or entry.get("message_id")):
+                descriptors.append(entry)
+        return descriptors
+
+    async def _persist_send_records(
+        self,
+        *,
+        response: Any,
+        recipients: Sequence[str],
+        channels: Sequence[str],
+        template: Mapping[str, Any],
+        sandbox: bool,
+        idempotency_key: Optional[str],
+        profile_id: Optional[str],
+    ) -> List[SentDMBroadcastRecord]:
+        """Create a SentDMBroadcastRecord per (message_id, recipient, channel)."""
+        if not self.persist_records:
+            return []
+        if sandbox and not self.persist_sandbox_sends:
+            return []
+
+        descriptors = self._extract_sent_message_descriptors(response)
+        if not descriptors:
+            logger.debug(
+                "SentDM persist: no message descriptors found in response; "
+                "skipping record creation (response keys=%s)",
+                list(response.keys()) if isinstance(response, dict) else type(response),
+            )
+            return []
+
+        agent = await self.get_agent()
+        agent_id = str(getattr(agent, "id", "") or "")
+
+        template_id = str(template.get("id") or "") or None
+        template_name = str(template.get("name") or "") or None
+        template_params = template.get("parameters") or {}
+        if not isinstance(template_params, dict):
+            template_params = {}
+
+        records: List[SentDMBroadcastRecord] = []
+        for desc in descriptors:
+            sentdm_message_id = str(desc.get("id") or desc.get("message_id") or "")
+            if not sentdm_message_id:
+                continue
+            to_value = str(
+                desc.get("to") or desc.get("recipient") or desc.get("phone") or ""
+            )
+            if not to_value and len(recipients) == 1:
+                to_value = recipients[0]
+            channel_value = str(desc.get("channel") or "")
+            if not channel_value and len(channels) == 1:
+                channel_value = channels[0]
+
+            status_value = str(desc.get("status") or "accepted").lower() or "accepted"
+
+            record = await SentDMBroadcastRecord.create(
+                action_id=str(self.id),
+                agent_id=agent_id,
+                sentdm_message_id=sentdm_message_id,
+                to=to_value,
+                channel=channel_value,
+                template_id=template_id,
+                template_name=template_name,
+                parameters=dict(template_params),
+                idempotency_key=idempotency_key or None,
+                profile_id=self._effective_profile_id(profile_id) or None,
+                sandbox=sandbox,
+                status=status_value,
+                last_event_field="send",
+                last_event_payload=desc,
+                last_status_at=datetime.now(timezone.utc),
+                events=[
+                    {
+                        "field": "send",
+                        "status": status_value,
+                        "payload": desc,
+                        "received_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                ],
+            )
+            try:
+                await self.connect(record)
+            except Exception as exc:  # pragma: no cover - non-fatal
+                logger.debug(
+                    "SentDM persist: failed to connect action->record edge: %s", exc
+                )
+            records.append(record)
+
+        if records:
+            logger.debug(
+                "SentDM persist: stored %d broadcast record(s) for action %s",
+                len(records),
+                self.id,
+            )
+        return records
+
+    async def _record_for_message_id(
+        self, message_id: str
+    ) -> Optional[SentDMBroadcastRecord]:
+        """Look up the broadcast record for a SentDM message id."""
+        key = (message_id or "").strip()
+        if not key:
+            return None
+        try:
+            result = await SentDMBroadcastRecord.find_one(
+                action_id=str(self.id), sentdm_message_id=key
+            )
+        except Exception as exc:
+            logger.warning("SentDM persist: find_one failed for %s: %s", key, exc)
+            return None
+        if result is None or not isinstance(result, SentDMBroadcastRecord):
+            return None
+        return result
+
+    @staticmethod
+    def _derive_status_and_error(
+        field: str,
+        payload: Any,
+    ) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+        """Extract a normalized status (and optional error) from a webhook event.
+
+        Resolution order:
+
+        1. ``payload.status`` (or ``payload.data.status``) when it matches a
+           known status string.
+        2. Event-name suffix when ``payload.event`` looks like
+           ``message.delivered`` / ``message.sent`` / ``message.failed`` etc.
+        3. None when nothing matched (caller keeps the prior status).
+        """
+        known = {
+            "accepted",
+            "queued",
+            "processing",
+            "sent",
+            "delivered",
+            "read",
+            "failed",
+            "rejected",
+            "undelivered",
+            "expired",
+            "unknown",
+        }
+
+        def _normalize(value: Any) -> Optional[str]:
+            if not isinstance(value, str):
+                return None
+            v = value.strip().lower()
+            if not v:
+                return None
+            if v in known:
+                return v
+            return None
+
+        body: Dict[str, Any] = payload if isinstance(payload, dict) else {}
+        status = _normalize(body.get("status"))
+        if not status and isinstance(body.get("data"), dict):
+            status = _normalize(body["data"].get("status"))
+
+        if not status:
+            event_name = body.get("event") or body.get("event_type")
+            if isinstance(event_name, str) and "." in event_name:
+                suffix = event_name.split(".", 1)[1].strip().lower()
+                status = _normalize(suffix)
+
+        error_payload: Optional[Dict[str, Any]] = None
+        if status in {"failed", "rejected", "undelivered"}:
+            err = body.get("error") or body.get("failure_reason") or body.get("reason")
+            if isinstance(err, dict):
+                error_payload = err
+            elif isinstance(err, str) and err.strip():
+                error_payload = {"message": err.strip()}
+
+        # field is reserved for callers; not used to derive status yet but
+        # available for future heuristics.
+        _ = field
+        return status, error_payload
+
+    async def _apply_webhook_event_to_record(
+        self,
+        record: SentDMBroadcastRecord,
+        field: str,
+        payload: Any,
+        *,
+        source: str = "webhook",
+    ) -> SentDMBroadcastRecord:
+        """Fold a webhook (or refresh) event into a broadcast record."""
+        new_status, error_payload = self._derive_status_and_error(field, payload)
+        now = datetime.now(timezone.utc)
+
+        event_entry: Dict[str, Any] = {
+            "source": source,
+            "field": field or None,
+            "status": new_status,
+            "received_at": now.isoformat(),
+            "payload": payload if isinstance(payload, (dict, list, str)) else None,
+        }
+        events = list(record.events or [])
+        events.append(event_entry)
+        cap = max(int(self.record_event_history_limit or 1), 1)
+        if len(events) > cap:
+            events = events[-cap:]
+        record.events = events
+
+        record.last_event_field = field or record.last_event_field
+        if isinstance(payload, dict):
+            record.last_event_payload = payload
+
+        if new_status and new_status != record.status:
+            record.status = new_status
+            record.last_status_at = now
+        elif new_status:
+            record.last_status_at = now
+
+        if error_payload:
+            record.error = error_payload
+        elif new_status and new_status not in {"failed", "rejected", "undelivered"}:
+            record.error = None
+
+        record.updated_at = now
+        await record.save()
+        return record
+
+    async def refresh_record(
+        self,
+        record_id: str,
+    ) -> Dict[str, Any]:
+        """Re-fetch the latest server-truth status for one record.
+
+        Useful when a webhook was missed or delivered to a different replica.
+        Calls ``GET /v3/messages/{sentdm_message_id}`` and folds the result
+        into the record's audit log.
+        """
+        if not record_id:
+            raise ValidationError("record_id is required")
+        record = await SentDMBroadcastRecord.get(record_id)
+        if record is None or not isinstance(record, SentDMBroadcastRecord):
+            raise ValidationError(f"SentDMBroadcastRecord not found: {record_id}")
+        if str(getattr(record, "action_id", "")) != str(self.id):
+            raise ValidationError(
+                f"Record {record_id} does not belong to action {self.id}"
+            )
+        if not record.sentdm_message_id:
+            raise ValidationError(
+                f"Record {record_id} has no sentdm_message_id; cannot refresh"
+            )
+
+        status_body = await self.get_message_status(
+            record.sentdm_message_id, profile_id=record.profile_id or None
+        )
+        updated = await self._apply_webhook_event_to_record(
+            record, "refresh", status_body, source="refresh"
+        )
+        return {
+            "record_id": updated.id,
+            "sentdm_message_id": updated.sentdm_message_id,
+            "status": updated.status,
+            "last_status_at": (
+                updated.last_status_at.isoformat() if updated.last_status_at else None
+            ),
+            "upstream": status_body,
+        }
 
     async def get_message_status(
         self,

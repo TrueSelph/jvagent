@@ -198,11 +198,15 @@ configured and want to broadcast for real.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/actions/{action_id}/sentdm/broadcast` | Send a broadcast |
-| `GET` | `/api/actions/{action_id}/sentdm/messages/{message_id}` | Message status |
-| `GET` | `/api/actions/{action_id}/sentdm/messages/{message_id}/activities` | Delivery activity log |
+| `GET` | `/api/actions/{action_id}/sentdm/messages/{message_id}` | Message status (SentDM-truth) |
+| `GET` | `/api/actions/{action_id}/sentdm/messages/{message_id}/activities` | Delivery activity log (SentDM-truth) |
 | `GET` | `/api/actions/{action_id}/sentdm/templates` | List templates |
 | `GET` | `/api/actions/{action_id}/sentdm/status` | Healthcheck (`/v3/me`) |
 | `POST` | `/api/actions/{action_id}/sentdm/webhook/register` | Force webhook reconcile |
+| `GET` | `/api/actions/{action_id}/sentdm/webhook` | View the registered webhook URL |
+| `GET` | `/api/actions/{action_id}/sentdm/broadcasts` | List persisted broadcast records |
+| `GET` | `/api/actions/{action_id}/sentdm/broadcasts/{record_id}` | Show one broadcast record (full event log) |
+| `POST` | `/api/actions/{action_id}/sentdm/broadcasts/{record_id}/refresh` | Re-fetch a record's status from SentDM |
 
 An interactive tester ships with the action at
 [`jvagent/action/sentdm_broadcast/test_cli.py`](../../../../../jvagent/action/sentdm_broadcast/test_cli.py).
