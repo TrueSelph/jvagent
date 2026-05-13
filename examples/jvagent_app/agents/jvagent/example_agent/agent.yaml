@@ -106,6 +106,29 @@ actions:
       model_temperature: 0.1
       model_max_tokens: 8192
 
+  # ── SentDM broadcast (SMS / WhatsApp) ────────────────────
+  # Sends template-based broadcasts via the SentDM v3 API. Requires the
+  # SENTDM_API_KEY environment variable. For webhook auto-registration of
+  # delivery events, also set JVAGENT_PUBLIC_BASE_URL and
+  # JVSPATIAL_JWT_SECRET_KEY. Templates must already exist in your SentDM
+  # account (create them via the SentDM dashboard).
+  - action: jvagent/sentdm_broadcast_action
+    context:
+      enabled: true
+      description: "SentDM broadcast — template-based SMS / WhatsApp messages"
+      default_channels: ["sms"]
+      # Uncomment to set an account-wide fallback template:
+      # default_template_name: "order_confirmation"
+      # default_template_id: ""
+      # profile_id: ""              # required when using an organization API key
+      sandbox: true                 # validate only, no real send — flip to false to go live
+      timeout: 30
+      # Webhook tuning (used when JVAGENT_PUBLIC_BASE_URL is set)
+      webhook_display_name: "jvagent SentDM"
+      webhook_event_types: ["messages"]
+      webhook_retry_count: 3
+      webhook_timeout_seconds: 30
+
   # ── Signup interview (local custom action) ───────────────
   - action: jvagent/signup_interview_interact_action
     context:

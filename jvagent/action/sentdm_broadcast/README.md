@@ -94,14 +94,24 @@ talks to a running jvagent server over HTTP.
 
 ```bash
 python jvagent/action/sentdm_broadcast/test_cli.py
-python jvagent/action/sentdm_broadcast/test_cli.py --env-file ./.env
-python jvagent/action/sentdm_broadcast/test_cli.py --no-env   # ignore .env
+python jvagent/action/sentdm_broadcast/test_cli.py --env-file path/to/.env
+python jvagent/action/sentdm_broadcast/test_cli.py --no-env   # ignore .env files
+python jvagent/action/sentdm_broadcast/test_cli.py --prompt   # force interactive auth
+python jvagent/action/sentdm_broadcast/test_cli.py -y         # explicit auto-mode
 ```
+
+By default the CLI runs in **auto-mode** whenever the resolved env supplies
+enough to authenticate (`JVAGENT_API_KEY`, or `JVAGENT_ADMIN_EMAIL` +
+`JVAGENT_ADMIN_PASSWORD`). In auto-mode it skips every prompt that has a
+default, auto-selects the agent that has a `SentDMBroadcastAction`, and drops
+straight into the menu. Pass `--prompt` to force the legacy interactive flow.
 
 What it does:
 
-1. Loads a `.env` file (auto-discovered from the current working directory
-   upward, or via `--env-file`) and uses it for prompt defaults.
+1. Loads a `.env` file for prompt defaults. By default it uses
+   `examples/jvagent_app/.env` in this repository (the same file as the example
+   app). If that path does not exist, it falls back to walking upward from the
+   current working directory. Override with `--env-file`.
 2. Prompts for the jvagent base URL — the default is
    `JVAGENT_BASE_URL` / `JVAGENT_PUBLIC_BASE_URL`, otherwise
    `http://{JVAGENT_HOST or localhost}:{JVAGENT_PORT or 8000}`.
@@ -119,7 +129,7 @@ What it does:
 | `JVAGENT_BASE_URL` *(optional)* | Explicit base URL for the CLI |
 | `JVAGENT_PUBLIC_BASE_URL` | Fallback base URL |
 | `JVAGENT_HOST`, `JVAGENT_PORT` | Built into `http://host:port` as a last resort |
-| `JVAGENT_ADMIN_USERNAME` / `JVAGENT_ADMIN_EMAIL` | Default login username |
+| `JVAGENT_ADMIN_EMAIL` | Default email for `POST /api/auth/login` (the jvspatial endpoint expects `email`, not `username`); falls back to `JVAGENT_ADMIN_USERNAME` |
 | `JVAGENT_ADMIN_PASSWORD` | Skips the password prompt when present |
 | `JVAGENT_API_KEY` | Skips the API-key prompt when present |
 | `JVAGENT_API_KEY_HEADER` | Default header name (defaults to `x-api-key`) |
