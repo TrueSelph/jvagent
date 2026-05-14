@@ -6,6 +6,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
+pytest.importorskip("google")
+pytest.importorskip("google_auth_oauthlib")
+pytest.importorskip("googleapiclient")
+
 from jvspatial.exceptions import ValidationError
 
 from jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action import (
