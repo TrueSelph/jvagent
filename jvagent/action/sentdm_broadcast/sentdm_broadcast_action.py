@@ -496,6 +496,143 @@ class SentDMBroadcastAction(Action):
     # --- broadcast record helpers -----------------------------------------
 
     @staticmethod
+    def _unwrap_sent_v3_envelope(body: Any) -> Any:
+        """Return ``body['data']`` when ``body`` looks like ``{success, data, meta}``."""
+        if not isinstance(body, dict) or "data" not in body:
+            return body
+        inner = body.get("data")
+        if not isinstance(inner, (dict, list)):
+            return body
+        if "success" in body or "meta" in body or body.get("ok") is True:
+            return inner
+        return body
+
+    @staticmethod
+    def _dict_has_message_identifier(d: dict) -> bool:
+        for key in ("id", "message_id", "messageId"):
+            v = d.get(key)
+            if isinstance(v, str) and v.strip():
+                return True
+        return False
+
+    @staticmethod
+    def _collect_message_lists_and_singletons(
+        node: Any, *, _depth: int = 0
+    ) -> List[Dict[str, Any]]:
+        """Gather dict rows that look like Sent message descriptors from a node."""
+        if _depth > 12:
+            return []
+        out: List[Dict[str, Any]] = []
+        if isinstance(node, list):
+            for entry in node:
+                if isinstance(
+                    entry, dict
+                ) and SentDMBroadcastAction._dict_has_message_identifier(entry):
+                    out.append(entry)
+            return out
+        if not isinstance(node, dict):
+            return out
+
+        for key in (
+            "messages",
+            "results",
+            "items",
+            "records",
+            "rows",
+            "message",
+            "data",
+            "Messages",
+            "Results",
+        ):
+            if key not in node:
+                continue
+            value = node.get(key)
+            if isinstance(value, list):
+                for entry in value:
+                    if isinstance(
+                        entry, dict
+                    ) and SentDMBroadcastAction._dict_has_message_identifier(entry):
+                        out.append(entry)
+                if out:
+                    return out
+            if isinstance(value, dict):
+                if SentDMBroadcastAction._dict_has_message_identifier(value):
+                    out.append(value)
+                    return out
+                nested = SentDMBroadcastAction._collect_message_lists_and_singletons(
+                    value, _depth=_depth + 1
+                )
+                if nested:
+                    return nested
+
+        if SentDMBroadcastAction._dict_has_message_identifier(node):
+            out.append(node)
+            return out
+        msg = node.get("message")
+        if isinstance(msg, dict) and SentDMBroadcastAction._dict_has_message_identifier(
+            msg
+        ):
+            out.append(msg)
+            return out
+        return out
+
+    @staticmethod
+    def _walk_sent_tree_for_message_dicts(
+        obj: Any, *, _depth: int = 0, _seen: Optional[set] = None
+    ) -> List[Dict[str, Any]]:
+        """Last-resort scan for message-shaped dicts (nested ``results.messages``, etc.)."""
+        if _depth > 14 or obj is None:
+            return []
+        if _seen is None:
+            _seen = set()
+        found: List[Dict[str, Any]] = []
+        if isinstance(obj, dict):
+            oid = id(obj)
+            if oid in _seen:
+                return []
+            _seen.add(oid)
+            if SentDMBroadcastAction._dict_has_message_identifier(obj):
+                hint_keys = (
+                    "to",
+                    "channel",
+                    "message_status",
+                    "messageStatus",
+                    "status",
+                    "template_id",
+                    "templateId",
+                    "sandbox",
+                    "recipient",
+                    "phone",
+                )
+                if any(k in obj for k in hint_keys):
+                    return [obj]
+                if _depth >= 2:
+                    rid = str(
+                        obj.get("id")
+                        or obj.get("message_id")
+                        or obj.get("messageId")
+                        or ""
+                    ).strip()
+                    if len(rid) >= 32 and rid.count("-") >= 4:
+                        return [obj]
+            for k, v in obj.items():
+                if k in ("meta",) and isinstance(v, dict) and len(v) > 8:
+                    continue
+                found.extend(
+                    SentDMBroadcastAction._walk_sent_tree_for_message_dicts(
+                        v, _depth=_depth + 1, _seen=_seen
+                    )
+                )
+        elif isinstance(obj, list):
+            for it in obj:
+                found.extend(
+                    SentDMBroadcastAction._walk_sent_tree_for_message_dicts(
+                        it, _depth=_depth + 1, _seen=_seen
+                    )
+                )
+        return found
+
+    @staticmethod
     def _extract_sent_message_descriptors(
         response: Any,
     ) -> List[Dict[str, Any]]:
@@ -506,29 +643,51 @@ class SentDMBroadcastAction(Action):
         message descriptor (i.e. has an ``id`` / ``message_id``). The
         descriptors are returned verbatim so callers can read ``id``, ``to``,
         ``channel``, ``status`` etc. with whatever names SentDM uses.
+
+        Recent APIs wrap payloads as ``{success, data, meta}`` where ``data``
+        holds ``messages`` or a single message object — older code only treated
+        top-level ``data`` as a list and missed those rows.
         """
-        candidates: List[Any] = []
-        if isinstance(response, list):
-            candidates = response
-        elif isinstance(response, dict):
-            for key in ("messages", "data", "results", "items"):
-                value = response.get(key)
-                if isinstance(value, list):
-                    candidates = value
-                    break
-                if isinstance(value, dict):
-                    inner = value.get("messages")
-                    if isinstance(inner, list):
-                        candidates = inner
-                        break
-            if not candidates:
-                if response.get("id") or response.get("message_id"):
-                    candidates = [response]
-        descriptors: List[Dict[str, Any]] = []
-        for entry in candidates:
-            if isinstance(entry, dict) and (entry.get("id") or entry.get("message_id")):
-                descriptors.append(entry)
-        return descriptors
+        cur: Any = response
+        for _ in range(3):
+            nxt = SentDMBroadcastAction._unwrap_sent_v3_envelope(cur)
+            if nxt is cur:
+                break
+            cur = nxt
+
+        if isinstance(cur, list):
+            return SentDMBroadcastAction._collect_message_lists_and_singletons(cur)
+
+        if isinstance(cur, dict):
+            found = SentDMBroadcastAction._collect_message_lists_and_singletons(cur)
+            if found:
+                return found
+            # ``data`` may be a nested envelope or message bag
+            inner = cur.get("data")
+            if isinstance(inner, (dict, list)):
+                found = SentDMBroadcastAction._collect_message_lists_and_singletons(
+                    inner
+                )
+                if found:
+                    return found
+
+        if isinstance(cur, (dict, list)):
+            scanned = SentDMBroadcastAction._walk_sent_tree_for_message_dicts(cur)
+            if scanned:
+                # De-dupe by message id
+                by_id: Dict[str, Dict[str, Any]] = {}
+                for row in scanned:
+                    rid = str(
+                        row.get("id")
+                        or row.get("message_id")
+                        or row.get("messageId")
+                        or ""
+                    ).strip()
+                    if rid:
+                        by_id[rid] = row
+                return list(by_id.values())
+
+        return []
 
     async def _persist_send_records(
         self,
@@ -553,11 +712,15 @@ class SentDMBroadcastAction(Action):
 
         descriptors = self._extract_sent_message_descriptors(response)
         if not descriptors:
+            data_keys: Optional[List[str]] = None
+            if isinstance(response, dict) and isinstance(response.get("data"), dict):
+                data_keys = list(response["data"].keys())[:32]
             logger.info(
                 "SentDM persist: no message descriptors in POST /v3/messages response; "
-                "skipping SentDMBroadcastRecord (type=%s keys=%s)",
+                "skipping SentDMBroadcastRecord (type=%s keys=%s data_keys=%s)",
                 type(response).__name__,
                 list(response.keys()) if isinstance(response, dict) else None,
+                data_keys,
             )
             return []
 
@@ -645,6 +808,82 @@ class SentDMBroadcastAction(Action):
             return None
         return result
 
+    async def _create_record_from_webhook_fold(
+        self,
+        field: str,
+        fold: Dict[str, Any],
+        message_id: str,
+    ) -> SentDMBroadcastRecord:
+        """Create a minimal ``SentDMBroadcastRecord`` from the first webhook payload."""
+        body = fold if isinstance(fold, dict) else {}
+        mid = (message_id or "").strip()
+        if not mid:
+            raise ValueError("message_id is required to create a webhook record")
+
+        outbound = str(body.get("outbound_number") or "").strip()
+        to_val = "" if outbound.lower() == "unknown" else outbound
+
+        chan = str(body.get("channel") or "").strip()
+        if chan.lower() == "unknown":
+            chan = ""
+
+        tid_raw = body.get("template_id")
+        template_id: Optional[str]
+        if tid_raw is None or (isinstance(tid_raw, str) and not tid_raw.strip()):
+            template_id = None
+        else:
+            template_id = str(tid_raw).strip() or None
+
+        record = await SentDMBroadcastRecord.create(
+            action_id=str(self.id),
+            agent_id=str(self.agent_id or ""),
+            sentdm_message_id=mid,
+            to=to_val,
+            channel=chan,
+            template_id=template_id,
+            template_name=None,
+            parameters={},
+            idempotency_key=None,
+            profile_id=None,
+            sandbox=False,
+            status="accepted",
+            last_event_field=None,
+            last_event_payload=None,
+            last_status_at=None,
+            events=[],
+            error=None,
+        )
+        try:
+            await self.connect(record)
+        except Exception as exc:  # pragma: no cover - non-fatal
+            logger.debug(
+                "SentDM webhook upsert: connect action->record failed: %s", exc
+            )
+        logger.info(
+            "SentDM webhook: created SentDMBroadcastRecord for message_id=%s "
+            "(field=%s action=%s)",
+            mid,
+            field or "(unknown)",
+            self.id,
+        )
+        return record
+
+    async def apply_webhook_with_upsert(
+        self,
+        field: str,
+        fold: Dict[str, Any],
+        message_id: str,
+    ) -> Optional[SentDMBroadcastRecord]:
+        """Find or create the graph record for ``message_id`` and fold in this event."""
+        mid = (message_id or "").strip()
+        if not mid:
+            return None
+
+        record = await self._record_for_message_id(mid)
+        if record is None:
+            record = await self._create_record_from_webhook_fold(field, fold, mid)
+        return await self._apply_webhook_event_to_record(record, field, fold)
+
     @staticmethod
     def _derive_status_and_error(
         field: str,
@@ -723,6 +962,7 @@ class SentDMBroadcastAction(Action):
         {
             "sub_type",
             "message_id",
+            "sentdm_message_id",
             "id",
             "status",
             "message_status",

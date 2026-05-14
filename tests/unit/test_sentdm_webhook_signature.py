@@ -3,10 +3,12 @@
 import base64
 import hashlib
 import hmac
+import json
 import time
 
 from jvagent.action.sentdm_broadcast.endpoints import (
     _normalize_sentdm_webhook_envelope,
+    _resolve_sentdm_webhook_message_id,
     _verify_sentdm_signature,
 )
 from jvagent.action.sentdm_broadcast.sentdm_broadcast_action import (
@@ -67,6 +69,54 @@ def test_normalize_dashboard_wrapped_envelope() -> None:
     assert st == "read"
 
 
+def test_normalize_message_queued_dashboard_shape() -> None:
+    body = {
+        "eventType": "message.queued",
+        "eventData": {
+            "field": "message",
+            "payload": {
+                "channel": "unknown",
+                "account_id": "372f629c-194d-4c88-8cb7-582ead4bcdf0",
+                "message_id": "f06ff5f1-e05d-469d-baa4-5b0e32a24cf2",
+                "template_id": "f70c78f8-4be0-49eb-88e2-cd7aa9a7cef9",
+                "inbound_number": "unknown",
+                "message_status": "QUEUED",
+                "outbound_number": "unknown",
+            },
+            "sub_type": "message.queued",
+            "timestamp": "2026-05-14T18:49:14Z",
+        },
+    }
+    field, fold = _normalize_sentdm_webhook_envelope(body)
+    assert field == "message"
+    assert fold["message_id"] == "f06ff5f1-e05d-469d-baa4-5b0e32a24cf2"
+    st, _ = SentDMBroadcastAction._derive_status_and_error(field, fold)
+    assert st == "queued"
+
+
+def test_resolve_message_id_from_response_body_sentdm_alias() -> None:
+    mid = "f06ff5f1-e05d-469d-baa4-5b0e32a24cf2"
+    payload = {
+        "responseBody": json.dumps(
+            {
+                "status": "received",
+                "sentdm_message_id": mid,
+                "record_id": None,
+            }
+        ),
+    }
+    assert _resolve_sentdm_webhook_message_id(payload, {}) == mid
+
+
+def test_derive_status_message_status_queued_uppercase() -> None:
+    st, err = SentDMBroadcastAction._derive_status_and_error(
+        "message",
+        {"message_id": "x", "message_status": "QUEUED", "sub_type": "message.queued"},
+    )
+    assert st == "queued"
+    assert err is None
+
+
 def test_sentdm_legacy_hex_still_verifies() -> None:
     secret = "plain-test-secret"
     raw_body = b'{"x":1}'
@@ -120,3 +170,64 @@ def test_sentdm_webhook_different_paths_not_equivalent() -> None:
     a = "https://h/api/webhook/n.Action.1?k=1"
     b = "https://h/api/webhook/n.Action.2?k=2"
     assert not _sentdm_webhook_urls_equivalent(a, b)
+
+
+def test_extract_message_descriptors_v3_success_envelope() -> None:
+    envelope = {
+        "success": True,
+        "data": {
+            "messages": [
+                {
+                    "id": "m1",
+                    "to": "+15550001",
+                    "channel": "sms",
+                    "status": "queued",
+                },
+            ]
+        },
+        "meta": {},
+    }
+    rows = SentDMBroadcastAction._extract_sent_message_descriptors(envelope)
+    assert len(rows) == 1
+    assert rows[0]["id"] == "m1"
+    assert rows[0]["to"] == "+15550001"
+
+
+def test_extract_message_descriptors_v3_single_message_in_data() -> None:
+    envelope = {
+        "success": True,
+        "data": {"id": "solo-1", "message_status": "QUEUED"},
+        "meta": {},
+    }
+    rows = SentDMBroadcastAction._extract_sent_message_descriptors(envelope)
+    assert len(rows) == 1
+    assert rows[0]["id"] == "solo-1"
+
+
+def test_extract_message_descriptors_nested_results_messages() -> None:
+    envelope = {
+        "success": True,
+        "data": {
+            "results": {
+                "messages": [
+                    {"id": "mid-nested", "to": "+15550001", "channel": "sms"},
+                ]
+            }
+        },
+        "meta": {},
+    }
+    rows = SentDMBroadcastAction._extract_sent_message_descriptors(envelope)
+    assert len(rows) == 1
+    assert rows[0]["id"] == "mid-nested"
+
+
+def test_extract_message_descriptors_message_id_uuid_only_deep() -> None:
+    mid = "f06ff5f1-e05d-469d-baa4-5b0e32a24cf2"
+    envelope = {
+        "success": True,
+        "data": {"payload": {"row": {"message_id": mid}}},
+        "meta": {},
+    }
+    rows = SentDMBroadcastAction._extract_sent_message_descriptors(envelope)
+    assert len(rows) == 1
+    assert rows[0]["message_id"] == mid

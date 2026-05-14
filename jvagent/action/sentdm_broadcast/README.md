@@ -44,7 +44,7 @@ actions:
 | `webhook_event_filters` | `Dict[str, List[str]] \| null` | `null` → default ``{message: [queued, sent, delivered, read, failed, received]}`` | Sent ``event_filters``; ``{}`` means all sub-types for subscribed parents. |
 | `webhook_retry_count` | `int` | `3` | SentDM webhook retry count. |
 | `webhook_timeout_seconds` | `int` | `30` | SentDM webhook delivery timeout. |
-| `persist_records` | `bool` | `true` | Persist a `SentDMBroadcastRecord` per `(recipient, channel)` on each send so webhook events update the graph. |
+| `persist_records` | `bool` | `true` | Persist a `SentDMBroadcastRecord` per `(recipient, channel)` on each successful send. Webhooks **always** upsert by `sentdm_message_id` (create a minimal record if none exists), independent of this flag. |
 | `persist_sandbox_sends` | `bool` | `false` | Persist sandbox sends as well (off by default to keep the graph free of test traffic). |
 | `record_event_history_limit` | `int` | `25` | Bound on the `events[]` audit log per record (FIFO eviction). |
 
@@ -74,7 +74,7 @@ Mutable fields:
 | `last_event_field`, `last_event_payload`, `last_status_at` | Snapshot of the most recent webhook (or refresh) event. |
 | `events` | Bounded audit log (newest last); cap from `record_event_history_limit`. |
 | `error` | Populated when `status in {failed, rejected, undelivered}`. |
-| `to`, `channel`, `template_id`, `template_name`, `parameters`, `idempotency_key`, `profile_id`, `sandbox`, `created_at`, `updated_at` | Captured at send time. |
+| `to`, `channel`, `template_id`, `template_name`, `parameters`, `idempotency_key`, `profile_id`, `sandbox`, `created_at`, `updated_at` | Captured at send time; webhook-only records fill `to` / `channel` / `template_id` from the first event when Sent provides them. |
 
 Status derivation when a webhook arrives:
 
@@ -82,9 +82,9 @@ Status derivation when a webhook arrives:
 2. Else if `payload.event`, `eventType`, or `sub_type` looks like `message.delivered` / `message.sent` / `message.failed`, use the suffix after the dot.
 3. Else keep the prior status; only `last_event_field` / `events` are updated.
 
-If no local record exists for the inbound `sentdm_message_id` (e.g.
-`persist_records=false`, or the send was made from a different node), the
-handler still returns `200` so SentDM stops retrying and logs an `info` line.
+If the message id cannot be resolved from the payload, the handler still
+returns `200` so SentDM stops retrying; otherwise a record is created or
+updated in place.
 
 ## Usage from another action
 

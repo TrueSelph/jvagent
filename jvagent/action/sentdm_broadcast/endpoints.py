@@ -188,7 +188,7 @@ def _extract_message_id_from_event(event_payload: Any) -> str:
     """
     if not isinstance(event_payload, dict):
         return ""
-    direct_keys = ("id", "message_id", "messageId")
+    direct_keys = ("id", "message_id", "messageId", "sentdm_message_id")
     for key in direct_keys:
         value = event_payload.get(key)
         if isinstance(value, str) and value.strip():
@@ -200,6 +200,28 @@ def _extract_message_id_from_event(event_payload: Any) -> str:
                 value = nested.get(key)
                 if isinstance(value, str) and value.strip():
                     return value.strip()
+    return ""
+
+
+def _resolve_sentdm_webhook_message_id(payload: Any, fold: Dict[str, Any]) -> str:
+    """Resolve SentDM message id from normalized ``fold`` and optional raw root."""
+    mid = _extract_message_id_from_event(fold)
+    if mid:
+        return mid
+    if isinstance(payload, dict):
+        mid = _extract_message_id_from_event(payload)
+        if mid:
+            return mid
+        rb = payload.get("responseBody")
+        if isinstance(rb, str) and rb.strip():
+            try:
+                parsed = json.loads(rb)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, dict):
+                mid = _extract_message_id_from_event(parsed)
+                if mid:
+                    return mid
     return ""
 
 
@@ -483,7 +505,7 @@ async def sentdm_webhook_receive(request: Request, action_id: str) -> Dict[str, 
             raise HTTPException(status_code=400, detail="Invalid JSON body")
 
     field, fold = _normalize_sentdm_webhook_envelope(payload)
-    sentdm_message_id = _extract_message_id_from_event(fold)
+    sentdm_message_id = _resolve_sentdm_webhook_message_id(payload, fold)
 
     logger.info(
         "SentDM webhook received: action=%s webhook_id=%s field=%s message_id=%s",
@@ -498,34 +520,18 @@ async def sentdm_webhook_receive(request: Request, action_id: str) -> Dict[str, 
     record_status: Optional[str] = None
     if sentdm_message_id:
         try:
-            record = await action._record_for_message_id(sentdm_message_id)
-        except Exception as exc:  # pragma: no cover - DB hiccup, best effort
-            logger.warning(
-                "SentDM webhook (action=%s) record lookup failed: %s",
-                action_id,
-                exc,
+            updated = await action.apply_webhook_with_upsert(
+                field, fold, sentdm_message_id
             )
-            record = None
-        if record is not None:
-            try:
-                updated = await action._apply_webhook_event_to_record(
-                    record, field, fold
-                )
+            if updated is not None:
                 record_id = updated.id
                 record_status = updated.status
-            except Exception as exc:  # pragma: no cover - best effort
-                logger.warning(
-                    "SentDM webhook (action=%s) record update failed for %s: %s",
-                    action_id,
-                    sentdm_message_id,
-                    exc,
-                )
-        else:
-            logger.info(
-                "SentDM webhook (action=%s): no local record for message_id=%s "
-                "(broadcast may have been sent elsewhere or persist_records=False)",
+        except Exception as exc:  # pragma: no cover - DB hiccup, best effort
+            logger.warning(
+                "SentDM webhook (action=%s) record upsert/update failed for %s: %s",
                 action_id,
                 sentdm_message_id,
+                exc,
             )
 
     return {
