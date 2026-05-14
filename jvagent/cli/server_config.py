@@ -10,6 +10,7 @@ from jvspatial.api.config_groups import (
     CORSConfig,
     DatabaseConfig,
     FileStorageConfig,
+    WebhookConfig,
 )
 from jvspatial.env import env
 
@@ -324,6 +325,16 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         )
     )
 
+    # jvspatial: require HTTPS when api_key is only in query string (mitigates referrer leaks).
+    # Plain HTTP tunnels (e.g. local forward to http://127.0.0.1:8800) fail unless the
+    # tunnel sets X-Forwarded-Proto: https or you set JVSPATIAL_WEBHOOK_API_KEY_REQUIRE_HTTPS=false.
+    webhook_api_key_require_https = get_config_value(
+        app_config,
+        "webhook.api_key_require_https",
+        "JVSPATIAL_WEBHOOK_API_KEY_REQUIRE_HTTPS",
+        True,
+    )
+
     # Create server with grouped configuration
     server_kwargs = {
         "title": title,
@@ -340,6 +351,9 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         "debug": debug_mode,
         "scheduler_enabled": scheduler_enabled,
         "scheduler_interval": scheduler_interval,
+        "webhook": WebhookConfig(
+            webhook_api_key_require_https=webhook_api_key_require_https
+        ),
     }
 
     server = Server(**server_kwargs)
@@ -492,6 +506,12 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     # sync_endpoint_modules handles uvicorn --reload double-load. Action-specific
     # endpoints (interact, pageindex, whatsapp, etc.) load via pre_import_action_modules_for_agents.
     _import_core_endpoint_modules()
+
+    from jvagent.action.sentdm_broadcast.webhook_debug import (
+        register_sentdm_webhook_debug_middleware,
+    )
+
+    register_sentdm_webhook_debug_middleware(server)
 
     return server
 

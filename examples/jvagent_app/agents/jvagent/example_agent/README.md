@@ -179,6 +179,34 @@ Demonstrates custom action development with:
 - Custom endpoints
 - Lifecycle hooks
 
+### SentDM Broadcast Action
+
+Sends template-based SMS / WhatsApp broadcasts through the
+[SentDM v3 API](https://docs.sent.dm/reference/api).
+
+**Required environment variables:**
+- `SENTDM_API_KEY` — account API key (sent as the `x-api-key` header).
+- `JVAGENT_PUBLIC_BASE_URL` — needed to auto-register a delivery-status webhook.
+- `JVSPATIAL_JWT_SECRET_KEY` — needed to create the system user that owns the webhook API key.
+
+The action ships with `sandbox: true` in this example so calls validate but do
+not actually send messages — flip to `false` once you have a real template
+configured and want to broadcast for real.
+
+**Key admin endpoints** (`action_id` is the id of this registered action):
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/actions/{action_id}/broadcast` | Send a broadcast |
+| `POST` | `/api/actions/{action_id}/webhook/register` | Force webhook reconcile |
+| `GET` | `/api/actions/{action_id}/webhook` | View the registered webhook URL |
+| `POST` | `/api/webhook/{action_id}?api_key=...` | Inbound SentDM webhook (registered automatically) |
+
+An interactive tester ships with the action at
+[`jvagent/action/sentdm_broadcast/test_cli.py`](../../../../../jvagent/action/sentdm_broadcast/test_cli.py).
+Full docs in the
+[SentDM Broadcast README](../../../../../jvagent/action/sentdm_broadcast/README.md).
+
 ## Usage
 
 When jvagent starts from the app directory:
@@ -206,6 +234,9 @@ To create your own agent:
 
 This agent uses environment variables for configuration:
 - `${OPENAI_API_KEY}`: OpenAI API key for the model and embedding actions (set in `.env` file)
+- `${OLLAMA_API_KEY}`: Ollama Cloud API key for the cockpit's primary engine (set in `.env` file)
 - `${TYPESENSE_API_KEY}`: Typesense API key for the vector store (set in `.env` file)
+- `${SENTDM_API_KEY}`: SentDM API key for the broadcast action (set in `.env` file)
+- `${JVAGENT_PUBLIC_BASE_URL}`: Public origin used by SentDM (and other) webhook auto-registration (set in `.env` file)
 
 See the main [jvagent README](../../../../../../README.md) for more information about environment variable resolution.

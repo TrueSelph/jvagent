@@ -1,0 +1,1455 @@
+API INFORMATION
+============================================================
+
+Title: SentDM - Public v3 API
+Version: 1.0.0
+
+Description:
+# Sent DM API v3
+
+Programmatic SMS and WhatsApp messaging — one API for sending messages, managing templates, contacts, webhooks, and compliance.
+
+## Authentication
+
+All requests require the `x-api-key` header. Set your key once in the **Variables** tab of this collection (`apiKey`) and it will be applied to every request automatically.
+
+## Sandbox Mode
+
+Every mutation endpoint accepts `"sandbox": true` in the request body. The API validates and returns a realistic response without executing any side effects — no messages sent, no data written. Useful for CI/CD and integration testing.
+
+## Useful Links
+
+- 📚 [API Reference](https://docs.sent.dm/reference/api)
+- 🚀 [Quickstart — Send your first message](https://docs.sent.dm/start/quickstart/first-message)
+- 📝 [Working with Templates](https://docs.sent.dm/start/guides/working-with-templates)
+- 📨 [Sending Messages](https://docs.sent.dm/start/guides/sending-messages)
+- 🔔 [Webhooks — Getting Started](https://docs.sent.dm/start/webhooks/getting-started)
+- 🔔 [Webhook Event Types](https://docs.sent.dm/start/webhooks/event-types)
+- ⚙️ [Webhook Local Development](https://docs.sent.dm/start/webhooks/local-development)
+- 🔁 [Handling Retries](https://docs.sent.dm/start/webhooks/handling-retries)
+- 🧪 [Testing &amp; Debugging](https://docs.sent.dm/start/guides/testing-debugging)
+- ❌ [Error Handling](https://docs.sent.dm/start/guides/error-handling)
+- 📦 [Batch Operations](https://docs.sent.dm/start/guides/batch-operations)
+- 🏢 [Multi-Tenant Architectures](https://docs.sent.dm/start/advanced/multi-tenant-architectures)
+
+## Rate Limits
+
+| Endpoint type | Limit |
+| --- | --- |
+| Standard | 200 req/min |
+| Sensitive (rotate-secret, test-webhook) | 10 req/min |
+
+On `429`, check the `Retry-After` response header.
+
+Contact:
+
+SERVERS
+============================================================
+
+URL: https://api.sent.dm
+
+SECURITY
+============================================================
+
+apiKey:
+  Type: apiKey
+  In: header
+
+ENDPOINTS
+============================================================
+
+Tag: Webhooks
+------------------------------------------------------------
+
+GET /v3/webhooks
+Operation ID: getWebhooksList
+Summary: Get webhooks list
+
+Description:
+Retrieves a paginated list of webhooks for the authenticated customer.
+
+Parameters:
+  - page (query) string
+    Example: "1"
+  - page_size (query) string
+    Example: "1"
+  - search (query) string
+    Example: "string"
+  - is_active (query) string
+    Example: ""
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Responses:
+  200:
+
+POST /v3/webhooks
+Operation ID: createAWebhook
+Summary: Create a webhook
+
+Description:
+Creates a new webhook endpoint for the authenticated customer.
+
+Parameters:
+  - idempotency-key (header) string
+    Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.
+    Example: "string"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - display_name: string
+          Example: "Order Notifications"
+        - endpoint_url: string
+          Example: "https://example.com/webhooks/orders"
+        - event_types: array<string>
+          Example: ["messages","templates"]
+          Items:
+            - items: string
+              Example: "messages"
+        - retry_count: number
+          Example: 3
+        - sandbox: boolean
+          Example: false
+        - timeout_seconds: number
+          Example: 30
+
+Responses:
+  200:
+
+GET /v3/webhooks/{id}
+Operation ID: getAWebhook
+Summary: Get a webhook
+
+Description:
+Retrieves a single webhook by ID for the authenticated customer.
+
+Parameters:
+  - id (path) string REQUIRED
+    Example: "{{id}}"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Responses:
+  200:
+
+PUT /v3/webhooks/{id}
+Operation ID: updateAWebhook
+Summary: Update a webhook
+
+Description:
+Updates an existing webhook for the authenticated customer.
+
+Parameters:
+  - id (path) string REQUIRED
+    Example: "{{id}}"
+  - idempotency-key (header) string
+    Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.
+    Example: "string"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - display_name: string
+          Example: "Updated Order Notifications"
+        - endpoint_url: string
+          Example: "https://example.com/webhooks/orders-v2"
+        - event_types: array<string>
+          Example: ["messages","templates"]
+          Items:
+            - items: string
+              Example: "messages"
+        - retry_count: number
+          Example: 5
+        - sandbox: boolean
+          Example: false
+        - timeout_seconds: number
+          Example: 60
+
+Responses:
+  200:
+
+DELETE /v3/webhooks/{id}
+Operation ID: deleteAWebhook
+Summary: Delete a webhook
+
+Description:
+Deletes a webhook for the authenticated customer.
+
+Parameters:
+  - id (path) string REQUIRED
+    Example: "{{id}}"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Responses:
+  200:
+
+GET /v3/webhooks/{id}/events
+Operation ID: getWebhookEvents
+Summary: Get webhook events
+
+Description:
+Retrieves a paginated list of delivery events for the specified webhook.
+
+Parameters:
+  - id (path) string REQUIRED
+    Example: "{{id}}"
+  - page (query) string
+    Example: "1"
+  - page_size (query) string
+    Example: "1"
+  - search (query) string
+    Example: "string"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Responses:
+  200:
+
+GET /v3/webhooks/event-types
+Operation ID: getAvailableWebhookEventTypes
+Summary: Get available webhook event types
+
+Description:
+Retrieves all available webhook event types that can be subscribed to.
+
+Parameters:
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Responses:
+  200:
+
+POST /v3/webhooks/{id}/rotate-secret
+Operation ID: rotateWebhookSigningSecret
+Summary: Rotate webhook signing secret
+
+Description:
+Generates a new signing secret for the specified webhook. The old secret is immediately invalidated.
+
+Parameters:
+  - id (path) string REQUIRED
+    Example: "{{id}}"
+  - idempotency-key (header) string
+    Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.
+    Example: "string"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - sandbox: boolean
+          Example: false
+
+Responses:
+  200:
+
+POST /v3/webhooks/{id}/test
+Operation ID: testAWebhook
+Summary: Test a webhook
+
+Description:
+Sends a test event to the specified webhook endpoint to verify connectivity.
+
+Parameters:
+  - id (path) string REQUIRED
+    Example: "{{id}}"
+  - idempotency-key (header) string
+    Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.
+    Example: "string"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - event_type: string
+          Example: "message.sent"
+        - sandbox: boolean
+          Example: false
+
+Responses:
+  200:
+
+PATCH /v3/webhooks/{id}/toggle-status
+Operation ID: toggleWebhookStatus
+Summary: Toggle webhook status
+
+Description:
+Activates or deactivates a webhook for the authenticated customer.
+
+Parameters:
+  - id (path) string REQUIRED
+    Example: "{{id}}"
+  - idempotency-key (header) string
+    Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.
+    Example: "string"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - is_active: boolean
+          Example: false
+        - sandbox: boolean
+          Example: false
+
+Responses:
+  200:
+
+Tag: Users
+------------------------------------------------------------
+
+GET /v3/users/{userId}
+Operation ID: getUserById
+Summary: Get user by ID
+
+Description:
+Retrieves detailed information about a specific user in an organization or profile. Requires developer role or higher.
+
+Parameters:
+  - userId (path) string REQUIRED
+    Example: "{{userId}}"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Responses:
+  200:
+
+DELETE /v3/users/{userId}
+Operation ID: removeUser
+Summary: Remove user
+
+Description:
+Removes a user's access to an organization or profile. Requires admin role. You cannot remove yourself or remove the last admin.
+
+Parameters:
+  - userId (path) string REQUIRED
+    Example: "{{userId}}"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - sandbox: boolean
+          Example: false
+
+Responses:
+  200:
+
+PATCH /v3/users/{userId}
+Operation ID: updateUserRole
+Summary: Update user role
+
+Description:
+Updates a user's role in the organization or profile. Requires admin role. You cannot change your own role or demote the last admin.
+
+Parameters:
+  - userId (path) string REQUIRED
+    Example: "{{userId}}"
+  - idempotency-key (header) string
+    Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.
+    Example: "string"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - role: string
+          Example: "billing"
+        - sandbox: boolean
+          Example: false
+
+Responses:
+  200:
+
+GET /v3/users
+Operation ID: listUsers
+Summary: List users
+
+Description:
+Retrieves all users who have access to the organization or profile identified by the API key, including their roles and status. Shows invited users (pending acceptance) and active users. Requires developer role or higher.
+
+Parameters:
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Responses:
+  200:
+
+POST /v3/users
+Operation ID: inviteAUser
+Summary: Invite a user
+
+Description:
+Sends an invitation to a user to join the organization or profile with a specific role. Requires admin role. The user will receive an invitation email with a token to accept. Invitation tokens expire after 7 days.
+
+Parameters:
+  - idempotency-key (header) string
+    Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.
+    Example: "string"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - email: string
+          Example: "newuser@example.com"
+        - name: string
+          Example: "New User"
+        - role: string
+          Example: "developer"
+        - sandbox: boolean
+          Example: false
+
+Responses:
+  200:
+
+Tag: Templates
+------------------------------------------------------------
+
+GET /v3/templates
+Operation ID: getTemplatesList
+Summary: Get templates list
+
+Description:
+Retrieves a paginated list of message templates for the authenticated customer. Supports filtering by status, category, and search term.
+
+Parameters:
+  - page (query) string
+    Page number (1-indexed)
+    Example: "1"
+  - page_size (query) string
+    Number of items per page
+    Example: "1"
+  - search (query) string
+    Optional search term for filtering templates
+    Example: "string"
+  - status (query) string
+    Optional status filter: APPROVED, PENDING, REJECTED
+    Example: "string"
+  - category (query) string
+    Optional category filter: MARKETING, UTILITY, AUTHENTICATION
+    Example: "string"
+  - is_welcome_playground (query) string
+    Optional filter by welcome playground flag
+    Example: ""
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Responses:
+  200:
+
+POST /v3/templates
+Operation ID: createANewTemplate
+Summary: Create a new template
+
+Description:
+Creates a new message template with header, body, footer, and buttons. The template can be submitted for review immediately or saved as draft for later submission.
+
+Parameters:
+  - idempotency-key (header) string
+    Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.
+    Example: "string"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - category: string
+          Example: "MARKETING"
+        - definition: object
+          Properties:
+            - authenticationConfig: unknown NULLABLE
+              Example: null
+            - body: object
+              Properties:
+                - multiChannel: object
+                  Properties:
+                    - template: string
+                      Example: "Hello {{0:variable}}! Welcome to {{1:variable}}."
+                    - type: unknown NULLABLE
+                      Example: null
+                    - variables: array<object>
+                      Example: [{"id":0,"name":"name","props":{"alt":null,"mediaType":null,"regex":null,"sample":"John","shortUrl":null,"url":null,"variableType":"text"},"type":"variable"},{"id":1,"name":"company","props":{"alt":null,"mediaType":null,"regex":null,"sample":"SentDM","shortUrl":null,"url":null,"variableType":"text"},"type":"variable"}]
+                      Items:
+                        - items: object
+                          Properties:
+                            - id: number
+                              Example: 0
+                            - name: string
+                              Example: "name"
+                            - props: object
+                              Properties:
+                                - alt: unknown NULLABLE
+                                  Example: null
+                                - mediaType: unknown NULLABLE
+                                  Example: null
+                                - regex: unknown NULLABLE
+                                  Example: null
+                                - sample: string
+                                  Example: "John"
+                                - shortUrl: unknown NULLABLE
+                                  Example: null
+                                - url: unknown NULLABLE
+                                  Example: null
+                                - variableType: string
+                                  Example: "text"
+                            - type: string
+                              Example: "variable"
+                - sms: unknown NULLABLE
+                  Example: null
+                - whatsapp: unknown NULLABLE
+                  Example: null
+            - buttons: unknown NULLABLE
+              Example: null
+            - definitionVersion: string
+              Example: "1.0"
+            - footer: unknown NULLABLE
+              Example: null
+            - header: unknown NULLABLE
+              Example: null
+        - language: string
+          Example: "en_US"
+        - sandbox: boolean
+          Example: false
+        - submit_for_review: boolean
+          Example: false
+
+Responses:
+  200:
+
+GET /v3/templates/{id}
+Operation ID: getTemplateById
+Summary: Get template by ID
+
+Description:
+Retrieves a specific template by its ID. Returns template details including name, category, language, status, and definition.
+
+Parameters:
+  - id (path) string REQUIRED
+    Example: "{{id}}"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Responses:
+  200:
+
+PUT /v3/templates/{id}
+Operation ID: updateATemplate
+Summary: Update a template
+
+Description:
+Updates an existing template's name, category, language, definition, or submits it for review.
+
+Parameters:
+  - id (path) string REQUIRED
+    Example: "{{id}}"
+  - idempotency-key (header) string
+    Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.
+    Example: "string"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - category: string
+          Example: "MARKETING"
+        - definition: object
+          Properties:
+            - authenticationConfig: object
+              Properties:
+                - addSecurityRecommendation: boolean
+                  Example: false
+                - codeExpirationMinutes: number
+                  Example: 1
+            - buttons: array<object>
+              Example: [{"id":1,"type":"string"}]
+              Items:
+                - items: object
+                  Properties:
+                    - id: number
+                      Example: 1
+                    - type: string
+                      Example: "string"
+            - definitionVersion: string
+              Example: "string"
+            - footer: object
+              Properties:
+                - template: string
+                  Example: "string"
+                - type: string
+                  Example: "string"
+                - variables: array<object>
+                  Example: [{"id":1,"name":"string","props":{},"type":"string"}]
+                  Items:
+                    - items: object
+                      Properties:
+                        - id: number
+                          Example: 1
+                        - name: string
+                          Example: "string"
+                        - props: object
+                        - type: string
+                          Example: "string"
+            - header: object
+              Properties:
+                - template: string
+                  Example: "string"
+                - type: string
+                  Example: "string"
+                - variables: array<object>
+                  Example: [{"id":1,"name":"string","props":{},"type":"string"}]
+                  Items:
+                    - items: object
+                      Properties:
+                        - id: number
+                          Example: 1
+                        - name: string
+                          Example: "string"
+                        - props: object
+                        - type: string
+                          Example: "string"
+        - name: string
+          Example: "Updated Welcome Message"
+        - sandbox: boolean
+          Example: false
+        - submit_for_review: boolean
+          Example: false
+
+Responses:
+  200:
+
+DELETE /v3/templates/{id}
+Operation ID: deleteATemplate
+Summary: Delete a template
+
+Description:
+Deletes a template by ID. Optionally, you can also delete the template from WhatsApp/Meta by setting delete_from_meta=true.
+
+Parameters:
+  - id (path) string REQUIRED
+    Example: "{{id}}"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - delete_from_meta: boolean
+          Example: false
+        - sandbox: boolean
+          Example: false
+
+Responses:
+  200:
+
+Tag: Profiles
+------------------------------------------------------------
+
+POST /v3/profiles/{profileId}/complete
+Operation ID: completeProfileSetup
+Summary: Complete profile setup
+
+Description:
+Final step in profile compliance workflow. Validates all prerequisites (general data, brand, campaigns), connects profile to Telnyx/WhatsApp, and sets status based on configuration. The process runs in the background and calls the provided webhook URL when finished.
+
+                Prerequisites:
+                - Profile must be completed
+                - If inheritTcrBrand=false: Profile must have existing brand
+                - If inheritTcrBrand=true: Parent must have existing brand
+                - If TCR application: Must have at least one campaign (own or inherited)
+                - If inheritTcrCampaign=false: Profile should have campaigns
+                - If inheritTcrCampaign=true: Parent must have campaigns
+
+                Status Logic:
+                - If both SMS and WhatsApp channels are missing → SUBMITTED
+                - If TCR application and not inheriting brand/campaigns → SUBMITTED
+                - If non-TCR with destination country (IsMain=true) → SUBMITTED
+                - Otherwise → COMPLETED
+
+Parameters:
+  - profileId (path) string REQUIRED
+    Example: "{{profileId}}"
+  - idempotency-key (header) string
+    Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.
+    Example: "string"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - sandbox: boolean
+          Example: false
+        - webHookUrl: string
+          Example: "https://your-app.com/webhook/profile-complete"
+
+Responses:
+  200:
+
+GET /v3/profiles
+Operation ID: listProfilesInOrganization
+Summary: List profiles in organization
+
+Description:
+Retrieves all sender profiles within an organization, including brand information for each profile. Profiles represent different brands, departments, or use cases within an organization, each with their own messaging configuration.
+
+Parameters:
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Responses:
+  200:
+
+POST /v3/profiles
+Operation ID: createANewProfile
+Summary: Create a new profile
+
+Description:
+Creates a new sender profile within an organization. Profiles represent different brands, departments, or use cases, each with their own messaging configuration and settings. Requires admin role in the organization.
+
+## WhatsApp Business Account
+
+Every profile must be linked to a WhatsApp Business Account. There are two ways to do this:
+
+**1. Inherit from organization (default)** — Omit the `whatsapp_business_account` field. The profile will share the organization's WhatsApp Business Account, which must have been set up via WhatsApp Embedded Signup. This is the recommended path for most use cases.
+
+**2. Direct credentials** — Provide a `whatsapp_business_account` object with `waba_id`, `phone_number_id`, and `access_token`. Use this when the profile needs its own independent WhatsApp Business Account. Obtain these from Meta Business Manager by creating a System User with `whatsapp_business_messaging` and `whatsapp_business_management` permissions.
+
+If the `whatsapp_business_account` field is omitted and the organization has no WhatsApp Business Account configured, the request will be rejected with HTTP 422.
+
+## Brand
+
+Include the optional `brand` field to create the brand for this profile at the same time. Cannot be used when `inherit_tcr_brand` is `true`.
+
+## Payment Details
+
+When `billing_model` is `"profile"` or `"profile_and_organization"` you may include a `payment_details` object containing the card number, expiry (MM/YY), CVC, and billing ZIP code. Payment details are **never stored** on our servers and are forwarded directly to the payment processor. Providing `payment_details` when `billing_model` is `"organization"` is not allowed.
+
+Parameters:
+  - idempotency-key (header) string
+    Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.
+    Example: "string"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - allow_contact_sharing: boolean
+          Example: true
+        - allow_template_sharing: boolean
+          Example: false
+        - billing_contact: object
+          Properties:
+            - address: string
+              Example: "string"
+            - email: string
+              Example: "string"
+            - name: string
+              Example: "string"
+            - phone: string
+              Example: "string"
+        - billing_model: string
+          Example: "profile"
+        - brand: object
+          Properties:
+            - business: object
+              Properties:
+                - city: string
+                  Example: "string"
+                - country: string
+                  Example: "string"
+                - countryOfRegistration: string
+                  Example: "string"
+                - legalName: string
+                  Example: "string"
+                - postalCode: string
+                  Example: "string"
+                - state: string
+                  Example: "string"
+                - street: string
+                  Example: "string"
+                - taxId: string
+                  Example: "string"
+                - taxIdType: string
+                  Example: "string"
+                - url: string
+                  Example: "https://example.com/webhook"
+        - description: string
+          Example: "Sales department sender profile"
+        - icon: string
+          Example: "https://example.com/sales-icon.png"
+        - inherit_contacts: boolean
+          Example: true
+        - inherit_tcr_brand: boolean
+          Example: false
+        - inherit_tcr_campaign: boolean
+          Example: false
+        - inherit_templates: boolean
+          Example: true
+        - name: string
+          Example: "Sales Team"
+        - payment_details: object
+          Properties:
+            - card_number: string
+              Example: "string"
+            - cvc: string
+              Example: "string"
+            - expiry: string
+              Example: "string"
+            - zip_code: string
+              Example: "string"
+        - sandbox: boolean
+          Example: false
+        - short_name: string
+          Example: "SALES"
+        - whatsapp_business_account: object
+          Properties:
+            - access_token: string
+              Example: "string"
+            - phone_number_id: string
+              Example: "string"
+            - waba_id: string
+              Example: "string"
+
+Responses:
+  200:
+
+GET /v3/profiles/{profileId}
+Operation ID: getProfileById
+Summary: Get profile by ID
+
+Description:
+Retrieves detailed information about a specific sender profile within an organization, including brand and KYC information if a brand has been configured.
+
+Parameters:
+  - profileId (path) string REQUIRED
+    Example: "{{profileId}}"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Responses:
+  200:
+
+DELETE /v3/profiles/{profileId}
+Operation ID: deleteAProfile
+Summary: Delete a profile
+
+Description:
+Soft deletes a sender profile. The profile will be marked as deleted but data is retained. Requires admin role in the organization.
+
+Parameters:
+  - profileId (path) string REQUIRED
+    Example: "{{profileId}}"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - sandbox: boolean
+          Example: false
+
+Responses:
+  200:
+
+PATCH /v3/profiles/{profileId}
+Operation ID: updateProfileSettings
+Summary: Update profile settings
+
+Description:
+Updates a profile's configuration and settings. Requires admin role in the organization. Only provided fields will be updated (partial update).
+
+## Brand Management
+
+Include the optional `brand` field to create or update the brand associated with this profile. The brand holds KYC and TCR compliance data (legal business info, contact details, messaging vertical). Once a brand has been submitted to TCR it cannot be modified. Setting `inherit_tcr_brand: true` and providing `brand` in the same request is not allowed.
+
+## Payment Details
+
+When `billing_model` is `"profile"` or `"profile_and_organization"` you may include a `payment_details` object containing the card number, expiry (MM/YY), CVC, and billing ZIP code. Payment details are **never stored** on our servers and are forwarded directly to the payment processor. Providing `payment_details` when `billing_model` is `"organization"` is not allowed.
+
+Parameters:
+  - profileId (path) string REQUIRED
+    Example: "{{profileId}}"
+  - idempotency-key (header) string
+    Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.
+    Example: "string"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - allow_contact_sharing: boolean
+          Example: true
+        - billing_contact: object
+          Properties:
+            - address: string
+              Example: "string"
+            - email: string
+              Example: "string"
+            - name: string
+              Example: "string"
+            - phone: string
+              Example: "string"
+        - billing_model: string
+          Example: "organization"
+        - brand: object
+          Properties:
+            - business: object
+              Properties:
+                - city: string
+                  Example: "string"
+                - country: string
+                  Example: "string"
+                - countryOfRegistration: string
+                  Example: "string"
+                - legalName: string
+                  Example: "string"
+                - postalCode: string
+                  Example: "string"
+                - state: string
+                  Example: "string"
+                - street: string
+                  Example: "string"
+                - taxId: string
+                  Example: "string"
+                - taxIdType: string
+                  Example: "string"
+                - url: string
+                  Example: "https://example.com/webhook"
+        - description: string
+          Example: "Updated sales department sender profile"
+        - name: string
+          Example: "Sales Team - Updated"
+        - payment_details: object
+          Properties:
+            - card_number: string
+              Example: "string"
+            - cvc: string
+              Example: "string"
+            - expiry: string
+              Example: "string"
+            - zip_code: string
+              Example: "string"
+        - sandbox: boolean
+          Example: false
+        - short_name: string
+          Example: "SALES"
+
+Responses:
+  200:
+
+GET /v3/profiles/{profileId}/campaigns
+Operation ID: getCampaignsForAProfileSBrand
+Summary: Get campaigns for a profile's brand
+
+Description:
+Retrieves all campaigns linked to the profile's brand, including use cases and sample messages. Returns inherited campaigns if inherit_tcr_campaign=true.
+
+Parameters:
+  - profileId (path) string REQUIRED
+    Example: "{{profileId}}"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Responses:
+  200:
+
+POST /v3/profiles/{profileId}/campaigns
+Operation ID: createACampaignForAProfileSBrand
+Summary: Create a campaign for a profile's brand
+
+Description:
+Creates a new campaign scoped under the brand of the specified profile. Each campaign must include at least one use case with sample messages.
+
+Parameters:
+  - profileId (path) string REQUIRED
+    Example: "{{profileId}}"
+  - idempotency-key (header) string
+    Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.
+    Example: "string"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - campaign: object
+          Properties:
+            - description: string
+              Example: "Appointment reminders and account notifications"
+            - helpKeywords: string
+              Example: "HELP, INFO, SUPPORT"
+            - helpMessage: string
+              Example: "Reply STOP to unsubscribe or contact support@acmecorp.com"
+            - messageFlow: string
+              Example: "User signs up on website and opts in to receive SMS notifications"
+            - name: string
+              Example: "Customer Notifications"
+            - optinKeywords: string
+              Example: "YES, START, SUBSCRIBE"
+            - optinMessage: string
+              Example: "You have opted in to Acme Corp notifications. Reply STOP to opt out."
+            - optoutKeywords: string
+              Example: "STOP, UNSUBSCRIBE, END"
+            - optoutMessage: string
+              Example: "You have been unsubscribed. Reply START to opt back in."
+            - privacyPolicyLink: string
+              Example: "https://acmecorp.com/privacy"
+            - termsAndConditionsLink: string
+              Example: "https://acmecorp.com/terms"
+            - type: string
+              Example: "App"
+            - useCases: array<object>
+              Example: [{"messagingUseCaseUs":"ACCOUNT_NOTIFICATION","sampleMessages":["Hi {name}, your appointment is confirmed for {date} at {time}.","Your order #{order_id} has been shipped. Track at {url}"]}]
+              Items:
+                - items: object
+                  Properties:
+                    - messagingUseCaseUs: string
+                      Example: "ACCOUNT_NOTIFICATION"
+                    - sampleMessages: array<string>
+                      Example: ["Hi {name}, your appointment is confirmed for {date} at {time}.","Your order #{order_id} has been shipped. Track at {url}"]
+                      Items:
+                        - items: string
+                          Example: "Hi {name}, your appointment is confirmed for {date} at {time}."
+        - sandbox: boolean
+          Example: false
+
+Responses:
+  200:
+
+PUT /v3/profiles/{profileId}/campaigns/{campaignId}
+Operation ID: updateACampaign
+Summary: Update a campaign
+
+Description:
+Updates an existing campaign under the brand of the specified profile. Cannot update campaigns that have already been submitted to TCR.
+
+Parameters:
+  - profileId (path) string REQUIRED
+    Example: "{{profileId}}"
+  - campaignId (path) string REQUIRED
+    Example: "{{campaignId}}"
+  - idempotency-key (header) string
+    Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.
+    Example: "string"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - campaign: object
+          Properties:
+            - description: string
+              Example: "Updated appointment reminders and account notifications"
+            - helpKeywords: unknown NULLABLE
+              Example: null
+            - helpMessage: unknown NULLABLE
+              Example: null
+            - messageFlow: string
+              Example: "User signs up on website and opts in to receive SMS notifications"
+            - name: string
+              Example: "Customer Notifications Updated"
+            - optinKeywords: unknown NULLABLE
+              Example: null
+            - optinMessage: unknown NULLABLE
+              Example: null
+            - optoutKeywords: unknown NULLABLE
+              Example: null
+            - optoutMessage: unknown NULLABLE
+              Example: null
+            - privacyPolicyLink: unknown NULLABLE
+              Example: null
+            - termsAndConditionsLink: unknown NULLABLE
+              Example: null
+            - type: string
+              Example: "App"
+            - useCases: array<object>
+              Example: [{"messagingUseCaseUs":"ACCOUNT_NOTIFICATION","sampleMessages":["Hi {name}, your appointment is confirmed for {date} at {time}.","Your order #{order_id} has been shipped. Track at {url}"]}]
+              Items:
+                - items: object
+                  Properties:
+                    - messagingUseCaseUs: string
+                      Example: "ACCOUNT_NOTIFICATION"
+                    - sampleMessages: array<string>
+                      Example: ["Hi {name}, your appointment is confirmed for {date} at {time}.","Your order #{order_id} has been shipped. Track at {url}"]
+                      Items:
+                        - items: string
+                          Example: "Hi {name}, your appointment is confirmed for {date} at {time}."
+        - sandbox: boolean
+          Example: false
+
+Responses:
+  200:
+
+DELETE /v3/profiles/{profileId}/campaigns/{campaignId}
+Operation ID: deleteACampaign
+Summary: Delete a campaign
+
+Description:
+Deletes a campaign by ID from the brand of the specified profile. The profile must belong to the authenticated organization.
+
+Parameters:
+  - profileId (path) string REQUIRED
+    Example: "{{profileId}}"
+  - campaignId (path) string REQUIRED
+    Example: "{{campaignId}}"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - sandbox: boolean
+          Example: false
+
+Responses:
+  200:
+
+Tag: Numbers
+------------------------------------------------------------
+
+GET /v3/numbers/lookup/{phoneNumber}
+Operation ID: getPhoneNumberDetails
+Summary: Get phone number details
+
+Description:
+Retrieves detailed information about a phone number including carrier, line type, porting status, and VoIP detection. Uses the customer's messaging provider for rich data, with fallback to the internal index.
+
+Parameters:
+  - phoneNumber (path) string REQUIRED
+    Example: "{{phoneNumber}}"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Responses:
+  200:
+
+Tag: Messages
+------------------------------------------------------------
+
+GET /v3/messages/{id}/activities
+Operation ID: getMessageActivities
+Summary: Get message activities
+
+Description:
+Retrieves the activity log for a specific message. Activities track the message lifecycle including acceptance, processing, sending, delivery, and any errors.
+
+Parameters:
+  - id (path) string REQUIRED
+    Example: "{{id}}"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Responses:
+  200:
+
+GET /v3/messages/{id}
+Operation ID: getMessageStatus
+Summary: Get message status
+
+Description:
+Retrieves the current status and details of a message by ID. Includes delivery status, timestamps, and error information if applicable.
+
+Parameters:
+  - id (path) string REQUIRED
+    Example: "{{id}}"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Responses:
+  200:
+
+POST /v3/messages
+Operation ID: sendAMessage
+Summary: Send a message
+
+Description:
+Sends a message to one or more recipients using a template. Supports multi-channel broadcast — when multiple channels are specified (e.g. ["sms", "whatsapp"]), a separate message is created for each (recipient, channel) pair. Returns immediately with per-recipient message IDs for async tracking via webhooks or the GET /messages/{id} endpoint.
+
+Parameters:
+  - idempotency-key (header) string
+    Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.
+    Example: "string"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - channel: array<string>
+          Example: ["sms","whatsapp"]
+          Items:
+            - items: string
+              Example: "sms"
+        - sandbox: boolean
+          Example: false
+        - template: object
+          Properties:
+            - id: string
+              Example: "7ba7b820-9dad-11d1-80b4-00c04fd430c8"
+            - name: string
+              Example: "order_confirmation"
+            - parameters: object
+              Properties:
+                - name: string
+                  Example: "John Doe"
+                - order_id: string
+                  Example: "12345"
+        - to: array<string>
+          Example: ["+14155551234","+14155555678"]
+          Items:
+            - items: string
+              Example: "+14155551234"
+
+Responses:
+  200:
+
+Tag: Contacts
+------------------------------------------------------------
+
+GET /v3/contacts
+Operation ID: getContactsList
+Summary: Get contacts list
+
+Description:
+Retrieves a paginated list of contacts for the authenticated customer. Supports filtering by search term, channel, or phone number.
+
+Parameters:
+  - page (query) string
+    Page number (1-indexed)
+    Example: "1"
+  - page_size (query) string
+    Number of items per page
+    Example: "1"
+  - search (query) string
+    Optional search term for filtering contacts
+    Example: "string"
+  - channel (query) string
+    Optional channel filter (sms, whatsapp)
+    Example: "string"
+  - phone (query) string
+    Optional phone number filter (alternative to list view)
+    Example: "string"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Responses:
+  200:
+
+POST /v3/contacts
+Operation ID: createAContact
+Summary: Create a contact
+
+Description:
+Creates a new contact by phone number and associates it with the authenticated customer.
+
+Parameters:
+  - idempotency-key (header) string
+    Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.
+    Example: "string"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - phone_number: string
+          Example: "+1234567890"
+        - sandbox: boolean
+          Example: false
+
+Responses:
+  200:
+
+GET /v3/contacts/{id}
+Operation ID: getContactById
+Summary: Get contact by ID
+
+Description:
+Retrieves a specific contact by their unique identifier. Returns detailed contact information including phone formats, available channels, and opt-out status.
+
+Parameters:
+  - id (path) string REQUIRED
+    Example: "{{id}}"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Responses:
+  200:
+
+DELETE /v3/contacts/{id}
+Operation ID: deleteAContact
+Summary: Delete a contact
+
+Description:
+Dissociates a contact from the authenticated customer. Inherited contacts cannot be deleted.
+
+Parameters:
+  - id (path) string REQUIRED
+    Example: "{{id}}"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - sandbox: boolean
+          Example: false
+
+Responses:
+  200:
+
+PATCH /v3/contacts/{id}
+Operation ID: updateAContact
+Summary: Update a contact
+
+Description:
+Updates a contact's default channel and/or opt-out status. Inherited contacts cannot be updated.
+
+Parameters:
+  - id (path) string REQUIRED
+    Example: "{{id}}"
+  - idempotency-key (header) string
+    Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.
+    Example: "string"
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Request Body (application/json):
+
+  Schema:
+    - body: object REQUIRED
+      Properties:
+        - default_channel: string
+          Example: "whatsapp"
+        - opt_out: boolean
+          Example: false
+        - sandbox: boolean
+          Example: false
+
+Responses:
+  200:
+
+Tag: Accounts
+------------------------------------------------------------
+
+GET /v3/me
+Operation ID: getAuthenticatedAccount
+Summary: Get authenticated account
+
+Description:
+Returns the account associated with the provided API key. The response includes account identity, contact information, messaging channel configuration, and — depending on the account type — either a list of child profiles or the profile's own settings.
+
+**Account types:**
+- `organization` — Has child profiles. The `profiles` array is populated.
+- `user` — Standalone account with no profiles.
+- `profile` — Child of an organization. Includes `organization_id`, `short_name`, `status`, and `settings`.
+
+**Channels:**
+The `channels` object always includes `sms`, `whatsapp`, and `rcs`. Each channel has a `configured` boolean. Configured channels expose additional details such as `phone_number`.
+
+Parameters:
+  - x-profile-id (header) string
+    Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.
+    Example: "{{$guid}}"
+
+Responses:
+  200:

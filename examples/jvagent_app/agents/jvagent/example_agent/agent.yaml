@@ -106,6 +106,37 @@ actions:
       model_temperature: 0.1
       model_max_tokens: 8192
 
+  # ── SentDM broadcast (SMS / WhatsApp) ────────────────────
+  # Sends template-based broadcasts via the SentDM v3 API. Requires the
+  # SENTDM_API_KEY environment variable. For webhook auto-registration of
+  # delivery events, also set JVAGENT_PUBLIC_BASE_URL and
+  # JVSPATIAL_JWT_SECRET_KEY. Templates must already exist in your SentDM
+  # account (create them via the SentDM dashboard).
+  - action: jvagent/sentdm_broadcast_action
+    context:
+      enabled: true
+      description: "SentDM broadcast — template-based SMS / WhatsApp messages"
+      default_channels: ["sms"]
+      # Uncomment to set an account-wide fallback template:
+      # default_template_name: "order_confirmation"
+      # default_template_id: ""
+#      profile_id: "5311d08c-f79a-41b1-8ebb-1f0efaefdf8f"
+      sandbox: true                 # validate only, no real send — flip to false to go live
+      timeout: 30
+      # Webhook tuning (used when JVAGENT_PUBLIC_BASE_URL is set)
+      webhook_display_name: "jvagent SentDM"
+      webhook_event_types: ["message"]
+      # webhook_event_filters: {}  # omit Sent event_filters (all message.*); default includes queued + received + outbound lifecycle
+      webhook_retry_count: 3
+      webhook_timeout_seconds: 30
+      # Graph persistence — each send creates a SentDMBroadcastRecord node
+      # (one per recipient/channel), and the inbound webhook handler folds
+      # delivery events into it. Disable persist_records to skip entirely.
+      persist_records: true
+      # Sandbox validates only — no carrier send. Records are skipped unless true:
+      persist_sandbox_sends: true
+      record_event_history_limit: 25
+
   # ── Signup interview (local custom action) ───────────────
   - action: jvagent/signup_interview_interact_action
     context:

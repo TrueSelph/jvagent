@@ -1,0 +1,2074 @@
+{
+  "info": {
+    "_postman_id": "c01e1c57-126b-4465-83cf-9faabb182861",
+    "name": "SentDM - Public v3 API",
+    "description": "# Sent DM API v3\n\nProgrammatic SMS and WhatsApp messaging — one API for sending messages, managing templates, contacts, webhooks, and compliance.\n\n## Authentication\n\nAll requests require the `x-api-key` header. Set your key once in the **Variables** tab of this collection (`apiKey`) and it will be applied to every request automatically.\n\n## Sandbox Mode\n\nEvery mutation endpoint accepts `\"sandbox\": true` in the request body. The API validates and returns a realistic response without executing any side effects — no messages sent, no data written. Useful for CI/CD and integration testing.\n\n## Useful Links\n\n- 📚 [API Reference](https://docs.sent.dm/reference/api)\n    \n- 🚀 [Quickstart — Send your first message](https://docs.sent.dm/start/quickstart/first-message)\n    \n- 📝 [Working with Templates](https://docs.sent.dm/start/guides/working-with-templates)\n    \n- 📨 [Sending Messages](https://docs.sent.dm/start/guides/sending-messages)\n    \n- 🔔 [Webhooks — Getting Started](https://docs.sent.dm/start/webhooks/getting-started)\n    \n- 🔔 [Webhook Event Types](https://docs.sent.dm/start/webhooks/event-types)\n    \n- ⚙️ [Webhook Local Development](https://docs.sent.dm/start/webhooks/local-development)\n    \n- 🔁 [Handling Retries](https://docs.sent.dm/start/webhooks/handling-retries)\n    \n- 🧪 [Testing &amp; Debugging](https://docs.sent.dm/start/guides/testing-debugging)\n    \n- ❌ [Error Handling](https://docs.sent.dm/start/guides/error-handling)\n    \n- 📦 [Batch Operations](https://docs.sent.dm/start/guides/batch-operations)\n    \n- 🏢 [Multi-Tenant Architectures](https://docs.sent.dm/start/advanced/multi-tenant-architectures)\n    \n\n## Rate Limits\n\n| Endpoint type | Limit |\n| --- | --- |\n| Standard | 200 req/min |\n| Sensitive (rotate-secret, test-webhook) | 10 req/min |\n\nOn `429`, check the `Retry-After` response header.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "209920",
+    "_collection_link": "https://go.postman.co/collection/48394910-c01e1c57-126b-4465-83cf-9faabb182861?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "Webhooks",
+      "item": [
+        {
+          "name": "Create a webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "string",
+                "description": "Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.",
+                "disabled": true
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false,\n  \"display_name\": \"Order Notifications\",\n  \"endpoint_url\": \"https://example.com/webhooks/orders\",\n  \"event_types\": [\n    \"messages\",\n    \"templates\"\n  ],\n  \"retry_count\": 3,\n  \"timeout_seconds\": 30\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/webhooks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "webhooks"
+              ]
+            },
+            "description": "Creates a new webhook endpoint for the authenticated customer."
+          },
+          "response": []
+        },
+        {
+          "name": "Get webhooks list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v3/webhooks?page=1&page_size=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "webhooks"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "1"
+                },
+                {
+                  "key": "search",
+                  "value": "string",
+                  "disabled": true
+                },
+                {
+                  "key": "is_active",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Retrieves a paginated list of webhooks for the authenticated customer."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete a webhook",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v3/webhooks/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "webhooks",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{id}}"
+                }
+              ]
+            },
+            "description": "Deletes a webhook for the authenticated customer."
+          },
+          "response": []
+        },
+        {
+          "name": "Get a webhook",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v3/webhooks/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "webhooks",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{id}}"
+                }
+              ]
+            },
+            "description": "Retrieves a single webhook by ID for the authenticated customer."
+          },
+          "response": []
+        },
+        {
+          "name": "Update a webhook",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "string",
+                "description": "Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.",
+                "disabled": true
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false,\n  \"display_name\": \"Updated Order Notifications\",\n  \"endpoint_url\": \"https://example.com/webhooks/orders-v2\",\n  \"event_types\": [\n    \"messages\",\n    \"templates\"\n  ],\n  \"retry_count\": 5,\n  \"timeout_seconds\": 60\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/webhooks/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "webhooks",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{id}}"
+                }
+              ]
+            },
+            "description": "Updates an existing webhook for the authenticated customer."
+          },
+          "response": []
+        },
+        {
+          "name": "Get webhook events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v3/webhooks/:id/events?page=1&page_size=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "webhooks",
+                ":id",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "1"
+                },
+                {
+                  "key": "search",
+                  "value": "string",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{id}}"
+                }
+              ]
+            },
+            "description": "Retrieves a paginated list of delivery events for the specified webhook."
+          },
+          "response": []
+        },
+        {
+          "name": "Get available webhook event types",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v3/webhooks/event-types",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "webhooks",
+                "event-types"
+              ]
+            },
+            "description": "Retrieves all available webhook event types that can be subscribed to."
+          },
+          "response": []
+        },
+        {
+          "name": "Rotate webhook signing secret",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "string",
+                "description": "Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.",
+                "disabled": true
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/webhooks/:id/rotate-secret",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "webhooks",
+                ":id",
+                "rotate-secret"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{id}}"
+                }
+              ]
+            },
+            "description": "Generates a new signing secret for the specified webhook. The old secret is immediately invalidated."
+          },
+          "response": []
+        },
+        {
+          "name": "Test a webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "string",
+                "description": "Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.",
+                "disabled": true
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false,\n  \"event_type\": \"message.sent\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/webhooks/:id/test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "webhooks",
+                ":id",
+                "test"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{id}}"
+                }
+              ]
+            },
+            "description": "Sends a test event to the specified webhook endpoint to verify connectivity."
+          },
+          "response": []
+        },
+        {
+          "name": "Toggle webhook status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "string",
+                "description": "Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.",
+                "disabled": true
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false,\n  \"is_active\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/webhooks/:id/toggle-status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "webhooks",
+                ":id",
+                "toggle-status"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{id}}"
+                }
+              ]
+            },
+            "description": "Activates or deactivates a webhook for the authenticated customer."
+          },
+          "response": []
+        }
+      ],
+      "description": "Manage webhook endpoints that receive real-time event notifications for messages and templates.\n\nEvents are delivered as `POST` requests to your endpoint with a nested `{ field, timestamp, payload }` structure. Verify the `X-Webhook-Signature` header on every incoming request and use `X-Webhook-ID` for idempotency.\n\n📖 [Webhooks — Getting Started](https://docs.sent.dm/start/webhooks/getting-started)\n📖 [Event Types](https://docs.sent.dm/start/webhooks/event-types)\n📖 [Local Development](https://docs.sent.dm/start/webhooks/local-development)\n📖 [Handling Retries](https://docs.sent.dm/start/webhooks/handling-retries)\n📖 [Signature Verification](https://docs.sent.dm/start/webhooks/signature-verification)\n📖 [Production Checklist](https://docs.sent.dm/start/webhooks/production-checklist)"
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get user by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v3/users/:userId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "users",
+                ":userId"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}"
+                }
+              ]
+            },
+            "description": "Retrieves detailed information about a specific user in an organization or profile. Requires developer role or higher."
+          },
+          "response": []
+        },
+        {
+          "name": "Remove user",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/users/:userId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "users",
+                ":userId"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}"
+                }
+              ]
+            },
+            "description": "Removes a user's access to an organization or profile. Requires admin role. You cannot remove yourself or remove the last admin."
+          },
+          "response": []
+        },
+        {
+          "name": "Update user role",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "string",
+                "description": "Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.",
+                "disabled": true
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false,\n  \"role\": \"billing\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/users/:userId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "users",
+                ":userId"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}"
+                }
+              ]
+            },
+            "description": "Updates a user's role in the organization or profile. Requires admin role. You cannot change your own role or demote the last admin."
+          },
+          "response": []
+        },
+        {
+          "name": "List users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v3/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "users"
+              ]
+            },
+            "description": "Retrieves all users who have access to the organization or profile identified by the API key, including their roles and status. Shows invited users (pending acceptance) and active users. Requires developer role or higher."
+          },
+          "response": []
+        },
+        {
+          "name": "Invite a user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "string",
+                "description": "Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.",
+                "disabled": true
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false,\n  \"email\": \"newuser@example.com\",\n  \"name\": \"New User\",\n  \"role\": \"developer\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "users"
+              ]
+            },
+            "description": "Sends an invitation to a user to join the organization or profile with a specific role. Requires admin role. The user will receive an invitation email with a token to accept. Invitation tokens expire after 7 days."
+          },
+          "response": []
+        }
+      ],
+      "description": "Manage user accounts and roles within your organization. Invite new users, update roles (`admin`, `member`, `billing`), or remove access.\n\n📖 [Dashboard Walkthrough](https://docs.sent.dm/start/quickstart/dashboard-walkthrough)"
+    },
+    {
+      "name": "Templates",
+      "item": [
+        {
+          "name": "Create a new template",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "string",
+                "description": "Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.",
+                "disabled": true
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false,\n  \"category\": \"MARKETING\",\n  \"language\": \"en_US\",\n  \"definition\": {\n    \"header\": null,\n    \"body\": {\n      \"multiChannel\": {\n        \"type\": null,\n        \"template\": \"Hello {{0:variable}}! Welcome to {{1:variable}}.\",\n        \"variables\": [\n          {\n            \"id\": 0,\n            \"name\": \"name\",\n            \"type\": \"variable\",\n            \"props\": {\n              \"variableType\": \"text\",\n              \"sample\": \"John\",\n              \"regex\": null,\n              \"url\": null,\n              \"shortUrl\": null,\n              \"alt\": null,\n              \"mediaType\": null\n            }\n          },\n          {\n            \"id\": 1,\n            \"name\": \"company\",\n            \"type\": \"variable\",\n            \"props\": {\n              \"variableType\": \"text\",\n              \"sample\": \"SentDM\",\n              \"regex\": null,\n              \"url\": null,\n              \"shortUrl\": null,\n              \"alt\": null,\n              \"mediaType\": null\n            }\n          }\n        ]\n      },\n      \"sms\": null,\n      \"whatsapp\": null\n    },\n    \"footer\": null,\n    \"buttons\": null,\n    \"definitionVersion\": \"1.0\",\n    \"authenticationConfig\": null\n  },\n  \"submit_for_review\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "templates"
+              ]
+            },
+            "description": "Creates a new message template with header, body, footer, and buttons. The template can be submitted for review immediately or saved as draft for later submission."
+          },
+          "response": []
+        },
+        {
+          "name": "Get templates list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v3/templates?page=1&page_size=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "templates"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (1-indexed)"
+                },
+                {
+                  "key": "page_size",
+                  "value": "1",
+                  "description": "Number of items per page"
+                },
+                {
+                  "key": "search",
+                  "value": "string",
+                  "description": "Optional search term for filtering templates",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "string",
+                  "description": "Optional status filter: APPROVED, PENDING, REJECTED",
+                  "disabled": true
+                },
+                {
+                  "key": "category",
+                  "value": "string",
+                  "description": "Optional category filter: MARKETING, UTILITY, AUTHENTICATION",
+                  "disabled": true
+                },
+                {
+                  "key": "is_welcome_playground",
+                  "value": "",
+                  "description": "Optional filter by welcome playground flag",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Retrieves a paginated list of message templates for the authenticated customer. Supports filtering by status, category, and search term."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete a template",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false,\n  \"delete_from_meta\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/templates/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "templates",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{id}}"
+                }
+              ]
+            },
+            "description": "Deletes a template by ID. Optionally, you can also delete the template from WhatsApp/Meta by setting delete_from_meta=true."
+          },
+          "response": []
+        },
+        {
+          "name": "Get template by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v3/templates/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "templates",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{id}}"
+                }
+              ]
+            },
+            "description": "Retrieves a specific template by its ID. Returns template details including name, category, language, status, and definition."
+          },
+          "response": []
+        },
+        {
+          "name": "Update a template",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "string",
+                "description": "Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.",
+                "disabled": true
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false,\n  \"name\": \"Updated Welcome Message\",\n  \"category\": \"MARKETING\",\n  \"definition\": {\n    \"header\": {\n      \"type\": \"string\",\n      \"template\": \"string\",\n      \"variables\": [\n        {\n          \"id\": 1,\n          \"name\": \"string\",\n          \"type\": \"string\",\n          \"props\": {}\n        }\n      ]\n    },\n    \"footer\": {\n      \"type\": \"string\",\n      \"template\": \"string\",\n      \"variables\": [\n        {\n          \"id\": 1,\n          \"name\": \"string\",\n          \"type\": \"string\",\n          \"props\": {}\n        }\n      ]\n    },\n    \"buttons\": [\n      {\n        \"id\": 1,\n        \"type\": \"string\"\n      }\n    ],\n    \"definitionVersion\": \"string\",\n    \"authenticationConfig\": {\n      \"addSecurityRecommendation\": false,\n      \"codeExpirationMinutes\": 1\n    }\n  },\n  \"submit_for_review\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/templates/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "templates",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{id}}"
+                }
+              ]
+            },
+            "description": "Updates an existing template's name, category, language, definition, or submits it for review."
+          },
+          "response": []
+        }
+      ],
+      "description": "Create and manage reusable message templates for SMS and WhatsApp. Templates go through a lifecycle: `DRAFT → PENDING → APPROVED / REJECTED`. WhatsApp templates require Meta approval before use on that channel; SMS delivery is available immediately.\n\n📖 [Working with Templates](https://docs.sent.dm/start/guides/working-with-templates)\n📖 [First Template Quickstart](https://docs.sent.dm/start/quickstart/first-template)"
+    },
+    {
+      "name": "Profiles",
+      "item": [
+        {
+          "name": "Complete profile setup",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "string",
+                "description": "Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.",
+                "disabled": true
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false,\n  \"webHookUrl\": \"https://your-app.com/webhook/profile-complete\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/profiles/:profileId/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "profiles",
+                ":profileId",
+                "complete"
+              ],
+              "variable": [
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                }
+              ]
+            },
+            "description": "Final step in profile compliance workflow. Validates all prerequisites (general data, brand, campaigns), connects profile to Telnyx/WhatsApp, and sets status based on configuration. The process runs in the background and calls the provided webhook URL when finished.\n\n                Prerequisites:\n                - Profile must be completed\n                - If inheritTcrBrand=false: Profile must have existing brand\n                - If inheritTcrBrand=true: Parent must have existing brand\n                - If TCR application: Must have at least one campaign (own or inherited)\n                - If inheritTcrCampaign=false: Profile should have campaigns\n                - If inheritTcrCampaign=true: Parent must have campaigns\n\n                Status Logic:\n                - If both SMS and WhatsApp channels are missing → SUBMITTED\n                - If TCR application and not inheriting brand/campaigns → SUBMITTED\n                - If non-TCR with destination country (IsMain=true) → SUBMITTED\n                - Otherwise → COMPLETED"
+          },
+          "response": []
+        },
+        {
+          "name": "Create a new profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "string",
+                "description": "Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.",
+                "disabled": true
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false,\n  \"name\": \"Sales Team\",\n  \"icon\": \"https://example.com/sales-icon.png\",\n  \"description\": \"Sales department sender profile\",\n  \"short_name\": \"SALES\",\n  \"allow_contact_sharing\": true,\n  \"allow_template_sharing\": false,\n  \"inherit_contacts\": true,\n  \"inherit_templates\": true,\n  \"inherit_tcr_brand\": false,\n  \"inherit_tcr_campaign\": false,\n  \"billing_model\": \"profile\",\n  \"billing_contact\": {\n    \"name\": \"string\",\n    \"email\": \"string\",\n    \"phone\": \"string\",\n    \"address\": \"string\"\n  },\n  \"whatsapp_business_account\": {\n    \"waba_id\": \"string\",\n    \"phone_number_id\": \"string\",\n    \"access_token\": \"string\"\n  },\n  \"brand\": {\n    \"business\": {\n      \"legalName\": \"string\",\n      \"taxId\": \"string\",\n      \"taxIdType\": \"string\",\n      \"street\": \"string\",\n      \"city\": \"string\",\n      \"state\": \"string\",\n      \"postalCode\": \"string\",\n      \"country\": \"string\",\n      \"url\": \"https://example.com/webhook\",\n      \"countryOfRegistration\": \"string\"\n    }\n  },\n  \"payment_details\": {\n    \"card_number\": \"string\",\n    \"expiry\": \"string\",\n    \"cvc\": \"string\",\n    \"zip_code\": \"string\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/profiles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "profiles"
+              ]
+            },
+            "description": "Creates a new sender profile within an organization. Profiles represent different brands, departments, or use cases, each with their own messaging configuration and settings. Requires admin role in the organization.\n\n## WhatsApp Business Account\n\nEvery profile must be linked to a WhatsApp Business Account. There are two ways to do this:\n\n**1. Inherit from organization (default)** — Omit the `whatsapp_business_account` field. The profile will share the organization's WhatsApp Business Account, which must have been set up via WhatsApp Embedded Signup. This is the recommended path for most use cases.\n\n**2. Direct credentials** — Provide a `whatsapp_business_account` object with `waba_id`, `phone_number_id`, and `access_token`. Use this when the profile needs its own independent WhatsApp Business Account. Obtain these from Meta Business Manager by creating a System User with `whatsapp_business_messaging` and `whatsapp_business_management` permissions.\n\nIf the `whatsapp_business_account` field is omitted and the organization has no WhatsApp Business Account configured, the request will be rejected with HTTP 422.\n\n## Brand\n\nInclude the optional `brand` field to create the brand for this profile at the same time. Cannot be used when `inherit_tcr_brand` is `true`.\n\n## Payment Details\n\nWhen `billing_model` is `\"profile\"` or `\"profile_and_organization\"` you may include a `payment_details` object containing the card number, expiry (MM/YY), CVC, and billing ZIP code. Payment details are **never stored** on our servers and are forwarded directly to the payment processor. Providing `payment_details` when `billing_model` is `\"organization\"` is not allowed."
+          },
+          "response": []
+        },
+        {
+          "name": "List profiles in organization",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v3/profiles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "profiles"
+              ]
+            },
+            "description": "Retrieves all sender profiles within an organization, including brand information for each profile. Profiles represent different brands, departments, or use cases within an organization, each with their own messaging configuration."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete a profile",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/profiles/:profileId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "profiles",
+                ":profileId"
+              ],
+              "variable": [
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                }
+              ]
+            },
+            "description": "Soft deletes a sender profile. The profile will be marked as deleted but data is retained. Requires admin role in the organization."
+          },
+          "response": []
+        },
+        {
+          "name": "Get profile by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v3/profiles/:profileId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "profiles",
+                ":profileId"
+              ],
+              "variable": [
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                }
+              ]
+            },
+            "description": "Retrieves detailed information about a specific sender profile within an organization, including brand and KYC information if a brand has been configured."
+          },
+          "response": []
+        },
+        {
+          "name": "Update profile settings",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "string",
+                "description": "Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.",
+                "disabled": true
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false,\n  \"name\": \"Sales Team - Updated\",\n  \"description\": \"Updated sales department sender profile\",\n  \"short_name\": \"SALES\",\n  \"allow_contact_sharing\": true,\n  \"billing_model\": \"organization\",\n  \"billing_contact\": {\n    \"name\": \"string\",\n    \"email\": \"string\",\n    \"phone\": \"string\",\n    \"address\": \"string\"\n  },\n  \"brand\": {\n    \"business\": {\n      \"legalName\": \"string\",\n      \"taxId\": \"string\",\n      \"taxIdType\": \"string\",\n      \"street\": \"string\",\n      \"city\": \"string\",\n      \"state\": \"string\",\n      \"postalCode\": \"string\",\n      \"country\": \"string\",\n      \"url\": \"https://example.com/webhook\",\n      \"countryOfRegistration\": \"string\"\n    }\n  },\n  \"payment_details\": {\n    \"card_number\": \"string\",\n    \"expiry\": \"string\",\n    \"cvc\": \"string\",\n    \"zip_code\": \"string\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/profiles/:profileId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "profiles",
+                ":profileId"
+              ],
+              "variable": [
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                }
+              ]
+            },
+            "description": "Updates a profile's configuration and settings. Requires admin role in the organization. Only provided fields will be updated (partial update).\n\n## Brand Management\n\nInclude the optional `brand` field to create or update the brand associated with this profile. The brand holds KYC and TCR compliance data (legal business info, contact details, messaging vertical). Once a brand has been submitted to TCR it cannot be modified. Setting `inherit_tcr_brand: true` and providing `brand` in the same request is not allowed.\n\n## Payment Details\n\nWhen `billing_model` is `\"profile\"` or `\"profile_and_organization\"` you may include a `payment_details` object containing the card number, expiry (MM/YY), CVC, and billing ZIP code. Payment details are **never stored** on our servers and are forwarded directly to the payment processor. Providing `payment_details` when `billing_model` is `\"organization\"` is not allowed."
+          },
+          "response": []
+        },
+        {
+          "name": "Create a campaign for a profile's brand",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "string",
+                "description": "Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.",
+                "disabled": true
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false,\n  \"campaign\": {\n    \"name\": \"Customer Notifications\",\n    \"description\": \"Appointment reminders and account notifications\",\n    \"type\": \"App\",\n    \"useCases\": [\n      {\n        \"messagingUseCaseUs\": \"ACCOUNT_NOTIFICATION\",\n        \"sampleMessages\": [\n          \"Hi {name}, your appointment is confirmed for {date} at {time}.\",\n          \"Your order #{order_id} has been shipped. Track at {url}\"\n        ]\n      }\n    ],\n    \"messageFlow\": \"User signs up on website and opts in to receive SMS notifications\",\n    \"privacyPolicyLink\": \"https://acmecorp.com/privacy\",\n    \"termsAndConditionsLink\": \"https://acmecorp.com/terms\",\n    \"optinMessage\": \"You have opted in to Acme Corp notifications. Reply STOP to opt out.\",\n    \"optoutMessage\": \"You have been unsubscribed. Reply START to opt back in.\",\n    \"helpMessage\": \"Reply STOP to unsubscribe or contact support@acmecorp.com\",\n    \"optinKeywords\": \"YES, START, SUBSCRIBE\",\n    \"optoutKeywords\": \"STOP, UNSUBSCRIBE, END\",\n    \"helpKeywords\": \"HELP, INFO, SUPPORT\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/profiles/:profileId/campaigns",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "profiles",
+                ":profileId",
+                "campaigns"
+              ],
+              "variable": [
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                }
+              ]
+            },
+            "description": "Creates a new campaign scoped under the brand of the specified profile. Each campaign must include at least one use case with sample messages."
+          },
+          "response": []
+        },
+        {
+          "name": "Get campaigns for a profile's brand",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v3/profiles/:profileId/campaigns",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "profiles",
+                ":profileId",
+                "campaigns"
+              ],
+              "variable": [
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                }
+              ]
+            },
+            "description": "Retrieves all campaigns linked to the profile's brand, including use cases and sample messages. Returns inherited campaigns if inherit_tcr_campaign=true."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete a campaign",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/profiles/:profileId/campaigns/:campaignId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "profiles",
+                ":profileId",
+                "campaigns",
+                ":campaignId"
+              ],
+              "variable": [
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                },
+                {
+                  "key": "campaignId",
+                  "value": "{{campaignId}}"
+                }
+              ]
+            },
+            "description": "Deletes a campaign by ID from the brand of the specified profile. The profile must belong to the authenticated organization."
+          },
+          "response": []
+        },
+        {
+          "name": "Update a campaign",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "string",
+                "description": "Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.",
+                "disabled": true
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false,\n  \"campaign\": {\n    \"name\": \"Customer Notifications Updated\",\n    \"description\": \"Updated appointment reminders and account notifications\",\n    \"type\": \"App\",\n    \"useCases\": [\n      {\n        \"messagingUseCaseUs\": \"ACCOUNT_NOTIFICATION\",\n        \"sampleMessages\": [\n          \"Hi {name}, your appointment is confirmed for {date} at {time}.\",\n          \"Your order #{order_id} has been shipped. Track at {url}\"\n        ]\n      }\n    ],\n    \"messageFlow\": \"User signs up on website and opts in to receive SMS notifications\",\n    \"privacyPolicyLink\": null,\n    \"termsAndConditionsLink\": null,\n    \"optinMessage\": null,\n    \"optoutMessage\": null,\n    \"helpMessage\": null,\n    \"optinKeywords\": null,\n    \"optoutKeywords\": null,\n    \"helpKeywords\": null\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/profiles/:profileId/campaigns/:campaignId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "profiles",
+                ":profileId",
+                "campaigns",
+                ":campaignId"
+              ],
+              "variable": [
+                {
+                  "key": "profileId",
+                  "value": "{{profileId}}"
+                },
+                {
+                  "key": "campaignId",
+                  "value": "{{campaignId}}"
+                }
+              ]
+            },
+            "description": "Updates an existing campaign under the brand of the specified profile. Cannot update campaigns that have already been submitted to TCR."
+          },
+          "response": []
+        }
+      ],
+      "description": "Profiles enable multi-tenant architectures — each profile is an isolated messaging identity with its own contacts, templates, and webhooks. Organization API keys can act on behalf of a profile by passing the `x-profile-id` header.\n\nProfiles also hold 10DLC brand and campaign registrations required for US SMS compliance.\n\n📖 [Multi-Tenant Architectures](https://docs.sent.dm/start/advanced/multi-tenant-architectures)\n📖 [Compliance & Regulations](https://docs.sent.dm/start/advanced/compliance-regulations)"
+    },
+    {
+      "name": "Numbers",
+      "item": [
+        {
+          "name": "Get phone number details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v3/numbers/lookup/:phoneNumber",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "numbers",
+                "lookup",
+                ":phoneNumber"
+              ],
+              "variable": [
+                {
+                  "key": "phoneNumber",
+                  "value": "{{phoneNumber}}"
+                }
+              ]
+            },
+            "description": "Retrieves detailed information about a phone number including carrier, line type, porting status, and VoIP detection. Uses the customer's messaging provider for rich data, with fallback to the internal index."
+          },
+          "response": []
+        }
+      ],
+      "description": "Look up a phone number to check its validity and available channels (SMS / WhatsApp) before sending. Useful for pre-validating recipients without creating a contact.\n\n📖 [Managing Contacts](https://docs.sent.dm/start/guides/managing-contacts)"
+    },
+    {
+      "name": "Messages",
+      "item": [
+        {
+          "name": "Get message activities",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v3/messages/:id/activities",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "messages",
+                ":id",
+                "activities"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{id}}"
+                }
+              ]
+            },
+            "description": "Retrieves the activity log for a specific message. Activities track the message lifecycle including acceptance, processing, sending, delivery, and any errors."
+          },
+          "response": []
+        },
+        {
+          "name": "Get message status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v3/messages/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "messages",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{id}}"
+                }
+              ]
+            },
+            "description": "Retrieves the current status and details of a message by ID. Includes delivery status, timestamps, and error information if applicable."
+          },
+          "response": []
+        },
+        {
+          "name": "Send a message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "string",
+                "description": "Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.",
+                "disabled": true
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false,\n  \"to\": [\n    \"+14155551234\",\n    \"+14155555678\"\n  ],\n  \"channel\": [\n    \"sms\",\n    \"whatsapp\"\n  ],\n  \"template\": {\n    \"id\": \"7ba7b820-9dad-11d1-80b4-00c04fd430c8\",\n    \"name\": \"order_confirmation\",\n    \"parameters\": {\n      \"name\": \"John Doe\",\n      \"order_id\": \"12345\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "messages"
+              ]
+            },
+            "description": "Sends a message to one or more recipients using a template. Supports multi-channel broadcast — when multiple channels are specified (e.g. [\"sms\", \"whatsapp\"]), a separate message is created for each (recipient, channel) pair. Returns immediately with per-recipient message IDs for async tracking via webhooks or the GET /messages/{id} endpoint."
+          },
+          "response": []
+        }
+      ],
+      "description": "Send SMS and WhatsApp messages using pre-approved templates. A single request can target up to **1,000 recipients**; separate messages are created per (recipient, channel) pair — there is no implicit fallback when multiple channels are specified.\n\nPoll `/v3/messages/{id}/activities` or use webhooks to track delivery status (`QUEUED → SENT → DELIVERED → READ / FAILED`).\n\n📖 [Sending Messages](https://docs.sent.dm/start/guides/sending-messages)\n📖 [Message Responses](https://docs.sent.dm/start/guides/message-responses)\n📖 [Message Status Tracking](https://docs.sent.dm/start/guides/message-status-tracking)\n📖 [Batch Operations](https://docs.sent.dm/start/guides/batch-operations)"
+    },
+    {
+      "name": "Contacts",
+      "item": [
+        {
+          "name": "Create a contact",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "string",
+                "description": "Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.",
+                "disabled": true
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false,\n  \"phone_number\": \"+1234567890\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/contacts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "contacts"
+              ]
+            },
+            "description": "Creates a new contact by phone number and associates it with the authenticated customer."
+          },
+          "response": []
+        },
+        {
+          "name": "Get contacts list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v3/contacts?page=1&page_size=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "contacts"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (1-indexed)"
+                },
+                {
+                  "key": "page_size",
+                  "value": "1",
+                  "description": "Number of items per page"
+                },
+                {
+                  "key": "search",
+                  "value": "string",
+                  "description": "Optional search term for filtering contacts",
+                  "disabled": true
+                },
+                {
+                  "key": "channel",
+                  "value": "string",
+                  "description": "Optional channel filter (sms, whatsapp)",
+                  "disabled": true
+                },
+                {
+                  "key": "phone",
+                  "value": "string",
+                  "description": "Optional phone number filter (alternative to list view)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Retrieves a paginated list of contacts for the authenticated customer. Supports filtering by search term, channel, or phone number."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete a contact",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/contacts/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "contacts",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{id}}"
+                }
+              ]
+            },
+            "description": "Dissociates a contact from the authenticated customer. Inherited contacts cannot be deleted."
+          },
+          "response": []
+        },
+        {
+          "name": "Get contact by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v3/contacts/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "contacts",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{id}}"
+                }
+              ]
+            },
+            "description": "Retrieves a specific contact by their unique identifier. Returns detailed contact information including phone formats, available channels, and opt-out status."
+          },
+          "response": []
+        },
+        {
+          "name": "Update a contact",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "string",
+                "description": "Unique key to ensure idempotent request processing. Must be 1-255 alphanumeric characters, hyphens, or underscores. Responses are cached for 24 hours per key per customer.",
+                "disabled": true
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sandbox\": false,\n  \"default_channel\": \"whatsapp\",\n  \"opt_out\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v3/contacts/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "contacts",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{id}}"
+                }
+              ]
+            },
+            "description": "Updates a contact's default channel and/or opt-out status. Inherited contacts cannot be updated."
+          },
+          "response": []
+        }
+      ],
+      "description": "Contacts are validated, channel-aware communication endpoints. Creating a contact triggers real-time validation across SMS and WhatsApp, caching channel availability for optimized future routing.\n\nContacts are created lazily on first message send, or explicitly via `POST /v3/contacts`.\n\n📖 [Managing Contacts](https://docs.sent.dm/start/guides/managing-contacts)"
+    },
+    {
+      "name": "Accounts",
+      "item": [
+        {
+          "name": "Get authenticated account",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "x-profile-id",
+                "value": "{{$guid}}",
+                "description": "Profile UUID to scope the request to a child profile. Only organization API keys can use this header. The profile must belong to the calling organization.",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v3/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "me"
+              ]
+            },
+            "description": "Returns the account associated with the provided API key. The response includes account identity, contact information, messaging channel configuration, and — depending on the account type — either a list of child profiles or the profile's own settings.\n\n**Account types:**\n- `organization` — Has child profiles. The `profiles` array is populated.\n- `user` — Standalone account with no profiles.\n- `profile` — Child of an organization. Includes `organization_id`, `short_name`, `status`, and `settings`.\n\n**Channels:**\nThe `channels` object always includes `sms`, `whatsapp`, and `rcs`. Each channel has a `configured` boolean. Configured channels expose additional details such as `phone_number`."
+          },
+          "response": []
+        }
+      ],
+      "description": "Retrieve details about the authenticated account — balance, plan, and configuration.\n\n📖 [Account Setup](https://docs.sent.dm/start/quickstart/account-setup)"
+    }
+  ],
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "x-api-key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{apiKey}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://api.sent.dm"
+    },
+    {
+      "key": "apiKey",
+      "value": "",
+      "description": "Your Sent DM API key"
+    }
+  ]
+}
