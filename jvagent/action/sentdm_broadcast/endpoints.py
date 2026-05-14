@@ -18,7 +18,7 @@ import logging
 import time
 from collections import OrderedDict
 from threading import Lock
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 from fastapi import HTTPException, Request
@@ -27,7 +27,10 @@ from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.exceptions import ValidationError
 
 from .models import SentDMBroadcastRecord
-from .sentdm_broadcast_action import SentDMBroadcastAction
+from .sentdm_broadcast_action import (
+    SentDMBroadcastAction,
+    _DEFAULT_WEBHOOK_EVENT_FILTERS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +202,42 @@ def _extract_message_id_from_event(event_payload: Any) -> str:
                 if isinstance(value, str) and value.strip():
                     return value.strip()
     return ""
+
+
+def _normalize_sentdm_webhook_envelope(payload: Any) -> Tuple[str, Dict[str, Any]]:
+    """Normalize Sent webhook JSON to ``(field, fold)`` for derive + record update.
+
+    Handles the documented envelope ``{field, sub_type, timestamp, payload}`` and a
+    dashboard-style wrapper ``{eventType, eventData: {...}}``.
+    """
+    if not isinstance(payload, dict):
+        return "", {}
+    root = payload
+    env: Dict[str, Any] = root
+    nested = root.get("eventData")
+    if isinstance(nested, dict) and (
+        isinstance(nested.get("payload"), dict) or nested.get("field") is not None
+    ):
+        env = nested
+    field = str(env.get("field") or root.get("field") or "")
+    sub_raw = env.get("sub_type")
+    if not (isinstance(sub_raw, str) and sub_raw.strip()):
+        sub_raw = root.get("eventType") or root.get("event_type")
+    sub_type = str(sub_raw).strip() if isinstance(sub_raw, str) else ""
+    inner = env.get("payload")
+    if not isinstance(inner, dict):
+        inner = {}
+    fold: Dict[str, Any] = dict(inner)
+    if sub_type:
+        fold["sub_type"] = sub_type
+        fold["event"] = sub_type
+    if (
+        "message_id" not in fold
+        and isinstance(fold.get("id"), str)
+        and fold["id"].strip()
+    ):
+        fold["message_id"] = fold["id"].strip()
+    return field, fold
 
 
 @endpoint(
@@ -394,12 +433,19 @@ async def sentdm_get_webhook(action_id: str) -> Dict[str, Any]:
     ``/actions/{action_id}/sentdm/webhook/register``.
     """
     action = await _get_sentdm_action(action_id)
+    eff = (
+        {k: list(v) for k, v in _DEFAULT_WEBHOOK_EVENT_FILTERS.items()}
+        if action.webhook_event_filters is None
+        else dict(action.webhook_event_filters)
+    )
     return {
         "configured": action.is_configured(),
         "webhook_url": action.webhook_url,
         "sentdm_webhook_id": action.sentdm_webhook_id,
         "has_signing_secret": bool((action.sentdm_webhook_secret or "").strip()),
         "event_types": list(action.webhook_event_types or []),
+        "webhook_event_filters": action.webhook_event_filters,
+        "event_filters_effective": eff,
         "display_name": action.webhook_display_name,
     }
 
@@ -627,13 +673,8 @@ async def sentdm_webhook_receive(request: Request, action_id: str) -> Dict[str, 
             logger.warning("SentDM webhook JSON parse error: %s", exc)
             raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-    field = ""
-    event_payload: Any = None
-    if isinstance(payload, dict):
-        field = str(payload.get("field") or "")
-        event_payload = payload.get("payload")
-
-    sentdm_message_id = _extract_message_id_from_event(event_payload)
+    field, fold = _normalize_sentdm_webhook_envelope(payload)
+    sentdm_message_id = _extract_message_id_from_event(fold)
 
     logger.info(
         "SentDM webhook received: action=%s webhook_id=%s field=%s message_id=%s",
@@ -642,7 +683,7 @@ async def sentdm_webhook_receive(request: Request, action_id: str) -> Dict[str, 
         field or "(unknown)",
         sentdm_message_id or "(none)",
     )
-    logger.debug("SentDM webhook payload (action=%s): %r", action_id, event_payload)
+    logger.debug("SentDM webhook fold (action=%s): %r", action_id, fold)
 
     record_id: Optional[str] = None
     record_status: Optional[str] = None
@@ -659,7 +700,7 @@ async def sentdm_webhook_receive(request: Request, action_id: str) -> Dict[str, 
         if record is not None:
             try:
                 updated = await action._apply_webhook_event_to_record(
-                    record, field, event_payload
+                    record, field, fold
                 )
                 record_id = updated.id
                 record_status = updated.status

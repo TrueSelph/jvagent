@@ -90,7 +90,9 @@ class SentDMBroadcastRecord(Node):
     )
     last_event_payload: Optional[Dict[str, Any]] = attribute(
         default=None,
-        description="Last webhook event payload, kept verbatim for debugging",
+        description=(
+            "Last webhook event payload (trimmed: ids, channel, status, sub_type)"
+        ),
     )
     last_status_at: Optional[datetime] = attribute(
         default=None,

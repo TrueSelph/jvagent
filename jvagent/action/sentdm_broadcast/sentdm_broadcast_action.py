@@ -3,6 +3,7 @@
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
+from urllib.parse import urlsplit
 
 import httpx
 from jvspatial.api.auth.api_key_service import APIKeyService
@@ -21,6 +22,88 @@ from .webhook_auth import get_or_create_system_user
 logger = logging.getLogger(__name__)
 
 
+def _sentdm_webhook_endpoint_url(ep: Mapping[str, Any]) -> str:
+    for key in (
+        "endpoint_url",
+        "endpointUrl",
+        "url",
+        "callback_url",
+        "callbackUrl",
+        "webhook_url",
+        "webhookUrl",
+    ):
+        raw = ep.get(key)
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+    return ""
+
+
+def _sentdm_webhook_record_id(ep: Mapping[str, Any]) -> str:
+    for key in ("id", "webhook_id", "webhookId", "uuid", "UUID"):
+        raw = ep.get(key)
+        if raw is not None and str(raw).strip():
+            return str(raw).strip()
+    return ""
+
+
+def _extract_sentdm_webhook_list_items(body: Any) -> List[Dict[str, Any]]:
+    """Unwrap ``GET /v3/webhooks`` JSON into webhook row dicts (handles nested ``data``)."""
+    acc: List[Dict[str, Any]] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, list):
+            for it in node:
+                walk(it)
+            return
+        if not isinstance(node, dict):
+            return
+        branched = False
+        for key in ("data", "items", "webhooks", "results", "records", "rows"):
+            child = node.get(key)
+            if isinstance(child, list):
+                branched = True
+                for it in child:
+                    walk(it)
+            elif isinstance(child, dict):
+                branched = True
+                walk(child)
+        if branched:
+            return
+        if _sentdm_webhook_endpoint_url(node) or _sentdm_webhook_record_id(node):
+            acc.append(node)
+
+    walk(body)
+    return acc
+
+
+def _sentdm_webhook_url_on_public_origin(ep_url: str, public_base: str) -> bool:
+    """True when ``ep_url`` is under ``/api/sentdm/webhook/`` on the same host as ``public_base``."""
+    ep = urlsplit((ep_url or "").strip())
+    base = urlsplit((public_base or "").strip())
+    if (ep.scheme or "https").lower() != (base.scheme or "https").lower():
+        return False
+    if ep.netloc.lower() != base.netloc.lower():
+        return False
+    path = ep.path or "/"
+    return path.startswith("/api/sentdm/webhook/")
+
+
+def _sentdm_webhook_urls_equivalent(a: str, b: str) -> bool:
+    """True for identical URLs or same origin+path when Sent omits ``?api_key=`` in list APIs."""
+    sa = (a or "").strip()
+    sb = (b or "").strip()
+    if sa == sb:
+        return True
+    pa, pb = urlsplit(sa), urlsplit(sb)
+    if pa.netloc.lower() != pb.netloc.lower():
+        return False
+    if (pa.scheme or "https").lower() != (pb.scheme or "https").lower():
+        return False
+    path_a = (pa.path or "/").rstrip("/") or "/"
+    path_b = (pb.path or "/").rstrip("/") or "/"
+    return path_a == path_b
+
+
 # Sent's POST /v3/webhooks expects ``message`` (singular) for message lifecycle
 # events; older bundled docs used ``messages`` — we normalize when calling the API.
 _SENTDM_WEBHOOK_EVENT_API_VALUE = {
@@ -29,6 +112,9 @@ _SENTDM_WEBHOOK_EVENT_API_VALUE = {
     "templates": "templates",
 }
 _DEFAULT_WEBHOOK_DISPLAY_NAME = "jvagent SentDM"
+_DEFAULT_WEBHOOK_EVENT_FILTERS: Dict[str, List[str]] = {
+    "message": ["sent", "delivered", "read", "failed"],
+}
 
 
 class SentDMBroadcastAction(Action):
@@ -97,9 +183,22 @@ class SentDMBroadcastAction(Action):
     webhook_event_types: List[str] = attribute(
         default_factory=lambda: ["message"],
         description=(
-            "Sent webhook event categories. Use ``message`` (singular) for "
-            "delivery/status events; ``templates`` for template approvals. "
-            "Legacy value ``messages`` is accepted and mapped to ``message``."
+            "Sent webhook parent ``event_types`` for ``POST /v3/webhooks``. Use "
+            "``message`` (singular) for outbound/inbound message events; "
+            "``templates`` for template lifecycle. Sub-types (e.g. "
+            "``message.delivered``) are *not* listed here — use "
+            "``webhook_event_filters`` instead. Legacy ``messages`` maps to "
+            "``message``."
+        ),
+    )
+    webhook_event_filters: Optional[Dict[str, List[str]]] = attribute(
+        default=None,
+        description=(
+            "Optional Sent ``event_filters`` map: parent event type → list of "
+            "subtype suffixes (e.g. ``{'message': ['sent', 'delivered']}``). "
+            "``None`` applies a broadcast-focused default "
+            "(sent/delivered/read/failed only). ``{}`` omits filters (all "
+            "sub-types for subscribed parents)."
         ),
     )
     webhook_retry_count: int = attribute(
@@ -543,16 +642,17 @@ class SentDMBroadcastAction(Action):
 
         Resolution order:
 
-        1. ``payload.status`` (or ``payload.data.status``) when it matches a
-           known status string.
-        2. Event-name suffix when ``payload.event`` looks like
-           ``message.delivered`` / ``message.sent`` / ``message.failed`` etc.
+        1. ``payload.status`` / ``payload.message_status`` (or nested ``data``)
+           when it matches a known status string (case-insensitive).
+        2. Event-name suffix when ``payload.event``, ``event_type``, ``eventType``,
+           or ``sub_type`` looks like ``message.delivered`` / ``message.sent`` / etc.
         3. None when nothing matched (caller keeps the prior status).
         """
         known = {
             "accepted",
             "queued",
             "processing",
+            "routed",
             "sent",
             "delivered",
             "read",
@@ -575,11 +675,20 @@ class SentDMBroadcastAction(Action):
 
         body: Dict[str, Any] = payload if isinstance(payload, dict) else {}
         status = _normalize(body.get("status"))
+        if not status:
+            status = _normalize(body.get("message_status"))
         if not status and isinstance(body.get("data"), dict):
             status = _normalize(body["data"].get("status"))
+        if not status and isinstance(body.get("data"), dict):
+            status = _normalize(body["data"].get("message_status"))
 
         if not status:
-            event_name = body.get("event") or body.get("event_type")
+            event_name = (
+                body.get("event")
+                or body.get("event_type")
+                or body.get("eventType")
+                or body.get("sub_type")
+            )
             if isinstance(event_name, str) and "." in event_name:
                 suffix = event_name.split(".", 1)[1].strip().lower()
                 status = _normalize(suffix)
@@ -597,6 +706,33 @@ class SentDMBroadcastAction(Action):
         _ = field
         return status, error_payload
 
+    _WEBHOOK_AUDIT_KEYS = frozenset(
+        {
+            "sub_type",
+            "message_id",
+            "id",
+            "status",
+            "message_status",
+            "channel",
+            "account_id",
+            "template_id",
+            "inbound_number",
+            "outbound_number",
+        }
+    )
+
+    @staticmethod
+    def _compact_webhook_audit_payload(payload: Any) -> Optional[Dict[str, Any]]:
+        """Persist only Sent message fields useful for status correlation / support."""
+        if not isinstance(payload, dict):
+            return None
+        out = {
+            k: payload[k]
+            for k in SentDMBroadcastAction._WEBHOOK_AUDIT_KEYS
+            if k in payload and payload[k] is not None and str(payload[k]).strip() != ""
+        }
+        return out or None
+
     async def _apply_webhook_event_to_record(
         self,
         record: SentDMBroadcastRecord,
@@ -609,12 +745,13 @@ class SentDMBroadcastAction(Action):
         new_status, error_payload = self._derive_status_and_error(field, payload)
         now = datetime.now(timezone.utc)
 
+        stored = self._compact_webhook_audit_payload(payload)
         event_entry: Dict[str, Any] = {
             "source": source,
             "field": field or None,
             "status": new_status,
             "received_at": now.isoformat(),
-            "payload": payload if isinstance(payload, (dict, list, str)) else None,
+            "payload": stored,
         }
         events = list(record.events or [])
         events.append(event_entry)
@@ -624,8 +761,8 @@ class SentDMBroadcastAction(Action):
         record.events = events
 
         record.last_event_field = field or record.last_event_field
-        if isinstance(payload, dict):
-            record.last_event_payload = payload
+        if stored is not None:
+            record.last_event_payload = stored
 
         if new_status and new_status != record.status:
             record.status = new_status
@@ -669,8 +806,14 @@ class SentDMBroadcastAction(Action):
         status_body = await self.get_message_status(
             record.sentdm_message_id, profile_id=record.profile_id or None
         )
+        fold: Dict[str, Any]
+        if isinstance(status_body, dict):
+            inner = status_body.get("data")
+            fold = dict(inner) if isinstance(inner, dict) else dict(status_body)
+        else:
+            fold = {}
         updated = await self._apply_webhook_event_to_record(
-            record, "refresh", status_body, source="refresh"
+            record, "refresh", fold, source="refresh"
         )
         return {
             "record_id": updated.id,
@@ -797,6 +940,16 @@ class SentDMBroadcastAction(Action):
     def _expected_webhook_url_base(self, base_url: str) -> str:
         return f"{base_url.rstrip('/')}/api/sentdm/webhook/{str(self.id)}"
 
+    @staticmethod
+    def _sentdm_webhook_path_prefix_for_base(base_url: str) -> str:
+        """URL prefix for any jvagent SentDM webhook on this public host.
+
+        Matches ``<public-base>/api/sentdm/webhook/<any-action-id>`` so reconcile
+        can remove stale Sent endpoints that pointed at another action on the
+        same ``JVAGENT_PUBLIC_BASE_URL``.
+        """
+        return f"{(base_url or '').rstrip('/')}/api/sentdm/webhook/"
+
     async def get_webhook_url(
         self,
         *,
@@ -886,24 +1039,27 @@ class SentDMBroadcastAction(Action):
     # --- SentDM webhook CRUD ----------------------------------------------
 
     async def _sentdm_webhook_list(self) -> List[Dict[str, Any]]:
-        """List webhook endpoints registered on the SentDM account."""
-        body = await self._request(
-            "GET", "/v3/webhooks", params={"page": 1, "page_size": 100}
-        )
-        items: Any
-        if isinstance(body, dict):
-            items = (
-                body.get("data")
-                or body.get("items")
-                or body.get("webhooks")
-                or body.get("results")
-                or []
+        """List webhook endpoints registered on the SentDM account (all pages)."""
+        merged: Dict[str, Dict[str, Any]] = {}
+        page = 1
+        while page <= 100:
+            body = await self._request(
+                "GET",
+                "/v3/webhooks",
+                params={"page": str(page), "page_size": "100"},
             )
-        elif isinstance(body, list):
-            items = body
-        else:
-            items = []
-        return [w for w in items if isinstance(w, dict)]
+            batch = _extract_sentdm_webhook_list_items(body)
+            if not batch:
+                break
+            for ep in batch:
+                wid = _sentdm_webhook_record_id(ep)
+                ep_url = _sentdm_webhook_endpoint_url(ep)
+                key = wid or f"url:{ep_url}"
+                merged[key] = ep
+            if len(batch) < 100:
+                break
+            page += 1
+        return list(merged.values())
 
     async def _sentdm_webhook_create(
         self,
@@ -930,7 +1086,7 @@ class SentDMBroadcastAction(Action):
         if not events:
             events = ["message"]
 
-        payload = {
+        payload: Dict[str, Any] = {
             "display_name": display_name or self.webhook_display_name,
             "endpoint_url": endpoint_url,
             "event_types": events,
@@ -944,6 +1100,26 @@ class SentDMBroadcastAction(Action):
             ),
             "sandbox": False,
         }
+
+        filters_raw = self.webhook_event_filters
+        if filters_raw is None:
+            payload["event_filters"] = {
+                k: list(v) for k, v in _DEFAULT_WEBHOOK_EVENT_FILTERS.items()
+            }
+        elif filters_raw:
+            cleaned: Dict[str, List[str]] = {}
+            for raw_key, raw_list in filters_raw.items():
+                if not isinstance(raw_list, list):
+                    continue
+                key = str(raw_key).strip()
+                if not key:
+                    continue
+                items = [str(x).strip() for x in raw_list if str(x).strip()]
+                if items:
+                    cleaned[key] = items
+            if cleaned:
+                payload["event_filters"] = cleaned
+
         body = await self._request("POST", "/v3/webhooks", json_body=payload)
         data = body.get("data") if isinstance(body, dict) and "data" in body else body
         if not isinstance(data, dict):
@@ -975,11 +1151,13 @@ class SentDMBroadcastAction(Action):
             raise
 
     async def reconcile_webhook_endpoint(self) -> Dict[str, Any]:
-        """Ensure SentDM has exactly one webhook pointing at our public URL.
+        """Ensure SentDM has exactly one webhook for this action's URL.
 
         - Generates the webhook URL if missing.
         - Lists existing SentDM webhooks; keeps an exact ``endpoint_url`` match.
-        - Deletes stale webhooks with the same ``display_name`` or URL prefix.
+        - Deletes other webhooks under
+          ``{JVAGENT_PUBLIC_BASE_URL}/api/sentdm/webhook/`` (any action id) that
+          are not the desired URL.
         - Creates a new webhook (with signing secret) if no match was kept.
         """
         if not self.is_configured():
@@ -997,10 +1175,6 @@ class SentDMBroadcastAction(Action):
             }
 
         desired_url = await self.get_webhook_url()
-        desired_prefix = self._expected_webhook_url_base(base_url)
-        display_name = (
-            self.webhook_display_name or _DEFAULT_WEBHOOK_DISPLAY_NAME
-        ).strip()
 
         try:
             existing = await self._sentdm_webhook_list()
@@ -1011,21 +1185,24 @@ class SentDMBroadcastAction(Action):
         exact_matches: List[Dict[str, Any]] = []
         stale_matches: List[Dict[str, Any]] = []
         for ep in existing:
-            ep_url = str(ep.get("endpoint_url") or ep.get("url") or "").strip()
-            ep_name = str(ep.get("display_name") or ep.get("name") or "").strip()
+            ep_url = _sentdm_webhook_endpoint_url(ep)
             if not ep_url:
                 continue
-            if ep_url == desired_url:
+            if _sentdm_webhook_urls_equivalent(ep_url, desired_url):
                 exact_matches.append(ep)
-            elif desired_prefix and ep_url.startswith(desired_prefix):
-                stale_matches.append(ep)
-            elif display_name and ep_name == display_name:
+            elif _sentdm_webhook_url_on_public_origin(
+                ep_url, base_url
+            ) and not _sentdm_webhook_urls_equivalent(ep_url, desired_url):
                 stale_matches.append(ep)
 
         deleted: List[str] = []
         for ep in stale_matches:
-            wid = str(ep.get("id") or ep.get("webhook_id") or "")
+            wid = _sentdm_webhook_record_id(ep)
             if not wid:
+                logger.warning(
+                    "SentDM reconcile: skipping stale webhook with no id (url=%s)",
+                    _sentdm_webhook_endpoint_url(ep) or "?",
+                )
                 continue
             try:
                 await self._sentdm_webhook_delete(wid)
@@ -1037,7 +1214,7 @@ class SentDMBroadcastAction(Action):
         if exact_matches:
             kept = exact_matches[0]
             for ep in exact_matches[1:]:
-                wid = str(ep.get("id") or ep.get("webhook_id") or "")
+                wid = _sentdm_webhook_record_id(ep)
                 if not wid:
                     continue
                 try:
@@ -1050,7 +1227,7 @@ class SentDMBroadcastAction(Action):
 
         created: Optional[Dict[str, Any]] = None
         if kept:
-            wid = str(kept.get("id") or kept.get("webhook_id") or "")
+            wid = _sentdm_webhook_record_id(kept)
             if wid and wid != (self.sentdm_webhook_id or ""):
                 self.sentdm_webhook_id = wid
                 await self.save()

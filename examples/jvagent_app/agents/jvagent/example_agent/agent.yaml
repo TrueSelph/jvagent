@@ -126,6 +126,7 @@ actions:
       # Webhook tuning (used when JVAGENT_PUBLIC_BASE_URL is set)
       webhook_display_name: "jvagent SentDM"
       webhook_event_types: ["message"]
+      # webhook_event_filters: {}  # omit Sent event_filters (all message.*); default is sent/delivered/read/failed only
       webhook_retry_count: 3
       webhook_timeout_seconds: 30
       # Graph persistence — each send creates a SentDMBroadcastRecord node

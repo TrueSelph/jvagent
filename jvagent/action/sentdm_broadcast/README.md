@@ -40,7 +40,8 @@ actions:
 | `timeout` | `int` | `30` | HTTP timeout in seconds. |
 | `sandbox` | `bool` | `false` | Default `sandbox` flag for mutating calls. |
 | `webhook_display_name` | `str` | `"jvagent SentDM"` | Display name used when (re)creating the SentDM webhook. |
-| `webhook_event_types` | `List[str]` | `["message"]` | Webhook categories for Sent ``POST /v3/webhooks``. Use ``message`` (singular) and/or ``templates``. Legacy ``messages`` is mapped to ``message``. |
+| `webhook_event_types` | `List[str]` | `["message"]` | Parent categories for Sent ``POST /v3/webhooks`` (``message``, ``templates``). Sub-types use ``webhook_event_filters``. |
+| `webhook_event_filters` | `Dict[str, List[str]] \| null` | `null` → default ``{message: [sent, delivered, read, failed]}`` | Sent ``event_filters``; ``{}`` means all sub-types for subscribed parents. |
 | `webhook_retry_count` | `int` | `3` | SentDM webhook retry count. |
 | `webhook_timeout_seconds` | `int` | `30` | SentDM webhook delivery timeout. |
 | `persist_records` | `bool` | `true` | Persist a `SentDMBroadcastRecord` per `(recipient, channel)` on each send so webhook events update the graph. |
@@ -77,8 +78,8 @@ Mutable fields:
 
 Status derivation when a webhook arrives:
 
-1. If `payload.status` (or `payload.data.status`) matches a known token, use it.
-2. Else if `payload.event` looks like `message.delivered` / `message.sent` / `message.failed`, use the suffix.
+1. If `payload.status` or `payload.message_status` (or nested `data.*`) matches a known token, use it.
+2. Else if `payload.event`, `eventType`, or `sub_type` looks like `message.delivered` / `message.sent` / `message.failed`, use the suffix after the dot.
 3. Else keep the prior status; only `last_event_field` / `events` are updated.
 
 If no local record exists for the inbound `sentdm_message_id` (e.g.
@@ -132,6 +133,14 @@ secret, de-duplicates by `X-Webhook-ID`, looks up the matching
 `SentDMBroadcastRecord` (by `sentdm_message_id` parsed out of the event
 payload), and folds the event into the record's `status`, `last_status_at`,
 `last_event_payload` and `events[]` audit log.
+
+Webhook **reconcile** (on action load or `POST …/webhook/register`) deletes every
+other Sent webhook whose URL starts with
+`{JVAGENT_PUBLIC_BASE_URL}/api/sentdm/webhook/` except the exact URL for **this**
+action — including other action ids on the same host. If you run multiple
+SentDM broadcast actions behind one public base URL, reconciling one action
+removes the others' Sent registrations; use distinct base URLs (or hostnames)
+per deployment if you need them concurrently.
 
 ## Interactive test CLI
 
