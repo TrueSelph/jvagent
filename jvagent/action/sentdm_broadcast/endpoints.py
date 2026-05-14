@@ -61,13 +61,18 @@ def _sentdm_decode_signing_secret(secret: str) -> Optional[bytes]:
     material = s[6:] if s.startswith("whsec_") else s
     pad = (-len(material)) % 4
     padded = material + ("=" * pad)
-    for decoder in (base64.b64decode, base64.urlsafe_b64decode):
-        try:
-            out = decoder(padded)
-        except (binascii.Error, ValueError):
-            continue
-        if out:
-            return out
+    try:
+        out = base64.b64decode(padded)
+    except (binascii.Error, ValueError):
+        out = b""
+    if out:
+        return out
+    try:
+        out = base64.urlsafe_b64decode(padded)
+    except (binascii.Error, ValueError):
+        out = b""
+    if out:
+        return out
     if s.startswith("whsec_"):
         return None
     return s.encode("utf-8")
@@ -91,12 +96,14 @@ def _b64decode_signature_blob(sig_b64: str) -> Optional[bytes]:
         return None
     pad = (-len(s)) % 4
     padded = s + ("=" * pad)
-    for decoder in (base64.b64decode, base64.urlsafe_b64decode):
-        try:
-            return decoder(padded)
-        except (binascii.Error, ValueError):
-            continue
-    return None
+    try:
+        return base64.b64decode(padded)
+    except (binascii.Error, ValueError):
+        pass
+    try:
+        return base64.urlsafe_b64decode(padded)
+    except (binascii.Error, ValueError):
+        return None
 
 
 def _verify_sentdm_signature_v1(
