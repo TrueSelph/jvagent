@@ -120,7 +120,7 @@ actions:
       # Uncomment to set an account-wide fallback template:
       # default_template_name: "order_confirmation"
       # default_template_id: ""
-      # profile_id: ""              # required when using an organization API key
+#      profile_id: "5311d08c-f79a-41b1-8ebb-1f0efaefdf8f"
       sandbox: true                 # validate only, no real send — flip to false to go live
       timeout: 30
       # Webhook tuning (used when JVAGENT_PUBLIC_BASE_URL is set)
@@ -133,7 +133,8 @@ actions:
       # (one per recipient/channel), and the inbound webhook handler folds
       # delivery events into it. Disable persist_records to skip entirely.
       persist_records: true
-      persist_sandbox_sends: false   # sandbox sends are not recorded by default
+      # Sandbox validates only — no carrier send. Records are skipped unless true:
+      persist_sandbox_sends: true
       record_event_history_limit: 25
 
   # ── Signup interview (local custom action) ───────────────

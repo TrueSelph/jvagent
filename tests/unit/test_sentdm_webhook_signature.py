@@ -111,6 +111,11 @@ def test_sentdm_webhook_urls_equivalent_ignores_query() -> None:
     assert _sentdm_webhook_url_on_public_origin(a, "https://h")
 
 
+def test_sentdm_legacy_webhook_path_still_on_public_origin() -> None:
+    legacy = "https://h/api/sentdm/webhook/n.Action.1"
+    assert _sentdm_webhook_url_on_public_origin(legacy, "https://h")
+
+
 def test_sentdm_webhook_different_paths_not_equivalent() -> None:
     a = "https://h/api/webhook/n.Action.1?k=1"
     b = "https://h/api/webhook/n.Action.2?k=2"

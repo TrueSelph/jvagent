@@ -24,8 +24,8 @@ The script will:
    ``JVAGENT_API_KEY_HEADER`` if present.
 4. List agents and let you pick one.
 5. Find the SentDMBroadcastAction registered on that agent.
-6. Open a menu: send broadcast, reconcile webhook, show webhook URL,
-   switch agent, quit.
+6. Open a menu: send broadcast (few prompts; optional ``SENTDM_TEST_*`` .env
+   defaults), reconcile webhook, show webhook URL, switch agent, quit.
 
 Depends on the standard library + ``httpx`` + ``python-dotenv`` (both already
 jvagent dependencies). The last successful base_url + auth method are cached
@@ -209,6 +209,11 @@ def load_env_file(explicit_path: Optional[str]) -> Dict[str, str]:
 
 _PREFIXES: Tuple[str, ...] = ("JVAGENT_", "JVSPATIAL_", "SENTDM_")
 
+# Optional .env defaults for a shorter broadcast flow (see do_send_broadcast).
+_SENTDM_ENV_TEST_TO = "SENTDM_TEST_TO"
+_SENTDM_ENV_TEST_TEMPLATE_ID = "SENTDM_TEST_TEMPLATE_ID"
+_SENTDM_ENV_TEST_PARAMETERS = "SENTDM_TEST_PARAMETERS_JSON"
+
 
 def _env_value(env: Dict[str, str], *keys: str) -> Optional[str]:
     for key in keys:
@@ -249,10 +254,17 @@ def derive_default_base_url(env: Dict[str, str]) -> str:
 class JvAgentClient:
     """Thin wrapper around the jvagent REST API."""
 
-    def __init__(self, base_url: str, *, timeout: float = 30.0) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        timeout: float = 30.0,
+        cli_env: Optional[Dict[str, str]] = None,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self._client = httpx.Client(timeout=timeout)
         self._headers: Dict[str, str] = {"accept": "application/json"}
+        self.cli_env: Dict[str, str] = dict(cli_env or {})
 
     def close(self) -> None:
         self._client.close()
@@ -487,32 +499,39 @@ def _action_id(action: Dict[str, Any]) -> str:
 
 
 def do_send_broadcast(client: JvAgentClient, action: Dict[str, Any]) -> None:
+    """Minimal prompts: to, optional template id, optional parameters JSON, sandbox.
+
+    Set ``SENTDM_TEST_TO``, ``SENTDM_TEST_TEMPLATE_ID``, and/or
+    ``SENTDM_TEST_PARAMETERS_JSON`` in ``.env`` to pre-fill defaults (fewer keystrokes).
+    """
     _print_header("Send broadcast")
-    recipients_raw = _prompt("recipient phone(s), comma-separated (E.164)")
+
+    env_defaults = client.cli_env
+    env_to = _env_value(env_defaults, _SENTDM_ENV_TEST_TO)
+    env_tid = _env_value(env_defaults, _SENTDM_ENV_TEST_TEMPLATE_ID)
+    env_params = _env_value(env_defaults, _SENTDM_ENV_TEST_PARAMETERS)
+
+    recipients_raw = _prompt(
+        "recipient phone(s), comma-separated (E.164)",
+        env_to or "",
+    )
     recipients = [r.strip() for r in recipients_raw.split(",") if r.strip()]
     if not recipients:
         print("  No recipients provided; aborting.")
         return
 
-    template_id = _prompt_optional("template id (UUID) — leave blank to use name")
-    template_name: Optional[str] = None
-    if not template_id:
-        template_name = _prompt_optional("template name")
-    if not template_id and not template_name:
-        print(
-            "  Neither template id nor name provided; the action's default will be "
-            "used if configured."
-        )
-
-    channels_raw = _prompt_optional("channels comma-separated (sms,whatsapp,rcs)")
-    channels: Optional[List[str]] = None
-    if channels_raw:
-        channels = [c.strip() for c in channels_raw.split(",") if c.strip()]
-
-    parameters: Optional[Dict[str, Any]] = None
-    params_raw = _prompt_optional(
-        'parameters JSON (e.g. {"name":"Jane","order_id":"123"})'
+    template_id = (
+        _prompt(
+            "template id (UUID, blank = action default_template_*)", env_tid or ""
+        ).strip()
+        or None
     )
+
+    params_raw = _prompt(
+        'parameters JSON (blank = omit), e.g. {"var_1":"123456"}',
+        env_params or "",
+    ).strip()
+    parameters: Optional[Dict[str, Any]] = None
     if params_raw:
         try:
             parsed = json.loads(params_raw)
@@ -524,32 +543,16 @@ def do_send_broadcast(client: JvAgentClient, action: Dict[str, Any]) -> None:
             else:
                 print("  parameters must be a JSON object; ignoring.")
 
-    sandbox = _prompt_bool("sandbox mode? (no real send)", True)
-    idempotency = _prompt_optional("idempotency-key")
-    profile = _prompt_optional("x-profile-id override")
+    sandbox = _prompt_bool("sandbox mode? (no real carrier send)", True)
 
     body: Dict[str, Any] = {"to": recipients, "sandbox": sandbox}
-    template_block: Dict[str, Any] = {}
     if template_id:
-        template_block["id"] = template_id
-    if template_name:
-        template_block["name"] = template_name
-    if template_block:
-        body["template"] = template_block
+        body["template"] = {"id": template_id}
     if parameters:
         body["parameters"] = parameters
-    if channels:
-        body["channels"] = channels
-    if idempotency:
-        body["idempotency_key"] = idempotency
-    if profile:
-        body["profile_id"] = profile
 
     print("\nRequest body:")
     _dump_json(body)
-    if not _prompt_bool("Confirm send?", True):
-        print("  Cancelled.")
-        return
 
     resp = client.request(
         "POST",
@@ -558,6 +561,13 @@ def do_send_broadcast(client: JvAgentClient, action: Dict[str, Any]) -> None:
     )
     _print_header("Response")
     _dump_json(_unwrap_data(resp))
+
+    if sandbox:
+        print(
+            "\n(Graph) SentDMBroadcastRecord is not created for sandbox sends unless "
+            "the action has persist_sandbox_sends: true in agent.yaml — "
+            "otherwise only non-sandbox sends are persisted."
+        )
 
 
 def do_reconcile_webhook(client: JvAgentClient, action: Dict[str, Any]) -> None:
@@ -803,7 +813,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     default_base = cached.get("base_url") or derive_default_base_url(env)
     base_url = _prompt("jvagent base URL", default_base)
 
-    client = JvAgentClient(base_url)
+    client = JvAgentClient(base_url, cli_env=env)
     try:
         try:
             authenticate(client, cached, env)

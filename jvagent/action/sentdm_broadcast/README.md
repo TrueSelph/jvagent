@@ -129,7 +129,8 @@ payload), and folds the event into the record's `status`, `last_status_at`,
 
 Webhook **reconcile** (on action load or `POST …/webhook/register`) deletes every
 other Sent webhook whose URL starts with
-`{JVAGENT_PUBLIC_BASE_URL}/api/webhook/` except the exact URL for **this**
+`{JVAGENT_PUBLIC_BASE_URL}/api/webhook/` **or** the legacy
+`/api/sentdm/webhook/` prefix on the same host, except the exact URL for **this**
 action — including other action ids on the same host. If you run multiple
 SentDM broadcast actions behind one public base URL, reconciling one action
 removes the others' Sent registrations; use distinct base URLs (or hostnames)
@@ -167,7 +168,7 @@ What it does:
 3. Authenticates with either admin credentials (`POST /api/auth/login`) or an
    existing jvagent API key (`x-api-key` header).
 4. Lists agents, lets you pick one, and locates its `SentDMBroadcastAction`.
-5. Opens a menu: send broadcast (sandbox-on by default), reconcile webhook,
+5. Opens a menu: send broadcast (few prompts; optional ``SENTDM_TEST_*`` in ``.env``), reconcile webhook,
    show registered webhook URL, switch agent, quit.
 
 ### Env vars used as defaults
@@ -181,6 +182,9 @@ What it does:
 | `JVAGENT_ADMIN_PASSWORD` | Skips the password prompt when present |
 | `JVAGENT_API_KEY` | Skips the API-key prompt when present |
 | `JVAGENT_API_KEY_HEADER` | Default header name (defaults to `x-api-key`) |
+| `SENTDM_TEST_TO` | Default recipient list for the send-broadcast prompt (E.164, comma-separated) |
+| `SENTDM_TEST_TEMPLATE_ID` | Default template UUID for the send-broadcast prompt |
+| `SENTDM_TEST_PARAMETERS_JSON` | Default parameters JSON string for the send-broadcast prompt |
 
 The CLI requires `httpx` (already a jvagent dependency) and uses
 `python-dotenv` (also a jvagent dependency) for `.env` parsing. The last base

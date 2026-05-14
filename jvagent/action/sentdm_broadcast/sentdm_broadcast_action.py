@@ -76,8 +76,15 @@ def _extract_sentdm_webhook_list_items(body: Any) -> List[Dict[str, Any]]:
     return acc
 
 
+# Current + legacy inbound paths (reconcile deletes stale rows on the same host).
+_JVAGENT_SENTDM_WEBHOOK_PATH_PREFIXES: Tuple[str, ...] = (
+    "/api/webhook/",
+    "/api/sentdm/webhook/",
+)
+
+
 def _sentdm_webhook_url_on_public_origin(ep_url: str, public_base: str) -> bool:
-    """True when ``ep_url`` is under ``/api/webhook/`` on the same host as ``public_base``."""
+    """True when ``ep_url`` is our jvagent SentDM inbound URL on ``public_base``."""
     ep = urlsplit((ep_url or "").strip())
     base = urlsplit((public_base or "").strip())
     if (ep.scheme or "https").lower() != (base.scheme or "https").lower():
@@ -85,7 +92,7 @@ def _sentdm_webhook_url_on_public_origin(ep_url: str, public_base: str) -> bool:
     if ep.netloc.lower() != base.netloc.lower():
         return False
     path = ep.path or "/"
-    return path.startswith("/api/webhook/")
+    return any(path.startswith(p) for p in _JVAGENT_SENTDM_WEBHOOK_PATH_PREFIXES)
 
 
 def _sentdm_webhook_urls_equivalent(a: str, b: str) -> bool:
@@ -538,14 +545,19 @@ class SentDMBroadcastAction(Action):
         if not self.persist_records:
             return []
         if sandbox and not self.persist_sandbox_sends:
+            logger.info(
+                "SentDM persist: skipping SentDMBroadcastRecord creation "
+                "(sandbox send; set persist_sandbox_sends=true on the action to record)"
+            )
             return []
 
         descriptors = self._extract_sent_message_descriptors(response)
         if not descriptors:
-            logger.debug(
-                "SentDM persist: no message descriptors found in response; "
-                "skipping record creation (response keys=%s)",
-                list(response.keys()) if isinstance(response, dict) else type(response),
+            logger.info(
+                "SentDM persist: no message descriptors in POST /v3/messages response; "
+                "skipping SentDMBroadcastRecord (type=%s keys=%s)",
+                type(response).__name__,
+                list(response.keys()) if isinstance(response, dict) else None,
             )
             return []
 
@@ -945,9 +957,9 @@ class SentDMBroadcastAction(Action):
     def _sentdm_webhook_path_prefix_for_base(base_url: str) -> str:
         """URL prefix for any jvagent SentDM webhook on this public host.
 
-        Matches ``<public-base>/api/webhook/<any-action-id>`` so reconcile
-        can remove stale Sent endpoints that pointed at another action on the
-        same ``JVAGENT_PUBLIC_BASE_URL``.
+        Matches ``<public-base>/api/webhook/<any-action-id>`` (and legacy
+        ``/api/sentdm/webhook/``) so reconcile can remove stale Sent endpoints
+        on the same ``JVAGENT_PUBLIC_BASE_URL``.
         """
         return f"{(base_url or '').rstrip('/')}/api/webhook/"
 
@@ -1021,7 +1033,10 @@ class SentDMBroadcastAction(Action):
                 permissions=["webhook:sentdm"],
                 expires_in_days=None,
                 allowed_ips=[allowed_ip] if allowed_ip else [],
-                allowed_endpoints=["/api/webhook/*"],
+                allowed_endpoints=[
+                    "/api/webhook/*",
+                    "/api/sentdm/webhook/*",
+                ],
                 key_prefix="jv_",
             )
 
@@ -1156,8 +1171,8 @@ class SentDMBroadcastAction(Action):
 
         - Generates the webhook URL if missing.
         - Lists existing SentDM webhooks; keeps an exact ``endpoint_url`` match.
-        - Deletes other webhooks under
-          ``{JVAGENT_PUBLIC_BASE_URL}/api/webhook/`` (any action id) that
+        - Deletes other webhooks under the same public host whose path starts with
+          ``/api/webhook/`` or legacy ``/api/sentdm/webhook/`` (any action id) that
           are not the desired URL.
         - Creates a new webhook (with signing secret) if no match was kept.
         """
@@ -1280,7 +1295,7 @@ class SentDMBroadcastAction(Action):
 
     async def _try_reconcile_webhook(self, *, reason: str) -> None:
         if not get_public_base_url():
-            logger.debug(
+            logger.info(
                 "SentDM webhook reconcile (%s) skipped: JVAGENT_PUBLIC_BASE_URL is not set",
                 reason,
             )
@@ -1288,11 +1303,18 @@ class SentDMBroadcastAction(Action):
         try:
             result = await self.reconcile_webhook_endpoint()
             if isinstance(result, dict) and result.get("status") == "ok":
-                logger.debug(
-                    "SentDM webhook reconciled (%s): created=%s deleted=%s",
+                logger.info(
+                    "SentDM webhook reconciled (%s): created=%s deleted=%s desired_url=%s",
                     reason,
                     result.get("created"),
                     result.get("deleted_webhook_ids"),
+                    result.get("desired_url"),
+                )
+            elif isinstance(result, dict) and result.get("status") == "skipped":
+                logger.info(
+                    "SentDM webhook reconcile (%s) skipped: %s",
+                    reason,
+                    result.get("reason"),
                 )
             else:
                 logger.warning(

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_SENTDM_PATH_MARK = "/api/webhook/"
+_SENTDM_PATH_MARKERS = ("/api/webhook/", "/api/sentdm/webhook/")
 
 
 def register_sentdm_webhook_debug_middleware(server: Server) -> None:
@@ -24,7 +24,8 @@ def register_sentdm_webhook_debug_middleware(server: Server) -> None:
     @server.middleware("http")
     async def sentdm_webhook_request_trace(request, call_next):  # type: ignore[no-untyped-def]
         path = request.url.path or ""
-        if _SENTDM_PATH_MARK not in path.replace("\\", "/"):
+        norm = path.replace("\\", "/")
+        if not any(m in norm for m in _SENTDM_PATH_MARKERS):
             return await call_next(request)
 
         query = request.query_params

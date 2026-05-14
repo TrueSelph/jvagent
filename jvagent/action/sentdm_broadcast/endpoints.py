@@ -244,7 +244,7 @@ def _normalize_sentdm_webhook_envelope(payload: Any) -> Tuple[str, Dict[str, Any
     methods=["POST"],
     auth=True,
     roles=["admin"],
-    tags=["Broadcast"],
+    tags=["SentDM Broadcast"],
     summary="Send a SentDM broadcast (POST /v3/messages)",
 )
 async def sentdm_broadcast(
@@ -359,7 +359,7 @@ async def sentdm_broadcast(
     methods=["POST"],
     auth=True,
     roles=["admin"],
-    tags=["Webhooks"],
+    tags=["SentDM Broadcast"],
     summary="Force a SentDM webhook reconcile",
 )
 async def sentdm_register_webhook(action_id: str) -> Dict[str, Any]:
@@ -376,7 +376,7 @@ async def sentdm_register_webhook(action_id: str) -> Dict[str, Any]:
     methods=["GET"],
     auth=True,
     roles=["admin"],
-    tags=["Webhooks"],
+    tags=["SentDM Broadcast"],
     summary="Show the currently registered SentDM webhook URL",
 )
 async def sentdm_get_webhook(action_id: str) -> Dict[str, Any]:
@@ -409,7 +409,7 @@ async def sentdm_get_webhook(action_id: str) -> Dict[str, Any]:
     webhook=True,
     auth=False,
     webhook_auth="api_key",
-    tags=["Webhooks"],
+    tags=["SentDM Broadcast"],
     summary="Inbound SentDM webhook (delivery / template events)",
 )
 async def sentdm_webhook_receive(request: Request, action_id: str) -> Dict[str, Any]:
