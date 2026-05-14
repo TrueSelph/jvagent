@@ -80,8 +80,8 @@ class SentDMBroadcastRecord(Node):
     status: str = attribute(
         default="accepted",
         description=(
-            "Last-known status: accepted | processing | sent | delivered | "
-            "read | failed | rejected | unknown"
+            "Last-known status: accepted | processing | queued | sent | delivered | "
+            "read | received | failed | rejected | undelivered | unknown"
         ),
     )
     last_event_field: Optional[str] = attribute(

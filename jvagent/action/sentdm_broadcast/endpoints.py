@@ -1,9 +1,9 @@
 """HTTP endpoints for SentDMBroadcastAction.
 
-Admin endpoints are scoped by ``action_id`` and require an authenticated admin
-session. The public webhook endpoint is registered with SentDM at startup
+Admin routes are scoped by ``action_id`` and require an authenticated admin
+session. The public webhook route is registered with SentDM at startup
 (``reconcile_webhook_endpoint``); it is protected by an ``api_key`` query
-parameter (jvspatial webhook middleware) AND verifies the SentDM
+parameter (jvspatial webhook middleware) and verifies the SentDM
 ``X-Webhook-Signature`` per Sent's scheme (``v1,{base64}`` using
 ``{x-webhook-id}.{x-webhook-timestamp}.{raw_body}`` and a ``whsec_`` signing
 secret), with a legacy fallback for older hex digests over the raw body only.
@@ -18,18 +18,17 @@ import logging
 import time
 from collections import OrderedDict
 from threading import Lock
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import httpx
 from fastapi import HTTPException, Request
 from jvspatial.api import endpoint
 from jvspatial.api.exceptions import ResourceNotFoundError
-from jvspatial.exceptions import ValidationError
+from pydantic import Field
 
-from .models import SentDMBroadcastRecord
 from .sentdm_broadcast_action import (
-    SentDMBroadcastAction,
     _DEFAULT_WEBHOOK_EVENT_FILTERS,
+    SentDMBroadcastAction,
 )
 
 logger = logging.getLogger(__name__)
@@ -241,30 +240,75 @@ def _normalize_sentdm_webhook_envelope(payload: Any) -> Tuple[str, Dict[str, Any
 
 
 @endpoint(
-    "/actions/{action_id}/sentdm/broadcast",
+    "/actions/{action_id}/broadcast",
     methods=["POST"],
     auth=True,
     roles=["admin"],
-    tags=["SentDM"],
+    tags=["Broadcast"],
     summary="Send a SentDM broadcast (POST /v3/messages)",
 )
 async def sentdm_broadcast(
     action_id: str,
-    to: Any,
-    template: Optional[Dict[str, Any]] = None,
-    channels: Optional[List[str]] = None,
-    parameters: Optional[Dict[str, Any]] = None,
-    sandbox: Optional[bool] = None,
-    idempotency_key: Optional[str] = None,
-    profile_id: Optional[str] = None,
+    to: Union[str, List[str]] = Field(
+        ...,
+        description="Recipient E.164 number(s). Pass a string or an array of strings.",
+        examples=["5920000000"],
+    ),
+    template: Optional[Dict[str, Any]] = Field(
+        None,
+        description=(
+            "Template selector: ``id`` and/or ``name``. Optional nested "
+            "``parameters`` are merged under top-level ``parameters``."
+        ),
+        examples=[{"id": "f70c78f8-4be0-49eb-88e2-cd7aa9a7cef9"}],
+    ),
+    channels: Optional[List[str]] = Field(
+        None,
+        description=(
+            "Channels to try in order, e.g. ``sms``, ``whatsapp``, ``rcs``. "
+            "Defaults to the action's ``default_channels``."
+        ),
+    ),
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        description=(
+            "Template variables (Sent placeholder names → values), merged on top "
+            "of any ``template.parameters``."
+        ),
+        examples=[{"var_1": "123456"}],
+    ),
+    sandbox: Optional[bool] = Field(
+        None,
+        description="When true, Sent validates the payload without delivering to carriers.",
+        examples=[True],
+    ),
+    idempotency_key: Optional[str] = Field(
+        default=None,
+        description="Forwarded as the ``idempotency-key`` header on the SentDM request.",
+    ),
+    profile_id: Optional[str] = Field(
+        default=None,
+        description="Forwarded as ``x-profile-id`` when using a Sent child profile.",
+    ),
 ) -> Dict[str, Any]:
     """Send a broadcast via the configured SentDM action.
 
-    Body fields:
+    **Example body**
 
-    - ``to`` (required): single phone number or list of E.164 numbers.
-    - ``template`` (optional): ``{"id"?, "name"?, "parameters"?}``. Falls back
-      to ``default_template_id`` / ``default_template_name`` on the action.
+    ::
+
+        {
+          "to": "5920000000",
+          "template": {"id": "f70c78f8-4be0-49eb-88e2-cd7aa9a7cef9"},
+          "parameters": {"var_1": "123456"},
+          "sandbox": true
+        }
+
+    **Fields**
+
+    - ``to`` (required): one E.164 number or a list of numbers.
+    - ``template`` (optional): ``{"id"?, "name"?, "parameters"?}``. Falls back to
+      ``default_template_id`` / ``default_template_name`` on the action.
     - ``channels`` (optional): defaults to ``default_channels``.
     - ``parameters`` (optional): merged on top of ``template.parameters``.
     - ``sandbox`` (optional): per-call override.
@@ -311,102 +355,11 @@ async def sentdm_broadcast(
 
 
 @endpoint(
-    "/actions/{action_id}/sentdm/messages/{message_id}",
-    methods=["GET"],
-    auth=True,
-    roles=["admin"],
-    tags=["SentDM"],
-    summary="Get the current status of a SentDM message",
-)
-async def sentdm_get_message(
-    action_id: str,
-    message_id: str,
-    profile_id: Optional[str] = None,
-) -> Dict[str, Any]:
-    """``GET /v3/messages/{id}`` proxy."""
-    action = await _get_sentdm_action(action_id)
-    try:
-        return await action.get_message_status(message_id, profile_id=profile_id)
-    except httpx.HTTPStatusError as exc:
-        raise _httpx_error_to_http(exc)
-
-
-@endpoint(
-    "/actions/{action_id}/sentdm/messages/{message_id}/activities",
-    methods=["GET"],
-    auth=True,
-    roles=["admin"],
-    tags=["SentDM"],
-    summary="Get the SentDM activity log for a message",
-)
-async def sentdm_get_message_activities(
-    action_id: str,
-    message_id: str,
-    profile_id: Optional[str] = None,
-) -> Dict[str, Any]:
-    """``GET /v3/messages/{id}/activities`` proxy."""
-    action = await _get_sentdm_action(action_id)
-    try:
-        return await action.get_message_activities(message_id, profile_id=profile_id)
-    except httpx.HTTPStatusError as exc:
-        raise _httpx_error_to_http(exc)
-
-
-@endpoint(
-    "/actions/{action_id}/sentdm/templates",
-    methods=["GET"],
-    auth=True,
-    roles=["admin"],
-    tags=["SentDM"],
-    summary="List SentDM templates",
-)
-async def sentdm_list_templates(
-    action_id: str,
-    page: Optional[int] = None,
-    page_size: Optional[int] = None,
-    search: Optional[str] = None,
-    status: Optional[str] = None,
-    category: Optional[str] = None,
-    profile_id: Optional[str] = None,
-) -> Dict[str, Any]:
-    """``GET /v3/templates`` proxy with optional filters."""
-    action = await _get_sentdm_action(action_id)
-    try:
-        return await action.list_templates(
-            page=page,
-            page_size=page_size,
-            search=search,
-            status=status,
-            category=category,
-            profile_id=profile_id,
-        )
-    except httpx.HTTPStatusError as exc:
-        raise _httpx_error_to_http(exc)
-
-
-@endpoint(
-    "/actions/{action_id}/sentdm/status",
-    methods=["GET"],
-    auth=True,
-    roles=["admin"],
-    tags=["SentDM"],
-    summary="SentDM connection healthcheck",
-)
-async def sentdm_status(action_id: str) -> Dict[str, Any]:
-    """Return :py:meth:`SentDMBroadcastAction.healthcheck` output."""
-    action = await _get_sentdm_action(action_id)
-    result = await action.healthcheck()
-    if isinstance(result, dict):
-        return result
-    return {"healthy": bool(result)}
-
-
-@endpoint(
-    "/actions/{action_id}/sentdm/webhook/register",
+    "/actions/{action_id}/webhook/register",
     methods=["POST"],
     auth=True,
     roles=["admin"],
-    tags=["SentDM"],
+    tags=["Webhooks"],
     summary="Force a SentDM webhook reconcile",
 )
 async def sentdm_register_webhook(action_id: str) -> Dict[str, Any]:
@@ -419,18 +372,18 @@ async def sentdm_register_webhook(action_id: str) -> Dict[str, Any]:
 
 
 @endpoint(
-    "/actions/{action_id}/sentdm/webhook",
+    "/actions/{action_id}/webhook",
     methods=["GET"],
     auth=True,
     roles=["admin"],
-    tags=["SentDM"],
+    tags=["Webhooks"],
     summary="Show the currently registered SentDM webhook URL",
 )
 async def sentdm_get_webhook(action_id: str) -> Dict[str, Any]:
     """Return the persisted webhook URL + SentDM webhook id (read-only).
 
     Does not contact SentDM. To force a reconcile, POST
-    ``/actions/{action_id}/sentdm/webhook/register``.
+    ``/actions/{action_id}/webhook/register``.
     """
     action = await _get_sentdm_action(action_id)
     eff = (
@@ -451,156 +404,12 @@ async def sentdm_get_webhook(action_id: str) -> Dict[str, Any]:
 
 
 @endpoint(
-    "/actions/{action_id}/sentdm/broadcasts",
-    methods=["GET"],
-    auth=True,
-    roles=["admin"],
-    tags=["SentDM"],
-    summary="List persisted SentDM broadcast records",
-)
-async def sentdm_list_broadcasts(
-    action_id: str,
-    status: Optional[str] = None,
-    to: Optional[str] = None,
-    sentdm_message_id: Optional[str] = None,
-    page: int = 1,
-    page_size: int = 50,
-) -> Dict[str, Any]:
-    """Return broadcast records persisted for this action.
-
-    Filters:
-
-    - ``status`` (e.g. ``delivered``, ``failed``)
-    - ``to`` — exact recipient match (E.164)
-    - ``sentdm_message_id`` — direct id lookup
-
-    Pagination is client-side (in-memory) for now — fine for the volumes
-    these records target.
-    """
-    action = await _get_sentdm_action(action_id)
-
-    query: Dict[str, Any] = {"action_id": str(action.id)}
-    if status:
-        query["status"] = status.strip().lower()
-    if to:
-        query["to"] = to.strip()
-    if sentdm_message_id:
-        query["sentdm_message_id"] = sentdm_message_id.strip()
-
-    try:
-        records = await SentDMBroadcastRecord.find(**query)
-    except Exception as exc:
-        logger.warning("SentDM list broadcasts query failed: %s", exc)
-        raise HTTPException(status_code=500, detail="broadcast record query failed")
-
-    records_sorted = sorted(
-        records,
-        key=lambda r: getattr(r, "created_at", None) or 0,
-        reverse=True,
-    )
-
-    safe_page = max(1, int(page or 1))
-    safe_page_size = max(1, min(int(page_size or 50), 500))
-    start = (safe_page - 1) * safe_page_size
-    end = start + safe_page_size
-    page_records = records_sorted[start:end]
-
-    return {
-        "total": len(records_sorted),
-        "page": safe_page,
-        "page_size": safe_page_size,
-        "records": [_record_to_dict(r) for r in page_records],
-    }
-
-
-@endpoint(
-    "/actions/{action_id}/sentdm/broadcasts/{record_id}",
-    methods=["GET"],
-    auth=True,
-    roles=["admin"],
-    tags=["SentDM"],
-    summary="Show a single SentDM broadcast record (with full event history)",
-)
-async def sentdm_get_broadcast(action_id: str, record_id: str) -> Dict[str, Any]:
-    """Return one broadcast record by its node id, including the full audit log."""
-    action = await _get_sentdm_action(action_id)
-    record = await SentDMBroadcastRecord.get(record_id)
-    if record is None or not isinstance(record, SentDMBroadcastRecord):
-        raise ResourceNotFoundError(f"Broadcast record not found: {record_id}")
-    if str(getattr(record, "action_id", "")) != str(action.id):
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                f"Broadcast record {record_id} does not belong to action {action_id}"
-            ),
-        )
-    return _record_to_dict(record, include_events=True)
-
-
-@endpoint(
-    "/actions/{action_id}/sentdm/broadcasts/{record_id}/refresh",
-    methods=["POST"],
-    auth=True,
-    roles=["admin"],
-    tags=["SentDM"],
-    summary="Re-fetch a broadcast's status from SentDM and update the record",
-)
-async def sentdm_refresh_broadcast(action_id: str, record_id: str) -> Dict[str, Any]:
-    """Force-refresh a record's status from SentDM (recovers from missed webhooks)."""
-    action = await _get_sentdm_action(action_id)
-    try:
-        return await action.refresh_record(record_id)
-    except ValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except httpx.HTTPStatusError as exc:
-        raise _httpx_error_to_http(exc)
-
-
-def _record_to_dict(
-    record: SentDMBroadcastRecord, *, include_events: bool = False
-) -> Dict[str, Any]:
-    """Serialize a broadcast record for HTTP responses."""
-
-    def _iso(value: Any) -> Optional[str]:
-        try:
-            return value.isoformat() if value is not None else None
-        except AttributeError:
-            return str(value) if value is not None else None
-
-    data: Dict[str, Any] = {
-        "id": record.id,
-        "action_id": record.action_id,
-        "agent_id": record.agent_id,
-        "sentdm_message_id": record.sentdm_message_id,
-        "to": record.to,
-        "channel": record.channel,
-        "template_id": record.template_id,
-        "template_name": record.template_name,
-        "parameters": record.parameters,
-        "idempotency_key": record.idempotency_key,
-        "profile_id": record.profile_id,
-        "sandbox": record.sandbox,
-        "status": record.status,
-        "last_event_field": record.last_event_field,
-        "last_status_at": _iso(record.last_status_at),
-        "error": record.error,
-        "created_at": _iso(record.created_at),
-        "updated_at": _iso(record.updated_at),
-        "event_count": len(record.events or []),
-    }
-    if include_events:
-        data["events"] = list(record.events or [])
-        data["last_event_payload"] = record.last_event_payload
-    return data
-
-
-@endpoint(
-    "/sentdm/webhook/{action_id}",
+    "/webhook/{action_id}",
     methods=["POST"],
     webhook=True,
     auth=False,
     webhook_auth="api_key",
-    tags=["SentDM"],
+    tags=["Webhooks"],
     summary="Inbound SentDM webhook (delivery / template events)",
 )
 async def sentdm_webhook_receive(request: Request, action_id: str) -> Dict[str, Any]:

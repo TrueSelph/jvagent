@@ -24,8 +24,8 @@ The script will:
    ``JVAGENT_API_KEY_HEADER`` if present.
 4. List agents and let you pick one.
 5. Find the SentDMBroadcastAction registered on that agent.
-6. Open a menu: healthcheck, send broadcast, list templates, get message
-   status / activities, reconcile webhook, switch agent, quit.
+6. Open a menu: send broadcast, reconcile webhook, show webhook URL,
+   switch agent, quit.
 
 Depends on the standard library + ``httpx`` + ``python-dotenv`` (both already
 jvagent dependencies). The last successful base_url + auth method are cached
@@ -486,34 +486,6 @@ def _action_id(action: Dict[str, Any]) -> str:
     return str(action.get("id") or _agent_field(action, "id") or "")
 
 
-def do_healthcheck(client: JvAgentClient, action: Dict[str, Any]) -> None:
-    _print_header("Healthcheck")
-    body = client.request("GET", f"/api/actions/{_action_id(action)}/sentdm/status")
-    _dump_json(_unwrap_data(body))
-
-
-def do_list_templates(client: JvAgentClient, action: Dict[str, Any]) -> None:
-    _print_header("List templates")
-    page = _prompt("page", "1")
-    page_size = _prompt("page_size", "20")
-    search = _prompt_optional("search filter")
-    status = _prompt_optional("status filter (APPROVED/PENDING/REJECTED)")
-    category = _prompt_optional("category filter (MARKETING/UTILITY/AUTHENTICATION)")
-    params: Dict[str, Any] = {"page": page, "page_size": page_size}
-    if search:
-        params["search"] = search
-    if status:
-        params["status"] = status
-    if category:
-        params["category"] = category
-    body = client.request(
-        "GET",
-        f"/api/actions/{_action_id(action)}/sentdm/templates",
-        params=params,
-    )
-    _dump_json(_unwrap_data(body))
-
-
 def do_send_broadcast(client: JvAgentClient, action: Dict[str, Any]) -> None:
     _print_header("Send broadcast")
     recipients_raw = _prompt("recipient phone(s), comma-separated (E.164)")
@@ -562,10 +534,10 @@ def do_send_broadcast(client: JvAgentClient, action: Dict[str, Any]) -> None:
         template_block["id"] = template_id
     if template_name:
         template_block["name"] = template_name
-    if parameters:
-        template_block["parameters"] = parameters
     if template_block:
         body["template"] = template_block
+    if parameters:
+        body["parameters"] = parameters
     if channels:
         body["channels"] = channels
     if idempotency:
@@ -581,48 +553,18 @@ def do_send_broadcast(client: JvAgentClient, action: Dict[str, Any]) -> None:
 
     resp = client.request(
         "POST",
-        f"/api/actions/{_action_id(action)}/sentdm/broadcast",
+        f"/api/actions/{_action_id(action)}/broadcast",
         json_body=body,
     )
     _print_header("Response")
     _dump_json(_unwrap_data(resp))
 
 
-def do_get_message(client: JvAgentClient, action: Dict[str, Any]) -> None:
-    _print_header("Get message status")
-    message_id = _prompt("message id")
-    profile = _prompt_optional("x-profile-id override")
-    params: Dict[str, Any] = {}
-    if profile:
-        params["profile_id"] = profile
-    body = client.request(
-        "GET",
-        f"/api/actions/{_action_id(action)}/sentdm/messages/{message_id}",
-        params=params or None,
-    )
-    _dump_json(_unwrap_data(body))
-
-
-def do_get_activities(client: JvAgentClient, action: Dict[str, Any]) -> None:
-    _print_header("Get message activities")
-    message_id = _prompt("message id")
-    profile = _prompt_optional("x-profile-id override")
-    params: Dict[str, Any] = {}
-    if profile:
-        params["profile_id"] = profile
-    body = client.request(
-        "GET",
-        f"/api/actions/{_action_id(action)}/sentdm/messages/{message_id}/activities",
-        params=params or None,
-    )
-    _dump_json(_unwrap_data(body))
-
-
 def do_reconcile_webhook(client: JvAgentClient, action: Dict[str, Any]) -> None:
     _print_header("Reconcile webhook")
     body = client.request(
         "POST",
-        f"/api/actions/{_action_id(action)}/sentdm/webhook/register",
+        f"/api/actions/{_action_id(action)}/webhook/register",
     )
     _dump_json(_unwrap_data(body))
 
@@ -631,68 +573,7 @@ def do_show_webhook(client: JvAgentClient, action: Dict[str, Any]) -> None:
     _print_header("Webhook URL (currently registered)")
     body = client.request(
         "GET",
-        f"/api/actions/{_action_id(action)}/sentdm/webhook",
-    )
-    _dump_json(_unwrap_data(body))
-
-
-def do_list_broadcasts(client: JvAgentClient, action: Dict[str, Any]) -> None:
-    _print_header("List broadcasts (graph records)")
-    status_filter = _prompt_optional(
-        "filter by status (e.g. delivered/failed; blank for any)"
-    )
-    to_filter = _prompt_optional("filter by recipient (E.164; blank for any)")
-    msg_id_filter = _prompt_optional("filter by sentdm_message_id (blank for any)")
-    page = _prompt("page", "1")
-    page_size = _prompt("page_size", "20")
-    params: Dict[str, Any] = {"page": page, "page_size": page_size}
-    if status_filter:
-        params["status"] = status_filter
-    if to_filter:
-        params["to"] = to_filter
-    if msg_id_filter:
-        params["sentdm_message_id"] = msg_id_filter
-    body = client.request(
-        "GET",
-        f"/api/actions/{_action_id(action)}/sentdm/broadcasts",
-        params=params,
-    )
-    data = _unwrap_data(body)
-    if isinstance(data, dict):
-        total = data.get("total")
-        records = data.get("records") or []
-        print(f"  total={total}  page={data.get('page')}  size={data.get('page_size')}")
-        if not records:
-            print("  (no records)")
-            return
-        for rec in records:
-            print(
-                f"  - id={rec.get('id')}  "
-                f"status={rec.get('status')}  "
-                f"to={rec.get('to')}  "
-                f"channel={rec.get('channel')}  "
-                f"message_id={rec.get('sentdm_message_id')}"
-            )
-    else:
-        _dump_json(data)
-
-
-def do_show_broadcast(client: JvAgentClient, action: Dict[str, Any]) -> None:
-    _print_header("Broadcast record (full event history)")
-    record_id = _prompt("record id (the node id, e.g. n.SentDMBroadcastRecord.xxx)")
-    body = client.request(
-        "GET",
-        f"/api/actions/{_action_id(action)}/sentdm/broadcasts/{record_id}",
-    )
-    _dump_json(_unwrap_data(body))
-
-
-def do_refresh_broadcast(client: JvAgentClient, action: Dict[str, Any]) -> None:
-    _print_header("Refresh broadcast (re-fetch status from SentDM)")
-    record_id = _prompt("record id")
-    body = client.request(
-        "POST",
-        f"/api/actions/{_action_id(action)}/sentdm/broadcasts/{record_id}/refresh",
+        f"/api/actions/{_action_id(action)}/webhook",
     )
     _dump_json(_unwrap_data(body))
 
@@ -705,17 +586,10 @@ def do_refresh_broadcast(client: JvAgentClient, action: Dict[str, Any]) -> None:
 MENU = """
 SentDM Broadcast Tester
 =======================
-  1) Healthcheck (/v3/me)
-  2) Send broadcast
-  3) List templates
-  4) Get message status
-  5) Get message activities
-  6) Reconcile webhook
-  7) Pick a different agent / action
-  8) Show webhook URL
-  9) List broadcasts (graph records)
- 10) Show broadcast record by id
- 11) Refresh broadcast record (re-fetch from SentDM)
+  1) Send broadcast
+  2) Reconcile webhook
+  3) Show webhook URL
+  4) Pick a different agent / action
   0) Quit
 """
 
@@ -841,29 +715,15 @@ def menu_loop(client: JvAgentClient) -> None:
         choice = _prompt("choose", "1")
         try:
             if choice == "1":
-                do_healthcheck(client, action)
-            elif choice == "2":
                 do_send_broadcast(client, action)
-            elif choice == "3":
-                do_list_templates(client, action)
-            elif choice == "4":
-                do_get_message(client, action)
-            elif choice == "5":
-                do_get_activities(client, action)
-            elif choice == "6":
+            elif choice == "2":
                 do_reconcile_webhook(client, action)
-            elif choice == "7":
+            elif choice == "3":
+                do_show_webhook(client, action)
+            elif choice == "4":
                 new_sel = select_action(client)
                 if new_sel:
                     _, action = new_sel
-            elif choice == "8":
-                do_show_webhook(client, action)
-            elif choice == "9":
-                do_list_broadcasts(client, action)
-            elif choice == "10":
-                do_show_broadcast(client, action)
-            elif choice == "11":
-                do_refresh_broadcast(client, action)
             elif choice == "0":
                 return
             else:

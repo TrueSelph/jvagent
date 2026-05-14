@@ -41,7 +41,7 @@ actions:
 | `sandbox` | `bool` | `false` | Default `sandbox` flag for mutating calls. |
 | `webhook_display_name` | `str` | `"jvagent SentDM"` | Display name used when (re)creating the SentDM webhook. |
 | `webhook_event_types` | `List[str]` | `["message"]` | Parent categories for Sent ``POST /v3/webhooks`` (``message``, ``templates``). Sub-types use ``webhook_event_filters``. |
-| `webhook_event_filters` | `Dict[str, List[str]] \| null` | `null` → default ``{message: [sent, delivered, read, failed]}`` | Sent ``event_filters``; ``{}`` means all sub-types for subscribed parents. |
+| `webhook_event_filters` | `Dict[str, List[str]] \| null` | `null` → default ``{message: [queued, sent, delivered, read, failed, received]}`` | Sent ``event_filters``; ``{}`` means all sub-types for subscribed parents. |
 | `webhook_retry_count` | `int` | `3` | SentDM webhook retry count. |
 | `webhook_timeout_seconds` | `int` | `30` | SentDM webhook delivery timeout. |
 | `persist_records` | `bool` | `true` | Persist a `SentDMBroadcastRecord` per `(recipient, channel)` on each send so webhook events update the graph. |
@@ -70,7 +70,7 @@ Mutable fields:
 
 | Field | Notes |
 | --- | --- |
-| `status` | Normalized: `accepted` / `processing` / `sent` / `delivered` / `read` / `failed` / `rejected` / `undelivered`. |
+| `status` | Normalized: `accepted` / `processing` / `queued` / `sent` / `delivered` / `read` / `received` / `failed` / `rejected` / `undelivered`. |
 | `last_event_field`, `last_event_payload`, `last_status_at` | Snapshot of the most recent webhook (or refresh) event. |
 | `events` | Bounded audit log (newest last); cap from `record_event_history_limit`. |
 | `error` | Populated when `status in {failed, rejected, undelivered}`. |
@@ -110,23 +110,16 @@ All admin endpoints require auth (admin role) and are scoped by the action id:
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/actions/{action_id}/sentdm/broadcast` | Send a broadcast. Body: `{to, template?, channels?, parameters?, sandbox?, idempotency_key?, profile_id?}`. |
-| `GET` | `/api/actions/{action_id}/sentdm/messages/{message_id}` | Get current status (SentDM-truth). |
-| `GET` | `/api/actions/{action_id}/sentdm/messages/{message_id}/activities` | Get delivery activity log (SentDM-truth). |
-| `GET` | `/api/actions/{action_id}/sentdm/templates` | List templates (forwards `page`, `page_size`, `search`, `status`, `category`). |
-| `GET` | `/api/actions/{action_id}/sentdm/status` | Healthcheck (`/v3/me`). |
-| `POST` | `/api/actions/{action_id}/sentdm/webhook/register` | Force webhook reconcile (re-creates SentDM webhook to point at us). |
-| `GET` | `/api/actions/{action_id}/sentdm/webhook` | Read-only view of the currently registered webhook URL + signing-secret status. |
-| `GET` | `/api/actions/{action_id}/sentdm/broadcasts` | List persisted broadcast records. Query params: `status`, `to`, `sentdm_message_id`, `page`, `page_size`. |
-| `GET` | `/api/actions/{action_id}/sentdm/broadcasts/{record_id}` | Single broadcast record including full `events[]` audit log. |
-| `POST` | `/api/actions/{action_id}/sentdm/broadcasts/{record_id}/refresh` | Re-fetch a record's status from SentDM (recovers from missed webhooks). |
+| `POST` | `/api/actions/{action_id}/broadcast` | Send a broadcast. Body: `{to, template?, channels?, parameters?, sandbox?, idempotency_key?, profile_id?}` (see OpenAPI / docstring example). |
+| `POST` | `/api/actions/{action_id}/webhook/register` | Force webhook reconcile (re-creates SentDM webhook to point at us). |
+| `GET` | `/api/actions/{action_id}/webhook` | Read-only view of the currently registered webhook URL + signing-secret status. |
 
 Public webhook receiver (api_key auth via query/header — registered with SentDM
 automatically on startup):
 
 | Method | Path |
 | --- | --- |
-| `POST` | `/api/sentdm/webhook/{action_id}?api_key=...` |
+| `POST` | `/api/webhook/{action_id}?api_key=...` |
 
 The handler verifies the `X-Webhook-Signature` HMAC against the stored signing
 secret, de-duplicates by `X-Webhook-ID`, looks up the matching
@@ -136,7 +129,7 @@ payload), and folds the event into the record's `status`, `last_status_at`,
 
 Webhook **reconcile** (on action load or `POST …/webhook/register`) deletes every
 other Sent webhook whose URL starts with
-`{JVAGENT_PUBLIC_BASE_URL}/api/sentdm/webhook/` except the exact URL for **this**
+`{JVAGENT_PUBLIC_BASE_URL}/api/webhook/` except the exact URL for **this**
 action — including other action ids on the same host. If you run multiple
 SentDM broadcast actions behind one public base URL, reconciling one action
 removes the others' Sent registrations; use distinct base URLs (or hostnames)
@@ -174,10 +167,8 @@ What it does:
 3. Authenticates with either admin credentials (`POST /api/auth/login`) or an
    existing jvagent API key (`x-api-key` header).
 4. Lists agents, lets you pick one, and locates its `SentDMBroadcastAction`.
-5. Opens a menu: healthcheck, send broadcast (sandbox-on by default),
-   list templates, get message status, get message activities, reconcile
-   webhook, switch agent, show registered webhook URL, list / show / refresh
-   persisted broadcast records, quit.
+5. Opens a menu: send broadcast (sandbox-on by default), reconcile webhook,
+   show registered webhook URL, switch agent, quit.
 
 ### Env vars used as defaults
 

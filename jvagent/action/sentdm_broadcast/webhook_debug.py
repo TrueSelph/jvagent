@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_SENTDM_PATH_MARK = "sentdm/webhook"
+_SENTDM_PATH_MARK = "/api/webhook/"
 
 
 def register_sentdm_webhook_debug_middleware(server: Server) -> None:

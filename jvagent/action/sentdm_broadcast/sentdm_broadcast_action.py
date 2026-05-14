@@ -77,7 +77,7 @@ def _extract_sentdm_webhook_list_items(body: Any) -> List[Dict[str, Any]]:
 
 
 def _sentdm_webhook_url_on_public_origin(ep_url: str, public_base: str) -> bool:
-    """True when ``ep_url`` is under ``/api/sentdm/webhook/`` on the same host as ``public_base``."""
+    """True when ``ep_url`` is under ``/api/webhook/`` on the same host as ``public_base``."""
     ep = urlsplit((ep_url or "").strip())
     base = urlsplit((public_base or "").strip())
     if (ep.scheme or "https").lower() != (base.scheme or "https").lower():
@@ -85,7 +85,7 @@ def _sentdm_webhook_url_on_public_origin(ep_url: str, public_base: str) -> bool:
     if ep.netloc.lower() != base.netloc.lower():
         return False
     path = ep.path or "/"
-    return path.startswith("/api/sentdm/webhook/")
+    return path.startswith("/api/webhook/")
 
 
 def _sentdm_webhook_urls_equivalent(a: str, b: str) -> bool:
@@ -113,7 +113,7 @@ _SENTDM_WEBHOOK_EVENT_API_VALUE = {
 }
 _DEFAULT_WEBHOOK_DISPLAY_NAME = "jvagent SentDM"
 _DEFAULT_WEBHOOK_EVENT_FILTERS: Dict[str, List[str]] = {
-    "message": ["sent", "delivered", "read", "failed"],
+    "message": ["queued", "sent", "delivered", "read", "failed", "received"],
 }
 
 
@@ -197,7 +197,7 @@ class SentDMBroadcastAction(Action):
             "Optional Sent ``event_filters`` map: parent event type → list of "
             "subtype suffixes (e.g. ``{'message': ['sent', 'delivered']}``). "
             "``None`` applies a broadcast-focused default "
-            "(sent/delivered/read/failed only). ``{}`` omits filters (all "
+            "(queued, sent, delivered, read, failed, received). ``{}`` omits filters (all "
             "sub-types for subscribed parents)."
         ),
     )
@@ -661,6 +661,7 @@ class SentDMBroadcastAction(Action):
             "undelivered",
             "expired",
             "unknown",
+            "received",
         }
 
         def _normalize(value: Any) -> Optional[str]:
@@ -938,17 +939,17 @@ class SentDMBroadcastAction(Action):
     # --- webhook URL / system user ----------------------------------------
 
     def _expected_webhook_url_base(self, base_url: str) -> str:
-        return f"{base_url.rstrip('/')}/api/sentdm/webhook/{str(self.id)}"
+        return f"{base_url.rstrip('/')}/api/webhook/{str(self.id)}"
 
     @staticmethod
     def _sentdm_webhook_path_prefix_for_base(base_url: str) -> str:
         """URL prefix for any jvagent SentDM webhook on this public host.
 
-        Matches ``<public-base>/api/sentdm/webhook/<any-action-id>`` so reconcile
+        Matches ``<public-base>/api/webhook/<any-action-id>`` so reconcile
         can remove stale Sent endpoints that pointed at another action on the
         same ``JVAGENT_PUBLIC_BASE_URL``.
         """
-        return f"{(base_url or '').rstrip('/')}/api/sentdm/webhook/"
+        return f"{(base_url or '').rstrip('/')}/api/webhook/"
 
     async def get_webhook_url(
         self,
@@ -1020,7 +1021,7 @@ class SentDMBroadcastAction(Action):
                 permissions=["webhook:sentdm"],
                 expires_in_days=None,
                 allowed_ips=[allowed_ip] if allowed_ip else [],
-                allowed_endpoints=["/api/sentdm/webhook/*"],
+                allowed_endpoints=["/api/webhook/*"],
                 key_prefix="jv_",
             )
 
@@ -1156,7 +1157,7 @@ class SentDMBroadcastAction(Action):
         - Generates the webhook URL if missing.
         - Lists existing SentDM webhooks; keeps an exact ``endpoint_url`` match.
         - Deletes other webhooks under
-          ``{JVAGENT_PUBLIC_BASE_URL}/api/sentdm/webhook/`` (any action id) that
+          ``{JVAGENT_PUBLIC_BASE_URL}/api/webhook/`` (any action id) that
           are not the desired URL.
         - Creates a new webhook (with signing secret) if no match was kept.
         """

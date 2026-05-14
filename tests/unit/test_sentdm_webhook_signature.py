@@ -83,11 +83,11 @@ def test_sentdm_legacy_hex_still_verifies() -> None:
 def test_sentdm_webhook_path_prefix_for_base() -> None:
     assert (
         SentDMBroadcastAction._sentdm_webhook_path_prefix_for_base("https://ex.com")
-        == "https://ex.com/api/sentdm/webhook/"
+        == "https://ex.com/api/webhook/"
     )
     assert (
         SentDMBroadcastAction._sentdm_webhook_path_prefix_for_base("https://ex.com/")
-        == "https://ex.com/api/sentdm/webhook/"
+        == "https://ex.com/api/webhook/"
     )
 
 
@@ -95,7 +95,7 @@ def test_extract_sentdm_webhook_list_nested_data() -> None:
     body = {
         "data": {
             "webhooks": [
-                {"id": "w1", "endpoint_url": "https://h/api/sentdm/webhook/a?api_key=x"}
+                {"id": "w1", "endpoint_url": "https://h/api/webhook/a?api_key=x"}
             ]
         }
     }
@@ -105,13 +105,13 @@ def test_extract_sentdm_webhook_list_nested_data() -> None:
 
 
 def test_sentdm_webhook_urls_equivalent_ignores_query() -> None:
-    a = "https://h/api/sentdm/webhook/n.Action.1?api_key=jv_abc"
-    b = "https://h/api/sentdm/webhook/n.Action.1"
+    a = "https://h/api/webhook/n.Action.1?api_key=jv_abc"
+    b = "https://h/api/webhook/n.Action.1"
     assert _sentdm_webhook_urls_equivalent(a, b)
     assert _sentdm_webhook_url_on_public_origin(a, "https://h")
 
 
 def test_sentdm_webhook_different_paths_not_equivalent() -> None:
-    a = "https://h/api/sentdm/webhook/n.Action.1?k=1"
-    b = "https://h/api/sentdm/webhook/n.Action.2?k=2"
+    a = "https://h/api/webhook/n.Action.1?k=1"
+    b = "https://h/api/webhook/n.Action.2?k=2"
     assert not _sentdm_webhook_urls_equivalent(a, b)
