@@ -170,6 +170,7 @@ CLASSIFICATION_INTENT_RULES = """INTENT CLASSIFICATION (choose exactly one):
    - User abandons the interview process
    - Patterns: "cancel", "abort", "stop", "never mind", "forget it"
    - Valid in any state
+   - In REVIEW state, when the assistant explicitly offers "continue" as an option and user gives a negative response that rejects the presented account/data, treat as CANCELLATION.
 
 2. CONFIRMATION (REVIEW STATE ONLY)
    - Pure affirmation with NO new field values

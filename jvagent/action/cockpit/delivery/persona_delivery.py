@@ -14,7 +14,6 @@ from typing import Any, Optional
 
 from jvagent.action.cockpit.catalog.skill_catalog import SkillCatalog
 from jvagent.action.cockpit.context import CockpitResult
-from jvagent.action.cockpit.prompts import CITATION_INSTRUCTION
 
 
 def _normalize_response_mode(raw_mode: str) -> str:
@@ -117,10 +116,7 @@ async def deliver_via_persona(
         if directive:
             await visitor.add_directive(directive)
         elif text:
-            citation = (
-                getattr(action, "citation_instruction", None) or CITATION_INSTRUCTION
-            )
-            await visitor.add_directive(f"Tell the user: {text}{citation}")
+            await visitor.add_directive(f"Tell the user: {text}")
         await action.respond(
             visitor,
             use_history=use_history,

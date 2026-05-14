@@ -29,7 +29,8 @@ DIRECTIVE_TEMPLATE = Template(
 
 DIRECTIVE_TEMPLATE_NO_REFS = Template(
     "Use the following numbered excerpts to inform your response to the user's query.\n"
-    "Cite sources using bracketed reference numbers (e.g. [1], [2]) where appropriate.\n\n"
+    "Each excerpt is tagged with a reference number [N]. When you use information from an excerpt, "
+    "cite its [N] inline.\n\n"
     "{results}\n\n"
     "[END OF CONTEXT]"
 )
