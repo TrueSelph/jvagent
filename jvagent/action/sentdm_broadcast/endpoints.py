@@ -4,14 +4,18 @@ Admin endpoints are scoped by ``action_id`` and require an authenticated admin
 session. The public webhook endpoint is registered with SentDM at startup
 (``reconcile_webhook_endpoint``); it is protected by an ``api_key`` query
 parameter (jvspatial webhook middleware) AND verifies the SentDM
-``X-Webhook-Signature`` HMAC against the signing secret SentDM returned when
-the webhook was created.
+``X-Webhook-Signature`` per Sent's scheme (``v1,{base64}`` using
+``{x-webhook-id}.{x-webhook-timestamp}.{raw_body}`` and a ``whsec_`` signing
+secret), with a legacy fallback for older hex digests over the raw body only.
 """
 
+import base64
+import binascii
 import hashlib
 import hmac
 import json
 import logging
+import time
 from collections import OrderedDict
 from threading import Lock
 from typing import Any, Dict, List, Optional
@@ -47,17 +51,111 @@ def _remember_webhook_id(webhook_id: str) -> bool:
     return True
 
 
-def _verify_sentdm_signature(
-    secret: str, raw_body: bytes, signature_header: Optional[str]
-) -> bool:
-    """Constant-time verify ``X-Webhook-Signature`` (HMAC-SHA256 hex)."""
-    if not secret or not signature_header:
+def _sentdm_decode_signing_secret(secret: str) -> Optional[bytes]:
+    """Decode Sent signing secret (``whsec_`` + base64) to raw HMAC key bytes."""
+    s = (secret or "").strip()
+    if not s:
+        return None
+    material = s[6:] if s.startswith("whsec_") else s
+    pad = (-len(material)) % 4
+    padded = material + ("=" * pad)
+    for decoder in (base64.b64decode, base64.urlsafe_b64decode):
+        try:
+            out = decoder(padded)
+        except (binascii.Error, ValueError):
+            continue
+        if out:
+            return out
+    if s.startswith("whsec_"):
+        return None
+    return s.encode("utf-8")
+
+
+def _sentdm_timestamp_acceptable(timestamp_header: str, *, max_skew: int = 600) -> bool:
+    """Reject wildly stale ``x-webhook-timestamp`` values (replay mitigation)."""
+    raw = (timestamp_header or "").strip()
+    if not raw:
+        return True
+    try:
+        ts = int(raw, 10)
+    except ValueError:
         return False
+    return abs(int(time.time()) - ts) <= max_skew
+
+
+def _b64decode_signature_blob(sig_b64: str) -> Optional[bytes]:
+    s = (sig_b64 or "").strip()
+    if not s:
+        return None
+    pad = (-len(s)) % 4
+    padded = s + ("=" * pad)
+    for decoder in (base64.b64decode, base64.urlsafe_b64decode):
+        try:
+            return decoder(padded)
+        except (binascii.Error, ValueError):
+            continue
+    return None
+
+
+def _verify_sentdm_signature_v1(
+    secret: str,
+    raw_body: bytes,
+    sig_b64: str,
+    webhook_id: str,
+    timestamp: str,
+) -> bool:
+    """Sent documented scheme: HMAC-SHA256(key, f'{id}.{ts}.{body}') → base64, header ``v1,…``."""
+    key = _sentdm_decode_signing_secret(secret)
+    if key is None:
+        return False
+    wid = (webhook_id or "").strip()
+    ts = (timestamp or "").strip()
+    if not wid or not ts:
+        return False
+    if not _sentdm_timestamp_acceptable(ts):
+        return False
+    try:
+        body_text = raw_body.decode("utf-8")
+    except UnicodeDecodeError:
+        body_text = raw_body.decode("utf-8", errors="surrogateescape")
+    signed = f"{wid}.{ts}.{body_text}"
+    digest = hmac.new(key, signed.encode("utf-8"), hashlib.sha256).digest()
+    provided = _b64decode_signature_blob(sig_b64)
+    if not provided:
+        return False
+    return hmac.compare_digest(digest, provided)
+
+
+def _verify_sentdm_signature_legacy(
+    secret: str, raw_body: bytes, signature_header: str
+) -> bool:
+    """Legacy: hex HMAC-SHA256(secret utf-8, raw_body) or ``sha256=`` hex prefix."""
     sig = str(signature_header).strip()
     if sig.startswith("sha256="):
-        sig = sig[len("sha256=") :]
+        sig = sig[len("sha256=") :].strip()
+    if len(sig) != 64 or any(c not in "0123456789abcdefABCDEF" for c in sig):
+        return False
     expected = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(sig.lower(), expected.lower())
+
+
+def _verify_sentdm_signature(
+    secret: str,
+    raw_body: bytes,
+    signature_header: Optional[str],
+    *,
+    webhook_id: str,
+    timestamp: str,
+) -> bool:
+    """Verify ``X-Webhook-Signature`` (Sent ``v1,`` base64, else legacy hex)."""
+    if not secret or not signature_header:
+        return False
+    sh = str(signature_header).strip()
+    if sh.lower().startswith("v1,"):
+        return _verify_sentdm_signature_v1(
+            secret, raw_body, sh[3:].strip(), webhook_id, timestamp
+        )
+    return _verify_sentdm_signature_legacy(secret, raw_body, sh)
 
 
 async def _get_sentdm_action(action_id: str) -> SentDMBroadcastAction:
@@ -463,12 +561,17 @@ async def sentdm_webhook_receive(request: Request, action_id: str) -> Dict[str, 
     """Receive a signed event from SentDM.
 
     Performs:
-    1. ``X-Webhook-Signature`` HMAC-SHA256 verification with the stored
-       signing secret.
+    1. ``X-Webhook-Signature`` verification (Sent ``v1,{base64}`` scheme, or legacy
+       hex digest over the raw body).
     2. ``X-Webhook-ID`` de-duplication via an in-memory LRU.
     3. Logging of the event for later inspection. Downstream dispatch hooks
        can be added without changing the wire contract.
     """
+    logger.info(
+        "SentDM webhook route reached (jvspatial webhook api_key auth passed): "
+        "action_id=%s",
+        action_id,
+    )
     action = await _get_sentdm_action(action_id)
     secret = (action.sentdm_webhook_secret or "").strip()
     if not secret:
@@ -485,11 +588,34 @@ async def sentdm_webhook_receive(request: Request, action_id: str) -> Dict[str, 
     if not raw_body:
         raw_body = await request.body()
 
+    webhook_id = (request.headers.get("x-webhook-id") or "").strip()
+    timestamp_hdr = (request.headers.get("x-webhook-timestamp") or "").strip()
     signature = request.headers.get("x-webhook-signature")
-    if not _verify_sentdm_signature(secret, raw_body, signature):
+    if not _verify_sentdm_signature(
+        secret,
+        raw_body,
+        signature,
+        webhook_id=webhook_id,
+        timestamp=timestamp_hdr,
+    ):
+        sig_desc = "absent"
+        if signature:
+            s = str(signature).strip()
+            sig_desc = (
+                f"len={len(s)} v1_prefix={s.lower().startswith('v1,')} "
+                f"sha256_prefix={s.lower().startswith('sha256=')}"
+            )
+        logger.warning(
+            "SentDM webhook HMAC verification failed: action_id=%s raw_body_bytes=%s "
+            "signature_header=%s x_webhook_id_len=%s x_webhook_timestamp=%r",
+            action_id,
+            len(raw_body),
+            sig_desc,
+            len(webhook_id),
+            timestamp_hdr[:32] if timestamp_hdr else "",
+        )
         raise HTTPException(status_code=401, detail="Invalid X-Webhook-Signature")
 
-    webhook_id = request.headers.get("x-webhook-id") or ""
     if webhook_id and not _remember_webhook_id(webhook_id):
         return {"status": "duplicate", "webhook_id": webhook_id}
 

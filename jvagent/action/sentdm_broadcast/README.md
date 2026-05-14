@@ -40,7 +40,7 @@ actions:
 | `timeout` | `int` | `30` | HTTP timeout in seconds. |
 | `sandbox` | `bool` | `false` | Default `sandbox` flag for mutating calls. |
 | `webhook_display_name` | `str` | `"jvagent SentDM"` | Display name used when (re)creating the SentDM webhook. |
-| `webhook_event_types` | `List[str]` | `["messages"]` | Event categories to subscribe to. Valid values: `messages`, `templates`. |
+| `webhook_event_types` | `List[str]` | `["message"]` | Webhook categories for Sent ``POST /v3/webhooks``. Use ``message`` (singular) and/or ``templates``. Legacy ``messages`` is mapped to ``message``. |
 | `webhook_retry_count` | `int` | `3` | SentDM webhook retry count. |
 | `webhook_timeout_seconds` | `int` | `30` | SentDM webhook delivery timeout. |
 | `persist_records` | `bool` | `true` | Persist a `SentDMBroadcastRecord` per `(recipient, channel)` on each send so webhook events update the graph. |

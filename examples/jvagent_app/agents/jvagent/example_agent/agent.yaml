@@ -116,7 +116,7 @@ actions:
     context:
       enabled: true
       description: "SentDM broadcast — template-based SMS / WhatsApp messages"
-      default_channels: ["whatsapp"]
+      default_channels: ["sms"]
       # Uncomment to set an account-wide fallback template:
       # default_template_name: "order_confirmation"
       # default_template_id: ""
@@ -125,7 +125,7 @@ actions:
       timeout: 30
       # Webhook tuning (used when JVAGENT_PUBLIC_BASE_URL is set)
       webhook_display_name: "jvagent SentDM"
-      webhook_event_types: ["messages"]
+      webhook_event_types: ["message"]
       webhook_retry_count: 3
       webhook_timeout_seconds: 30
       # Graph persistence — each send creates a SentDMBroadcastRecord node

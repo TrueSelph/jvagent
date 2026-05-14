@@ -21,7 +21,13 @@ from .webhook_auth import get_or_create_system_user
 logger = logging.getLogger(__name__)
 
 
-_VALID_EVENT_TYPES = {"messages", "templates"}
+# Sent's POST /v3/webhooks expects ``message`` (singular) for message lifecycle
+# events; older bundled docs used ``messages`` — we normalize when calling the API.
+_SENTDM_WEBHOOK_EVENT_API_VALUE = {
+    "message": "message",
+    "messages": "message",
+    "templates": "templates",
+}
 _DEFAULT_WEBHOOK_DISPLAY_NAME = "jvagent SentDM"
 
 
@@ -89,10 +95,11 @@ class SentDMBroadcastAction(Action):
         description="Display name used when creating the SentDM webhook endpoint",
     )
     webhook_event_types: List[str] = attribute(
-        default_factory=lambda: ["messages"],
+        default_factory=lambda: ["message"],
         description=(
-            "SentDM event categories to subscribe to. Valid values: "
-            "messages, templates."
+            "Sent webhook event categories. Use ``message`` (singular) for "
+            "delivery/status events; ``templates`` for template approvals. "
+            "Legacy value ``messages`` is accepted and mapped to ``message``."
         ),
     )
     webhook_retry_count: int = attribute(
@@ -248,6 +255,11 @@ class SentDMBroadcastAction(Action):
         except ValueError:
             body = response.text
         if not response.is_success:
+            details: Any = None
+            if isinstance(body, dict):
+                err = body.get("error")
+                if isinstance(err, dict):
+                    details = err.get("details")
             logger.error(
                 "SentDM %s %s failed (http=%s): %s",
                 method.upper(),
@@ -255,6 +267,8 @@ class SentDMBroadcastAction(Action):
                 response.status_code,
                 body,
             )
+            if details is not None:
+                logger.error("SentDM validation details: %s", details)
             response.raise_for_status()
         return body
 
@@ -901,13 +915,20 @@ class SentDMBroadcastAction(Action):
         timeout_seconds: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Create a webhook in SentDM and capture its id + signing secret."""
-        events = [
-            e
-            for e in (event_types or self.webhook_event_types or ["messages"])
-            if e in _VALID_EVENT_TYPES
-        ]
+        mapped: List[str] = []
+        for raw in event_types or self.webhook_event_types or ["message"]:
+            key = str(raw).strip().lower()
+            if key in _SENTDM_WEBHOOK_EVENT_API_VALUE:
+                mapped.append(_SENTDM_WEBHOOK_EVENT_API_VALUE[key])
+        # De-dupe while preserving order
+        seen: set = set()
+        events: List[str] = []
+        for ev in mapped:
+            if ev not in seen:
+                seen.add(ev)
+                events.append(ev)
         if not events:
-            events = ["messages"]
+            events = ["message"]
 
         payload = {
             "display_name": display_name or self.webhook_display_name,
