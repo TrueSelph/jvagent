@@ -50,14 +50,9 @@ def _set_db_env_from_config(app_root: str) -> None:
 
 def _import_core_endpoint_modules() -> None:
     """Import core endpoint modules so @endpoint decorators register with the server."""
-    from jvagent.action import endpoints as _action_endpoints  # noqa: F401
-    from jvagent.core import endpoints as _core_endpoints  # noqa: F401
-    from jvagent.logging import endpoints as _logging_endpoints  # noqa: F401
+    from jvagent.core.embed_endpoints import import_jvagent_endpoint_modules
 
-    try:
-        import jvagent.action.google.endpoints as _google_oauth  # noqa: F401
-    except ImportError:
-        pass
+    import_jvagent_endpoint_modules()
 
 
 def create_server_from_config(debug: bool = False, app_root: str = None) -> Server:
