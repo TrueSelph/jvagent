@@ -421,6 +421,15 @@ class CockpitInteractAction(InteractAction):
             always_run_ias = await collect_always_execute_interact_actions(
                 agent, exclude_class_names={self.__class__.__name__}
             )
+            # Always-execute IAs MUST also go through per-user access
+            # control, otherwise they sit in the curated queue until
+            # ``enforce_interact_action_access`` denies them at visit
+            # time — wasting observability slots and emitting
+            # ``deny_access_directive`` for every turn. AUDIT-interact
+            # HIGH-08.
+            always_run_ias = await filter_routed_interact_actions_by_access(
+                agent, always_run_ias, user_id=user_id, channel=channel
+            )
             await curate_walk_path_for_cockpit(
                 visitor,
                 self,
@@ -461,13 +470,55 @@ class CockpitInteractAction(InteractAction):
                     [a.__class__.__name__ for a in routed_ias],
                 )
                 session.ia_finalize_pending = True
+                finalize_enqueued = False
                 try:
                     await visitor.append([self])
+                    # WalkerQueue.append silently drops when the queue is at
+                    # its ``max_queue_size`` cap. Verify the cockpit instance
+                    # actually landed in the tail before returning — otherwise
+                    # the finalize step never runs and the user sees no
+                    # response. AUDIT-interact-cockpit CRIT-04.
+                    try:
+                        current_queue = await visitor.get_queue()
+                        finalize_enqueued = any(
+                            getattr(node, "id", None) == self.id
+                            for node in current_queue
+                        )
+                    except Exception:
+                        # If queue introspection isn't available, assume the
+                        # append succeeded — the fallback below only fires on
+                        # an explicit miss.
+                        finalize_enqueued = True
                 except Exception as exc:
                     logger.warning(
                         "CockpitInteractAction: failed to append finalize step: %s",
                         exc,
                     )
+
+                if not finalize_enqueued:
+                    logger.warning(
+                        "CockpitInteractAction: finalize append dropped "
+                        "(walker queue at cap); falling back to inline finalize"
+                    )
+                    session.ia_finalize_pending = False
+                    # Inline persona finalize so the turn is not silently
+                    # dropped. Mark the interaction executed afterwards.
+                    try:
+                        await deliver_via_persona(
+                            self,
+                            visitor,
+                            response_mode="respond",
+                            history_limit=self.history_limit,
+                        )
+                    except Exception as deliver_exc:
+                        logger.warning(
+                            "CockpitInteractAction: inline finalize failed: %s",
+                            deliver_exc,
+                        )
+                    try:
+                        interaction.set_to_executed()
+                    except Exception:
+                        pass
                 # Don't mark interaction executed yet — finalize step will do it.
                 return
 
@@ -492,12 +543,80 @@ class CockpitInteractAction(InteractAction):
             await self._handle_error(visitor, exc)
 
     async def _phase_continue(self, visitor: InteractWalker) -> None:
-        """Revisit: reuse engine instance and run next step."""
+        """Revisit: reuse engine instance and run next step.
+
+        If the engine was cleared between prepend and revisit (stale-state
+        guard, error handler ``clear_session``, or a tool calling
+        ``response_publish(finalize=True)`` resetting the session), the
+        previous implementation silently returned without publishing or
+        marking the interaction executed. The walker then moved on with no
+        user-facing output for the turn. AUDIT-interact-cockpit CRIT-02.
+
+        Now: surface a generic fallback response, mark the interaction
+        executed, and clear remaining session state so the walker continues
+        cleanly without a dangling run.
+        """
         session = get_session(visitor)
         engine = session.engine
         if engine is None:
-            logger.warning("CockpitInteractAction: revisit without engine, skipping")
-            session.debug_state = None
+            logger.warning(
+                "CockpitInteractAction: revisit without engine; "
+                "publishing fallback so the turn is not silently dropped"
+            )
+            interaction = visitor.interaction
+            try:
+                if interaction is not None and not getattr(
+                    interaction, "response", None
+                ):
+                    fallback = (
+                        "Sorry — I lost track of that step. "
+                        "Could you rephrase or try again?"
+                    )
+                    interaction.response = fallback
+                    try:
+                        await interaction.save()
+                    except Exception:
+                        pass
+                    if visitor.response_bus and visitor.session_id:
+                        try:
+                            await self.publish(
+                                visitor=visitor,
+                                content=fallback,
+                                stream=False,
+                                streaming_complete=True,
+                            )
+                        except Exception:
+                            pass
+                if interaction is not None and hasattr(
+                    interaction, "set_to_executed"
+                ):
+                    try:
+                        interaction.set_to_executed()
+                        await interaction.save()
+                    except Exception:
+                        pass
+            finally:
+                session.debug_state = None
+            return
+
+        # AUDIT-interact HIGH-02: enforce a per-interaction step cap that
+        # survives engine rebuilds (engine._iteration resets to 0 on rebuild).
+        session.total_steps_this_interaction = (
+            (session.total_steps_this_interaction or 0) + 1
+        )
+        if session.total_steps_this_interaction > max(1, int(self.max_iterations) * 2):
+            logger.warning(
+                "CockpitInteractAction: per-interaction step cap exceeded "
+                "(%d steps; max_iterations=%d, ceiling=2x). Terminating turn.",
+                session.total_steps_this_interaction,
+                self.max_iterations,
+            )
+            await self._handle_error(
+                visitor,
+                RuntimeError(
+                    "Per-interaction cockpit step cap exceeded — turn terminated"
+                ),
+            )
             return
 
         try:
@@ -635,6 +754,11 @@ class CockpitInteractAction(InteractAction):
         session = get_session(visitor)
         session.engine = engine
         session.interaction_id = interaction.id
+        # AUDIT-interact HIGH-02: count the first step against the
+        # per-interaction ceiling. Subsequent steps fire in _phase_continue.
+        session.total_steps_this_interaction = (
+            (session.total_steps_this_interaction or 0) + 1
+        )
 
         step_result = await engine.step()
         await self._handle_step_result(visitor, engine, step_result)

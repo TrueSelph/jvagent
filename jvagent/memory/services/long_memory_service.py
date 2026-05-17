@@ -27,4 +27,15 @@ class LongMemoryService:
         return payload
 
     def resolve_collection(self, *, agent_id: str, suffix: str) -> str:
-        return resolve_long_memory_collection(agent_id=agent_id, suffix=suffix)
+        """Build the PageIndex collection name for the given agent + suffix.
+
+        Bridges to :func:`resolve_long_memory_collection`, which takes
+        ``collection_attr`` and ``config`` rather than a flat ``suffix``.
+        The previous implementation passed an unrecognized ``suffix=`` kwarg
+        and would raise ``TypeError`` on the first call.  AUDIT-memory CRIT-02.
+        """
+        return resolve_long_memory_collection(
+            agent_id=agent_id,
+            collection_attr=suffix,
+            config=None,
+        )

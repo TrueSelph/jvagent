@@ -57,6 +57,44 @@ def _tool_call_signature(tc: Dict[str, Any]) -> str:
     return f"{name}::{fp}"
 
 
+# Tools whose output the user has ALREADY seen via the response bus
+# (response_publish writes to the user's chat bubble; response_emit_thought
+# streams to the Reasoning panel; response_deliver_via_persona triggers
+# PersonaAction which also publishes). Emitting tool_call / tool_result /
+# tool_progress observability envelopes for these is pure noise — every
+# call surfaces as a redundant ``← ok: response_publish`` line under the
+# Reasoning panel in jvchat. Skip the envelopes; the underlying publish
+# already produced the user-visible artifact.
+USER_VISIBLE_TOOL_NAMES = frozenset(
+    {
+        "response_publish",
+        "response_emit_thought",
+        "response_deliver_via_persona",
+    }
+)
+
+
+def _suppress_tool_observability(tool_name: str) -> bool:
+    """Return True iff tool ``tool_name`` should NOT emit tool_call /
+    tool_result / tool_progress thought envelopes.
+
+    Honors :data:`USER_VISIBLE_TOOL_NAMES`. Override by setting env
+    ``JVAGENT_COCKPIT_VERBOSE_RESPONSE_TOOLS=true`` to bring the old
+    triple-emit back (useful for backend-only consumers that don't
+    inspect the chat stream).
+    """
+    import os
+
+    if (
+        os.environ.get("JVAGENT_COCKPIT_VERBOSE_RESPONSE_TOOLS", "")
+        .strip()
+        .lower()
+        in {"true", "1", "yes", "on"}
+    ):
+        return False
+    return tool_name in USER_VISIBLE_TOOL_NAMES
+
+
 class CockpitEngine:
     """The cockpit think-act-observe engine.
 
@@ -1188,18 +1226,52 @@ class CockpitEngine:
         Used by the all-errors short-circuit so the operator-facing detail
         is captured on the response bus without leaking tool internals into
         the user's chat reply.
+
+        When ``sanitize_tool_errors`` is True (default), the raw per-tool
+        ``content`` is NOT included in the streamed thought — only the tool
+        names. Many harness tools return ``f"Error: {exc}"`` directly, which
+        previously flowed through this publish path despite the sanitize
+        flag (AUDIT-interact-cockpit CRIT-05). The full error is still
+        recorded to the standard logger for operators / DBLogHandler.
         """
         ctx = self.ctx
         if not getattr(ctx.config, "stream_internal_progress", True):
+            # Still log for ops even when streaming is disabled.
+            logger.warning(
+                "Cockpit tool batch failed",
+                extra={"details": {"error_details": error_details or ""}},
+            )
             return
         if not ctx.response_bus or not ctx.session_id or not ctx.interaction:
             return
         body = (error_details or "").strip()
         if not body:
             return
+
+        sanitize = bool(getattr(ctx.config, "sanitize_tool_errors", True))
+        if sanitize:
+            # Always log the raw detail for ops; strip it from the streamed thought.
+            logger.warning(
+                "Cockpit tool batch failed (full detail logged; stream sanitized)",
+                extra={"details": {"error_details": body}},
+            )
+            sanitized_lines: list[str] = []
+            for raw_line in body.split("\n"):
+                # Each line begins with ``- {tool_name}: {content[:200]}``.
+                # Keep ``- {tool_name}: error`` only.
+                stripped = raw_line.lstrip()
+                if stripped.startswith("- ") and ":" in stripped[2:]:
+                    name_part = stripped[2:].split(":", 1)[0].strip()
+                    sanitized_lines.append(f"- {name_part}: error")
+                else:
+                    sanitized_lines.append("- error")
+            streamed_body = "\n".join(sanitized_lines)
+        else:
+            streamed_body = body
+
         await ctx.response_bus.publish(
             session_id=ctx.session_id,
-            content=f"Tool batch failed:\n{body}",
+            content=f"Tool batch failed:\n{streamed_body}",
             channel=ctx.channel,
             stream=ctx.stream,
             interaction_id=ctx.interaction.id,
@@ -1313,6 +1385,9 @@ class CockpitEngine:
             fn = tc.get("function", {})
             tool_name = fn.get("name", "")
             tool_call_id = tc.get("id") or ""
+            # Suppress for user-visible tools (response_publish, etc.).
+            if _suppress_tool_observability(tool_name):
+                continue
             status = (
                 "failed"
                 if (
@@ -1394,6 +1469,12 @@ class CockpitEngine:
             fn = tc.get("function", {})
             tool_name = fn.get("name") or "unknown"
             tool_call_id = tc.get("id") or ""
+            # Suppress observability emit for tools whose effect is
+            # already user-visible (response_publish, etc.). Avoids
+            # the noisy ``← ok: response_publish`` line in jvchat's
+            # Reasoning panel.
+            if _suppress_tool_observability(tool_name):
+                continue
             # Idempotency: skip if we've already published this
             # tool_call envelope. Guards against any upstream cause
             # of duplicate emission — walker re-walks, parallel
@@ -1464,6 +1545,10 @@ class CockpitEngine:
             fn = tc.get("function", {})
             tool_name = fn.get("name") or "unknown"
             tool_call_id = tc.get("id") or ""
+            # Suppress observability emit for tools whose effect is
+            # already user-visible (response_publish, etc.).
+            if _suppress_tool_observability(tool_name):
+                continue
             # Idempotency: skip if we've already published this
             # tool_result envelope. Pairs with the matching guard
             # in ``_emit_tool_call``. See the doc-comment on

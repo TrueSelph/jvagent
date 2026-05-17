@@ -11,9 +11,12 @@ from jvspatial.api.constants import APIRoutes
 from jvspatial.api.context import get_current_server
 from jvspatial.core import Node, Root
 from jvspatial.core.annotations import attribute
+from jvspatial.core.context import get_default_context
 from jvspatial.env import env, resolve_file_storage_root
 from jvspatial.storage import create_storage, get_proxy_manager
 from jvspatial.storage.exceptions import StorageError
+
+logger = logging.getLogger(__name__)
 
 
 class App(Node):
@@ -127,51 +130,107 @@ class App(Node):
         This method provides convenient singleton-like access to the App node.
         It traverses from Root -> App and caches the result for subsequent calls.
 
+        The cache hit additionally re-resolves the cached instance against the
+        **current** ``GraphContext`` database. Tests, embedded hosts, and any
+        process that swaps DB contexts can otherwise hand out an App node from
+        the previous database — silent multi-tenant corruption. AUDIT-core C-1.
+
+        ``_cached_app`` reads/writes go through ``_locks_guard`` (a
+        :class:`threading.Lock`) so concurrent workers in the same process
+        cannot race on first fetch. AUDIT-core C-2.
+
         Returns:
             App node if found, None otherwise
-
-        Example:
-            ```python
-            app = await App.get()
-            if app:
-                file_content = await app.get_file("path/to/file")
-            ```
         """
-        # Return cached instance if available
-        if cls._cached_app is not None:
-            # Verify the cached instance still exists
-            try:
-                # Quick check - if it has an ID, assume it's still valid
-                if cls._cached_app.id:
-                    return cls._cached_app
-            except Exception:
-                # If verification fails, clear cache and re-fetch
-                cls._cached_app = None
+        # Fast-path: cache hit, but verify the cached node is reachable in
+        # the *current* DB context (handles context swaps between calls).
+        cached = cls._read_cached_app()
+        if cached is not None:
+            verified = await cls._verify_cached_against_current_context(cached)
+            if verified is not None:
+                return verified
+            # Cached instance no longer belongs to the active DB; drop it.
+            cls._set_cached_app(None)
 
-        # Use lock to prevent concurrent fetches
+        # Use lock to prevent concurrent fetches.
         async with cls._get_lock():
-            # Double-check after acquiring lock
-            if cls._cached_app is not None:
-                try:
-                    if cls._cached_app.id:
-                        return cls._cached_app
-                except Exception:
-                    cls._cached_app = None
+            # Double-check after acquiring lock.
+            cached = cls._read_cached_app()
+            if cached is not None:
+                verified = await cls._verify_cached_against_current_context(cached)
+                if verified is not None:
+                    return verified
+                cls._set_cached_app(None)
 
-            # Get Root node
+            # Get Root node.
             root = await Root.get()
             if not root:
                 return None
 
-            # Get App node connected to Root
+            # Get App node connected to Root.
             app_nodes = await root.nodes()
-            for node in app_nodes:
-                if isinstance(node, App):
-                    cls._cached_app = node
-                    return node
+            app_candidates = [n for n in app_nodes if isinstance(n, App)]
+            if not app_candidates:
+                # App node not found.
+                return None
+            # AUDIT-core M-1: warn (and tie-break deterministically) when
+            # multiple App nodes hang off Root. Boot-time
+            # ``_deduplicate_app_nodes`` should make this a no-op, but
+            # later manual edits / partial restores can leave duplicates.
+            # Tie-break: smallest id wins (lexicographic, deterministic).
+            if len(app_candidates) > 1:
+                ids = sorted(
+                    [getattr(a, "id", "") for a in app_candidates]
+                )
+                logger.warning(
+                    "App.get(): found %d App nodes on Root (%s); returning %r. "
+                    "Run graph repair / dedupe to remove the others.",
+                    len(app_candidates),
+                    ids,
+                    ids[0],
+                )
+                app_candidates.sort(key=lambda a: getattr(a, "id", "") or "")
+            chosen = app_candidates[0]
+            cls._set_cached_app(chosen)
+            return chosen
 
-            # App node not found
+    @classmethod
+    def _read_cached_app(cls) -> Optional["App"]:
+        """Thread-safe read of ``_cached_app``."""
+        with cls._locks_guard:
+            return cls._cached_app
+
+    @classmethod
+    def _set_cached_app(cls, value: Optional["App"]) -> None:
+        """Thread-safe write of ``_cached_app``.
+
+        Public so :mod:`jvagent.core.app_loader` can populate the cache
+        through the same guard rather than touching the class attribute
+        directly. AUDIT-core C-2.
+        """
+        with cls._locks_guard:
+            cls._cached_app = value
+
+    @classmethod
+    async def _verify_cached_against_current_context(
+        cls, cached: "App"
+    ) -> Optional["App"]:
+        """Return the cached App iff it is reachable in the current context.
+
+        Returns ``None`` if the cached node belongs to a different DB context
+        (e.g. test fixture swap, embedded-host context change).
+        """
+        cached_id = getattr(cached, "id", None)
+        if not cached_id:
             return None
+        try:
+            ctx = get_default_context()
+            live = await ctx.get(Node, cached_id)
+        except Exception:
+            return None
+        if live is None:
+            return None
+        return cached
 
     @classmethod
     def clear_cache(cls) -> None:
@@ -180,7 +239,7 @@ class App(Node):
         This is useful when the App node might have been deleted or recreated,
         or when you want to force a fresh lookup on the next get() call.
         """
-        cls._cached_app = None
+        cls._set_cached_app(None)
 
     # ============================================================================
     # Datetime (App Timezone)

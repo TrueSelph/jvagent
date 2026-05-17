@@ -37,16 +37,14 @@ def _build_skill_tools(ctx: CockpitContext) -> List[Tool]:
         if catalog is None:
             return "No skills are loaded to search."
         try:
-            results = catalog.search(query)
-            if not results:
+            # ``SkillCatalog.search`` returns a pre-rendered string, not a
+            # mapping. The previous implementation called ``.items()`` on
+            # the result and threw on every invocation. AUDIT-interact
+            # HIGH-03.
+            rendered = catalog.search(query)
+            if not rendered or not rendered.strip():
                 return f'No skills found matching "{query}".'
-            lines = [f'Skills matching "{query}":']
-            for name, data in results.items():
-                desc = data.get("description", "")
-                tags = data.get("metadata", {}).get("tags", []) or []
-                tag_str = f" [{', '.join(map(str, tags))}]" if tags else ""
-                lines.append(f"  - {name}: {desc}{tag_str}")
-            return "\n".join(lines)
+            return rendered
         except Exception as exc:
             return f"Error searching skills: {exc}"
 

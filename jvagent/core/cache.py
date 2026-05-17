@@ -265,7 +265,13 @@ class CacheManager:
         buffer_fingerprint: str,
         active_task_fingerprint: str,
         proactive_tasks_fingerprint: str = "",
+        user_id: str = "",
     ) -> str:
+        # ``user_id`` is included so router-decision cache entries cannot
+        # bleed across users even if a future refactor reuses a single
+        # ``conversation_id`` across multiple Users (group chat / shared
+        # session). Routing decisions carry per-user interpretation text.
+        # AUDIT-interact-cockpit HIGH-04.
         payload = json.dumps(
             {
                 "conversation_id": conversation_id,
@@ -274,6 +280,7 @@ class CacheManager:
                 "buffer": buffer_fingerprint,
                 "active_tasks": active_task_fingerprint,
                 "proactive_tasks": proactive_tasks_fingerprint,
+                "user_id": user_id,
             },
             sort_keys=True,
         )
@@ -461,6 +468,7 @@ def interact_router_cache_key(
     buffer_fingerprint: str,
     active_task_fingerprint: str,
     proactive_tasks_fingerprint: str = "",
+    user_id: str = "",
 ) -> str:
     return cache_manager.router_cache_key(
         conversation_id,
@@ -469,6 +477,7 @@ def interact_router_cache_key(
         buffer_fingerprint,
         active_task_fingerprint,
         proactive_tasks_fingerprint,
+        user_id=user_id,
     )
 
 

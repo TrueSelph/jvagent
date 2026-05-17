@@ -3,12 +3,12 @@
 Implements web search using Serper's Google Search REST API.
 """
 
-import http.client
 import json
 import logging
 from typing import Any, Dict, List
 from urllib.parse import urlparse
 
+import httpx
 from jvspatial.core.annotations import attribute
 from jvspatial.env import env
 
@@ -59,6 +59,12 @@ class SerperWebSearchAction(BaseWebSearchAction):
     async def search(self, query: str, **kwargs: Any) -> List[Dict[str, str]]:
         """Execute a Google search via Serper and return normalized results.
 
+        Uses :class:`httpx.AsyncClient` so the coroutine does not stall the
+        event loop. The previous implementation used stdlib
+        ``http.client.HTTPSConnection`` synchronously inside ``async def``,
+        blocking the worker for the full network round-trip and serializing
+        every other coroutine on it. AUDIT-actions XC-3.
+
         Args:
             query: The search query string
             **kwargs: Additional Serper parameters (override instance defaults)
@@ -67,8 +73,10 @@ class SerperWebSearchAction(BaseWebSearchAction):
             List of result dicts with keys: title, link, snippet
         """
         parsed = urlparse(self.api_endpoint)
+        scheme = parsed.scheme or "https"
         host = parsed.netloc or "google.serper.dev"
         path = parsed.path or "/search"
+        url = f"{scheme}://{host}{path}"
 
         payload = {
             "q": query,
@@ -81,13 +89,9 @@ class SerperWebSearchAction(BaseWebSearchAction):
         headers = {"X-API-KEY": api_key, "Content-Type": "application/json"}
 
         try:
-            conn = http.client.HTTPSConnection(host)
-            conn.request("POST", path, json.dumps(payload), headers)
-            res = conn.getresponse()
-            data = res.read()
-            conn.close()
-
-            data_dict = json.loads(data.decode("utf-8"))
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(url, content=json.dumps(payload), headers=headers)
+            data_dict = resp.json()
             organic = data_dict.get("organic", [])
             logger.debug(
                 f"SerperWebSearchAction: Found {len(organic)} organic results for query: {query!r}"

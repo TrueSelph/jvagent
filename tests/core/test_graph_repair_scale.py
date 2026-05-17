@@ -239,6 +239,12 @@ class TestPurgeStale:
         from datetime import timedelta
 
         await Root.get()
+        # Seed a real App into this test's DB. The previous version of this
+        # test relied on App._cached_app leaking across the function-scoped
+        # ``test_db`` fixture, which was exactly the bug AUDIT-core C-1 found.
+        # The fix to App.get() now invalidates cross-context cache hits, so
+        # the test must create its own App.
+        await _seed_graph(temp_dir, n_users=1, interactions_per_conv=1)
         app = await App.get()
         assert app is not None
 

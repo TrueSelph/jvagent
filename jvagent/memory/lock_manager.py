@@ -23,18 +23,28 @@ _CLEANUP_INTERVAL_SECONDS = 120
 
 
 class MemoryLockManager:
-    """Per-key async lock manager with TTL-based cleanup.
+    """Per-(loop, key) async lock manager with TTL-based cleanup.
 
-    Prevents TOCTOU races in Memory.get_user(), Conversation.add_interaction(),
-    and similar create-if-missing flows.
+    Prevents TOCTOU races in :meth:`Memory.get_user`,
+    :meth:`Conversation.add_interaction`, and similar create-if-missing
+    flows.
+
+    Locks are keyed by ``(id(running_loop), key)`` rather than just
+    ``key``.  Without this, a lock instantiated on a destroyed event loop
+    (typical on serverless warm starts) survives in the singleton dict and
+    later raises ``RuntimeError: ... bound to a different loop`` when a
+    fresh request on a new loop tries to acquire it.  AUDIT-memory CRIT-04.
+
+    The TTL sweep additionally drops every entry whose loop is closed, so
+    long-running processes that intentionally spin and tear down loops do
+    not accumulate dead locks forever.
     """
 
     def __init__(self) -> None:
-        self._locks: Dict[str, asyncio.Lock] = {}
-        self._timestamps: Dict[str, float] = {}
-        # ``_global_lock`` is created lazily per running event loop. The class
-        # is instantiated at module import (singletons below), so pinning the
-        # lock to the import-time loop breaks on serverless warm starts.
+        # Keyed by (loop_id, logical_key). Each loop sees its own lock set.
+        self._locks: Dict[tuple, asyncio.Lock] = {}
+        self._timestamps: Dict[tuple, float] = {}
+        # Global lock for dict mutation. Same per-loop pattern.
         self._global_locks_by_loop: Dict[int, asyncio.Lock] = {}
         self._last_cleanup = time.time()
 
@@ -48,36 +58,76 @@ class MemoryLockManager:
         return lock
 
     async def acquire(self, key: str) -> asyncio.Lock:
-        """Get or create a lock for *key* (thread-safe).
+        """Get or create a lock for *key* on the current event loop.
 
         Returns the lock; caller must use ``async with`` on the result.
         """
+        loop = asyncio.get_running_loop()
+        composite_key = (id(loop), key)
         async with self._global_lock_for_loop():
-            if key not in self._locks:
-                self._locks[key] = asyncio.Lock()
-            self._timestamps[key] = time.time()
+            if composite_key not in self._locks:
+                self._locks[composite_key] = asyncio.Lock()
+            self._timestamps[composite_key] = time.time()
 
             now = time.time()
             if now - self._last_cleanup > _CLEANUP_INTERVAL_SECONDS:
                 self._last_cleanup = now
                 self._cleanup_stale()
 
-            return self._locks[key]
+            return self._locks[composite_key]
 
     def _cleanup_stale(self) -> None:
         now = time.time()
-        stale = [
-            k
-            for k, ts in self._timestamps.items()
-            if now - ts > _LOCK_TTL_SECONDS
-            and k in self._locks
-            and not self._locks[k].locked()
+
+        # First, drop global-lock entries whose loop is closed. The current
+        # loop's entry is preserved because we are running on it.
+        try:
+            current_loop_id = id(asyncio.get_running_loop())
+        except RuntimeError:
+            current_loop_id = None
+        for loop_id in list(self._global_locks_by_loop.keys()):
+            if loop_id == current_loop_id:
+                continue
+            cached = self._global_locks_by_loop[loop_id]
+            inner_loop = getattr(cached, "_loop", None)
+            # On Python 3.10+ asyncio.Lock has no ``_loop`` until first await;
+            # in that case fall back to treating any non-current loop as
+            # dead — it cannot reuse our locks anyway since the per-key keys
+            # are also (loop_id, key) tuples bound to that loop.
+            try:
+                if inner_loop is None or inner_loop.is_closed():
+                    self._global_locks_by_loop.pop(loop_id, None)
+            except Exception:
+                pass
+
+        # Drop every per-key entry whose loop_id is no longer present in the
+        # global-lock registry. Those loops are confirmed dead.
+        alive_loop_ids = set(self._global_locks_by_loop.keys())
+        loop_stale = [
+            ck for ck in list(self._locks.keys()) if ck[0] not in alive_loop_ids
         ]
-        for k in stale:
-            del self._locks[k]
-            del self._timestamps[k]
+
+        # Plus the classic TTL-based eviction for live-loop keys that have
+        # not been touched in a while.
+        ttl_stale = [
+            ck
+            for ck, ts in self._timestamps.items()
+            if now - ts > _LOCK_TTL_SECONDS
+            and ck in self._locks
+            and not self._locks[ck].locked()
+        ]
+
+        stale = set(ttl_stale) | set(loop_stale)
+        for ck in stale:
+            self._locks.pop(ck, None)
+            self._timestamps.pop(ck, None)
         if stale:
-            logger.debug("Cleaned up %d stale memory locks", len(stale))
+            logger.debug(
+                "Cleaned up %d stale memory locks (ttl=%d, dead-loop=%d)",
+                len(stale),
+                len(ttl_stale),
+                len(loop_stale),
+            )
 
 
 # Module-level singletons

@@ -182,7 +182,11 @@ class HeygenVideoAction(Action):
             events if events is not None else getattr(self, "webhook_events", None)
         )
 
-        endpoints = self._webhook_list()
+        # The _webhook_* helpers use sync `requests`. Run them in worker
+        # threads so the event loop is not stalled. AUDIT-actions XC-3.
+        import asyncio
+
+        endpoints = await asyncio.to_thread(self._webhook_list)
 
         exact_matches: List[Dict[str, Any]] = []
         stale_matches: List[Dict[str, Any]] = []
@@ -204,7 +208,7 @@ class HeygenVideoAction(Action):
             endpoint_id = str(ep.get("endpoint_id") or "")
             if endpoint_id:
                 try:
-                    self._webhook_delete(endpoint_id)
+                    await asyncio.to_thread(self._webhook_delete, endpoint_id)
                     deleted.append(endpoint_id)
                 except Exception as exc:
                     logger.warning(
@@ -221,7 +225,7 @@ class HeygenVideoAction(Action):
                 endpoint_id = str(ep.get("endpoint_id") or "")
                 if endpoint_id:
                     try:
-                        self._webhook_delete(endpoint_id)
+                        await asyncio.to_thread(self._webhook_delete, endpoint_id)
                         deleted.append(endpoint_id)
                     except Exception as exc:
                         logger.warning(
@@ -232,7 +236,9 @@ class HeygenVideoAction(Action):
 
         created: Optional[Dict[str, Any]] = None
         if not kept:
-            created = self._webhook_add(desired_norm, events=effective_events)
+            created = await asyncio.to_thread(
+                self._webhook_add, desired_norm, effective_events
+            )
             kept = created
 
         # Surface relevant info to callers (and logs)
@@ -263,10 +269,21 @@ class HeygenVideoAction(Action):
 
         url = "https://api.heygen.com/v2/video/generate"
 
+        # callback_id correlates HeyGen's async webhook back to this request.
+        # The previous default of the literal string "string" left every
+        # request indistinguishable. AUDIT-actions video_generation.
+        import uuid as _uuid
+
+        callback_id = (
+            kwargs.get("callback_id")
+            or (kwargs.get("payload") or {}).get("callback_id")
+            or _uuid.uuid4().hex
+        )
+
         payload = {
             "caption": True,
             "title": title,
-            "callback_id": "string",
+            "callback_id": callback_id,
             "video_inputs": [
                 {
                     "character": {
@@ -347,13 +364,15 @@ class HeygenVideoAction(Action):
             "x-api-key": api_key,
         }
 
-        response = requests.post(url, json=payload, headers=headers)
+        # AUDIT-actions XC-3: use httpx.AsyncClient to avoid blocking the loop.
+        async with AsyncClient(timeout=Timeout(60.0)) as client:
+            response = await client.post(url, json=payload, headers=headers)
         try:
             body: Any = response.json()
         except ValueError:
             logger.error("HeygenVideoAction: response was not valid JSON")
             return None
-        if not response.ok:
+        if response.is_error:
             logger.error(
                 "HeygenVideoAction: HTTP %s: %s",
                 response.status_code,
@@ -444,8 +463,10 @@ class HeygenVideoAction(Action):
             "variables": variables,
         }
 
-        response = requests.post(url, json=payload, headers=headers)
-        print(f"\033[92m{response.text}\033[0m")
+        # AUDIT-actions XC-3: use httpx.AsyncClient to avoid blocking the loop.
+        async with AsyncClient(timeout=Timeout(60.0)) as client:
+            response = await client.post(url, json=payload, headers=headers)
+        logger.debug("HeygenVideoAction: template response %s", response.text)
 
         return response.json()
 
@@ -460,7 +481,9 @@ class HeygenVideoAction(Action):
 
         headers = {"accept": "application/json", "x-api-key": api_key}
 
-        response = requests.get(url, headers=headers)
+        # AUDIT-actions XC-3.
+        async with AsyncClient(timeout=Timeout(60.0)) as client:
+            response = await client.get(url, headers=headers)
         return response.json()
 
     async def create_video_from_prompt(self, prompt: str, **kwargs: Any) -> Any:
@@ -484,9 +507,11 @@ class HeygenVideoAction(Action):
             "x-api-key": api_key,
         }
 
-        response = requests.post(url, json=payload, headers=headers)
+        # AUDIT-actions XC-3.
+        async with AsyncClient(timeout=Timeout(60.0)) as client:
+            response = await client.post(url, json=payload, headers=headers)
 
-        print(f"\033[92m{response.text}\033[0m")
+        logger.debug("HeygenVideoAction: prompt response %s", response.text)
 
         return response
 
@@ -501,20 +526,27 @@ class HeygenVideoAction(Action):
 
         headers = {"accept": "application/json", "x-api-key": api_key}
 
-        response = requests.get(url, headers=headers)
+        # AUDIT-actions XC-3.
+        async with AsyncClient(timeout=Timeout(60.0)) as client:
+            response = await client.get(url, headers=headers)
         status = response.json()["data"]["status"]
 
         if status == "completed":
             video_url = response.json()["data"]["video_url"]
             thumbnail_url = response.json()["data"]["thumbnail_url"]
-            print(
-                f"Video generation completed! \nVideo URL: {video_url} \nThumbnail URL: {thumbnail_url}"
+            logger.info(
+                "HeygenVideoAction: video ready url=%s thumbnail=%s",
+                video_url,
+                thumbnail_url,
             )
 
             # Save the video to a file
             video_filename = "generated_video.mp4"
             with open(video_filename, "wb") as video_file:
-                video_content = requests.get(video_url).content
+                # AUDIT-actions XC-3.
+                async with AsyncClient(timeout=Timeout(120.0)) as client:
+                    video_resp = await client.get(video_url)
+                video_content = video_resp.content
                 video_file.write(video_content)
 
         print(response.text)

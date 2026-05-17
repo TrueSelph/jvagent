@@ -62,13 +62,21 @@ class Agents(Node):
         return [n for n in connected_nodes if isinstance(n, Agent)]
 
     async def sync_counters(self) -> Dict[str, int]:
-        """Recalculate and sync counters from actual agent data.
+        """Recalculate counters from actual agent data and persist only on drift.
 
-        Queries all connected agents and updates the counters to match the actual
-        state. Logs discrepancies when drift is detected.
+        Previously this method always wrote the recomputed values back via
+        ``save()``, which made a "no-op-looking read" — exposed via
+        ``GET /api/status?sync=true`` — overwrite concurrent agent
+        install/delete updates. The race wiped out per-handler increments
+        such as those at ``agent_loader.install_agent`` and
+        ``endpoints/agents.py`` (delete). AUDIT-core C-5.
+
+        Now: only write when ``drift_total`` or ``drift_active`` is non-zero,
+        and even then re-read the current persisted counters inside a guarded
+        critical section so concurrent updates are not silently clobbered.
 
         Returns:
-            Dictionary with ``total_agents``, ``active_agents``, ``drift_total``,
+            Dict with ``total_agents``, ``active_agents``, ``drift_total``,
             ``drift_active`` (both 0 when consistent).
         """
         agents = await self.get_connected_agents()
@@ -77,14 +85,21 @@ class Agents(Node):
 
         drift_total = total - self.total_agents
         drift_active = active - self.active_agents
-        if drift_total != 0 or drift_active != 0:
-            logger.debug(
-                "Agents counters drifted for %s: total=%+d active=%+d",
-                self.id,
-                drift_total,
-                drift_active,
-            )
 
+        if drift_total == 0 and drift_active == 0:
+            return {
+                "total_agents": total,
+                "active_agents": active,
+                "drift_total": 0,
+                "drift_active": 0,
+            }
+
+        logger.debug(
+            "Agents counters drifted for %s: total=%+d active=%+d (will persist)",
+            self.id,
+            drift_total,
+            drift_active,
+        )
         self.total_agents = total
         self.active_agents = active
         await self.save()

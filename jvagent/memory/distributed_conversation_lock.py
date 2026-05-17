@@ -104,12 +104,35 @@ async def _redis_conversation_lock(
     end
     """
 
+    # AUDIT-memory HIGH-05: bounded wait + exponential backoff + heartbeat
+    # logs. Unbounded polling lets a poisoned holder block every other
+    # request until its TTL expires.
+    max_wait = max(ttl + 5, 60)
+    start = asyncio.get_event_loop().time()
+    delay = 0.05
+    attempt = 0
     try:
         while True:
             acquired = await client.set(name=key, value=token, nx=True, ex=ttl)
             if acquired:
                 break
-            await asyncio.sleep(0.05)
+            elapsed = asyncio.get_event_loop().time() - start
+            if elapsed >= max_wait:
+                raise TimeoutError(
+                    f"Redis conversation lock for {conversation_id} not "
+                    f"acquired within {max_wait}s"
+                )
+            attempt += 1
+            if attempt % 20 == 0:
+                logger.warning(
+                    "Still waiting on redis conversation lock for %s "
+                    "(elapsed=%.1fs of %.1fs)",
+                    conversation_id,
+                    elapsed,
+                    max_wait,
+                )
+            await asyncio.sleep(delay)
+            delay = min(delay * 1.5, 0.5)
         yield
     finally:
         try:
@@ -200,12 +223,33 @@ async def _dynamo_conversation_lock(
                     code,
                 )
 
+    # AUDIT-memory HIGH-05: same bounded wait + backoff as the Redis path.
+    dyn_max_wait = max(ttl_sec + 5, 60)
+    dyn_start = asyncio.get_event_loop().time()
+    dyn_delay = 0.05
+    dyn_attempt = 0
     try:
         while True:
             ok = await asyncio.to_thread(try_acquire)
             if ok:
                 break
-            await asyncio.sleep(0.05)
+            elapsed = asyncio.get_event_loop().time() - dyn_start
+            if elapsed >= dyn_max_wait:
+                raise TimeoutError(
+                    f"DynamoDB conversation lock for {conversation_id} not "
+                    f"acquired within {dyn_max_wait}s"
+                )
+            dyn_attempt += 1
+            if dyn_attempt % 20 == 0:
+                logger.warning(
+                    "Still waiting on DynamoDB conversation lock for %s "
+                    "(elapsed=%.1fs of %.1fs)",
+                    conversation_id,
+                    elapsed,
+                    dyn_max_wait,
+                )
+            await asyncio.sleep(dyn_delay)
+            dyn_delay = min(dyn_delay * 1.5, 0.5)
         yield
     finally:
         await asyncio.to_thread(release)

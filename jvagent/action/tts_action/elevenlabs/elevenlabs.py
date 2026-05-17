@@ -33,18 +33,25 @@ class ElevenLabsTTSAction(BaseTTSAction):
 
         audio = None
         try:
+            # The ElevenLabs SDK is synchronous; run the blocking calls in a
+            # worker thread so the event loop is not stalled.
+            # AUDIT-actions XC-3.
+            import asyncio
+
             from elevenlabs.client import ElevenLabs
 
             client = ElevenLabs(api_key=api_key)
             voice_id = await self._get_voice_id(self.voice)
-            response = client.text_to_speech.convert(
-                voice_id=voice_id,
-                text=text,
-                model_id=self.model,
-            )
 
-            if response:
-                audio = b"".join(response)
+            def _convert() -> bytes:
+                response = client.text_to_speech.convert(
+                    voice_id=voice_id,
+                    text=text,
+                    model_id=self.model,
+                )
+                return b"".join(response) if response else b""
+
+            audio = await asyncio.to_thread(_convert)
 
         except Exception as e:
             logger.error("ElevenLabs API error: %s", e, exc_info=True)
@@ -95,10 +102,13 @@ class ElevenLabsTTSAction(BaseTTSAction):
             return []
 
         try:
+            import asyncio
+
             from elevenlabs.client import ElevenLabs
 
             client = ElevenLabs(api_key=api_key)
-            result = client.voices.get_all()
+            # SDK call is synchronous; offload to a thread. AUDIT-actions XC-3.
+            result = await asyncio.to_thread(client.voices.get_all)
 
             if result:
                 return [
@@ -123,10 +133,13 @@ class ElevenLabsTTSAction(BaseTTSAction):
             return None
 
         try:
+            import asyncio
+
             from elevenlabs.client import ElevenLabs
 
             client = ElevenLabs(api_key=api_key)
-            voices = client.voices.get_all().voices
+            # SDK call is synchronous; offload to a thread. AUDIT-actions XC-3.
+            voices = (await asyncio.to_thread(client.voices.get_all)).voices
 
             name_lower = name.strip().lower()
 
@@ -153,10 +166,13 @@ class ElevenLabsTTSAction(BaseTTSAction):
             return []
 
         try:
+            import asyncio
+
             from elevenlabs.client import ElevenLabs
 
             client = ElevenLabs(api_key=api_key)
-            result = client.models.get_all()
+            # SDK call is synchronous; offload to a thread. AUDIT-actions XC-3.
+            result = await asyncio.to_thread(client.models.get_all)
 
             if result:
                 return [

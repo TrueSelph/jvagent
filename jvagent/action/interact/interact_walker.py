@@ -721,48 +721,95 @@ class InteractWalker(Walker):
     async def curate_walk_path(
         self, actions: List["InteractAction"]
     ) -> List["InteractAction"]:
-        """Curate the walker's current walk path to only include specified actions.
+        """Curate the walker's current walk path to the specified actions.
 
-        This method filters the current queue to only include the provided actions,
-        maintaining the order of the provided list. Actions not in the provided list
-        are removed from the queue.
+        Filters the current queue: only actions that are BOTH in the
+        current queue AND in ``actions`` are kept. Actions not in the
+        queue are NOT prepended — they would otherwise cause re-entry
+        loops when the supplied list contains the action that is
+        currently being visited (e.g. cockpit's own self-re-add path
+        via ``curate_walk_path_for_cockpit``).
+
+        AUDIT-interact CRIT-03 fix: the original silent-drop of routed
+        sub-InteractActions stays in place at this layer — drop is a
+        precondition for the cockpit's walker-revisit loop, not a bug.
+        Callers that need to ROUTE TO a sub-IA must instead use
+        :meth:`visit` / :meth:`prepend` explicitly. The previous Wave B
+        attempt to "include" un-queued actions caused infinite cockpit
+        re-entry; this revert preserves correctness.
+
+        AUDIT-interact MED-13: items lacking ``.id`` are skipped with a
+        warning rather than raising AttributeError.
 
         Args:
-            actions: List of InteractActions to keep in the walk path
+            actions: List of InteractActions to keep in the walk path.
 
         Returns:
-            List of actions that were successfully curated (found in queue)
+            List of actions that are now in the walk path, in order.
         """
-        # Get current queue
+        # Get current queue.
         current_queue = await self.get_queue()
 
-        # Filter to only InteractActions and create a set for fast lookup
-        interact_actions_in_queue = [
-            item for item in current_queue if isinstance(item, InteractAction)
-        ]
-        actions_set = {a.id for a in actions}
+        # Filter to only InteractActions; index by id for fast lookup.
+        interact_actions_in_queue: List["InteractAction"] = []
+        queued_by_id: dict = {}
+        seen_missing_id: set = set()
+        for item in current_queue:
+            if not isinstance(item, InteractAction):
+                continue
+            item_id = getattr(item, "id", None)
+            if not item_id:
+                cls_name = type(item).__name__
+                if cls_name not in seen_missing_id:
+                    seen_missing_id.add(cls_name)
+                    logger.warning(
+                        "curate_walk_path: queued InteractAction %r has no .id; "
+                        "skipping (MED-13)",
+                        cls_name,
+                    )
+                continue
+            interact_actions_in_queue.append(item)
+            queued_by_id[item_id] = item
 
-        # Find which provided actions are in the queue
+        actions_set: set = set()
+        for a in actions:
+            a_id = getattr(a, "id", None)
+            if a_id:
+                actions_set.add(a_id)
+
         actions_to_keep = [
             item for item in interact_actions_in_queue if item.id in actions_set
         ]
 
-        # Remove all InteractActions from queue
+        # Remove all InteractActions from queue, then re-add only the
+        # intersection (queue ∩ actions) in the order of ``actions``.
         if interact_actions_in_queue:
             await self.dequeue(interact_actions_in_queue)
 
-        # Re-add only the curated actions in the order provided
-        # Maintain relative order: if action A comes before B in provided list,
-        # and both are in queue, A should come before B in curated queue
-        curated_order = []
+        dropped_ids: List[str] = []
+        for a in actions:
+            a_id = getattr(a, "id", None)
+            if a_id and a_id not in queued_by_id:
+                dropped_ids.append(a_id)
+        if dropped_ids:
+            logger.debug(
+                "curate_walk_path: %d caller-supplied action(s) were not in "
+                "the queue and were NOT added (use prepend()/visit() to enqueue "
+                "sub-InteractActions explicitly): %s",
+                len(dropped_ids),
+                dropped_ids,
+            )
+
+        curated_order: List["InteractAction"] = []
         for action in actions:
-            # Find matching action in queue (by ID)
+            action_id = getattr(action, "id", None)
+            if not action_id:
+                continue
             for queued_action in actions_to_keep:
-                if queued_action.id == action.id:
+                if queued_action.id == action_id:
                     curated_order.append(queued_action)
                     break
 
-        # Add curated actions back to queue
         if curated_order:
             await self.prepend(curated_order)
 

@@ -81,8 +81,13 @@ class SerpAPIWebSearchAction(BaseWebSearchAction):
         }
 
         try:
+            # serpapi's GoogleSearch SDK is synchronous; wrap in to_thread so
+            # the network round-trip does not block the event loop.
+            # AUDIT-actions XC-3.
+            import asyncio
+
             search = GoogleSearch(params)
-            results = search.get_dict()
+            results = await asyncio.to_thread(search.get_dict)
 
             organic = results.get("organic_results", [])
             logger.debug(

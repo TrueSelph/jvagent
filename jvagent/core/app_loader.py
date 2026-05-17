@@ -316,7 +316,7 @@ class AppLoader:
                     await app.save()
                     logger.debug(f"Updated App node (merge): {app.id}")
 
-                App._cached_app = app
+                App._set_cached_app(app)
                 return app
 
             # No App found - create new

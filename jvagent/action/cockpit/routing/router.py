@@ -451,12 +451,20 @@ class CockpitRouter:
             active_fp = ",".join(sorted(parts))
         except Exception:
             active_fp = ""
+        # Include user_id so the cache cannot bleed routing decisions
+        # across users (AUDIT-interact-cockpit HIGH-04).
+        user_id = ""
+        try:
+            user_id = str(getattr(self._visitor, "user_id", "") or "")
+        except Exception:
+            user_id = ""
         return interact_router_cache_key(
             conversation_id=conv_id,
             utterance=utterance,
             last_interaction_ids=(),
             buffer_fingerprint="",
             active_task_fingerprint=active_fp,
+            user_id=user_id,
         )
 
     def _restore_cached_routing_result(
