@@ -88,24 +88,40 @@ class Memory(Node):
         app = await App.get()
         now = await app.now() if app else datetime.now(timezone.utc)
 
-        user = await self.node(node=User, user_id=user_id)
+        # AUDIT-memory HIGH-01/HIGH-02: scope by BOTH memory_id and user_id
+        # on the graph traversal, not just user_id. Without the memory_id
+        # filter, a connected User from a different Memory (legacy data,
+        # cross-context contamination) would silently win.
+        user = await self.node(node=User, memory_id=self.id, user_id=user_id)
         if user:
-            if user.memory_id and user.memory_id != self.id:
-                user = None
-            else:
-                user.last_seen = now
-                await user.save()
-                return user
+            user.last_seen = now
+            await user.save()
+            return user
 
+        # Reconnect-on-create fallback: search the compound index. ALWAYS
+        # scope by ``memory_id`` AND ``user_id`` together — the unique index
+        # at user.py:16-24 covers this pair, but only when both fields are
+        # part of the query. AUDIT-memory HIGH-01.
         scoped = await User.find_one(
             {"context.memory_id": self.id, "context.user_id": user_id}
         )
         if scoped:
-            if not await self.is_connected_to(scoped):
-                await self.connect(scoped)
-            scoped.last_seen = now
-            await scoped.save()
-            return scoped
+            # Defensive double-check before connecting — memory_id MUST
+            # match self; index should make this redundant, but lock-bypass
+            # paths could in theory return a stale match.
+            if getattr(scoped, "memory_id", None) != self.id:
+                logger.warning(
+                    "_get_user_unlocked: find_one returned User with "
+                    "mismatched memory_id (got=%s expected=%s); ignoring",
+                    getattr(scoped, "memory_id", None),
+                    self.id,
+                )
+            else:
+                if not await self.is_connected_to(scoped):
+                    await self.connect(scoped)
+                scoped.last_seen = now
+                await scoped.save()
+                return scoped
 
         if create_if_missing:
             user = await User.create(
@@ -171,16 +187,40 @@ class Memory(Node):
     async def users_scoped_to_this_memory(self) -> List["User"]:
         """Connected users that belong to this Memory root.
 
-        Includes legacy users with empty ``memory_id``. Excludes users whose
-        ``memory_id`` points at another Memory (stale cross-edges).
+        AUDIT-memory MED-04: when ``JVAGENT_STRICT_USER_MEMORY_ID=true``
+        (recommended for multi-tenant deployments), users with an empty
+        ``memory_id`` are NOT included — they cannot be proven to belong
+        to this Memory without an explicit owner.  Default behaviour
+        preserves backward compatibility (include empty memory_id) so
+        single-tenant tests and legacy graphs still see their users.
         """
+        import os
+
         from jvagent.memory.user import User
 
-        return [
-            u
-            for u in await self.nodes(node=User)
-            if not u.memory_id or u.memory_id == self.id
-        ]
+        strict = (
+            os.environ.get("JVAGENT_STRICT_USER_MEMORY_ID", "false").strip().lower()
+            in {"true", "1", "yes", "on"}
+        )
+
+        connected = await self.nodes(node=User)
+        result: List["User"] = []
+        for u in connected:
+            mid = getattr(u, "memory_id", "") or ""
+            if mid == self.id:
+                result.append(u)
+                continue
+            if not mid:
+                if strict:
+                    logger.warning(
+                        "users_scoped_to_this_memory: skipping legacy user %s with "
+                        "empty memory_id (JVAGENT_STRICT_USER_MEMORY_ID=true)",
+                        getattr(u, "id", "unknown"),
+                    )
+                    continue
+                result.append(u)
+            # else: foreign memory_id — skip silently (was already excluded).
+        return result
 
     async def get_users(self) -> List["User"]:
         """Get all Users under this Memory (edge + ``memory_id`` scope).
@@ -587,6 +627,26 @@ class Memory(Node):
         if conversation_id:
             conversation = await Conversation.get(conversation_id)
             if not conversation:
+                return None
+            # Ownership check: the conversation MUST belong to a User
+            # connected to this Memory node. Without this, an admin could
+            # delete conversations belonging to another Memory by supplying
+            # any conversation_id. AUDIT-memory CRIT-03.
+            owners = await conversation.nodes(node=User, direction="in")
+            scoped_users = {
+                u.id for u in await self.users_scoped_to_this_memory()
+            }
+            if not any(getattr(o, "id", None) in scoped_users for o in owners):
+                logger.warning(
+                    "purge_conversations: refused cross-memory purge",
+                    extra={
+                        "details": {
+                            "conversation_id": conversation_id,
+                            "memory_id": getattr(self, "id", None),
+                            "owner_ids": [getattr(o, "id", None) for o in owners],
+                        }
+                    },
+                )
                 return None
             conversations_to_purge = [conversation]
         elif user_id:

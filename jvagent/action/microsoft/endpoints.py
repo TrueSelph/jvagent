@@ -257,9 +257,20 @@ async def microsoft_oauth_callback(code: str, state: str) -> HTMLResponse:
     if not code or not state:
         return _oauth_error_html("Missing code or state.", status_code=400)
 
-    parts = state.split(":", 1)
-    action_id = parts[0]
-    code_verifier = parts[1] if len(parts) > 1 else None
+    from jvagent.action.utils.oauth_state import consume_oauth_state
+
+    record = await consume_oauth_state(state, provider="microsoft")
+    if record is None:
+        logger.warning(
+            "Microsoft OAuth callback rejected: invalid or expired state"
+        )
+        return _oauth_error_html(
+            "OAuth state is invalid, expired, or already used.",
+            status_code=400,
+        )
+
+    action_id = record.action_id
+    code_verifier = record.code_verifier or None
 
     action = await MicrosoftAction.get(action_id)
     if not action or not isinstance(action, MicrosoftAction):

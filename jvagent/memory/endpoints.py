@@ -48,9 +48,22 @@ def _user_context_matches(user: User, filter_query: Dict[str, Any]) -> bool:
                 if val == expected["$ne"]:
                     return False
             elif "$regex" in expected:
+                # AUDIT-memory MED-11: validate the supplied pattern is a
+                # string of reasonable length and compiles. Otherwise a
+                # caller can DoS the endpoint with catastrophic-backtracking
+                # patterns (ReDoS) or feed in a non-string and crash.
                 import re
 
-                if not isinstance(val, str) or not re.search(expected["$regex"], val):
+                pattern = expected.get("$regex")
+                if not isinstance(pattern, str) or not pattern:
+                    return False
+                if len(pattern) > 1024:
+                    return False
+                try:
+                    compiled = re.compile(pattern)
+                except re.error:
+                    return False
+                if not isinstance(val, str) or not compiled.search(val):
                     return False
             elif "$exists" in expected:
                 exists = val is not None
@@ -432,6 +445,7 @@ async def repair_memory(
 async def get_my_memory(
     agent_id: str,
     user_id: Optional[str] = None,
+    current_user: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Get the current user's long-term memory for an agent.
 
@@ -440,12 +454,31 @@ async def get_my_memory(
 
     **Args:**
     - `agent_id`: Agent node ID
-    - `user_id`: Authenticated caller user identifier (injected by auth middleware)
+    - `user_id`: Caller user identifier (jvspatial-injected from
+      ``request.state.user``; stripped from FastAPI's public signature by
+      ``wrap_function_with_params``)
+    - `current_user`: Authenticated user object (jvspatial-injected). Used as
+      the authoritative source when both are present — defense-in-depth so
+      this endpoint is robust even if ``user_id`` were ever exposed to client
+      input by a routing-layer regression.
 
     **Returns:**
     - `memory`: { category_key: { title, content, updated_at } }
     """
-    if not user_id:
+    # Prefer current_user (authenticated object) over user_id (string) so a
+    # leak in the routing layer cannot drive cross-user reads.
+    caller_id: Optional[str] = None
+    if current_user is not None:
+        candidate = getattr(current_user, "id", None) or getattr(
+            current_user, "user_id", None
+        )
+        if candidate is None and isinstance(current_user, dict):
+            candidate = current_user.get("id") or current_user.get("user_id")
+        if candidate is not None:
+            caller_id = str(candidate)
+    if caller_id is None:
+        caller_id = user_id
+    if not caller_id:
         return {"memory": {}}
 
     agent = await Agent.get(agent_id)
@@ -456,7 +489,7 @@ async def get_my_memory(
     if not memory_manager:
         raise ResourceNotFoundError(f"Memory not found for agent '{agent_id}'")
 
-    user = await memory_manager.get_user(user_id)
+    user = await memory_manager.get_user(caller_id)
     if not user:
         return {"memory": {}}
 

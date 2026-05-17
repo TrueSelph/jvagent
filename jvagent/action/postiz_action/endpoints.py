@@ -1,24 +1,43 @@
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from jvspatial.api import endpoint
+
+from jvagent.action.base import Action
 
 from .postiz_action import PostizAction
 
 
+async def _resolve_action(action_id: str) -> Optional[PostizAction]:
+    """Resolve a PostizAction by its exact node id.
+
+    Scoping by action_id (instead of the previous
+    ``find_one({"context.enabled": True})``) avoids the cross-tenant leak
+    where the first enabled PostizAction across all agents was returned.
+    See AUDIT-actions XC-12.
+    """
+    node = await Action.get(action_id)
+    if not isinstance(node, PostizAction) or not node.enabled:
+        return None
+    return node
+
+
 @endpoint(
-    "/postiz/auth/{provider}",
+    "/actions/{action_id}/postiz/auth/{provider}",
     methods=["GET"],
     auth=True,
     operation_id="get_postiz_auth_url",
     tags=["Postiz"],
 )
-async def get_postiz_auth_url(provider: str) -> Dict[str, Any]:
+async def get_postiz_auth_url(action_id: str, provider: str) -> Dict[str, Any]:
     """Get the Postiz OAuth URL for a specific social media provider.
 
-    This endpoint initiates the programmatic authentication flow. It returns
-    a URL that the user must visit to complete the OAuth consent process.
+    Args:
+        action_id: ID of the PostizAction node (per-agent scope).
+        provider: Social media platform identifier.
+
+    Returns the URL the user must visit to complete the OAuth consent.
     """
-    action = await PostizAction.find_one({"context.enabled": True})
+    action = await _resolve_action(action_id)
     if not action:
         return {"error": "PostizAction not found or disabled"}
 
@@ -30,19 +49,19 @@ async def get_postiz_auth_url(provider: str) -> Dict[str, Any]:
 
 
 @endpoint(
-    "/postiz/providers",
+    "/actions/{action_id}/postiz/providers",
     methods=["GET"],
     auth=True,
     operation_id="get_postiz_providers",
     tags=["Postiz"],
 )
-async def get_postiz_providers() -> Dict[str, Any]:
-    """Get a list of all social media providers supported by the Postiz instance.
+async def get_postiz_providers(action_id: str) -> Dict[str, Any]:
+    """Get the social media providers supported by this PostizAction.
 
-    This returns all platforms compatible with Postiz (e.g., x, linkedin, facebook),
-    allowing for an informed selection before initiating the authentication flow.
+    Args:
+        action_id: ID of the PostizAction node (per-agent scope).
     """
-    action = await PostizAction.find_one({"context.enabled": True})
+    action = await _resolve_action(action_id)
     if not action:
         return {"error": "PostizAction not found or disabled"}
 

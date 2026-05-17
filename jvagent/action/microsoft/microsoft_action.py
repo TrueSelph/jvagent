@@ -92,22 +92,34 @@ class MicrosoftAction(Action):
         await self._apply_env_defaults()
 
     async def get_authorization_url(self, code_verifier: Optional[str] = None) -> str:
+        """Build the Microsoft / Entra ID authorization URL.
+
+        The ``state`` parameter is an opaque CSRF token from
+        :func:`jvagent.action.utils.oauth_state.create_oauth_state`. The
+        ``code_verifier`` is persisted server-side and looked up at callback
+        time — never sent to the IdP via the browser. AUDIT-actions XC-2.
+        """
+        from jvagent.action.utils.oauth_state import create_oauth_state
+
         cid, _ = self._require_client_config()
         if not self.SCOPES:
             raise ValueError(
                 f"{self.__class__.__name__} must define SCOPES for Microsoft Graph delegated auth."
             )
         scope_str = " ".join(self.SCOPES)
-        state = self.id
-        if code_verifier:
-            state = f"{self.id}:{code_verifier}"
+        state_token = await create_oauth_state(
+            action_id=self.id,
+            provider="microsoft",
+            code_verifier=code_verifier or "",
+            redirect_uri=self.redirect_uri,
+        )
         params: Dict[str, str] = {
             "client_id": cid,
             "response_type": "code",
             "redirect_uri": self.redirect_uri,
             "response_mode": "query",
             "scope": scope_str,
-            "state": state,
+            "state": state_token,
             "prompt": "consent",
         }
         if code_verifier:

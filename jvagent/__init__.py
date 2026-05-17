@@ -14,7 +14,14 @@ Public, semver-tracked exports live here. Anything reached via
 between minor versions.
 """
 
-from jvagent import embed
-from jvagent.version import __version__
+# Install the Logger subclass that accepts ``details=`` as a kwarg before
+# any submodule's ``logging.getLogger(__name__)`` call runs. See
+# ``jvagent/_logging_compat.py`` and AUDIT-INDEX §2.2.
+from jvagent._logging_compat import install as _install_logging_compat
+
+_install_logging_compat()
+
+from jvagent import embed  # noqa: E402  -- must follow logging shim install
+from jvagent.version import __version__  # noqa: E402
 
 __all__ = ["__version__", "embed"]

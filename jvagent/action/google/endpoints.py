@@ -302,10 +302,20 @@ async def google_oauth_callback(code: str, state: str) -> HTMLResponse:
     if not code or not state:
         return _oauth_error_html("Missing code or state.", status_code=400)
 
-    parts = state.split(":", 1)
-    action_id = parts[0]
-    code_verifier = parts[1] if len(parts) > 1 else None
+    from jvagent.action.utils.oauth_state import consume_oauth_state
 
+    record = await consume_oauth_state(state, provider="google")
+    if record is None:
+        # No row, expired, wrong provider, or already consumed — refuse.
+        # The state token itself MUST NOT be logged (it's a CSRF secret).
+        logger.warning("Google OAuth callback rejected: invalid or expired state")
+        return _oauth_error_html(
+            "OAuth state is invalid, expired, or already used.",
+            status_code=400,
+        )
+
+    action_id = record.action_id
+    code_verifier = record.code_verifier or None
     logger.info("Processing Google OAuth callback for action: %s", action_id)
 
     action = await GoogleAction.get(action_id)

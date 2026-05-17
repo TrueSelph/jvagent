@@ -10,17 +10,41 @@ from jvspatial import create_task
 
 logger = logging.getLogger(__name__)
 
-# Reserved IP blocks that outbound webhooks must not target
-_SSRF_BLOCKED_NETWORKS = [
-    ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
-    ipaddress.ip_network("169.254.0.0/16"),
-    ipaddress.ip_network("::1/128"),
-    ipaddress.ip_network("fc00::/7"),
-    ipaddress.ip_network("fe80::/10"),
-]
+# Outbound webhook scheme allow-list. Anything else (file://, gopher://, etc.)
+# is rejected before DNS resolution. AUDIT-core C-4.
+_ALLOWED_WEBHOOK_SCHEMES = frozenset({"http", "https"})
+
+
+def _is_unsafe_ip(ip: ipaddress._BaseAddress) -> bool:
+    """Return True for any IP that must not be a webhook target.
+
+    Uses ipaddress' own classification (covers RFC1918, link-local, loopback,
+    multicast, reserved, unspecified, and IPv6 ULA/link-local) rather than a
+    hand-rolled CIDR list. AUDIT-core C-4(a)+(b).
+    """
+    if (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    ):
+        return True
+    # Catch IPv4-mapped IPv6 (::ffff:127.0.0.1) by checking the mapped IPv4
+    # form against the same classifiers.
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        mapped = ip.ipv4_mapped
+        if (
+            mapped.is_private
+            or mapped.is_loopback
+            or mapped.is_link_local
+            or mapped.is_multicast
+            or mapped.is_reserved
+            or mapped.is_unspecified
+        ):
+            return True
+    return False
 
 
 def _resolve_and_validate(webhook_url: str) -> Tuple[str, List[str]]:
@@ -30,11 +54,37 @@ def _resolve_and_validate(webhook_url: str) -> Tuple[str, List[str]]:
     httpx connection to those exact addresses, defending against DNS
     rebinding (the resolver can't change between validation and connect
     if the connect uses the IP we already verified).
+
+    Callers MUST NOT loop-retry against the same URL with fresh resolutions:
+    an attacker who controls the target DNS can rotate records between
+    attempts. Retries must reuse the validated IP list from this call.
+    AUDIT-core C-4(d).
     """
     parsed = urlparse(webhook_url)
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in _ALLOWED_WEBHOOK_SCHEMES:
+        raise ValueError(
+            f"Webhook URL scheme {scheme!r} is not allowed (must be one of "
+            f"{sorted(_ALLOWED_WEBHOOK_SCHEMES)}): {webhook_url}"
+        )
+
     hostname = (parsed.hostname or "").strip()
     if not hostname:
         raise ValueError(f"Webhook URL has no resolvable host: {webhook_url}")
+
+    # If the hostname is itself an IP literal, check it BEFORE DNS resolution
+    # so an attacker can't bypass via `http://10.0.0.1` style URLs.
+    # AUDIT-core C-4(c).
+    try:
+        literal_ip = ipaddress.ip_address(hostname.strip("[]"))
+    except ValueError:
+        literal_ip = None
+    if literal_ip is not None and _is_unsafe_ip(literal_ip):
+        raise ValueError(
+            f"Webhook URL hostname is a blocked IP literal "
+            f"({literal_ip}): {webhook_url}"
+        )
+
     try:
         addrs = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
     except socket.gaierror as e:
@@ -47,12 +97,10 @@ def _resolve_and_validate(webhook_url: str) -> Tuple[str, List[str]]:
             ip = ipaddress.ip_address(ip_str)
         except ValueError:
             continue
-        for net in _SSRF_BLOCKED_NETWORKS:
-            if ip in net:
-                raise ValueError(
-                    f"Webhook URL resolves to blocked address range "
-                    f"({ip} in {net}): {webhook_url}"
-                )
+        if _is_unsafe_ip(ip):
+            raise ValueError(
+                f"Webhook URL resolves to blocked address ({ip}): {webhook_url}"
+            )
         safe.append(ip_str)
 
     if not safe:
