@@ -274,7 +274,6 @@ class Conversation(DeferredSaveMixin, Node):
         self.last_interaction_id = interaction.id
         self.interaction_count += 1
         self.last_interaction_at = now
-        await self.save()
 
         agent = await self.get_agent()
         if (
@@ -284,7 +283,10 @@ class Conversation(DeferredSaveMixin, Node):
             and self.interaction_limit != agent.interaction_limit
         ):
             self.interaction_limit = agent.interaction_limit
-            await self.save()
+
+        # AUDIT-memory HIGH-10: a single save() covers all the field
+        # changes above instead of two back-to-back writes.
+        await self.save()
 
         if (
             self.interaction_limit > 0
@@ -312,15 +314,30 @@ class Conversation(DeferredSaveMixin, Node):
             return 0
 
         # Cap work per call so append latency stays bounded when far over limit
-        # (e.g. after lowering interaction_limit). Further pruning happens on later appends
-        # or via Memory.apply_interaction_limit_pruning_for_connected_users.
+        # (e.g. after lowering interaction_limit). Further pruning happens on
+        # later appends or via Memory.apply_interaction_limit_pruning_for_connected_users.
+        # AUDIT-memory MED-02: explicitly reject zero/negative env values so a
+        # misconfigured ``JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL=-1`` does
+        # not silently disable pruning (the previous ``max(1, …)`` swallowed
+        # it without a log).
+        raw_env = os.environ.get("JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL", "100")
         try:
-            max_prune = max(
-                1,
-                int(os.environ.get("JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL", "100")),
-            )
+            parsed_cap = int(raw_env)
         except ValueError:
-            max_prune = 100
+            logger.warning(
+                "JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL is not an int (%r); "
+                "falling back to default 100",
+                raw_env,
+            )
+            parsed_cap = 100
+        if parsed_cap < 1:
+            logger.warning(
+                "JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL must be >= 1 (got %d); "
+                "clamping to 1",
+                parsed_cap,
+            )
+            parsed_cap = 1
+        max_prune = parsed_cap
 
         # Start from the first interaction and remove the oldest ones
         current = await self.get_first_interaction()

@@ -1,7 +1,18 @@
 """Agent node and CRUD operations."""
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Type, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Dict,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+)
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
@@ -59,15 +70,21 @@ class Agent(Node):
     # Runtime instances (private, transient)
     _response_bus: Any = attribute(private=True, default=None)
 
+    # One-shot guard so the cache-bypass warning fires once per kwarg-name
+    # combo, not on every call. AUDIT-core H-1.
+    _bypass_warning_seen: ClassVar[Set[Tuple[str, ...]]] = set()
+
     @classmethod
     async def get(
         cls: Type[TAgent], agent_id: Optional[str] = None, **kwargs: Any
     ) -> Optional[TAgent]:
         """Get an Agent node by ID, with caching.
 
-        When *agent_id* is provided, delegates through the cache layer for
-        reduced database I/O. Falls back to the parent ``Node.get()`` for
-        any additional keyword arguments.
+        When *agent_id* is provided alone, delegates through the cache for
+        reduced database I/O. Passing **any** keyword arg alongside
+        ``agent_id`` bypasses the cache and hits the DB directly; a debug
+        log fires once per kwarg-name combo so action authors notice the
+        full DB cost. AUDIT-core H-1.
 
         Args:
             agent_id: Node ID to fetch (cached).
@@ -80,6 +97,15 @@ class Agent(Node):
             from jvagent.core.cache import cache_manager
 
             return await cache_manager.get_agent(agent_id)  # type: ignore[return-value]
+        if agent_id is not None and kwargs:
+            seen_key = tuple(sorted(kwargs.keys()))
+            if seen_key not in cls._bypass_warning_seen:
+                cls._bypass_warning_seen.add(seen_key)
+                logger.debug(
+                    "Agent.get(agent_id=..., %s=...) bypasses the agent cache; "
+                    "pass only agent_id for cached lookups (AUDIT-core H-1)",
+                    ", ".join(seen_key),
+                )
         return await super().get(agent_id, **kwargs)  # type: ignore[return-value]
 
     # =========================================================================
@@ -216,12 +242,21 @@ class Agent(Node):
             operations fail.
         """
         result = await super().save(*args, **kwargs)
-        # Invalidate cache after save to ensure consistency
+        # Invalidate ALL agent-scoped caches after save (AUDIT-core H-2).
+        # Toggling ``enabled`` or other action-affecting fields previously
+        # left the action cache and the class-name → action-id index stale
+        # for up to ``action_cache_ttl`` (60s default).
         try:
-            from jvagent.core.cache import invalidate_agent_cache
+            from jvagent.core.cache import (
+                invalidate_action_cache,
+                invalidate_action_type_index,
+                invalidate_agent_cache,
+            )
 
             await invalidate_agent_cache(self.id)
+            await invalidate_action_cache(self.id)
+            await invalidate_action_type_index(self.id)
         except Exception as e:
-            # Log but don't fail - save already succeeded
-            logger.warning(f"Failed to invalidate agent cache for {self.id}: {e}")
+            # Log but don't fail — save already succeeded.
+            logger.warning(f"Failed to invalidate agent caches for {self.id}: {e}")
         return result

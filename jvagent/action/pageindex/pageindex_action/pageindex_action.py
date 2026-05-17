@@ -635,7 +635,10 @@ class PageIndexAction(Action):
         base = metadata_filter or self.metadata_filter
         access_control_action = await self.get_action("AccessControlAction")
         if not access_control_action:
-            logger.warning("access_control_action is not available")
+            logger.debug(
+                "AccessControlAction not registered; PageIndexAction.search "
+                "proceeds without group-based access filtering"
+            )
             return base
 
         if not access_control_action.user_groups:
@@ -654,14 +657,17 @@ class PageIndexAction(Action):
             for group, users in page_index_groups.items()
             if visitor.user_id in users or visitor.session_id in users
         ]
-        if matched_groups:
-            existing = mf.get("access")
-            if isinstance(existing, list):
-                existing.extend(matched_groups)
-            elif existing is not None:
-                mf["access"] = [existing, *matched_groups]
-            else:
-                mf["access"] = matched_groups
+        if not matched_groups:
+            mf["access"] = []
+            return mf
+
+        existing = mf.get("access")
+        if isinstance(existing, list):
+            existing.extend(matched_groups)
+        elif existing is not None:
+            mf["access"] = [existing, *matched_groups]
+        else:
+            mf["access"] = matched_groups
         return mf
 
     def _resolve_include_references(self) -> bool:

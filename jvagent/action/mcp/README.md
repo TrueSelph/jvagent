@@ -114,3 +114,29 @@ Use `result.text` and optionally `result.structured` or `result.error_kind` (e.g
 - **Tool list**: Cached per server session; invalidated on reconnect/disconnect. No TTL or live refresh during a session.
 - **Stdio**: One long-lived subprocess session per configured server.
 - **Streamable HTTP**: One shared reusable session per configured server.
+
+## Security model
+
+> **`npx`-based stdio servers execute arbitrary npm packages with the
+> running process's privileges.** There is no signature check on the npm
+> package, no sandbox boundary beyond the OS-level filesystem allowlist
+> set by `@modelcontextprotocol/server-filesystem`, and no out-of-the-box
+> verification that the package's published version matches an expected
+> digest. AUDIT-actions MED.
+>
+> If you ship MCPAction in a multi-tenant deployment:
+>
+> 1. **Pin** every npm package to an exact version (no `latest`).
+> 2. **Pre-bake** packages into the container image so cold starts do
+>    not pull from the npm registry at runtime.
+> 3. **Run agents as a low-privilege user** with no write access outside
+>    the configured workspace root.
+> 4. **Prefer `jvspatial_fs`** (`type: jvspatial_fs`) for filesystem
+>    access — it stays in-process, no `npx` dependency, and inherits
+>    `App.get_file_interface()` permissions.
+> 5. **Allowlist `command` values** at deploy time. Reject any agent
+>    config whose stdio `command` is not in the allowlist before the
+>    bootstrap loader saves the agent.
+>
+> When in doubt, use Streamable HTTP MCP servers running in their own
+> network namespace (separate container, separate IAM identity).

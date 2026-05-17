@@ -177,7 +177,19 @@ def initialize_rate_limiter(
 def extract_client_ip(request) -> Optional[str]:
     """Extract client IP address from request headers.
 
-    Handles proxy headers in order:
+    Trust order is configurable via ``JVAGENT_TRUST_PROXY_HEADERS`` env:
+
+    - ``true`` / ``1`` (default for backward compatibility): trust the
+      proxy chain headers (X-Forwarded-For, X-Real-IP, CF-Connecting-IP).
+      Use this only when jvagent sits behind a trusted reverse proxy
+      that overwrites these headers — otherwise a client-supplied
+      ``X-Forwarded-For: 1.2.3.4`` will spoof every per-IP rate-limit
+      bucket. AUDIT-interact MED-12.
+    - ``false`` / ``0``: ignore client-supplied proxy headers; always
+      use ``request.client.host``. Safer default for direct-internet
+      deployments.
+
+    Order when proxy headers are trusted:
     1. X-Forwarded-For (first IP in comma-separated list)
     2. X-Real-IP
     3. CF-Connecting-IP (Cloudflare)
@@ -189,6 +201,17 @@ def extract_client_ip(request) -> Optional[str]:
     Returns:
         IP address string or None if unavailable
     """
+    import os
+
+    trust_proxy = os.environ.get(
+        "JVAGENT_TRUST_PROXY_HEADERS", "true"
+    ).strip().lower() not in {"false", "0", "no", "off"}
+
+    if not trust_proxy:
+        client = getattr(request, "client", None)
+        host = getattr(client, "host", None) if client else None
+        return host.strip() if isinstance(host, str) and host.strip() else None
+
     # Check X-Forwarded-For header (first IP in comma-separated list)
     x_forwarded_for = request.headers.get("x-forwarded-for")
     if x_forwarded_for:

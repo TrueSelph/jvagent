@@ -171,12 +171,26 @@ async def repair_agent_graph(
                     result["message"] = "Another worker is running repair"
                     result["status"] = "in_progress"
                     result["phase"] = phase
+                    rs_started = repair_state.started_at
                     result["started_at"] = (
-                        repair_state.started_at.isoformat()
-                        if repair_state.started_at
+                        rs_started.isoformat()
+                        if rs_started
                         else started_at.isoformat()
                     )
-                    result["elapsed_seconds"] = 0.0
+                    # AUDIT-core H-7: report the actual elapsed time of the
+                    # in-flight repair (caller previously got 0.0, which
+                    # made observability misread "no progress" for every
+                    # contended request).
+                    try:
+                        anchor = rs_started or started_at
+                        if anchor.tzinfo is None:
+                            anchor = anchor.replace(tzinfo=timezone.utc)
+                        now = datetime.now(timezone.utc)
+                        result["elapsed_seconds"] = max(
+                            0.0, (now - anchor).total_seconds()
+                        )
+                    except Exception:
+                        result["elapsed_seconds"] = 0.0
                     return result
                 # No state found; safe to proceed (lock may have just expired).
 

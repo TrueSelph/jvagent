@@ -180,7 +180,25 @@ async def filter_tool_registry_by_access(
     user_id: Optional[str],
     channel: str,
 ) -> int:
-    """Remove tools the user can't access from ``registry``. Returns count removed."""
+    """Remove tools the user can't access from ``registry``.
+
+    AUDIT-interact MED-22: when no AccessControlAction is registered on
+    the agent (or ``agent`` itself is None), this returns 0 with no
+    filtering — the cockpit runs with the full unfiltered tool set.
+    Log a warning so operators notice they're shipping without access
+    enforcement, instead of failing silently.
+
+    Returns count removed.
+    """
+    if agent is None:
+        logger.warning(
+            "filter_tool_registry_by_access: agent is None — running without "
+            "per-user access filtering. Set up an AccessControlAction or pass "
+            "the agent through to enforce tool-level access (user=%s channel=%s)",
+            user_id,
+            channel,
+        )
+        return 0
     ac = await _resolve_access_control(agent)
     if ac is None:
         return 0

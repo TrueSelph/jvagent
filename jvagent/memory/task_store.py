@@ -24,10 +24,13 @@ Typical usage inside an action::
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional, Union
+
+logger = logging.getLogger(__name__)
 
 # ------------------------------------------------------------------
 # Status constants
@@ -297,26 +300,6 @@ class StepHandle:
     async def update(self, **data: Any) -> None:
         """Merge key-value pairs into the step's data bag."""
         self._step.data.update(data)
-        self._step._touch()
-        await self._store._persist_step(self._step, self._task_id)
-
-    async def add_event(
-        self,
-        event_type: str,
-        iteration: int = 0,
-        details: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Append an observability log entry to the step's data bag."""
-        events = list(self._step.data.get("_events") or [])
-        events.append(
-            {
-                "type": event_type,
-                "iteration": iteration,
-                "timestamp": _now_iso(),
-                "details": dict(details or {}),
-            }
-        )
-        self._step.data["_events"] = events
         self._step._touch()
         await self._store._persist_step(self._step, self._task_id)
 
@@ -691,7 +674,15 @@ class TaskStore:
     # --- Utility ---
 
     async def sweep_terminal(self, *, older_than_seconds: Optional[int] = None) -> int:
-        """Remove terminal tasks, optionally older than a TTL."""
+        """Remove terminal tasks, optionally older than a TTL.
+
+        AUDIT-memory MED-10: when ``older_than_seconds`` is provided and
+        a task's ``completed_at`` is unparseable, the previous logic
+        kept the task silently. Behaviour now: log a warning AND keep
+        the task (cannot prove it's old enough to evict). When
+        ``older_than_seconds`` is None, ALL terminal tasks are evicted
+        as the docstring implies.
+        """
         tasks = self._load_tasks()
         now = datetime.now(timezone.utc)
         kept: List[Task] = []
@@ -700,14 +691,29 @@ class TaskStore:
             if t.status not in _TASK_TERMINAL:
                 kept.append(t)
                 continue
-            if older_than_seconds is not None and t.completed_at:
-                try:
-                    completed = datetime.fromisoformat(t.completed_at)
-                    if (now - completed).total_seconds() > older_than_seconds:
-                        removed += 1
-                        continue
-                except Exception:
-                    pass
+            if older_than_seconds is None:
+                # Unconditional terminal sweep.
+                removed += 1
+                continue
+            if not t.completed_at:
+                # Conservative: keep tasks missing completed_at when a TTL is
+                # set — we can't prove they're old enough to evict.
+                kept.append(t)
+                continue
+            try:
+                completed = datetime.fromisoformat(t.completed_at)
+            except Exception:
+                logger.warning(
+                    "sweep_terminal: completed_at %r on task %s is not ISO; "
+                    "skipping for safety",
+                    t.completed_at,
+                    getattr(t, "id", "?"),
+                )
+                kept.append(t)
+                continue
+            if (now - completed).total_seconds() > older_than_seconds:
+                removed += 1
+                continue
             kept.append(t)
         if removed:
             self._save_tasks(kept)

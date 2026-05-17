@@ -17,9 +17,9 @@ logger = logging.getLogger(__name__)
 
 DIRECT_CONTACT_PROMPT = """You can reach a human representative directly using the contact details below:
 
-Email: support@company.com
-Phone / WhatsApp: +592 XXX XXXX
-Office Hours: Mon-Fri, 9:00 AM - 5:00 PM
+Email: {handoff_email}
+Phone / WhatsApp: {handoff_phone}
+Office Hours: {handoff_hours}
 
 A team member will assist you as soon as possible."""
 
@@ -178,8 +178,27 @@ class HandoffInteractAction(InteractAction):
     )
 
     handoff_number: str = attribute(
-        default="5926431530",
-        description="Handoff number",
+        default="",
+        description=(
+            "Phone / WhatsApp number for direct contact. Configure via "
+            "agent.yaml ``context.handoff_number`` (or pin to an env var "
+            "with ``${HANDOFF_NUMBER}``). Empty string disables the phone "
+            "line in the DIRECT_CONTACT_PROMPT template."
+        ),
+    )
+
+    handoff_email: str = attribute(
+        default="",
+        description=(
+            "Email for direct contact. Configure via agent.yaml "
+            "``context.handoff_email`` or ``${HANDOFF_EMAIL}``. AUDIT-actions"
+            " (Wave D removed the previous hardcoded ``support@company.com``)."
+        ),
+    )
+
+    handoff_hours: str = attribute(
+        default="Mon-Fri, 9:00 AM - 5:00 PM",
+        description="Office hours phrase rendered into DIRECT_CONTACT_PROMPT.",
     )
 
     ########################################################################################
@@ -353,10 +372,35 @@ class HandoffInteractAction(InteractAction):
 
         # Handle the handoff mode
         if handoff_mode == "direct_contact":
+            # Render contact placeholders into the operator-configurable
+            # template. When a field is blank, drop the line so we never
+            # show ``Email: `` / ``Phone: ``. Falls back to the literal
+            # template when there are no `{...}` placeholders (legacy
+            # override). AUDIT-actions D.1 (Wave D).
+            try:
+                rendered = self.direct_contact_prompt.format(
+                    handoff_email=self.handoff_email,
+                    handoff_phone=self.handoff_number,
+                    handoff_hours=self.handoff_hours,
+                )
+            except (KeyError, IndexError):
+                rendered = self.direct_contact_prompt
+            # Trim blank-field lines so an empty handoff_email/number does
+            # not render as ``Email: ``.
+            cleaned_lines = []
+            for line in rendered.split("\n"):
+                stripped = line.strip()
+                if stripped.endswith(":") and (
+                    stripped.lower().startswith("email:")
+                    or stripped.lower().startswith("phone")
+                ):
+                    continue
+                cleaned_lines.append(line)
+            rendered = "\n".join(cleaned_lines)
             visitor.interaction.directives = [
                 {
                     "action_name": self.get_class_name(),
-                    "content": self.direct_contact_prompt,
+                    "content": rendered,
                     "executed": False,
                 }
             ]

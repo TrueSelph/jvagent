@@ -5,6 +5,13 @@ from jvagent.tooling.tool import Tool
 
 logger = logging.getLogger(__name__)
 
+# Reserved prefixes the cockpit assigns at registration time. Action /
+# skill / MCP authors must not ship tool names that already start with
+# these — doing so leads to confusing ``action__action__foo`` double
+# prefixes when collisions hit, or silent registration as the wrong
+# source. AUDIT-interact HIGH-11.
+RESERVED_TOOL_PREFIXES = ("action__", "harness__", "skill__", "mcp__")
+
 
 class ToolRegistry:
     """Collision-safe registry for ``Tool`` instances with namespace prefixing.
@@ -12,6 +19,11 @@ class ToolRegistry:
     When a tool name is already registered, an optional *prefix* is used to
     create a namespaced name (``prefix__name``).  This avoids collisions
     between tools from different sources (actions, skills, MCP servers).
+
+    Tool names that start with one of the framework-reserved prefixes
+    (``action__``, ``harness__``, ``skill__``, ``mcp__``) are rejected at
+    register time so the author's name doesn't collide with cockpit's
+    own prefixing strategy.
 
     Usage::
 
@@ -28,6 +40,17 @@ class ToolRegistry:
     def register(self, tool: Tool, *, prefix: Optional[str] = None) -> str:
         if not tool.name:
             raise ValueError("Tool name is required")
+
+        # AUDIT-interact HIGH-11: reject tool names that smuggle a
+        # cockpit-reserved prefix. Caller must drop the prefix and let
+        # ``register(..., prefix=...)`` apply it instead.
+        for reserved in RESERVED_TOOL_PREFIXES:
+            if tool.name.startswith(reserved):
+                raise ValueError(
+                    f"Tool '{tool.name}' starts with reserved prefix "
+                    f"'{reserved}' — let the registry apply prefixing via "
+                    f"the ``prefix=`` kwarg instead."
+                )
 
         name = tool.name
         if name in self._by_name:

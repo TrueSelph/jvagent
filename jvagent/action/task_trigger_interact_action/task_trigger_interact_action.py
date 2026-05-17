@@ -82,16 +82,37 @@ class TaskTriggerInteractAction(InteractAction):
             should_trigger = False
 
             # A) Time-based trigger (The HARD GATE)
+            # AUDIT-actions XC-18: parse both ends into timezone-aware
+            # ``datetime`` and compare as instants. Lexicographic string
+            # comparison breaks the moment trigger_time_str carries a
+            # timezone offset (e.g. ``2026-05-17T08:00-05:00``).
             if trigger_time_str:
                 trigger_at_str = str(trigger_time_str).replace(" ", "T")
-                if trigger_at_str > now_str:
+                try:
+                    parsed = datetime.fromisoformat(
+                        trigger_at_str.replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    logger.warning(
+                        "TaskTrigger: malformed trigger_time %r on task %s; "
+                        "skipping",
+                        trigger_time_str,
+                        task.get("task_id"),
+                    )
+                    continue
+                if parsed.tzinfo is None:
+                    # Treat naïve trigger_time as UTC for backward-compat.
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                if parsed > now:
                     logger.debug(
-                        f"TaskTrigger: Task '{task.get('description')}' is for the future ({trigger_at_str}). Skipping."
+                        f"TaskTrigger: Task '{task.get('description')}' is for "
+                        f"the future ({parsed.isoformat()}). Skipping."
                     )
                     continue
 
                 logger.info(
-                    f"TaskTrigger: Time trigger '{trigger_time_str}' matched (due at {trigger_at_str}, now is {now_str})"
+                    f"TaskTrigger: Time trigger '{trigger_time_str}' matched "
+                    f"(due at {parsed.isoformat()}, now is {now.isoformat()})"
                 )
                 should_trigger = True
 

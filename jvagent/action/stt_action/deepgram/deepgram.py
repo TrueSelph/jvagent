@@ -13,6 +13,24 @@ from jvagent.action.stt_action.base import BaseSTTAction
 
 logger = logging.getLogger(__name__)
 
+# AUDIT-actions XC-17: cap STT audio uploads. 25 MB roughly accommodates
+# a 30-minute mp3 at 128 kbps; bigger inputs are almost certainly
+# accidental or hostile.
+STT_MAX_BYTES = 25 * 1024 * 1024
+ALLOWED_STT_MIME_TYPES = frozenset(
+    {
+        "audio/mp3",
+        "audio/mpeg",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/ogg",
+        "audio/webm",
+        "audio/flac",
+        "audio/m4a",
+        "audio/x-m4a",
+    }
+)
+
 
 class DeepgramSTTAction(BaseSTTAction):
     """Speech-to-text action using the Deepgram API."""
@@ -88,10 +106,34 @@ class DeepgramSTTAction(BaseSTTAction):
     async def invoke_base64(
         self, audio_base64: str, audio_type: str = "audio/mp3"
     ) -> Optional[str]:
-        """Convert audio from base64 to text using Deepgram API."""
+        """Convert audio from base64 to text using Deepgram API.
+
+        AUDIT-actions XC-17: reject payloads larger than ``STT_MAX_BYTES``
+        (default 25 MB) and audio_type outside the allowed list. The
+        base64 length-to-byte estimate is computed before the decode to
+        avoid allocating huge buffers for hostile/accidental inputs.
+        """
         if not (self._env_api_key() or "").strip():
             return None
 
+        # MIME allowlist.
+        mime_norm = (audio_type or "").strip().lower()
+        if mime_norm not in ALLOWED_STT_MIME_TYPES:
+            logger.warning(
+                "invoke_base64: rejected audio_type=%r (allowed=%s)",
+                audio_type,
+                sorted(ALLOWED_STT_MIME_TYPES),
+            )
+            return None
+        # Size cap pre-decode.
+        raw_estimate = (len(audio_base64 or "") * 3) // 4
+        if raw_estimate > STT_MAX_BYTES:
+            logger.warning(
+                "invoke_base64: payload ~%d bytes exceeds %d cap",
+                raw_estimate,
+                STT_MAX_BYTES,
+            )
+            return None
         data = base64.b64decode(audio_base64)
         try:
             client = self._get_client()

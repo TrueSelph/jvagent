@@ -67,6 +67,40 @@ async def delete_conversation(
             },
         )
 
+    # AUDIT-core L-5: refuse the delete when an InteractWalker is likely
+    # mid-flight on this conversation. Heuristic: the most recent
+    # interaction was added in the last 30 seconds. The walker holds a
+    # ``conversation_mutation_lock`` but that lock is not visible from
+    # this endpoint; a recency check is the cheap defense-in-depth that
+    # keeps cascade-delete from racing the walker.
+    try:
+        last_at = getattr(conversation, "last_interaction_at", None)
+        if last_at is not None:
+            from datetime import datetime, timezone
+
+            now = datetime.now(timezone.utc)
+            ref = last_at if last_at.tzinfo else last_at.replace(tzinfo=timezone.utc)
+            age_seconds = (now - ref).total_seconds()
+            if 0 <= age_seconds < 30:
+                raise ValidationError(
+                    message=(
+                        "Conversation has activity within the last 30 seconds; "
+                        "refusing delete to avoid racing an active walker. "
+                        "Wait briefly or close the session first."
+                    ),
+                    details={
+                        "session_id": session_id,
+                        "last_interaction_at": last_at.isoformat(),
+                        "age_seconds": age_seconds,
+                    },
+                )
+    except ValidationError:
+        raise
+    except Exception:
+        # Recency check is advisory; never block delete on a clock or
+        # attribute glitch.
+        pass
+
     # Cascade delete: removes connected Interaction nodes and decrements
     # Memory.total_conversations via Conversation.delete override.
     await conversation.delete(cascade=True)

@@ -710,47 +710,59 @@ class Interaction(DeferredSaveMixin, Node):
     async def get_next_interaction(self) -> Optional["Interaction"]:
         """Get the next interaction in the chain (forward traversal).
 
+        With bidirectional edges there should be at most one "next" neighbor
+        per direction, but a broken / partially-pruned chain can briefly
+        expose multiples. AUDIT-memory HIGH-09: when more than one
+        candidate is found, deterministically pick the one with the
+        smallest ``started_at`` greater-than-or-equal-to ``self.started_at``;
+        on equal timestamps use the lexicographic ``id`` tiebreak from
+        :func:`interaction_sort_key`.
+
         Returns:
-            Next Interaction node, or None if this is the last interaction
+            Next Interaction node, or None if this is the last interaction.
         """
         from jvagent.memory.interaction import Interaction
 
-        # Get the next interaction via outgoing edges (forward direction)
-        # Filter by conversation_id to ensure it's part of the same chain
-        # With bidirectional edges, there should be at most one next interaction
-        next_int = await self.node(
+        candidates = await self.nodes(
             node=Interaction, direction="out", conversation_id=self.conversation_id
         )
-
-        # Verify timestamp ordering (safety check)
-        if next_int:
-            a, b = _normalize_dt(next_int.started_at), _normalize_dt(self.started_at)
-            if a is not None and b is not None and a >= b:
-                return next_int
-            if a is None or b is None:
-                return next_int
-        return None
+        if not candidates:
+            return None
+        self_dt = _normalize_dt(self.started_at)
+        forward = []
+        for c in candidates:
+            cdt = _normalize_dt(getattr(c, "started_at", None))
+            if cdt is None or self_dt is None or cdt >= self_dt:
+                forward.append(c)
+        # If filter dropped everything (timestamps all behind us), keep the
+        # whole candidate set so the chain can still be traversed.
+        pool = forward or candidates
+        pool.sort(key=interaction_sort_key)
+        return pool[0]
 
     async def get_previous_interaction(self) -> Optional["Interaction"]:
         """Get the previous interaction in the chain (backward traversal).
 
+        See :meth:`get_next_interaction` for the deterministic tiebreak
+        behaviour (AUDIT-memory HIGH-09).
+
         Returns:
-            Previous Interaction node, or None if this is the first interaction
+            Previous Interaction node, or None if this is the first interaction.
         """
         from jvagent.memory.interaction import Interaction
 
-        # Get the previous interaction via incoming edges (backward direction)
-        # Filter by conversation_id to ensure it's part of the same chain
-        # With bidirectional edges, there should be at most one previous interaction
-        prev_int = await self.node(
+        candidates = await self.nodes(
             node=Interaction, direction="in", conversation_id=self.conversation_id
         )
-
-        # Verify timestamp ordering (safety check)
-        if prev_int:
-            a, b = _normalize_dt(prev_int.started_at), _normalize_dt(self.started_at)
-            if a is not None and b is not None and a <= b:
-                return prev_int
-            if a is None or b is None:
-                return prev_int
-        return None
+        if not candidates:
+            return None
+        self_dt = _normalize_dt(self.started_at)
+        backward = []
+        for c in candidates:
+            cdt = _normalize_dt(getattr(c, "started_at", None))
+            if cdt is None or self_dt is None or cdt <= self_dt:
+                backward.append(c)
+        pool = backward or candidates
+        pool.sort(key=interaction_sort_key)
+        # Largest timestamp first (latest before self).
+        return pool[-1]

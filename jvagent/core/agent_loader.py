@@ -688,12 +688,33 @@ class AgentLoader:
                 logger.warning(f"Agent '{namespace}/{agent_name}' not found")
                 return False
             was_enabled = agent.enabled
+            agent_id_for_cache = getattr(agent, "id", None)
 
             app = await App.get()
             agents_manager = await app.node(node="Agents") if app else None
 
             await agent.delete()
             logger.info(f"Uninstalled agent: {namespace}/{agent_name}")
+
+            # AUDIT-core M-4: drop every agent-scoped cache so subsequent
+            # lookups don't return the now-deleted agent for up to TTL.
+            if agent_id_for_cache:
+                try:
+                    from jvagent.core.cache import (
+                        invalidate_action_cache,
+                        invalidate_action_type_index,
+                        invalidate_agent_cache,
+                    )
+
+                    await invalidate_agent_cache(agent_id_for_cache)
+                    await invalidate_action_cache(agent_id_for_cache)
+                    await invalidate_action_type_index(agent_id_for_cache)
+                except Exception as cache_exc:
+                    logger.warning(
+                        "uninstall_agent: cache invalidation failed for %s: %s",
+                        agent_id_for_cache,
+                        cache_exc,
+                    )
 
             if agents_manager:
                 agents_manager.total_agents = max(0, agents_manager.total_agents - 1)

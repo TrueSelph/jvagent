@@ -56,6 +56,12 @@ class CockpitSession:
     trace_task_id: Optional[str] = None  # shared task id for engine + model task tools
     model_planned: bool = False  # True after the model called ``task_create_plan``
 
+    # AUDIT-interact HIGH-02: per-interaction step counter that survives
+    # engine rebuilds within a turn (engine's ``_iteration`` resets to
+    # 0 when the stale-state guard creates a new engine). Compared
+    # against ``max_iterations`` as a hard ceiling for the whole turn.
+    total_steps_this_interaction: int = 0
+
     def reset(self) -> None:
         """Reset every field to its default (in-place — preserves identity)."""
         self.engine = None
@@ -66,6 +72,7 @@ class CockpitSession:
         self.finalized = False
         self.trace_task_id = None
         self.model_planned = False
+        self.total_steps_this_interaction = 0
 
 
 def _ensure_skill_state(visitor: Any) -> Optional[dict]:

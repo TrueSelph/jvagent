@@ -72,9 +72,14 @@ class TypesenseVectorStore(VectorStore):
         description="Number of dimensions for embeddings (default: 384 for sentence-transformers)",
     )
 
-    # Internal state
-    _client: Optional[Any] = None
-    _collections: Dict[str, bool] = {}  # Track created collections
+    # Internal state. AUDIT-actions XC-10: ``_collections`` MUST be a
+    # per-instance dict; the previous class-level ``{}`` literal was
+    # shared across all TypesenseVectorStore instances, causing
+    # cross-agent state contamination (instance A's "collection X
+    # exists" flag was visible to instance B, which might be pointed at
+    # a different Typesense cluster).
+    _client: Optional[Any] = attribute(private=True, default=None)
+    _collections: Dict[str, bool] = attribute(private=True, default_factory=dict)
 
     @staticmethod
     def _env_api_key() -> str:

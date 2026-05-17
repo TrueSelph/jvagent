@@ -16,8 +16,26 @@ except ImportError:
 logger = logging.getLogger(__name__)
 SCHEDULE_TASK_ID = "system_task_dispatcher"
 
-# Module-level cache: survives across threads unlike ContextVars.
-_scheduler_service_ref = None
+# Per-Server scheduler-service cache. Keyed by ``id(server)`` so multiple
+# jvagent apps embedded in the same Python process keep isolated
+# references. AUDIT-actions Wave D.
+_scheduler_service_refs: Dict[int, Any] = {}
+
+
+def _server_key(server: Any) -> int:
+    return id(server) if server is not None else 0
+
+
+def _get_cached_scheduler(server: Any) -> Any:
+    return _scheduler_service_refs.get(_server_key(server))
+
+
+def _set_cached_scheduler(server: Any, value: Any) -> None:
+    key = _server_key(server)
+    if value is None:
+        _scheduler_service_refs.pop(key, None)
+    else:
+        _scheduler_service_refs[key] = value
 
 
 class TaskDispatcher(Action):
@@ -37,7 +55,6 @@ class TaskDispatcher(Action):
         await self._register_scheduler_task(warn_on_missing=True)
 
     def _initialize_scheduler_service(self):
-        global _scheduler_service_ref
         try:
             from jvspatial.api.context import get_current_server
             from jvspatial.api.integrations.scheduler.scheduler import (
@@ -50,11 +67,11 @@ class TaskDispatcher(Action):
                 logger.debug(
                     "TaskDispatcher: no current server in context (background thread)"
                 )
-                return _scheduler_service_ref
+                return _get_cached_scheduler(server)
 
             existing_scheduler = getattr(server, "scheduler_service", None)
             if existing_scheduler:
-                _scheduler_service_ref = existing_scheduler
+                _set_cached_scheduler(server, existing_scheduler)
                 return existing_scheduler
 
             scheduler_interval = getattr(server.config, "scheduler_interval", 1)
@@ -66,13 +83,12 @@ class TaskDispatcher(Action):
                 graph_context=getattr(server, "_graph_context", None),
             )
             server.scheduler_service = scheduler_service
-            _scheduler_service_ref = scheduler_service
+            _set_cached_scheduler(server, scheduler_service)
 
             try:
                 if hasattr(server, "lifecycle_manager"):
 
                     def _stop_scheduler() -> None:
-                        global _scheduler_service_ref
                         try:
                             if server.scheduler_service.is_running:
                                 server.scheduler_service.stop()
@@ -81,7 +97,7 @@ class TaskDispatcher(Action):
                                 f"TaskDispatcher: failed to stop scheduler on shutdown: {e}"
                             )
                         finally:
-                            _scheduler_service_ref = None
+                            _set_cached_scheduler(server, None)
 
                     server.lifecycle_manager.add_shutdown_hook(_stop_scheduler)
             except Exception:
@@ -93,20 +109,20 @@ class TaskDispatcher(Action):
             return None
 
     def _get_scheduler_service(self):
-        global _scheduler_service_ref
-        if _scheduler_service_ref is not None:
-            return _scheduler_service_ref
         try:
             from jvspatial.api.context import get_current_server
 
             server = get_current_server()
+            cached = _get_cached_scheduler(server)
+            if cached is not None:
+                return cached
             if (
                 server
                 and hasattr(server, "scheduler_service")
                 and getattr(server, "scheduler_service")
             ):
                 svc = getattr(server, "scheduler_service")
-                _scheduler_service_ref = svc
+                _set_cached_scheduler(server, svc)
                 return svc
             return self._initialize_scheduler_service()
         except Exception as e:

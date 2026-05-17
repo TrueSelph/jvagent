@@ -14,6 +14,14 @@ from jvagent.action.base import Action
 
 logger = logging.getLogger(__name__)
 
+# AUDIT-actions XC-16: cap base64-encoded avatar payloads. 5 MB raw is
+# already large for an avatar; bigger inputs are almost certainly
+# accidental or hostile.
+AVATAR_MAX_BYTES = 5 * 1024 * 1024
+ALLOWED_AVATAR_MIME_TYPES = frozenset(
+    {"image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"}
+)
+
 
 class AvatarAction(Action):
     """Action for managing agent avatar images.
@@ -71,20 +79,41 @@ class AvatarAction(Action):
                 f"Could not find a valid profile picture URL in response: {result}"
             )
 
-        # Download image
+        # Download image with size cap + content-type allowlist.
+        # AUDIT-actions XC-16: previously read the entire body unchecked,
+        # which let a hostile URL push tens of MB of base64 into the
+        # action node and bloat the graph DB.
+        max_bytes = AVATAR_MAX_BYTES
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
-                if response.status == 200:
-                    content = await response.read()
-                    self.image_data = base64.b64encode(content).decode("utf-8")
-                    self.mimetype = response.content_type or "image/jpeg"
-                    await self.save()
-                    logger.info(f"Successfully pulled avatar for {phone}")
-                    return True
-                else:
+                if response.status != 200:
                     raise Exception(
                         f"Failed to download profile picture: HTTP {response.status}"
                     )
+                resolved_mime = (response.content_type or "image/jpeg").lower()
+                if resolved_mime not in ALLOWED_AVATAR_MIME_TYPES:
+                    raise Exception(
+                        f"Avatar MIME type {resolved_mime!r} is not allowed; "
+                        f"expected one of {sorted(ALLOWED_AVATAR_MIME_TYPES)}"
+                    )
+                # Stream-read with a cap so a server advertising a tiny
+                # Content-Length but actually sending a huge body cannot
+                # exhaust memory.
+                chunks: list = []
+                total = 0
+                async for chunk in response.content.iter_chunked(64 * 1024):
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise Exception(
+                            f"Avatar payload exceeds {max_bytes // 1024} KB cap"
+                        )
+                    chunks.append(chunk)
+                content = b"".join(chunks)
+                self.image_data = base64.b64encode(content).decode("utf-8")
+                self.mimetype = resolved_mime
+                await self.save()
+                logger.info(f"Successfully pulled avatar for {phone}")
+                return True
 
     async def set_whatsapp_avatar(self) -> bool:
         """Set WhatsApp profile picture using the current local avatar."""
@@ -111,6 +140,11 @@ class AvatarAction(Action):
     async def set_avatar(self, image_data: str, mimetype: str) -> bool:
         """Set the avatar image data and mimetype.
 
+        AUDIT-actions XC-16: rejects payloads larger than
+        ``AVATAR_MAX_BYTES`` and MIME types outside
+        ``ALLOWED_AVATAR_MIME_TYPES``. Base64 input length is converted
+        to bytes via the 4/3 ratio so we don't have to fully decode.
+
         Args:
             image_data: Base64 encoded image string (without data: prefix)
             mimetype: MIME type of the image
@@ -118,8 +152,27 @@ class AvatarAction(Action):
         Returns:
             True if successfully updated, False otherwise
         """
+        # MIME allowlist
+        mime_norm = (mimetype or "").strip().lower()
+        if mime_norm not in ALLOWED_AVATAR_MIME_TYPES:
+            logger.warning(
+                "set_avatar: rejected mimetype %r (allowed=%s)",
+                mimetype,
+                sorted(ALLOWED_AVATAR_MIME_TYPES),
+            )
+            return False
+        # Size cap (base64 bytes → raw bytes ≈ len * 3/4).
+        raw_bytes_estimate = (len(image_data or "") * 3) // 4
+        if raw_bytes_estimate > AVATAR_MAX_BYTES:
+            logger.warning(
+                "set_avatar: payload ~%d bytes exceeds %d cap",
+                raw_bytes_estimate,
+                AVATAR_MAX_BYTES,
+            )
+            return False
+
         self.image_data = image_data
-        self.mimetype = mimetype
+        self.mimetype = mime_norm
 
         try:
             await self.save()

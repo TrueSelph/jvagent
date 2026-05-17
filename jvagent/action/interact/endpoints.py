@@ -76,18 +76,37 @@ async def _run_background_actions(walker: "InteractWalker") -> None:
         return
 
     for action in walker.background_actions:
+        action_name = (
+            action.get_class_name()
+            if hasattr(action, "get_class_name")
+            else action.__class__.__name__
+        )
+        # AUDIT-interact HIGH-01: do the access check OUTSIDE the
+        # action-execution try/except so an exception inside
+        # ``enforce_interact_action_access`` cannot be misclassified as an
+        # execute failure. Treat any access-check error as a deny and log
+        # at error level so operators see misconfigurations.
         try:
-            action_name = (
-                action.get_class_name()
-                if hasattr(action, "get_class_name")
-                else action.__class__.__name__
-            )
-            logger.debug(f"Running background action: {action_name}")
-            if not await walker.enforce_interact_action_access(
+            access_ok = await walker.enforce_interact_action_access(
                 action, stage="background"
-            ):
-                continue
-            # Temporarily mark as current action so convenience methods work
+            )
+        except Exception as access_exc:
+            logger.error(
+                "Access check failed for background action %s; denying execution",
+                action_name,
+                exc_info=True,
+                extra={
+                    "agent_id": getattr(action, "agent_id", None),
+                    "action_class": action.__class__.__name__,
+                    "context": "background_access_check",
+                },
+            )
+            continue
+        if not access_ok:
+            continue
+
+        try:
+            logger.debug(f"Running background action: {action_name}")
             walker._current_action = action
             walker._skip_current_action_record = False
             await action.execute(walker)

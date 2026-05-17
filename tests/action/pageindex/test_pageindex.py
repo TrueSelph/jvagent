@@ -1300,3 +1300,144 @@ def test_ssrf_guard_allows_public_https():
 
     # google.com / cloudflare.com etc. depend on DNS — use literal public IP.
     _ssrf_guard_url("https://1.1.1.1/")
+
+
+# ---------------------------------------------------------------------------
+# resolved_metadata_filter — AccessControlAction integration
+# ---------------------------------------------------------------------------
+
+
+def _make_visitor(user_id: str = "user-1", session_id: str = "sess-1"):
+    """Stub InteractWalker exposing the attrs resolved_metadata_filter reads."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(user_id=user_id, session_id=session_id)
+
+
+def _make_pageindex_action(metadata_filter=None):
+    action = object.__new__(PageIndexAction)
+    object.__setattr__(action, "metadata_filter", metadata_filter)
+    return action
+
+
+class _StubACA:
+    """Minimal stand-in for AccessControlAction used by resolved_metadata_filter."""
+
+    def __init__(self, user_groups):
+        self.user_groups = user_groups
+
+    def _resolve_user_groups(self, action_label):
+        if action_label in self.user_groups:
+            groups = self.user_groups[action_label]
+            default_groups = self.user_groups.get("default", {})
+            merged = dict(default_groups)
+            merged.update(groups)
+            return merged
+        return dict(self.user_groups.get("default", {}))
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_ac_absent_falls_back(caplog):
+    """AccessControlAction not registered → return base unchanged, log at DEBUG (not WARNING)."""
+    import logging
+
+    action = _make_pageindex_action(metadata_filter={"topic": "finance"})
+
+    with patch.object(
+        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=None
+    ):
+        with caplog.at_level(
+            logging.DEBUG,
+            logger="jvagent.action.pageindex.pageindex_action.pageindex_action",
+        ):
+            result = await PageIndexAction.resolved_metadata_filter(
+                action, _make_visitor(), None
+            )
+
+    assert result == {"topic": "finance"}
+    warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert warnings == [], f"expected no WARNING records, got {warnings}"
+    debugs = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.DEBUG and "AccessControlAction" in r.getMessage()
+    ]
+    assert debugs, "expected a DEBUG record noting graceful fallback"
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_ac_empty_user_groups_falls_back():
+    """AccessControlAction present but user_groups empty → return base unchanged."""
+    action = _make_pageindex_action(metadata_filter=None)
+    aca = _StubACA(user_groups={})
+
+    with patch.object(
+        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
+    ):
+        result = await PageIndexAction.resolved_metadata_filter(
+            action, _make_visitor(), None
+        )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_no_pageindex_scope_falls_back():
+    """AccessControlAction has user_groups but none for PageIndexAction or default → return base."""
+    action = _make_pageindex_action(metadata_filter={"topic": "finance"})
+    aca = _StubACA(user_groups={"SomeOtherAction": {"admins": ["user-1"]}})
+
+    with patch.object(
+        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
+    ):
+        result = await PageIndexAction.resolved_metadata_filter(
+            action, _make_visitor(), None
+        )
+
+    assert result == {"topic": "finance"}
+    assert "access" not in result
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_visitor_matches_merges_access():
+    """Visitor matches a configured PageIndexAction group → access list includes that group."""
+    action = _make_pageindex_action(metadata_filter=None)
+    aca = _StubACA(
+        user_groups={
+            "PageIndexAction": {
+                "admins": ["user-1"],
+                "guests": ["other-user"],
+            }
+        }
+    )
+
+    with patch.object(
+        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
+    ):
+        result = await PageIndexAction.resolved_metadata_filter(
+            action, _make_visitor("user-1"), None
+        )
+
+    assert result.get("access") == ["admins"]
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_visitor_unmatched_default_deny():
+    """Visitor matches no PageIndexAction group → access=[] (default-deny per docstring)."""
+    action = _make_pageindex_action(metadata_filter=None)
+    aca = _StubACA(
+        user_groups={
+            "PageIndexAction": {
+                "admins": ["other-user"],
+            }
+        }
+    )
+
+    with patch.object(
+        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
+    ):
+        result = await PageIndexAction.resolved_metadata_filter(
+            action, _make_visitor("user-1"), None
+        )
+
+    assert result == {"access": []}

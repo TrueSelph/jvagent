@@ -379,16 +379,36 @@ def _ssrf_guard_url(raw: str) -> None:
 async def _fetch_url_bytes_capped(
     url: str, *, read_timeout: float = 120.0
 ) -> Tuple[bytes, str, Optional[str]]:
+    """Fetch *url* with SSRF guards + per-hop redirect validation.
+
+    AUDIT-actions XC-23: each redirect target is re-validated. Returning
+    302→302→… targeting an internal IP cannot bypass the original
+    ``_ssrf_guard_url`` check, because each hop's ``Location`` value is
+    funnelled through it before httpx follows it.
+
+    Note on full DNS-rebind defence: the audit also asked for httpx
+    connection pinning to a pre-resolved IP. We choose NOT to pin in this
+    streaming path because httpx + HTTP/2 + multi-hop redirects make
+    Host-rewrite tricky to keep correct across redirects. Per-hop re-
+    validation (this function) plus a strict resolver in
+    ``_ssrf_guard_url`` (literal-IP rejection, IPv4-mapped-IPv6, etc.)
+    closes the practical bypass surface in our threat model. Operators
+    who need full pinning should run jvagent behind an egress proxy
+    that enforces it.
+    """
     raw = url.strip()
     _ssrf_guard_url(raw)
     timeout = httpx.Timeout(read_timeout, connect=30.0)
 
     async def _validate_redirect(response: httpx.Response) -> None:
-        loc = response.headers.get("location")
-        if loc:
-            # httpx resolves relative redirects against response.url
-            target = str(httpx.URL(response.url).join(loc))
-            _ssrf_guard_url(target)
+        # Fires on EVERY response (including the final 200); only
+        # validate when this is actually a redirect with a Location.
+        if 300 <= response.status_code < 400:
+            loc = response.headers.get("location")
+            if loc:
+                # httpx resolves relative redirects against response.url.
+                target = str(httpx.URL(response.url).join(loc))
+                _ssrf_guard_url(target)
 
     async with httpx.AsyncClient(
         timeout=timeout,
@@ -1968,6 +1988,20 @@ async def pageindex_llm_webhook(request: Request, agent_id: str) -> Dict[str, An
             )
         purge_flag = data.get("purge")
         purge = bool(purge_flag) if purge_flag is not None else False
+        # AUDIT-actions Wave D: a leaked api_key + ``purge=True`` would
+        # otherwise wipe the agent's index in one call. Require an
+        # explicit ``confirm_purge`` field that echoes the agent_id, so
+        # the caller has to know more than just the api_key.
+        if purge:
+            confirm = (data.get("confirm_purge") or "").strip()
+            if confirm != agent_id:
+                raise ValidationError(
+                    message=(
+                        "purge=True requires confirm_purge to match agent_id "
+                        "(defense against API-key-only destructive calls)"
+                    ),
+                    details={"agent_id": agent_id},
+                )
         initialize_pageindex_database(app_id=await _get_app_id_from_node())
         try:
             staged_path = await _stage_graph_from_remote_url(

@@ -41,6 +41,37 @@ def _build_task_tools(ctx: CockpitContext) -> List[Tool]:
     async def _create_plan(title: str, steps: List[str], description: str = "") -> str:
         if not ctx.visitor or not ctx.conversation:
             return "Error: no conversation available for task tracking."
+        # AUDIT-interact MED-20: defensive shape check on ``steps`` —
+        # the model can emit non-list / nested shapes (e.g. a single
+        # string, a dict, or a list of dicts). Coerce / reject so
+        # downstream ``task.set_plan(steps)`` doesn't blow up far from
+        # the source.
+        if isinstance(steps, str):
+            return (
+                "Error: 'steps' must be a list of strings, not a single string. "
+                "Wrap each step as its own list element."
+            )
+        if not isinstance(steps, list):
+            return "Error: 'steps' must be a list of short strings."
+        coerced: List[str] = []
+        for idx, step in enumerate(steps):
+            if isinstance(step, str):
+                trimmed = step.strip()
+                if not trimmed:
+                    return f"Error: 'steps[{idx}]' is empty."
+                coerced.append(trimmed)
+            elif isinstance(step, dict) and "description" in step:
+                # Tolerate {"description": "..."} shape some models emit.
+                desc = str(step.get("description", "")).strip()
+                if not desc:
+                    return f"Error: 'steps[{idx}]' has empty description."
+                coerced.append(desc)
+            else:
+                return (
+                    f"Error: 'steps[{idx}]' must be a string, not "
+                    f"{type(step).__name__}."
+                )
+        steps = coerced
         # Cap step count from the operator config so the model can't blow
         # past the prompt budget with a thousand-step plan.
         max_steps = max(1, int(getattr(ctx.config, "max_task_plan_steps", 50) or 50))

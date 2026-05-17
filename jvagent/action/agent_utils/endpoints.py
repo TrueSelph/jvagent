@@ -30,22 +30,29 @@ logger = logging.getLogger(__name__)
 )
 async def list_interactions_endpoint(
     action_id: str,
+    limit: int = 100,
+    offset: int = 0,
 ) -> Dict[str, List[Dict]]:
-    """List all interaction log contents.
+    """List interaction log contents (most-recent first, paginated).
 
     **Args:**
 
     - action_id: AgentUtils action ID
+    - limit: Max number of interactions to return (default 100, max 1000)
+    - offset: Skip the first N most-recent interactions (default 0)
 
     **Returns:**
 
-    Dictionary with list of interaction log contents
+    Dictionary with list of interaction log contents.
+
+    AUDIT-actions XC-19: pagination + path containment + thread-offload
+    are enforced inside :meth:`AgentUtils.list_interactions`.
     """
     action = await AgentUtils.get(action_id)
     if not action or not isinstance(action, AgentUtils):
         raise ResourceNotFoundError(f"AgentUtils action not found: {action_id}")
 
-    interactions = await action.list_interactions()
+    interactions = await action.list_interactions(limit=limit, offset=offset)
 
     return {
         "interactions": interactions,
