@@ -58,9 +58,9 @@ async def test_consume_one_shot_deletes_row_even_when_valid():
     )
 
     delete_mock = AsyncMock()
-    with patch.object(OAuthState, "find", new=AsyncMock(return_value=[fake])), patch.object(
-        OAuthState, "delete", new=delete_mock
-    ):
+    with patch.object(
+        OAuthState, "find", new=AsyncMock(return_value=[fake])
+    ), patch.object(OAuthState, "delete", new=delete_mock):
         result = await consume_oauth_state("tok_x", provider="google")
 
     assert result is not None
@@ -83,9 +83,9 @@ async def test_consume_wrong_provider_rejected_and_deleted():
     )
 
     delete_mock = AsyncMock()
-    with patch.object(OAuthState, "find", new=AsyncMock(return_value=[fake])), patch.object(
-        OAuthState, "delete", new=delete_mock
-    ):
+    with patch.object(
+        OAuthState, "find", new=AsyncMock(return_value=[fake])
+    ), patch.object(OAuthState, "delete", new=delete_mock):
         result = await consume_oauth_state("tok_x", provider="google")
 
     assert result is None
@@ -104,9 +104,9 @@ async def test_consume_expired_rejected_and_deleted():
     )
 
     delete_mock = AsyncMock()
-    with patch.object(OAuthState, "find", new=AsyncMock(return_value=[fake])), patch.object(
-        OAuthState, "delete", new=delete_mock
-    ):
+    with patch.object(
+        OAuthState, "find", new=AsyncMock(return_value=[fake])
+    ), patch.object(OAuthState, "delete", new=delete_mock):
         result = await consume_oauth_state("tok_x", provider="google")
 
     assert result is None

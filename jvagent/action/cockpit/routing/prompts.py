@@ -151,10 +151,6 @@ Rephrase this clarification question naturally and concisely: "{template}"
 """
 
 
-# Reserved for future per-call fragment-buffer rendering.
-ROUTING_PRIOR_FRAGMENTS_SECTION = ""
-
-
 __all__ = [
     "ROUTING_SYSTEM_PROMPT",
     "ROUTING_USER_PROMPT_TEMPLATE",
@@ -162,5 +158,4 @@ __all__ = [
     "ROUTING_CLARIFICATION_FALLBACK_MESSAGES",
     "ROUTING_CLARIFICATION_USER_PROMPT_TEMPLATE",
     "ROUTING_CLARIFICATION_PARAPHRASE_PROMPT_TEMPLATE",
-    "ROUTING_PRIOR_FRAGMENTS_SECTION",
 ]

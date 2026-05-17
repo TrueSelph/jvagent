@@ -85,12 +85,12 @@ def _suppress_tool_observability(tool_name: str) -> bool:
     """
     import os
 
-    if (
-        os.environ.get("JVAGENT_COCKPIT_VERBOSE_RESPONSE_TOOLS", "")
-        .strip()
-        .lower()
-        in {"true", "1", "yes", "on"}
-    ):
+    if os.environ.get("JVAGENT_COCKPIT_VERBOSE_RESPONSE_TOOLS", "").strip().lower() in {
+        "true",
+        "1",
+        "yes",
+        "on",
+    }:
         return False
     return tool_name in USER_VISIBLE_TOOL_NAMES
 
@@ -996,7 +996,11 @@ class CockpitEngine:
         try:
             raw = await self.ctx.conversation.get_interaction_history(
                 limit=self.ctx.config.history_limit,
-                excluded=self.ctx.interaction.id if self.ctx.interaction else None,
+                excluded=(
+                    self.ctx.interaction.id
+                    if (self.ctx.interaction and self.ctx.interaction.id)
+                    else None
+                ),
                 with_utterance=True,
                 with_response=True,
                 formatted=True,
@@ -1394,7 +1398,7 @@ class CockpitEngine:
                     getattr(tr, "is_error", False)
                     or (
                         isinstance(tr, dict)
-                        and tr.get("content", "").startswith("Error:")
+                        and (tr.get("content") or "").startswith("Error:")
                     )
                 )
                 else "ok"

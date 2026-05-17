@@ -12,6 +12,11 @@ from jvspatial.core.annotations import attribute
 from jvspatial.env import env
 
 from jvagent.action.base import Action
+from jvagent.action.utils.oauth_audit import _audit_log_oauth_event
+from jvagent.action.utils.oauth_token_crypto import (
+    decrypt_token_from_storage,
+    encrypt_token_for_storage,
+)
 from jvagent.core.public_url import get_public_base_url
 
 from .google_token import GoogleToken
@@ -56,6 +61,15 @@ class GoogleAction(Action):
     API_SERVICE_NAME: ClassVar[str] = ""
     API_VERSION: ClassVar[str] = ""
     SCOPES: ClassVar[List[str]] = []
+
+    # AUDIT-actions XC-4: ``/api/google/{action_id}`` is the per-action
+    # auth-URL entry point. ``/api/google/callback/`` is intentionally
+    # SHARED across every GoogleAction instance and is therefore NOT
+    # declared here — unregistering it on one action's deregister would
+    # break OAuth callbacks for all the others.
+    additional_endpoint_path_templates: ClassVar[List[str]] = [
+        "/api/google/{action_id}",
+    ]
 
     async def _apply_env_defaults(self) -> None:
         base = get_public_base_url()
@@ -110,7 +124,7 @@ class GoogleAction(Action):
             creds = await self._get_credentials()
 
             # 3. Build the actual service object
-            logger.warning(
+            logger.debug(
                 f"Building Google {self.API_SERVICE_NAME} service for {self.id}"
             )
             self._built_service = build(
@@ -198,6 +212,43 @@ class GoogleAction(Action):
             client_config, scopes=self.SCOPES, redirect_uri=self.redirect_uri
         )
 
+    def _resolve_client_secret_from_env(self) -> str:
+        """Re-read ``client_secret`` from ``GOOGLE_CLIENT_SECRETS_JSON`` each refresh.
+
+        AUDIT-actions XC-1: the secret is app-wide, not per-user/per-action.
+        Storing it on every ``GoogleToken`` row multiplied the leak surface;
+        env is the single source of truth.
+        """
+        raw = self._raw_client_secrets()
+        if not raw:
+            return ""
+        client_config: Any = None
+        try:
+            if isinstance(raw, str):
+                try:
+                    client_config = json.loads(raw)
+                except json.JSONDecodeError:
+                    with open(raw, "r") as f:
+                        client_config = json.load(f)
+            else:
+                client_config = raw
+        except Exception as exc:
+            logger.warning(
+                "GoogleAction %s: failed to parse client secrets for refresh: %s",
+                self.id,
+                exc,
+            )
+            return ""
+        # client_config can be {"web": {...}} or {"installed": {...}}.
+        if isinstance(client_config, dict):
+            for outer in ("web", "installed"):
+                inner = client_config.get(outer)
+                if isinstance(inner, dict) and inner.get("client_secret"):
+                    return str(inner["client_secret"])
+            if client_config.get("client_secret"):
+                return str(client_config["client_secret"])
+        return ""
+
     async def _get_credentials(self) -> Credentials:
         """Retrieves and refreshes cached credentials from database, or raises an error if missing."""
         creds = None
@@ -207,12 +258,22 @@ class GoogleAction(Action):
 
         if token_node:
             try:
+                # AUDIT-actions XC-1: prefer env-sourced client_secret over
+                # the persisted row field. Old rows may still carry a
+                # value; new rows must not be written with one.
+                env_secret = self._resolve_client_secret_from_env()
+                # Decrypt token + refresh_token from storage (AES-GCM
+                # via JVAGENT_TOKEN_ENC_KEY). Legacy plaintext rows are
+                # passed through unchanged; next save re-encrypts.
+                decrypted_token = decrypt_token_from_storage(token_node.token)
+                decrypted_refresh = decrypt_token_from_storage(token_node.refresh_token)
                 token_info = {
-                    "token": token_node.token,
-                    "refresh_token": token_node.refresh_token,
+                    "token": decrypted_token,
+                    "refresh_token": decrypted_refresh,
                     "token_uri": token_node.token_uri,
                     "client_id": token_node.client_id,
-                    "client_secret": token_node.client_secret,
+                    "client_secret": env_secret
+                    or getattr(token_node, "client_secret", ""),
                     "scopes": token_node.scopes,
                     "expiry": (
                         token_node.expiry.isoformat() if token_node.expiry else None
@@ -221,6 +282,13 @@ class GoogleAction(Action):
                 creds = Credentials.from_authorized_user_info(token_info, self.SCOPES)
             except Exception as e:
                 logger.warning(f"Failed to load cached credentials for {self.id}: {e}")
+                _audit_log_oauth_event(
+                    provider="google",
+                    event="token_load_failed",
+                    action_id=self.id,
+                    agent_id=self.agent_id,
+                    extra_details={"error_type": type(e).__name__},
+                )
 
         # If there are no (valid) credentials available, let the user log in.
         if not creds or not creds.valid:
@@ -239,6 +307,14 @@ class GoogleAction(Action):
                     self._built_service = None
                 except Exception as e:
                     logger.error(f"Failed to refresh credentials for {self.id}: {e}")
+                    _audit_log_oauth_event(
+                        provider="google",
+                        event="token_refresh_failed",
+                        action_id=self.id,
+                        agent_id=self.agent_id,
+                        client_id_hint=getattr(creds, "client_id", None),
+                        extra_details={"error_type": type(e).__name__},
+                    )
                     raise ValueError(
                         f"OAuth2 credentials for {self.id} expired and could not be refreshed. Please re-authorize."
                     )
@@ -250,14 +326,29 @@ class GoogleAction(Action):
         return creds
 
     async def _save_credentials(self, creds: Credentials) -> None:
-        """Saves the credentials to database as a GoogleToken node."""
+        """Saves the credentials to database as a GoogleToken node.
+
+        AUDIT-actions XC-1: does NOT persist ``client_secret`` — the app-wide
+        secret is re-read from ``GOOGLE_CLIENT_SECRETS_JSON`` env at every
+        refresh via :meth:`_resolve_client_secret_from_env`. If an existing
+        row carries a leftover ``client_secret`` value, it is scrubbed on
+        the next save so the field stops being a leak target. Token +
+        refresh_token still persist (they are per-user; encryption layer
+        in subsequent work).
+        """
+        # Encrypt token + refresh_token before persisting. No-op when
+        # JVAGENT_TOKEN_ENC_KEY is unset (legacy plaintext storage).
+        # AUDIT-actions XC-1 Fix 2.
+        enc_token = encrypt_token_for_storage(creds.token or "")
+        enc_refresh = encrypt_token_for_storage(creds.refresh_token or "")
         token_data = {
             "action_id": self.id,
-            "token": creds.token,
-            "refresh_token": creds.refresh_token,
+            "token": enc_token,
+            "refresh_token": enc_refresh,
             "token_uri": creds.token_uri,
             "client_id": creds.client_id,
-            "client_secret": creds.client_secret,
+            # client_secret intentionally omitted — AUDIT XC-1.
+            "client_secret": "",
             "scopes": creds.scopes,
             "agent_id": self.agent_id,
             "expiry": creds.expiry,
@@ -266,11 +357,12 @@ class GoogleAction(Action):
         # Update existing token or create new one
         token_node = await self.node(node="GoogleToken", action_id=self.id)
         if token_node:
-            token_node.token = creds.token
-            token_node.refresh_token = creds.refresh_token
+            token_node.token = enc_token
+            token_node.refresh_token = enc_refresh
             token_node.token_uri = creds.token_uri
             token_node.client_id = creds.client_id
-            token_node.client_secret = creds.client_secret
+            # Scrub any legacy client_secret on existing row.
+            token_node.client_secret = ""
             token_node.scopes = creds.scopes
             token_node.expiry = creds.expiry
             await token_node.save()
@@ -279,4 +371,12 @@ class GoogleAction(Action):
             # Establish google_action >> token relationship
             await self.connect(token_node)
 
+        # AUDIT-actions XC-1 Fix 3: audit-log every token mint / refresh.
+        _audit_log_oauth_event(
+            provider="google",
+            event="token_saved",
+            action_id=self.id,
+            agent_id=self.agent_id,
+            client_id_hint=creds.client_id,
+        )
         logger.info(f"Saved Google credentials for {self.id} to database")

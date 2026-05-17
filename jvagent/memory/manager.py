@@ -198,10 +198,9 @@ class Memory(Node):
 
         from jvagent.memory.user import User
 
-        strict = (
-            os.environ.get("JVAGENT_STRICT_USER_MEMORY_ID", "false").strip().lower()
-            in {"true", "1", "yes", "on"}
-        )
+        strict = os.environ.get(
+            "JVAGENT_STRICT_USER_MEMORY_ID", "false"
+        ).strip().lower() in {"true", "1", "yes", "on"}
 
         connected = await self.nodes(node=User)
         result: List["User"] = []
@@ -633,9 +632,7 @@ class Memory(Node):
             # delete conversations belonging to another Memory by supplying
             # any conversation_id. AUDIT-memory CRIT-03.
             owners = await conversation.nodes(node=User, direction="in")
-            scoped_users = {
-                u.id for u in await self.users_scoped_to_this_memory()
-            }
+            scoped_users = {u.id for u in await self.users_scoped_to_this_memory()}
             if not any(getattr(o, "id", None) in scoped_users for o in owners):
                 logger.warning(
                     "purge_conversations: refused cross-memory purge",

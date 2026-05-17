@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, ClassVar, Dict, List, Optional, Tuple, Union
 
 from jvspatial.api.auth.api_key_service import APIKeyService
 from jvspatial.core.annotations import attribute
@@ -32,6 +32,12 @@ class EmailAction(Action):
     outbound send. Inbound webhook URL generation still needs a public base URL for
     all providers that use the email webhook.
     """
+
+    # AUDIT-actions XC-4: inbound webhook for SendGrid / Mailgun-style
+    # providers. Per-agent URL means it follows ``{agent_id}``.
+    additional_endpoint_path_templates: ClassVar[List[str]] = [
+        "/email/interact/webhook/{agent_id}",
+    ]
 
     provider: str = attribute(
         default="gmail",

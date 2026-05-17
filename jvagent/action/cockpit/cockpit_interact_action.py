@@ -333,9 +333,8 @@ class CockpitInteractAction(InteractAction):
             await visitor.unrecord_action_execution()
             return
 
-        visitor._skill_state = (
-            visitor._skill_state if hasattr(visitor, "_skill_state") else {}
-        )
+        if not hasattr(visitor, "_skill_state"):
+            visitor._skill_state = {}
         visitor._skill_state.setdefault("action", self)
 
         session = get_session(visitor)
@@ -587,9 +586,7 @@ class CockpitInteractAction(InteractAction):
                             )
                         except Exception:
                             pass
-                if interaction is not None and hasattr(
-                    interaction, "set_to_executed"
-                ):
+                if interaction is not None and hasattr(interaction, "set_to_executed"):
                     try:
                         interaction.set_to_executed()
                         await interaction.save()
@@ -602,8 +599,8 @@ class CockpitInteractAction(InteractAction):
         # AUDIT-interact HIGH-02: enforce a per-interaction step cap that
         # survives engine rebuilds (engine._iteration resets to 0 on rebuild).
         session.total_steps_this_interaction = (
-            (session.total_steps_this_interaction or 0) + 1
-        )
+            session.total_steps_this_interaction or 0
+        ) + 1
         if session.total_steps_this_interaction > max(1, int(self.max_iterations) * 2):
             logger.warning(
                 "CockpitInteractAction: per-interaction step cap exceeded "
@@ -757,8 +754,8 @@ class CockpitInteractAction(InteractAction):
         # AUDIT-interact HIGH-02: count the first step against the
         # per-interaction ceiling. Subsequent steps fire in _phase_continue.
         session.total_steps_this_interaction = (
-            (session.total_steps_this_interaction or 0) + 1
-        )
+            session.total_steps_this_interaction or 0
+        ) + 1
 
         step_result = await engine.step()
         await self._handle_step_result(visitor, engine, step_result)
@@ -860,7 +857,9 @@ class CockpitInteractAction(InteractAction):
                 visitor,
                 content=None,
                 response_mode="respond",
-                history_limit=max(1, int(self.history_limit or 0) or 4),
+                history_limit=(
+                    max(1, int(self.history_limit)) if self.history_limit else 4
+                ),
                 use_history=True,
             )
         except Exception as exc:

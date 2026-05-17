@@ -134,7 +134,7 @@ class AvatarAction(Action):
                 f"Failed to set profile picture: {result.get('error', 'Unknown error')}"
             )
 
-        logger.info(f"Successfully set WhatsApp profile picture from current avatar")
+        logger.info("Successfully set WhatsApp profile picture from current avatar")
         return True
 
     async def set_avatar(self, image_data: str, mimetype: str) -> bool:

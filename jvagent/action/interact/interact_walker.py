@@ -209,14 +209,8 @@ class InteractWalker(Walker):
         self, here: "InteractAction", action_label: str
     ) -> None:
         if self.interaction and getattr(here, "deny_access_directive", None):
-            self.interaction.directives.append(
-                {
-                    "content": here.deny_access_directive,
-                    "action_name": action_label,
-                    "executed": False,
-                }
-            )
-            await self.interaction.save()
+            if self.interaction.add_directive(here.deny_access_directive, action_label):
+                await self.interaction.save()
 
         await self.report(
             {

@@ -261,9 +261,7 @@ async def microsoft_oauth_callback(code: str, state: str) -> HTMLResponse:
 
     record = await consume_oauth_state(state, provider="microsoft")
     if record is None:
-        logger.warning(
-            "Microsoft OAuth callback rejected: invalid or expired state"
-        )
+        logger.warning("Microsoft OAuth callback rejected: invalid or expired state")
         return _oauth_error_html(
             "OAuth state is invalid, expired, or already used.",
             status_code=400,

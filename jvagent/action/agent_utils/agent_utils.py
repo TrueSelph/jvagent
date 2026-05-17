@@ -14,9 +14,7 @@ logger = logging.getLogger(__name__)
 class AgentUtils(Action):
     """Action for agent utilities and power user controls."""
 
-    async def list_interactions(
-        self, limit: int = 100, offset: int = 0
-    ) -> List[Dict]:
+    async def list_interactions(self, limit: int = 100, offset: int = 0) -> List[Dict]:
         """List interaction logs from the configured logs directory.
 
         AUDIT-actions XC-19: hardened against three previous footguns:
@@ -64,17 +62,13 @@ class AgentUtils(Action):
 
             app = await App.get()
             if app and app.file_storage_root_dir:
-                safe_roots.append(
-                    Path(app.file_storage_root_dir).resolve()
-                )
+                safe_roots.append(Path(app.file_storage_root_dir).resolve())
         except Exception:
             pass
         safe_roots.append(Path.cwd().resolve())
 
         resolved = log_path.resolve()
-        if not any(
-            str(resolved).startswith(str(root)) for root in safe_roots
-        ):
+        if not any(str(resolved).startswith(str(root)) for root in safe_roots):
             logger.warning(
                 "list_interactions: refusing to read %s (outside %s)",
                 resolved,

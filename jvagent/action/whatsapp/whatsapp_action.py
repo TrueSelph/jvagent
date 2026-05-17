@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, ClassVar, Dict, List, Optional, Union
 
 from jvspatial.api.auth.api_key_service import APIKeyService
 from jvspatial.core.annotations import attribute
@@ -42,6 +42,15 @@ class WhatsAppAction(Action):
     The WhatsApp session name is resolved in order: ``WHATSAPP_SESSION`` env, then
     optional ``session`` on this action, then the current agent's name.
     """
+
+    # AUDIT-actions XC-4: declare non-conforming endpoint paths so deregister
+    # cleanup unregisters them along with the standard /actions/{id}/ ones.
+    # ``/whatsapp/{action_id}/...`` paths are unique to this action instance;
+    # ``/whatsapp/interact/webhook/{agent_id}`` is per-agent.
+    additional_endpoint_path_templates: ClassVar[List[str]] = [
+        "/whatsapp/{action_id}/",
+        "/whatsapp/interact/webhook/{agent_id}",
+    ]
 
     provider: str = attribute(
         default="wwebjs",

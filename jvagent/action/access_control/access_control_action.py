@@ -1,7 +1,7 @@
 """Access Control action."""
 
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, ClassVar, Dict, List, Optional, Union
 
 from jvspatial.core.annotations import attribute
 
@@ -37,6 +37,13 @@ def log_access_denied(
 
 class AccessControlAction(Action):
     """Agent access control with permissions per channel, action and user_id."""
+
+    # AUDIT-actions XC-4: admin-facing routes under /agents/{agent_id}/
+    # access_control/ (11 sub-routes). Per-agent grouping, not per-action,
+    # so use the {agent_id} placeholder.
+    additional_endpoint_path_templates: ClassVar[List[str]] = [
+        "/agents/{agent_id}/access_control/",
+    ]
 
     exceptions: List[str] = attribute(
         default_factory=list, description="Actions exempt from permissions"

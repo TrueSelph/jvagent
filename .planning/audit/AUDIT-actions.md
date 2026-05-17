@@ -102,7 +102,7 @@ For unique-host paths like `/postiz/auth/...` (no `agent_id` parameter, just `fi
 
 **Issue**: `action-authoring.md` §3 (`package.name`) says it "must match dir layout". The loader (`loader/info_yaml.py:40-46`) actually uses the second half of `package.name` (not the directory name) as `action_name`, so loading does work — but external configs reference actions by either name. `actions-catalog.md` already lists divergent names (e.g. it calls it `jvagent/whatsapp` and `jvagent/web_search/serper` — neither matches the on-disk YAML).
 
-**Why it matters**: 
+**Why it matters**:
 - Documentation drift between SPEC, catalog, and ground truth.
 - `agent.yaml` writers see two valid spellings; tooling that splits on directory walks vs the YAML name will disagree.
 
@@ -279,7 +279,7 @@ For `interview._input_handlers`, the dict is **class-level** so all subclasses s
 **Fix**: Add `limit`/`offset` params; validate that the resolved log path is under `app.file_storage_root` or a configured allowlist; offload the read to a thread.
 
 #### XC-20 — Pip dependencies missing from several `info.yaml` files
-**Affects**: 
+**Affects**:
 - `video_generation/info.yaml` lists `httpx>=0.24.0` but the code uses both `httpx` AND `requests` (`heygen.py:6`). `requests` not in deps.
 - `mcp/info.yaml` lists `mcp>=1.0,<2` but `mcp_action.py` imports `jvagent.action.mcp.client` which uses MCP stdio_client — the `mcp` package version pin is fine, but child-process tooling (`npx`) isn't pip-installable and is not flagged in `info.yaml`.
 - `web_search/serper/info.yaml` not checked but `serper.py:6` uses `http.client` only (stdlib) — OK.
@@ -447,7 +447,7 @@ Only packages with action-specific findings are listed below. Packages reviewed 
 **Findings**:
 - **H-1** (`long_memory_store_interact_action.py:22-29`, XC-11): unbounded `_store_locks` dict.
 - **M-1** (`long_memory_interact_action.py:71-105`): `update_frequency=3` means every 3 user messages triggers an LLM call; for chatty users this is expensive. Document the cost and consider an upper bound on cumulative spend per user per day.
-- **M-2** (`long_memory_store_interact_action.py:96-118`): If `UserLongMemory.get_unindexed_categories()` returns a huge set, the action calls `assimilate_document(...)` synchronously inside the lock. Long users with many categories can stall their next interaction (the lock is held during ingest). 
+- **M-2** (`long_memory_store_interact_action.py:96-118`): If `UserLongMemory.get_unindexed_categories()` returns a huge set, the action calls `assimilate_document(...)` synchronously inside the lock. Long users with many categories can stall their next interaction (the lock is held during ingest).
 - **L-1** (`long_memory_store_interact_action.py:97`): SHA-256 of the full markdown is recomputed every interaction even when no categories changed. Cheap, but unnecessary.
 
 ### jvagent/mcp

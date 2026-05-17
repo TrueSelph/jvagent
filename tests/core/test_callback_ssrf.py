@@ -8,12 +8,12 @@ Verifies that ``_resolve_and_validate`` rejects:
 - 0.0.0.0 and ::.
 """
 
+import ipaddress
 from unittest.mock import patch
 
 import pytest
 
 from jvagent.core.callback import _is_unsafe_ip, _resolve_and_validate
-import ipaddress
 
 
 def test_literal_loopback_rejected():

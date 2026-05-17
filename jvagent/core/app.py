@@ -179,9 +179,7 @@ class App(Node):
             # later manual edits / partial restores can leave duplicates.
             # Tie-break: smallest id wins (lexicographic, deterministic).
             if len(app_candidates) > 1:
-                ids = sorted(
-                    [getattr(a, "id", "") for a in app_candidates]
-                )
+                ids = sorted([getattr(a, "id", "") for a in app_candidates])
                 logger.warning(
                     "App.get(): found %d App nodes on Root (%s); returning %r. "
                     "Run graph repair / dedupe to remove the others.",

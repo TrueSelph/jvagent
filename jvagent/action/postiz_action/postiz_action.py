@@ -115,8 +115,6 @@ class PostizAction(Action):
                 logger.error(f"Unexpected error getting Postiz auth URL: {e}")
                 raise
 
-        return ""  # Fallback to satisfy linters
-
     async def list_available_providers(self) -> List[Dict[str, str]]:
         """List all social media providers supported by Postiz.
 

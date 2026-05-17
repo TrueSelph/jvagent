@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import (
     TYPE_CHECKING,
     Any,
+    ClassVar,
     Dict,
     List,
     Optional,
@@ -351,14 +352,64 @@ class Action(Node):
     # Deregistration Cleanup Helpers
     # ============================================================================
 
+    # ============================================================================
+    # Endpoint cleanup contract (AUDIT-actions XC-4)
+    # ============================================================================
+    #
+    # When an action is deregistered, ``_discover_action_endpoints`` finds
+    # every endpoint whose path begins with ``/actions/{self.id}/`` so the
+    # framework can unregister them.  Several first-party actions register
+    # endpoints outside that prefix because the URL is externally pinned
+    # (OAuth callback URLs in Cloud Console, webhook URLs registered with
+    # WhatsApp/FB/Email providers) or because the path is admin-facing
+    # (``/agents/{agent_id}/...``).
+    #
+    # Subclasses override the two class attrs below to declare extra
+    # paths so deregister cleans them up:
+    #
+    #   ``additional_endpoint_path_prefixes``
+    #     Literal path prefixes (no placeholders). Matched with
+    #     ``str.startswith``.
+    #
+    #   ``additional_endpoint_path_templates``
+    #     Templates with ``{action_id}`` / ``{agent_id}`` placeholders.
+    #     Substituted with the action's own ids before matching.
+    #
+    # **Shared-route caveat**: paths shared across all instances of an
+    # action class (e.g. ``/google/callback/`` is the dispatch entry for
+    # EVERY GoogleAction instance) MUST NOT be declared here. Unregistering
+    # them when one of N instances deregisters breaks the remaining N-1.
+    # Only declare paths uniquely owned by ``self``.
+    additional_endpoint_path_prefixes: ClassVar[List[str]] = []
+    additional_endpoint_path_templates: ClassVar[List[str]] = []
+
+    def _expand_endpoint_path_templates(self) -> List[str]:
+        """Substitute ``{action_id}`` / ``{agent_id}`` placeholders.
+
+        Returns the list of concrete prefixes derived from
+        :attr:`additional_endpoint_path_templates` for this instance.
+        """
+        out: List[str] = []
+        for tmpl in self.additional_endpoint_path_templates:
+            try:
+                out.append(tmpl.format(action_id=self.id, agent_id=self.agent_id))
+            except (KeyError, IndexError):
+                # Template referenced a placeholder we don't supply —
+                # skip rather than crash deregister.
+                continue
+        return out
+
     def _discover_action_endpoints(self) -> List[Any]:
         """Discover all endpoints registered for this action.
 
-        Queries the endpoint registry for endpoints matching this action's path patterns.
-        Endpoints are typically registered with paths like `/actions/{action_id}/...`.
+        Queries the endpoint registry for endpoints matching this action's
+        path patterns. The standard pattern is ``/actions/{action_id}/...``;
+        subclasses can declare additional patterns via
+        :attr:`additional_endpoint_path_prefixes` /
+        :attr:`additional_endpoint_path_templates` (see AUDIT-actions XC-4).
 
         Returns:
-            List of endpoint function callables to unregister
+            List of endpoint function callables to unregister.
         """
         try:
             from jvspatial.api.context import get_current_server
@@ -369,23 +420,29 @@ class Action(Node):
 
             registry = server._endpoint_registry
 
-            # Pattern: endpoints for this action typically use /actions/{action_id}/...
-            action_path_prefix = f"/actions/{self.id}/"
+            matching_prefixes: List[str] = [f"/actions/{self.id}/"]
+            matching_prefixes.extend(self.additional_endpoint_path_prefixes)
+            matching_prefixes.extend(self._expand_endpoint_path_templates())
 
-            # Find endpoints matching this action's ID by iterating through _function_registry
             matching_endpoints = []
-            # Access the internal registry dict directly
+            seen_funcs: set = set()
             for func, endpoint_info in registry._function_registry.items():
                 path = endpoint_info.path
-                if path.startswith(action_path_prefix):
-                    matching_endpoints.append(func)
+                for prefix in matching_prefixes:
+                    # Match either prefix-style (trailing slash, "starts
+                    # with") or exact-path (no trailing slash, equality
+                    # OR startswith of the path-with-slash form). Lets
+                    # callers declare ``/google/callback/`` and also
+                    # ``/google/{action_id}`` without ambiguity.
+                    if path.startswith(prefix) or path == prefix.rstrip("/"):
+                        if id(func) not in seen_funcs:
+                            seen_funcs.add(id(func))
+                            matching_endpoints.append(func)
+                        break
 
             return matching_endpoints
 
         except Exception as e:
-            import logging
-
-            logger = logging.getLogger(__name__)
             logger.warning(f"Error discovering endpoints for action {self.id}: {e}")
             return []
 

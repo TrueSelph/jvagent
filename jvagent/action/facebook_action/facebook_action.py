@@ -6,7 +6,7 @@ import mimetypes
 import os
 import random
 import string
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, ClassVar, Dict, List, Optional, Union
 
 import httpx
 from jvspatial.api.auth.api_key_service import APIKeyService
@@ -27,6 +27,11 @@ logger = logging.getLogger(__name__)
 
 class FacebookAction(Action):
     """Action for Facebook Graph API (page management, Messenger, webhooks)."""
+
+    # AUDIT-actions XC-4: Messenger webhook receives FB Graph events.
+    additional_endpoint_path_templates: ClassVar[List[str]] = [
+        "/messenger/interact/webhook/{agent_id}",
+    ]
 
     api_url: Optional[str] = attribute(
         default=None,

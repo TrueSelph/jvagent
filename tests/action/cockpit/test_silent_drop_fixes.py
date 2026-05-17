@@ -19,7 +19,6 @@ from jvagent.action.cockpit.cockpit_interact_action import CockpitInteractAction
 from jvagent.action.cockpit.session import CockpitSession
 from jvagent.action.interact.base import InteractAction
 
-
 # ---------- CRIT-02 helpers ----------
 
 
@@ -111,6 +110,4 @@ async def test_curate_walk_path_drops_actions_not_in_queue():
     # by the caller so it must NOT appear in the result.
     assert [a.id for a in result] == [in_queue.id]
     # The prepend list (if any) also excludes ``nested``.
-    assert prepend_calls and not any(
-        a.id == nested.id for a in prepend_calls[0]
-    )
+    assert prepend_calls and not any(a.id == nested.id for a in prepend_calls[0])

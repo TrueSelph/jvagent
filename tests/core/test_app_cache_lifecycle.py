@@ -39,9 +39,7 @@ async def test_cache_hit_dropped_when_not_in_current_context():
     fake_ctx = AsyncMock()
     fake_ctx.get = AsyncMock(return_value=None)  # not in current DB
 
-    with patch(
-        "jvagent.core.app.get_default_context", return_value=fake_ctx
-    ):
+    with patch("jvagent.core.app.get_default_context", return_value=fake_ctx):
         result = await App._verify_cached_against_current_context(cached)
 
     assert result is None
@@ -54,9 +52,7 @@ async def test_cache_hit_returned_when_in_current_context():
     fake_ctx = AsyncMock()
     fake_ctx.get = AsyncMock(return_value=cached)
 
-    with patch(
-        "jvagent.core.app.get_default_context", return_value=fake_ctx
-    ):
+    with patch("jvagent.core.app.get_default_context", return_value=fake_ctx):
         result = await App._verify_cached_against_current_context(cached)
 
     assert result is cached

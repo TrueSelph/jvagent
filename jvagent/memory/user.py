@@ -249,7 +249,12 @@ class User(Node):
         facts: Optional[List[str]] = None,
         preferences: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Update the stored user model facts/preferences and timestamp."""
+        """Update the stored user model facts/preferences and timestamp.
+
+        ``user_model`` is deprecated in favor of ``User.memory``. This writer
+        dual-writes to both so back-compat readers and new readers see
+        consistent state. New callers should write to ``User.memory`` directly.
+        """
         if not self.user_model:
             self.user_model = {"facts": [], "preferences": {}, "last_updated": None}
 
@@ -264,6 +269,28 @@ class User(Node):
         self.user_model["last_updated"] = (
             await app.now() if app else datetime.now(timezone.utc)
         )
+
+        # Mirror into the canonical ``memory`` dict so new readers stay in sync.
+        if not isinstance(self.memory, dict):
+            self.memory = {}
+        um_mirror = self.memory.setdefault("user_model", {})
+        if not isinstance(um_mirror, dict):
+            um_mirror = {}
+            self.memory["user_model"] = um_mirror
+        if facts:
+            existing_facts = um_mirror.setdefault("facts", [])
+            if isinstance(existing_facts, list):
+                existing_facts.extend(facts)
+            else:
+                um_mirror["facts"] = list(facts)
+        if preferences:
+            existing_prefs = um_mirror.setdefault("preferences", {})
+            if isinstance(existing_prefs, dict):
+                existing_prefs.update(preferences)
+            else:
+                um_mirror["preferences"] = dict(preferences)
+        um_mirror["last_updated"] = self.user_model["last_updated"]
+
         await self.save()
 
     def get_user_model(self) -> Dict[str, Any]:

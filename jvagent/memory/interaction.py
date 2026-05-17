@@ -15,7 +15,11 @@ if TYPE_CHECKING:
 
 
 def _normalize_dt(dt: Optional[datetime]) -> Optional[datetime]:
-    """Normalize datetime for comparison; handles naive/aware mix."""
+    """Normalize datetime for comparison; handles naive/aware mix.
+
+    ``None`` is passed through unchanged so callers can sort/filter without
+    pre-checking. Naive datetimes are treated as UTC.
+    """
     if dt is None:
         return None
     if dt.tzinfo is None:

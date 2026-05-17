@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional
+from typing import Any, ClassVar, Dict, List, Optional
 
 from jvagent.action.base import Action
 from jvagent.action.interact.endpoints import interact_endpoint
@@ -40,6 +40,12 @@ def _set_cached_scheduler(server: Any, value: Any) -> None:
 
 class TaskDispatcher(Action):
     """Dispatches proactive tasks that have reached their trigger time."""
+
+    # AUDIT-actions XC-4: proactive scheduler endpoints registered per-agent.
+    additional_endpoint_path_templates: ClassVar[List[str]] = [
+        "/proactive/tick/{agent_id}",
+        "/proactive/webhooks/{agent_id}",
+    ]
 
     async def on_reload(self) -> None:
         await super().on_reload()

@@ -198,7 +198,7 @@ async def get_or_create_profile(request_id: Optional[str] = None) -> RequestProf
         # Return a no-op profile that doesn't store anything
         return RequestProfile()
 
-    rid = request_id or str(uuid.uuid4())[:8]
+    rid = request_id or str(uuid.uuid4())
     async with _profile_lock:
         if rid not in _profile_context:
             # Enforce max profiles limit before adding new one

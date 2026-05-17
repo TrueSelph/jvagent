@@ -14,14 +14,11 @@ from jvagent.action.cockpit.routing.prompts import (
     ROUTING_CLARIFICATION_FALLBACK_MESSAGES,
     ROUTING_CLARIFICATION_PARAPHRASE_PROMPT_TEMPLATE,
     ROUTING_CLARIFICATION_USER_PROMPT_TEMPLATE,
-    ROUTING_PRIOR_FRAGMENTS_SECTION,
     ROUTING_SYSTEM_PROMPT,
     ROUTING_USER_PROMPT_TEMPLATE,
 )
 from jvagent.action.cockpit.routing.types import (
-    POSTURE_DEFER,
     POSTURE_RESPOND,
-    POSTURE_SUPPRESS,
     RoutingResult,
     format_interaction_history,
     parse_routing_response,

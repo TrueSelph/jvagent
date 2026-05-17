@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import copy
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Optional
 
 from jvspatial.api.auth.api_key_service import APIKeyService
 from jvspatial.api.exceptions import ValidationError
@@ -45,6 +45,15 @@ logger = logging.getLogger(__name__)
 
 class PageIndexAction(Action):
     """Core PageIndex: ``search``, ``assimilate``, ``list_documents``, ``delete_document``."""
+
+    # AUDIT-actions XC-4: admin-facing pageindex routes under
+    # /agents/{agent_id}/pageindex/. ~18 routes; per-agent grouping.
+    # The /pageindex_retrieval_interact_action/interact/webhook/{agent_id}
+    # webhook also lives here for ingestion callbacks.
+    additional_endpoint_path_templates: ClassVar[List[str]] = [
+        "/agents/{agent_id}/pageindex/",
+        "/pageindex_retrieval_interact_action/interact/webhook/{agent_id}",
+    ]
 
     strategy: str = attribute(
         default="tree_search",

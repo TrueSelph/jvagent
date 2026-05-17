@@ -2,7 +2,17 @@
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import (
+    Any,
+    ClassVar,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 from urllib.parse import urlsplit
 
 import httpx
@@ -145,6 +155,13 @@ class SentDMBroadcastAction(Action):
             channels=["sms", "whatsapp"],
         )
     """
+
+    # AUDIT-actions XC-4: SentDM webhook receives status callbacks. The
+    # path is per-action_id (``/webhook/{action_id}`` is intentionally
+    # generic but unique to this instance).
+    additional_endpoint_path_templates: ClassVar[List[str]] = [
+        "/webhook/{action_id}",
+    ]
 
     api_base: str = attribute(
         default="https://api.sent.dm",

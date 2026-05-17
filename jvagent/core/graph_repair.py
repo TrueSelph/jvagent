@@ -173,9 +173,7 @@ async def repair_agent_graph(
                     result["phase"] = phase
                     rs_started = repair_state.started_at
                     result["started_at"] = (
-                        rs_started.isoformat()
-                        if rs_started
-                        else started_at.isoformat()
+                        rs_started.isoformat() if rs_started else started_at.isoformat()
                     )
                     # AUDIT-core H-7: report the actual elapsed time of the
                     # in-flight repair (caller previously got 0.0, which

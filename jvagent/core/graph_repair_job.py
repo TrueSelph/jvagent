@@ -1378,8 +1378,6 @@ async def _tick_dup_apply(
         key = keys[ki]
         ki += 1
         processed_keys += 1
-        src, _, tgt = key.partition("\n")
-        # Load all edge ids for this pair from scratch
         prefix = f"{key}|"
         pair_rows = await scratch_page(db, run_id, "edge_pair", prefix[:-1], 200)
         group_ids = sorted(
@@ -1409,7 +1407,6 @@ async def _tick_dup_apply(
                     logger.warning("Failed to remove duplicate edge %s: %s", dup_id, e)
             else:
                 removed += 1
-        _ = (src, tgt)
 
     cur["dup_key_index"] = ki
     cur["run_id"] = run_id

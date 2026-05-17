@@ -54,7 +54,8 @@ class MicrosoftOutlookMailAction(MicrosoftAction):
         params: Dict[str, Any] = {"$top": max(1, min(max_results, 999))}
         headers: Optional[Dict[str, str]] = None
         if query:
-            params["$search"] = f'"{query}"'
+            escaped = query.replace("\\", "\\\\").replace('"', '\\"')
+            params["$search"] = f'"{escaped}"'
             headers = {"ConsistencyLevel": "eventual"}
         resp = await self.graph_request(
             "GET",

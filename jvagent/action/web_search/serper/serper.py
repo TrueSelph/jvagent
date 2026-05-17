@@ -90,7 +90,9 @@ class SerperWebSearchAction(BaseWebSearchAction):
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(url, content=json.dumps(payload), headers=headers)
+                resp = await client.post(
+                    url, content=json.dumps(payload), headers=headers
+                )
             data_dict = resp.json()
             organic = data_dict.get("organic", [])
             logger.debug(

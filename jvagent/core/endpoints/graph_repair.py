@@ -99,7 +99,15 @@ async def repair_graph(
         ),
     ),
 ) -> Dict[str, Any]:
-    """Run one bounded repair step (admin only). Re-invoke until ``status=completed``."""
+    """Run one bounded repair step (admin only). Re-invoke until ``status=completed``.
+
+    Concurrency: a distributed DB-level lock (``repair_lock`` collection) ensures
+    only one step executes at a time across all replicas. Concurrent callers
+    receive ``status=in_progress`` without doing repair work, so spamming this
+    endpoint cannot multiply the underlying DB load — but each call still
+    issues a paginated find. Operators should treat this as a single-tenant
+    admin tool, not a polling target.
+    """
     return await repair_agent_graph(
         dry_run=dry_run,
         recent_minutes=recent_minutes,
