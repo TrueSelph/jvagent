@@ -2041,6 +2041,25 @@ For more details, see [jvagent/bundle/README.md](jvagent/bundle/README.md).
 
 ## Documentation Index
 
+### For AI agents (Claude Code, Codex CLI, etc.)
+
+Agent-targeted reference docs live under [`.planning/`](.planning/). Start here when an AI agent is doing work on this repo:
+
+- [Agent Master Guide](CLAUDE.md) — entry point for any AI agent (also surfaced as [AGENTS.md](AGENTS.md))
+- [Project vision](.planning/PROJECT.md) — what jvagent is and isn't
+- [SPEC](.planning/SPEC.md) — normative semantics, invariants, lifecycle contracts
+- [Architecture diagrams](.planning/architecture.md) — boot, interact, cockpit, pruning
+- [Glossary](.planning/GLOSSARY.md)
+- [Action authoring contract](.planning/action-authoring.md)
+- [Actions catalog](.planning/actions-catalog.md) — inventory of every action
+- [Memory & pruning](.planning/memory-and-pruning.md)
+- [Observability index](.planning/observability.md)
+- [Configuration keys](.planning/configuration-keys.md)
+- [jvspatial integration](.planning/jvspatial-integration.md) — boundary + inline concept summary
+- [Decision records (ADRs)](.planning/adr/)
+- Runbooks: [local dev](.planning/runbooks/local-dev.md), [add an action](.planning/runbooks/add-action.md)
+- Per-subsystem `CLAUDE.md` files in `jvagent/core/`, `jvagent/memory/`, `jvagent/action/`, `jvagent/action/interact/`, `jvagent/action/cockpit/`, `jvagent/cli/`, `jvagent/logging/`, `tests/`
+
 ### Core Documentation
 
 - [Configuration reference](docs/configuration.md) — `app.yaml` ↔ env mapping, prefix rules, jvspatial alignment
