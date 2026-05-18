@@ -29,6 +29,9 @@ It does **not** own: per-user state (that's `memory/`), action plugins (that's `
 | `app.py:537` | `set_app_update_mode` — example of mutating a `protected=True` field |
 | `agent.py:18` | `Agent` node + `Agent.get(agent_id)` cached fetch |
 | `agent.py:62-83` | Cache-aware fetch via `cache_manager.get_agent()` |
+| `agent.py:199-205` | `Agent.get_memory()` — resolves attached `Memory` node |
+| `agent.py:211-224` | `Agent.get_response_bus()` — lazy per-agent `ResponseBus` singleton |
+| `agent.py:226-319` | `Agent.send_proactive_message()` — programmatic, response-only message send; resolves User/Conversation, creates empty-utterance Interaction, publishes via `ResponseBus` (auto-records + auto-dispatches to channel adapter). See [`docs/proactive-messages.md`](../../docs/proactive-messages.md). |
 | `agents.py:17` | `Agents` branchpoint node |
 | `app_loader.py` | `app.yaml → App` translation |
 | `agent_loader.py` | `agent.yaml → Agent + Action graph` |
@@ -77,6 +80,7 @@ It does **not** own: per-user state (that's `memory/`), action plugins (that's `
 | A graph repair phase | `repair_phases/` — phases are isolated and registered via `repair_state.py`. |
 | A core HTTP route | `endpoints/`. Use `@endpoint("/api/...")` with `auth=True, roles=["admin"]` unless public. |
 | A bootstrap hook | `cli/bootstrap.py` is the orchestrator; add intermediate steps in `core/startup.py`. |
+| Programmatic proactive send (agent → user, no inbound) | Call `await agent.send_proactive_message(user_id=..., content=..., channel=...)`. See [`docs/proactive-messages.md`](../../docs/proactive-messages.md). Do NOT publish to `ResponseBus` directly from outside the walker pipeline — use this method so the bound Interaction is created and the response is recorded. |
 
 ---
 

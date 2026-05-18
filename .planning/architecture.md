@@ -215,7 +215,26 @@ InteractAction.publish() ─┬─ visitor.response_bus.publish(...)
 - Source: [`action/interact/base.py:193-274`](../jvagent/action/interact/base.py).
 - Channel adapters: `action/response/channel_adapter.py`.
 - Filters: `action/response/channel_filter.py`.
-- Per-agent bus: `Agent.get_response_bus()` ([`agent.py:185`](../jvagent/core/agent.py)).
+- Per-agent bus: `Agent.get_response_bus()` ([`agent.py:211`](../jvagent/core/agent.py)).
+
+### 6.1 Proactive (out-of-walker) sends
+
+```
+Agent.send_proactive_message(user_id, content, channel, ...)
+   │
+   ├─ Memory.get_user(user_id, create_if_missing=True)
+   ├─ user.get_conversation_by_session(session_id) OR get_active_conversation() OR create_conversation()
+   ├─ conversation.add_interaction(utterance="")     ── empty utterance = proactive marker
+   ├─ interaction.add_parameter({"is_proactive": True, ...metadata}, source_action)
+   └─ response_bus.publish(category="user", interaction=..., content=..., channel=...)
+         │
+         ├─ channel adapter dispatch (e.g. WhatsAppAdapter.send → provider API)
+         └─ _append_to_interaction_response_impl → interaction.set_response + save
+```
+
+- Source: [`agent.py:226-319`](../jvagent/core/agent.py).
+- Empty-utterance entries are suppressed from the `role: "user"` slot in LLM history at [`conversation.py:553-566`](../jvagent/memory/conversation.py); they render as standalone `assistant` turns.
+- User-facing reference: [`../docs/proactive-messages.md`](../docs/proactive-messages.md).
 
 ---
 

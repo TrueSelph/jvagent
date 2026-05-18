@@ -36,6 +36,7 @@ Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email /
 | **Understand the cockpit** | [`docs/COCKPIT.md`](docs/COCKPIT.md) + [`jvagent/action/cockpit/CLAUDE.md`](jvagent/action/cockpit/CLAUDE.md) |
 | **Run jvagent locally** | [`.planning/runbooks/local-dev.md`](.planning/runbooks/local-dev.md) |
 | **Add a new action end-to-end** | [`.planning/runbooks/add-action.md`](.planning/runbooks/add-action.md) |
+| **Send a proactive (agent-initiated) message** | [`docs/proactive-messages.md`](docs/proactive-messages.md) |
 | **See design rationale** | [`.planning/adr/`](.planning/adr/) |
 | **User-facing onboarding** | [`README.md`](README.md) |
 

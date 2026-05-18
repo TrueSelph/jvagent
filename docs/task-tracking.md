@@ -106,11 +106,12 @@ Webhook URLs can be configured with:
 - **CockpitInteractAction** uses `visitor.tasks.track(...)` and records structured steps via the cockpit engine.
 - **DirectiveBuilder** starts and completes/cancels interview tasks through `visitor.tasks`.
 - **TaskCreationInteractAction** creates proactive tasks via `visitor.tasks.create(...)`.
-- **TaskDispatcher** starts tasks before dispatch and completes/fails through store APIs.
+- **TaskDispatcher** starts tasks before dispatch and completes/fails through store APIs. It generates the dispatched message via `PersonaAction.respond(...)` (LLM-generated). For **canned** (pre-formed) proactive messages from any task or scheduler, use `Agent.send_proactive_message(...)` directly instead — see [proactive-messages.md](proactive-messages.md).
 - **TaskTriggerInteractAction** marks matched proactive tasks complete through the store.
 
 ## See also
 
+- [Proactive messages](proactive-messages.md)
 - [Conversation](jvagent/memory/conversation.py)
 - [TaskStore](jvagent/memory/task_store.py)
 - [InteractWalker](jvagent/action/interact/interact_walker.py)

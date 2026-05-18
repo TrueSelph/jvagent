@@ -525,6 +525,12 @@ For the full standard (folder anatomy, metadata, tool contract, and action integ
 - See [Task Tracking](docs/task-tracking.md) for details
 - See [Memory System](jvagent/memory/README.md) for full API reference
 
+**Proactive Messages:**
+- `Agent.send_proactive_message(user_id, content, channel, ...)` pushes a message OUT to a user from any code path — schedulers, integration callbacks, admin tools — and records a new `Interaction` so future user replies have the message in their LLM context.
+- The message is dispatched via the standard `ResponseBus` → channel adapter (WhatsApp, Messenger, email, SSE), so delivery and recording happen in one call.
+- The recorded `Interaction` has `utterance=""` and `response=<content>`; LLM history serialization renders it as a standalone assistant turn.
+- See [Proactive Messages](docs/proactive-messages.md) for the full API and usage patterns.
+
 ### Namespaces
 
 **Namespaces** organize actions to prevent naming conflicts:
@@ -1807,6 +1813,37 @@ await conversation.save()
 # the oldest interaction is automatically removed
 ```
 
+#### Sending a Proactive (Agent-Initiated) Message
+
+When code outside the inbound webhook path needs to push a message to a user
+(scheduled outreach, integration callback, admin notification), use
+`Agent.send_proactive_message` — it resolves the User/Conversation, records a
+new `Interaction`, and publishes through the standard `ResponseBus` so the
+channel adapter delivers it.
+
+```python
+agent = await Agent.get(agent_id)
+
+interaction = await agent.send_proactive_message(
+    user_id="<target user / phone / external id>",
+    content="Heads up — your reminder is due.",
+    channel="whatsapp",                    # any channel with a registered adapter
+    source_action="ReminderScheduler",     # optional origin tag (default: "ProactiveDispatch")
+    metadata={"job_id": "j-123"},          # optional — merged into the proactive tag
+)
+```
+
+The recorded `Interaction` has `utterance=""` and `response=<content>`; tag
+metadata lives on `Interaction.parameters` (e.g.
+`{"is_proactive": True, "job_id": "j-123", "action_name": "ReminderScheduler", "executed": False}`).
+LLM history rendering treats this as a standalone assistant turn — no blank
+user role is injected.
+
+For LLM-generated proactive messages (the message body is produced by a model
+based on conversation state), use the `TaskDispatcher` walker pattern instead;
+see [Task Tracking](docs/task-tracking.md). Full reference:
+[Proactive Messages](docs/proactive-messages.md).
+
 #### Optimized Query Patterns
 
 ```python
@@ -2073,6 +2110,7 @@ Agent-targeted reference docs live under [`.planning/`](.planning/). Start here 
 - [Interaction Logging](docs/interaction-logging.md) - INTERACTION log level
 - [Error Logging](docs/error-logging.md) - Error logging and querying
 - [Task Tracking](docs/task-tracking.md) - Active tasks on Conversation, API, and integrations
+- [Proactive Messages](docs/proactive-messages.md) - `Agent.send_proactive_message` API for agent-initiated, out-of-walker sends
 
 ### Action Modules
 

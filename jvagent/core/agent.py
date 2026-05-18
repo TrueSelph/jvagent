@@ -20,6 +20,7 @@ from jvspatial.core.annotations import attribute
 if TYPE_CHECKING:
     from jvagent.action.actions import Actions
     from jvagent.action.response.response_bus import ResponseBus
+    from jvagent.memory.interaction import Interaction
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +223,94 @@ class Agent(Node):
 
             self._response_bus = ResponseBus()
         return self._response_bus
+
+    async def send_proactive_message(
+        self,
+        *,
+        user_id: str,
+        content: str,
+        channel: str,
+        session_id: Optional[str] = None,
+        source_action: str = "ProactiveDispatch",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional["Interaction"]:
+        """Send a proactive, response-only message to a user via the ResponseBus.
+
+        No user utterance is involved. ``content`` is published through this
+        agent's ResponseBus, which dispatches to the registered channel adapter,
+        appends ``content`` to the bound Interaction's ``response`` field, and
+        saves the Interaction. The new Interaction is created with empty
+        ``utterance`` so the entry represents a standalone assistant turn in
+        future LLM history.
+
+        Args:
+            user_id:       Target user identifier (e.g. phone number / external ID).
+            content:       Text the agent wants to send.
+            channel:       Channel key — must match a registered adapter
+                           (e.g. ``"whatsapp"``, ``"default"``).
+            session_id:    Optional session override. If ``None``, uses the
+                           user's active conversation's session; creates one on demand.
+            source_action: Action name tag stored on the Interaction's parameters
+                           array — useful for downstream filters.
+            metadata:      Arbitrary tag dict merged into the proactive tag entry
+                           (e.g. ``{"job_id": "...", "reason": "..."}``).
+
+        Returns:
+            The persisted Interaction, or ``None`` if dispatch was skipped
+            (missing inputs, no memory, user lookup failed).
+        """
+        if not user_id or not content or not channel:
+            return None
+        memory = await self.get_memory()
+        if not memory:
+            return None
+        response_bus = await self.get_response_bus()
+
+        user = await memory.get_user(user_id, create_if_missing=True)
+        if not user:
+            return None
+
+        conversation = None
+        if session_id:
+            conversation = await user.get_conversation_by_session(session_id)
+        if conversation is None:
+            get_active = getattr(user, "get_active_conversation", None)
+            if callable(get_active):
+                conversation = await get_active()
+        if conversation is None:
+            conversation = await user.create_conversation(
+                session_id=session_id,
+                channel=channel,
+            )
+        effective_session_id = session_id or conversation.session_id or ""
+
+        interaction = await conversation.add_interaction(
+            utterance="",
+            channel=channel,
+            session_id=effective_session_id,
+        )
+        if not interaction:
+            return None
+
+        tag: Dict[str, Any] = {"is_proactive": True}
+        if metadata:
+            tag.update(metadata)
+        interaction.add_parameter(tag, source_action)
+        await interaction.save()
+
+        await response_bus.publish(
+            session_id=effective_session_id,
+            content=content,
+            channel=channel,
+            user_id=user_id,
+            interaction_id=interaction.id,
+            interaction=interaction,
+            category="user",
+            stream=False,
+            metadata={"is_proactive": True, "source_action": source_action},
+        )
+
+        return interaction
 
     async def save(self, *args, **kwargs):
         """Save the agent and invalidate cache.

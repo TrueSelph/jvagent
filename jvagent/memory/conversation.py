@@ -550,8 +550,11 @@ class Conversation(DeferredSaveMixin, Node):
                         }
                     )
 
-            # Add user utterance (if requested) - truncated if max_statement_length is set
-            if with_utterance:
+            # Add user utterance (if requested) - truncated if max_statement_length is set.
+            # Skip when utterance is empty/whitespace so proactive interactions
+            # (Agent.send_proactive_message) appear as a standalone assistant turn
+            # rather than injecting a blank user role into the LLM history.
+            if with_utterance and (interaction.utterance or "").strip():
                 truncated_utterance = await Conversation.truncate_statement(
                     interaction.utterance, max_statement_length, interaction=interaction
                 )

@@ -88,6 +88,9 @@ Logical grouping for actions (e.g., `jvagent/`, `contrib/`, `custom/`). Prevents
 ### Posture
 Cockpit-router classification of an utterance: `RESPOND`, `SUPPRESS`, or `DEFER`. Drives whether the cockpit engages and which skills it loads. See [`../docs/COCKPIT.md`](../docs/COCKPIT.md).
 
+### Proactive message / Proactive interaction
+An `Interaction` recorded in conversation history that originates from the agent (or owning code) without an inbound user utterance. Shape: `utterance == ""`, `response == <agent text>`, tagged via `Interaction.parameters` with `{"is_proactive": True, "action_name": <source>, ...metadata}`. Sent programmatically via [`Agent.send_proactive_message`](../jvagent/core/agent.py) ([`agent.py:226-319`](../jvagent/core/agent.py)) — see [`../docs/proactive-messages.md`](../docs/proactive-messages.md). In LLM history serialization the empty-utterance `user` role is suppressed ([`conversation.py:553-566`](../jvagent/memory/conversation.py)), so the entry shows as a standalone `assistant` turn.
+
 ### Profile (scaffold)
 Built-in starter template for a new agent (`minimal`, `conversational`, `whatsapp_voice`, `research`). Selected via `jvagent app create --agent namespace/name@profile`. See `docs/scaffolding.md`.
 

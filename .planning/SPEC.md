@@ -208,6 +208,7 @@ See [`adr/0004-namespace-isolation.md`](adr/0004-namespace-isolation.md) and [`a
 - The first `Interaction` is connected to the `Conversation` directly with `direction="out"`.
 - Subsequent `Interaction`s connect to the previous one with `direction="both"` (bidirectional chain).
 - `Conversation.last_interaction_id` is updated atomically with the count and timestamp.
+- `Interaction.utterance` defaults to `""` ([`interaction.py:92`](../jvagent/memory/interaction.py)). An empty utterance denotes a **proactive (agent-initiated)** entry — see §7.1 and [`docs/proactive-messages.md`](../docs/proactive-messages.md). `Conversation._format_interactions` ([`conversation.py:553-566`](../jvagent/memory/conversation.py)) skips the `role: "user"` entry when the utterance is empty/whitespace, so proactive entries appear as standalone `assistant` turns in LLM history.
 
 ### 5.3 Rolling-window pruning
 
@@ -275,8 +276,18 @@ The response bus ([`jvagent/action/response/response_bus.py`](../jvagent/action/
 
 - Channel adapters (`EmailAction`, `WhatsAppAction`, `FacebookAction`, etc.) register with the bus and translate messages to channel-specific transports.
 - Filters can drop, transform, or duplicate messages per channel.
-- `InteractAction.publish()` ([`interact/base.py:193`](../jvagent/action/interact/base.py)) is the canonical emit path.
+- `InteractAction.publish()` ([`interact/base.py:193`](../jvagent/action/interact/base.py)) is the canonical emit path **from within the walker pipeline**.
 - Stream mode defaults to `visitor.stream`; pass `stream=False` for non-streaming publishes.
+
+### 7.1 Proactive (agent-initiated) sends
+
+For messages that originate from code outside an inbound webhook (scheduled outreach, integration callbacks, admin actions), use **`Agent.send_proactive_message(user_id, content, channel, ...)`** ([`agent.py:226-319`](../jvagent/core/agent.py)) — the canonical programmatic entrypoint. It:
+
+- resolves the `User` (via `Memory.get_user(create_if_missing=True)`) and the active `Conversation` (or creates one);
+- creates an `Interaction` with `utterance=""` and tags origin under `Interaction.parameters` (`{"is_proactive": True, "action_name": <source_action>, ...metadata}`);
+- calls `ResponseBus.publish(category="user", interaction=...)` which dispatches to the channel adapter AND appends `content` to `interaction.response` and saves.
+
+Do NOT publish to the bus directly from outside the walker pipeline — bypassing this method skips the bound `Interaction` and leaves the conversation history incomplete. User-facing reference: [`docs/proactive-messages.md`](../docs/proactive-messages.md).
 
 ---
 
