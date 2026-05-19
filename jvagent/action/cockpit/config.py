@@ -50,6 +50,10 @@ class CockpitConfig:
     enable_skill_helper_tools: bool = True
     enable_artifact_tools: bool = True
     enable_cockpit_search: bool = True
+    # Cap on dynamic ``skill_activate`` invocations per cockpit run.
+    # Prevents an agent loop from runaway-activating the full catalogue.
+    # 0 disables the ``skill_activate`` harness tool entirely.
+    max_dynamic_activations: int = 10
     router_use_cockpit_search: bool = False
     # Harness-tool tier: "minimal" | "standard" | "full". Trims rarely-used
     # harness tools from the engine prompt to control token cost. Action and

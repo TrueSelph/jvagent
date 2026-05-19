@@ -77,6 +77,133 @@ def _build_skill_tools(ctx: CockpitContext) -> List[Tool]:
 
         return out
 
+    async def _activate_skill(skill_name: str) -> str:
+        """Hot-register a skill's tools into the live registry.
+
+        Use when ``skill_read`` shows a skill has tools you need but they
+        are not yet callable (i.e. the router did not pre-select that skill
+        and no ``coactivate-with`` declaration loaded it). Activation runs
+        the same loader the cockpit uses at start-up; on the next model
+        call the new tools appear in the engine's tool list.
+
+        Idempotent: re-activating an already-active skill is a no-op.
+        Bounded: per cockpit run, no more than
+        ``CockpitConfig.max_dynamic_activations`` skills may be activated
+        this way (default 10).
+        """
+        skill_name = (skill_name or "").strip()
+        if not skill_name:
+            return "skill_activate: skill_name is required."
+
+        catalog = _get_catalog()
+        if catalog is None:
+            return "skill_activate: no skill catalog available."
+
+        data = catalog.skills.get(skill_name)
+        if not data:
+            available = list(catalog.skills.keys())
+            return (
+                f"skill_activate: skill '{skill_name}' not in catalog. "
+                f"Available: {available}. Use skill_search to discover."
+            )
+
+        # Already loaded? Treat as success — engine already has the tools.
+        if skill_name in (ctx.preloaded_skills or []):
+            return f"skill_activate: '{skill_name}' is already active."
+
+        # Refuse if a required action is not enabled on this agent.
+        required_actions = data.get("requires_actions") or []
+        if required_actions and ctx.action_resolver is not None:
+            missing: List[str] = []
+            for action_label in required_actions:
+                try:
+                    resolved, _err = await ctx.action_resolver.resolve(
+                        ctx.visitor, action_label
+                    )
+                except Exception:
+                    resolved = None
+                if resolved is None:
+                    missing.append(action_label)
+            if missing:
+                return (
+                    f"skill_activate: cannot activate '{skill_name}' — "
+                    f"required action(s) not available: {missing}."
+                )
+
+        # Enforce per-run activation cap.
+        cap = getattr(ctx.config, "max_dynamic_activations", 10)
+        if cap <= 0:
+            return (
+                "skill_activate: dynamic activation disabled in this agent's "
+                "configuration (max_dynamic_activations=0)."
+            )
+        if ctx.dynamic_activations >= cap:
+            return (
+                f"skill_activate: per-run activation cap reached ({cap}). "
+                "Continue with already-loaded skills or finish the turn."
+            )
+
+        registry = ctx.registry
+        if registry is None:
+            return (
+                "skill_activate: tool registry is not exposed on ctx; this "
+                "cockpit run cannot accept dynamic activations."
+            )
+
+        # Load the bundle. Import locally to avoid a circular import at
+        # module load time (assembler imports tools/skill.py via
+        # ``_build_skill_tools``).
+        from jvagent.action.cockpit.registry.assembler import (
+            SKILL_LOAD_REPORT_KEY,
+            SkillLoadReport,
+            load_one_skill,
+        )
+
+        report = SkillLoadReport()
+        try:
+            await load_one_skill(
+                registry,
+                skill_name,
+                data,
+                catalog,
+                ctx.action_resolver,
+                ctx,
+                report,
+            )
+        except Exception as exc:
+            return f"skill_activate: load failed: {type(exc).__name__}: {exc}"
+
+        loaded_names = [e.tool_name for e in report.loaded() if e.tool_name]
+        failed_entries = report.failed()
+
+        # Append to the cumulative skill-load report so observability
+        # surfaces dynamic activations alongside startup loads.
+        skill_state = getattr(ctx.visitor, "_skill_state", None)
+        if isinstance(skill_state, dict):
+            cumulative = skill_state.get(SKILL_LOAD_REPORT_KEY)
+            if cumulative is not None and hasattr(cumulative, "entries"):
+                cumulative.entries.extend(report.entries)
+
+        if not loaded_names and failed_entries:
+            reasons = "; ".join(
+                f"{e.file or '<file>'}: {e.reason}" for e in failed_entries
+            )
+            return (
+                f"skill_activate: no tools loaded for '{skill_name}'. "
+                f"Errors: {reasons}"
+            )
+
+        if skill_name not in (ctx.preloaded_skills or []):
+            ctx.preloaded_skills.append(skill_name)
+        ctx.dynamic_activations += 1
+        ctx.registry_dirty = True
+
+        return (
+            f"skill_activate: activated '{skill_name}'. "
+            f"Newly callable tools: {loaded_names}. "
+            "These appear in your tool list on the next step."
+        )
+
     return [
         Tool(
             name="skill_list",
@@ -119,5 +246,31 @@ def _build_skill_tools(ctx: CockpitContext) -> List[Tool]:
                 "required": ["skill_name"],
             },
             execute=_read_skill,
+        ),
+        Tool(
+            name="skill_activate",
+            description=(
+                "Hot-register a skill's tools into the engine so you can "
+                "call them on the next step. Use after skill_read when the "
+                "skill's tools are listed as available but not yet callable "
+                "(i.e. the skill was not pre-selected by the router and is "
+                "not always-active). Idempotent. Bounded by "
+                "max_dynamic_activations per cockpit run."
+            ),
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "skill_name": {
+                        "type": "string",
+                        "description": (
+                            "Exact catalog name of the skill to activate. "
+                            "Use skill_search or skill_list to discover "
+                            "names."
+                        ),
+                    },
+                },
+                "required": ["skill_name"],
+            },
+            execute=_activate_skill,
         ),
     ]

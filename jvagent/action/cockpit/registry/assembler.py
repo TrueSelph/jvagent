@@ -92,6 +92,13 @@ async def assemble_cockpit_tools(ctx: CockpitContext) -> ToolRegistry:
     await _register_action_tools(registry, ctx)
     await _register_skill_tools(registry, ctx)
 
+    # Expose the assembled registry on ctx so the ``skill_activate`` harness
+    # tool can hot-register additional skill bundles mid-loop.
+    try:
+        ctx.registry = registry
+    except Exception:
+        pass
+
     user_id = getattr(ctx, "user_id", None)
     channel = getattr(ctx, "channel", "default") or "default"
     removed = await filter_tool_registry_by_access(
@@ -258,6 +265,12 @@ async def _register_skill_tools(registry: ToolRegistry, ctx: CockpitContext) -> 
             setattr(ctx.visitor, "action_resolver", action_resolver)
         except Exception:
             pass
+        # Cache on ctx for the dynamic ``skill_activate`` harness tool, which
+        # needs to call ``load_one_skill`` mid-loop without rebuilding it.
+        try:
+            ctx.action_resolver = action_resolver
+        except Exception:
+            pass
 
     preloaded = ctx.preloaded_skills if hasattr(ctx, "preloaded_skills") else []
 
@@ -321,6 +334,33 @@ async def _register_skill_tools(registry: ToolRegistry, ctx: CockpitContext) -> 
                 failed.file,
                 failed.reason,
             )
+
+
+async def load_one_skill(
+    registry: ToolRegistry,
+    skill_name: str,
+    skill_data: Dict[str, Any],
+    catalog: SkillCatalog,
+    action_resolver: Optional[ActionResolver],
+    ctx: CockpitContext,
+    report: SkillLoadReport,
+) -> None:
+    """Public wrapper around the module-private ``_load_one_skill``.
+
+    Re-exported so the ``skill_activate`` harness tool (and external
+    callers needing to hot-register a skill bundle) can use the same
+    loader the assembler does without depending on a leading-underscore
+    name.
+    """
+    await _load_one_skill(
+        registry,
+        skill_name,
+        skill_data,
+        catalog,
+        action_resolver,
+        ctx,
+        report,
+    )
 
 
 async def _load_one_skill(

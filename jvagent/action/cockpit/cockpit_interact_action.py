@@ -104,6 +104,7 @@ class CockpitInteractAction(InteractAction):
     skills_source: str = attribute(default="both")
     max_iterations: int = attribute(default=25)
     max_duration_seconds: float = attribute(default=300.0)
+    max_dynamic_activations: int = attribute(default=10)
     response_mode: str = attribute(default="publish")
 
     converse_enabled: bool = attribute(default=True)
@@ -229,6 +230,7 @@ class CockpitInteractAction(InteractAction):
             enable_skill_helper_tools=self.enable_skill_helper_tools,
             enable_artifact_tools=self.enable_artifact_tools,
             enable_cockpit_search=self.enable_cockpit_search,
+            max_dynamic_activations=self.max_dynamic_activations,
             router_use_cockpit_search=self.router_use_cockpit_search,
             tool_tier=self.tool_tier,
             preload_user_memory=self.preload_user_memory,

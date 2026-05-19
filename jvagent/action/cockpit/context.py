@@ -68,6 +68,22 @@ class CockpitContext:
     routed_skills: List[str] = field(default_factory=list)
     publish_callback: Optional[Callable] = None
 
+    # Live tool registry (set by ``assemble_cockpit_tools`` after the full
+    # surface is built). Exposed on ctx so the ``skill_activate`` harness
+    # tool can hot-register additional skill tools mid-loop.
+    registry: Optional[Any] = None
+    # Action resolver for the running agent (same instance the assembler
+    # creates). Cached here so dynamic activation can pass it to
+    # ``load_one_skill`` without re-instantiating.
+    action_resolver: Optional[Any] = None
+    # Set to True by ``skill_activate`` after registering new tools.
+    # ``CockpitEngine.step`` checks this at the top of each iteration and
+    # re-serialises the tool list before the next model call.
+    registry_dirty: bool = False
+    # Counter for dynamic activations within this cockpit run; capped by
+    # ``CockpitConfig.max_dynamic_activations`` to bound runaway behaviour.
+    dynamic_activations: int = 0
+
     @property
     def agent_name(self) -> str:
         return getattr(self.persona, "persona_name", "Agent")
