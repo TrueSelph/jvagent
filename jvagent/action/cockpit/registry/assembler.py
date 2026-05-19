@@ -265,6 +265,28 @@ async def _register_skill_tools(registry: ToolRegistry, ctx: CockpitContext) -> 
         catalog = SkillCatalog(discovered)
         skill_state["skill_catalog"] = catalog
 
+    # Expand preloaded list with declared ``coactivate-with`` companions.
+    # Companions inherit activation from the seed skill so the engine has
+    # the related tool surface (e.g. drill-down from an insights query into
+    # a single entry) without a mid-loop ``skill_activate`` round trip.
+    # Depth cap = 2 (seed → companion → companion-of-companion).
+    if catalog is not None and preloaded:
+        expanded = catalog.expand_with_companions(preloaded, max_depth=2)
+        added = [s for s in expanded if s not in preloaded]
+        if added:
+            logger.info(
+                "CockpitSkillLoad: coactivate-with expanded preloaded "
+                "skills from %s by adding %s",
+                preloaded,
+                added,
+            )
+            preloaded = expanded
+            # Mutate ctx.preloaded_skills in place so downstream consumers
+            # (engine._activated_skills snapshot, prompt construction) see
+            # the same expanded set.
+            if hasattr(ctx, "preloaded_skills"):
+                ctx.preloaded_skills[:] = expanded
+
     for skill_name in preloaded:
         if skill_name not in discovered:
             report.entries.append(

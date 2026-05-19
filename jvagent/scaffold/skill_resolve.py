@@ -284,6 +284,9 @@ def parse_skill_bundle(
     imports = _normalize_string_list(
         frontmatter.get("imports"), skill_file, key="imports"
     )
+    coactivate_with = _normalize_string_list(
+        frontmatter.get("coactivate-with"), skill_file, key="coactivate-with"
+    )
     scope_hint = ", ".join(str(tag) for tag in tags if str(tag).strip())
     if not scope_hint:
         scope_hint = description
@@ -317,6 +320,7 @@ def parse_skill_bundle(
         "dispatch": dispatch,
         "exports": exports,
         "imports": imports,
+        "coactivate_with": coactivate_with,
         "scope_hint": scope_hint,
         "source": source,
         "metadata": {

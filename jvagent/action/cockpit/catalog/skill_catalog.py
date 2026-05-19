@@ -59,6 +59,63 @@ class SkillCatalog:
         return not self._skills
 
     # ------------------------------------------------------------------
+    # Co-activation
+    # ------------------------------------------------------------------
+
+    def expand_with_companions(
+        self,
+        seed_skills: List[str],
+        max_depth: int = 2,
+    ) -> List[str]:
+        """Expand a seed list with declared ``coactivate-with`` companions.
+
+        Walks the companion graph breadth-first up to ``max_depth`` hops.
+        Skills that don't exist in the catalog are silently dropped from
+        the expansion (the router or skill author may have referenced a
+        renamed/removed skill). Order is preserved: seeds first in input
+        order, then companions in discovery order. Cycles terminate at
+        the depth cap; the same skill never appears twice in the output.
+        """
+        if not seed_skills:
+            return []
+
+        result: List[str] = []
+        seen: Set[str] = set()
+        frontier: List[Tuple[str, int]] = []
+
+        for name in seed_skills:
+            if name and name not in seen:
+                seen.add(name)
+                result.append(name)
+                frontier.append((name, 0))
+
+        while frontier:
+            name, depth = frontier.pop(0)
+            if depth >= max_depth:
+                continue
+            data = self._skills.get(name)
+            if not data:
+                continue
+            companions = data.get("coactivate_with") or []
+            for companion in companions:
+                if not companion or companion in seen:
+                    continue
+                if companion not in self._skills:
+                    logger.debug(
+                        "SkillCatalog.expand_with_companions: skill %s "
+                        "declares coactivate-with %s but companion is "
+                        "not in catalog; skipping",
+                        name,
+                        companion,
+                    )
+                    continue
+                seen.add(companion)
+                result.append(companion)
+                frontier.append((companion, depth + 1))
+
+        return result
+
+    # ------------------------------------------------------------------
     # Rendering
     # ------------------------------------------------------------------
 
