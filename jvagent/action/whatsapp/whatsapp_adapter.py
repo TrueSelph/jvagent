@@ -112,7 +112,7 @@ class WhatsAppAdapter(ChannelAdapter):
 
         # Extract is_group from message.metadata.whatsapp_payload
         whatsapp_payload = message.metadata.get("whatsapp_payload", {})
-        is_group = whatsapp_payload.get("isGroup", False)
+        is_group = whatsapp_payload.get("isGroup", None)
         if is_group is None and len(message.user_id) > 10:
             is_group = True
 
