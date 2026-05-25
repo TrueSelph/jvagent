@@ -2143,6 +2143,12 @@ Agent-targeted reference docs live under [`.planning/`](.planning/). Start here 
 - [App Structure](examples/jvagent_app/STRUCTURE.md)
 - [Resolv Demo](examples/jvagent_app/agents/resolv/resolv_demo/README.md)
 
+## Authors & maintainers
+
+jvagent — an agent harness built on jvspatial — was created by **Eldon Marks** ([@eldonm](https://github.com/eldonm)), who serves as its lead maintainer.
+
+See [AUTHORS](AUTHORS) for the full list of authors and contributors. Copyright and licensing terms are set out in the [LICENSE](LICENSE) file.
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
