@@ -14,16 +14,22 @@ Differences vs the cockpit ancestor:
 
    - tool-call iterations → :class:`CONTINUE` (helm dispatched its own
      tools internally via the duplicated engine)
-   - terminal engine states (final response / timeout / stuck / budget) →
-     :class:`EMIT(text="", finalize=True)` (delivery already published by
-     ``deliver_final_response`` via :class:`PersonaAction`; the empty
-     ``EMIT`` is purely a turn-finalisation signal)
+   - routed ``interact_actions`` (IA-only or engine + IAs) → a chain of
+     :class:`DELEGATE` verbs, ``follow_up=True`` for every entry except
+     the tail (``follow_up=False`` on the last so Bridge runs persona-
+     finalize and closes the turn). Each DELEGATE is one walker visit;
+     Bridge runs the IA inline and re-enqueues this helm to dispatch
+     the next.
+   - terminal engine states with no queued IAs (final response /
+     timeout / stuck / budget) → :class:`YIELD` (delivery already
+     published by ``deliver_final_response`` via :class:`PersonaAction`)
    - SUPPRESS posture / interaction missing / persona broken → :class:`YIELD`
-3. IA delegation paths (``routing.interact_actions`` curate +
-   ``ia_finalize_pending``) are intentionally omitted at C-6. The 6-utterance
-   baseline does not exercise them; when it does, ReasoningHelm will return
-   :class:`DELEGATE` so Bridge owns the dispatch instead of mutating the
-   walker queue directly.
+3. Walker-queue curation is delegated to Bridge entirely. Cockpit's
+   ``curate_walk_path_for_cockpit`` call (which mutated the walker queue
+   to schedule routed IAs after revisits) is removed — Bridge owns the
+   queue via its own ``_curate_walker_queue``, and routed IAs are
+   dispatched through the DELEGATE chain instead of being queued for
+   walker iteration.
 4. ``visitor.unrecord_action_execution()`` calls are dropped — the walker
    records only :class:`BridgeInteractAction` visits; helms are invisible
    to the walker's action trace.
@@ -36,9 +42,11 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 
+from jvagent.action.bridge.state import BRIDGE_STATE_VISITOR_ATTR
 from jvagent.action.helm.base import BaseHelm
 from jvagent.action.helm.contracts import (
     CONTINUE,
+    DELEGATE,
     EMIT,
     YIELD,
     HelmStepResult,
@@ -51,8 +59,6 @@ from jvagent.action.helm.reasoning.config import CockpitConfig
 from jvagent.action.helm.reasoning.context import CockpitContext
 from jvagent.action.helm.reasoning.contracts import TerminationReason
 from jvagent.action.helm.reasoning.delivery.delegation import (
-    collect_always_execute_interact_actions,
-    curate_walk_path_for_cockpit,
     resolve_routed_interact_actions,
 )
 from jvagent.action.helm.reasoning.delivery.gates import (
@@ -370,6 +376,53 @@ class ReasoningHelm(BaseHelm):
             )
         return persona
 
+    # Key under ``bridge_state.helm_states[helm_name]`` where pending
+    # ``DELEGATE`` targets are queued (BRIDGE-ROADMAP §C-6 follow-up:
+    # IA-tail dispatch via DELEGATE chain). Each entry is an
+    # ``InteractAction`` class name (string). The list is mutated only
+    # from inside this helm — Bridge does not touch it.
+    _PENDING_IAS_SLOT = "pending_ias"
+
+    def _queue_pending_ias(
+        self,
+        visitor: "InteractWalker",
+        routed_ias: List[Any],
+    ) -> None:
+        """Save routed IA class names to the helm slot for DELEGATE chain.
+
+        Reads ``bridge_state`` via the centralised visitor attribute
+        (``BRIDGE_STATE_VISITOR_ATTR``) so the side-channel name is not
+        duplicated. Truncates the list to ``max_dynamic_activations`` so
+        a misbehaving router can't queue an unbounded chain.
+
+        No-op when Bridge state is missing or ``routed_ias`` is empty.
+        """
+        if not routed_ias:
+            return
+        bridge_state = getattr(visitor, BRIDGE_STATE_VISITOR_ATTR, None)
+        if bridge_state is None:
+            logger.warning(
+                "ReasoningHelm: cannot queue pending IAs — visitor has no "
+                "bridge_state (Bridge orchestration appears bypassed)."
+            )
+            return
+        cap = max(1, int(self.max_dynamic_activations or 10))
+        names = [ia.__class__.__name__ for ia in routed_ias[:cap]]
+        if len(routed_ias) > cap:
+            logger.info(
+                "ReasoningHelm: routed_ias truncated to max_dynamic_activations=%d "
+                "(was %d entries; dropped tail)",
+                cap,
+                len(routed_ias),
+            )
+        slot = bridge_state.helm_states.setdefault(self.helm_name(), {})
+        # If a chain is already in flight (engine + IAs path on a revisit),
+        # extend rather than replace — the routing call only fires once
+        # per turn, so this is defensive against a future code path that
+        # re-routes.
+        existing = list(slot.get(self._PENDING_IAS_SLOT) or [])
+        slot[self._PENDING_IAS_SLOT] = existing + names
+
     async def step(
         self,
         visitor: "InteractWalker",
@@ -377,15 +430,37 @@ class ReasoningHelm(BaseHelm):
     ) -> HelmStepResult:
         """Bridge entry point: run one cockpit-style step + translate to verb.
 
-        Internally calls :meth:`_orchestrate` (the renamed cockpit
-        ``execute`` body) which sets ``self._step_outcome`` to one of
-        ``"continue"`` (engine needs another iteration), ``"yield"``
-        (terminal — persona already published), or leaves it ``None``
-        (rare error path — treated as YIELD with no-op).
+        Three return paths:
+
+        - ``CONTINUE`` — engine called tools and wants another visit.
+        - ``DELEGATE(follow_up=...)`` — one or more routed
+          ``InteractAction``s were queued during routing (or earlier
+          this turn) and the helm is dispatching them sequentially.
+          ``follow_up=True`` for every entry except the last; ``False``
+          on the final entry so Bridge runs persona-finalize and
+          closes the turn.
+        - ``YIELD`` — terminal (persona already published by the engine,
+          or there's nothing left to do).
         """
-        # Reset outcome marker before each step. Bridge re-enters step() on
-        # every walker visit (CONTINUE path), so stale state from a prior
-        # visit must not leak into the next decision.
+        # Mid-chain dispatch: if a prior visit populated pending IAs
+        # (routing returned them, or engine terminated with IAs queued),
+        # pop the next one and return DELEGATE without re-running
+        # orchestration. The chain runs to completion before any further
+        # routing happens this turn.
+        helm_slot = bridge_state.helm_states.setdefault(self.helm_name(), {})
+        pending = list(helm_slot.get(self._PENDING_IAS_SLOT) or [])
+        if pending:
+            next_ia = pending[0]
+            remaining = pending[1:]
+            helm_slot[self._PENDING_IAS_SLOT] = remaining
+            return DELEGATE(
+                interact_action=next_ia,
+                follow_up=bool(remaining),
+            )
+
+        # Fresh visit (or engine still in flight): run orchestration.
+        # Reset outcome marker so stale state from a prior visit can't
+        # leak into the next decision.
         self._step_outcome = None
 
         try:
@@ -401,13 +476,22 @@ class ReasoningHelm(BaseHelm):
         outcome = getattr(self, "_step_outcome", None)
         if outcome == "continue":
             return CONTINUE(reason="reasoning engine requested another visit")
-        # Terminal cases: persona delivery is already published by
-        # deliver_final_response / deliver_conversational / deliver_via_persona.
-        # The empty EMIT(finalize=True) tells Bridge the turn is done so it
-        # clears _bridge_state without double-publishing.
-        # ``YIELD`` is equivalent for our needs (clears state, no re-enqueue);
-        # we prefer it because EMIT with empty text would log a "content
-        # required" warning in InteractAction.publish.
+
+        # Orchestration completed. It may have populated pending_ias
+        # (IA-only branch, or engine + IAs branch on terminal). If so,
+        # pop the first and start the DELEGATE chain. Otherwise yield.
+        new_pending = list(helm_slot.get(self._PENDING_IAS_SLOT) or [])
+        if new_pending:
+            next_ia = new_pending[0]
+            remaining = new_pending[1:]
+            helm_slot[self._PENDING_IAS_SLOT] = remaining
+            return DELEGATE(
+                interact_action=next_ia,
+                follow_up=bool(remaining),
+            )
+
+        # Terminal: persona delivery already published by deliver_*
+        # helpers. YIELD lets Bridge clear state without double-publishing.
         return YIELD()
 
     async def _orchestrate(self, visitor: "InteractWalker") -> None:
@@ -509,41 +593,16 @@ class ReasoningHelm(BaseHelm):
                 agent, routing, user_id=user_id, channel=channel
             )
 
-            # Resolve routed interact_actions and curate the walker queue.
-            # We MUST curate so non-routed / non-always-execute IAs
-            # (e.g. HandoffInteractAction sitting in the agent chain) do not
-            # auto-run after Bridge yields — that would add a stray
-            # persona-finalize LM call per turn and break parity with
-            # cockpit. We pass ``visitor._bridge_action`` (the IA actually
-            # in the walker queue) rather than ``self`` (ReasoningHelm,
-            # which is not in the queue).
+            # Resolve and AC-filter routed interact_actions. In Bridge
+            # composition we do NOT curate the walker queue here — Bridge
+            # owns it via its own ``_curate_walker_queue`` (which already
+            # restricts the queue to ``{Bridge} ∪ always_execute IAs``
+            # on first visit). Routed IAs are dispatched one at a time
+            # via the DELEGATE chain in :meth:`step` instead.
             routed_ias = await resolve_routed_interact_actions(agent, routing)
             routed_ias = await filter_routed_interact_actions_by_access(
                 agent, routed_ias, user_id=user_id, channel=channel
             )
-            always_run_ias = await collect_always_execute_interact_actions(
-                agent,
-                exclude_class_names={
-                    self.__class__.__name__,
-                    "BridgeInteractAction",
-                },
-            )
-            always_run_ias = await filter_routed_interact_actions_by_access(
-                agent, always_run_ias, user_id=user_id, channel=channel
-            )
-            bridge_ia = getattr(visitor, "_bridge_action", None)
-            if bridge_ia is not None:
-                await curate_walk_path_for_cockpit(
-                    visitor,
-                    bridge_ia,
-                    routed_ias,
-                    always_execute=always_run_ias,
-                )
-            else:
-                logger.warning(
-                    "ReasoningHelm: visitor._bridge_action not set; skipping "
-                    "walker-queue curation (downstream IAs may fire)"
-                )
 
             if should_use_conversational_gate(
                 routing,
@@ -573,45 +632,35 @@ class ReasoningHelm(BaseHelm):
             session = get_session(visitor)
 
             if has_ias and not has_skills:
-                # IA-only delegation is deferred at C-6 — Bridge's DELEGATE
-                # verb (one IA at a time) doesn't yet model cockpit's
-                # weight-ordered IA dispatch. Until that's wired (post-C-7
-                # follow-up), inline persona finalize so the turn isn't
-                # silently dropped: PersonaAction renders a response from
-                # the accumulated directives and any prior interaction state.
+                # IA-only: queue the IAs for sequenced DELEGATE dispatch
+                # via :meth:`step`. No engine call this turn — Bridge
+                # runs each IA through its ``_handle_delegate`` and
+                # finalises via persona after the LAST DELEGATE
+                # (``follow_up=False`` on the tail). Cap chain length at
+                # ``max_dynamic_activations`` so a misbehaving router
+                # can't queue an unbounded number of activations.
+                self._queue_pending_ias(visitor, routed_ias)
                 logger.info(
-                    "ReasoningHelm: routing returned IA-only=%s; IA "
-                    "delegation deferred at C-6 — inline persona finalize "
-                    "(no engine call this turn)",
+                    "ReasoningHelm: routing returned IA-only=%s; queued "
+                    "for DELEGATE chain (length=%d)",
                     [a.__class__.__name__ for a in routed_ias],
+                    len(routed_ias),
                 )
-                try:
-                    await deliver_via_persona(
-                        self,
-                        visitor,
-                        response_mode="respond",
-                        history_limit=self.history_limit,
-                    )
-                except Exception as deliver_exc:
-                    logger.warning(
-                        "ReasoningHelm: IA-only inline finalize failed: %s",
-                        deliver_exc,
-                    )
-                try:
-                    interaction.set_to_executed()
-                except Exception:
-                    pass
                 self._step_outcome = "yield"
                 return
 
-            # both → run engine. C-6 defers post-engine IA dispatch (no
-            # DELEGATE verb chained yet); the engine path proceeds without
-            # queueing the IAs. Log routed_ias for observability.
+            # both → run engine first; queue the IAs for post-engine
+            # DELEGATE chain. The engine path proceeds normally; on
+            # terminal state, :meth:`step` finds the queued IAs and
+            # starts the chain. Bridge finalises via persona after the
+            # last DELEGATE in the chain.
             if has_ias and has_skills:
+                self._queue_pending_ias(visitor, routed_ias)
                 logger.info(
-                    "ReasoningHelm: engine + IAs routed=%s; IA tail "
-                    "dispatch deferred at C-6 (engine path only this turn)",
+                    "ReasoningHelm: routing returned engine + IAs=%s; "
+                    "queued for post-engine DELEGATE chain (length=%d)",
                     [a.__class__.__name__ for a in routed_ias],
+                    len(routed_ias),
                 )
 
             # skills only OR neither → cockpit engine path.
@@ -923,48 +972,11 @@ class ReasoningHelm(BaseHelm):
                 skill_catalog=skill_catalog,
             )
 
-    async def _finalize_via_persona(self, visitor: InteractWalker) -> None:
-        """Run a persona-shaped delivery after upstream IAs queued directives.
-
-        Used in "interact_actions only" mode. Cockpit was appended to the end
-        of the walk path; this routes through the unified ``deliver_via_persona``
-        in ``"respond"`` mode (no content, no directive — directives accumulated
-        by upstream IAs are read straight off the interaction by PersonaAction).
-        """
-        interaction = visitor.interaction
-        if not interaction:
-            pass  # helms not recorded by walker (Bridge owns trace)
-            return
-
-        try:
-            await self._require_persona()
-        except Exception as exc:
-            logger.warning(
-                "CockpitInteractAction: persona unavailable for finalize step: %s",
-                exc,
-            )
-            interaction.set_to_executed()
-            return
-
-        try:
-            await deliver_via_persona(
-                self,
-                visitor,
-                content=None,
-                response_mode="respond",
-                history_limit=(
-                    max(1, int(self.history_limit)) if self.history_limit else 4
-                ),
-                use_history=True,
-            )
-        except Exception as exc:
-            logger.warning(
-                "CockpitInteractAction: persona finalize delivery failed: %s",
-                exc,
-                exc_info=True,
-            )
-        finally:
-            interaction.set_to_executed()
+    # ``_finalize_via_persona`` (cockpit's IA-only mode finalizer) is
+    # not duplicated here — Bridge handles persona-finalize itself after
+    # the last DELEGATE in the chain via
+    # ``BridgeInteractAction._finalize_via_persona_if_directives``.
+    # Removed at the C-6 follow-up (IA-tail dispatch via DELEGATE chain).
 
     def _build_publish_callback(self, visitor: InteractWalker):
         """Build the callback that routes publish/thought events to the response bus."""

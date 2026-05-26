@@ -15,6 +15,31 @@ review. Future revisions of these files MAY diverge from the cockpit
 source; treat this notice as the **last known sync point**, not an
 ongoing-mirror guarantee.
 
+## Known divergences from cockpit (post-sync)
+
+- **IA-tail dispatch via DELEGATE chain** (BRIDGE-ROADMAP §C-6 follow-up,
+  not in cockpit). `reasoning_helm.py` no longer calls
+  `curate_walk_path_for_cockpit` to schedule routed `interact_actions`
+  on the walker queue; Bridge owns walker-queue curation, and routed
+  IAs are dispatched one-at-a-time through a `DELEGATE` chain
+  (`follow_up=True` on all but the last entry, `follow_up=False` on the
+  tail so Bridge runs persona-finalize). Cockpit retains its
+  `curate_walk_path` flow because it IS the InteractAction in the
+  walker queue. Side-effect: the helm no longer references
+  `visitor._bridge_action` because it no longer needs the IA-in-the-
+  queue reference for queue mutation.
+- **`_finalize_via_persona` removed.** Cockpit's IA-only-mode finalizer
+  has no helm counterpart — Bridge's
+  `_finalize_via_persona_if_directives` runs after the last DELEGATE
+  in the chain instead.
+- **Always-execute IA collection removed.** Cockpit collects and
+  weight-orders always-execute IAs alongside routed IAs before
+  curating. In Bridge composition this is duplicative — Bridge's own
+  `_curate_walker_queue` already restricts the walker queue to
+  `{Bridge} ∪ always_execute IAs` on the first visit. Note: cockpit's
+  pre-curate path also applied AccessControl to always-execute IAs;
+  Bridge's `_curate_walker_queue` does not (yet — known follow-up).
+
 The `tests/action/helm/reasoning/test_no_cockpit_imports.py` invariant
 guard fails the build if any `.py` file under `jvagent/action/helm/` or
 `jvagent/action/bridge/` imports from `jvagent.action.cockpit`.

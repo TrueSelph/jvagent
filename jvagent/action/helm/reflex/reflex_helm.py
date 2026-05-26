@@ -39,6 +39,10 @@ from jvagent.action.helm.contracts import (
     YIELD,
     HelmStepResult,
 )
+from jvagent.action.helm.reflex.language import (
+    detect_short_utterance_language,
+    language_hint_line,
+)
 from jvagent.action.helm.reflex.prompts import (
     REFLEX_SYSTEM_PROMPT,
     REFLEX_USER_PROMPT_TEMPLATE,
@@ -99,7 +103,15 @@ class ReflexHelm(BaseHelm):
     history_limit: int = attribute(default=4)
 
     default_shift_target: str = attribute(default="ReasoningHelm")
-    fallback_text: str = attribute(default="Got it — one moment.")
+    # Last-resort text emitted ONLY when Reflex cannot classify AND cannot
+    # SHIFT (the default target isn't an installed peer helm — usually a
+    # configuration error). Phrased honestly so the user knows the turn
+    # didn't land and a retry is welcome — don't promise action with
+    # "one moment" because no helm is going to act. Operators localizing
+    # per-language should override this in ``agent.yaml.context:``.
+    fallback_text: str = attribute(
+        default="Sorry — I couldn't process that. Could you rephrase or try again?"
+    )
 
     # ------------------------------------------------------------------
     # Step entry point
@@ -128,9 +140,19 @@ class ReflexHelm(BaseHelm):
 
         system_prompt = self._build_system_prompt(peer_helms, peer_actions)
         history = await self._build_history(visitor)
+        # Deterministic short-utterance language detection. Reflex on
+        # gpt-4o-mini occasionally translates short English greetings
+        # ("Hi" → "Hola") despite the system-prompt directive to match
+        # the user's language. When the utterance is a known short
+        # phrase in the lexicon, we inject an explicit "Reply in <lang>"
+        # line into the user prompt. Empty string when no match —
+        # model falls back to its own inference (reliable on longer
+        # utterances).
+        detected_language = detect_short_utterance_language(utterance)
         user_prompt = REFLEX_USER_PROMPT_TEMPLATE.format(
             history_section=history or "(no prior turns)",
             utterance=utterance,
+            language_hint=language_hint_line(detected_language),
         )
 
         verb = await self._classify(system_prompt, user_prompt)
@@ -141,6 +163,7 @@ class ReflexHelm(BaseHelm):
         # actually-installed peer helms / actions. If invalid, fall back.
         normalized = self._normalize_verb(
             verb,
+            utterance=utterance,
             peer_helm_names={h["name"] for h in peer_helms},
             peer_action_names={a["name"] for a in peer_actions},
         )
@@ -370,10 +393,28 @@ class ReflexHelm(BaseHelm):
     # Verb normalisation
     # ------------------------------------------------------------------
 
+    # Word count above which an utterance is considered substantive and
+    # cannot be EMIT'd directly. Trivial smalltalk (greetings, thanks,
+    # short acks) is always ≤3 words; anything longer is overwhelmingly
+    # a real request that needs SHIFT to a reasoning helm.
+    #
+    # Failure mode this prevents (live-smoke observed on
+    # llama-3.1-8b-instant):
+    #
+    #   user: "Search the web for the current weather in San Francisco today"
+    #   model: {"verb": "EMIT", "text": "Buscando ahora el clima en San
+    #            Francisco hoy"}
+    #
+    # The model conflated transient_ack-style content with the EMIT verb,
+    # short-circuiting the turn before Reasoning ran. The defensive guard
+    # below downgrades to SHIFT regardless of what the model said.
+    _SUBSTANTIVE_UTTERANCE_WORD_THRESHOLD = 3
+
     def _normalize_verb(
         self,
         parsed: Dict[str, Any],
         *,
+        utterance: str,
         peer_helm_names: set,
         peer_action_names: set,
     ) -> HelmStepResult:
@@ -383,7 +424,12 @@ class ReflexHelm(BaseHelm):
         - SHIFT target must be in ``peer_helm_names`` — else fall back.
         - DELEGATE interact_action must be in ``peer_action_names`` — else
           fall back.
-        - EMIT requires ``can_emit_directly`` — else fall back.
+        - EMIT requires ``can_emit_directly`` AND a non-substantive
+          utterance (≤ ``_SUBSTANTIVE_UTTERANCE_WORD_THRESHOLD`` words OR
+          a known short greeting / thanks / confirmation in the
+          language lexicon). Substantive utterances get downgraded to
+          SHIFT regardless of model output — defends against small-model
+          mis-classifications observed in live smoke.
         - Unknown verbs fall back to the default shift target.
         """
         verb = (parsed.get("verb") or "").strip().upper()
@@ -396,6 +442,19 @@ class ReflexHelm(BaseHelm):
             text = (parsed.get("text") or "").strip()
             if not text:
                 return self._safe_default_shift("EMIT verb missing text")
+            # Defensive override: substantive utterances must SHIFT.
+            if self._is_substantive_utterance(utterance):
+                logger.warning(
+                    "ReflexHelm: model returned EMIT for substantive "
+                    "utterance %r (text=%r); overriding to SHIFT(%s) — "
+                    "likely model mis-classification.",
+                    utterance[:80],
+                    text[:80],
+                    self.default_shift_target,
+                )
+                return self._safe_default_shift(
+                    "EMIT on substantive utterance (defensive override)"
+                )
             return EMIT(text=text, finalize=True)
 
         if verb == "SHIFT":
@@ -447,6 +506,42 @@ class ReflexHelm(BaseHelm):
         )
         return self._safe_default_shift(f"unknown verb {verb!r}")
 
+    def _is_substantive_utterance(self, utterance: str) -> bool:
+        """Heuristic: True iff this utterance should never get EMIT.
+
+        Two-stage check:
+
+        1. **Lexicon match** — if the utterance is a known short greeting,
+           thanks, or confirmation in any supported language (per
+           :func:`detect_short_utterance_language`), it's trivially
+           EMIT-able regardless of word count. ``"Good morning"`` etc.
+        2. **Word count** — otherwise, anything beyond
+           ``_SUBSTANTIVE_UTTERANCE_WORD_THRESHOLD`` words is treated
+           as substantive and must SHIFT.
+
+        Returns False (not substantive, EMIT allowed) only when:
+        - The utterance matches the lexicon, OR
+        - The utterance is empty / whitespace, OR
+        - The utterance has at most ``_SUBSTANTIVE_UTTERANCE_WORD_THRESHOLD``
+          words AND contains no question mark.
+
+        The question-mark rule catches short interrogatives the model
+        might naively EMIT a guess for ("What is 2+2?" — 4 words but
+        questionable; "Where am I?" — 3 words with ?). When in doubt,
+        let Reasoning take the turn.
+        """
+        text = (utterance or "").strip()
+        if not text:
+            return False
+        # Stage 1: lexicon — known short phrases bypass the word-count rule.
+        if detect_short_utterance_language(text) is not None:
+            return False
+        # Stage 2: word count + question-mark guard.
+        if "?" in text:
+            return True
+        word_count = len(text.split())
+        return word_count > self._SUBSTANTIVE_UTTERANCE_WORD_THRESHOLD
+
     def _safe_default_shift(self, reason: str) -> HelmStepResult:
         """Build a fallback SHIFT to the configured default target.
 
@@ -463,9 +558,25 @@ class ReflexHelm(BaseHelm):
         )
 
     def _safe_default_emit(self, reason: str) -> HelmStepResult:
-        """Last-resort EMIT when neither classification nor shift can proceed."""
-        text = self.fallback_text or "Got it."
-        logger.warning("ReflexHelm: emitting fallback text (%s)", reason)
+        """Last-resort EMIT when classification AND shift both fail.
+
+        Fires only when Reflex cannot classify the utterance AND the
+        configured ``default_shift_target`` is not an installed peer
+        helm — i.e. Bridge is misconfigured. Honest fallback text;
+        ``finalize=True`` ends the turn (do NOT re-enqueue — that would
+        loop into the same failure).
+        """
+        text = (
+            self.fallback_text
+            or "Sorry — I couldn't process that. Could you rephrase or try again?"
+        )
+        logger.warning(
+            "ReflexHelm: emitting fallback text (%s) — check Bridge helm "
+            "configuration: default_shift_target=%r must resolve to an "
+            "installed BaseHelm peer.",
+            reason,
+            self.default_shift_target,
+        )
         return EMIT(text=text, finalize=True)
 
 

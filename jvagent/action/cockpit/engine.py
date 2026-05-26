@@ -261,9 +261,7 @@ class CockpitEngine:
         # was captured at startup. Re-serialise before the next model call so
         # the new tools become callable.
         if getattr(self.ctx, "registry_dirty", False) and self._registry is not None:
-            self._tools_serialized = ToolSerializer.serialize_all(
-                self._registry.list()
-            )
+            self._tools_serialized = ToolSerializer.serialize_all(self._registry.list())
             for name in self.ctx.preloaded_skills:
                 if name not in self._activated_skills:
                     self._activated_skills.append(name)

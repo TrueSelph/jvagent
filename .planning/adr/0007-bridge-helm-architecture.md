@@ -149,6 +149,17 @@ class BridgeState:
 
 **Invariant:** `current_helm` may be `None` only at the start of the first visit; after Bridge's initial helm resolution it MUST be a registered helm name until `finalized` or `YIELD`.
 
+### Visitor attribute conventions
+
+Two attributes Bridge sets on the walker. Both are part of the public Bridge–helm contract; helms read them via the named accessors below, not by reaching for the underscore name directly. Centralising the names lets a future revision switch to a different mechanism (e.g. a `BridgeContext` object passed into `step()`) in one place.
+
+| Attribute | Constant | Set by | Read by | Lifetime |
+|---|---|---|---|---|
+| `visitor._bridge_state` | `BRIDGE_STATE_VISITOR_ATTR` in `bridge/state.py` | Bridge on first visit; cleared on `EMIT(finalize=True)` / `YIELD` | Bridge's verb dispatch and observability writers | Per-turn |
+| `visitor._bridge_action` | `BRIDGE_VISITOR_ATTR` in `bridge/bridge_interact_action.py` | Bridge at the start of every `execute()` | Helms that need the IA in the walker queue — resolved via `BridgeInteractAction.from_visitor(visitor)` | Lifetime of the walker (Bridge does not clear it; harmless across turns since it always points at the same Bridge instance) |
+
+Helms MUST NOT write to either attribute. Other patterns (cockpit, future helms) MAY define their own visitor attributes for their own state — by convention, prefix with an underscore and the pattern name (`_skill_state` for cockpit, `_bridge_state` / `_bridge_action` for Bridge, etc.).
+
 ### Manifest v0 schema
 
 A pattern-agnostic `manifest:` block in `info.yaml`. Read by the loader into `Action.metadata['manifest']`. Helms and other patterns may consume it; the harness does not interpret it. **Lives in [`loader/info_yaml.py`](../../jvagent/action/loader/info_yaml.py), not under `bridge/` or `cockpit/`.**

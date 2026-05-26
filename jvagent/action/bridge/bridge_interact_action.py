@@ -73,6 +73,17 @@ logger = logging.getLogger(__name__)
 # Latency classes that warrant an ack-on-shift when transient_ack is provided.
 _ACK_ELIGIBLE_LATENCY_CLASSES = frozenset({"deliberate", "long"})
 
+# Visitor attribute Bridge uses to stamp itself for helm lookup.
+#
+# Helms are ``Action`` subclasses, not ``InteractAction``s — they're not in
+# the walker queue. When a helm needs the InteractAction reference that IS
+# in the queue (e.g. ``ReasoningHelm`` calling ``curate_walk_path_for_cockpit``
+# during routed-IA queue setup), it resolves the Bridge instance via
+# :meth:`BridgeInteractAction.from_visitor` rather than reading the
+# underscore attribute directly. Centralised here so the mechanism is
+# changeable in one place.
+BRIDGE_VISITOR_ATTR = "_bridge_action"
+
 
 class BridgeConfigurationError(RuntimeError):
     """Raised when Bridge is asked to execute without any usable helms."""
@@ -133,6 +144,27 @@ class BridgeInteractAction(InteractAction):
         default="Sorry, I can't do that here.",
         description="Text published when the safe-fallback path activates.",
     )
+
+    # ------------------------------------------------------------------
+    # Visitor-side lookup (named contract for helms that need the Bridge IA)
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_visitor(cls, visitor: Any) -> Optional["BridgeInteractAction"]:
+        """Return the Bridge instance orchestrating this visitor, or ``None``.
+
+        Bridge stamps itself on the visitor at :meth:`execute` time via
+        :data:`BRIDGE_VISITOR_ATTR`. Helms call this helper rather than
+        reading the underscore attribute directly so the mechanism can
+        evolve in one place. See ADR-0007 §"Visitor attribute conventions".
+
+        Returns the stamped instance only when it is a ``BridgeInteractAction``;
+        anything else (or a missing attribute) returns ``None``. Helms that
+        require Bridge MUST handle ``None`` (typically by logging and
+        proceeding without the queue-curation side-effect).
+        """
+        ia = getattr(visitor, BRIDGE_VISITOR_ATTR, None)
+        return ia if isinstance(ia, cls) else None
 
     # ------------------------------------------------------------------
     # Helm resolution (overridable in tests)
@@ -317,11 +349,13 @@ class BridgeInteractAction(InteractAction):
 
     async def execute(self, visitor: "InteractWalker") -> None:
         """Run one Bridge step: resolve helm, call ``step()``, dispatch verb."""
-        # Stamp self on the visitor so helms can reference the Bridge IA
-        # (e.g. to pass to walker-queue curation that expects the IA
-        # actually present in the queue — helms themselves are not).
+        # Stamp self on the visitor under ``BRIDGE_VISITOR_ATTR`` so helms
+        # can reference the Bridge IA via :meth:`from_visitor` (e.g. to
+        # pass to walker-queue curation that expects the IA actually
+        # present in the queue — helms themselves are not). See ADR-0007
+        # §"Visitor attribute conventions".
         try:
-            visitor._bridge_action = self  # type: ignore[attr-defined]
+            setattr(visitor, BRIDGE_VISITOR_ATTR, self)
         except Exception:
             pass
 
@@ -816,7 +850,16 @@ class BridgeInteractAction(InteractAction):
                         verb.interact_action,
                         exc,
                     )
-        # DELEGATE hands the turn to the rails IA. The IA may have:
+        # follow_up=True: the calling helm has more work to do (typically
+        # more IAs in a sequenced chain). Re-enqueue Bridge so the helm
+        # gets visited again; do NOT finalize via persona yet and do NOT
+        # clear state — the helm will eventually emit the terminal verb
+        # (DELEGATE follow_up=False, EMIT, or YIELD) that closes the turn.
+        if verb.follow_up:
+            await visitor.prepend([self])
+            return
+        # follow_up=False (default): DELEGATE hands the turn to the rails IA.
+        # The IA may have:
         # (a) published a response directly via the response bus, OR
         # (b) added a directive to ``interaction.directives`` expecting a
         #     downstream PersonaAction to render it (the

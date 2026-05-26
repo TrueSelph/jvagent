@@ -79,21 +79,26 @@ actions:
 
   # ── ReflexHelm — sub-500ms fast classifier (BRIDGE-ROADMAP §E) ──
   # Default helm on every turn. One LM call: classify and either EMIT
-  # directly or SHIFT to ReasoningHelm. Same provider as Reasoning
-  # (OpenAI gpt-4o-mini) so no new API key is required; swap to a
-  # faster provider (Groq llama-3.1-8b-instant, Cerebras) here to
-  # tighten p50 below 200ms.
+  # directly or SHIFT to ReasoningHelm. Bound to GroqLanguageModelAction
+  # below (llama-3.1-8b-instant) for sub-200ms typical p50 — Reflex on
+  # gpt-4o-mini adds a round-trip without compensating speedup. Set
+  # GROQ_API_KEY in the environment. To revert to the OpenAI mix, swap
+  # model_action_type to OpenAILanguageModelAction and model to
+  # gpt-4o-mini.
   - action: jvagent/reflex_helm
     context:
       enabled: true
-      model: gpt-4o-mini
-      model_action_type: OpenAILanguageModelAction
+      model_action_type: GroqLanguageModelAction
+      model: llama-3.1-8b-instant
       model_temperature: 0.0
       model_max_tokens: 256
       timeout_seconds: 3.0
       history_limit: 4
       default_shift_target: ReasoningHelm
-      fallback_text: "Got it — one moment."
+      # Fires only when classification AND shift both fail (Bridge
+      # misconfiguration — default_shift_target isn't an installed peer).
+      # Don't pretend action ("one moment") since no helm is going to act.
+      fallback_text: "Sorry — I couldn't process that. Could you rephrase or try again?"
       # ``can_emit_directly: true`` lets Reflex answer trivial turns
       # itself; set false to force every turn through ReasoningHelm /
       # PersonaHelm (useful when polish quality matters more than
@@ -187,6 +192,26 @@ actions:
       temperature: 0.2
       max_tokens: 4096
       timeout: 60
+
+  # ── Groq Language Model (Reflex provider — sub-200ms typical p50) ──
+  # Groq runs Llama on dedicated LPU hardware and exposes an
+  # OpenAI-compatible API. The bridge_agent binds ReflexHelm to this
+  # provider via ``model_action_type: GroqLanguageModelAction`` above.
+  # If GROQ_API_KEY is unset, ReflexHelm logs and falls back to its
+  # safe-default SHIFT to ReasoningHelm (i.e. behaves like a no-Reflex
+  # config until the key is supplied — graceful degradation).
+  - action: jvagent/groq_lm
+    context:
+      enabled: true
+      # API key is env-only — set GROQ_API_KEY in your environment.
+      # Falls back to OPENAI_API_KEY if GROQ_API_KEY is unset (shared-key
+      # deployments). Without either key, this action remains installed
+      # but cannot serve requests.
+      api_endpoint: https://api.groq.com/openai/v1
+      model: llama-3.1-8b-instant
+      temperature: 0.0
+      max_tokens: 256
+      timeout: 10
 
   - action: jvagent/mcp
     context:

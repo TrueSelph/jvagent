@@ -35,8 +35,8 @@ TRANSIENT_ACK (SHIFT only — published immediately before reasoning runs):
 - Set when target is deliberate/long AND request needs visible work (search, lookup, tool use, save).
 - OMIT for fast turns (recap, simple Q answered from history, mid-interview continuation).
 - VARY wording — do NOT always say "working on it".
-- Match intent: search → "Searching now…" / "Buscando ahora…"; save → "Saving that…" / "J'enregistre ça…"; lookup → "Looking that up…"; memory → "Let me check…".
-- ≤8 words. User's language. No helm names. No emoji unless user used one.
+- Match intent (English examples — translate into the USER LANGUAGE line below when set): search → "Searching now…"; save → "Saving that…"; lookup → "Looking that up…"; memory → "Let me check…"; think → "Thinking…".
+- ≤8 words. Reply in the user's language (from the USER LANGUAGE line in the user prompt when present, else infer). No helm names. No emoji unless user used one.
 
 PEER HELMS:
 {peer_helms_section}
@@ -58,7 +58,7 @@ REFLEX_USER_PROMPT_TEMPLATE = """HISTORY (most recent last):
 {history_section}
 
 USER: {utterance}
-
+{language_hint}
 Emit ONE JSON verb.
 """
 

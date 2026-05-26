@@ -181,12 +181,34 @@ class DELEGATE:
     """Yield to a rails ``InteractAction`` for a single execution.
 
     Bridge resolves the action via ``Action.get_action(<interact_action>)``,
-    calls ``await action.execute(visitor)`` inline, then revisits Bridge so the
-    helm can continue. AccessControl: ``tool:delegate:{interact_action}``.
+    calls ``await action.execute(visitor)`` inline, then either finalises
+    the turn (default) or re-enqueues itself so the calling helm can
+    continue dispatching. AccessControl: ``tool:delegate:{interact_action}``.
+
+    ``follow_up`` controls Bridge's behaviour after the IA runs:
+
+    - ``False`` (default) — Bridge finalises via persona if directives are
+      pending, then clears Bridge state and exits the turn. Used when the
+      DELEGATE is the LAST step the helm wants to take (single-IA dispatch
+      or the final IA in a chain).
+    - ``True`` — Bridge re-enqueues itself via ``visitor.prepend([self])``
+      WITHOUT clearing state and WITHOUT calling persona-finalize. The
+      helm gets visited again and is responsible for either issuing the
+      next DELEGATE in the chain (``follow_up=True``), the final DELEGATE
+      (``follow_up=False``), or another terminal verb. Used to sequence
+      multiple rails IAs through a single helm-driven chain — e.g. when
+      the router returned multiple ``routing.interact_actions`` and each
+      needs to run in weight order before persona-finalize.
+
+    Helms MUST set ``follow_up=False`` on the last DELEGATE of a chain
+    so persona-finalize runs and the turn closes. A helm that keeps
+    returning ``follow_up=True`` forever is bounded only by jvspatial's
+    ``max_visits_per_node=100``; pair with the helm's own iteration cap.
     """
 
     interact_action: str
     args: Optional[Dict[str, Any]] = None
+    follow_up: bool = False
 
 
 @dataclass(frozen=True)
