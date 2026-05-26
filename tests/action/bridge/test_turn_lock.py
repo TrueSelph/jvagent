@@ -285,16 +285,29 @@ async def test_execute_auto_delegates_to_lock_owner_when_helm_cannot_interrupt(
     assert BRIDGE_STATE_VISITOR_ATTR not in visitor.__dict__
 
 
-async def test_execute_skips_auto_delegate_when_helm_can_interrupt(
+async def test_auto_delegate_fires_regardless_of_can_interrupt(
     make_bridge, make_visitor, stub_helm, monkeypatch
 ):
-    """A helm with ``can_interrupt=True`` (e.g. Reflex) is allowed to
-    run despite an active turn-lock — it may issue SHIFT(interrupt=True)
-    to break the lock cleanly."""
+    """Turn-lock auto-DELEGATE fires for ALL helms, including those
+    with ``can_interrupt=True`` (e.g. ReflexHelm).
+
+    Previously, ``can_interrupt=True`` skipped the turn-lock check so
+    Reflex could "interrupt cleanly" via SHIFT(interrupt=True). Live
+    testing exposed the mis-design: Reflex doesn't know about active
+    locks and routinely intercepted "Yep"/"ok" confirmation turns mid-
+    interview, EMITting a polite ack instead of letting the interview
+    finalise. The new contract: auto-DELEGATE always when a lock is
+    active; the rails IA's own intent classifier (e.g. interview's
+    CANCELLATION intent + interrupt_phrases) decides whether the user
+    wants to break the flow.
+
+    ``can_interrupt`` is preserved on BaseHelm for the separate
+    ``SHIFT(interrupt=True)`` mechanism inside helm.step().
+    """
     from jvagent.action.helm.contracts import EMIT
 
     helm = stub_helm(name="A", script=[EMIT(text="reflex emit", finalize=True)])
-    helm.can_interrupt = True
+    helm.can_interrupt = True  # would have bypassed the check pre-fix
     bridge = make_bridge(helms={"A": helm}, default_helm="A")
     visitor = make_visitor()
 
@@ -316,9 +329,9 @@ async def test_execute_skips_auto_delegate_when_helm_can_interrupt(
 
     await bridge.execute(visitor)
 
-    # Helm ran, locked action did NOT.
-    assert helm.call_count == 1
-    locked_action.execute.assert_not_called()
+    # Locked action ran; helm did NOT.
+    locked_action.execute.assert_awaited_once_with(visitor)
+    assert helm.call_count == 0
 
 
 async def test_auto_delegate_handles_action_raise(

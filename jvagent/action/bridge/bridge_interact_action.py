@@ -366,25 +366,37 @@ class BridgeInteractAction(InteractAction):
         helm = resolved[state.current_helm]
 
         # Turn-lock detection (BRIDGE-ROADMAP §F). When a turn-locked
-        # action is in flight (e.g. a multi-turn interview) and the
-        # current helm cannot interrupt it, route directly to the lock
-        # owner via DELEGATE rather than letting the helm potentially
-        # run a parallel model loop. The lock owner's manifest declares
-        # ``turn_lock: true`` and its action class name is captured by
-        # the detector. Helms with ``can_interrupt: true`` (e.g. Reflex)
-        # are allowed to run anyway — they may issue
-        # ``SHIFT(interrupt=True)`` to break the lock cleanly.
-        if not is_interrupt_allowed(helm):
-            lock_owner = await find_turn_lock_owner(visitor)
-            if lock_owner is not None and lock_owner.action_name != helm.helm_name():
-                logger.info(
-                    "bridge: turn-lock active on %r; helm %r cannot interrupt "
-                    "— DELEGATE'ing instead of running helm.step()",
-                    lock_owner.action_name,
-                    helm.helm_name(),
-                )
-                await self._delegate_to_lock_owner(visitor, state, lock_owner)
-                return
+        # action is in flight (e.g. a multi-turn interview), ALWAYS
+        # route directly to the lock owner via DELEGATE rather than
+        # letting any helm run a parallel model loop on the same turn.
+        # The lock owner's manifest declares ``turn_lock: true`` and
+        # its action class name is captured by the detector.
+        #
+        # ``can_interrupt`` previously gated this check (helms with
+        # ``can_interrupt: true`` ran anyway, with the option to emit
+        # ``SHIFT(interrupt=True)``). Live testing exposed the
+        # mis-design: Reflex, with can_interrupt=True, intercepted
+        # "Yep" confirmations during interview REVIEW state and
+        # EMITted "Ok!" instead of letting the interview finalise.
+        # Reflex doesn't know about active locks — it can't decide
+        # whether a one-word ack continues the lock or breaks it.
+        #
+        # Better contract: ALWAYS auto-DELEGATE when a lock is active.
+        # Interrupt semantics live in the rails IA's own intent
+        # classifier (e.g. InterviewInteractAction's CANCELLATION
+        # intent handles "stop"/"cancel"/"quit" / interrupt_phrases).
+        # ``can_interrupt`` remains on the helm for the separate
+        # SHIFT(interrupt=True) mechanism inside helm.step().
+        lock_owner = await find_turn_lock_owner(visitor)
+        if lock_owner is not None and lock_owner.action_name != helm.helm_name():
+            logger.info(
+                "bridge: turn-lock active on %r; auto-DELEGATE'ing "
+                "instead of running helm %r.step()",
+                lock_owner.action_name,
+                helm.helm_name(),
+            )
+            await self._delegate_to_lock_owner(visitor, state, lock_owner)
+            return
 
         # Per-helm wall-clock + step-count instrumentation (BRIDGE-ROADMAP §I).
         # Each step() call accrues to ``helm_timings_seconds[helm_name]`` so
