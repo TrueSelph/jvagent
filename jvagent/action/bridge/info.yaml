@@ -1,0 +1,22 @@
+# Bridge Action Package Descriptor
+package:
+  name: jvagent/bridge
+  author: jvagent
+  archetype: BridgeInteractAction
+  version: 0.1.0
+  meta:
+    title: BridgeInteractAction
+    description: >-
+      Multi-helm orchestrator InteractAction. Composes one or more helms
+      (Reflex / Reasoning / Specialist / Persona) into a single agent slot at
+      weight -200, with explicit shift verbs, shift budget, first-emit
+      timeout safety net, and AccessControl gating per shift target.
+    group: jvagent
+    type: interact_action
+  config:
+    order:
+      weight: -200
+    singleton: true
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []
