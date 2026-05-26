@@ -1,0 +1,362 @@
+{
+  "commit": "b134065",
+  "agent": "bridge_agent",
+  "rows": [
+    {
+      "label": "greeting",
+      "utterance": "Hi",
+      "duration_s": 2.065,
+      "session_id": "sess_813d99ad784548b3",
+      "user_id": "user_fd1036169a8e4564",
+      "actions_executed": [
+        "IntroInteractAction",
+        "BridgeInteractAction",
+        "PersonaAction"
+      ],
+      "model_calls": 1,
+      "total_tokens": 1181,
+      "prompt_tokens": 1155,
+      "completion_tokens": 26,
+      "callers": [
+        "PersonaAction"
+      ],
+      "response_chars": 118,
+      "response_preview": "Hey there! I can search documents, browse the web, and remember your preferences during our chat. What\u2019s on your mind?",
+      "tasks_count": 0,
+      "error": null
+    },
+    {
+      "label": "informational_simple",
+      "utterance": "What is 2 + 2? Answer in one word.",
+      "duration_s": 2.869,
+      "session_id": "sess_813d99ad784548b3",
+      "user_id": "user_fd1036169a8e4564",
+      "actions_executed": [
+        "BridgeInteractAction",
+        "PersonaAction"
+      ],
+      "model_calls": 2,
+      "total_tokens": 4068,
+      "prompt_tokens": 3993,
+      "completion_tokens": 75,
+      "callers": [
+        "ReasoningHelm",
+        "PersonaAction"
+      ],
+      "response_chars": 5,
+      "response_preview": "Four.",
+      "tasks_count": 0,
+      "error": null
+    },
+    {
+      "label": "directive_web_search",
+      "utterance": "Search the web for the most recent stable release of Python.",
+      "duration_s": 9.594,
+      "session_id": "sess_813d99ad784548b3",
+      "user_id": "user_fd1036169a8e4564",
+      "actions_executed": [
+        "BridgeInteractAction",
+        "PersonaAction"
+      ],
+      "model_calls": 3,
+      "total_tokens": 8643,
+      "prompt_tokens": 8457,
+      "completion_tokens": 186,
+      "callers": [
+        "ReasoningHelm",
+        "OpenAILanguageModelAction",
+        "PersonaAction"
+      ],
+      "response_chars": 191,
+      "response_preview": "The most recent stable release of Python is Python 3.14.5, released on May 10, 2026. You can find it on the official Python website: [python.org/downloads](http",
+      "tasks_count": 0,
+      "error": null
+    },
+    {
+      "label": "directive_remember_pref",
+      "utterance": "Remember that I prefer Python over JavaScript for new projects.",
+      "duration_s": 3.243,
+      "session_id": "sess_813d99ad784548b3",
+      "user_id": "user_fd1036169a8e4564",
+      "actions_executed": [
+        "BridgeInteractAction",
+        "PersonaAction"
+      ],
+      "model_calls": 2,
+      "total_tokens": 3995,
+      "prompt_tokens": 3894,
+      "completion_tokens": 101,
+      "callers": [
+        "ReasoningHelm",
+        "PersonaAction"
+      ],
+      "response_chars": 92,
+      "response_preview": "Got it! I\u2019ll keep that in mind. If you need any help with Python projects, just let me know!",
+      "tasks_count": 0,
+      "error": null
+    },
+    {
+      "label": "informational_recall",
+      "utterance": "What do you remember about my language preferences?",
+      "duration_s": 4.364,
+      "session_id": "sess_813d99ad784548b3",
+      "user_id": "user_fd1036169a8e4564",
+      "actions_executed": [
+        "BridgeInteractAction",
+        "PersonaAction"
+      ],
+      "model_calls": 2,
+      "total_tokens": 4287,
+      "prompt_tokens": 4179,
+      "completion_tokens": 108,
+      "callers": [
+        "ReasoningHelm",
+        "PersonaAction"
+      ],
+      "response_chars": 127,
+      "response_preview": "You prefer Python over JavaScript for new projects. If there\u2019s anything else you\u2019d like me to note or update, just let me know!",
+      "tasks_count": 0,
+      "error": null
+    },
+    {
+      "label": "thanks_followup",
+      "utterance": "Thanks!",
+      "duration_s": 1.447,
+      "session_id": "sess_813d99ad784548b3",
+      "user_id": "user_fd1036169a8e4564",
+      "actions_executed": [
+        "BridgeInteractAction",
+        "PersonaAction"
+      ],
+      "model_calls": 1,
+      "total_tokens": 1245,
+      "prompt_tokens": 1230,
+      "completion_tokens": 15,
+      "callers": [
+        "PersonaAction"
+      ],
+      "response_chars": 72,
+      "response_preview": "You're welcome! If you have more questions or need assistance, just ask!",
+      "tasks_count": 0,
+      "error": null
+    }
+  ],
+  "parity": {
+    "greeting": {
+      "model_calls": {
+        "observed": 1.0,
+        "baseline": 1.0,
+        "drift": 0.0,
+        "within_tol": true,
+        "tolerance": 0.0,
+        "gated": true
+      },
+      "prompt_tokens": {
+        "observed": 1155.0,
+        "baseline": 1155.0,
+        "drift": 0.0,
+        "within_tol": true,
+        "tolerance": 0.15,
+        "gated": true
+      },
+      "duration_s": {
+        "observed": 2.065,
+        "baseline": 1.559,
+        "drift": 0.32456703014753047,
+        "within_tol": true,
+        "tolerance": null,
+        "gated": false
+      },
+      "response_chars": {
+        "observed": 118.0,
+        "baseline": 113.0,
+        "drift": 0.04424778761061947,
+        "within_tol": true,
+        "tolerance": null,
+        "gated": false
+      }
+    },
+    "informational_simple": {
+      "model_calls": {
+        "observed": 2.0,
+        "baseline": 2.0,
+        "drift": 0.0,
+        "within_tol": true,
+        "tolerance": 0.0,
+        "gated": true
+      },
+      "prompt_tokens": {
+        "observed": 3993.0,
+        "baseline": 3921.0,
+        "drift": 0.018362662586074982,
+        "within_tol": true,
+        "tolerance": 0.15,
+        "gated": true
+      },
+      "duration_s": {
+        "observed": 2.869,
+        "baseline": 3.279,
+        "drift": -0.12503812137846895,
+        "within_tol": true,
+        "tolerance": null,
+        "gated": false
+      },
+      "response_chars": {
+        "observed": 5.0,
+        "baseline": 5.0,
+        "drift": 0.0,
+        "within_tol": true,
+        "tolerance": null,
+        "gated": false
+      }
+    },
+    "directive_web_search": {
+      "model_calls": {
+        "observed": 3.0,
+        "baseline": 3.0,
+        "drift": 0.0,
+        "within_tol": true,
+        "tolerance": 0.0,
+        "gated": true
+      },
+      "prompt_tokens": {
+        "observed": 8457.0,
+        "baseline": 9588.0,
+        "drift": -0.11795994993742177,
+        "within_tol": true,
+        "tolerance": 0.15,
+        "gated": true
+      },
+      "duration_s": {
+        "observed": 9.594,
+        "baseline": 8.709,
+        "drift": 0.10161901481226315,
+        "within_tol": true,
+        "tolerance": null,
+        "gated": false
+      },
+      "response_chars": {
+        "observed": 191.0,
+        "baseline": 198.0,
+        "drift": -0.03535353535353535,
+        "within_tol": true,
+        "tolerance": null,
+        "gated": false
+      }
+    },
+    "directive_remember_pref": {
+      "model_calls": {
+        "observed": 2.0,
+        "baseline": 2.0,
+        "drift": 0.0,
+        "within_tol": true,
+        "tolerance": 0.0,
+        "gated": true
+      },
+      "prompt_tokens": {
+        "observed": 3894.0,
+        "baseline": 4115.0,
+        "drift": -0.05370595382746051,
+        "within_tol": true,
+        "tolerance": 0.15,
+        "gated": true
+      },
+      "duration_s": {
+        "observed": 3.243,
+        "baseline": 3.596,
+        "drift": -0.09816462736373754,
+        "within_tol": true,
+        "tolerance": null,
+        "gated": false
+      },
+      "response_chars": {
+        "observed": 92.0,
+        "baseline": 86.0,
+        "drift": 0.06976744186046512,
+        "within_tol": true,
+        "tolerance": null,
+        "gated": false
+      }
+    },
+    "informational_recall": {
+      "model_calls": {
+        "observed": 2.0,
+        "baseline": 2.0,
+        "drift": 0.0,
+        "within_tol": true,
+        "tolerance": 0.0,
+        "gated": true
+      },
+      "prompt_tokens": {
+        "observed": 4179.0,
+        "baseline": 4119.0,
+        "drift": 0.014566642388929352,
+        "within_tol": true,
+        "tolerance": 0.15,
+        "gated": true
+      },
+      "duration_s": {
+        "observed": 4.364,
+        "baseline": 3.273,
+        "drift": 0.33333333333333326,
+        "within_tol": true,
+        "tolerance": null,
+        "gated": false
+      },
+      "response_chars": {
+        "observed": 127.0,
+        "baseline": 51.0,
+        "drift": 1.4901960784313726,
+        "within_tol": true,
+        "tolerance": null,
+        "gated": false
+      }
+    },
+    "thanks_followup": {
+      "model_calls": {
+        "observed": 1.0,
+        "baseline": 1.0,
+        "drift": 0.0,
+        "within_tol": true,
+        "tolerance": 0.0,
+        "gated": true
+      },
+      "prompt_tokens": {
+        "observed": 1230.0,
+        "baseline": 1226.0,
+        "drift": 0.0032626427406199023,
+        "within_tol": true,
+        "tolerance": 0.15,
+        "gated": true
+      },
+      "duration_s": {
+        "observed": 1.447,
+        "baseline": 0.929,
+        "drift": 0.5575888051668461,
+        "within_tol": true,
+        "tolerance": null,
+        "gated": false
+      },
+      "response_chars": {
+        "observed": 72.0,
+        "baseline": 32.0,
+        "drift": 1.25,
+        "within_tol": true,
+        "tolerance": null,
+        "gated": false
+      }
+    },
+    "_summary": {
+      "baseline_commit": "fresh",
+      "green": true,
+      "breaches": [],
+      "metric_tolerances": {
+        "model_calls": 0.0,
+        "prompt_tokens": 0.15,
+        "duration_s": null,
+        "response_chars": null
+      }
+    }
+  },
+  "wall_clock_unix": 1779813214.355975
+}

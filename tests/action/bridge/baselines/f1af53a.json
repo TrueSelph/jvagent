@@ -1,0 +1,464 @@
+{
+  "commit": "f1af53a",
+  "agent": "bridge_agent",
+  "rows": [
+    {
+      "label": "greeting",
+      "utterance": "Hi",
+      "duration_s": 0.117,
+      "session_id": "sess_8c20c152d4ef4caa",
+      "user_id": "user_b6e977fe2d1a4fe1",
+      "actions_executed": [
+        "IntroInteractAction",
+        "BridgeInteractAction"
+      ],
+      "model_calls": 0,
+      "total_tokens": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "callers": [],
+      "response_chars": 65,
+      "response_preview": "I encountered an error processing your request. Please try again.",
+      "tasks_count": 0,
+      "error": null
+    },
+    {
+      "label": "informational_simple",
+      "utterance": "What is 2 + 2? Answer in one word.",
+      "duration_s": 3.173,
+      "session_id": "sess_8c20c152d4ef4caa",
+      "user_id": "user_b6e977fe2d1a4fe1",
+      "actions_executed": [
+        "BridgeInteractAction"
+      ],
+      "model_calls": 1,
+      "total_tokens": 2599,
+      "prompt_tokens": 2526,
+      "completion_tokens": 73,
+      "callers": [
+        "ReasoningHelm"
+      ],
+      "response_chars": 65,
+      "response_preview": "I encountered an error processing your request. Please try again.",
+      "tasks_count": 0,
+      "error": null
+    },
+    {
+      "label": "directive_web_search",
+      "utterance": "Search the web for the most recent stable release of Python.",
+      "duration_s": 5.144,
+      "session_id": "sess_8c20c152d4ef4caa",
+      "user_id": "user_b6e977fe2d1a4fe1",
+      "actions_executed": [
+        "BridgeInteractAction"
+      ],
+      "model_calls": 2,
+      "total_tokens": 7078,
+      "prompt_tokens": 6942,
+      "completion_tokens": 136,
+      "callers": [
+        "ReasoningHelm",
+        "OpenAILanguageModelAction"
+      ],
+      "response_chars": 65,
+      "response_preview": "I encountered an error processing your request. Please try again.",
+      "tasks_count": 0,
+      "error": null
+    },
+    {
+      "label": "directive_remember_pref",
+      "utterance": "Remember that I prefer Python over JavaScript for new projects.",
+      "duration_s": 2.94,
+      "session_id": "sess_8c20c152d4ef4caa",
+      "user_id": "user_b6e977fe2d1a4fe1",
+      "actions_executed": [
+        "BridgeInteractAction"
+      ],
+      "model_calls": 1,
+      "total_tokens": 2657,
+      "prompt_tokens": 2582,
+      "completion_tokens": 75,
+      "callers": [
+        "ReasoningHelm"
+      ],
+      "response_chars": 65,
+      "response_preview": "I encountered an error processing your request. Please try again.",
+      "tasks_count": 0,
+      "error": null
+    },
+    {
+      "label": "informational_recall",
+      "utterance": "What do you remember about my language preferences?",
+      "duration_s": 1.746,
+      "session_id": "sess_8c20c152d4ef4caa",
+      "user_id": "user_b6e977fe2d1a4fe1",
+      "actions_executed": [
+        "BridgeInteractAction"
+      ],
+      "model_calls": 1,
+      "total_tokens": 2670,
+      "prompt_tokens": 2589,
+      "completion_tokens": 81,
+      "callers": [
+        "ReasoningHelm"
+      ],
+      "response_chars": 65,
+      "response_preview": "I encountered an error processing your request. Please try again.",
+      "tasks_count": 0,
+      "error": null
+    },
+    {
+      "label": "thanks_followup",
+      "utterance": "Thanks!",
+      "duration_s": 0.095,
+      "session_id": "sess_8c20c152d4ef4caa",
+      "user_id": "user_b6e977fe2d1a4fe1",
+      "actions_executed": [
+        "BridgeInteractAction"
+      ],
+      "model_calls": 0,
+      "total_tokens": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "callers": [],
+      "response_chars": 65,
+      "response_preview": "I encountered an error processing your request. Please try again.",
+      "tasks_count": 0,
+      "error": null
+    }
+  ],
+  "parity": {
+    "greeting": {
+      "duration_s": {
+        "observed": 0.117,
+        "baseline": 2.93,
+        "drift": -0.9600682593856655,
+        "within_tol": false
+      },
+      "model_calls": {
+        "observed": 0.0,
+        "baseline": 2.0,
+        "drift": -1.0,
+        "within_tol": false
+      },
+      "prompt_tokens": {
+        "observed": 0.0,
+        "baseline": 2014.0,
+        "drift": -1.0,
+        "within_tol": false
+      },
+      "response_chars": {
+        "observed": 65.0,
+        "baseline": 34.0,
+        "drift": 0.9117647058823529,
+        "within_tol": false
+      }
+    },
+    "informational_simple": {
+      "duration_s": {
+        "observed": 3.173,
+        "baseline": 2.79,
+        "drift": 0.13727598566308244,
+        "within_tol": false
+      },
+      "model_calls": {
+        "observed": 1.0,
+        "baseline": 2.0,
+        "drift": -0.5,
+        "within_tol": false
+      },
+      "prompt_tokens": {
+        "observed": 2526.0,
+        "baseline": 4956.0,
+        "drift": -0.49031476997578693,
+        "within_tol": false
+      },
+      "response_chars": {
+        "observed": 65.0,
+        "baseline": 5.0,
+        "drift": 12.0,
+        "within_tol": false
+      }
+    },
+    "directive_web_search": {
+      "duration_s": {
+        "observed": 5.144,
+        "baseline": 5.89,
+        "drift": -0.12665534804753814,
+        "within_tol": false
+      },
+      "model_calls": {
+        "observed": 2.0,
+        "baseline": 3.0,
+        "drift": -0.3333333333333333,
+        "within_tol": false
+      },
+      "prompt_tokens": {
+        "observed": 6942.0,
+        "baseline": 8342.0,
+        "drift": -0.16782546152001918,
+        "within_tol": false
+      },
+      "response_chars": {
+        "observed": 65.0,
+        "baseline": 167.0,
+        "drift": -0.6107784431137725,
+        "within_tol": false
+      }
+    },
+    "directive_remember_pref": {
+      "duration_s": {
+        "observed": 2.94,
+        "baseline": 9.29,
+        "drift": -0.6835306781485468,
+        "within_tol": false
+      },
+      "model_calls": {
+        "observed": 1.0,
+        "baseline": 3.0,
+        "drift": -0.6666666666666666,
+        "within_tol": false
+      },
+      "prompt_tokens": {
+        "observed": 2582.0,
+        "baseline": 8260.0,
+        "drift": -0.687409200968523,
+        "within_tol": false
+      },
+      "response_chars": {
+        "observed": 65.0,
+        "baseline": 139.0,
+        "drift": -0.5323741007194245,
+        "within_tol": false
+      }
+    },
+    "informational_recall": {
+      "duration_s": {
+        "observed": 1.746,
+        "baseline": 8.7,
+        "drift": -0.7993103448275861,
+        "within_tol": false
+      },
+      "model_calls": {
+        "observed": 1.0,
+        "baseline": 3.0,
+        "drift": -0.6666666666666666,
+        "within_tol": false
+      },
+      "prompt_tokens": {
+        "observed": 2589.0,
+        "baseline": 8342.0,
+        "drift": -0.6896427715176217,
+        "within_tol": false
+      },
+      "response_chars": {
+        "observed": 65.0,
+        "baseline": 183.0,
+        "drift": -0.644808743169399,
+        "within_tol": false
+      }
+    },
+    "thanks_followup": {
+      "duration_s": {
+        "observed": 0.095,
+        "baseline": 3.55,
+        "drift": -0.9732394366197182,
+        "within_tol": false
+      },
+      "model_calls": {
+        "observed": 0.0,
+        "baseline": 2.0,
+        "drift": -1.0,
+        "within_tol": false
+      },
+      "prompt_tokens": {
+        "observed": 0.0,
+        "baseline": 2180.0,
+        "drift": -1.0,
+        "within_tol": false
+      },
+      "response_chars": {
+        "observed": 65.0,
+        "baseline": 79.0,
+        "drift": -0.17721518987341772,
+        "within_tol": false
+      }
+    },
+    "_summary": {
+      "tolerance": 0.05,
+      "green": false,
+      "breaches": [
+        {
+          "label": "greeting",
+          "metric": "duration_s",
+          "observed": 0.117,
+          "baseline": 2.93,
+          "drift": -0.9600682593856655
+        },
+        {
+          "label": "greeting",
+          "metric": "model_calls",
+          "observed": 0.0,
+          "baseline": 2.0,
+          "drift": -1.0
+        },
+        {
+          "label": "greeting",
+          "metric": "prompt_tokens",
+          "observed": 0.0,
+          "baseline": 2014.0,
+          "drift": -1.0
+        },
+        {
+          "label": "greeting",
+          "metric": "response_chars",
+          "observed": 65.0,
+          "baseline": 34.0,
+          "drift": 0.9117647058823529
+        },
+        {
+          "label": "informational_simple",
+          "metric": "duration_s",
+          "observed": 3.173,
+          "baseline": 2.79,
+          "drift": 0.13727598566308244
+        },
+        {
+          "label": "informational_simple",
+          "metric": "model_calls",
+          "observed": 1.0,
+          "baseline": 2.0,
+          "drift": -0.5
+        },
+        {
+          "label": "informational_simple",
+          "metric": "prompt_tokens",
+          "observed": 2526.0,
+          "baseline": 4956.0,
+          "drift": -0.49031476997578693
+        },
+        {
+          "label": "informational_simple",
+          "metric": "response_chars",
+          "observed": 65.0,
+          "baseline": 5.0,
+          "drift": 12.0
+        },
+        {
+          "label": "directive_web_search",
+          "metric": "duration_s",
+          "observed": 5.144,
+          "baseline": 5.89,
+          "drift": -0.12665534804753814
+        },
+        {
+          "label": "directive_web_search",
+          "metric": "model_calls",
+          "observed": 2.0,
+          "baseline": 3.0,
+          "drift": -0.3333333333333333
+        },
+        {
+          "label": "directive_web_search",
+          "metric": "prompt_tokens",
+          "observed": 6942.0,
+          "baseline": 8342.0,
+          "drift": -0.16782546152001918
+        },
+        {
+          "label": "directive_web_search",
+          "metric": "response_chars",
+          "observed": 65.0,
+          "baseline": 167.0,
+          "drift": -0.6107784431137725
+        },
+        {
+          "label": "directive_remember_pref",
+          "metric": "duration_s",
+          "observed": 2.94,
+          "baseline": 9.29,
+          "drift": -0.6835306781485468
+        },
+        {
+          "label": "directive_remember_pref",
+          "metric": "model_calls",
+          "observed": 1.0,
+          "baseline": 3.0,
+          "drift": -0.6666666666666666
+        },
+        {
+          "label": "directive_remember_pref",
+          "metric": "prompt_tokens",
+          "observed": 2582.0,
+          "baseline": 8260.0,
+          "drift": -0.687409200968523
+        },
+        {
+          "label": "directive_remember_pref",
+          "metric": "response_chars",
+          "observed": 65.0,
+          "baseline": 139.0,
+          "drift": -0.5323741007194245
+        },
+        {
+          "label": "informational_recall",
+          "metric": "duration_s",
+          "observed": 1.746,
+          "baseline": 8.7,
+          "drift": -0.7993103448275861
+        },
+        {
+          "label": "informational_recall",
+          "metric": "model_calls",
+          "observed": 1.0,
+          "baseline": 3.0,
+          "drift": -0.6666666666666666
+        },
+        {
+          "label": "informational_recall",
+          "metric": "prompt_tokens",
+          "observed": 2589.0,
+          "baseline": 8342.0,
+          "drift": -0.6896427715176217
+        },
+        {
+          "label": "informational_recall",
+          "metric": "response_chars",
+          "observed": 65.0,
+          "baseline": 183.0,
+          "drift": -0.644808743169399
+        },
+        {
+          "label": "thanks_followup",
+          "metric": "duration_s",
+          "observed": 0.095,
+          "baseline": 3.55,
+          "drift": -0.9732394366197182
+        },
+        {
+          "label": "thanks_followup",
+          "metric": "model_calls",
+          "observed": 0.0,
+          "baseline": 2.0,
+          "drift": -1.0
+        },
+        {
+          "label": "thanks_followup",
+          "metric": "prompt_tokens",
+          "observed": 0.0,
+          "baseline": 2180.0,
+          "drift": -1.0
+        },
+        {
+          "label": "thanks_followup",
+          "metric": "response_chars",
+          "observed": 65.0,
+          "baseline": 79.0,
+          "drift": -0.17721518987341772
+        }
+      ],
+      "baseline_commit": "7d95904"
+    }
+  },
+  "wall_clock_unix": 1779812066.0116658
+}

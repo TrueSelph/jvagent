@@ -51,6 +51,8 @@ from jvagent.action.helm.reasoning.config import CockpitConfig
 from jvagent.action.helm.reasoning.context import CockpitContext
 from jvagent.action.helm.reasoning.contracts import TerminationReason
 from jvagent.action.helm.reasoning.delivery.delegation import (
+    collect_always_execute_interact_actions,
+    curate_walk_path_for_cockpit,
     resolve_routed_interact_actions,
 )
 from jvagent.action.helm.reasoning.delivery.gates import (
@@ -501,16 +503,41 @@ class ReasoningHelm(BaseHelm):
                 agent, routing, user_id=user_id, channel=channel
             )
 
-            # Resolve routed interact_actions for observability / deferred
-            # delegation paths. Bridge — not ReasoningHelm — owns the walker
-            # queue, so cockpit's ``curate_walk_path_for_cockpit`` /
-            # ``collect_always_execute_interact_actions`` calls are
-            # intentionally OMITTED here. Always-execute IAs continue to
-            # run via the walker's normal weight chain after Bridge yields.
+            # Resolve routed interact_actions and curate the walker queue.
+            # We MUST curate so non-routed / non-always-execute IAs
+            # (e.g. HandoffInteractAction sitting in the agent chain) do not
+            # auto-run after Bridge yields — that would add a stray
+            # persona-finalize LM call per turn and break parity with
+            # cockpit. We pass ``visitor._bridge_action`` (the IA actually
+            # in the walker queue) rather than ``self`` (ReasoningHelm,
+            # which is not in the queue).
             routed_ias = await resolve_routed_interact_actions(agent, routing)
             routed_ias = await filter_routed_interact_actions_by_access(
                 agent, routed_ias, user_id=user_id, channel=channel
             )
+            always_run_ias = await collect_always_execute_interact_actions(
+                agent,
+                exclude_class_names={
+                    self.__class__.__name__,
+                    "BridgeInteractAction",
+                },
+            )
+            always_run_ias = await filter_routed_interact_actions_by_access(
+                agent, always_run_ias, user_id=user_id, channel=channel
+            )
+            bridge_ia = getattr(visitor, "_bridge_action", None)
+            if bridge_ia is not None:
+                await curate_walk_path_for_cockpit(
+                    visitor,
+                    bridge_ia,
+                    routed_ias,
+                    always_execute=always_run_ias,
+                )
+            else:
+                logger.warning(
+                    "ReasoningHelm: visitor._bridge_action not set; skipping "
+                    "walker-queue curation (downstream IAs may fire)"
+                )
 
             if should_use_conversational_gate(
                 routing,

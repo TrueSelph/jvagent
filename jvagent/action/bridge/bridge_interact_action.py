@@ -214,6 +214,14 @@ class BridgeInteractAction(InteractAction):
 
     async def execute(self, visitor: "InteractWalker") -> None:
         """Run one Bridge step: resolve helm, call ``step()``, dispatch verb."""
+        # Stamp self on the visitor so helms can reference the Bridge IA
+        # (e.g. to pass to walker-queue curation that expects the IA
+        # actually present in the queue — helms themselves are not).
+        try:
+            visitor._bridge_action = self  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
         resolved = await self._resolve_helms_map()
         state = self._get_or_init_state(visitor)
 
