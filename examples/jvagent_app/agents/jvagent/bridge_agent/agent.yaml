@@ -1,0 +1,196 @@
+# Bridge Agent — Bridge + ReasoningHelm with full tool agency
+#
+# Mirrors examples/jvagent_app/agents/jvagent/cockpit_agent in capability,
+# diverges only in composition: a BridgeInteractAction at weight -200
+# orchestrates one or more helms (ReasoningHelm by default). Used as the
+# parity smoke-test target at BRIDGE-ROADMAP §C-7 — measurements against
+# this agent are compared to baseline 7d95904 (cockpit_agent).
+#
+# Architecture:
+#   BridgeInteractAction
+#     └─ ReasoningHelm.step()                     [duplicated from cockpit]
+#           ├─ Phase 1 — CockpitRouter            (router_model_action_type → OpenAI)
+#           └─ Phase 2 — CockpitEngine.step()     (model_action_type → OpenAI)
+#                 ├─ Harness service tools (memory, response, task, conversation, …)
+#                 ├─ Action tools (pageindex__*, web_search__*, mcp_filesystem__*, …)
+#                 └─ Skill bundle tools (Claude-style SKILL.md)
+#
+# Bridge vs Cockpit:
+#   - Cockpit is a single InteractAction at weight -200 (legacy).
+#   - Bridge is also at weight -200 but composes N helms; this example
+#     uses ReasoningHelm only. Reflex / Specialist / Persona helms ship
+#     at milestones E / F / G respectively.
+#
+# Reasoning helm config knobs mirror cockpit's exactly so the parity gate
+# at C-7 has apples-to-apples LM-call counts and prompt-token totals.
+
+agent: jvagent/bridge_agent
+version: 1.0.0
+author: V75 Inc.
+jvagent: ~0.0.1
+
+context:
+  alias: Bridge Agent
+  description: >-
+    Bridge-pattern agent giving the model access to all harness services and
+    action tools. BridgeInteractAction at weight -200 dispatches to
+    ReasoningHelm which runs the cockpit-style think/act/observe loop.
+    Pre-loaded with pageindex_search, pageindex_docs, and web_search skills.
+  enabled: true
+  interaction_limit: 20
+
+actions:
+  # ── BridgeInteractAction — multi-helm orchestrator ──
+  - action: jvagent/bridge
+    context:
+      enabled: true
+      helms:
+        - ReasoningHelm
+      default_helm: ReasoningHelm
+      # Shift budget bounds helm ping-pong. ReasoningHelm-only configs
+      # never SHIFT, so 4 is comfortably over-provisioned; tighter is fine
+      # once Reflex/Persona land (milestones E/G).
+      shift_budget_per_turn: 4
+      # First-emit timeout — fires the safety-net ack once per turn when no
+      # helm publishes by deadline. 800ms matches the ADR default; raise
+      # to 1200 if the upstream model is consistently slower to first token.
+      first_emit_timeout_ms: 800
+      safety_net_ack_text: "Working on it…"
+      denied_response_text: "Sorry, I can't do that here."
+
+  # ── ReasoningHelm — cockpit-style think/act/observe loop ──
+  # All knobs mirror cockpit_agent.yaml's jvagent/cockpit block for
+  # apples-to-apples parity at the C-7 smoke gate.
+  - action: jvagent/reasoning_helm
+    context:
+      enabled: true
+      router_model: gpt-4o-mini
+      router_model_action_type: OpenAILanguageModelAction
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4.1
+      skills:
+        - pageindex_search
+        - pageindex_docs
+        - web_search
+      tool_servers:
+        - filesystem
+      skills_source: both
+      max_iterations: 25
+      stream_internal_progress: true
+      block_raw_tool_invocation: false
+      # Router context depth. Smaller → faster routing prompt.
+      history_limit: 3
+      response_mode: respond
+      # Latency knobs (mirror cockpit_agent):
+      # ``enable_router_preclassifier``: smalltalk skips the router LLM entirely.
+      # ``enable_interact_router_cache``: identical utterances within TTL skip the LLM.
+      # ``conversational_fast_path``: empty-route classifications take the
+      # persona-only path instead of running the heavy engine.
+      enable_router_preclassifier: true
+      enable_interact_router_cache: true
+      converse_enabled: true
+      conversational_fast_path: true
+      converse_context_limit: 2
+      converse_persona_prompt: >-
+        Brief, in-character replies. Greetings and smalltalk: natural and short.
+        Keep replies under 30 words unless the user asks for detail.
+        Do not append invitation closers ("let me know if…", "feel free to ask…").
+
+  # ── Ollama Language Model (available for routing variants; not the default) ──
+  # Kept in parity with cockpit_agent so swapping providers in agent.yaml
+  # context is a one-line diff against either example.
+  - action: jvagent/ollama_lm
+    context:
+      enabled: true
+      description: Ollama cloud endpoint (kept for parity with cockpit_agent)
+      api_endpoint: https://ollama.com
+      # API key is env-only — set OLLAMA_API_KEY in your environment.
+      model: deepseek-v4-flash:cloud
+      temperature: 0.2
+      max_tokens: 16384
+      timeout: 120
+
+  # ── OpenAI Language Model (router + persona + reasoning loop) ──
+  - action: jvagent/openai_lm
+    context:
+      enabled: true
+      # API key is env-only — set OPENAI_API_KEY in your environment.
+      api_endpoint: https://api.openai.com/v1
+      model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 4096
+      timeout: 60
+
+  - action: jvagent/mcp
+    context:
+      enabled: true
+      description: >
+        Example MCP gateway with a sandboxed filesystem server (npx). Registers
+        tools under tool_servers for ReasoningHelm; fulfills multi-server
+        patterns alongside streamable_http MCP apps.
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      sandbox_mode: true
+      sandbox_user_scoped: true
+      servers:
+        - name: filesystem
+          enabled: true
+          transport: stdio
+          command: npx
+          args:
+            - -y
+            - "@modelcontextprotocol/server-filesystem"
+          mcp_connect_timeout: 15
+          mcp_call_timeout: 60
+          tools: "-all"
+          denied_tools: []
+
+  - action: jvagent/intro_interact_action
+    context:
+      enabled: true
+      directive: >-
+        Greet the user briefly and explain you can search documents, search the web,
+        and remember preferences across the conversation.
+
+  - action: jvagent/handoff_interact_action
+    context:
+      enabled: true
+      handoff_mode: direct_contact
+
+  - action: jvagent/persona
+    context:
+      enabled: true
+      persona_name: Research Assistant
+      persona_description: >-
+        You are a knowledgeable research assistant with access to internal documents
+        and the public web. For simple questions, respond directly and concisely.
+        For complex research tasks, you search internal sources first, supplement with
+        web search when needed, and synthesize clear, cited answers.
+      persona_capabilities:
+        - Answer questions from internal knowledge base
+        - Search the web for current information
+        - Ingest and manage documents
+        - Synthesize multi-source research findings
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      model_temperature: 0.2
+      model_max_tokens: 1024
+
+  - action: jvagent/pageindex_action
+    context:
+      enabled: true
+      description: Vectorless RAG — indexes documents and provides search / ingest / management APIs
+      strategy: direct
+      limit: 10
+      node_summary: true
+    config:
+      node_text: true
+      summary_token_threshold: 200
+
+  - action: jvagent/serper_web_search
+    context:
+      enabled: true
+      description: Serper Google Search provider
+      engine: google_light
+      hl: en
+      max_results: 10
