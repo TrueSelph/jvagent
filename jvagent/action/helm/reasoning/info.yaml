@@ -1,0 +1,29 @@
+# ReasoningHelm Action Package Descriptor
+package:
+  name: jvagent/reasoning_helm
+  author: jvagent
+  archetype: ReasoningHelm
+  version: 0.1.0
+  meta:
+    title: ReasoningHelm
+    description: >-
+      Cockpit-style think/act/observe model loop as a Bridge helm. Selectively
+      duplicated from jvagent/action/cockpit/ (zero source-level coupling).
+      Orchestrated by BridgeInteractAction; each step() issues at most one
+      LM call and dispatches its own tools internally, signalling another
+      walker visit via the CONTINUE verb. Default helm in the bridge profile.
+    group: jvagent
+    type: action
+  config:
+    singleton: true
+  manifest:
+    purpose: "Deliberate reasoning with full agency over harness + action tools."
+    latency_class: deliberate
+    turn_lock: false
+    can_interrupt: false
+    can_emit_directly: true
+    expected_duration_seconds: 30.0
+  dependencies:
+    jvagent: ~0.0.1
+    actions:
+      - "jvagent/persona"
