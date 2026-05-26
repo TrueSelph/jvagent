@@ -61,6 +61,7 @@ from jvagent.action.helm.contracts import (
     SHIFT,
     YIELD,
     HelmStepResult,
+    ShiftRecord,
 )
 from jvagent.action.interact.base import InteractAction
 
@@ -206,11 +207,109 @@ class BridgeInteractAction(InteractAction):
         return state
 
     def _clear_state(self, visitor: "InteractWalker") -> None:
+        # Persist observability metadata BEFORE clearing the state object
+        # so the interaction node carries a queryable trail of what the
+        # turn actually did (BRIDGE-ROADMAP §I).
+        try:
+            self._persist_observability(visitor)
+        except Exception as exc:
+            logger.debug("bridge: observability persistence failed: %s", exc)
         if hasattr(visitor, BRIDGE_STATE_VISITOR_ATTR):
             try:
                 delattr(visitor, BRIDGE_STATE_VISITOR_ATTR)
             except AttributeError:
                 pass
+
+    # ------------------------------------------------------------------
+    # Observability (BRIDGE-ROADMAP §I)
+    # ------------------------------------------------------------------
+
+    def _record_helm_shift_event(
+        self,
+        visitor: "InteractWalker",
+        record: ShiftRecord,
+    ) -> None:
+        """Append a ``helm_shift`` event to ``interaction.observability_metrics``.
+
+        Mirrors the structure cockpit / jvagent core already uses (``event_type``
+        + ``data`` + ``timestamp``) so the existing ``GET /logs/agents/{id}``
+        query surface accepts these events without schema changes. See
+        ``docs/logging.md`` for the canonical event taxonomy.
+        """
+        interaction = getattr(visitor, "interaction", None)
+        if interaction is None:
+            return
+        metrics = getattr(interaction, "observability_metrics", None)
+        if metrics is None:
+            return
+        try:
+            metrics.append(
+                {
+                    "event_type": "helm_shift",
+                    "data": {
+                        "from_helm": record.from_helm,
+                        "to_helm": record.to_helm,
+                        "reason": record.reason,
+                        "ack_emitted": record.ack_emitted,
+                        "shift_index": record.shift_index,
+                        "at_monotonic": record.at_monotonic,
+                    },
+                    "timestamp": record.at_monotonic,
+                }
+            )
+        except Exception as exc:
+            logger.debug("bridge: failed to append helm_shift event: %s", exc)
+
+    def _persist_observability(self, visitor: "InteractWalker") -> None:
+        """Write Bridge's per-turn observability metadata onto the interaction.
+
+        Three fields go onto ``Interaction.parameters`` (pattern-agnostic
+        observability slot):
+
+        - ``gear_trace`` — full list of :class:`ShiftRecord` dicts for the
+          turn, including the initial helm resolution.
+        - ``helm_timings_seconds`` — per-helm wall-clock totals.
+        - ``helm_step_counts`` — per-helm step() call counts.
+
+        Writes are best-effort: any exception is logged at DEBUG and
+        observability silently degrades. We never block a turn on
+        observability.
+        """
+        state = getattr(visitor, BRIDGE_STATE_VISITOR_ATTR, None)
+        if state is None:
+            return
+        interaction = getattr(visitor, "interaction", None)
+        if interaction is None:
+            return
+        params = getattr(interaction, "parameters", None)
+        if params is None:
+            return
+        try:
+            trace = [rec.to_dict() for rec in state.gear_trace]
+        except Exception:
+            trace = []
+        payload = {
+            "gear_trace": trace,
+            "helm_timings_seconds": dict(state.helm_timings_seconds),
+            "helm_step_counts": dict(state.helm_step_counts),
+            "shift_count": state.shift_count,
+            "turn_started_at": state.turn_started_at,
+            "last_emit_at": state.last_emit_at,
+        }
+        try:
+            if isinstance(params, dict):
+                params["bridge_observability"] = payload
+            elif isinstance(params, list):
+                # Older interaction parameter shape — list of dicts.
+                params.append(
+                    {
+                        "action_name": self.__class__.__name__,
+                        "content": "bridge_observability",
+                        "bridge_observability": payload,
+                    }
+                )
+        except Exception as exc:
+            logger.debug("bridge: failed to persist bridge_observability: %s", exc)
 
     # ------------------------------------------------------------------
     # Main entry point
@@ -243,13 +342,14 @@ class BridgeInteractAction(InteractAction):
         if state.current_helm is None:
             initial = self._pick_initial_helm(resolved)
             state.current_helm = initial.helm_name()
-            state.record_shift(
+            rec = state.record_shift(
                 from_helm=None,
                 to_helm=state.current_helm,
                 reason="bridge:initial",
                 ack_emitted=False,
                 at_monotonic=time.monotonic(),
             )
+            self._record_helm_shift_event(visitor, rec)
         elif state.current_helm not in resolved:
             # Defensive: current_helm vanished between visits (helm unloaded
             # mid-turn). Fall back to safe-default response.
@@ -286,7 +386,21 @@ class BridgeInteractAction(InteractAction):
                 await self._delegate_to_lock_owner(visitor, state, lock_owner)
                 return
 
-        result = await helm.step(visitor, state)
+        # Per-helm wall-clock + step-count instrumentation (BRIDGE-ROADMAP §I).
+        # Each step() call accrues to ``helm_timings_seconds[helm_name]`` so
+        # operators can see where a turn's time was actually spent.
+        helm_name = helm.helm_name()
+        _t_step_start = time.monotonic()
+        try:
+            result = await helm.step(visitor, state)
+        finally:
+            elapsed = time.monotonic() - _t_step_start
+            state.helm_timings_seconds[helm_name] = (
+                state.helm_timings_seconds.get(helm_name, 0.0) + elapsed
+            )
+            state.helm_step_counts[helm_name] = (
+                state.helm_step_counts.get(helm_name, 0) + 1
+            )
 
         if not self._is_valid_verb(result):
             logger.error(
@@ -473,7 +587,7 @@ class BridgeInteractAction(InteractAction):
         if verb.handoff_state is not None:
             state.helm_states[verb.target] = dict(verb.handoff_state)
 
-        state.record_shift(
+        rec = state.record_shift(
             from_helm=current_helm.helm_name(),
             to_helm=verb.target,
             reason=verb.reason,
@@ -481,6 +595,7 @@ class BridgeInteractAction(InteractAction):
             at_monotonic=time.monotonic(),
             handoff_state=verb.handoff_state,
         )
+        self._record_helm_shift_event(visitor, rec)
         state.shift_budget_remaining -= 1
         state.current_helm = verb.target
         await visitor.prepend([self])

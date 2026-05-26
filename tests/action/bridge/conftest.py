@@ -130,6 +130,11 @@ def make_visitor():
         interaction.id = "int_1"
         interaction.utterance = "hello"
         interaction.response = ""
+        # Real dict so Bridge's observability persistence
+        # (isinstance(params, dict)) writes through. List of dicts
+        # would also work; dict is the modern shape.
+        interaction.parameters = {}
+        interaction.observability_metrics = []
 
         conversation = MagicMock()
 

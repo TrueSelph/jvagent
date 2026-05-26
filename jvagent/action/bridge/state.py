@@ -49,6 +49,12 @@ class BridgeState:
     delegated_action: Optional[str] = None
     shift_budget_remaining: int = DEFAULT_SHIFT_BUDGET
     finalized: bool = False
+    # Per-helm wall-clock time accumulated across step() calls this turn.
+    # Keyed by helm_name; written by Bridge's step machine (BRIDGE-ROADMAP §I).
+    helm_timings_seconds: Dict[str, float] = field(default_factory=dict)
+    # Per-helm step counts. Useful for spotting helms that loop many
+    # times via CONTINUE/EXECUTE before producing an EMIT.
+    helm_step_counts: Dict[str, int] = field(default_factory=dict)
 
     def record_shift(
         self,

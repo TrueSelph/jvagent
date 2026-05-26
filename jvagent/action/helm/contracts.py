@@ -72,6 +72,29 @@ class ShiftRecord:
     at_monotonic: float
     handoff_state: Optional[Dict[str, Any]] = None
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialise this record for persistence on ``Interaction.parameters``.
+
+        ``handoff_state`` is dropped if it carries unserialisable values —
+        gear_trace is observability metadata, not authoritative state, so
+        it should never fail to persist because of one record.
+        """
+        try:
+            handoff: Optional[Dict[str, Any]] = (
+                dict(self.handoff_state) if self.handoff_state is not None else None
+            )
+        except Exception:
+            handoff = None
+        return {
+            "from_helm": self.from_helm,
+            "to_helm": self.to_helm,
+            "reason": self.reason,
+            "ack_emitted": self.ack_emitted,
+            "shift_index": self.shift_index,
+            "at_monotonic": self.at_monotonic,
+            "handoff_state": handoff,
+        }
+
 
 @dataclass(frozen=True)
 class EMIT:
