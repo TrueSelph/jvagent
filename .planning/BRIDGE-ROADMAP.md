@@ -18,9 +18,9 @@ Living roadmap for delivering the **Bridge + Helm** architecture as an additive 
 
 | Milestone | State | Notes |
 |---|---|---|
-| A — ADR + contracts | TODO | Lock `HelmStepResult` verb set, `BridgeState` shape, manifest v0 schema. Supersedes [`adr/0002`](adr/0002-walker-revisit-cockpit.md) in spirit; walker-revisit pattern stays. |
-| B — Skeleton + stub helms | TODO | `BaseHelm` Action subclass, `BridgeInteractAction`, `StubHelm` for tests. No real LM calls. |
-| C — ReasoningHelm parity | TODO | Lift `CockpitEngine` into `ReasoningHelm`. Highest-risk milestone. Existing cockpit tests gate merge. |
+| A — ADR + contracts | DONE | Locked `HelmStepResult` verb set v0.1, `BridgeState` shape, manifest v0 schema. ADR-0007 + PATTERNS.md shipped at commit `006d635`. Supersedes [`adr/0002`](adr/0002-walker-revisit-cockpit.md) in spirit; walker-revisit pattern stays. |
+| B — Skeleton + stub helms | DONE | `BaseHelm` Action subclass, `BridgeInteractAction` at weight `-200`, `StubHelm`, full verb dispatch (50 unit tests, 97% coverage). Shipped at commit `d24fc5a`. No real LM calls. |
+| C — ReasoningHelm parity | IN PROGRESS | **No shim**: cockpit code path stays untouched. `ReasoningHelm` is a parallel implementation under `jvagent/action/helm/reasoning/` — selective duplication from cockpit, **zero imports** from `jvagent.action.cockpit`. Bridge gains `CONTINUE` verb (additive v0.1) so `ReasoningHelm` can run cockpit-style internal tool dispatch. Direct call to `PersonaAction` for final delivery. Parity gate at C against baseline `7d95904`: ≤5% drift via a new `tests/action/bridge/smoke_bridge.py`. Cockpit smoke harness no longer applies (cockpit untouched). |
 | D — Manifest plumbing | TODO | `manifest:` block in `info.yaml`; `agent.yaml` override; pilot on 3 actions. Pattern-agnostic. |
 | E — ReflexHelm | TODO | Fast completion model; `shift_helm` + `emit_response` tools; ack-on-shift; target sub-500ms p50 trivial turn. |
 | F — Specialist delegation | TODO | `DELEGATE` verb; turn-lock; interrupt protocol. Feedback interview scenario gates merge. |
@@ -122,25 +122,42 @@ Inherited from cockpit. Bridge configurations are measured against the same 6-ut
 
 ### C — ReasoningHelm parity
 
-**Gap.** Today's `CockpitEngine` owns the model loop. To make cockpit + bridge coexist, we extract that loop into a `ReasoningHelm` and turn `CockpitInteractAction` into a thin compat shim.
+**Strategy (revised 2026-05-26):** Cockpit code path is **untouched**. `ReasoningHelm` is a parallel implementation built by selectively duplicating cockpit modules into `jvagent/action/helm/reasoning/`. **Zero imports** from `jvagent.action.cockpit` into `jvagent.action.helm` or `jvagent.action.bridge`. Bridge gains a new `CONTINUE` verb (additive, v0.1, non-breaking per ADR-0007) so `ReasoningHelm` can run cockpit-style internal tool dispatch and signal "give me another visit" without using `EXECUTE` (which would force Bridge to own the tool registry).
+
+**Rationale.** Avoids coupling between patterns. A future revision can phase cockpit out by deleting `jvagent/action/cockpit/` wholesale, with no fallout on Bridge. Duplication cost (~9k LoC) is accepted; it concentrates pattern-specific code under its pattern's namespace.
 
 **Plan.**
 
-1. `jvagent/action/helm/reasoning_helm.py` — `ReasoningHelm(BaseHelm)` wrapping current `CockpitEngine.step()`.
-2. Tool registry assembly, skill catalog, stuck detection, termination contracts — relocated under ReasoningHelm. Implementation lifted intact from `jvagent/action/cockpit/engine.py`.
-3. `CockpitInteractAction` refactored to internally construct a Bridge + ReasoningHelm. External behavior unchanged.
-4. Both old cockpit YAML and new bridge YAML produce equivalent Reasoning-only execution paths.
-5. Comparison instrumentation: per-commit smoke run published to `tests/action/bridge/baselines/` for diff tracking.
+1. **C-0 — CONTINUE verb.** Add `CONTINUE(reason: Optional[str])` to `jvagent/action/helm/contracts.py`. Wire dispatch in `BridgeInteractAction._dispatch` — Bridge calls `visitor.prepend([self])` with no state mutation. Update ADR-0007 + tests.
+2. **C-1 — Skeleton.** `jvagent/action/helm/reasoning/` package: `__init__.py`, `reasoning_helm.py` (class skeleton with `step()` returning `EMIT` placeholder), `info.yaml` (`jvagent/reasoning_helm`, `archetype: ReasoningHelm`, `type: action`), `endpoints.py` stub.
+3. **C-2 — Engine.** Duplicate `cockpit/engine.py`, `session.py`, `context.py`, `config.py`, `contracts.py`, `prompts.py` into `helm/reasoning/`. Wire bare LM loop. `ReasoningHelm.step()` runs one engine step per call — returns `CONTINUE` when tools dispatched, `EMIT(finalize=True)` when final text produced.
+4. **C-3 — Harness service tools.** Duplicate `cockpit/tools/` (memory, response, task, conversation, skill, artifact, search, clock) into `helm/reasoning/tools/`. Tool registry assembly with tier filtering (`minimal | standard | full`). Per-tool AC (`tool:{name}`).
+5. **C-4 — Routing.** Duplicate `cockpit/routing/` (router, preclassifier, types, prompts) into `helm/reasoning/routing/`. Wired as `ReasoningHelm` Phase 1.
+6. **C-5 — Skills + action_resolver.** Duplicate `cockpit/catalog/` into `helm/reasoning/catalog/`.
+7. **C-6 — Persona delivery.** Duplicate `cockpit/delivery/` into `helm/reasoning/delivery/`. `ReasoningHelm` calls `PersonaAction` directly via `get_action("PersonaAction")` for final delivery — `PersonaAction` is a peer Action, not a cockpit dependency. Conversational fast-path included for baseline parity.
+8. **C-7 — Smoke harness + parity.** `tests/action/bridge/smoke_bridge.py` runs the 6-utterance suite against the `bridge_agent` example (Bridge + ReasoningHelm). Baselines archived under `tests/action/bridge/baselines/`. Iterate to ≤5% drift vs commit `7d95904` on `dur`, `model_calls`, `prompt_tok`, `resp_chars`.
+
+**Hard constraints.**
+
+- **No imports** from `jvagent.action.cockpit.*` in any new file under `jvagent.action.helm.*` or `jvagent.action.bridge.*`. Verified by grep at C-7.
+- Cockpit YAML, tests, and runtime behavior **unchanged**. `tests/action/cockpit/` stays green at every step.
+- `CockpitInteractAction` is **not** refactored.
 
 **Tests.**
 
-- All 60+ existing `tests/action/cockpit/` tests pass against the new arrangement.
-- `tests/action/cockpit/smoke_real_lm.py` shows ≤5% delta on all metrics vs baseline.
-- New: `tests/action/helm/test_reasoning_helm.py` — direct ReasoningHelm exercise.
+- `tests/action/cockpit/` — all 189 existing tests pass (cockpit untouched).
+- `tests/action/bridge/` — existing 50 tests pass + new CONTINUE coverage.
+- `tests/action/helm/reasoning/` — direct ReasoningHelm exercises mirroring `tests/action/cockpit/` structure (engine baseline, routing, skill dispatch, stuck detection, hygiene flags, persona delivery).
+- `tests/action/bridge/smoke_bridge.py` — real-LM 6-utterance suite vs baseline.
 
-**Exit.** Cockpit smoke harness within 5% of baseline on every metric. Zero behavioral regressions on the cockpit_agent example. Merge gated on this.
+**Exit.** All of:
 
-**Risk.** Behavioral drift during extraction. Mitigation: incremental refactor on branch `bridge-architecture`; parity tests run continuously; per-commit comparison metrics published to baselines directory; merge requires explicit parity sign-off.
+- Bridge smoke harness ≤5% drift vs baseline `7d95904` on every metric.
+- Cockpit smoke harness unchanged (cockpit code untouched).
+- Zero `jvagent.action.cockpit` imports in `helm/` or `bridge/` packages.
+- pre-commit green; full pytest suite green.
+
+**Risk.** Duplication cost + maintenance burden of two parallel implementations until cockpit is phased out (post-K). Mitigation: each duplicated module clearly marked with `# duplicated from jvagent/action/cockpit/<module> at commit <sha>` in its docstring so divergence is auditable. Cockpit phase-out is gated by the performance ledger in [`PATTERNS.md`](PATTERNS.md).
 
 ### D — Manifest plumbing
 

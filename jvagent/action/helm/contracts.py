@@ -1,7 +1,9 @@
 """HelmStepResult verb set and supporting dataclasses.
 
-The verb set is a **closed enum at v0** per ADR-0007. Additive verbs are
-non-breaking; breaking changes require ADR-0008+.
+The verb set at **v0.1** is the closed enum below. Verbs are additive across
+minor revisions per ADR-0007: ``CONTINUE`` joined v0 as the first additive
+verb (v0.1) to support helms that internally dispatch their own tools and
+just need Bridge to re-enqueue them. Breaking changes require ADR-0008+.
 
 Verb semantics (Bridge dispatch contract):
 
@@ -11,8 +13,13 @@ Verb                Bridge behavior
 ``EMIT``            Publish ``text`` via the agent's response bus.
                     If ``finalize=True`` (default), turn ends and Bridge clears state.
                     If ``finalize=False``, Bridge re-enqueues the current helm.
-``EXECUTE``         Dispatch ``tool_calls`` (Bridge-side tool registry, not part of B).
-                    Persist results into helm-scoped state and re-enqueue the helm.
+``EXECUTE``         Dispatch ``tool_calls`` (Bridge-side tool registry; used by helms
+                    that delegate tool execution to Bridge). Persists results into
+                    helm-scoped state and re-enqueues the helm.
+``CONTINUE``        Re-enqueue the current helm with no Bridge-side state mutation.
+                    Used by helms that dispatch their own tools internally (e.g.
+                    ``ReasoningHelm`` running the cockpit-style engine loop) and
+                    simply need another walker visit to continue.
 ``SHIFT``           Switch to ``target`` helm. Emits ``transient_ack`` first when the
                     target's manifest declares a ``deliberate`` or ``long`` latency
                     class. AccessControl gated by ``tool:helm:{target}``.
@@ -31,7 +38,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Union
 
-HelmVerb = Literal["EMIT", "EXECUTE", "SHIFT", "DELEGATE", "YIELD"]
+HelmVerb = Literal["EMIT", "EXECUTE", "CONTINUE", "SHIFT", "DELEGATE", "YIELD"]
 
 
 @dataclass(frozen=True)
@@ -83,15 +90,40 @@ class EMIT:
 
 @dataclass(frozen=True)
 class EXECUTE:
-    """Dispatch a batch of tool calls.
+    """Dispatch a batch of tool calls via Bridge's tool registry.
 
     Bridge runs each call against its registry (Bridge tool dispatch is wired
     in later milestones — at B the verb is accepted but no real registry is
     invoked). After dispatch, Bridge persists state and revisits the **same**
     helm so it can observe results.
+
+    Use this when the helm wants Bridge to own dispatch (so the registry is
+    a Bridge-level service, queryable from any helm). Use :class:`CONTINUE`
+    when the helm dispatches its own tools internally.
     """
 
     tool_calls: List[ToolCall]
+
+
+@dataclass(frozen=True)
+class CONTINUE:
+    """Re-enqueue the current helm with no Bridge-side state mutation.
+
+    The helm has already done its work for this visit — typically dispatched
+    its own tool calls and recorded results in its private slot of
+    ``BridgeState.helm_states`` — and just needs another walker visit to
+    continue the loop. Bridge calls ``visitor.prepend([self])`` and returns.
+
+    Compared to ``EXECUTE``:
+
+    - ``EXECUTE`` asks Bridge to run a tool batch on the helm's behalf.
+    - ``CONTINUE`` only asks Bridge to schedule the next visit.
+
+    ``ReasoningHelm`` uses ``CONTINUE`` because the cockpit-style engine
+    loop manages its own tool dispatch.
+    """
+
+    reason: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -142,7 +174,7 @@ class YIELD:
     """
 
 
-HelmStepResult = Union[EMIT, EXECUTE, SHIFT, DELEGATE, YIELD]
+HelmStepResult = Union[EMIT, EXECUTE, CONTINUE, SHIFT, DELEGATE, YIELD]
 """Discriminated union of all verbs a helm's ``step()`` may return.
 
-At v0 this is a closed set; additive verbs are non-breaking per ADR-0007."""
+At v0.1 this is a closed set; additive verbs are non-breaking per ADR-0007."""

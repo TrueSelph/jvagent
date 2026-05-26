@@ -15,6 +15,7 @@ This package contains:
 
 from jvagent.action.helm.base import BaseHelm
 from jvagent.action.helm.contracts import (
+    CONTINUE,
     DELEGATE,
     EMIT,
     EXECUTE,
@@ -29,6 +30,7 @@ from jvagent.action.helm.stub_helm import StubHelm
 
 __all__ = [
     "BaseHelm",
+    "CONTINUE",
     "DELEGATE",
     "EMIT",
     "EXECUTE",

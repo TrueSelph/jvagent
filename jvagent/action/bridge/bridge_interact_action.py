@@ -50,6 +50,7 @@ from jvagent.action.bridge.state import (
 )
 from jvagent.action.helm.base import BaseHelm
 from jvagent.action.helm.contracts import (
+    CONTINUE,
     DELEGATE,
     EMIT,
     EXECUTE,
@@ -260,7 +261,7 @@ class BridgeInteractAction(InteractAction):
 
     @staticmethod
     def _is_valid_verb(result: Any) -> bool:
-        return isinstance(result, (EMIT, EXECUTE, SHIFT, DELEGATE, YIELD))
+        return isinstance(result, (EMIT, EXECUTE, CONTINUE, SHIFT, DELEGATE, YIELD))
 
     async def _dispatch(
         self,
@@ -275,6 +276,9 @@ class BridgeInteractAction(InteractAction):
             return
         if isinstance(verb, EXECUTE):
             await self._handle_execute(visitor, state, current_helm, verb)
+            return
+        if isinstance(verb, CONTINUE):
+            await self._handle_continue(visitor, state, verb)
             return
         if isinstance(verb, SHIFT):
             await self._handle_shift(visitor, state, resolved, current_helm, verb)
@@ -333,6 +337,25 @@ class BridgeInteractAction(InteractAction):
                 }
                 for tc in verb.tool_calls
             )
+        await visitor.prepend([self])
+
+    # -- CONTINUE ------------------------------------------------------
+
+    async def _handle_continue(
+        self,
+        visitor: "InteractWalker",
+        state: BridgeState,
+        verb: CONTINUE,
+    ) -> None:
+        """Re-enqueue the current helm with no state mutation.
+
+        Bridge owns walker queue, budget, and gear trace; CONTINUE is the
+        helm's way of saying "I've done my own work this visit (likely an
+        internal model call + tool dispatch) — please visit me again."
+        ``verb.reason`` is informational only and surfaces in logs.
+        """
+        if verb.reason:
+            logger.debug("bridge: CONTINUE (%s)", verb.reason)
         await visitor.prepend([self])
 
     # -- SHIFT ---------------------------------------------------------

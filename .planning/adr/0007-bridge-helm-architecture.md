@@ -30,9 +30,13 @@ BridgeInteractAction.execute(visitor)
 
 Each Bridge visit issues **at most one** model call (delegated to the current helm's `step()`). This preserves the one-model-call-per-walker-visit invariant established by ADR-0002.
 
-### `HelmStepResult` verb set (v0)
+### `HelmStepResult` verb set (v0.1)
 
-Verbs are a closed enum at v0. Additive verbs are non-breaking; breaking changes require ADR-0008+.
+Verbs are a closed enum revised additively. The original v0 set was
+`EMIT | EXECUTE | SHIFT | DELEGATE | YIELD`. **v0.1** adds `CONTINUE` to support
+helms that dispatch their own tools internally (e.g. `ReasoningHelm` running
+the cockpit-style engine loop) and just need Bridge to re-enqueue them.
+Additive verbs are non-breaking; breaking changes require ADR-0008+.
 
 ```python
 # jvagent/action/helm/contracts.py (proposed)
@@ -40,7 +44,7 @@ Verbs are a closed enum at v0. Additive verbs are non-breaking; breaking changes
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Union
 
-HelmVerb = Literal["EMIT", "EXECUTE", "SHIFT", "DELEGATE", "YIELD"]
+HelmVerb = Literal["EMIT", "EXECUTE", "CONTINUE", "SHIFT", "DELEGATE", "YIELD"]
 
 @dataclass(frozen=True)
 class ToolCall:
@@ -68,8 +72,18 @@ class EMIT:
 @dataclass(frozen=True)
 class EXECUTE:
     tool_calls: List[ToolCall]
-    # After dispatch, Bridge persists state on visitor._bridge_state
-    # and visitor.prepend([self]) to revisit the SAME helm.
+    # Bridge owns the tool registry. After dispatch, Bridge persists state on
+    # visitor._bridge_state and visitor.prepend([self]) to revisit the SAME helm.
+    # Use EXECUTE when the helm wants Bridge to own tool dispatch (e.g. a fast
+    # classifier helm with a small, allow-listed tool surface).
+
+@dataclass(frozen=True)
+class CONTINUE:
+    reason: Optional[str] = None
+    # Helm dispatched its own tools internally this visit and just needs another
+    # walker visit. Bridge does NOT mutate helm_states / gear_trace / budget;
+    # it only calls visitor.prepend([self]). Used by ReasoningHelm, which runs
+    # the cockpit-style engine loop with its own tool registry.
 
 @dataclass(frozen=True)
 class SHIFT:
@@ -93,7 +107,7 @@ class YIELD:
     No revisit. Bridge exits cleanly. The agent's downstream IAs proceed."""
     pass
 
-HelmStepResult = Union[EMIT, EXECUTE, SHIFT, DELEGATE, YIELD]
+HelmStepResult = Union[EMIT, EXECUTE, CONTINUE, SHIFT, DELEGATE, YIELD]
 ```
 
 **Semantics:**
@@ -102,7 +116,8 @@ HelmStepResult = Union[EMIT, EXECUTE, SHIFT, DELEGATE, YIELD]
 |---|---|---|---|---|
 | `EMIT(finalize=True)` | Publish via `response_bus`; finalize turn. | No (cleared) | No | No |
 | `EMIT(finalize=False)` | Publish; revisit current helm. | Yes | Yes | No |
-| `EXECUTE` | Dispatch tool calls; record results into helm-scoped state. | Yes | Yes (same helm) | No |
+| `EXECUTE` | Dispatch tool calls (Bridge-owned registry); record results into helm-scoped state. | Yes | Yes (same helm) | No |
+| `CONTINUE` | Re-enqueue current helm; **no** state mutation by Bridge. | No (Bridge does not touch state — helm owns it) | Yes | No |
 | `SHIFT` | Emit `transient_ack` if eligible; check `tool:helm:{target}` AC; set `current_helm=target`; revisit. | Yes (with handoff_state on target's helm_states slot) | Yes | **Yes** |
 | `DELEGATE` | Resolve named IA; `await ia.execute(visitor)`; revisit Bridge. | Yes | Yes | No (separate `DELEGATION` event for I) |
 | `YIELD` | Exit Bridge; let walker continue weight chain. | Bridge clears its own state | No | No |

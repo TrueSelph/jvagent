@@ -18,6 +18,7 @@ from jvagent.action.bridge.bridge_interact_action import (
 )
 from jvagent.action.bridge.state import BRIDGE_STATE_VISITOR_ATTR
 from jvagent.action.helm.contracts import (
+    CONTINUE,
     DELEGATE,
     EMIT,
     EXECUTE,
@@ -109,6 +110,69 @@ async def test_execute_records_tool_calls_and_reenqueues(
     assert pending == [
         {"name": "memory_set", "arguments": {"key": "k", "value": "v"}, "call_id": None}
     ]
+
+
+# ---------------------------------------------------------------------------
+# CONTINUE
+# ---------------------------------------------------------------------------
+
+
+async def test_continue_reenqueues_without_state_mutation(
+    make_bridge, make_visitor, stub_helm, publish_log
+):
+    """CONTINUE schedules another visit and does not touch publish / helm slot."""
+    helm = stub_helm(name="StubHelm", script=[CONTINUE(reason="awaiting tools")])
+    bridge = make_bridge(helms={"StubHelm": helm})
+    visitor = make_visitor()
+
+    await bridge.execute(visitor)
+
+    visitor.prepend.assert_awaited_once_with([bridge])
+    # No publish.
+    assert publish_log == []
+    state = getattr(visitor, BRIDGE_STATE_VISITOR_ATTR)
+    # Helm slot untouched by Bridge.
+    assert "StubHelm" not in state.helm_states
+    # Budget unchanged.
+    assert state.shift_budget_remaining == bridge.shift_budget_per_turn
+    # Shift count is 1 (the initial helm resolution) — no extra shift recorded.
+    assert state.shift_count == 1
+
+
+async def test_continue_without_reason_still_reenqueues(
+    make_bridge, make_visitor, stub_helm
+):
+    helm = stub_helm(name="StubHelm", script=[CONTINUE()])
+    bridge = make_bridge(helms={"StubHelm": helm})
+    visitor = make_visitor()
+
+    await bridge.execute(visitor)
+
+    visitor.prepend.assert_awaited_once_with([bridge])
+
+
+async def test_continue_loop_terminates_on_eventual_emit(
+    make_bridge, make_visitor, stub_helm, publish_log
+):
+    """Multiple CONTINUE visits then a final EMIT — natural revisit pattern."""
+    helm = stub_helm(
+        name="StubHelm",
+        script=[
+            CONTINUE(reason="round 1"),
+            CONTINUE(reason="round 2"),
+            EMIT(text="done", finalize=True),
+        ],
+    )
+    bridge = make_bridge(helms={"StubHelm": helm})
+    visitor = make_visitor()
+
+    await bridge.execute(visitor)
+    await bridge.execute(visitor)
+    await bridge.execute(visitor)
+
+    assert helm.call_count == 3
+    assert publish_log == [{"content": "done", "channel": None, "metadata": None}]
+    assert not hasattr(visitor, BRIDGE_STATE_VISITOR_ATTR)
 
 
 # ---------------------------------------------------------------------------
