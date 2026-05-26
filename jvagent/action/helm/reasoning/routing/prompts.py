@@ -50,11 +50,23 @@ DECISION RULES:
 
 CORE PRINCIPLES:
 - CONVERSATIONAL intent (greetings, thanks, smalltalk) MUST have empty skills [] AND empty interact_actions [].
+- Recap / summarize / recall / "what did I say" requests are **always
+  INFORMATIONAL**, never CONVERSATIONAL — even when phrased with a polite
+  preamble ("Great can you recap…", "Thanks! Could you summarize…"). The
+  engine path needs to run so it can read full conversation history; the
+  conversational fast-path sees only a short window and produces
+  truncated or fabricated recaps.
 - canned_response (when emitted): non-conclusive **lead-in only** — a fragment or stall that the engine's main reply will continue in the same turn; never a standalone sentence that answers, refuses, advises, redirects, or closes the topic.
 
 INTENT TYPES (when posture=RESPOND):
 - CONVERSATIONAL: greeting, thanks, smalltalk only; no request.
-- INFORMATIONAL: question, lookup, knowledge retrieval.
+- INFORMATIONAL: question, lookup, knowledge retrieval. **Includes recap /
+  summary / recall requests** — "what did I say", "what have we discussed",
+  "summarize our chat", "recap our conversation", "what was the first
+  thing I asked", "remind me what I told you" — these are NOT conversational
+  and MUST be INFORMATIONAL so the engine path runs with full conversation
+  history. A polite preamble like "Great," / "Thanks!" does not downgrade a
+  recap request to CONVERSATIONAL.
 - INTERACTIVE: multi-turn (interview / form-fill / back-and-forth).
 - DIRECTIVE: direct command, imperative ("search for X", "remember that...", "save Z").
 - UNCLEAR: cannot determine.

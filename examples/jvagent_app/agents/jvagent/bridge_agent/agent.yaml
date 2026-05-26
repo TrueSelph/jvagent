@@ -79,7 +79,7 @@ actions:
       stream_internal_progress: true
       block_raw_tool_invocation: false
       # Router context depth. Smaller → faster routing prompt.
-      history_limit: 3
+      history_limit: 10
       response_mode: respond
       # Latency knobs (mirror cockpit_agent):
       # ``enable_router_preclassifier``: smalltalk skips the router LLM entirely.
@@ -90,11 +90,20 @@ actions:
       enable_interact_router_cache: true
       converse_enabled: true
       conversational_fast_path: true
-      converse_context_limit: 2
+      # Conversational context: tuned UP from cockpit's default of 2 because
+      # recap / recall / "what did I say" requests sometimes still slip
+      # through the router as CONVERSATIONAL despite the INFORMATIONAL rule
+      # in routing/prompts.py. 10 matches ``history_limit`` so the fast-path
+      # persona has the same context window the engine would.
+      converse_context_limit: 10
       converse_persona_prompt: >-
-        Brief, in-character replies. Greetings and smalltalk: natural and short.
-        Keep replies under 30 words unless the user asks for detail.
-        Do not append invitation closers ("let me know if…", "feel free to ask…").
+        In-character replies. Greetings and smalltalk: natural and short
+        (under 30 words). When the user asks you to recap, summarize, or
+        recall earlier turns, give a faithful, complete answer grounded in
+        the conversation history — do NOT truncate. If the user asks a
+        question that requires conversational history, ALWAYS draw from it
+        rather than from world knowledge. Do not append invitation closers
+        ("let me know if…", "feel free to ask…").
 
   # ── Ollama Language Model (available for routing variants; not the default) ──
   # Kept in parity with cockpit_agent so swapping providers in agent.yaml
