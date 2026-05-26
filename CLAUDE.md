@@ -25,6 +25,7 @@ Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email /
 |---|---|
 | **Get the big picture** | [`.planning/PROJECT.md`](.planning/PROJECT.md) |
 | **Look up normative semantics** (invariants, contracts) | [`.planning/SPEC.md`](.planning/SPEC.md) |
+| **Choose a deployment pattern** (Rails / Cockpit / Bridge) | [`.planning/PATTERNS.md`](.planning/PATTERNS.md) |
 | **See diagrams** (boot, interact, cockpit, pruning) | [`.planning/architecture.md`](.planning/architecture.md) |
 | **Define a term** | [`.planning/GLOSSARY.md`](.planning/GLOSSARY.md) |
 | **Build a new action** | [`.planning/action-authoring.md`](.planning/action-authoring.md) |
@@ -34,6 +35,7 @@ Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email /
 | **Tune / query logging** | [`.planning/observability.md`](.planning/observability.md) + [`docs/logging.md`](docs/logging.md) |
 | **Find a config key** | [`.planning/configuration-keys.md`](.planning/configuration-keys.md) + [`docs/environment-keys-reference.md`](docs/environment-keys-reference.md) |
 | **Understand the cockpit** | [`docs/COCKPIT.md`](docs/COCKPIT.md) + [`jvagent/action/cockpit/CLAUDE.md`](jvagent/action/cockpit/CLAUDE.md) |
+| **Understand the bridge** | [`docs/BRIDGE.md`](docs/BRIDGE.md) + [`.planning/adr/0007-bridge-helm-architecture.md`](.planning/adr/0007-bridge-helm-architecture.md) |
 | **Run jvagent locally** | [`.planning/runbooks/local-dev.md`](.planning/runbooks/local-dev.md) |
 | **Add a new action end-to-end** | [`.planning/runbooks/add-action.md`](.planning/runbooks/add-action.md) |
 | **Send a proactive (agent-initiated) message** | [`docs/proactive-messages.md`](docs/proactive-messages.md) |
@@ -61,6 +63,7 @@ Source anchors:
 - InteractAction: [`jvagent/action/interact/base.py:32`](jvagent/action/interact/base.py)
 - InteractWalker: `jvagent/action/interact/interact_walker.py:50+`
 - Cockpit: [`jvagent/action/cockpit/cockpit_interact_action.py:79`](jvagent/action/cockpit/cockpit_interact_action.py)
+- Bridge: [`jvagent/action/bridge/bridge_interact_action.py`](jvagent/action/bridge/bridge_interact_action.py) + helms under [`jvagent/action/helm/`](jvagent/action/helm/)
 - Conversation + pruning: `jvagent/memory/conversation.py:250-367`
 
 ---

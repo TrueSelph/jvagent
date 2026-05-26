@@ -62,6 +62,30 @@ def test_resolve_cockpit_profile_includes_cockpit_and_persona() -> None:
     assert "jvagent/handoff_interact_action" in ids
 
 
+def test_resolve_bridge_profile_includes_bridge_and_helms() -> None:
+    """The bridge profile produces a complete Reflex+Reasoning starter agent.
+
+    Bridge ships the orchestrator plus the two default helms (ReflexHelm
+    handles trivial turns, ReasoningHelm handles deliberate ones), plus
+    persona for delivery polish and intro / handoff IAs that the
+    reasoning router can route to. PersonaHelm is intentionally NOT in
+    the default helms list — operators add it when they want a polish
+    SHIFT target (BRIDGE-ROADMAP §K).
+    """
+    actions = resolve_profile_actions(None, "bridge")
+    ids = {x["action"] for x in actions}
+    assert "jvagent/bridge" in ids
+    assert "jvagent/reflex_helm" in ids
+    assert "jvagent/reasoning_helm" in ids
+    assert "jvagent/persona" in ids
+    assert "jvagent/openai_lm" in ids
+    assert "jvagent/intro_interact_action" in ids
+    assert "jvagent/handoff_interact_action" in ids
+    # Bridge and Cockpit MUST NOT coexist in the same starter — they
+    # occupy the same -200 weight slot and operator intent is ambiguous.
+    assert "jvagent/cockpit" not in ids
+
+
 def test_create_app_default_profile_is_cockpit(tmp_path: Path) -> None:
     """Calling create_app with no explicit default_profile picks cockpit.
 

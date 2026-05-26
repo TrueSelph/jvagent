@@ -1,0 +1,104 @@
+# Bridge profile (BRIDGE-ROADMAP §K).
+#
+# Multi-helm composition: BridgeInteractAction at weight -200 orchestrates
+# ReflexHelm (sub-500ms classifier) and ReasoningHelm (cockpit-style
+# think-act-observe loop). PersonaHelm is declared as an installable
+# action — operators can add it to the ``helms:`` list to enable
+# polish-and-deliver SHIFT targets.
+#
+# This profile is a STARTER for new agents. It is never injected into
+# existing agents — the bootstrap layer treats agents declaratively from
+# their own agent.yaml.
+#
+# Use --profile bridge to scaffold a new agent on this composition.
+# Use --profile cockpit for the standalone cockpit pattern (the current
+# scaffolder default).
+actions:
+  - action: jvagent/bridge
+    context:
+      enabled: true
+      # Helm composition. Order doesn't matter for resolution; the helm
+      # named in ``default_helm`` is the entry point each turn.
+      helms:
+        - ReflexHelm
+        - ReasoningHelm
+      default_helm: ReflexHelm
+      # Bridge safeguards.
+      shift_budget_per_turn: 4
+      first_emit_timeout_ms: 800
+      safety_net_ack_text: "Working on it…"
+      denied_response_text: "Sorry, I can't do that here."
+
+  - action: jvagent/reflex_helm
+    context:
+      enabled: true
+      # Fast classifier defaults — OpenAI gpt-4o-mini for ubiquity.
+      # Swap to Groq llama-3.1-8b-instant or Cerebras to tighten p50
+      # below 200ms (see .planning/PATTERNS.md performance ledger).
+      model: gpt-4o-mini
+      model_action_type: OpenAILanguageModelAction
+      model_temperature: 0.0
+      model_max_tokens: 256
+      timeout_seconds: 3.0
+      history_limit: 4
+      default_shift_target: ReasoningHelm
+      can_emit_directly: true
+
+  - action: jvagent/reasoning_helm
+    context:
+      enabled: true
+      # Mirrors the cockpit profile's defaults for apples-to-apples
+      # parity. Tune for production deployments.
+      router_model: gpt-4o-mini
+      router_model_action_type: OpenAILanguageModelAction
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      max_iterations: 25
+      tool_tier: standard
+      response_mode: respond
+      skills_source: both
+      # ReflexHelm owns the user-facing immediate response on SHIFT;
+      # Reasoning's router canned would duplicate it. Keep off in Bridge.
+      enable_canned_response: false
+      # Phase-1 latency knobs (mirror cockpit_agent).
+      enable_router_preclassifier: true
+      enable_interact_router_cache: true
+      converse_enabled: true
+      conversational_fast_path: true
+      converse_context_limit: 10
+      stream_internal_progress: true
+
+  - action: jvagent/openai_lm
+    context:
+      enabled: true
+      description: OpenAI language model (OPENAI_API_KEY in .env)
+      api_endpoint: https://api.openai.com/v1
+      model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 4096
+      timeout: 60
+
+  - action: jvagent/persona
+    context:
+      enabled: true
+      description: Agent persona — shapes final responses with directives from helms and other actions
+      persona_name: __JVAGENT_SCAFFOLD_AGENT_TITLE__
+      persona_description: __JVAGENT_SCAFFOLD_AGENT_DESCRIPTION__
+      persona_capabilities:
+        - Answer user questions helpfully and concisely
+        - Search and synthesize information using available tools
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      model_temperature: 0.1
+      model_max_tokens: 8192
+
+  - action: jvagent/intro_interact_action
+    context:
+      enabled: true
+      description: First-time-user intro (always_execute) — adds a persona directive on first interaction
+
+  - action: jvagent/handoff_interact_action
+    context:
+      enabled: true
+      description: Hands off to a human — routed by the reasoning helm when the user asks for support
+      mode: direct_contact

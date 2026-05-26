@@ -98,7 +98,29 @@ package:
       - jvagent/persona
     pip:                                   # PyPI packages (auto-installed unless
       - requests>=2.28                     # JVAGENT_DISABLE_RUNTIME_PIP_INSTALL=true)
+
+  manifest:                                # optional — pattern-agnostic metadata
+    latency_class: quick                   # fast | quick | deliberate | long
+    turn_lock: false                       # true if this IA owns the turn end-to-end
+    can_interrupt: false                   # true if this helm/IA may interrupt a turn-lock
+    pattern_compatibility:                 # informational; consumed by tooling + helms
+      - rails
+      - cockpit
+      - bridge
 ```
+
+### Pattern compatibility
+
+The `manifest:` block surfaces metadata that is consumed by deployment patterns at runtime. It is informational for **Rails** and **Cockpit** and orchestration-critical for **Bridge**:
+
+- `latency_class` — Bridge decides whether `SHIFT` to this target needs an ack-on-shift (`deliberate` / `long` ⇒ ack).
+- `turn_lock` — Bridge auto-`DELEGATE`s to this IA on the next turn when it's mid-workflow in recent history.
+- `can_interrupt` — Bridge allows this helm to interrupt a `turn_lock` owner.
+- `pattern_compatibility` — Validators / scaffold checks; Bridge's Reflex uses the list to build peer-awareness prompts.
+
+If your action is meant for any pattern, list all three. If it's Bridge-specific (e.g. a custom helm), list only `bridge`. The harness does not enforce this at v0 — it is consumed by tooling and helms only.
+
+Schema and defaults live at [`jvagent/action/manifest.py`](../jvagent/action/manifest.py). Access at runtime via `await action.get_manifest()`.
 
 Real examples to copy from:
 
@@ -106,6 +128,7 @@ Real examples to copy from:
 |---|---|---|
 | Persona | [`jvagent/action/persona/info.yaml`](../jvagent/action/persona/info.yaml) | `singleton: true`, no deps |
 | Cockpit | [`jvagent/action/cockpit/info.yaml`](../jvagent/action/cockpit/info.yaml) | `weight: -200`, depends on `jvagent/persona` |
+| Bridge | [`jvagent/action/bridge/info.yaml`](../jvagent/action/bridge/info.yaml) | `weight: -200`, multi-helm orchestrator |
 | Router | [`jvagent/action/router/info.yaml`](../jvagent/action/router/info.yaml) | `weight: -200`, no deps |
 | Email | [`jvagent/action/email_action/info.yaml`](../jvagent/action/email_action/info.yaml) | pip deps |
 

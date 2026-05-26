@@ -1,0 +1,323 @@
+# Bridge Architecture
+
+## Overview
+
+Bridge is the multi-helm deployment pattern. Where [Cockpit](COCKPIT.md) wraps a single think-act-observe loop, Bridge composes **N helms** behind a single `InteractAction` slot at weight `-200` and orchestrates **shifts** between them as walker hops. Each helm is itself an `Action` with a `step(visitor, bridge_state) → HelmStepResult` contract.
+
+The pattern targets latency-sensitive UX (voice, fast chat) and mixed workloads where trivial turns shouldn't pay the cost of a heavy reasoner. A fast classifier helm (Reflex) handles smalltalk in <300ms; deliberate turns shift to a Reasoning helm; delivery polish can shift again to a Persona helm. Each shift is observable, streamable, and AccessControl-gated.
+
+Bridge does NOT replace Cockpit. The two patterns coexist; operators choose per-deployment via scaffolder profile (`--profile bridge` vs `--profile cockpit`) and `agent.yaml`. See [`PATTERNS.md`](../.planning/PATTERNS.md) for the decision tree.
+
+## Architecture
+
+```
+POST /agents/{agent_id}/interact
+  │
+  ├─ 1. Bootstrap (InteractWalker)
+  │     └─ Resolve User → Conversation → Interaction
+  │
+  ├─ 2. Curate walker queue (once per turn)
+  │     └─ Bridge owns walker queue mutations; always_execute IAs preserved
+  │
+  └─ 3. BridgeInteractAction (walker-revisit pattern)
+        │
+        ├─ First visit: resolve current_helm (default_helm or first in helms[])
+        │   └─ Record initial ShiftRecord(from=None, to=current_helm)
+        │
+        └─ Each walker visit: helm.step(visitor, bridge_state)
+            │
+            ├─ EMIT(finalize=True)  → publish, clear state, end turn
+            ├─ EMIT(finalize=False) → publish, re-enqueue helm
+            ├─ EXECUTE(tool_calls)  → dispatch tools via Bridge registry, re-enqueue
+            ├─ CONTINUE             → re-enqueue helm (helm dispatched its own tools)
+            ├─ SHIFT(target)        → AC-check, ack-on-shift, switch helm, re-enqueue
+            ├─ DELEGATE(action)     → AC-check, run rails IA inline, re-enqueue
+            └─ YIELD                → clear state, let walker continue weight chain
+```
+
+Bridge invariants:
+
+1. **One model call per walker visit** (ADR-0002 preserved).
+2. **Bridge owns walker queue mutations** — helms never call `visitor.prepend([self])` directly.
+3. **Helms are invisible to the walker's action trace** — only `BridgeInteractAction` visits are recorded.
+4. **Shift budget per turn** (default `4`) prevents ping-pong loops.
+5. **First-emit timeout** (default `800ms`) triggers a safety-net ack on long deliberate turns.
+
+State persists on `visitor._bridge_state` (`BridgeState` dataclass). Per-helm internal state (e.g. ReasoningHelm's `CockpitState`) lives on `visitor._skill_state`, scoped by the helm that owns the current visit.
+
+## Helms
+
+A helm is a `BaseHelm` subclass — an `Action` that implements `step()` and declares a manifest. Helms are connected to the agent like any other action and named on the bridge's `helms:` list.
+
+| Helm | Class | Latency class | Purpose |
+|---|---|---|---|
+| **ReflexHelm** | `jvagent.action.helm.reflex.ReflexHelm` | `fast` | Sub-500ms classifier. Handles greetings, smalltalk, simple acknowledgements directly via a small completion model; SHIFTs to a deliberate helm on any utterance that needs reasoning. |
+| **ReasoningHelm** | `jvagent.action.helm.reasoning.ReasoningHelm` | `deliberate` | Cockpit-style think-act-observe loop. One model call per walker visit; full tool surface (memory, response, task, conversation, skill, artifact, search). Independent duplication — zero imports from `cockpit/`. |
+| **PersonaHelm** | `jvagent.action.helm.persona.PersonaHelm` | `fast` | Wraps `PersonaAction` to polish final output. Targeted via `SHIFT(target=PersonaHelm, handoff_state={...})` from upstream helms. |
+| **Specialist** | any rails `InteractAction` | (manifest) | Not a helm — invoked via `DELEGATE(action=...)`. Lets Bridge yield cleanly to a deterministic rails IA for an in-progress workflow (e.g. interview, form). |
+
+### HelmStepResult verb set (v0.1)
+
+```
+EMIT        publish text; finalize ends turn, non-finalize re-enqueues
+EXECUTE     tool calls dispatched by Bridge; results persisted; re-enqueue
+CONTINUE    re-enqueue with no Bridge-side state mutation (helm dispatched its own tools)
+SHIFT       switch to target helm; ack-on-shift if target is deliberate/long
+DELEGATE    resolve rails InteractAction, run inline, re-enqueue
+YIELD       exit Bridge cleanly; walker continues weight chain
+```
+
+Verb semantics live in [`jvagent/action/helm/contracts.py`](../jvagent/action/helm/contracts.py). The set is additive across minor revisions per ADR-0007 — `CONTINUE` joined at v0.1.
+
+### Shift verbs and turn-lock
+
+- Every `SHIFT` records a `ShiftRecord` on `BridgeState.gear_trace`.
+- A `SHIFT` to a helm whose `manifest.latency_class` is `deliberate` or `long` emits a `transient_ack` text via the response bus (default: "Working on it…") before the target helm gets its first visit.
+- Turn-lock: when an action with `manifest.turn_lock=True` is mid-workflow in the recent interaction history, Bridge auto-`DELEGATE`s the next utterance to that owner unless the helm requesting the SHIFT has `manifest.can_interrupt=True`.
+
+## Pattern-agnostic primitives
+
+These primitives live at harness level and are usable by other patterns:
+
+- **Manifest schema** ([`jvagent/action/manifest.py`](../jvagent/action/manifest.py)) — `latency_class`, `turn_lock`, `can_interrupt`, `pattern_compatibility` fields on any `Action` package. Exposed via `Action.get_manifest()`.
+- **HELM_SHIFT observability event** ([`docs/logging.md`](logging.md)) — emitted per shift, stamped on `Interaction.observability_metrics`.
+- **Gear trace persistence** — `Interaction.parameters["bridge_gear_trace"]` records every shift for the turn.
+- **Per-helm timings** — `Interaction.parameters["bridge_helm_timings"]` aggregates wall-clock per helm.
+
+## Plugging Into the Interact Pipeline
+
+`BridgeInteractAction` is a standard `InteractAction` (weight: `-200`) that plugs into the `InteractWalker` pipeline. Minimal `agent.yaml`:
+
+```yaml
+actions:
+  - action: jvagent/bridge
+    context:
+      enabled: true
+      helms:
+        - ReflexHelm
+        - ReasoningHelm
+      default_helm: ReflexHelm
+      shift_budget_per_turn: 4
+      first_emit_timeout_ms: 800
+
+  - action: jvagent/reflex_helm
+    context:
+      enabled: true
+      model: gpt-4o-mini
+      model_action_type: OpenAILanguageModelAction
+      default_shift_target: ReasoningHelm
+
+  - action: jvagent/reasoning_helm
+    context:
+      enabled: true
+      model: gpt-4o-mini
+      model_action_type: OpenAILanguageModelAction
+      enable_canned_response: false   # Reflex owns user-facing canned/ack
+```
+
+The interact pipeline (`InteractWalker` → `Actions` → sorted `InteractAction` chain by weight) is fully preserved. Bridge and Cockpit cannot coexist on the same agent — the scaffolder rejects this at validate-time because both occupy weight `-200` and operator intent is ambiguous.
+
+## Action Configuration
+
+### Recipe 1 — Default conversational agent (Reflex + Reasoning)
+
+```yaml
+- action: jvagent/bridge
+  context:
+    enabled: true
+    helms: [ReflexHelm, ReasoningHelm]
+    default_helm: ReflexHelm
+
+- action: jvagent/reflex_helm
+  context:
+    enabled: true
+    model: gpt-4o-mini
+    model_action_type: OpenAILanguageModelAction
+    timeout_seconds: 3.0
+    default_shift_target: ReasoningHelm
+    can_emit_directly: true
+
+- action: jvagent/reasoning_helm
+  context:
+    enabled: true
+    model: gpt-4o-mini
+    model_action_type: OpenAILanguageModelAction
+    max_iterations: 25
+    tool_tier: standard
+    skills_source: both
+    enable_canned_response: false
+```
+
+### Recipe 2 — Reflex on a faster provider (Groq / Cerebras)
+
+```yaml
+- action: jvagent/groq_lm
+  context:
+    enabled: true
+    model: llama-3.1-8b-instant
+
+- action: jvagent/reflex_helm
+  context:
+    enabled: true
+    model: llama-3.1-8b-instant
+    model_action_type: GroqLanguageModelAction
+    timeout_seconds: 1.5
+```
+
+The classifier prompt is ~800 prompt tokens. A genuinely fast provider drops trivial-turn p50 from ~2.1s to ~1.0s, closing on the milestone-J 30% target.
+
+### Recipe 3 — Add PersonaHelm for delivery polish
+
+```yaml
+- action: jvagent/bridge
+  context:
+    enabled: true
+    helms: [ReflexHelm, ReasoningHelm, PersonaHelm]
+    default_helm: ReflexHelm
+
+- action: jvagent/persona_helm
+  context:
+    enabled: true
+```
+
+ReasoningHelm SHIFTs to PersonaHelm at the end of a deliberate turn when the upstream output is rough or persona-shaping is configured.
+
+### Recipe 4 — Hardened production posture
+
+```yaml
+- action: jvagent/bridge
+  context:
+    enabled: true
+    helms: [ReflexHelm, ReasoningHelm]
+    default_helm: ReflexHelm
+    shift_budget_per_turn: 3            # tighter
+    first_emit_timeout_ms: 600          # earlier safety-net ack
+    safety_net_ack_text: "Still working…"
+    denied_response_text: "Sorry, I can't do that here."
+
+- action: jvagent/reasoning_helm
+  context:
+    enabled: true
+    block_raw_tool_invocation: true
+    stream_internal_progress: false
+    enable_canned_response: false
+    sanitize_tool_errors: true
+```
+
+### Configuration groups (cheat sheet)
+
+| Group | Tunable when … |
+|---|---|
+| Bridge orchestration | `helms`, `default_helm`, `shift_budget_per_turn`, `first_emit_timeout_ms` |
+| Reflex classifier | Provider / model, `timeout_seconds`, `default_shift_target`, `can_emit_directly` |
+| Reasoning engine | Same surface as Cockpit (engine + router + skills + tool tier) minus `enable_canned_response` |
+| Persona polish | `PersonaHelm` wraps the existing `PersonaAction` config |
+| Safety nets | `safety_net_ack_text`, `denied_response_text` |
+
+### Gotchas
+
+- `enable_canned_response` MUST stay `false` on `ReasoningHelm` in a Bridge agent. Reflex owns the user-facing canned lead-in / ack-on-shift — duplicating it from the reasoning router produces double lead-ins.
+- ReasoningHelm and `CockpitInteractAction` cannot coexist on the same agent. The Bridge composition fully replaces Cockpit.
+- ReflexHelm's classifier uses temperature `0.0` and a small `max_tokens` (256) by design. Don't raise these — the helm is meant to be a deterministic gate, not a generator.
+- Recap / recall questions ALWAYS SHIFT from ReflexHelm to ReasoningHelm regardless of perceived history. The reflex prompt enforces this explicitly.
+
+## Module Structure
+
+```
+jvagent/action/bridge/                  # Orchestrator
+  ├─ bridge_interact_action.py          # BridgeInteractAction (weight -200)
+  ├─ state.py                           # BridgeState dataclass
+  ├─ access.py                          # tool:helm:* and tool:delegate:* AC
+  ├─ turn_lock.py                       # find_turn_lock_owner, is_interrupt_allowed
+  └─ info.yaml
+
+jvagent/action/helm/                    # Helm primitives + concrete helms
+  ├─ base.py                            # BaseHelm (publish, publish_thought, respond)
+  ├─ contracts.py                       # HelmStepResult verb set + dataclasses
+  ├─ stub_helm.py                       # Test fixture
+  ├─ reflex/
+  │   ├─ reflex_helm.py                 # Fast classifier helm
+  │   ├─ prompts.py
+  │   └─ info.yaml
+  ├─ reasoning/                         # Independent duplication of cockpit
+  │   ├─ reasoning_helm.py
+  │   ├─ engine.py                      # ReasoningEngine (think-act-observe loop)
+  │   ├─ routing/router.py              # Router (Phase-1 classifier)
+  │   ├─ catalog/                       # SkillCatalog, ActionResolver
+  │   ├─ delivery/                      # gates, helpers, delegation
+  │   ├─ registry/                      # tool assembler, access, visitor shim
+  │   ├─ tools/                         # response, memory, task, skill, …
+  │   ├─ DUPLICATION_NOTICE.md          # Per-file source attribution from cockpit
+  │   └─ info.yaml
+  └─ persona/
+      ├─ persona_helm.py                # Wraps PersonaAction
+      └─ info.yaml
+
+jvagent/action/manifest.py              # Pattern-agnostic Manifest schema
+```
+
+The duplication notice ([`jvagent/action/helm/reasoning/DUPLICATION_NOTICE.md`](../jvagent/action/helm/reasoning/DUPLICATION_NOTICE.md)) records the source commit of every duplicated file from cockpit. Drift is expected: Bridge and Cockpit can evolve independently. The invariant guard `tests/action/bridge/test_no_cockpit_imports.py` prevents accidental cross-imports.
+
+## Implementing a New Helm
+
+Helms are `BaseHelm` subclasses. The minimum surface:
+
+```python
+from jvspatial.core.annotations import attribute
+
+from jvagent.action.helm.base import BaseHelm
+from jvagent.action.helm.contracts import EMIT, SHIFT, YIELD, HelmStepResult
+
+
+class MyHelm(BaseHelm):
+    enabled: bool = attribute(default=True)
+
+    @classmethod
+    def helm_name(cls) -> str:
+        return "MyHelm"
+
+    async def step(self, visitor, bridge_state) -> HelmStepResult:
+        utterance = (visitor.utterance or "").strip()
+        if not utterance:
+            return YIELD()
+        if utterance.lower() in ("hi", "hello"):
+            return EMIT(text="Hey.", finalize=True)
+        return SHIFT(target="ReasoningHelm", reason="not a greeting")
+```
+
+Then declare the helm in `info.yaml`:
+
+```yaml
+package:
+  name: jvagent/my_helm
+  archetype: MyHelm
+  manifest:
+    latency_class: fast
+    can_interrupt: false
+    turn_lock: false
+    pattern_compatibility:
+      - bridge
+```
+
+And add it to the bridge's `helms:` list in `agent.yaml`. AccessControl resources for the helm are auto-derived as `tool:helm:MyHelm`.
+
+## Observability
+
+Bridge stamps the following on each `Interaction`:
+
+| Surface | Key | Content |
+|---|---|---|
+| `observability_metrics` | `events[].HELM_SHIFT` | One event per shift, with `from`, `to`, `reason`, `ack_emitted`, `at_monotonic` |
+| `parameters` | `bridge_gear_trace` | Full `ShiftRecord` list serialized |
+| `parameters` | `bridge_helm_timings` | `{helm_name: total_wall_seconds}` |
+| `parameters` | `bridge_helm_step_counts` | `{helm_name: visit_count}` |
+
+See [`docs/logging.md`](logging.md) → "Bridge Observability" for query examples.
+
+## References
+
+- [`.planning/PATTERNS.md`](../.planning/PATTERNS.md) — pattern catalog + performance ledger
+- [`.planning/adr/0007-bridge-helm-architecture.md`](../.planning/adr/0007-bridge-helm-architecture.md) — Bridge + Helm architecture decision
+- [`.planning/BRIDGE-ROADMAP.md`](../.planning/BRIDGE-ROADMAP.md) — build plan
+- [`docs/COCKPIT.md`](COCKPIT.md) — Cockpit reference (companion pattern)
+- [`docs/logging.md`](logging.md) — observability schema (Bridge events)

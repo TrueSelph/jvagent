@@ -28,7 +28,7 @@ Living roadmap for delivering the **Bridge + Helm** architecture as an additive 
 | H — Migration CLI (optional) | TODO | `jvagent app migrate-to-bridge` with `--dry-run`, `--diff`. Non-blocking for K. |
 | I — Observability | TODO | `HELM_SHIFT` event; `Interaction.parameters.gear_trace`; per-helm token attribution. |
 | J — Performance validation | TODO | Smoke harness extended to 4 configs; pattern matrix run; published deltas vs baseline. |
-| K — Pattern parity | TODO | `bridge` profile in scaffolder alongside `cockpit`; PATTERNS.md catalog; `bridge_agent` example; **no cockpit deprecation**. |
+| K — Pattern parity | DONE | `bridge` profile shipped in `jvagent/scaffold/builtin_profiles/bridge.yaml`; scaffolder smoke verified (`/tmp/bridge_scaffold_test`); `docs/BRIDGE.md` mirrors `docs/COCKPIT.md`; GLOSSARY.md gains Bridge / Helm / Manifest / latency_class / ReflexHelm / ReasoningHelm / PersonaHelm / ShiftRecord / Specialist / Turn-lock / BridgeState / HelmStepResult; `CLAUDE.md` top-level points to `PATTERNS.md`; `action-authoring.md` gains a "Pattern compatibility" section. 158/158 bridge+helm+scaffold tests pass; cockpit 189/189 untouched. **No cockpit deprecation.** |
 
 ## Constraints (hard)
 
