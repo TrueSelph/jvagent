@@ -19,6 +19,31 @@ package:
     group: jvagent
     type: interact_action
 
+  # Pattern-agnostic manifest (BRIDGE-ROADMAP §D / ADR-0007 v0). Consumed
+  # by helms and schedulers for routing hints; ignored by patterns that
+  # don't read it. ``turn_lock: true`` because an interview spans multiple
+  # turns and other helms should not interleave.
+  manifest:
+    purpose: >-
+      Conduct a structured multi-turn interview with the user across a
+      defined question set, tracking branching and completion state.
+    activates_on:
+      - "user agrees to give feedback / be interviewed"
+      - "operator schedules an interview"
+    terminates_when:
+      - "all questions answered"
+      - "user explicitly cancels (stop / cancel / quit)"
+      - "interview times out"
+    latency_class: deliberate
+    turn_lock: true
+    can_interrupt: false
+    interrupt_phrases:
+      - "stop"
+      - "cancel"
+      - "quit"
+      - "end interview"
+    expected_duration_seconds: 180.0
+
   # Package dependencies
   dependencies:
     # jvagent version requirement

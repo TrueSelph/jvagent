@@ -28,6 +28,7 @@ from jvspatial.core import Node
 from jvspatial.core.annotations import attribute, compound_index
 
 if TYPE_CHECKING:
+    from jvagent.action.manifest import Manifest
     from jvagent.action.model.language.base import LanguageModelAction
 
 logger = logging.getLogger(__name__)
@@ -189,6 +190,31 @@ class Action(Node):
             List of capability strings (e.g., "Join WhatsApp groups and send messages")
         """
         return []
+
+    def get_manifest(self) -> "Manifest":
+        """Return the pattern-agnostic :class:`Manifest` for this action.
+
+        Resolution order (BRIDGE-ROADMAP §D / ADR-0007 v0):
+
+        1. ``self.metadata['manifest']`` from ``info.yaml`` (raw dict),
+           parsed into a :class:`Manifest` via ``Manifest.from_payload``.
+        2. ``agent.yaml`` ``context.manifest:`` shallow-merged on top
+           (per-action overrides — handled when the agent loader writes
+           into ``self.metadata['manifest']`` after merging contexts;
+           reads happen here from a single source).
+        3. Defaults from :class:`Manifest` (``latency_class="quick"``,
+           ``turn_lock=False``, ``can_interrupt=False``) when no manifest
+           block was declared.
+
+        The result is cached per-call; callers should treat it as
+        immutable (it is a frozen dataclass). Override in subclasses only
+        when an action needs to compute its manifest dynamically — most
+        actions just declare the block in ``info.yaml``.
+        """
+        from jvagent.action.manifest import Manifest
+
+        raw = (self.metadata or {}).get("manifest") if self.metadata else None
+        return Manifest.from_payload(raw)
 
     async def get_tools(self) -> List[Any]:
         """Return Tool instances this action exposes for cockpit runs.

@@ -68,6 +68,18 @@ class ActionMetadata:
         self.config = package.get("config", {})
         self.dependencies = package.get("dependencies", {})
 
+        # Pattern-agnostic manifest block (BRIDGE-ROADMAP §D / ADR-0007 v0).
+        # Located under ``package.manifest`` so it sits alongside ``meta``
+        # and ``config``. Optional — missing yields an empty dict here and
+        # safe defaults at ``Action.get_manifest()`` resolve time.
+        manifest_block = package.get("manifest")
+        if not isinstance(manifest_block, dict) and manifest_block is not None:
+            # Defer schema validation to the manifest module so we don't
+            # introduce a loader-level import cycle. Just preserve the raw
+            # payload here.
+            pass
+        self.manifest = manifest_block if isinstance(manifest_block, dict) else None
+
         self.module = self.name
         self.class_name = self.archetype
         self.enabled = True

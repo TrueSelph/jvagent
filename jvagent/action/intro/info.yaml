@@ -12,3 +12,17 @@ package:
     singleton: true
     order:
       weight: -300
+  # Pattern-agnostic manifest (BRIDGE-ROADMAP §D / ADR-0007 v0). Consumed
+  # by helms and schedulers for routing hints; ignored by patterns that
+  # don't read it. Safe to add to any action's info.yaml.
+  manifest:
+    purpose: "Greet first-time users with a brief intro and capability summary."
+    activates_on:
+      - "first user interaction in a conversation"
+      - "user has no prior turns in this session"
+    terminates_when:
+      - "intro directive published"
+    latency_class: quick
+    turn_lock: false
+    can_interrupt: false
+    expected_duration_seconds: 1.5

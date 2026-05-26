@@ -31,4 +31,8 @@ def build_action_metadata_payload(
         "loaded_modules": loaded_modules,
         "is_core_action": bool(getattr(metadata, "is_core_action", False)),
         "core_module_path": getattr(metadata, "core_module_path", None),
+        # BRIDGE-ROADMAP §D: surface the raw manifest payload so
+        # Action.get_manifest() can parse it lazily on first access.
+        # ``None`` if no ``manifest:`` block was declared in info.yaml.
+        "manifest": getattr(metadata, "manifest", None),
     }

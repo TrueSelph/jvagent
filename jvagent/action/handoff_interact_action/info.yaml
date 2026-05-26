@@ -15,6 +15,24 @@ package:
   config:
     order:
       weight: 0
+  # Pattern-agnostic manifest (BRIDGE-ROADMAP §D / ADR-0007 v0). Consumed
+  # by helms and schedulers for routing hints; ignored by patterns that
+  # don't read it.
+  manifest:
+    purpose: >-
+      Route the user to a human operator via direct contact details,
+      WhatsApp escalation, or scheduled callback.
+    activates_on:
+      - "user explicitly asks to speak to a person / human / agent"
+      - "user requests escalation, callback, or live support"
+    terminates_when:
+      - "contact details delivered to user"
+      - "escalation message dispatched"
+      - "callback scheduled"
+    latency_class: quick
+    turn_lock: false
+    can_interrupt: false
+    expected_duration_seconds: 3.0
   dependencies:
     jvagent: ~0.0.1
     actions: []
