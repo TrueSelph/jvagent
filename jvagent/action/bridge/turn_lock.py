@@ -78,26 +78,30 @@ async def find_turn_lock_owner(
         return None
 
     interaction = getattr(visitor, "interaction", None)
-    excluded = getattr(interaction, "id", None) if interaction else None
+    excluded_id = getattr(interaction, "id", None) if interaction else None
 
+    # ``get_interaction_history`` formats by default and does NOT include
+    # ``interaction.actions`` in either the formatted or raw output —
+    # turn-lock detection needs that field. Read raw Interaction nodes
+    # via ``get_interactions`` so ``.actions`` is reachable directly.
     try:
-        recent = await conversation.get_interaction_history(
+        interactions = await conversation.get_interactions(
             limit=max(1, int(lookback_turns)),
-            excluded=excluded,
-            with_utterance=False,
-            with_response=False,
+            reverse=True,
         )
     except Exception as exc:
         logger.debug("turn_lock: history fetch failed: %s", exc)
         return None
 
-    if not recent:
+    if not interactions:
         return None
 
     action_names: List[str] = []
     seen: set = set()
-    for turn in recent:
-        for name in turn.get("actions") or []:
+    for inter in interactions:
+        if excluded_id and getattr(inter, "id", None) == excluded_id:
+            continue
+        for name in getattr(inter, "actions", None) or []:
             if name in seen:
                 continue
             seen.add(name)

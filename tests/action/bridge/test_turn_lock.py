@@ -75,14 +75,25 @@ def _make_visitor_with_history(
     """Build a visitor whose conversation reports the given turn history.
 
     ``history_turns`` is a list of dicts with optional ``actions`` keys.
+    Each dict is converted to a MagicMock with an ``actions`` attribute
+    so ``find_turn_lock_owner``'s ``getattr(inter, "actions", ...)`` path
+    works the same as a real Interaction node.
+
     ``agent_actions`` is a list of Action instances exposed via the
     agent's actions manager.
     """
     interaction = MagicMock()
     interaction.id = "int_current"
 
+    fake_interactions = []
+    for turn in history_turns:
+        m = MagicMock()
+        m.id = turn.get("id", f"int_{len(fake_interactions)}")
+        m.actions = turn.get("actions") or []
+        fake_interactions.append(m)
+
     conversation = MagicMock()
-    conversation.get_interaction_history = AsyncMock(return_value=history_turns)
+    conversation.get_interactions = AsyncMock(return_value=fake_interactions)
 
     actions_mgr = MagicMock()
     actions_mgr.get_all_actions = AsyncMock(return_value=agent_actions)
@@ -153,9 +164,7 @@ async def test_find_turn_lock_owner_handles_conversation_error_gracefully():
     interaction.id = "int_x"
     visitor.interaction = interaction
     conversation = MagicMock()
-    conversation.get_interaction_history = AsyncMock(
-        side_effect=RuntimeError("db down")
-    )
+    conversation.get_interactions = AsyncMock(side_effect=RuntimeError("db down"))
     visitor.conversation = conversation
     result = await find_turn_lock_owner(visitor)
     assert result is None
@@ -170,9 +179,10 @@ async def test_find_turn_lock_owner_handles_missing_agent():
     interaction.id = "int_x"
     visitor.interaction = interaction
     conversation = MagicMock()
-    conversation.get_interaction_history = AsyncMock(
-        return_value=[{"actions": ["LockedThing"]}]
-    )
+    fake = MagicMock()
+    fake.id = "int_y"
+    fake.actions = ["LockedThing"]
+    conversation.get_interactions = AsyncMock(return_value=[fake])
     visitor.conversation = conversation
     result = await find_turn_lock_owner(visitor)
     assert result is None

@@ -698,6 +698,25 @@ class BridgeInteractAction(InteractAction):
             await self._safe_fallback(visitor, state)
             return
         state.delegated_action = None
+        # Same finalize path as explicit DELEGATE — turn-locked IAs
+        # (e.g. InterviewInteractAction) typically add a directive
+        # expecting downstream persona rendering rather than publishing
+        # directly. Without this call the directive sits unrendered and
+        # the turn closes with response=None.
+        await self._finalize_via_persona_if_directives(visitor)
+        # Re-record the lock owner so subsequent turn-lock detection
+        # finds it. Walker auto-records actions it visits via its queue;
+        # this auto-delegate bypasses the queue.
+        interaction = getattr(visitor, "interaction", None)
+        if interaction is not None:
+            try:
+                interaction.record_action_execution(lock_owner.action_name)
+            except Exception as exc:
+                logger.debug(
+                    "bridge: failed to record turn-lock action %r: %s",
+                    lock_owner.action_name,
+                    exc,
+                )
         # Lock-owner has run; let the walker continue (don't re-enqueue
         # Bridge — the locked action drives its own flow until done).
         # If the locked action wants more Bridge turns, the next user
@@ -759,6 +778,22 @@ class BridgeInteractAction(InteractAction):
             await self._safe_fallback(visitor, state)
             return
         state.delegated_action = None
+        # Record the delegated IA on the interaction so turn-lock
+        # detection on the NEXT turn (``find_turn_lock_owner`` reads
+        # ``interaction.actions``) can locate the active flow. Walker
+        # auto-records actions it visits via its queue; DELEGATE bypasses
+        # the queue (runs ``target.execute(visitor)`` inline), so we
+        # have to record manually here.
+        interaction = getattr(visitor, "interaction", None)
+        if interaction is not None:
+            try:
+                interaction.record_action_execution(verb.interact_action)
+            except Exception as exc:
+                logger.debug(
+                    "bridge: failed to record DELEGATE action %r: %s",
+                    verb.interact_action,
+                    exc,
+                )
         # DELEGATE hands the turn to the rails IA. The IA may have:
         # (a) published a response directly via the response bus, OR
         # (b) added a directive to ``interaction.directives`` expecting a
