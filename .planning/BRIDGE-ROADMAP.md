@@ -129,12 +129,12 @@ Inherited from cockpit. Bridge configurations are measured against the same 6-ut
 **Plan.**
 
 1. **C-0 — CONTINUE verb.** Add `CONTINUE(reason: Optional[str])` to `jvagent/action/helm/contracts.py`. Wire dispatch in `BridgeInteractAction._dispatch` — Bridge calls `visitor.prepend([self])` with no state mutation. Update ADR-0007 + tests.
-2. **C-1 — Skeleton.** `jvagent/action/helm/reasoning/` package: `__init__.py`, `reasoning_helm.py` (class skeleton with `step()` returning `EMIT` placeholder), `info.yaml` (`jvagent/reasoning_helm`, `archetype: ReasoningHelm`, `type: action`), `endpoints.py` stub.
-3. **C-2 — Engine.** Duplicate `cockpit/engine.py`, `session.py`, `context.py`, `config.py`, `contracts.py`, `prompts.py` into `helm/reasoning/`. Wire bare LM loop. `ReasoningHelm.step()` runs one engine step per call — returns `CONTINUE` when tools dispatched, `EMIT(finalize=True)` when final text produced.
-4. **C-3 — Harness service tools.** Duplicate `cockpit/tools/` (memory, response, task, conversation, skill, artifact, search, clock) into `helm/reasoning/tools/`. Tool registry assembly with tier filtering (`minimal | standard | full`). Per-tool AC (`tool:{name}`).
-5. **C-4 — Routing.** Duplicate `cockpit/routing/` (router, preclassifier, types, prompts) into `helm/reasoning/routing/`. Wired as `ReasoningHelm` Phase 1.
-6. **C-5 — Skills + action_resolver.** Duplicate `cockpit/catalog/` into `helm/reasoning/catalog/`.
-7. **C-6 — Persona delivery.** Duplicate `cockpit/delivery/` into `helm/reasoning/delivery/`. `ReasoningHelm` calls `PersonaAction` directly via `get_action("PersonaAction")` for final delivery — `PersonaAction` is a peer Action, not a cockpit dependency. Conversational fast-path included for baseline parity.
+2. **C-1 — Skeleton.** `jvagent/action/helm/reasoning/` package: `__init__.py`, `reasoning_helm.py` (class skeleton with `step()` returning `EMIT` placeholder), `info.yaml` (`jvagent/reasoning_helm`, `archetype: ReasoningHelm`, `type: action`), `endpoints.py` stub. **DONE @ `1385eea`**.
+3. **C-2 — Engine.** Duplicate `cockpit/engine.py`, `session.py`, `context.py`, `config.py`, `contracts.py`, `prompts.py` into `helm/reasoning/`. ReasoningHelm wiring deferred to C-6 (gates on full tool/catalog/routing/delivery surface). 8 ported engine-baseline tests pass. **DONE @ `16e886a`**.
+4. **C-3 — Bulk duplication of remaining cockpit modules.** All remaining cockpit modules duplicated in one commit because they cross-reference each other and an incremental split would leave broken imports between sub-commits. Roadmap rolls C-4 (routing) and C-5 (catalog) into this commit since they describe slices of the same bulk duplication. Files: `cockpit/tools/` (memory, response, task, conversation, skill, artifact, search, clock, identity) → `helm/reasoning/tools/`; `cockpit/registry/` (assembler, access, shim) → `helm/reasoning/registry/`; `cockpit/catalog/` (skill_catalog, skill_discovery, action_resolver, prompts) → `helm/reasoning/catalog/`; `cockpit/routing/` (router, preclassifier, types, prompts) → `helm/reasoning/routing/`; `cockpit/delivery/` (delegation, persona_delivery, gates, helpers) → `helm/reasoning/delivery/`. Single source-attribution table in `jvagent/action/helm/reasoning/DUPLICATION_NOTICE.md`.
+5. **C-4 — Routing.** Merged into C-3.
+6. **C-5 — Catalog.** Merged into C-3.
+7. **C-6 — ReasoningHelm wiring.** Replace the C-1 placeholder `step()` with a real implementation: build `CockpitContext`, run Phase 1 routing, instantiate `CockpitEngine`, dispatch engine steps one-per-visit. Translate `CockpitStepResult` → `HelmStepResult` (`final_response` → `EMIT(finalize=True)`; `tool_calls` → `CONTINUE` (the helm dispatched internally); `timeout`/`stuck`/`budget` → `EMIT(finalize=True)` with fallback). Persona finalisation calls `PersonaAction` directly via `Action.get_action("PersonaAction")`. Conversational fast-path included for baseline parity.
 8. **C-7 — Smoke harness + parity.** `tests/action/bridge/smoke_bridge.py` runs the 6-utterance suite against the `bridge_agent` example (Bridge + ReasoningHelm). Baselines archived under `tests/action/bridge/baselines/`. Iterate to ≤5% drift vs commit `7d95904` on `dur`, `model_calls`, `prompt_tok`, `resp_chars`.
 
 **Hard constraints.**
@@ -341,8 +341,14 @@ Phase-out is data-driven. A pattern moves from supported → deprecated only whe
 
 ## Branch strategy
 
-- Feature branch `bridge-architecture` through milestone C (the high-risk refactor).
-- After C merges to trunk, subsequent milestones (D–K) land on trunk gated by the `--profile bridge` scaffolder option. No env flag — pattern selection is via configuration, not feature toggle.
+- All Bridge work lives on `dev-bridge` through milestone C (the high-risk
+  duplication). An earlier `bridge-architecture` branch was created and
+  fast-forwarded back into `dev-bridge` during C-3 so a single linear
+  history captures milestones A → B → C-*.
+- After C merges to trunk, subsequent milestones (D–K) land on trunk gated
+  by the `--profile bridge` scaffolder option. No env flag — pattern
+  selection is via configuration, not feature toggle.
+- No remote pushes during C. The branch stays local until C ships parity.
 
 ## Open questions
 
