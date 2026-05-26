@@ -75,10 +75,10 @@ config:
 # Agents are discovered from agents/{namespace}/{agent_name}/ and installed from this list.
 agents:
   - jvagent/bridge_agent
-  # Cockpit_agent was temporarily enabled to capture the fresh
-  # baseline for C-7 parity validation. Re-disabled now so the demo
-  # app exposes only the Bridge pattern. Re-enable for side-by-side
-  # parity comparisons or when running the cockpit smoke harness.
+  # cockpit_agent stays commented out by default — only enable for
+  # side-by-side matrix runs (BRIDGE-ROADMAP §J). When enabled, the
+  # operator must run `jvagent --update --source` then the matrix
+  # script. See `.planning/PATTERNS.md` for ledger update flow.
   # - jvagent/cockpit_agent
   # - jvagent/example_agent
   # - jvagent/proposal_agent

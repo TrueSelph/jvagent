@@ -1,0 +1,275 @@
+{
+  "label": "j_initial",
+  "commit": "b830f42",
+  "wall_clock_unix": 1779819146.204871,
+  "results": {
+    "bridge_agent": {
+      "rows": [
+        {
+          "label": "greeting",
+          "utterance": "Hi",
+          "duration_s": 2.267,
+          "session_id": "sess_fb7720bf71014a00",
+          "user_id": "user_368772b940d84965",
+          "actions_executed": [
+            "IntroInteractAction",
+            "BridgeInteractAction"
+          ],
+          "model_calls": 1,
+          "total_tokens": 825,
+          "prompt_tokens": 804,
+          "completion_tokens": 21,
+          "response_chars": 34,
+          "response_preview": "Hello! How can I assist you today?",
+          "helm_shift_count": 1,
+          "bridge_observability": {},
+          "error": null
+        },
+        {
+          "label": "informational_simple",
+          "utterance": "What is 2 + 2? Answer in one word.",
+          "duration_s": 1.808,
+          "session_id": "sess_fb7720bf71014a00",
+          "user_id": "user_368772b940d84965",
+          "actions_executed": [
+            "BridgeInteractAction"
+          ],
+          "model_calls": 1,
+          "total_tokens": 829,
+          "prompt_tokens": 815,
+          "completion_tokens": 14,
+          "response_chars": 5,
+          "response_preview": "Four.",
+          "helm_shift_count": 1,
+          "bridge_observability": {},
+          "error": null
+        },
+        {
+          "label": "directive_web_search",
+          "utterance": "Search the web for the most recent stable release of Python.",
+          "duration_s": 8.688,
+          "session_id": "sess_fb7720bf71014a00",
+          "user_id": "user_368772b940d84965",
+          "actions_executed": [
+            "BridgeInteractAction",
+            "BridgeInteractAction",
+            "PersonaAction"
+          ],
+          "model_calls": 4,
+          "total_tokens": 8880,
+          "prompt_tokens": 8659,
+          "completion_tokens": 221,
+          "response_chars": 240,
+          "response_preview": "Oh, I see what you're looking for! The most recent stable release of Python is **Python 3.14.5**, which was released on May 10, 2026. You can find it on the off",
+          "helm_shift_count": 2,
+          "bridge_observability": {},
+          "error": null
+        },
+        {
+          "label": "directive_remember_pref",
+          "utterance": "Remember that I prefer Python over JavaScript for new projects.",
+          "duration_s": 6.146,
+          "session_id": "sess_fb7720bf71014a00",
+          "user_id": "user_368772b940d84965",
+          "actions_executed": [
+            "BridgeInteractAction",
+            "BridgeInteractAction",
+            "PersonaAction"
+          ],
+          "model_calls": 3,
+          "total_tokens": 4678,
+          "prompt_tokens": 4539,
+          "completion_tokens": 139,
+          "response_chars": 152,
+          "response_preview": "Got it! You mentioned you prefer Python over JavaScript for new projects. If you have any specific questions or need help with Python, just let me know!",
+          "helm_shift_count": 2,
+          "bridge_observability": {},
+          "error": null
+        },
+        {
+          "label": "informational_recall",
+          "utterance": "What do you remember about my language preferences?",
+          "duration_s": 7.109,
+          "session_id": "sess_fb7720bf71014a00",
+          "user_id": "user_368772b940d84965",
+          "actions_executed": [
+            "BridgeInteractAction",
+            "BridgeInteractAction",
+            "PersonaAction"
+          ],
+          "model_calls": 3,
+          "total_tokens": 4774,
+          "prompt_tokens": 4631,
+          "completion_tokens": 143,
+          "response_chars": 123,
+          "response_preview": "You prefer Python over JavaScript for new projects. If there's anything else you'd like to add or change, just let me know!",
+          "helm_shift_count": 2,
+          "bridge_observability": {},
+          "error": null
+        },
+        {
+          "label": "thanks_followup",
+          "utterance": "Thanks!",
+          "duration_s": 3.233,
+          "session_id": "sess_fb7720bf71014a00",
+          "user_id": "user_368772b940d84965",
+          "actions_executed": [
+            "BridgeInteractAction"
+          ],
+          "model_calls": 1,
+          "total_tokens": 819,
+          "prompt_tokens": 804,
+          "completion_tokens": 15,
+          "response_chars": 15,
+          "response_preview": "You're welcome!",
+          "helm_shift_count": 1,
+          "bridge_observability": {},
+          "error": null
+        }
+      ],
+      "summary": {
+        "total_dur_s": 29.251,
+        "total_calls": 13,
+        "total_prompt_tokens": 20252,
+        "total_completion_tokens": 553,
+        "total_tokens": 20805,
+        "median_trivial_dur_s": 2.267,
+        "p99_dur_s": 8.688
+      }
+    },
+    "cockpit_agent": {
+      "rows": [
+        {
+          "label": "greeting",
+          "utterance": "Hi",
+          "duration_s": 1.54,
+          "session_id": "sess_71fa937e0ab24dcf",
+          "user_id": "user_0981d4d4c7184d7c",
+          "actions_executed": [
+            "IntroInteractAction",
+            "CockpitInteractAction",
+            "PersonaAction"
+          ],
+          "model_calls": 1,
+          "total_tokens": 1181,
+          "prompt_tokens": 1155,
+          "completion_tokens": 26,
+          "response_chars": 113,
+          "response_preview": "Hey there! I can search documents, browse the web, and remember your preferences as we chat. What\u2019s on your mind?",
+          "helm_shift_count": 0,
+          "bridge_observability": {},
+          "error": null
+        },
+        {
+          "label": "informational_simple",
+          "utterance": "What is 2 + 2? Answer in one word.",
+          "duration_s": 2.994,
+          "session_id": "sess_71fa937e0ab24dcf",
+          "user_id": "user_0981d4d4c7184d7c",
+          "actions_executed": [
+            "CockpitInteractAction",
+            "PersonaAction"
+          ],
+          "model_calls": 2,
+          "total_tokens": 3990,
+          "prompt_tokens": 3915,
+          "completion_tokens": 75,
+          "response_chars": 5,
+          "response_preview": "Four.",
+          "helm_shift_count": 0,
+          "bridge_observability": {},
+          "error": null
+        },
+        {
+          "label": "directive_web_search",
+          "utterance": "Search the web for the most recent stable release of Python.",
+          "duration_s": 7.901,
+          "session_id": "sess_71fa937e0ab24dcf",
+          "user_id": "user_0981d4d4c7184d7c",
+          "actions_executed": [
+            "CockpitInteractAction",
+            "PersonaAction"
+          ],
+          "model_calls": 3,
+          "total_tokens": 8522,
+          "prompt_tokens": 8338,
+          "completion_tokens": 184,
+          "response_chars": 184,
+          "response_preview": "The most recent stable release of Python is 3.14.5, released on May 10, 2026. You can find it on the official Python website: [python.org/downloads](https://www",
+          "helm_shift_count": 0,
+          "bridge_observability": {},
+          "error": null
+        },
+        {
+          "label": "directive_remember_pref",
+          "utterance": "Remember that I prefer Python over JavaScript for new projects.",
+          "duration_s": 4.1,
+          "session_id": "sess_71fa937e0ab24dcf",
+          "user_id": "user_0981d4d4c7184d7c",
+          "actions_executed": [
+            "CockpitInteractAction",
+            "PersonaAction"
+          ],
+          "model_calls": 2,
+          "total_tokens": 3905,
+          "prompt_tokens": 3809,
+          "completion_tokens": 96,
+          "response_chars": 92,
+          "response_preview": "Got it! I\u2019ll keep that in mind. If you need any help with Python projects, just let me know!",
+          "helm_shift_count": 0,
+          "bridge_observability": {},
+          "error": null
+        },
+        {
+          "label": "informational_recall",
+          "utterance": "What do you remember about my language preferences?",
+          "duration_s": 4.114,
+          "session_id": "sess_71fa937e0ab24dcf",
+          "user_id": "user_0981d4d4c7184d7c",
+          "actions_executed": [
+            "CockpitInteractAction",
+            "PersonaAction"
+          ],
+          "model_calls": 2,
+          "total_tokens": 4221,
+          "prompt_tokens": 4107,
+          "completion_tokens": 114,
+          "response_chars": 145,
+          "response_preview": "I recall that you prefer Python over JavaScript for new projects. If there\u2019s anything else you\u2019d like me to remember or update, just let me know!",
+          "helm_shift_count": 0,
+          "bridge_observability": {},
+          "error": null
+        },
+        {
+          "label": "thanks_followup",
+          "utterance": "Thanks!",
+          "duration_s": 2.122,
+          "session_id": "sess_71fa937e0ab24dcf",
+          "user_id": "user_0981d4d4c7184d7c",
+          "actions_executed": [
+            "CockpitInteractAction",
+            "PersonaAction"
+          ],
+          "model_calls": 1,
+          "total_tokens": 1258,
+          "prompt_tokens": 1237,
+          "completion_tokens": 21,
+          "response_chars": 90,
+          "response_preview": "Sure thing! I\u2019ll keep that in mind. If you have more preferences or questions, just share!",
+          "helm_shift_count": 0,
+          "bridge_observability": {},
+          "error": null
+        }
+      ],
+      "summary": {
+        "total_dur_s": 22.771,
+        "total_calls": 11,
+        "total_prompt_tokens": 22561,
+        "total_completion_tokens": 516,
+        "total_tokens": 23077,
+        "median_trivial_dur_s": 2.122,
+        "p99_dur_s": 7.901
+      }
+    }
+  }
+}

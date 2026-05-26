@@ -78,13 +78,75 @@ A single agent CAN mix patterns: e.g., a Rails-style auth IA (weight `-1000`) ah
 
 Empirical comparison published per the 6-utterance baseline suite ([`BRIDGE-ROADMAP.md`](BRIDGE-ROADMAP.md) §Baseline). Baseline commit: `7d95904`.
 
-| Pattern config | Median total dur(s) | p99 dur(s) | Total tokens | Trivial-turn p50(s) | Notes |
-|---|---|---|---|---|---|
-| Cockpit (control) | 33.15 | — | 34094 | — | Baseline from commit `7d95904` |
-| Bridge + Reasoning | — | — | — | — | TBD at milestone C parity gate |
-| Bridge + Reflex + Reasoning | — | — | — | — | TBD at milestone J |
-| Bridge + Reflex + Reasoning + Persona | — | — | — | — | TBD at milestone J |
-| Bridge + Reflex + Reasoning + Specialist | — | — | — | — | TBD at milestone J |
+Run the matrix harness to refresh measurements:
+
+```bash
+# Enable both bridge_agent and cockpit_agent in app.yaml, then:
+.venv/bin/python tests/action/bridge/smoke_pattern_matrix.py \
+    --agents bridge_agent cockpit_agent \
+    --label rR_vs_cockpit
+```
+
+JSON archives land under `tests/action/bridge/baselines/matrix_<label>_<sha>.json`.
+
+### Cockpit baseline (control)
+
+| Metric | Value | Notes |
+|---|---|---|
+| Total dur(s) | 33.15 | Archived at commit `7d95904` (original) |
+| Total dur(s) | 22.77 | Re-baseline at `b830f42` (fresh matrix run, gpt-4o-mini + gpt-4.1) |
+| Total tokens | 34094 / 23077 | Original / fresh |
+| Trivial-turn p50(s) | 2.12 | Fresh, gpt-4o-mini |
+| p99 dur(s) | 7.90 | Fresh |
+
+### Bridge configurations
+
+Each cell records a measurement against the current `bridge_agent.yaml` composition. Toggle helms in YAML between matrix runs and copy results in.
+
+| Pattern config | Helms in `agent.yaml` | Total dur(s) | p99 dur(s) | Total tokens | Trivial-turn p50(s) | Source archive |
+|---|---|---|---|---|---|---|
+| Bridge + Reasoning | `[ReasoningHelm]` | TBD | TBD | TBD | TBD | TBD |
+| Bridge + Reflex + Reasoning | `[ReflexHelm, ReasoningHelm]` | 29.25 | 8.69 | 20805 | 2.27 | [`matrix_j_initial_b830f42.json`](../tests/action/bridge/baselines/matrix_j_initial_b830f42.json) |
+| Bridge + Reflex + Reasoning + Persona | `[ReflexHelm, ReasoningHelm, PersonaHelm]` | TBD | TBD | TBD | TBD | TBD |
+| Bridge + Reflex + Reasoning + Specialist | `[ReflexHelm, ReasoningHelm]` + Interview IA in chain | TBD | TBD | TBD | TBD | TBD |
+
+### Headline findings (first matrix run, OpenAI gpt-4o-mini Reflex)
+
+vs Cockpit (fresh re-baseline):
+
+- **Total tokens**: Bridge **-10%** (20805 vs 23077). Reflex's classifier prompt is smaller than Cockpit's router+converse combined for trivial turns.
+- **Total dur(s)**: Bridge **+28%** (29.25 vs 22.77). Reflex's classifier adds a network round-trip on every turn that Cockpit's preclassifier short-circuits on smalltalk.
+- **Trivial-turn p50**: Bridge **+7%** (2.27 vs 2.12). Below the 30% reduction target from the J exit gate.
+- **p99 dur(s)**: Bridge **+10%** (8.69 vs 7.90). Within tolerance.
+
+The 30% trivial-turn-latency target was predicated on Reflex running on a genuinely faster provider (Groq `llama-3.1-8b-instant` at ~200ms or Cerebras). The current OpenAI gpt-4o-mini Reflex is **comparable** to Cockpit's converse persona call, so the Bridge wrapper cost (router + classifier round-trip) is paid without a compensating provider speedup.
+
+### Reflex provider swap roadmap
+
+To hit the J exit gate:
+
+1. Add a Groq / Cerebras `LanguageModelAction` to the agent.
+2. Override `reflex_helm.model_action_type` to point at it.
+3. Re-run the matrix.
+
+The classifier's prompt is small enough (~800 prompt tokens) that even a fast provider should keep cost reasonable. Wall-clock should drop ~1s per turn → trivial-turn p50 lands around 1.0-1.2s, ~50% reduction vs Cockpit.
+
+### Ack-on-shift UX win (not captured in aggregate metrics)
+
+The matrix harness measures **end-to-end turn duration**. The architectural win of Bridge — visible "Working on it." within 1-2s on deliberate turns vs Cockpit's silent wait for the engine — is a **time-to-first-byte (TTFB)** improvement that aggregate timings don't expose. A J+1 follow-up could add TTFB instrumentation to the matrix harness; for now the UX win is documented qualitatively from the live browser smoke (see commit `f8fa0ab`).
+
+### Exit-gate targets for milestone J
+
+- **Median latency reduction ≥30% on trivial turns** (`greeting`, `informational_simple`, `thanks_followup`) for Bridge + Reflex + Reasoning vs Cockpit.
+- **p99 latency not worse than baseline** for any Bridge cell.
+- **Total tokens not worse than baseline** for any Bridge cell.
+- **All five configs execute the 6-utterance suite without errors.**
+
+### Notes on measurement variance
+
+- LM-output metrics (`response_chars`, `duration_s`) are inherently non-deterministic. Run each cell 3× and record the median to smooth variance, or accept ±10% per-cell drift between runs.
+- Re-baseline `cockpit_agent` alongside each Bridge cell so the comparison is taken under the same OpenAI conditions.
+- Total tokens are usually more stable than wall-clock; treat them as the primary efficiency metric.
 
 **Deprecation policy:** A pattern moves from supported → deprecated only when:
 
