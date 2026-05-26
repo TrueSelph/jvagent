@@ -1,0 +1,29 @@
+# ReflexHelm Action Package Descriptor
+package:
+  name: jvagent/reflex_helm
+  author: jvagent
+  archetype: ReflexHelm
+  version: 0.1.0
+  meta:
+    title: ReflexHelm
+    description: >-
+      Sub-500ms fast-classifier helm orchestrated by BridgeInteractAction.
+      Handles trivial turns (greetings, smalltalk, acknowledgements) directly
+      via a single fast-model call; SHIFTs to a peer helm (typically
+      ReasoningHelm) for anything substantive. Structured JSON output —
+      not function-calling — for minimal overhead.
+    group: jvagent
+    type: action
+  config:
+    singleton: true
+  manifest:
+    purpose: >-
+      Classify trivial vs substantive turns; emit fast or shift to peer helm.
+    latency_class: instant
+    turn_lock: false
+    can_interrupt: true
+    expected_duration_seconds: 0.5
+  dependencies:
+    jvagent: ~0.0.1
+    actions:
+      - "jvagent/persona"
