@@ -68,6 +68,12 @@ actions:
       # of a generic stall. The safety-net only fires when the engine
       # genuinely hangs — rare, but worth keeping as a backstop.
       first_emit_timeout_ms: 2500
+      # ``safety_net_ack_text`` and ``denied_response_text`` are STATIC
+      # strings. Reflex's per-turn transient_ack adapts to the user's
+      # language (see helm/reflex/prompts.py); these fallback strings
+      # do not. For a multilingual deployment, set them to a
+      # language-neutral character ("…") or override per-channel via a
+      # channel adapter that localises before publish.
       safety_net_ack_text: "Still working on this…"
       denied_response_text: "Sorry, I can't do that here."
 
