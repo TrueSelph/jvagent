@@ -126,12 +126,39 @@ async def find_turn_lock_owner(
             manifest = action.get_manifest()
         except Exception:
             continue
-        if manifest.turn_lock:
-            return TurnLockOwner(
-                action_name=name,
-                action=action,
-                manifest=manifest,
-            )
+        if not manifest.turn_lock:
+            continue
+        # Manifest says the action SUPPORTS a turn lock. Confirm it
+        # CURRENTLY HOLDS one — e.g. an interview that's been cancelled
+        # should not be re-DELEGATEd to on the next turn just because it
+        # appears in recent ``interaction.actions``. IAs opt in via
+        # ``is_actively_locking_turn(visitor)``; default (no method) is
+        # True so manifest-only declarations keep working.
+        method = getattr(action, "is_actively_locking_turn", None)
+        if method is not None:
+            try:
+                result = method(visitor)
+                if hasattr(result, "__await__"):
+                    result = await result
+                if not bool(result):
+                    logger.debug(
+                        "turn_lock: %r in history but is_actively_locking_turn "
+                        "returned False; treating as released",
+                        name,
+                    )
+                    continue
+            except Exception as exc:
+                logger.debug(
+                    "turn_lock: is_actively_locking_turn raised on %r: %s — "
+                    "assuming locked",
+                    name,
+                    exc,
+                )
+        return TurnLockOwner(
+            action_name=name,
+            action=action,
+            manifest=manifest,
+        )
     return None
 
 

@@ -706,17 +706,20 @@ class BridgeInteractAction(InteractAction):
         await self._finalize_via_persona_if_directives(visitor)
         # Re-record the lock owner so subsequent turn-lock detection
         # finds it. Walker auto-records actions it visits via its queue;
-        # this auto-delegate bypasses the queue.
-        interaction = getattr(visitor, "interaction", None)
-        if interaction is not None:
-            try:
-                interaction.record_action_execution(lock_owner.action_name)
-            except Exception as exc:
-                logger.debug(
-                    "bridge: failed to record turn-lock action %r: %s",
-                    lock_owner.action_name,
-                    exc,
-                )
+        # this auto-delegate bypasses the queue. Skip when the IA
+        # self-reports its lock has been released this turn (see the
+        # mirror logic in ``_handle_delegate``).
+        if await self._action_still_locking(action, visitor):
+            interaction = getattr(visitor, "interaction", None)
+            if interaction is not None:
+                try:
+                    interaction.record_action_execution(lock_owner.action_name)
+                except Exception as exc:
+                    logger.debug(
+                        "bridge: failed to record turn-lock action %r: %s",
+                        lock_owner.action_name,
+                        exc,
+                    )
         # Lock-owner has run; let the walker continue (don't re-enqueue
         # Bridge — the locked action drives its own flow until done).
         # If the locked action wants more Bridge turns, the next user
@@ -784,16 +787,23 @@ class BridgeInteractAction(InteractAction):
         # auto-records actions it visits via its queue; DELEGATE bypasses
         # the queue (runs ``target.execute(visitor)`` inline), so we
         # have to record manually here.
-        interaction = getattr(visitor, "interaction", None)
-        if interaction is not None:
-            try:
-                interaction.record_action_execution(verb.interact_action)
-            except Exception as exc:
-                logger.debug(
-                    "bridge: failed to record DELEGATE action %r: %s",
-                    verb.interact_action,
-                    exc,
-                )
+        #
+        # Skip recording when the IA self-reports its lock has been
+        # released this turn (e.g. an interview just transitioned to
+        # CANCELLED or COMPLETED). Otherwise the next user message would
+        # trip turn-lock detection on a dead IA and Bridge would
+        # auto-DELEGATE again — re-opening a fresh session.
+        if await self._action_still_locking(target, visitor):
+            interaction = getattr(visitor, "interaction", None)
+            if interaction is not None:
+                try:
+                    interaction.record_action_execution(verb.interact_action)
+                except Exception as exc:
+                    logger.debug(
+                        "bridge: failed to record DELEGATE action %r: %s",
+                        verb.interact_action,
+                        exc,
+                    )
         # DELEGATE hands the turn to the rails IA. The IA may have:
         # (a) published a response directly via the response bus, OR
         # (b) added a directive to ``interaction.directives`` expecting a
@@ -810,6 +820,45 @@ class BridgeInteractAction(InteractAction):
         # and likely re-issue the same DELEGATE, producing an infinite
         # loop. Mirrors the behaviour of ``_delegate_to_lock_owner``.
         self._clear_state(visitor)
+
+    async def _action_still_locking(
+        self,
+        action: Any,
+        visitor: "InteractWalker",
+    ) -> bool:
+        """Return True if the rails IA still owns a turn lock after running.
+
+        Bridge calls this after running an IA via DELEGATE (explicit or
+        turn-lock auto-delegate). The IA gets the chance to declare its
+        lock released — for example, an interview that just transitioned
+        to ``CANCELLED`` or ``COMPLETED`` sets its session state and
+        returns False here so Bridge skips recording the IA on
+        ``interaction.actions``. Without this, the very next user
+        message would re-trigger turn-lock detection, find the IA, and
+        Bridge would auto-DELEGATE — re-opening a fresh session.
+
+        IAs opt in by implementing
+        ``async def is_actively_locking_turn(visitor) -> bool``. Default
+        behaviour (no method on the IA) is True so existing rails IAs
+        without lifecycle awareness keep the previous semantics
+        (Bridge records them; turn-lock detection finds them next turn).
+        """
+        method = getattr(action, "is_actively_locking_turn", None)
+        if method is None:
+            return True
+        try:
+            result = method(visitor)
+            if hasattr(result, "__await__"):
+                result = await result
+            return bool(result)
+        except Exception as exc:
+            logger.debug(
+                "bridge: is_actively_locking_turn raised on %r: %s — "
+                "assuming still locking",
+                getattr(action, "__class__", type(action)).__name__,
+                exc,
+            )
+            return True
 
     async def _finalize_via_persona_if_directives(
         self,

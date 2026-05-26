@@ -843,6 +843,65 @@ class InterviewInteractAction(InteractAction, ABC):
             # Rebuild using QuestionGraphBuilder
             await self.question_builder.build_question_graph()
 
+    async def is_actively_locking_turn(self, visitor: "InteractWalker") -> bool:
+        """Tell Bridge whether the interview still owns a turn lock.
+
+        Bridge consults this in two places:
+
+        1. ``find_turn_lock_owner`` — on the NEW turn, before any IA
+           has run, to decide whether to auto-DELEGATE. At this point
+           ``visitor.interview_session`` is NOT set (execute hasn't run
+           yet), so we look up the session via the conversation graph,
+           same query as ``_get_or_create_session`` uses.
+        2. ``_handle_delegate`` / ``_delegate_to_lock_owner`` — right
+           after the IA ran on the current turn, to decide whether to
+           record itself on ``interaction.actions``. At this point
+           ``visitor.interview_session`` IS set; prefer that for speed.
+
+        Returns True when an ACTIVE/REVIEW session exists, False when
+        the session is terminated (CANCELLED / COMPLETED) or no session
+        exists. Falls back to True on any error so a broken check never
+        silently drops the lock for an otherwise-healthy interview.
+        """
+        terminal_values = {
+            InterviewState.COMPLETED.value,
+            InterviewState.CANCELLED.value,
+        }
+
+        # Fast path: session already loaded on the visitor.
+        session = getattr(visitor, "interview_session", None)
+        if session is not None:
+            try:
+                state = getattr(session, "state", None)
+                return state not in terminal_values
+            except Exception:
+                return True
+
+        # Slow path: look the session up via the conversation graph.
+        # ``_get_or_create_session`` query, minus the create step —
+        # excludes terminal states so a hit means there's an active or
+        # review session; a miss means no lock.
+        try:
+            interaction = getattr(visitor, "interaction", None)
+            if interaction is None:
+                return False
+            conversation = await interaction.get_conversation()
+            if conversation is None:
+                return False
+            active_session = await conversation.node(
+                node=[{"InterviewSession": {"state": {"$nin": list(terminal_values)}}}],
+                interview_type=self.get_class_name(),
+            )
+            return active_session is not None
+        except Exception as exc:
+            logger.debug(
+                "%s.is_actively_locking_turn: session lookup failed: %s — "
+                "assuming locked",
+                self.get_class_name(),
+                exc,
+            )
+            return True
+
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute interview action using target-node architecture.
 
