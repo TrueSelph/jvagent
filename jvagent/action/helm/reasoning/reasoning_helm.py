@@ -146,7 +146,13 @@ class ReasoningHelm(BaseHelm):
 
     router_model: str = attribute(default="gpt-4o-mini")
     router_model_action_type: str = attribute(default="")
-    enable_canned_response: bool = attribute(default=True)
+    # Bridge composition owns user-facing immediate response via
+    # ReflexHelm's ``transient_ack`` on SHIFT. ReasoningHelm is plumbing —
+    # it produces the final answer only. Default ``False`` here (cockpit's
+    # standalone equivalent keeps ``True`` because there's no upstream
+    # ack producer in that pattern). Operators may set ``True`` in
+    # agent.yaml.context.manifest if they explicitly want both acks.
+    enable_canned_response: bool = attribute(default=False)
 
     model_action_type: str = attribute(default="AnthropicLanguageModelAction")
     model: str = attribute(default=COCKPIT_DEFAULT_SKILL_MODEL)

@@ -96,6 +96,13 @@ actions:
       router_model_action_type: OpenAILanguageModelAction
       model_action_type: OpenAILanguageModelAction
       model: gpt-4.1
+      # In Bridge composition, ReflexHelm owns the user-facing
+      # immediate response (transient_ack on SHIFT). Reasoning's
+      # router canned is redundant — disable to prevent double
+      # lead-ins. The helm class default is already False; this
+      # explicit override survives `jvagent --update` without
+      # `--source`.
+      enable_canned_response: false
       skills:
         - pageindex_search
         - pageindex_docs
@@ -104,6 +111,11 @@ actions:
         - filesystem
       skills_source: both
       max_iterations: 25
+      # Engine thought-stream + tool-progress visibility. Useful for
+      # long-running multi-tool turns so the user sees activity rather
+      # than dead air. The lead-in fragment is owned by Reflex's
+      # transient_ack on SHIFT — this knob is purely about mid-engine
+      # visibility, not the initial ack.
       stream_internal_progress: true
       block_raw_tool_invocation: false
       # Router context depth. Smaller → faster routing prompt.
