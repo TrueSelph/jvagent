@@ -56,11 +56,19 @@ actions:
       # never SHIFT, so 4 is comfortably over-provisioned; tighter is fine
       # once Reflex/Persona land (milestones E/G).
       shift_budget_per_turn: 4
-      # First-emit timeout — fires the safety-net ack once per turn when no
-      # helm publishes by deadline. 800ms matches the ADR default; raise
-      # to 1200 if the upstream model is consistently slower to first token.
-      first_emit_timeout_ms: 800
-      safety_net_ack_text: "Working on it…"
+      # First-emit timeout — fires the safety-net ack once per turn when
+      # no helm has published by deadline. Bumped from the 800ms ADR
+      # default to 2500ms because Reflex now decides per-turn whether
+      # to emit a transient_ack on SHIFT (see helm/reflex/prompts.py).
+      # When Reflex picks a context-aware ack ("Searching now…",
+      # "Looking that up…", etc.) it lands well under 1s and the
+      # safety-net never fires. When Reflex omits ack on a fast turn
+      # (factual Q answered from history, recap) the engine usually
+      # finishes inside 2.5s and the user gets the real answer instead
+      # of a generic stall. The safety-net only fires when the engine
+      # genuinely hangs — rare, but worth keeping as a backstop.
+      first_emit_timeout_ms: 2500
+      safety_net_ack_text: "Still working on this…"
       denied_response_text: "Sorry, I can't do that here."
 
   # ── ReflexHelm — sub-500ms fast classifier (BRIDGE-ROADMAP §E) ──
