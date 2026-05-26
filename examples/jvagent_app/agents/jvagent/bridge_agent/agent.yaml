@@ -45,8 +45,13 @@ actions:
     context:
       enabled: true
       helms:
+        - ReflexHelm
         - ReasoningHelm
-      default_helm: ReasoningHelm
+      # ReflexHelm is the default entry point: it classifies the turn and
+      # either EMITs directly (trivial) or SHIFTs to ReasoningHelm
+      # (substantive). Replaces the bare ReasoningHelm-only config that
+      # ran before milestone E.
+      default_helm: ReflexHelm
       # Shift budget bounds helm ping-pong. ReasoningHelm-only configs
       # never SHIFT, so 4 is comfortably over-provisioned; tighter is fine
       # once Reflex/Persona land (milestones E/G).
@@ -57,6 +62,29 @@ actions:
       first_emit_timeout_ms: 800
       safety_net_ack_text: "Working on it…"
       denied_response_text: "Sorry, I can't do that here."
+
+  # ── ReflexHelm — sub-500ms fast classifier (BRIDGE-ROADMAP §E) ──
+  # Default helm on every turn. One LM call: classify and either EMIT
+  # directly or SHIFT to ReasoningHelm. Same provider as Reasoning
+  # (OpenAI gpt-4o-mini) so no new API key is required; swap to a
+  # faster provider (Groq llama-3.1-8b-instant, Cerebras) here to
+  # tighten p50 below 200ms.
+  - action: jvagent/reflex_helm
+    context:
+      enabled: true
+      model: gpt-4o-mini
+      model_action_type: OpenAILanguageModelAction
+      model_temperature: 0.0
+      model_max_tokens: 256
+      timeout_seconds: 3.0
+      history_limit: 4
+      default_shift_target: ReasoningHelm
+      fallback_text: "Got it — one moment."
+      # ``can_emit_directly: true`` lets Reflex answer trivial turns
+      # itself; set false to force every turn through ReasoningHelm /
+      # PersonaHelm (useful when polish quality matters more than
+      # latency on greetings).
+      can_emit_directly: true
 
   # ── ReasoningHelm — cockpit-style think/act/observe loop ──
   # All knobs mirror cockpit_agent.yaml's jvagent/cockpit block for

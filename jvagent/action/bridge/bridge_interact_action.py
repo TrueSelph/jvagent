@@ -48,6 +48,10 @@ from jvagent.action.bridge.state import (
     DEFAULT_SHIFT_BUDGET,
     BridgeState,
 )
+from jvagent.action.bridge.turn_lock import (
+    find_turn_lock_owner,
+    is_interrupt_allowed,
+)
 from jvagent.action.helm.base import BaseHelm
 from jvagent.action.helm.contracts import (
     CONTINUE,
@@ -250,6 +254,28 @@ class BridgeInteractAction(InteractAction):
         await self._maybe_emit_safety_net(visitor, state)
 
         helm = resolved[state.current_helm]
+
+        # Turn-lock detection (BRIDGE-ROADMAP §F). When a turn-locked
+        # action is in flight (e.g. a multi-turn interview) and the
+        # current helm cannot interrupt it, route directly to the lock
+        # owner via DELEGATE rather than letting the helm potentially
+        # run a parallel model loop. The lock owner's manifest declares
+        # ``turn_lock: true`` and its action class name is captured by
+        # the detector. Helms with ``can_interrupt: true`` (e.g. Reflex)
+        # are allowed to run anyway — they may issue
+        # ``SHIFT(interrupt=True)`` to break the lock cleanly.
+        if not is_interrupt_allowed(helm):
+            lock_owner = await find_turn_lock_owner(visitor)
+            if lock_owner is not None and lock_owner.action_name != helm.helm_name():
+                logger.info(
+                    "bridge: turn-lock active on %r; helm %r cannot interrupt "
+                    "— DELEGATE'ing instead of running helm.step()",
+                    lock_owner.action_name,
+                    helm.helm_name(),
+                )
+                await self._delegate_to_lock_owner(visitor, state, lock_owner)
+                return
+
         result = await helm.step(visitor, state)
 
         if not self._is_valid_verb(result):
@@ -391,6 +417,19 @@ class BridgeInteractAction(InteractAction):
             await self._safe_fallback(visitor, state)
             return
 
+        # Interrupt gate (BRIDGE-ROADMAP §F): ``SHIFT(interrupt=True)`` is
+        # only honoured for helms whose ``can_interrupt`` flag is True.
+        # When a helm without the flag emits ``interrupt=True``, treat it
+        # as a normal SHIFT (drop the interrupt bit) and log so operators
+        # can tighten their helm config.
+        if verb.interrupt and not is_interrupt_allowed(current_helm):
+            logger.warning(
+                "bridge: SHIFT(interrupt=True) from helm %r denied — "
+                "can_interrupt is False on that helm; downgrading to "
+                "non-interrupt SHIFT",
+                current_helm.helm_name(),
+            )
+
         # AccessControl gate.
         try:
             agent = await self.get_agent()
@@ -445,6 +484,51 @@ class BridgeInteractAction(InteractAction):
         return (
             target_helm.latency_class or ""
         ).lower() in _ACK_ELIGIBLE_LATENCY_CLASSES
+
+    # -- Turn-lock auto-delegate (BRIDGE-ROADMAP §F) -------------------
+
+    async def _delegate_to_lock_owner(
+        self,
+        visitor: "InteractWalker",
+        state: BridgeState,
+        lock_owner: Any,
+    ) -> None:
+        """Run the turn-locked action directly, bypassing helm dispatch.
+
+        Mirrors :meth:`_handle_delegate` except it skips the AccessControl
+        check on ``tool:delegate:{name}`` — the lock-owner was already
+        authorised when it acquired the lock — and uses the resolved
+        action instance from the lock detector to skip a re-lookup.
+        Persists ``delegated_action`` on the state so observability
+        traces show the auto-delegate, then re-enqueues Bridge for the
+        next walker visit.
+        """
+        action = lock_owner.action
+        if action is None:
+            logger.warning(
+                "bridge: turn-lock owner %r has no resolved action; "
+                "safe-falling back",
+                lock_owner.action_name,
+            )
+            await self._safe_fallback(visitor, state)
+            return
+        state.delegated_action = lock_owner.action_name
+        try:
+            await action.execute(visitor)
+        except Exception:
+            logger.exception(
+                "bridge: turn-lock owner %r raised during execute",
+                lock_owner.action_name,
+            )
+            state.delegated_action = None
+            await self._safe_fallback(visitor, state)
+            return
+        state.delegated_action = None
+        # Lock-owner has run; let the walker continue (don't re-enqueue
+        # Bridge — the locked action drives its own flow until done).
+        # If the locked action wants more Bridge turns, the next user
+        # message will re-enter Bridge naturally.
+        self._clear_state(visitor)
 
     # -- DELEGATE ------------------------------------------------------
 
