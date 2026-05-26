@@ -1,24 +1,82 @@
-"""``ReasoningHelm`` — Bridge helm running the cockpit-style engine loop.
+"""``ReasoningHelm``: Bridge helm running the cockpit-style engine loop.
 
-Pattern source (duplicated, not imported): ``jvagent/action/cockpit/cockpit_interact_action.py``
-at commit ``3cd4ebb`` (head of dev-cockpit-audit before Bridge work began).
-Subsequent commits in ``jvagent/action/cockpit/`` may diverge — this helm is
-self-contained.
+Duplicated from ``jvagent/action/cockpit/cockpit_interact_action.py`` at
+commit ``4bc6db6`` per the C-strategy hard constraint (BRIDGE-ROADMAP §C):
+zero source-level coupling between Bridge and Cockpit.
 
-At C-1 the helm ships as a skeleton: a single ``EMIT(finalize=True)`` is
-returned per visit, so Bridge + ReasoningHelm produces a one-shot response
-without any real LM call. C-2 wires the duplicated engine.
+Differences vs the cockpit ancestor:
+
+1. Subclass of :class:`BaseHelm` (not ``InteractAction``). Helms are
+   orchestrated by :class:`BridgeInteractAction`, which owns the walker
+   queue, shift budget, gear trace, and AC gating.
+2. ``step(visitor, bridge_state)`` replaces ``execute(visitor)``. Returns a
+   :class:`HelmStepResult` verb that Bridge dispatches:
+
+   - tool-call iterations → :class:`CONTINUE` (helm dispatched its own
+     tools internally via the duplicated engine)
+   - terminal engine states (final response / timeout / stuck / budget) →
+     :class:`EMIT(text="", finalize=True)` (delivery already published by
+     ``deliver_final_response`` via :class:`PersonaAction`; the empty
+     ``EMIT`` is purely a turn-finalisation signal)
+   - SUPPRESS posture / interaction missing / persona broken → :class:`YIELD`
+3. IA delegation paths (``routing.interact_actions`` curate +
+   ``ia_finalize_pending``) are intentionally omitted at C-6. The 6-utterance
+   baseline does not exercise them; when it does, ReasoningHelm will return
+   :class:`DELEGATE` so Bridge owns the dispatch instead of mutating the
+   walker queue directly.
+4. ``visitor.unrecord_action_execution()`` calls are dropped — the walker
+   records only :class:`BridgeInteractAction` visits; helms are invisible
+   to the walker's action trace.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.helm.base import BaseHelm
-from jvagent.action.helm.contracts import EMIT, HelmStepResult
+from jvagent.action.helm.contracts import (
+    CONTINUE,
+    EMIT,
+    YIELD,
+    HelmStepResult,
+)
+from jvagent.action.helm.reasoning.catalog.skill_catalog import SkillCatalog
+from jvagent.action.helm.reasoning.catalog.skill_discovery import (
+    list_always_active_skill_names,
+)
+from jvagent.action.helm.reasoning.config import CockpitConfig
+from jvagent.action.helm.reasoning.context import CockpitContext
+from jvagent.action.helm.reasoning.contracts import TerminationReason
+from jvagent.action.helm.reasoning.delivery.delegation import (
+    collect_always_execute_interact_actions,
+    curate_walk_path_for_cockpit,
+    resolve_routed_interact_actions,
+)
+from jvagent.action.helm.reasoning.delivery.gates import (
+    CONVERSE_SKILL_NAMES,
+    should_use_conversational_gate,
+)
+from jvagent.action.helm.reasoning.delivery.helpers import (
+    deliver_conversational,
+    deliver_final_response,
+)
+from jvagent.action.helm.reasoning.delivery.persona_delivery import deliver_via_persona
+from jvagent.action.helm.reasoning.engine import CockpitEngine
+from jvagent.action.helm.reasoning.registry.access import (
+    filter_routed_interact_actions_by_access,
+    filter_routed_skills_by_access,
+)
+from jvagent.action.helm.reasoning.registry.shim import CockpitVisitorShim
+from jvagent.action.helm.reasoning.routing.types import POSTURE_RESPOND, RoutingResult
+from jvagent.action.helm.reasoning.session import (
+    CockpitSession,
+    clear_session,
+    get_session,
+    get_session_optional,
+)
 
 if TYPE_CHECKING:
     from jvagent.action.bridge.state import BridgeState
@@ -26,62 +84,1012 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+COCKPIT_DEFAULT_SKILL_MODEL: str = "claude-sonnet-4-20250514"
 
-# Default model + provider mirror the cockpit defaults so the Bridge smoke
-# harness compares apples-to-apples against baseline ``7d95904``.
-DEFAULT_REASONING_MODEL = "claude-sonnet-4-20250514"
-DEFAULT_REASONING_MODEL_ACTION = "AnthropicLanguageModelAction"
+# ReasoningHelm-owned per-run engine state lives on a single
+# ``CockpitSession`` object accessed via ``get_session``. Bridge-level state
+# (current_helm, gear_trace, shift_count, etc.) is on
+# ``visitor._bridge_state``; the two are independent.
+
+
+def _routing_clarification_fallbacks_default() -> List[str]:
+    from jvagent.action.helm.reasoning.routing.router import (
+        ROUTING_CLARIFICATION_FALLBACK_MESSAGES,
+    )
+
+    return list(ROUTING_CLARIFICATION_FALLBACK_MESSAGES)
 
 
 class ReasoningHelm(BaseHelm):
-    """Deliberate-class reasoning helm orchestrated by ``BridgeInteractAction``.
+    """Deliberate-class reasoning helm: cockpit-style think/act/observe loop.
 
-    Each ``step()`` performs **at most one** model call (ADR-0002 invariant).
-    The helm dispatches tools internally (cockpit-style) and signals
-    ``CONTINUE`` to request another walker visit; final user-facing text is
-    rendered through :class:`PersonaAction` and returned via ``EMIT``.
+    Orchestrated by :class:`BridgeInteractAction`. Each ``step()`` call
+    issues at most one model call (ADR-0002 invariant) by delegating to
+    the duplicated :class:`CockpitEngine`. The helm dispatches its own
+    tools internally and signals back to Bridge via ``CONTINUE`` /
+    ``EMIT`` / ``YIELD``.
 
-    C-1 ships a placeholder ``step()`` returning ``EMIT(finalize=True)`` with
-    a static message so Bridge + ReasoningHelm can be wired end-to-end without
-    real model traffic.
+    Phase 1 (``CockpitRouter``) and Phase 2 (engine loop) are identical to
+    the cockpit equivalent; the duplication source for each module is
+    documented in ``jvagent/action/helm/reasoning/DUPLICATION_NOTICE.md``.
     """
+
+    # ``weight`` is intentionally absent — helms are not InteractActions and
+    # do not participate in the walker's weight ordering. Bridge (the
+    # surrounding InteractAction) carries the weight=-200 attribute that
+    # determines turn slot in the walker's queue.
 
     description: str = attribute(
         default=(
-            "Deliberate-class reasoning helm: think/act/observe loop with "
-            "full harness + action tool agency. Calls PersonaAction directly "
-            "for final delivery."
+            "Reasoning helm: route posture/intent, grant the model full agency "
+            "over harness services and action tools in a think-act-observe loop."
         )
     )
-    latency_class: str = attribute(default="deliberate")
+
+    # Helm-protocol attributes (from BaseHelm).
+    latency_class: str = attribute(
+        default="deliberate",
+        description="ReasoningHelm runs a heavy model loop; emit ack-on-shift "
+        "when a peer SHIFTs into this helm.",
+    )
     can_emit_directly: bool = attribute(default=True)
     can_interrupt: bool = attribute(default=False)
 
-    # --- C-2 will add the full attribute surface (model, max_iterations,
-    # max_duration_seconds, reasoning_*, stuck_*, tool_tier, prompts, etc.)
-    # by duplicating the cockpit declarations. C-1 keeps the attribute
-    # surface minimal so the skeleton is reviewable in isolation.
-    model: str = attribute(default=DEFAULT_REASONING_MODEL)
-    model_action_type: str = attribute(default=DEFAULT_REASONING_MODEL_ACTION)
+    def _ensure_interaction(self, visitor: "InteractWalker") -> bool:
+        """Lift of ``InteractAction._ensure_interaction``.
+
+        Helms inherit from :class:`BaseHelm` / :class:`Action`, not
+        :class:`InteractAction`, so the helper is re-declared here. Identical
+        semantics: return True iff the visitor carries a valid interaction.
+        """
+        return getattr(visitor, "interaction", None) is not None
+
+    router_model: str = attribute(default="gpt-4o-mini")
+    router_model_action_type: str = attribute(default="")
+    enable_canned_response: bool = attribute(default=True)
+
+    model_action_type: str = attribute(default="AnthropicLanguageModelAction")
+    model: str = attribute(default=COCKPIT_DEFAULT_SKILL_MODEL)
+    skills: Any = attribute(default=None)
+    denied_skills: List[str] = attribute(default_factory=list)
+    skills_source: str = attribute(default="both")
+    max_iterations: int = attribute(default=25)
+    max_duration_seconds: float = attribute(default=300.0)
+    max_dynamic_activations: int = attribute(default=10)
+    response_mode: str = attribute(default="publish")
+
+    converse_enabled: bool = attribute(default=True)
+    converse_context_limit: int = attribute(default=2)
+    converse_persona_prompt: str = attribute(
+        default=(
+            "Brief, in-character replies. Greetings and small talk: natural and short. "
+            "Task-style asks: acknowledge and hand off to skills/tools."
+        ),
+    )
+    # When True, bypass the cockpit engine and reply via PersonaAction whenever
+    # the router recommends no skills and no interact_actions (in addition to
+    # the strict CONVERSATIONAL-intent path). Saves a heavy engine LLM call on
+    # greetings, smalltalk, and any utterance the router classifies as having
+    # no work to do. Set False to fall through to the engine for UNCLEAR /
+    # INFORMATIONAL intents that have no specific handler — useful when the
+    # engine's harness tools (memory, artifacts, conversation search) should
+    # still get a chance to act.
+    conversational_fast_path: bool = attribute(default=True)
+
+    history_limit: int = attribute(default=3)
+    max_statement_length: Optional[int] = attribute(default=None)
+    enable_accumulation: bool = attribute(default=True)
+
+    router_model_temperature: float = attribute(default=0.1)
+    router_model_max_tokens: int = attribute(default=400)
+    canned_response_max_words: int = attribute(default=15)
+    skip_canned_for_intents: List[str] = attribute(
+        default_factory=lambda: ["CONVERSATIONAL", "UNCLEAR", "INTERACTIVE"],
+    )
+
+    model_temperature: float = attribute(default=0.3)
+    model_max_tokens: int = attribute(default=8192)
+
+    reasoning_budget_tokens: int = attribute(default=0)
+    reasoning_enabled: Optional[bool] = attribute(default=True)
+    reasoning_effort: Optional[str] = attribute(default="medium")
+    reasoning_extra: Optional[Dict[str, Any]] = attribute(default=None)
+
+    # Single switch for internal-progress streaming
+    # (model thoughts, reasoning chunks, tool progress badges).
+    stream_internal_progress: bool = attribute(default=True)
+
+    max_concurrent_tools: int = attribute(default=5)
+    tool_call_timeout: float = attribute(default=60.0)
+    sanitize_tool_errors: bool = attribute(default=True)
+    tool_servers: List[str] = attribute(default_factory=list)
+
+    enable_skill_helper_tools: bool = attribute(default=True)
+    enable_artifact_tools: bool = attribute(default=True)
+    enable_cockpit_search: bool = attribute(default=True)
+    tool_tier: str = attribute(default="standard")  # minimal | standard | full
+
+    # Phase 1 latency knobs.
+    # ``enable_router_preclassifier``: cheap local heuristic that fires
+    # before the router LLM call. When the utterance is unambiguous
+    # smalltalk (greeting / thanks / goodbye / pleasantry) and no active
+    # task is in flight, the router synthesises a converse-skill route
+    # and skips the LLM round-trip. See routing/preclassifier.py.
+    # ``enable_interact_router_cache``: opt into the in-process router
+    # cache. Cache keys fold active-task fingerprints so fragments routed
+    # mid-interview don't share keys with the same fragment after the
+    # interview completes. TTL is governed by perf config
+    # ``interact_router_cache_ttl`` (default 45s).
+    enable_router_preclassifier: bool = attribute(default=True)
+    enable_interact_router_cache: bool = attribute(default=False)
+
+    # Hygiene flags. Each one is independently tunable; there is no umbrella
+    # toggle. ``block_raw_tool_invocation`` defends the engine prompt against
+    # users naming tools by name; the other three keep the loop predictable.
+    block_raw_tool_invocation: bool = attribute(default=False)
+    router_use_cockpit_search: bool = attribute(default=False)
+    preload_user_memory: bool = attribute(default=True)
+    user_memory_max_chars: int = attribute(default=4096)
+    auto_track_tasks: bool = attribute(default=True)
+    skill_index_inline_max_skills: int = attribute(default=5)
+    plan_first: bool = attribute(default=True)
+    max_task_plan_steps: int = attribute(default=50)
+
+    degenerate_response_max_chars: int = attribute(default=25)
+    stuck_detection_window: int = attribute(default=4)
+    stuck_intent_jaccard_threshold: float = attribute(default=0.65)
+    stuck_primary_tool_repeat: int = attribute(default=4)
+    stuck_min_iterations: int = attribute(default=4)
+
+    # Overridable prompt templates (mirrors PersonaAction.system_prompt pattern).
+    # Defaults are empty strings — engine falls back to module-level constants
+    # in cockpit/prompts.py when the override is blank.  Set in agent.yaml to
+    # customise engine behaviour without forking the framework.
+    system_prompt: str = attribute(default="")
+    task_planning_prompt: str = attribute(default="")
+    security_prompt: str = attribute(default="")
+    capability_search_prompt: str = attribute(default="")
+    citation_instruction: str = attribute(default="")
+
+    def _build_cockpit_config(self) -> CockpitConfig:
+        return CockpitConfig(
+            model=self.model,
+            model_temperature=self.model_temperature,
+            model_max_tokens=self.model_max_tokens,
+            model_action_type=self.model_action_type,
+            router_model=self.router_model,
+            router_model_action_type=self.router_model_action_type or "",
+            router_model_temperature=self.router_model_temperature,
+            router_model_max_tokens=self.router_model_max_tokens,
+            max_iterations=self.max_iterations,
+            max_duration_seconds=self.max_duration_seconds,
+            max_concurrent_tools=self.max_concurrent_tools,
+            tool_call_timeout=self.tool_call_timeout,
+            sanitize_tool_errors=self.sanitize_tool_errors,
+            stuck_detection_window=self.stuck_detection_window,
+            stuck_intent_jaccard_threshold=self.stuck_intent_jaccard_threshold,
+            stuck_primary_tool_repeat=self.stuck_primary_tool_repeat,
+            stuck_min_iterations=self.stuck_min_iterations,
+            plan_first=self.plan_first,
+            max_task_plan_steps=self.max_task_plan_steps,
+            skills=self.skills,
+            denied_skills=list(self.denied_skills or []),
+            skills_source=self.skills_source,
+            response_mode=self.response_mode,
+            stream_internal_progress=bool(self.stream_internal_progress),
+            block_raw_tool_invocation=bool(self.block_raw_tool_invocation),
+            enable_skill_helper_tools=self.enable_skill_helper_tools,
+            enable_artifact_tools=self.enable_artifact_tools,
+            enable_cockpit_search=self.enable_cockpit_search,
+            max_dynamic_activations=self.max_dynamic_activations,
+            router_use_cockpit_search=self.router_use_cockpit_search,
+            tool_tier=self.tool_tier,
+            preload_user_memory=self.preload_user_memory,
+            user_memory_max_chars=self.user_memory_max_chars,
+            auto_track_tasks=self.auto_track_tasks,
+            skill_index_inline_max_skills=self.skill_index_inline_max_skills,
+            history_limit=self.history_limit,
+            max_statement_length=self.max_statement_length,
+            reasoning_budget_tokens=self.reasoning_budget_tokens,
+            reasoning_enabled=self.reasoning_enabled,
+            reasoning_effort=self.reasoning_effort,
+            reasoning_extra=self.reasoning_extra,
+            degenerate_response_max_chars=self.degenerate_response_max_chars,
+            tool_servers=list(self.tool_servers or []),
+            system_prompt=self.system_prompt or "",
+            task_planning_prompt=self.task_planning_prompt or "",
+            security_prompt=self.security_prompt or "",
+            capability_search_prompt=self.capability_search_prompt or "",
+            citation_instruction=self.citation_instruction or "",
+        )
+
+    @staticmethod
+    def _strip_model_action_type(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        s = str(value).strip()
+        return s or None
+
+    def _language_model_action_type_for_purpose(self, purpose: str) -> Optional[str]:
+        skill = self._strip_model_action_type(getattr(self, "model_action_type", None))
+        router = self._strip_model_action_type(
+            getattr(self, "router_model_action_type", None)
+        )
+        if purpose == "skill":
+            return skill
+        if purpose == "router":
+            return router or skill
+        return skill
+
+    async def get_model_action(
+        self,
+        required: bool = False,
+        *,
+        purpose: str = "skill",
+    ) -> Optional[Any]:
+        from jvagent.action.model.language.base import LanguageModelAction
+
+        type_name = self._language_model_action_type_for_purpose(purpose)
+        model_action: Optional[Any]
+        if type_name:
+            model_action = await self.get_action(type_name)
+            if model_action and isinstance(model_action, LanguageModelAction):
+                return model_action
+
+        model_action = await self.get_action(LanguageModelAction)
+        if model_action:
+            return model_action
+
+        if required:
+            agent = await self.get_agent()
+            agent_id = agent.id if agent else "unknown"
+            raise RuntimeError(
+                f"Model action for purpose '{purpose}' not found for agent '{agent_id}'"
+            )
+        return None
+
+    async def _require_persona(self) -> Any:
+        """Resolve and validate the persona action (duck-typed, no PersonaAction import)."""
+        persona: Any = await self.get_action("PersonaAction")
+        agent = await self.get_agent()
+        aid = getattr(agent, "id", None) or "unknown"
+        if persona is None or not getattr(persona, "enabled", True):
+            raise RuntimeError(
+                f"CockpitInteractAction requires an enabled PersonaAction on agent '{aid}'."
+            )
+        desc = (getattr(persona, "persona_description", None) or "").strip()
+        if not desc:
+            raise RuntimeError(
+                f"CockpitInteractAction requires non-empty PersonaAction.persona_description on agent '{aid}'."
+            )
+        return persona
 
     async def step(
         self,
         visitor: "InteractWalker",
         bridge_state: "BridgeState",
     ) -> HelmStepResult:
-        """C-1 placeholder. Returns an EMIT so the helm is exercisable end-to-end.
+        """Bridge entry point: run one cockpit-style step + translate to verb.
 
-        Subsequent sub-milestones replace the body:
-
-        - C-2 wires the duplicated engine and tool dispatch loop.
-        - C-3 plugs in harness service tools.
-        - C-4 plugs in routing (Phase 1).
-        - C-5 plugs in skill catalog.
-        - C-6 plugs in persona delivery.
+        Internally calls :meth:`_orchestrate` (the renamed cockpit
+        ``execute`` body) which sets ``self._step_outcome`` to one of
+        ``"continue"`` (engine needs another iteration), ``"yield"``
+        (terminal — persona already published), or leaves it ``None``
+        (rare error path — treated as YIELD with no-op).
         """
-        utterance = (getattr(visitor, "utterance", None) or "").strip()
-        body = utterance or "(empty utterance)"
-        return EMIT(
-            text=f"[ReasoningHelm placeholder] received: {body}",
-            finalize=True,
+        # Reset outcome marker before each step. Bridge re-enters step() on
+        # every walker visit (CONTINUE path), so stale state from a prior
+        # visit must not leak into the next decision.
+        self._step_outcome = None
+
+        try:
+            await self._orchestrate(visitor)
+        except Exception as exc:
+            logger.warning(
+                "ReasoningHelm: unhandled exception in _orchestrate: %s",
+                exc,
+                exc_info=True,
+            )
+            self._step_outcome = "yield"
+
+        outcome = getattr(self, "_step_outcome", None)
+        if outcome == "continue":
+            return CONTINUE(reason="reasoning engine requested another visit")
+        # Terminal cases: persona delivery is already published by
+        # deliver_final_response / deliver_conversational / deliver_via_persona.
+        # The empty EMIT(finalize=True) tells Bridge the turn is done so it
+        # clears _bridge_state without double-publishing.
+        # ``YIELD`` is equivalent for our needs (clears state, no re-enqueue);
+        # we prefer it because EMIT with empty text would log a "content
+        # required" warning in InteractAction.publish.
+        return YIELD()
+
+    async def _orchestrate(self, visitor: "InteractWalker") -> None:
+        """Cockpit-style orchestration body (renamed from ``execute``).
+
+        On first visit: route, set up engine, run first step.
+        On revisits: restore engine state, run next step.
+
+        Side-effects only — sets ``self._step_outcome`` to signal to
+        :meth:`step` whether Bridge should re-enqueue (``"continue"``) or
+        finalise (``"yield"``).
+        """
+        if not self._ensure_interaction(visitor):
+            return
+
+        interaction = visitor.interaction
+        conversation = visitor.conversation
+        if not interaction or not conversation:
+            return
+
+        if not hasattr(visitor, "_skill_state"):
+            visitor._skill_state = {}
+        visitor._skill_state.setdefault("action", self)
+
+        session = get_session(visitor)
+
+        # Finalize-pending revisit (IA-only mode) — DEAD CODE at C-6:
+        # ``ia_finalize_pending`` is never set because the IA-only branch in
+        # ``_phase_route_and_setup`` was replaced with inline persona
+        # finalize. Kept here as a no-op guard for forward compatibility:
+        # when IA delegation is wired (post-C-7) via the DELEGATE verb,
+        # this block can be revived.
+
+        # Stale-state guard: if the engine is from a different interaction,
+        # reset the session so routing runs on the fresh user message.
+        if session.engine is not None and session.interaction_id != interaction.id:
+            logger.debug(
+                "CockpitInteractAction: stale engine from interaction %s, "
+                "current interaction %s — clearing and re-routing",
+                session.interaction_id,
+                interaction.id,
+            )
+            session.reset()
+
+        if session.engine is None:
+            # Fresh visit: Phase 1 (routing) + Phase 2 setup
+            await self._phase_route_and_setup(visitor)
+        else:
+            # Revisit: skip routing, reuse engine, run next step
+            pass  # helms not recorded by walker (Bridge owns trace)  # Avoid duplicate recording on revisit
+            await self._phase_continue(visitor)
+
+    async def _phase_route_and_setup(self, visitor: InteractWalker) -> None:
+        """First visit: route, gate, dispatch to engine and/or interact_actions.
+
+        Dispatch matrix (after posture + conversational gating):
+
+        - ``routing.actions`` only          → cockpit engine path (existing)
+        - ``routing.interact_actions`` only → skip engine, hand off to those IAs
+        - both                              → engine first, IAs prepended on terminal
+        - neither                           → cockpit engine path (engine handles via
+          harness tools / model decides)
+        """
+        interaction = visitor.interaction
+
+        try:
+            from jvagent.action.helm.reasoning.routing.router import CockpitRouter
+
+            # Canned lead-in is generated INSIDE the routing LLM call (see
+            # ``ROUTING_CANNED_INSTRUCTIONS_TEMPLATE`` in router.py) and
+            # published from CockpitRouter.route() before the engine starts.
+            router = CockpitRouter(self)
+            posture, routing = await router.route(visitor)
+
+            if posture == "SUPPRESS":
+                # Router decided no response should be delivered this turn
+                # (e.g. ambiguous utterance during an active turn-locked task).
+                # Mark interaction complete and signal Bridge to finalise.
+                try:
+                    interaction.set_to_executed()
+                except Exception:
+                    pass
+                self._step_outcome = "yield"
+                return
+
+            if routing is None:
+                routing = RoutingResult(posture=POSTURE_RESPOND)
+
+            persona = await self._require_persona()
+            agent = await self.get_agent()
+            user_id = getattr(visitor, "user_id", None)
+            channel = getattr(visitor, "channel", "default") or "default"
+
+            # Apply per-user access control before resolving / dispatching.
+            # Skills routed by the LLM are filtered against
+            # ``skill:{name}`` rules; interact_actions are filtered against
+            # their class names (existing access_control convention).
+            routing.actions = await filter_routed_skills_by_access(
+                agent, routing, user_id=user_id, channel=channel
+            )
+
+            # Resolve routed interact_actions and curate the walker queue so
+            # only the cockpit + classified IAs + always_execute IAs remain.
+            routed_ias = await resolve_routed_interact_actions(agent, routing)
+            routed_ias = await filter_routed_interact_actions_by_access(
+                agent, routed_ias, user_id=user_id, channel=channel
+            )
+            always_run_ias = await collect_always_execute_interact_actions(
+                agent, exclude_class_names={self.__class__.__name__}
+            )
+            # Always-execute IAs MUST also go through per-user access
+            # control, otherwise they sit in the curated queue until
+            # ``enforce_interact_action_access`` denies them at visit
+            # time — wasting observability slots and emitting
+            # ``deny_access_directive`` for every turn. AUDIT-interact
+            # HIGH-08.
+            always_run_ias = await filter_routed_interact_actions_by_access(
+                agent, always_run_ias, user_id=user_id, channel=channel
+            )
+            await curate_walk_path_for_cockpit(
+                visitor,
+                self,
+                routed_ias,
+                always_execute=always_run_ias,
+            )
+
+            if should_use_conversational_gate(
+                routing,
+                converse_enabled=self.converse_enabled,
+                conversational_fast_path=self.conversational_fast_path,
+            ):
+                await deliver_conversational(
+                    self,
+                    visitor,
+                    response_mode=self.response_mode,
+                    converse_persona_prompt=self.converse_persona_prompt,
+                    converse_context_limit=self.converse_context_limit,
+                )
+                interaction.set_to_executed()
+                self._step_outcome = "yield"
+                return
+
+            has_skills = bool(routing.actions)
+            has_ias = bool(routed_ias)
+
+            # interact_actions only → skip engine, hand off to IAs.
+            # The curate above already placed the routed IAs in the walker queue
+            # in weight order; the walker will visit them after cockpit returns.
+            # We then append cockpit to the END of the walk path so it runs once
+            # more after the IAs to invoke PersonaAction with the accumulated
+            # directives — that's the user-facing response.
+            session = get_session(visitor)
+
+            if has_ias and not has_skills:
+                # IA-only delegation is deferred at C-6 — Bridge's DELEGATE
+                # verb (one IA at a time) doesn't yet model cockpit's
+                # weight-ordered IA dispatch. Until that's wired (post-C-7
+                # follow-up), inline persona finalize so the turn isn't
+                # silently dropped: PersonaAction renders a response from
+                # the accumulated directives and any prior interaction state.
+                logger.info(
+                    "ReasoningHelm: routing returned IA-only=%s; IA "
+                    "delegation deferred at C-6 — inline persona finalize "
+                    "(no engine call this turn)",
+                    [a.__class__.__name__ for a in routed_ias],
+                )
+                try:
+                    await deliver_via_persona(
+                        self,
+                        visitor,
+                        response_mode="respond",
+                        history_limit=self.history_limit,
+                    )
+                except Exception as deliver_exc:
+                    logger.warning(
+                        "ReasoningHelm: IA-only inline finalize failed: %s",
+                        deliver_exc,
+                    )
+                try:
+                    interaction.set_to_executed()
+                except Exception:
+                    pass
+                self._step_outcome = "yield"
+                return
+
+            # both → run engine. C-6 defers post-engine IA dispatch (no
+            # DELEGATE verb chained yet); the engine path proceeds without
+            # queueing the IAs. Log routed_ias for observability.
+            if has_ias and has_skills:
+                logger.info(
+                    "ReasoningHelm: engine + IAs routed=%s; IA tail "
+                    "dispatch deferred at C-6 (engine path only this turn)",
+                    [a.__class__.__name__ for a in routed_ias],
+                )
+
+            # skills only OR neither → cockpit engine path.
+            await self._start_cockpit(visitor, routing, persona)
+
+        except Exception as exc:
+            logger.warning(
+                "CockpitInteractAction: error in phase_route_and_setup: %s",
+                exc,
+                exc_info=True,
+            )
+            await self._handle_error(visitor, exc)
+
+    async def _phase_continue(self, visitor: InteractWalker) -> None:
+        """Revisit: reuse engine instance and run next step.
+
+        If the engine was cleared between prepend and revisit (stale-state
+        guard, error handler ``clear_session``, or a tool calling
+        ``response_publish(finalize=True)`` resetting the session), the
+        previous implementation silently returned without publishing or
+        marking the interaction executed. The walker then moved on with no
+        user-facing output for the turn. AUDIT-interact-cockpit CRIT-02.
+
+        Now: surface a generic fallback response, mark the interaction
+        executed, and clear remaining session state so the walker continues
+        cleanly without a dangling run.
+        """
+        session = get_session(visitor)
+        engine = session.engine
+        if engine is None:
+            logger.warning(
+                "CockpitInteractAction: revisit without engine; "
+                "publishing fallback so the turn is not silently dropped"
+            )
+            interaction = visitor.interaction
+            try:
+                if interaction is not None and not getattr(
+                    interaction, "response", None
+                ):
+                    fallback = (
+                        "Sorry — I lost track of that step. "
+                        "Could you rephrase or try again?"
+                    )
+                    interaction.response = fallback
+                    try:
+                        await interaction.save()
+                    except Exception:
+                        pass
+                    if visitor.response_bus and visitor.session_id:
+                        try:
+                            await self.publish(
+                                visitor=visitor,
+                                content=fallback,
+                                stream=False,
+                                streaming_complete=True,
+                            )
+                        except Exception:
+                            pass
+                if interaction is not None and hasattr(interaction, "set_to_executed"):
+                    try:
+                        interaction.set_to_executed()
+                        await interaction.save()
+                    except Exception:
+                        pass
+            finally:
+                session.debug_state = None
+            self._step_outcome = "yield"
+            return
+
+        # AUDIT-interact HIGH-02: enforce a per-interaction step cap that
+        # survives engine rebuilds (engine._iteration resets to 0 on rebuild).
+        session.total_steps_this_interaction = (
+            session.total_steps_this_interaction or 0
+        ) + 1
+        if session.total_steps_this_interaction > max(1, int(self.max_iterations) * 2):
+            logger.warning(
+                "CockpitInteractAction: per-interaction step cap exceeded "
+                "(%d steps; max_iterations=%d, ceiling=2x). Terminating turn.",
+                session.total_steps_this_interaction,
+                self.max_iterations,
+            )
+            await self._handle_error(
+                visitor,
+                RuntimeError(
+                    "Per-interaction cockpit step cap exceeded — turn terminated"
+                ),
+            )
+            return
+
+        try:
+            step_result = await engine.step()
+            await self._handle_step_result(visitor, engine, step_result)
+
+        except Exception as exc:
+            logger.warning(
+                "CockpitInteractAction: error in phase_continue: %s",
+                exc,
+                exc_info=True,
+            )
+            await self._handle_error(visitor, exc)
+
+    async def _start_cockpit(
+        self,
+        visitor: InteractWalker,
+        routing: RoutingResult,
+        persona: Any,
+    ) -> None:
+        """Set up the cockpit engine and run the first step."""
+        interaction = visitor.interaction
+        conversation = visitor.conversation
+        if not interaction or not conversation:
+            return
+
+        cfg = self._build_cockpit_config()
+        agent = getattr(visitor, "_agent", None)
+        agent_name = getattr(persona, "persona_name", "Agent")
+        agent_description = getattr(persona, "persona_description", "")
+
+        preloaded = list(routing.actions)
+        try:
+            always_active = await list_always_active_skill_names(
+                self, agent, conversation
+            )
+        except Exception:
+            always_active = []
+        for name in always_active:
+            if name not in preloaded:
+                preloaded.append(name)
+
+        # The converse skill is a routing alias — it has no tools and no
+        # engine workflow. If the engine is starting, the gate already let
+        # this through because OTHER skills are also routed; surfacing
+        # converse in the engine's preloaded list would be incoherent
+        # context. Strip it from the engine's view (catalog still has it).
+        preloaded = [s for s in preloaded if s not in CONVERSE_SKILL_NAMES]
+
+        if routing.actions:
+            skills_csv = ", ".join(routing.actions)
+            intent = routing.intent_type or "UNCLEAR"
+            interp_line = (
+                f" Interpretation: {routing.interpretation}"
+                if routing.interpretation
+                else ""
+            )
+            guidance = (
+                "\n\n# Routing decision (advisory — verify before committing)\n"
+                f"Intent: {intent}.{interp_line} "
+                f"Router pre-selected skill(s): **{skills_csv}**. "
+                "The SOP for these skills is inlined under '# Router-selected skill(s)' below, "
+                "alongside a quick index of the other catalog skills.\n"
+                "- If the recommended SOP fits the actual request, begin work with "
+                "its tools and workflow immediately. Do NOT call `skill_read` for "
+                "the recommended skill, and do NOT spend turns on memory_set, "
+                "task_create_plan, or other harness scaffolding before invoking "
+                "its primary tools.\n"
+                "- If the recommendation is the wrong fit (e.g. user actually "
+                "asked something the listed SOP does not cover), treat the "
+                "router as fallible: pick a better skill from the peer index, "
+                "call `skill_read` on it, and use ITS tools. Do NOT answer from "
+                "world knowledge while a catalog skill could plausibly satisfy "
+                "the request."
+            )
+            agent_description += guidance
+
+        model_action = await self.get_model_action(required=True)
+
+        # Skill discovery for prompt construction.
+        # Persists the resolved catalog and underlying discovered_skills dict
+        # on visitor._skill_state so the engine, registry, and harness tools
+        # (skill_*, cockpit_search) can all read the same source of truth.
+        try:
+            visitor_shim = CockpitVisitorShim(
+                agent,
+                None,
+                user_id=getattr(visitor, "user_id", None),
+                conversation=conversation,
+                interaction=interaction,
+                session_id=visitor.session_id,
+                response_bus=visitor.response_bus,
+                channel=getattr(visitor, "channel", None),
+            )
+            catalog = await SkillCatalog.discover(
+                visitor=visitor_shim,
+                skills_selector=cfg.skills,
+                skills_source=cfg.skills_source,
+                denied_skills=cfg.denied_skills or None,
+            )
+            if catalog is not None:
+                visitor._skill_state["skill_catalog"] = catalog
+                visitor._skill_state["discovered_skills"] = dict(catalog.skills)
+        except Exception as exc:
+            logger.warning(
+                "CockpitInteractAction: skill discovery for prompt failed: %s", exc
+            )
+
+        visitor._skill_state["interact_walker"] = visitor
+
+        ctx = CockpitContext(
+            utterance=visitor.utterance or "",
+            conversation=conversation,
+            interaction=interaction,
+            agent=agent,
+            model_action=model_action,
+            config=cfg,
+            response_bus=visitor.response_bus,
+            session_id=visitor.session_id or "",
+            channel=getattr(visitor, "channel", "default"),
+            stream=getattr(visitor, "stream", False),
+            user_id=getattr(visitor, "user_id", None),
+            persona=persona,
+            action=self,
+            visitor=visitor,
+            preloaded_skills=preloaded,
+            routed_skills=list(routing.actions or []),
+            publish_callback=self._build_publish_callback(visitor),
         )
+
+        engine = CockpitEngine(ctx)
+        await engine.initialize()
+
+        # Persist engine instance and interaction ID for revisit detection.
+        session = get_session(visitor)
+        session.engine = engine
+        session.interaction_id = interaction.id
+        # AUDIT-interact HIGH-02: count the first step against the
+        # per-interaction ceiling. Subsequent steps fire in _phase_continue.
+        session.total_steps_this_interaction = (
+            session.total_steps_this_interaction or 0
+        ) + 1
+
+        step_result = await engine.step()
+        await self._handle_step_result(visitor, engine, step_result)
+
+    async def _handle_step_result(
+        self,
+        visitor: InteractWalker,
+        engine: CockpitEngine,
+        step_result: Any,
+    ) -> None:
+        """Process a step result: revisit for tool calls, deliver for final response."""
+        interaction = visitor.interaction
+        if not interaction:
+            return
+
+        session = get_session(visitor)
+        status = getattr(step_result, "status", "")
+
+        if status == "tool_calls":
+            # Model called tools — persist state. The helm requests another
+            # Bridge visit via the CONTINUE verb instead of mutating the
+            # walker queue directly (Bridge owns visitor.prepend).
+            session.debug_state = engine.save_state()
+            # Check if response_publish set the finalized flag
+            if session.finalized:
+                # Tool already delivered the response — conclude
+                session.reset()
+                interaction.set_to_executed()
+                self._step_outcome = "yield"
+                return
+            self._step_outcome = "continue"
+            return
+
+        # Terminal state: final_response, timeout, budget_exhausted, stuck.
+        # Pending IAs are already in the walker queue from Phase 1 curate; the
+        # walker visits them automatically after the cockpit revisit chain ends.
+        # ``session.pending_interact_actions`` is never populated at C-6
+        # (the "engine + IAs" routing branch in _phase_route_and_setup does
+        # not queue them). Kept here as a guarded no-op for forward
+        # compatibility — when IA tail dispatch is wired via DELEGATE this
+        # block can return DELEGATE verbs instead of finalising.
+        try:
+            pending_ias = list(getattr(session, "pending_interact_actions", []))
+        except Exception:
+            pending_ias = []
+        if pending_ias:
+            logger.info(
+                "ReasoningHelm: engine done with pending IAs=%s; tail "
+                "dispatch deferred at C-6",
+                [a.__class__.__name__ for a in pending_ias],
+            )
+        session.reset()
+        interaction.set_to_executed()
+        self._step_outcome = "yield"
+
+        final_response = getattr(step_result, "final_response", "") or ""
+
+        if final_response.strip():
+            # Build a CockpitResult-like object for delivery
+            from jvagent.action.helm.reasoning.context import CockpitResult
+
+            result = CockpitResult(
+                final_response=final_response,
+                termination_reason=getattr(
+                    step_result, "termination_reason", TerminationReason.COMPLETED
+                ),
+                iterations=getattr(step_result, "iterations", 0),
+                duration_seconds=getattr(step_result, "duration_seconds", 0.0),
+                activated_skills=getattr(step_result, "activated_skills", []),
+            )
+
+            skill_catalog = (visitor._skill_state or {}).get("skill_catalog")
+
+            await deliver_final_response(
+                self,
+                visitor,
+                result,
+                response_mode=self.response_mode,
+                degenerate_response_max_chars=self.degenerate_response_max_chars,
+                skill_catalog=skill_catalog,
+            )
+
+    async def _finalize_via_persona(self, visitor: InteractWalker) -> None:
+        """Run a persona-shaped delivery after upstream IAs queued directives.
+
+        Used in "interact_actions only" mode. Cockpit was appended to the end
+        of the walk path; this routes through the unified ``deliver_via_persona``
+        in ``"respond"`` mode (no content, no directive — directives accumulated
+        by upstream IAs are read straight off the interaction by PersonaAction).
+        """
+        interaction = visitor.interaction
+        if not interaction:
+            pass  # helms not recorded by walker (Bridge owns trace)
+            return
+
+        try:
+            await self._require_persona()
+        except Exception as exc:
+            logger.warning(
+                "CockpitInteractAction: persona unavailable for finalize step: %s",
+                exc,
+            )
+            interaction.set_to_executed()
+            return
+
+        try:
+            await deliver_via_persona(
+                self,
+                visitor,
+                content=None,
+                response_mode="respond",
+                history_limit=(
+                    max(1, int(self.history_limit)) if self.history_limit else 4
+                ),
+                use_history=True,
+            )
+        except Exception as exc:
+            logger.warning(
+                "CockpitInteractAction: persona finalize delivery failed: %s",
+                exc,
+                exc_info=True,
+            )
+        finally:
+            interaction.set_to_executed()
+
+    def _build_publish_callback(self, visitor: InteractWalker):
+        """Build the callback that routes publish/thought events to the response bus."""
+
+        async def _publish_cb(
+            content: str,
+            *,
+            category: str,
+            thought_type: Optional[str],
+            segment_id: Optional[str],
+            streaming_complete: bool,
+            relay_to_adapters: bool,
+        ) -> None:
+            if category == "thought":
+                await self.publish_thought(
+                    visitor=visitor,
+                    content=content,
+                    thought_type=thought_type or "reasoning",
+                    segment_id=segment_id,
+                    streaming_complete=streaming_complete,
+                    relay_to_adapters=relay_to_adapters,
+                    allow_empty=not content,
+                )
+            elif content:
+                await self.publish(
+                    visitor=visitor,
+                    content=content,
+                    streaming_complete=streaming_complete,
+                )
+
+        return _publish_cb
+
+    async def _handle_error(self, visitor: "InteractWalker", exc: Exception) -> None:
+        """Handle errors during orchestration.
+
+        Clears session state, sets a fallback response on the interaction
+        if one isn't already present, and signals Bridge to finalise.
+        """
+        clear_session(visitor)
+        interaction = visitor.interaction
+        if interaction:
+            if not interaction.response:
+                interaction.response = (
+                    "I encountered an error processing your request. Please try again."
+                )
+                try:
+                    await interaction.save()
+                except Exception:
+                    pass
+        # helms not recorded by walker (Bridge owns trace)
+        self._step_outcome = "yield"
+
+    async def healthcheck(self) -> bool:
+        if not self.model_action_type:
+            return False
+        if self.max_iterations < 1:
+            return False
+        agent = await self.get_agent()
+        if not agent:
+            return True
+        persona: Any = await self.get_action("PersonaAction")
+        if not persona or not getattr(persona, "enabled", True):
+            return False
+        if not (getattr(persona, "persona_description", None) or "").strip():
+            return False
+        return True
+
+    @classmethod
+    async def refresh_skills(cls, visitor: InteractWalker) -> List[str]:
+        """Re-discover skills and merge any newly installed bundles into the live session.
+
+        The cockpit assembles its tool registry fresh on every step from
+        ``visitor._skill_state["discovered_skills"]``, so updating that dict
+        is sufficient — no per-call registration is needed.
+        """
+        state = getattr(visitor, "_skill_state", None)
+        if state is None:
+            logger.warning("refresh_skills: no _skill_state on visitor")
+            return []
+
+        agent = getattr(visitor, "_agent", None)
+        if agent is None:
+            return []
+
+        action = state.get("action")
+        discovered_skills: Dict[str, Any] = state.get("discovered_skills") or {}
+        skill_catalog = state.get("skill_catalog")
+
+        await SkillCatalog.invalidate_cache(
+            namespace=agent.namespace,
+            agent_name=agent.name,
+        )
+        new_catalog = await SkillCatalog.discover(
+            visitor=visitor,
+            skills_selector=getattr(action, "skills", None) if action else None,
+            skills_source=(
+                getattr(action, "skills_source", "both") if action else "both"
+            ),
+            denied_skills=getattr(action, "denied_skills", None) if action else None,
+        )
+        new_skills = new_catalog.skills
+        newly_found = [name for name in new_skills if name not in discovered_skills]
+
+        if not newly_found and new_skills.keys() == discovered_skills.keys():
+            return []
+
+        discovered_skills.update(new_skills)
+        state["discovered_skills"] = discovered_skills
+        if skill_catalog is not None:
+            skill_catalog.skills = discovered_skills
+
+        logger.info(
+            "refresh_skills: merged %d new skill(s): %s",
+            len(newly_found),
+            newly_found,
+        )
+        return newly_found
+
+    @classmethod
+    async def remove_skill(cls, visitor: InteractWalker, skill_name: str) -> bool:
+        """Hot-unload *skill_name* from the current cockpit session."""
+        state = getattr(visitor, "_skill_state", None)
+        if state is None:
+            return False
+
+        discovered_skills = state.get("discovered_skills") or {}
+        skill_catalog = state.get("skill_catalog")
+
+        if skill_name not in discovered_skills:
+            return False
+
+        discovered_skills.pop(skill_name, None)
+        state["discovered_skills"] = discovered_skills
+        if skill_catalog and isinstance(getattr(skill_catalog, "skills", None), dict):
+            skill_catalog.skills.pop(skill_name, None)
+
+        agent = getattr(visitor, "_agent", None)
+        if agent is not None:
+            await SkillCatalog.invalidate_cache(
+                namespace=agent.namespace,
+                agent_name=agent.name,
+            )
+
+        logger.info("remove_skill: removed skill '%s' from session", skill_name)
+        return True

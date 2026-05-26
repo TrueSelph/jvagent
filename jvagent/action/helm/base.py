@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from abc import abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from jvspatial.core.annotations import attribute
 
@@ -104,3 +104,110 @@ class BaseHelm(Action):
         ``tool:helm:{helm_name}`` MUST match whatever this returns.
         """
         return self.__class__.__name__
+
+    # ------------------------------------------------------------------
+    # Publishing helpers
+    #
+    # Lifted verbatim from :class:`jvagent.action.interact.base.InteractAction`
+    # so helms can call ``self.publish(...)`` / ``self.publish_thought(...)``
+    # the same way cockpit-style InteractActions do. Helms are not
+    # InteractActions; they need their own copy because Action does not
+    # provide these methods.
+    # ------------------------------------------------------------------
+
+    async def publish(
+        self,
+        visitor: "InteractWalker",
+        content: str,
+        channel: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        streaming_complete: bool = True,
+        stream: Optional[bool] = None,
+        transient: bool = False,
+        category: str = "user",
+        thought_type: Optional[str] = None,
+        segment_id: Optional[str] = None,
+        relay_to_adapters: bool = False,
+        allow_empty: bool = False,
+    ) -> Optional[Any]:
+        """Publish a response directly to the response bus.
+
+        Mirrors :meth:`InteractAction.publish` so duplicated cockpit code
+        (``deliver_final_response``, ``deliver_conversational``,
+        ``deliver_via_persona``) that calls ``action.publish(...)`` works
+        unchanged when ``action`` is a helm.
+        """
+        if not content and not allow_empty:
+            logger.error("BaseHelm.publish: content is required")
+            return None
+
+        if not visitor.response_bus:
+            logger.warning(
+                "ResponseBus not available — cannot publish response. "
+                "Ensure InteractWalker has response_bus initialized."
+            )
+            return None
+
+        if not visitor.session_id:
+            logger.warning("Session ID not available — cannot publish response")
+            return None
+
+        interaction = visitor.interaction
+        if not interaction:
+            logger.warning(
+                "Interaction not available — cannot publish response or set "
+                "interaction.response"
+            )
+            return None
+
+        use_stream = stream if stream is not None else getattr(visitor, "stream", False)
+        pub_channel = channel or visitor.channel
+        visitor_data = getattr(visitor, "data", None) or {}
+        pub_metadata = {**(metadata or {}), **visitor_data}
+        return await visitor.response_bus.publish(
+            session_id=visitor.session_id,
+            content=content,
+            channel=pub_channel,
+            stream=use_stream,
+            interaction_id=interaction.id,
+            interaction=interaction,
+            user_id=interaction.user_id if hasattr(interaction, "user_id") else None,
+            metadata=pub_metadata,
+            streaming_complete=streaming_complete,
+            transient=transient,
+            category=category,
+            thought_type=thought_type,
+            segment_id=segment_id,
+            relay_to_adapters=relay_to_adapters,
+        )
+
+    async def publish_thought(
+        self,
+        visitor: "InteractWalker",
+        content: str,
+        *,
+        thought_type: str = "reasoning",
+        segment_id: Optional[str] = None,
+        streaming_complete: bool = True,
+        relay_to_adapters: Optional[bool] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        stream: Optional[bool] = None,
+        allow_empty: bool = False,
+    ) -> Optional[Any]:
+        """Publish a thought-category message with helm-level relay defaults."""
+        relay_default = bool(getattr(self, "relay_thoughts_to_channels", False))
+        return await self.publish(
+            visitor=visitor,
+            content=content,
+            metadata=metadata,
+            streaming_complete=streaming_complete,
+            stream=stream,
+            transient=True,
+            category="thought",
+            thought_type=thought_type,
+            segment_id=segment_id,
+            relay_to_adapters=(
+                relay_default if relay_to_adapters is None else relay_to_adapters
+            ),
+            allow_empty=allow_empty,
+        )
