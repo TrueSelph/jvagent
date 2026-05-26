@@ -211,3 +211,76 @@ class BaseHelm(Action):
             ),
             allow_empty=allow_empty,
         )
+
+    async def respond(
+        self,
+        visitor: "InteractWalker",
+        directives=None,
+        parameters=None,
+        *,
+        use_history: bool = True,
+        history_limit: int = 3,
+        with_utterance: bool = True,
+        with_interpretation: bool = False,
+        with_event: bool = True,
+        with_response: bool = True,
+        max_statement_length: Optional[int] = None,
+        transient: bool = False,
+    ) -> Optional[str]:
+        """Generate a response via PersonaAction.
+
+        Lifted verbatim from :meth:`InteractAction.respond` so duplicated
+        cockpit delivery helpers (``deliver_via_persona``,
+        ``deliver_conversational``, ``deliver_final_response``) work
+        unchanged when ``action`` is a helm.
+
+        Returns the generated response string, or None if PersonaAction is
+        not found or generation errored. PersonaAction.respond writes
+        ``interaction.response`` itself; this method does not duplicate
+        that write.
+        """
+        interaction = visitor.interaction
+        if not interaction:
+            logger.error("BaseHelm.respond: No interaction available in visitor")
+            return None
+
+        try:
+            if directives:
+                await visitor.add_directives(directives)
+
+            if parameters:
+                action_name = getattr(
+                    self, "get_class_name", lambda: self.__class__.__name__
+                )()
+                if interaction.add_parameters(parameters, action_name):
+                    await interaction.save()
+
+            from jvagent.action.persona.persona_action import PersonaAction
+
+            persona = await self.get_action(PersonaAction)
+            if not persona:
+                logger.debug(
+                    "BaseHelm.respond: PersonaAction not found; skipping response"
+                )
+                return None
+
+            response = await persona.respond(
+                interaction,
+                visitor=visitor,
+                use_history=use_history,
+                history_limit=history_limit,
+                with_utterance=with_utterance,
+                with_interpretation=with_interpretation,
+                with_event=with_event,
+                with_response=with_response,
+                max_statement_length=max_statement_length,
+                transient=transient,
+            )
+            return response
+        except Exception as exc:
+            logger.error(
+                "BaseHelm.respond: error calling PersonaAction: %s",
+                exc,
+                exc_info=True,
+            )
+            return None

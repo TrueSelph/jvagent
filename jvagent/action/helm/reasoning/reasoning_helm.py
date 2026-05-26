@@ -51,8 +51,6 @@ from jvagent.action.helm.reasoning.config import CockpitConfig
 from jvagent.action.helm.reasoning.context import CockpitContext
 from jvagent.action.helm.reasoning.contracts import TerminationReason
 from jvagent.action.helm.reasoning.delivery.delegation import (
-    collect_always_execute_interact_actions,
-    curate_walk_path_for_cockpit,
     resolve_routed_interact_actions,
 )
 from jvagent.action.helm.reasoning.delivery.gates import (
@@ -503,29 +501,15 @@ class ReasoningHelm(BaseHelm):
                 agent, routing, user_id=user_id, channel=channel
             )
 
-            # Resolve routed interact_actions and curate the walker queue so
-            # only the cockpit + classified IAs + always_execute IAs remain.
+            # Resolve routed interact_actions for observability / deferred
+            # delegation paths. Bridge — not ReasoningHelm — owns the walker
+            # queue, so cockpit's ``curate_walk_path_for_cockpit`` /
+            # ``collect_always_execute_interact_actions`` calls are
+            # intentionally OMITTED here. Always-execute IAs continue to
+            # run via the walker's normal weight chain after Bridge yields.
             routed_ias = await resolve_routed_interact_actions(agent, routing)
             routed_ias = await filter_routed_interact_actions_by_access(
                 agent, routed_ias, user_id=user_id, channel=channel
-            )
-            always_run_ias = await collect_always_execute_interact_actions(
-                agent, exclude_class_names={self.__class__.__name__}
-            )
-            # Always-execute IAs MUST also go through per-user access
-            # control, otherwise they sit in the curated queue until
-            # ``enforce_interact_action_access`` denies them at visit
-            # time — wasting observability slots and emitting
-            # ``deny_access_directive`` for every turn. AUDIT-interact
-            # HIGH-08.
-            always_run_ias = await filter_routed_interact_actions_by_access(
-                agent, always_run_ias, user_id=user_id, channel=channel
-            )
-            await curate_walk_path_for_cockpit(
-                visitor,
-                self,
-                routed_ias,
-                always_execute=always_run_ias,
             )
 
             if should_use_conversational_gate(
