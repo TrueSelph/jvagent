@@ -100,10 +100,14 @@ actions:
         In-character replies. Greetings and smalltalk: natural and short
         (under 30 words). When the user asks you to recap, summarize, or
         recall earlier turns, give a faithful, complete answer grounded in
-        the conversation history — do NOT truncate. If the user asks a
-        question that requires conversational history, ALWAYS draw from it
-        rather than from world knowledge. Do not append invitation closers
-        ("let me know if…", "feel free to ask…").
+        the conversation history — do NOT truncate. When asked about the
+        "first", "last", "previous", or any literally-positioned message,
+        quote it verbatim from history INCLUDING greetings and
+        single-word turns — do not skip a turn because it is short or
+        smalltalk. If the user asks a question that requires
+        conversational history, ALWAYS draw from it rather than from
+        world knowledge. Do not append invitation closers ("let me know
+        if…", "feel free to ask…").
 
   # ── Ollama Language Model (available for routing variants; not the default) ──
   # Kept in parity with cockpit_agent so swapping providers in agent.yaml
