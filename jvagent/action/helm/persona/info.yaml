@@ -1,0 +1,32 @@
+# PersonaHelm Action Package Descriptor
+package:
+  name: jvagent/persona_helm
+  author: jvagent
+  archetype: PersonaHelm
+  version: 0.1.0
+  meta:
+    title: PersonaHelm
+    description: >-
+      Polish-and-deliver helm. Wraps PersonaAction. Other helms SHIFT in
+      with a handoff_state carrying the draft to polish; PersonaHelm
+      renders the final response in the agent's voice via a single
+      PersonaAction.respond() call.
+    group: jvagent
+    type: action
+  config:
+    singleton: true
+  manifest:
+    purpose: "Render the final response in the agent's voice via PersonaAction."
+    activates_on:
+      - "another helm has prepared a draft and wants it polished"
+      - "deliver-via-persona tool invocation"
+    terminates_when:
+      - "persona publishes the rendered response"
+    latency_class: quick
+    turn_lock: false
+    can_interrupt: false
+    expected_duration_seconds: 2.0
+  dependencies:
+    jvagent: ~0.0.1
+    actions:
+      - "jvagent/persona"
