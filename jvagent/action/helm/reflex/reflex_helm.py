@@ -139,11 +139,26 @@ class ReflexHelm(BaseHelm):
 
         # Validate the verb's target / interact_action against the
         # actually-installed peer helms / actions. If invalid, fall back.
-        return self._normalize_verb(
+        normalized = self._normalize_verb(
             verb,
             peer_helm_names={h["name"] for h in peer_helms},
             peer_action_names={a["name"] for a in peer_actions},
         )
+        # Defensive: YIELD on a non-empty utterance leaves the user
+        # without a response (walker yields out of Bridge; no other IA
+        # publishes). Downgrade to a SHIFT to the default target so the
+        # reasoning helm gets a chance — the prompt instructs the model
+        # never to YIELD non-empty input, but real classifiers
+        # occasionally do.
+        if isinstance(normalized, YIELD):
+            logger.info(
+                "ReflexHelm: classifier YIELDed on non-empty utterance %r; "
+                "downgrading to SHIFT(%s) so the reasoning helm handles it",
+                utterance[:60],
+                self.default_shift_target,
+            )
+            return self._safe_default_shift("classifier YIELDed on non-empty utterance")
+        return normalized
 
     # ------------------------------------------------------------------
     # Peer discovery

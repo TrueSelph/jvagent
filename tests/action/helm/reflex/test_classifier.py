@@ -298,11 +298,20 @@ async def test_step_delegate_unknown_target_falls_back(monkeypatch):
     assert result.target == "ReasoningHelm"
 
 
-async def test_step_yield_when_classifier_picks_yield(monkeypatch):
+async def test_step_yield_downgraded_to_shift_on_nonempty_utterance(monkeypatch):
+    """A classifier YIELD on a non-empty utterance gets downgraded to
+    SHIFT(default_shift_target) so the reasoning helm handles it.
+
+    Without this, YIELD on "ok" would yield Bridge out of the turn
+    entirely and the user would see no response (walker continues past
+    Bridge but no other IA publishes). Defensive — the prompt forbids
+    YIELD on non-empty input, but real classifiers occasionally ignore.
+    """
     helm = ReflexHelm()
     visitor = _make_visitor("ok")
     state = _make_bridge_state()
-    agent = _make_agent()
+    peer = _make_peer_helm("ReasoningHelm", purpose="Deep reasoning")
+    agent = _make_agent(helms=[peer])
 
     _patch_helm(
         monkeypatch,
@@ -310,6 +319,20 @@ async def test_step_yield_when_classifier_picks_yield(monkeypatch):
         agent=agent,
         model_response=json.dumps({"verb": "YIELD", "reason": "ambiguous"}),
     )
+
+    result = await helm.step(visitor, state)
+    assert isinstance(result, SHIFT)
+    assert result.target == "ReasoningHelm"
+
+
+async def test_step_yield_preserved_on_empty_utterance(monkeypatch):
+    """Empty utterance still yields — no point burning an LM call or shift."""
+    helm = ReflexHelm()
+    visitor = _make_visitor("   ")  # whitespace-only
+    state = _make_bridge_state()
+    agent = _make_agent()
+
+    _patch_helm(monkeypatch, helm, agent=agent, model_response="")
 
     result = await helm.step(visitor, state)
     assert isinstance(result, YIELD)
