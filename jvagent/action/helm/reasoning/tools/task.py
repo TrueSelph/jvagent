@@ -121,7 +121,7 @@ def _build_task_tools(ctx: CockpitContext) -> List[Tool]:
                 task = await task_store.create(
                     title=title,
                     description=description or title,
-                    owner_action="CockpitEngine",
+                    owner_action="ReasoningHelm",
                 )
                 await task.start()
                 await task.set_plan(steps)

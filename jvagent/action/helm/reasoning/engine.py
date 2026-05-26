@@ -1073,12 +1073,12 @@ class CockpitEngine:
             title = (
                 (utterance[:80] + "…")
                 if len(utterance) > 80
-                else (utterance or "Cockpit run")
+                else (utterance or "ReasoningHelm run")
             )
             task = await store.create(
                 title=title,
-                description=utterance or "Cockpit auto-tracked run",
-                owner_action="CockpitInteractAction",
+                description=utterance or "ReasoningHelm auto-tracked run",
+                owner_action="ReasoningHelm",
             )
             await task.start()
             self._trace_task = task

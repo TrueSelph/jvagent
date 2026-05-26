@@ -4,7 +4,7 @@ description: >-
   Reply to the user briefly and in character via the agent persona. Use for
   greetings, acknowledgments, smalltalk, off-task chat, brief follow-ups,
   and any utterance that does not require a tool, lookup, or research step.
-  No tools, no engine loop — the cockpit hands the utterance straight to
+  No tools, no engine loop — the agent hands the utterance straight to
   PersonaAction so the response is low-latency and persona-shaped.
 always-active: true
 response-mode: respond
