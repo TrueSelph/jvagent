@@ -163,7 +163,6 @@ def stub_helm():
         name: Optional[str] = None,
         latency_class: str = "quick",
         can_emit_directly: bool = True,
-        can_interrupt: bool = False,
         script: Optional[List[Any]] = None,
     ) -> StubHelm:
         helm = StubHelm()
@@ -179,7 +178,6 @@ def stub_helm():
             helm.__dict__["helm_name"] = _helm_name
         helm.latency_class = latency_class
         helm.can_emit_directly = can_emit_directly
-        helm.can_interrupt = can_interrupt
         helm.set_script(script or [])
         return helm
 

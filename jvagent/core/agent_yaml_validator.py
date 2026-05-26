@@ -29,6 +29,14 @@ _SEEN_WARNING_KEYS: Set[str] = set()
 _ALLOWED_TOP_LEVEL = {"agent", "version", "author", "jvagent", "context", "actions"}
 _ALLOWED_ACTION_ENTRY_KEYS = {"action", "context", "config"}
 
+# Pattern orchestrators that cannot coexist on a single agent — both
+# occupy the same weight slot (-200) and ownership of the turn would be
+# ambiguous. PATTERNS.md flags this as a hard constraint; the validator
+# enforces it by emitting a warning at validate time.
+_MUTUALLY_EXCLUSIVE_ORCHESTRATORS: tuple[frozenset[str], ...] = (
+    frozenset({"jvagent/bridge", "jvagent/cockpit"}),
+)
+
 
 def _mk(path: str, message: str, hint: str = "") -> AgentYamlWarning:
     return AgentYamlWarning(path=path, message=message, hint=hint)
@@ -115,7 +123,45 @@ def validate_agent_yaml(data: Dict[str, Any]) -> List[AgentYamlWarning]:
         _expect_type(warnings, f"{path}.context", action_entry.get("context"), (dict,))
         _expect_type(warnings, f"{path}.config", action_entry.get("config"), (dict,))
 
+    _check_mutually_exclusive_orchestrators(warnings, actions)
+
     return warnings
+
+
+def _check_mutually_exclusive_orchestrators(
+    warnings: List[AgentYamlWarning],
+    actions: List[Any],
+) -> None:
+    """Warn when an agent.yaml installs both Bridge AND Cockpit (or any
+    other declared mutually-exclusive pair of pattern orchestrators).
+
+    Both occupy the same weight slot in the walker queue, so installing
+    both produces ambiguous ownership of the turn. PATTERNS.md flags
+    this as a hard constraint; this check makes it visible at validate
+    time so operators catch it before bootstrap.
+    """
+    installed_refs: Set[str] = set()
+    for entry in actions:
+        if not isinstance(entry, dict):
+            continue
+        ref = entry.get("action")
+        if isinstance(ref, str):
+            installed_refs.add(ref)
+
+    for exclusive_group in _MUTUALLY_EXCLUSIVE_ORCHESTRATORS:
+        present = exclusive_group & installed_refs
+        if len(present) > 1:
+            members = ", ".join(sorted(present))
+            warnings.append(
+                _mk(
+                    "actions",
+                    f"mutually exclusive pattern orchestrators installed together: {members}",
+                    hint=(
+                        "These actions occupy the same weight slot (-200) in the walker "
+                        "queue. Pick ONE pattern per agent. See .planning/PATTERNS.md."
+                    ),
+                )
+            )
 
 
 def warn_agent_yaml(data: Dict[str, Any], source: str = "agent.yaml") -> None:

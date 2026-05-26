@@ -7,9 +7,9 @@ verb set defined in :mod:`jvagent.action.helm.contracts` (see ADR-0007).
 This package contains:
 
 - :class:`BaseHelm` — abstract base class for helms.
-- Verb dataclasses: :class:`EMIT`, :class:`EXECUTE`, :class:`SHIFT`,
+- Verb dataclasses: :class:`EMIT`, :class:`CONTINUE`, :class:`SHIFT`,
   :class:`DELEGATE`, :class:`YIELD`.
-- Supporting types: :class:`ToolCall`, :class:`ShiftRecord`.
+- Supporting types: :class:`ShiftRecord`.
 - :class:`StubHelm` — deterministic helm used in tests; not loaded in production.
 """
 
@@ -18,13 +18,11 @@ from jvagent.action.helm.contracts import (
     CONTINUE,
     DELEGATE,
     EMIT,
-    EXECUTE,
     SHIFT,
     YIELD,
     HelmStepResult,
     HelmVerb,
     ShiftRecord,
-    ToolCall,
 )
 from jvagent.action.helm.stub_helm import StubHelm
 
@@ -33,12 +31,10 @@ __all__ = [
     "CONTINUE",
     "DELEGATE",
     "EMIT",
-    "EXECUTE",
     "SHIFT",
     "YIELD",
     "HelmStepResult",
     "HelmVerb",
     "ShiftRecord",
     "StubHelm",
-    "ToolCall",
 ]

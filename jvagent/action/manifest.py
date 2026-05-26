@@ -13,10 +13,10 @@ runtime routing hints to any helm or scheduler that wants to consume them:
   than running in parallel during this action's lifetime (think
   multi-turn forms).
 - ``interrupt_phrases`` — phrases that may break ``turn_lock``. Read by
-  fast classifiers (e.g. ReflexHelm) at routing time.
+  the lock-owning rails IA's own intent classifier (e.g. an interview's
+  CANCELLATION state). NOT a Bridge-level mechanic — Bridge always
+  auto-DELEGATEs to the lock owner regardless of helm or utterance.
 - ``expected_duration_seconds`` — operator hint; not enforced.
-- ``can_interrupt`` — when True, this action / helm may emit
-  ``SHIFT(interrupt=True)`` to break a turn-lock owned by another helm.
 
 The manifest is read at loader-level (``loader/info_yaml.py``) into
 ``Action.metadata['manifest']``. Operators may override per-deployment via
@@ -46,7 +46,6 @@ ACK_ELIGIBLE_LATENCY_CLASSES = frozenset({"deliberate", "long"})
 
 DEFAULT_LATENCY_CLASS = "quick"
 DEFAULT_TURN_LOCK = False
-DEFAULT_CAN_INTERRUPT = False
 
 
 class ManifestValidationError(ValueError):
@@ -77,7 +76,6 @@ class Manifest:
     turn_lock: bool = DEFAULT_TURN_LOCK
     interrupt_phrases: List[str] = field(default_factory=list)
     expected_duration_seconds: Optional[float] = None
-    can_interrupt: bool = DEFAULT_CAN_INTERRUPT
 
     @classmethod
     def from_payload(
@@ -125,9 +123,6 @@ class Manifest:
             expected_duration_seconds=_validate_optional_float(
                 payload, "expected_duration_seconds", strict=strict
             ),
-            can_interrupt=_validate_bool(
-                payload, "can_interrupt", DEFAULT_CAN_INTERRUPT, strict=strict
-            ),
         )
 
     def merged_with(self, override: Optional[Dict[str, Any]]) -> "Manifest":
@@ -149,7 +144,6 @@ class Manifest:
             "turn_lock": self.turn_lock,
             "interrupt_phrases": list(self.interrupt_phrases),
             "expected_duration_seconds": self.expected_duration_seconds,
-            "can_interrupt": self.can_interrupt,
         }
         merged.update(override)
         return Manifest.from_payload(merged)
@@ -171,7 +165,6 @@ class Manifest:
             "turn_lock": self.turn_lock,
             "interrupt_phrases": list(self.interrupt_phrases),
             "expected_duration_seconds": self.expected_duration_seconds,
-            "can_interrupt": self.can_interrupt,
         }
 
 
@@ -295,7 +288,6 @@ def _validate_optional_float(
 
 __all__ = [
     "ACK_ELIGIBLE_LATENCY_CLASSES",
-    "DEFAULT_CAN_INTERRUPT",
     "DEFAULT_LATENCY_CLASS",
     "DEFAULT_TURN_LOCK",
     "Manifest",

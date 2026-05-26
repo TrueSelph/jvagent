@@ -74,7 +74,7 @@ Tools the cockpit exposes to the model that wrap jvagent's internal services (me
 A subclass of `BaseHelm` (which extends `Action`) participating in a Bridge composition. Implements `step(visitor, bridge_state) → HelmStepResult`. Helms are orchestrated by `BridgeInteractAction`; they never touch the walker queue directly. Source: [`jvagent/action/helm/base.py`](../jvagent/action/helm/base.py). See [`../docs/BRIDGE.md`](../docs/BRIDGE.md).
 
 ### `HelmStepResult` (verb set)
-The closed enum of return values from `Helm.step()` that Bridge dispatches: `EMIT`, `EXECUTE`, `CONTINUE`, `SHIFT`, `DELEGATE`, `YIELD`. Additive across minor revisions per ADR-0007 (`CONTINUE` joined at v0.1). Source: [`jvagent/action/helm/contracts.py`](../jvagent/action/helm/contracts.py).
+The closed enum of return values from `Helm.step()` that Bridge dispatches: `EMIT`, `CONTINUE`, `SHIFT`, `DELEGATE`, `YIELD`. Current revision v0.2. History: `CONTINUE` joined at v0.1 (additive); `EXECUTE` and `SHIFT.interrupt` removed at v0.2 (breaking — both were unused). Source: [`jvagent/action/helm/contracts.py`](../jvagent/action/helm/contracts.py).
 
 ### Interaction
 Single user-message ⇄ agent-response exchange. Source: `jvagent/memory/interaction.py:47`. Stores utterance, response, channel, actions taken, directives, events, parameters, usage, observability metrics. Bidirectionally chained to neighbor interactions.
@@ -95,7 +95,7 @@ Subclass of `BaseModelAction` for LLM providers. Source: `jvagent/action/model/l
 Manifest field on an `Action` package declaring expected wall-clock cost: `fast` (sub-500ms), `quick` (sub-2s), `deliberate` (2–10s), `long` (>10s). Used by Bridge to decide whether `SHIFT` to that target needs an ack-on-shift. Source: [`jvagent/action/manifest.py`](../jvagent/action/manifest.py).
 
 ### Manifest
-Pattern-agnostic metadata block on an `Action` package descriptor. Declares `latency_class`, `turn_lock`, `can_interrupt`, `pattern_compatibility`, plus pattern-specific extensions. Read at package load via `Action.get_manifest()`. Consumed by Bridge for orchestration; informational for Cockpit / Rails. Source: [`jvagent/action/manifest.py`](../jvagent/action/manifest.py).
+Pattern-agnostic metadata block on an `Action` package descriptor. Declares `purpose`, `activates_on`, `terminates_when`, `latency_class`, `turn_lock`, `interrupt_phrases`, `expected_duration_seconds`, plus pattern-specific extensions. Read at package load via `Action.get_manifest()`. Consumed by Bridge for orchestration; informational for Cockpit / Rails. Source: [`jvagent/action/manifest.py`](../jvagent/action/manifest.py).
 
 ### Memory (node)
 Branchpoint node connecting an `Agent` to its `User` graph. One per agent. Source: `jvagent/memory/manager.py:18`.
@@ -134,7 +134,7 @@ The single jvspatial `Root` node. `App` is connected to `Root`.
 Markdown-first procedure (with optional Python tool script) the cockpit can load to instruct the model. Skills are discovered via `SkillCatalog` (`jvagent/action/cockpit/catalog/skill_catalog.py`). Distinct from `Action`s.
 
 ### `ShiftRecord`
-One entry in `BridgeState.gear_trace`. Emitted per `SHIFT` verb (including initial helm resolution where `from_helm=None`). Persisted on `Interaction.parameters["bridge_gear_trace"]`. Fields: `from_helm`, `to_helm`, `reason`, `ack_emitted`, `shift_index`, `at_monotonic`, `handoff_state`. Source: [`jvagent/action/helm/contracts.py`](../jvagent/action/helm/contracts.py).
+One entry in `BridgeState.gear_trace`. Emitted for the initial helm pick (`routing_source="initial"`), every `SHIFT` verb (`"helm_shift"`), every `DELEGATE` verb (`"helm_delegate"`), and every turn-lock auto-DELEGATE (`"turn_lock"`). Persisted as part of the `Interaction.parameters["bridge_observability"]` bundle. Fields: `from_helm`, `to_helm`, `reason`, `ack_emitted`, `shift_index`, `at_monotonic`, `handoff_state`, `routing_source`. Source: [`jvagent/action/helm/contracts.py`](../jvagent/action/helm/contracts.py).
 
 ### Specialist (Bridge)
 Not a helm — a rails `InteractAction` invoked via `DELEGATE(action=...)`. Lets Bridge yield cleanly to a deterministic IA for an in-progress workflow (interview, form, gated process). AccessControl gated by `tool:delegate:{action_name}`. See [`../docs/BRIDGE.md`](../docs/BRIDGE.md).
@@ -149,7 +149,7 @@ A structured plan/step node created by `task_creation_interact_action` and dispa
 A named callable wrapped with a JSON Schema for arguments, exposed to the cockpit LLM. Sources: `jvagent.tooling.tool.Tool`; built from `Action.get_tools()` for action tools, and from `cockpit/*_tools.py` for harness service tools.
 
 ### Turn-lock
-Manifest flag (`turn_lock: true`) declaring that an `InteractAction` owns the next turn end-to-end (e.g. interview, form, gated workflow). Bridge scans the recent interaction history via `find_turn_lock_owner()`; when a lock owner is mid-workflow, the next utterance auto-`DELEGATE`s to it unless the requesting helm has `can_interrupt=True`. Source: [`jvagent/action/bridge/turn_lock.py`](../jvagent/action/bridge/turn_lock.py).
+Manifest flag (`turn_lock: true`) declaring that an `InteractAction` owns the next turn end-to-end (e.g. interview, form, gated workflow). Bridge scans the recent interaction history via `find_turn_lock_owner()`; when a lock owner is mid-workflow, the next utterance is **always** auto-`DELEGATE`d to it — there is no helm-level escape. Lock-breaking lives in the lock-owning IA's own intent classifier (e.g. an interview's CANCELLATION intent reading `manifest.interrupt_phrases`). Source: [`jvagent/action/bridge/turn_lock.py`](../jvagent/action/bridge/turn_lock.py).
 
 ### Update mode
 The bootstrap intent for the next start: `run` (don't re-sync YAML), `merge` (non-destructive merge), or `source` (destructive sync). Stored on `App.update_mode` ([`app.py:74`](../jvagent/core/app.py)). CLI flags `--update --merge` / `--update --source` override per-process. See [`adr/0005`](adr/0005-app-yaml-agent-yaml-split.md).

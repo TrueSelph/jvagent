@@ -86,6 +86,82 @@ def test_agent_loader_emits_validation_warning(tmp_path, caplog):
     assert "actions[0].unexpected" in caplog.text
 
 
+def test_bridge_alone_validates_clean():
+    """Bridge installed without Cockpit produces no exclusion warning."""
+    from jvagent.core.agent_yaml_validator import validate_agent_yaml
+
+    payload = {
+        "agent": "jvagent/example_agent",
+        "actions": [{"action": "jvagent/bridge"}],
+    }
+    warnings = validate_agent_yaml(payload)
+    assert not any("mutually exclusive" in w.message for w in warnings)
+
+
+def test_cockpit_alone_validates_clean():
+    """Cockpit installed without Bridge produces no exclusion warning."""
+    from jvagent.core.agent_yaml_validator import validate_agent_yaml
+
+    payload = {
+        "agent": "jvagent/example_agent",
+        "actions": [{"action": "jvagent/cockpit"}],
+    }
+    warnings = validate_agent_yaml(payload)
+    assert not any("mutually exclusive" in w.message for w in warnings)
+
+
+def test_bridge_plus_cockpit_emits_exclusion_warning():
+    """Both installed together produces the exclusion warning."""
+    from jvagent.core.agent_yaml_validator import validate_agent_yaml
+
+    payload = {
+        "agent": "jvagent/example_agent",
+        "actions": [
+            {"action": "jvagent/bridge"},
+            {"action": "jvagent/cockpit"},
+        ],
+    }
+    warnings = validate_agent_yaml(payload)
+    exclusion = [w for w in warnings if "mutually exclusive" in w.message]
+    assert len(exclusion) == 1
+    assert "jvagent/bridge" in exclusion[0].message
+    assert "jvagent/cockpit" in exclusion[0].message
+    assert "PATTERNS.md" in exclusion[0].hint
+
+
+def test_exclusion_check_order_independent():
+    """Cockpit listed before Bridge still triggers the check."""
+    from jvagent.core.agent_yaml_validator import validate_agent_yaml
+
+    payload = {
+        "agent": "jvagent/example_agent",
+        "actions": [
+            {"action": "jvagent/cockpit"},
+            {"action": "jvagent/bridge"},
+        ],
+    }
+    warnings = validate_agent_yaml(payload)
+    assert any("mutually exclusive" in w.message for w in warnings)
+
+
+def test_exclusion_check_ignores_non_orchestrator_actions():
+    """Bridge with rails IAs and helms validates clean."""
+    from jvagent.core.agent_yaml_validator import validate_agent_yaml
+
+    payload = {
+        "agent": "jvagent/example_agent",
+        "actions": [
+            {"action": "jvagent/bridge"},
+            {"action": "jvagent/reflex_helm"},
+            {"action": "jvagent/reasoning_helm"},
+            {"action": "jvagent/persona"},
+            {"action": "jvagent/intro_interact_action"},
+        ],
+    }
+    warnings = validate_agent_yaml(payload)
+    assert not any("mutually exclusive" in w.message for w in warnings)
+
+
 def test_action_loader_scan_emits_validation_warning(tmp_path, caplog):
     from jvagent.action.loader import ActionLoader
     from jvagent.core.agent_yaml_validator import _reset_warning_cache_for_tests

@@ -24,7 +24,6 @@ package:
       - "persona publishes the rendered response"
     latency_class: quick
     turn_lock: false
-    can_interrupt: false
     expected_duration_seconds: 2.0
   dependencies:
     jvagent: ~0.0.1

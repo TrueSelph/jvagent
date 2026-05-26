@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from jvagent.action.bridge.state import BRIDGE_STATE_VISITOR_ATTR
-from jvagent.action.helm.contracts import EMIT, EXECUTE, ToolCall
+from jvagent.action.helm.contracts import CONTINUE, EMIT
 
 pytestmark = pytest.mark.asyncio
 
@@ -24,12 +24,12 @@ async def _force_timeout(visitor) -> None:
 async def test_safety_net_fires_when_no_emit_within_window(
     make_bridge, make_visitor, stub_helm, publish_log
 ):
-    """Helm runs EXECUTE (no EMIT) past the deadline → safety-net ack publishes."""
+    """Helm runs CONTINUE (no EMIT) past the deadline → safety-net ack publishes."""
     helm = stub_helm(
         name="A",
         script=[
-            # First visit: EXECUTE (no EMIT), state persists.
-            EXECUTE(tool_calls=[ToolCall(name="noop", arguments={})]),
+            # First visit: CONTINUE (no EMIT), state persists.
+            CONTINUE(),
             # Second visit: EMIT (after deadline backdate).
             EMIT(text="done", finalize=True),
         ],
@@ -87,8 +87,8 @@ async def test_safety_net_fires_at_most_once_per_turn(
     helm = stub_helm(
         name="A",
         script=[
-            EXECUTE(tool_calls=[ToolCall(name="noop", arguments={})]),
-            EXECUTE(tool_calls=[ToolCall(name="noop2", arguments={})]),
+            CONTINUE(),
+            CONTINUE(),
             EMIT(text="done", finalize=True),
         ],
     )
@@ -100,9 +100,9 @@ async def test_safety_net_fires_at_most_once_per_turn(
     )
     visitor = make_visitor()
 
-    await bridge.execute(visitor)  # EXECUTE 1
+    await bridge.execute(visitor)  # CONTINUE 1
     await _force_timeout(visitor)
-    await bridge.execute(visitor)  # safety net fires here, then EXECUTE 2
+    await bridge.execute(visitor)  # safety net fires here, then CONTINUE 2
 
     # Reset last_emit_at to simulate "no emit yet" between visits even though
     # the safety net set it. The helm state should still prevent re-firing.
@@ -123,7 +123,7 @@ async def test_safety_net_skipped_when_text_blank(
     helm = stub_helm(
         name="A",
         script=[
-            EXECUTE(tool_calls=[ToolCall(name="noop", arguments={})]),
+            CONTINUE(),
             EMIT(text="done", finalize=True),
         ],
     )

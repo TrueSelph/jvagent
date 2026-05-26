@@ -26,13 +26,13 @@ POST /agents/{agent_id}/interact
         │
         └─ Each walker visit: helm.step(visitor, bridge_state)
             │
-            ├─ EMIT(finalize=True)  → publish, clear state, end turn
-            ├─ EMIT(finalize=False) → publish, re-enqueue helm
-            ├─ EXECUTE(tool_calls)  → dispatch tools via Bridge registry, re-enqueue
-            ├─ CONTINUE             → re-enqueue helm (helm dispatched its own tools)
-            ├─ SHIFT(target)        → AC-check, ack-on-shift, switch helm, re-enqueue
-            ├─ DELEGATE(action)     → AC-check, run rails IA inline, re-enqueue
-            └─ YIELD                → clear state, let walker continue weight chain
+            ├─ EMIT(finalize=True)            → publish, clear state, end turn
+            ├─ EMIT(finalize=False)           → publish, re-enqueue helm
+            ├─ CONTINUE                       → re-enqueue helm (helm dispatched its own tools)
+            ├─ SHIFT(target)                  → AC-check, ack-on-shift, switch helm, re-enqueue
+            ├─ DELEGATE(action, follow_up=F)  → AC-check, run rails IA inline, persona-finalize, end turn
+            ├─ DELEGATE(action, follow_up=T)  → AC-check, run rails IA inline, re-enqueue (chain mode)
+            └─ YIELD                          → clear state, let walker continue weight chain
 ```
 
 Bridge invariants:
@@ -56,33 +56,37 @@ A helm is a `BaseHelm` subclass — an `Action` that implements `step()` and dec
 | **PersonaHelm** | `jvagent.action.helm.persona.PersonaHelm` | `fast` | Wraps `PersonaAction` to polish final output. Targeted via `SHIFT(target=PersonaHelm, handoff_state={...})` from upstream helms. |
 | **Specialist** | any rails `InteractAction` | (manifest) | Not a helm — invoked via `DELEGATE(action=...)`. Lets Bridge yield cleanly to a deterministic rails IA for an in-progress workflow (e.g. interview, form). |
 
-### HelmStepResult verb set (v0.1)
+### HelmStepResult verb set (v0.2)
 
 ```
 EMIT        publish text; finalize ends turn, non-finalize re-enqueues
-EXECUTE     tool calls dispatched by Bridge; results persisted; re-enqueue
 CONTINUE    re-enqueue with no Bridge-side state mutation (helm dispatched its own tools)
 SHIFT       switch to target helm; ack-on-shift if target is deliberate/long
-DELEGATE    resolve rails InteractAction, run inline, re-enqueue
+DELEGATE    resolve rails InteractAction, run inline; follow_up=False ends turn,
+            follow_up=True re-enqueues for the next IA in a chain
 YIELD       exit Bridge cleanly; walker continues weight chain
 ```
 
-Verb semantics live in [`jvagent/action/helm/contracts.py`](../jvagent/action/helm/contracts.py). The set is additive across minor revisions per ADR-0007 — `CONTINUE` joined at v0.1.
+Verb semantics live in [`jvagent/action/helm/contracts.py`](../jvagent/action/helm/contracts.py).
+
+Revision history:
+- **v0** — original set: `EMIT | EXECUTE | SHIFT | DELEGATE | YIELD`.
+- **v0.1** — additive: `CONTINUE` for helms that dispatch their own tools; `DELEGATE.follow_up` for multi-IA chains.
+- **v0.2** — breaking cleanup: `EXECUTE` removed (no helm used it); `SHIFT.interrupt` removed (Bridge always auto-DELEGATEs on turn-lock; lock-breaking lives in the IA's intent classifier).
 
 ### Shift verbs and turn-lock
 
-- Every `SHIFT` records a `ShiftRecord` on `BridgeState.gear_trace`.
+- Every `SHIFT`, `DELEGATE`, turn-lock auto-delegate, and initial helm pick records a `ShiftRecord` on `BridgeState.gear_trace`.
 - A `SHIFT` to a helm whose `manifest.latency_class` is `deliberate` or `long` emits a `transient_ack` text via the response bus (default: "Working on it…") before the target helm gets its first visit.
-- Turn-lock: when an action with `manifest.turn_lock=True` is mid-workflow in the recent interaction history, Bridge auto-`DELEGATE`s the next utterance to that owner unless the helm requesting the SHIFT has `manifest.can_interrupt=True`.
+- Turn-lock: when an action with `manifest.turn_lock=True` is mid-workflow in the recent interaction history, Bridge **always** auto-`DELEGATE`s the next utterance to that owner — no helm-level escape. Lock-breaking lives in the rails IA's own intent classifier (e.g. an interview's CANCELLATION intent reading `manifest.interrupt_phrases`).
 
 ## Pattern-agnostic primitives
 
 These primitives live at harness level and are usable by other patterns:
 
-- **Manifest schema** ([`jvagent/action/manifest.py`](../jvagent/action/manifest.py)) — `latency_class`, `turn_lock`, `can_interrupt`, `pattern_compatibility` fields on any `Action` package. Exposed via `Action.get_manifest()`.
-- **HELM_SHIFT observability event** ([`docs/logging.md`](logging.md)) — emitted per shift, stamped on `Interaction.observability_metrics`.
-- **Gear trace persistence** — `Interaction.parameters["bridge_gear_trace"]` records every shift for the turn.
-- **Per-helm timings** — `Interaction.parameters["bridge_helm_timings"]` aggregates wall-clock per helm.
+- **Manifest schema** ([`jvagent/action/manifest.py`](../jvagent/action/manifest.py)) — `latency_class`, `turn_lock`, `interrupt_phrases`, `pattern_compatibility` fields on any `Action` package. Exposed via `Action.get_manifest()`.
+- **`helm_shift` observability event** ([`docs/logging.md`](logging.md)) — appended to `Interaction.observability_metrics` for every helm transition with a `routing_source` label (`initial` | `turn_lock` | `helm_shift` | `helm_delegate`).
+- **Bridge observability bundle** — `Interaction.parameters["bridge_observability"]` carries `gear_trace`, `helm_timings_seconds`, `helm_step_counts`, `shift_count`, `turn_started_at`, `last_emit_at` for the turn.
 
 ## Plugging Into the Interact Pipeline
 
@@ -217,9 +221,10 @@ ReasoningHelm SHIFTs to PersonaHelm at the end of a deliberate turn when the ups
 ### Gotchas
 
 - `enable_canned_response` MUST stay `false` on `ReasoningHelm` in a Bridge agent. Reflex owns the user-facing canned lead-in / ack-on-shift — duplicating it from the reasoning router produces double lead-ins.
-- ReasoningHelm and `CockpitInteractAction` cannot coexist on the same agent. The Bridge composition fully replaces Cockpit.
+- ReasoningHelm and `CockpitInteractAction` cannot coexist on the same agent. The Bridge composition fully replaces Cockpit. `agent_yaml_validator` warns when both are installed.
 - ReflexHelm's classifier uses temperature `0.0` and a small `max_tokens` (256) by design. Don't raise these — the helm is meant to be a deterministic gate, not a generator.
 - Recap / recall questions ALWAYS SHIFT from ReflexHelm to ReasoningHelm regardless of perceived history. The reflex prompt enforces this explicitly.
+- **Locale-static strings.** A few Bridge / helm attributes are STATIC strings that don't adapt to the user's language: `safety_net_ack_text` and `denied_response_text` on Bridge, and `fallback_text` on ReflexHelm and PersonaHelm. The Bridge `safety_net_ack_text` defaults to `"…"` (universal) so multilingual deployments inherit a safe placeholder; the rest default to English. Override per agent.yaml for single-language deployments, or use a channel adapter that localises before publish. Dynamic strings (Reflex's `transient_ack`, persona-rendered EMITs) DO adapt — they go through model calls that read `detected_language`.
 
 ## Module Structure
 
@@ -228,7 +233,7 @@ jvagent/action/bridge/                  # Orchestrator
   ├─ bridge_interact_action.py          # BridgeInteractAction (weight -200)
   ├─ state.py                           # BridgeState dataclass
   ├─ access.py                          # tool:helm:* and tool:delegate:* AC
-  ├─ turn_lock.py                       # find_turn_lock_owner, is_interrupt_allowed
+  ├─ turn_lock.py                       # find_turn_lock_owner
   └─ info.yaml
 
 jvagent/action/helm/                    # Helm primitives + concrete helms
@@ -293,7 +298,6 @@ package:
   archetype: MyHelm
   manifest:
     latency_class: fast
-    can_interrupt: false
     turn_lock: false
     pattern_compatibility:
       - bridge

@@ -1,6 +1,9 @@
 """HTTP endpoints for ``ReasoningHelm``.
 
-No endpoints at C — observability routes (per-helm timing, gear-trace
-queries) arrive at milestone I. This module exists so the package follows
-the four-file action layout and ``from . import endpoints`` does not fail.
+No HTTP endpoints needed: per-helm timing, gear-trace, and engine
+observability are exposed via the standard ``GET /logs/agents/{id}``
+endpoint reading ``Interaction.observability_metrics`` and
+``Interaction.parameters['bridge_observability']``. This module exists
+so the package follows the four-file action layout and
+``from . import endpoints`` does not fail.
 """

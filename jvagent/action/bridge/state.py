@@ -53,7 +53,7 @@ class BridgeState:
     # Keyed by helm_name; written by Bridge's step machine (BRIDGE-ROADMAP §I).
     helm_timings_seconds: Dict[str, float] = field(default_factory=dict)
     # Per-helm step counts. Useful for spotting helms that loop many
-    # times via CONTINUE/EXECUTE before producing an EMIT.
+    # times via CONTINUE before producing an EMIT.
     helm_step_counts: Dict[str, int] = field(default_factory=dict)
 
     def record_shift(
@@ -65,10 +65,14 @@ class BridgeState:
         ack_emitted: bool,
         at_monotonic: float,
         handoff_state: Optional[Dict[str, Any]] = None,
+        routing_source: Optional[str] = None,
     ) -> ShiftRecord:
         """Append a ``ShiftRecord`` and increment ``shift_count``.
 
         Returns the appended record so callers can use its ``shift_index``.
+        ``routing_source`` should be one of the labels enumerated on
+        :class:`ShiftRecord` so debugging the IA-selection cascade is
+        possible from observability data alone.
         """
         rec = ShiftRecord(
             from_helm=from_helm,
@@ -78,6 +82,7 @@ class BridgeState:
             shift_index=self.shift_count,
             at_monotonic=at_monotonic,
             handoff_state=handoff_state,
+            routing_source=routing_source,
         )
         self.gear_trace.append(rec)
         self.shift_count += 1

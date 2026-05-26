@@ -69,7 +69,6 @@ from jvagent.action.helm.reasoning.delivery.helpers import (
     deliver_conversational,
     deliver_final_response,
 )
-from jvagent.action.helm.reasoning.delivery.persona_delivery import deliver_via_persona
 from jvagent.action.helm.reasoning.engine import CockpitEngine
 from jvagent.action.helm.reasoning.registry.access import (
     filter_routed_interact_actions_by_access,
@@ -81,7 +80,6 @@ from jvagent.action.helm.reasoning.session import (
     CockpitSession,
     clear_session,
     get_session,
-    get_session_optional,
 )
 
 if TYPE_CHECKING:
@@ -139,7 +137,6 @@ class ReasoningHelm(BaseHelm):
         "when a peer SHIFTs into this helm.",
     )
     can_emit_directly: bool = attribute(default=True)
-    can_interrupt: bool = attribute(default=False)
 
     def _ensure_interaction(self, visitor: "InteractWalker") -> bool:
         """Lift of ``InteractAction._ensure_interaction``.
@@ -517,13 +514,6 @@ class ReasoningHelm(BaseHelm):
         visitor._skill_state.setdefault("action", self)
 
         session = get_session(visitor)
-
-        # Finalize-pending revisit (IA-only mode) — DEAD CODE at C-6:
-        # ``ia_finalize_pending`` is never set because the IA-only branch in
-        # ``_phase_route_and_setup`` was replaced with inline persona
-        # finalize. Kept here as a no-op guard for forward compatibility:
-        # when IA delegation is wired (post-C-7) via the DELEGATE verb,
-        # this block can be revived.
 
         # Stale-state guard: if the engine is from a different interaction,
         # reset the session so routing runs on the fresh user message.
@@ -924,23 +914,12 @@ class ReasoningHelm(BaseHelm):
             return
 
         # Terminal state: final_response, timeout, budget_exhausted, stuck.
-        # Pending IAs are already in the walker queue from Phase 1 curate; the
-        # walker visits them automatically after the cockpit revisit chain ends.
-        # ``session.pending_interact_actions`` is never populated at C-6
-        # (the "engine + IAs" routing branch in _phase_route_and_setup does
-        # not queue them). Kept here as a guarded no-op for forward
-        # compatibility — when IA tail dispatch is wired via DELEGATE this
-        # block can return DELEGATE verbs instead of finalising.
-        try:
-            pending_ias = list(getattr(session, "pending_interact_actions", []))
-        except Exception:
-            pending_ias = []
-        if pending_ias:
-            logger.info(
-                "ReasoningHelm: engine done with pending IAs=%s; tail "
-                "dispatch deferred at C-6",
-                [a.__class__.__name__ for a in pending_ias],
-            )
+        # IA tail dispatch (when routing returned interact_actions) is
+        # handled by :meth:`step` reading ``helm_states[helm_name]["pending_ias"]``
+        # and emitting a DELEGATE chain. We don't need to inspect
+        # ``session.pending_interact_actions`` here — that field is a
+        # cockpit-duplication artifact in :class:`CockpitSession` that
+        # Bridge code never populates.
         session.reset()
         interaction.set_to_executed()
         self._step_outcome = "yield"

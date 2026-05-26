@@ -21,10 +21,8 @@ from jvagent.action.helm.contracts import (
     CONTINUE,
     DELEGATE,
     EMIT,
-    EXECUTE,
     SHIFT,
     YIELD,
-    ToolCall,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -87,29 +85,6 @@ async def test_emit_non_finalize_publishes_and_reenqueues(
     state = getattr(visitor, BRIDGE_STATE_VISITOR_ATTR)
     assert state.finalized is False
     assert state.last_emit_at is not None
-
-
-# ---------------------------------------------------------------------------
-# EXECUTE
-# ---------------------------------------------------------------------------
-
-
-async def test_execute_records_tool_calls_and_reenqueues(
-    make_bridge, make_visitor, stub_helm
-):
-    call = ToolCall(name="memory_set", arguments={"key": "k", "value": "v"})
-    helm = stub_helm(name="StubHelm", script=[EXECUTE(tool_calls=[call])])
-    bridge = make_bridge(helms={"StubHelm": helm})
-    visitor = make_visitor()
-
-    await bridge.execute(visitor)
-
-    visitor.prepend.assert_awaited_once_with([bridge])
-    state = getattr(visitor, BRIDGE_STATE_VISITOR_ATTR)
-    pending = state.helm_states["StubHelm"]["_pending_tool_calls"]
-    assert pending == [
-        {"name": "memory_set", "arguments": {"key": "k", "value": "v"}, "call_id": None}
-    ]
 
 
 # ---------------------------------------------------------------------------

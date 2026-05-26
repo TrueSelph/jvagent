@@ -65,10 +65,12 @@ class PersonaHelm(BaseHelm):
     )
     latency_class: str = attribute(default="quick")
     can_emit_directly: bool = attribute(default=True)
-    can_interrupt: bool = attribute(default=False)
 
     history_limit: int = attribute(default=3)
     use_history: bool = attribute(default=True)
+    # Last-resort text when PersonaAction is unavailable or raises. STATIC
+    # English default — fires on rare error paths only. Operators
+    # localising per language should override in ``agent.yaml.context:``.
     fallback_text: str = attribute(
         default="(Persona delivery unavailable — please try again.)"
     )

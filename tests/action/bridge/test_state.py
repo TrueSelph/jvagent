@@ -13,7 +13,7 @@ from jvagent.action.bridge.state import (
     BRIDGE_STATE_VISITOR_ATTR,
     BridgeState,
 )
-from jvagent.action.helm.contracts import EMIT, EXECUTE, ToolCall
+from jvagent.action.helm.contracts import EMIT
 
 pytestmark = pytest.mark.asyncio
 
@@ -81,27 +81,6 @@ async def test_state_cleared_on_final_emit(make_bridge, make_visitor, stub_helm)
     assert hasattr(visitor, BRIDGE_STATE_VISITOR_ATTR)
     await bridge.execute(visitor)
     assert not hasattr(visitor, BRIDGE_STATE_VISITOR_ATTR)
-
-
-async def test_execute_writes_pending_tool_calls_into_helm_slot(
-    make_bridge, make_visitor, stub_helm
-):
-    """EXECUTE persists pending tool calls into ``helm_states[helm_name]``."""
-    helm = stub_helm(
-        name="A",
-        script=[
-            EXECUTE(tool_calls=[ToolCall(name="memory_set", arguments={"k": "v"})]),
-        ],
-    )
-    bridge = make_bridge(helms={"A": helm}, default_helm="A")
-    visitor = make_visitor()
-
-    await bridge.execute(visitor)
-
-    state = getattr(visitor, BRIDGE_STATE_VISITOR_ATTR)
-    assert "A" in state.helm_states
-    pending = state.helm_states["A"]["_pending_tool_calls"]
-    assert pending and pending[0]["name"] == "memory_set"
 
 
 async def test_default_helm_falls_back_to_first_in_helms(

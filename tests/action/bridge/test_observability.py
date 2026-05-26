@@ -43,6 +43,7 @@ async def test_shift_record_to_dict_serialises_all_fields():
         shift_index=3,
         at_monotonic=12.5,
         handoff_state={"topic": "weather"},
+        routing_source="helm_shift",
     )
     d = rec.to_dict()
     assert d == {
@@ -53,7 +54,22 @@ async def test_shift_record_to_dict_serialises_all_fields():
         "shift_index": 3,
         "at_monotonic": 12.5,
         "handoff_state": {"topic": "weather"},
+        "routing_source": "helm_shift",
     }
+
+
+async def test_shift_record_routing_source_defaults_to_none():
+    """``routing_source`` is optional — None when unset (backwards-compat)."""
+    rec = ShiftRecord(
+        from_helm=None,
+        to_helm="A",
+        reason="legacy",
+        ack_emitted=False,
+        shift_index=0,
+        at_monotonic=0.0,
+    )
+    assert rec.routing_source is None
+    assert rec.to_dict()["routing_source"] is None
 
 
 async def test_shift_record_to_dict_none_handoff():

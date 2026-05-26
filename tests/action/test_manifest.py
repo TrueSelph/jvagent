@@ -20,7 +20,6 @@ import pytest
 from jvagent.action.loader.metadata import ActionMetadata
 from jvagent.action.manifest import (
     ACK_ELIGIBLE_LATENCY_CLASSES,
-    DEFAULT_CAN_INTERRUPT,
     DEFAULT_LATENCY_CLASS,
     DEFAULT_TURN_LOCK,
     VALID_LATENCY_CLASSES,
@@ -40,7 +39,6 @@ def test_defaults_when_payload_is_none():
     assert m.terminates_when == []
     assert m.latency_class == DEFAULT_LATENCY_CLASS
     assert m.turn_lock is DEFAULT_TURN_LOCK
-    assert m.can_interrupt is DEFAULT_CAN_INTERRUPT
     assert m.interrupt_phrases == []
     assert m.expected_duration_seconds is None
 
@@ -59,7 +57,6 @@ def test_full_payload_parses_cleanly():
         "turn_lock": True,
         "interrupt_phrases": ["stop", "cancel"],
         "expected_duration_seconds": 180.0,
-        "can_interrupt": False,
     }
     m = Manifest.from_payload(payload)
     assert m.purpose == "Conduct a feedback interview."
@@ -142,11 +139,6 @@ def test_string_list_must_be_list_lenient():
 def test_turn_lock_must_be_bool_lenient():
     m = Manifest.from_payload({"turn_lock": "yes"})
     assert m.turn_lock is DEFAULT_TURN_LOCK
-
-
-def test_can_interrupt_must_be_bool_strict():
-    with pytest.raises(ManifestValidationError):
-        Manifest.from_payload({"can_interrupt": "true"}, strict=True)
 
 
 def test_expected_duration_accepts_int_and_float():
@@ -234,7 +226,6 @@ def test_to_dict_round_trip():
         "turn_lock": True,
         "interrupt_phrases": ["stop"],
         "expected_duration_seconds": 60.0,
-        "can_interrupt": True,
     }
     m = Manifest.from_payload(payload)
     assert Manifest.from_payload(m.to_dict()) == m

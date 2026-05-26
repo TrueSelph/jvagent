@@ -11,13 +11,14 @@ not installed together; PATTERNS.md enforces this). Its job is to:
 
    - ``EMIT(finalize=True)``  → publish; clear state; end turn.
    - ``EMIT(finalize=False)`` → publish; re-enqueue current helm.
-   - ``EXECUTE``              → record state; re-enqueue current helm.
-     (Real tool dispatch arrives in later milestones; B is the verb scaffold.)
+   - ``CONTINUE``             → re-enqueue current helm with no state mutation
+     (helm dispatched its own tools internally).
    - ``SHIFT``                → AC-check ``tool:helm:{target}``; record
      ``ShiftRecord``; emit ack-on-shift when target is deliberate/long;
      decrement shift budget; re-enqueue.
    - ``DELEGATE``             → AC-check ``tool:delegate:{action}``; resolve
-     and run the rails ``InteractAction`` inline; re-enqueue.
+     and run the rails ``InteractAction`` inline; finalise (default) or
+     re-enqueue (when ``follow_up=True``).
    - ``YIELD``                → clear state and let the walker continue.
 
 4. Enforce a **shift budget** (default 4 SHIFTs per turn) and a **first-emit
@@ -48,16 +49,12 @@ from jvagent.action.bridge.state import (
     DEFAULT_SHIFT_BUDGET,
     BridgeState,
 )
-from jvagent.action.bridge.turn_lock import (
-    find_turn_lock_owner,
-    is_interrupt_allowed,
-)
+from jvagent.action.bridge.turn_lock import find_turn_lock_owner
 from jvagent.action.helm.base import BaseHelm
 from jvagent.action.helm.contracts import (
     CONTINUE,
     DELEGATE,
     EMIT,
-    EXECUTE,
     SHIFT,
     YIELD,
     HelmStepResult,
@@ -137,12 +134,26 @@ class BridgeInteractAction(InteractAction):
         description="If no EMIT by this deadline, fire safety-net ack once (default 800).",
     )
     safety_net_ack_text: str = attribute(
-        default="Working on it…",
-        description="Text published when the first-emit timeout fires.",
+        default="…",
+        description=(
+            "Text published when the first-emit timeout fires. STATIC string "
+            "— does NOT adapt to the user's language. Default is the "
+            "universal ellipsis so multilingual deployments work without "
+            "operator config. Override in agent.yaml for a single-language "
+            'deployment (e.g. "Working on it…" for English-only). Set to '
+            "an empty string to disable the safety-net publish."
+        ),
     )
     denied_response_text: str = attribute(
         default="Sorry, I can't do that here.",
-        description="Text published when the safe-fallback path activates.",
+        description=(
+            "Text published when the safe-fallback path activates (shift "
+            "budget exhausted or AccessControl denied every reachable helm). "
+            "STATIC string — does NOT adapt to the user's language. The "
+            "default is English; override in agent.yaml for non-English "
+            "deployments. This fires on rare error paths only — channel "
+            "adapters that localise before publish are an alternative."
+        ),
     )
 
     # ------------------------------------------------------------------
@@ -382,6 +393,7 @@ class BridgeInteractAction(InteractAction):
                 reason="bridge:initial",
                 ack_emitted=False,
                 at_monotonic=time.monotonic(),
+                routing_source="initial",
             )
             self._record_helm_shift_event(visitor, rec)
         elif state.current_helm not in resolved:
@@ -401,26 +413,18 @@ class BridgeInteractAction(InteractAction):
 
         # Turn-lock detection (BRIDGE-ROADMAP §F). When a turn-locked
         # action is in flight (e.g. a multi-turn interview), ALWAYS
-        # route directly to the lock owner via DELEGATE rather than
-        # letting any helm run a parallel model loop on the same turn.
-        # The lock owner's manifest declares ``turn_lock: true`` and
-        # its action class name is captured by the detector.
+        # auto-DELEGATE to the lock owner rather than letting any helm
+        # run a parallel model loop on the same turn. The lock owner's
+        # manifest declares ``turn_lock: true``; its action class name
+        # is captured by the detector.
         #
-        # ``can_interrupt`` previously gated this check (helms with
-        # ``can_interrupt: true`` ran anyway, with the option to emit
-        # ``SHIFT(interrupt=True)``). Live testing exposed the
-        # mis-design: Reflex, with can_interrupt=True, intercepted
-        # "Yep" confirmations during interview REVIEW state and
-        # EMITted "Ok!" instead of letting the interview finalise.
-        # Reflex doesn't know about active locks — it can't decide
-        # whether a one-word ack continues the lock or breaks it.
-        #
-        # Better contract: ALWAYS auto-DELEGATE when a lock is active.
-        # Interrupt semantics live in the rails IA's own intent
-        # classifier (e.g. InterviewInteractAction's CANCELLATION
-        # intent handles "stop"/"cancel"/"quit" / interrupt_phrases).
-        # ``can_interrupt`` remains on the helm for the separate
-        # SHIFT(interrupt=True) mechanism inside helm.step().
+        # There is no helm-level "interrupt the lock" mechanism — that
+        # was vestigial v0.1 surface and was removed in v0.2. Helms
+        # don't know about active locks, so they can't reliably decide
+        # whether a fragment continues the lock or breaks it. Lock-
+        # breaking, when needed, lives in the IA's own intent
+        # classifier (e.g. ``InterviewInteractAction`` reading
+        # ``manifest.interrupt_phrases`` to detect CANCELLATION).
         lock_owner = await find_turn_lock_owner(visitor)
         if lock_owner is not None and lock_owner.action_name != helm.helm_name():
             logger.info(
@@ -465,7 +469,7 @@ class BridgeInteractAction(InteractAction):
 
     @staticmethod
     def _is_valid_verb(result: Any) -> bool:
-        return isinstance(result, (EMIT, EXECUTE, CONTINUE, SHIFT, DELEGATE, YIELD))
+        return isinstance(result, (EMIT, CONTINUE, SHIFT, DELEGATE, YIELD))
 
     async def _dispatch(
         self,
@@ -477,9 +481,6 @@ class BridgeInteractAction(InteractAction):
     ) -> None:
         if isinstance(verb, EMIT):
             await self._handle_emit(visitor, state, verb)
-            return
-        if isinstance(verb, EXECUTE):
-            await self._handle_execute(visitor, state, current_helm, verb)
             return
         if isinstance(verb, CONTINUE):
             await self._handle_continue(visitor, state, verb)
@@ -504,12 +505,25 @@ class BridgeInteractAction(InteractAction):
         state: BridgeState,
         verb: EMIT,
     ) -> None:
-        await self.publish(
-            visitor=visitor,
-            content=verb.text,
-            channel=verb.channel,
-            metadata=verb.metadata or None,
-        )
+        # On a terminal EMIT, check whether any always_execute IA
+        # (intro, handoff, etc.) has deposited an unexecuted directive
+        # this turn. If so, route the helm's draft text through
+        # PersonaAction so the directives compose with the helm's text
+        # into one cohesive response. Without this hook the directive
+        # sits unrendered (``executed=false``) and the user gets a bare
+        # helm-voice response.
+        handled_via_persona = False
+        if verb.finalize:
+            handled_via_persona = await self._publish_emit_via_persona_if_directives(
+                visitor, state, verb
+            )
+        if not handled_via_persona:
+            await self.publish(
+                visitor=visitor,
+                content=verb.text,
+                channel=verb.channel,
+                metadata=verb.metadata or None,
+            )
         state.last_emit_at = time.monotonic()
         if verb.finalize:
             state.finalized = True
@@ -518,30 +532,84 @@ class BridgeInteractAction(InteractAction):
         # Partial emit — same helm continues on next visit.
         await visitor.prepend([self])
 
-    # -- EXECUTE -------------------------------------------------------
-
-    async def _handle_execute(
+    async def _publish_emit_via_persona_if_directives(
         self,
         visitor: "InteractWalker",
         state: BridgeState,
-        current_helm: BaseHelm,
-        verb: EXECUTE,
-    ) -> None:
-        # Real tool dispatch is wired in later milestones. At B, Bridge
-        # records the request into helm-scoped state so the helm can observe
-        # that the verb was accepted and re-enqueues itself for continuation.
-        slot = state.helm_states.setdefault(current_helm.helm_name(), {})
-        if isinstance(slot, dict):
-            history = slot.setdefault("_pending_tool_calls", [])
-            history.extend(
-                {
-                    "name": tc.name,
-                    "arguments": dict(tc.arguments),
-                    "call_id": tc.call_id,
-                }
-                for tc in verb.tool_calls
+        verb: EMIT,
+    ) -> bool:
+        """Route a terminal helm EMIT through PersonaAction when pending
+        IA directives are unrendered.
+
+        Returns True iff persona handled the publish (caller skips its
+        own ``self.publish``). False when no directives are pending, no
+        PersonaAction is installed, or persona fails — caller falls
+        back to direct publish.
+
+        Always_execute IAs (intro, handoff) often deposit directives
+        expecting a downstream persona render. In Bridge composition
+        there is no walker-driven persona pass after Bridge yields,
+        so without this hook those directives go unrendered.
+        """
+        interaction = getattr(visitor, "interaction", None)
+        if interaction is None:
+            return False
+        directives = getattr(interaction, "directives", None) or []
+        if not directives:
+            return False
+
+        # Only fire when at least one directive is unexecuted. Persona
+        # marks directives executed when it consumes them; without this
+        # gate we'd re-render on subsequent turns that reuse the same
+        # interaction view.
+        pending = False
+        for d in directives:
+            if isinstance(d, dict) and not d.get("executed", False):
+                pending = True
+                break
+        if not pending:
+            return False
+
+        # Guard against double-render within a single turn (e.g. helm
+        # emits finalize=False then later finalize=True; we want one
+        # persona pass, not two).
+        bucket = state.helm_states.setdefault("__bridge__", {})
+        if isinstance(bucket, dict) and bucket.get("directives_rendered"):
+            return False
+
+        persona: Any = None
+        try:
+            persona = await self.get_action("PersonaAction")
+        except Exception:
+            persona = None
+        if persona is None:
+            logger.debug(
+                "bridge: pending directives but no PersonaAction installed; "
+                "publishing helm EMIT text directly (directives unrendered)"
             )
-        await visitor.prepend([self])
+            return False
+
+        # Inject the helm's draft as a directive so persona composes it
+        # alongside the IA directives. Mirrors PersonaHelm's pattern.
+        text = (verb.text or "").strip()
+        if text:
+            try:
+                await visitor.add_directive(f"Tell the user: {text}")
+            except Exception as exc:
+                logger.debug("bridge: failed to add helm draft directive: %s", exc)
+
+        try:
+            await persona.respond(interaction, visitor=visitor)
+        except Exception as exc:
+            logger.warning(
+                "bridge: persona.respond raised during EMIT directive merge: %s",
+                exc,
+            )
+            return False
+
+        if isinstance(bucket, dict):
+            bucket["directives_rendered"] = True
+        return True
 
     # -- CONTINUE ------------------------------------------------------
 
@@ -587,19 +655,6 @@ class BridgeInteractAction(InteractAction):
             await self._safe_fallback(visitor, state)
             return
 
-        # Interrupt gate (BRIDGE-ROADMAP §F): ``SHIFT(interrupt=True)`` is
-        # only honoured for helms whose ``can_interrupt`` flag is True.
-        # When a helm without the flag emits ``interrupt=True``, treat it
-        # as a normal SHIFT (drop the interrupt bit) and log so operators
-        # can tighten their helm config.
-        if verb.interrupt and not is_interrupt_allowed(current_helm):
-            logger.warning(
-                "bridge: SHIFT(interrupt=True) from helm %r denied — "
-                "can_interrupt is False on that helm; downgrading to "
-                "non-interrupt SHIFT",
-                current_helm.helm_name(),
-            )
-
         # AccessControl gate.
         try:
             agent = await self.get_agent()
@@ -640,6 +695,7 @@ class BridgeInteractAction(InteractAction):
             ack_emitted=ack_emitted,
             at_monotonic=time.monotonic(),
             handoff_state=verb.handoff_state,
+            routing_source="helm_shift",
         )
         self._record_helm_shift_event(visitor, rec)
         state.shift_budget_remaining -= 1
@@ -687,13 +743,36 @@ class BridgeInteractAction(InteractAction):
 
         always_run: List[Any] = []
         my_class = self.__class__.__name__
+        user_id = getattr(visitor, "user_id", None)
+        channel = getattr(visitor, "channel", "default") or "default"
         for action in all_enabled:
             if not isinstance(action, InteractAction):
                 continue
             if action is self or action.__class__.__name__ == my_class:
                 continue
-            if bool(getattr(action, "always_execute", False)):
-                always_run.append(action)
+            if not bool(getattr(action, "always_execute", False)):
+                continue
+            # AccessControl filter: ``always_execute`` IAs are implicit
+            # delegations on every turn, so they're gated by the same
+            # ``tool:delegate:{class_name}`` resource as explicit DELEGATE
+            # targets. Denials drop the IA from the curated queue. Failing
+            # closed here matches the explicit DELEGATE / SHIFT paths so
+            # AC denials uniformly remove an action from the turn.
+            try:
+                await check_delegate_access(
+                    agent,
+                    action_name=action.__class__.__name__,
+                    user_id=user_id,
+                    channel=channel,
+                )
+            except BridgeAccessDenied as denied:
+                logger.info(
+                    "bridge: always_execute IA %r filtered by AC: %s",
+                    action.__class__.__name__,
+                    denied.resource,
+                )
+                continue
+            always_run.append(action)
 
         # Sort by weight ascending so always-execute IAs visit in the
         # walker's normal order.
@@ -732,6 +811,19 @@ class BridgeInteractAction(InteractAction):
             )
             await self._safe_fallback(visitor, state)
             return
+        # Record the auto-delegate in the gear trace so operators can
+        # see when Bridge bypassed helm dispatch in favour of the lock
+        # owner — labelled ``turn_lock`` so debugging the IA-selection
+        # cascade is possible from the trace alone.
+        rec = state.record_shift(
+            from_helm=state.current_helm,
+            to_helm=lock_owner.action_name,
+            reason=f"bridge:turn_lock:{lock_owner.action_name}",
+            ack_emitted=False,
+            at_monotonic=time.monotonic(),
+            routing_source="turn_lock",
+        )
+        self._record_helm_shift_event(visitor, rec)
         state.delegated_action = lock_owner.action_name
         try:
             await action.execute(visitor)
@@ -815,6 +907,19 @@ class BridgeInteractAction(InteractAction):
             await self._safe_fallback(visitor, state)
             return
 
+        # Record the delegation in the gear trace so operators can see
+        # which IA the calling helm picked — labelled ``helm_delegate``
+        # so the trace distinguishes a helm-initiated DELEGATE from
+        # turn-lock auto-DELEGATE (``turn_lock``).
+        rec = state.record_shift(
+            from_helm=state.current_helm,
+            to_helm=verb.interact_action,
+            reason=f"bridge:delegate:{verb.interact_action}",
+            ack_emitted=False,
+            at_monotonic=time.monotonic(),
+            routing_source="helm_delegate",
+        )
+        self._record_helm_shift_event(visitor, rec)
         state.delegated_action = verb.interact_action
         try:
             await target.execute(visitor)

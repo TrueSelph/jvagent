@@ -1,27 +1,26 @@
-"""Turn-lock detection + interrupt gating for Bridge (BRIDGE-ROADMAP §F).
+"""Turn-lock detection for Bridge (BRIDGE-ROADMAP §F).
 
 A *turn-locked* action is one whose :class:`Manifest` declares
 ``turn_lock: true`` — typically a multi-turn flow like an interview or
-form-fill. While a turn-locked action is in flight, other helms should
-defer to it (DELEGATE) rather than running their own model loop in
-parallel and confusing the user.
+form-fill. While a turn-locked action is in flight, Bridge auto-DELEGATEs
+to it rather than running any helm's model loop in parallel.
 
-Two surfaces:
+Single surface: :func:`find_turn_lock_owner` — given a visitor, return
+the ``InteractAction`` whose ``manifest.turn_lock`` is True AND which
+has been recorded as executing in the recent interaction history.
+``None`` when no lock is active.
 
-1. :func:`find_turn_lock_owner` — given a visitor, return the
-   ``InteractAction`` whose ``manifest.turn_lock`` is True AND which has
-   been recorded as executing in the recent interaction history. ``None``
-   when no lock is active.
-
-2. :func:`is_interrupt_allowed` — given a helm and a verb, return True
-   iff ``SHIFT(interrupt=True)`` should be honoured. Gated by the helm's
-   ``can_interrupt`` flag (set on ``BaseHelm`` subclasses + mirrored in
-   the helm's manifest).
+Lock-breaking is NOT a Bridge-level mechanic. When an active lock needs
+to be broken (user says "cancel" / "stop"), it's the rails IA's own
+intent classifier that detects the phrase and transitions to a
+terminal state — at which point ``is_actively_locking_turn`` returns
+False and Bridge stops auto-DELEGATEing on the next turn. Operators
+can hint the IA's classifier via ``manifest.interrupt_phrases``.
 
 State across turns (full lock-holder tracking with explicit release on
-``EMIT(finalize=True)``) is deferred — F-minimum ships the detection
-primitive and the interrupt gate so Bridge can enforce ADR-0007's
-``interrupt`` semantics today. Full state machine is a follow-up.
+``EMIT(finalize=True)``) is deferred — F ships the detection primitive
++ ``is_actively_locking_turn`` opt-in protocol on the IA. Full state
+machine is a follow-up.
 """
 
 from __future__ import annotations
@@ -33,7 +32,6 @@ from typing import TYPE_CHECKING, Any, List, Optional
 from jvagent.action.manifest import Manifest
 
 if TYPE_CHECKING:
-    from jvagent.action.helm.base import BaseHelm
     from jvagent.action.interact.interact_walker import InteractWalker
 
 logger = logging.getLogger(__name__)
@@ -162,18 +160,6 @@ async def find_turn_lock_owner(
     return None
 
 
-def is_interrupt_allowed(helm: "BaseHelm") -> bool:
-    """Return True iff the helm is permitted to emit ``SHIFT(interrupt=True)``.
-
-    Gated by the helm's ``can_interrupt`` attribute. The helm's manifest
-    is intentionally NOT consulted here — operators configure this via
-    the helm's BaseHelm field so it's overridable in ``agent.yaml``
-    without modifying the manifest block. Manifests describe; attributes
-    decide.
-    """
-    return bool(getattr(helm, "can_interrupt", False))
-
-
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -224,5 +210,4 @@ async def _index_actions_by_class_name(agent: Any) -> dict:
 __all__ = [
     "TurnLockOwner",
     "find_turn_lock_owner",
-    "is_interrupt_allowed",
 ]

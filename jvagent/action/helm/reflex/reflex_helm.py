@@ -17,9 +17,6 @@ Design choices vs ReasoningHelm:
 - **Peer awareness via manifests**: the system prompt is built per-call
   from every other :class:`BaseHelm` instance on the agent, reading each
   helm's ``get_manifest()`` (D). Same for rails ``InteractAction``s.
-- **can_interrupt: True**: Reflex may emit ``SHIFT(interrupt=True)`` to
-  break a turn-lock; e.g. when an interview is active and the user
-  says "stop".
 """
 
 from __future__ import annotations
@@ -38,10 +35,6 @@ from jvagent.action.helm.contracts import (
     SHIFT,
     YIELD,
     HelmStepResult,
-)
-from jvagent.action.helm.reflex.language import (
-    detect_short_utterance_language,
-    language_hint_line,
 )
 from jvagent.action.helm.reflex.prompts import (
     REFLEX_SYSTEM_PROMPT,
@@ -93,7 +86,6 @@ class ReflexHelm(BaseHelm):
     )
     latency_class: str = attribute(default="instant")
     can_emit_directly: bool = attribute(default=True)
-    can_interrupt: bool = attribute(default=True)
 
     model: str = attribute(default=DEFAULT_REFLEX_MODEL)
     model_action_type: str = attribute(default=DEFAULT_REFLEX_MODEL_ACTION)
@@ -140,30 +132,48 @@ class ReflexHelm(BaseHelm):
 
         system_prompt = self._build_system_prompt(peer_helms, peer_actions)
         history = await self._build_history(visitor)
-        # Deterministic short-utterance language detection. Reflex on
-        # gpt-4o-mini occasionally translates short English greetings
-        # ("Hi" → "Hola") despite the system-prompt directive to match
-        # the user's language. When the utterance is a known short
-        # phrase in the lexicon, we inject an explicit "Reply in <lang>"
-        # line into the user prompt. Empty string when no match —
-        # model falls back to its own inference (reliable on longer
-        # utterances).
-        detected_language = detect_short_utterance_language(utterance)
+        # Language detection is model-driven via the ``detected_language``
+        # field in the JSON output schema. The model commits to a language
+        # before generating user-facing content — a chain-of-thought
+        # technique that's materially more reliable on small models than
+        # a "match user's language" directive buried in prose. No lexicon
+        # is consulted; cf. PROMPTS.md.
         user_prompt = REFLEX_USER_PROMPT_TEMPLATE.format(
             history_section=history or "(no prior turns)",
             utterance=utterance,
-            language_hint=language_hint_line(detected_language),
         )
+
+        # Detect whether the immediately prior assistant turn was a
+        # question. If so, the current utterance is a continuation —
+        # even single-word affirmatives ("Yes", "No", "Sure") must SHIFT
+        # to ReasoningHelm so the question's flow continues, never EMIT
+        # back to the user. The substantive guard reads this signal so
+        # the model's misclassification is overridden defensively.
+        prior_was_question = await self._prior_assistant_ended_with_question(visitor)
 
         verb = await self._classify(system_prompt, user_prompt)
         if verb is None:
             return self._safe_default_shift("classification failed")
+
+        # Log the model's detected language for observability. This is
+        # the chain-of-thought field that the model commits to before
+        # generating user-facing content. Surfacing it makes language
+        # behavior debuggable without inspecting raw JSON. The value
+        # is informational — Bridge doesn't act on it.
+        detected = (verb.get("detected_language") or "").strip()
+        if detected:
+            logger.debug(
+                "ReflexHelm: detected_language=%r for utterance %r",
+                detected,
+                utterance[:80],
+            )
 
         # Validate the verb's target / interact_action against the
         # actually-installed peer helms / actions. If invalid, fall back.
         normalized = self._normalize_verb(
             verb,
             utterance=utterance,
+            prior_was_question=prior_was_question,
             peer_helm_names={h["name"] for h in peer_helms},
             peer_action_names={a["name"] for a in peer_actions},
         )
@@ -190,9 +200,8 @@ class ReflexHelm(BaseHelm):
     async def _collect_peer_helms(self, agent: Any) -> List[Dict[str, Any]]:
         """Enumerate other :class:`BaseHelm` instances on the agent.
 
-        Each entry is ``{"name", "purpose", "latency_class", "turn_lock",
-        "can_interrupt"}`` so the prompt builder can render lines without
-        re-reading manifests.
+        Each entry is ``{"name", "purpose", "latency_class", "turn_lock"}``
+        so the prompt builder can render lines without re-reading manifests.
         """
         if agent is None:
             return []
@@ -226,7 +235,6 @@ class ReflexHelm(BaseHelm):
                     "purpose": manifest.purpose,
                     "latency_class": manifest.latency_class,
                     "turn_lock": manifest.turn_lock,
-                    "can_interrupt": manifest.can_interrupt,
                 }
             )
         return peers
@@ -286,7 +294,6 @@ class ReflexHelm(BaseHelm):
                 purpose=p["purpose"],
                 latency_class=p["latency_class"],
                 turn_lock=p["turn_lock"],
-                can_interrupt=p["can_interrupt"],
             )
             for p in peer_helms
         ]
@@ -315,11 +322,19 @@ class ReflexHelm(BaseHelm):
         try:
             interaction = getattr(visitor, "interaction", None)
             excluded = getattr(interaction, "id", None) if interaction else None
+            # ``formatted=False`` is load-bearing here: the default
+            # ``formatted=True`` returns ``{"role", "content"}`` pairs
+            # (LM-ready chat messages), which would make every
+            # ``turn.get("utterance")`` / ``turn.get("response")`` below
+            # silently return None — Reflex would then see "(no prior
+            # turns)" in its prompt every call. Raw format yields the
+            # ``utterance`` / ``response`` keys we read.
             turns = await conversation.get_interaction_history(
                 limit=max(1, int(self.history_limit)),
                 excluded=excluded,
                 with_utterance=True,
                 with_response=True,
+                formatted=False,
             )
         except Exception as exc:
             logger.debug("ReflexHelm: history fetch failed: %s", exc)
@@ -335,6 +350,59 @@ class ReflexHelm(BaseHelm):
             if resp:
                 lines.append(f"AGENT: {resp}")
         return "\n".join(lines)
+
+    async def _prior_assistant_ended_with_question(
+        self,
+        visitor: "InteractWalker",
+    ) -> bool:
+        """Return True iff the immediately prior assistant turn ended with ``?``.
+
+        Used by :meth:`_is_substantive_utterance` to detect continuation
+        replies (``Yes`` / ``No`` / ``Sure``) after an assistant question.
+        Without this signal, small classifier models occasionally EMIT
+        the user's affirmative verbatim — live-smoke observed
+        ``"Yes"`` echoed back when the assistant had just asked
+        ``"Would you like me to search?"``.
+
+        Returns False on any error or missing data — the guard then
+        operates only on word-count + ``?`` signals as before.
+        """
+        conversation = getattr(visitor, "conversation", None)
+        if conversation is None:
+            return False
+        try:
+            interaction = getattr(visitor, "interaction", None)
+            excluded = getattr(interaction, "id", None) if interaction else None
+            # ``formatted=False`` is load-bearing: the default
+            # ``formatted=True`` returns ``{"role", "content"}`` pairs,
+            # which would silently make ``turn.get("response")`` below
+            # always return None — the guard would never fire. Raw
+            # format yields the ``response`` key we need.
+            turns = await conversation.get_interaction_history(
+                limit=1,
+                excluded=excluded,
+                with_utterance=False,
+                with_response=True,
+                formatted=False,
+            )
+        except Exception as exc:
+            logger.debug("ReflexHelm: prior-question check failed: %s", exc)
+            return False
+        if not turns:
+            return False
+        # Iterate from the most recent backward so we find the latest
+        # assistant response with non-empty content.
+        for turn in reversed(turns):
+            if not isinstance(turn, dict):
+                continue
+            resp = (turn.get("response") or "").strip()
+            if not resp:
+                continue
+            # Strip trailing punctuation/whitespace except ``?`` so
+            # ``"...search?\n"`` and ``"...search? "`` both match.
+            stripped = resp.rstrip()
+            return stripped.endswith("?")
+        return False
 
     # ------------------------------------------------------------------
     # Classification call
@@ -364,13 +432,23 @@ class ReflexHelm(BaseHelm):
             {"role": "user", "content": user_prompt},
         ]
         try:
+            # Pass ``system`` and ``prompt_for_observability`` explicitly so the
+            # ``model_call`` observability event carries the structured prompt
+            # fields. Without these, the emitter sees None and drops
+            # ``system_prompt`` / ``user_prompt`` from the recorded event —
+            # making the call non-debuggable from logs alone.
+            # ``calling_action_name`` mirrors the same convention so the
+            # event records which helm originated the call.
             result = await model_action.query_messages(
                 messages=messages,
                 stream=False,
+                system=system_prompt,
+                prompt_for_observability=user_prompt,
                 tools=None,
                 model=self.model or None,
                 temperature=self.model_temperature,
                 max_tokens=self.model_max_tokens,
+                calling_action_name=self.helm_name(),
             )
         except Exception as exc:
             logger.warning("ReflexHelm: model call raised: %s", exc)
@@ -415,6 +493,7 @@ class ReflexHelm(BaseHelm):
         parsed: Dict[str, Any],
         *,
         utterance: str,
+        prior_was_question: bool = False,
         peer_helm_names: set,
         peer_action_names: set,
     ) -> HelmStepResult:
@@ -425,11 +504,9 @@ class ReflexHelm(BaseHelm):
         - DELEGATE interact_action must be in ``peer_action_names`` — else
           fall back.
         - EMIT requires ``can_emit_directly`` AND a non-substantive
-          utterance (≤ ``_SUBSTANTIVE_UTTERANCE_WORD_THRESHOLD`` words OR
-          a known short greeting / thanks / confirmation in the
-          language lexicon). Substantive utterances get downgraded to
-          SHIFT regardless of model output — defends against small-model
-          mis-classifications observed in live smoke.
+          utterance (see :meth:`_is_substantive_utterance` — also forces
+          SHIFT when the prior assistant turn ended with a question and
+          the current utterance is a continuation).
         - Unknown verbs fall back to the default shift target.
         """
         verb = (parsed.get("verb") or "").strip().upper()
@@ -443,17 +520,24 @@ class ReflexHelm(BaseHelm):
             if not text:
                 return self._safe_default_shift("EMIT verb missing text")
             # Defensive override: substantive utterances must SHIFT.
-            if self._is_substantive_utterance(utterance):
+            if self._is_substantive_utterance(
+                utterance, prior_was_question=prior_was_question
+            ):
+                reason = (
+                    "continuation after assistant question"
+                    if prior_was_question
+                    else "substantive utterance"
+                )
                 logger.warning(
-                    "ReflexHelm: model returned EMIT for substantive "
-                    "utterance %r (text=%r); overriding to SHIFT(%s) — "
-                    "likely model mis-classification.",
+                    "ReflexHelm: model returned EMIT for %s %r (text=%r); "
+                    "overriding to SHIFT(%s) — likely model mis-classification.",
+                    reason,
                     utterance[:80],
                     text[:80],
                     self.default_shift_target,
                 )
                 return self._safe_default_shift(
-                    "EMIT on substantive utterance (defensive override)"
+                    f"EMIT on {reason} (defensive override)"
                 )
             return EMIT(text=text, finalize=True)
 
@@ -475,7 +559,6 @@ class ReflexHelm(BaseHelm):
                 reason=(parsed.get("reason") or "ReflexHelm shift").strip(),
                 transient_ack=(parsed.get("transient_ack") or None),
                 handoff_state=parsed.get("handoff_state") or None,
-                interrupt=bool(parsed.get("interrupt", False)),
             )
 
         if verb == "DELEGATE":
@@ -506,37 +589,37 @@ class ReflexHelm(BaseHelm):
         )
         return self._safe_default_shift(f"unknown verb {verb!r}")
 
-    def _is_substantive_utterance(self, utterance: str) -> bool:
+    def _is_substantive_utterance(
+        self,
+        utterance: str,
+        *,
+        prior_was_question: bool = False,
+    ) -> bool:
         """Heuristic: True iff this utterance should never get EMIT.
 
-        Two-stage check:
+        Three signals make an utterance substantive (force SHIFT):
 
-        1. **Lexicon match** — if the utterance is a known short greeting,
-           thanks, or confirmation in any supported language (per
-           :func:`detect_short_utterance_language`), it's trivially
-           EMIT-able regardless of word count. ``"Good morning"`` etc.
-        2. **Word count** — otherwise, anything beyond
-           ``_SUBSTANTIVE_UTTERANCE_WORD_THRESHOLD`` words is treated
-           as substantive and must SHIFT.
+        1. The utterance contains a ``?`` (interrogative).
+        2. The utterance has more than
+           ``_SUBSTANTIVE_UTTERANCE_WORD_THRESHOLD`` words.
+        3. The prior assistant turn ended with a question — any
+           single-word reply ("Yes", "No", "Sure", "Maybe") is a
+           continuation of that question and must SHIFT to Reasoning,
+           never EMIT back. Without this signal, models occasionally
+           echo the user's affirmative as the response (live-smoke
+           observed: assistant asked "Would you like me to search?",
+           user said "Yes", Reflex EMIT'd "Yes" verbatim).
 
-        Returns False (not substantive, EMIT allowed) only when:
-        - The utterance matches the lexicon, OR
-        - The utterance is empty / whitespace, OR
-        - The utterance has at most ``_SUBSTANTIVE_UTTERANCE_WORD_THRESHOLD``
-          words AND contains no question mark.
-
-        The question-mark rule catches short interrogatives the model
-        might naively EMIT a guess for ("What is 2+2?" — 4 words but
-        questionable; "Where am I?" — 3 words with ?). When in doubt,
-        let Reasoning take the turn.
+        Returns False (EMIT allowed) only for short non-interrogative
+        utterances when the assistant didn't just ask a question. The
+        model's own ``detected_language`` + content choice handle the
+        rest.
         """
         text = (utterance or "").strip()
         if not text:
             return False
-        # Stage 1: lexicon — known short phrases bypass the word-count rule.
-        if detect_short_utterance_language(text) is not None:
-            return False
-        # Stage 2: word count + question-mark guard.
+        if prior_was_question:
+            return True
         if "?" in text:
             return True
         word_count = len(text.split())

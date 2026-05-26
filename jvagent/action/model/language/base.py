@@ -45,6 +45,72 @@ _QUERY_KWARGS_BLOCKLIST = frozenset(
     }
 )
 
+
+def _extract_obs_fields_from_messages(
+    messages: List[Dict[str, Any]],
+) -> tuple:
+    """Extract ``(system, user_prompt, history)`` from a raw messages array.
+
+    Defensive observability helper for ``query_messages`` callers that don't
+    pass these fields explicitly. The extraction policy mirrors the natural
+    shape of a chat call:
+
+    - ``system`` — content of the first ``role=system`` message, if any.
+    - ``user_prompt`` — content of the LAST ``role=user`` message (the
+      utterance the model is responding to).
+    - ``history`` — everything between (exclusive of) the leading system
+      message and the trailing user message. Includes prior user/assistant
+      turns and tool messages from think-act-observe loops.
+
+    Returns ``(None, None, None)`` triples when the corresponding shape
+    can't be extracted (e.g. empty messages, no user message). Observability-
+    only — call behavior is unaffected.
+    """
+    if not messages:
+        return None, None, None
+
+    system_content: Optional[str] = None
+    leading_system_idx: Optional[int] = None
+    for i, msg in enumerate(messages):
+        if not isinstance(msg, dict):
+            continue
+        if msg.get("role") == "system":
+            content = msg.get("content")
+            if isinstance(content, str):
+                system_content = content
+            leading_system_idx = i
+            break
+
+    # Find the last user message.
+    user_content: Optional[str] = None
+    last_user_idx: Optional[int] = None
+    for i in range(len(messages) - 1, -1, -1):
+        msg = messages[i]
+        if not isinstance(msg, dict):
+            continue
+        if msg.get("role") == "user":
+            content = msg.get("content")
+            if isinstance(content, str):
+                user_content = content
+            last_user_idx = i
+            break
+
+    # History = messages between the system anchor and the final user
+    # message (exclusive on both ends). Includes prior turns + tool
+    # messages. Empty list when there's nothing in between.
+    history: Optional[List[Dict[str, Any]]] = None
+    start = (leading_system_idx + 1) if leading_system_idx is not None else 0
+    end = last_user_idx if last_user_idx is not None else len(messages)
+    if start < end:
+        history = list(messages[start:end])
+    elif last_user_idx is not None or leading_system_idx is not None:
+        # Caller had a coherent system+user shape; declare empty history
+        # so the observability emitter knows we looked.
+        history = []
+
+    return system_content, user_content, history
+
+
 # Type aliases for multimodal content
 ContentPart = Dict[
     str, Any
@@ -666,6 +732,24 @@ class LanguageModelAction(BaseModelAction, ABC):
 
         if start_time is None:
             start_time = time.time()
+
+        # Defensive observability extraction: callers that build their own
+        # ``messages`` array (engines, classifiers, etc.) often don't pass
+        # ``system`` / ``prompt_for_observability`` / ``history`` separately.
+        # Without them, the ``model_call`` observability event drops those
+        # fields — making the call non-debuggable from logs alone. Recover
+        # them from the messages array when not provided explicitly. This
+        # only affects observability; call behavior is unchanged.
+        if system is None or prompt_for_observability is None or history is None:
+            _ext_system, _ext_prompt, _ext_history = _extract_obs_fields_from_messages(
+                messages
+            )
+            if system is None:
+                system = _ext_system
+            if prompt_for_observability is None:
+                prompt_for_observability = _ext_prompt
+            if history is None:
+                history = _ext_history
 
         # Route to appropriate implementation (retries for transient httpx failures)
         if stream:

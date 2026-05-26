@@ -21,7 +21,6 @@ package:
       Classify trivial vs substantive turns; emit fast or shift to peer helm.
     latency_class: instant
     turn_lock: false
-    can_interrupt: true
     expected_duration_seconds: 0.5
   dependencies:
     jvagent: ~0.0.1

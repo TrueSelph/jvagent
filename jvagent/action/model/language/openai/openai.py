@@ -371,7 +371,10 @@ class OpenAILanguageModelAction(LanguageModelAction):
                 response=content,
                 usage=usage,
                 model=model_override,  # Use the actual model used for this query
-                provider="openai",
+                # Read self.provider so subclasses (Groq, OpenRouter, …) that
+                # override the attribute get the right label on the result.
+                # Falls back to "openai" if a subclass forgot to set it.
+                provider=getattr(self, "provider", None) or "openai",
                 finish_reason=finish_reason,
                 tool_calls=tool_calls,
                 thinking_content=thinking_content,
@@ -402,7 +405,9 @@ class OpenAILanguageModelAction(LanguageModelAction):
         result = ModelActionResult(
             usage={},
             model=model_override,
-            provider="openai",
+            # Read self.provider so subclasses (Groq, OpenRouter, …) that
+            # override the attribute get the right label on the result.
+            provider=getattr(self, "provider", None) or "openai",
             finish_reason=None,
             tool_calls=[],
             thinking_content=None,

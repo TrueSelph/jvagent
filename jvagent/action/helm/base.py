@@ -6,7 +6,7 @@ once per Bridge walker visit, then dispatches the returned ``HelmStepResult``
 verb.
 
 Subclasses MUST implement :meth:`step` and SHOULD declare a manifest in their
-package ``info.yaml`` (loader integration arrives at milestone D).
+package ``info.yaml`` — read via ``Action.get_manifest()``.
 
 Each helm's :meth:`step` issues **at most one** model call. This invariant
 (ADR-0002 / ADR-0007) is load-bearing across cockpit and bridge.
@@ -41,8 +41,9 @@ class BaseHelm(Action):
 
     The ``latency_class`` attribute is a convenience mirror of the manifest
     field. It is consulted by Bridge when deciding whether to publish an
-    ``ack-on-shift`` before a ``SHIFT`` (milestone E wires this from the
-    manifest; B reads it from this attribute as a fallback).
+    ``ack-on-shift`` before a ``SHIFT`` (Bridge reads the helm's manifest
+    via :meth:`Action.get_manifest`; this attribute is the fallback when
+    no manifest is declared).
     """
 
     description: str = attribute(
@@ -57,18 +58,11 @@ class BaseHelm(Action):
             "precedence when present."
         ),
     )
-    can_interrupt: bool = attribute(
-        default=False,
-        description=(
-            "True iff this helm is allowed to emit SHIFT(interrupt=True). "
-            "Defaults False; set True on Reflex-class helms."
-        ),
-    )
     can_emit_directly: bool = attribute(
         default=True,
         description=(
             "False forces this helm to never EMIT (it must SHIFT or DELEGATE). "
-            "Used by classifier-style helms at milestone E."
+            "Used by classifier-style helms (e.g. ReflexHelm in pure-router mode)."
         ),
     )
 

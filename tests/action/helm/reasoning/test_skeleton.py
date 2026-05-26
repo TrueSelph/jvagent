@@ -23,7 +23,6 @@ async def test_reasoning_helm_instantiates_with_cockpit_defaults():
     helm = ReasoningHelm()
     assert helm.latency_class == "deliberate"
     assert helm.can_emit_directly is True
-    assert helm.can_interrupt is False
     # Mirror cockpit defaults so the smoke harness compares apples-to-apples.
     assert helm.model == "claude-sonnet-4-20250514"
     assert helm.model_action_type == "AnthropicLanguageModelAction"

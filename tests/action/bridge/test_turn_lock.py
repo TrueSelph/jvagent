@@ -1,4 +1,10 @@
-"""Tests for turn-lock detection and interrupt gating (BRIDGE-ROADMAP §F)."""
+"""Tests for turn-lock detection (BRIDGE-ROADMAP §F).
+
+Bridge's turn-lock policy is unconditional: when ``find_turn_lock_owner``
+returns a lock owner, Bridge auto-DELEGATEs to it regardless of helm or
+utterance. There is no helm-level "interrupt the lock" mechanism — that
+was vestigial v0.1 surface and was removed in v0.2.
+"""
 
 from __future__ import annotations
 
@@ -6,40 +12,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from jvagent.action.bridge.bridge_interact_action import BridgeInteractAction
 from jvagent.action.bridge.state import BRIDGE_STATE_VISITOR_ATTR
-from jvagent.action.bridge.turn_lock import (
-    TurnLockOwner,
-    find_turn_lock_owner,
-    is_interrupt_allowed,
-)
-from jvagent.action.helm.contracts import SHIFT
-from jvagent.action.helm.stub_helm import StubHelm
+from jvagent.action.bridge.turn_lock import TurnLockOwner, find_turn_lock_owner
 from jvagent.action.manifest import Manifest
 
 pytestmark = pytest.mark.asyncio
-
-
-# ---------------------------------------------------------------------------
-# is_interrupt_allowed
-# ---------------------------------------------------------------------------
-
-
-async def test_is_interrupt_allowed_true_when_helm_can_interrupt():
-    helm = StubHelm()
-    helm.can_interrupt = True
-    assert is_interrupt_allowed(helm) is True
-
-
-async def test_is_interrupt_allowed_false_when_helm_cannot_interrupt():
-    helm = StubHelm()
-    helm.can_interrupt = False
-    assert is_interrupt_allowed(helm) is False
-
-
-async def test_is_interrupt_allowed_false_on_object_without_attribute():
-    obj = MagicMock(spec=[])  # no can_interrupt attribute
-    assert is_interrupt_allowed(obj) is False
 
 
 # ---------------------------------------------------------------------------
@@ -189,73 +166,17 @@ async def test_find_turn_lock_owner_handles_missing_agent():
 
 
 # ---------------------------------------------------------------------------
-# Bridge SHIFT(interrupt=True) gating
-# ---------------------------------------------------------------------------
-
-
-async def test_shift_interrupt_downgraded_for_incapable_helm(
-    make_bridge, make_visitor, stub_helm, caplog
-):
-    """SHIFT(interrupt=True) from a helm without can_interrupt is still
-    honoured as a SHIFT, but the interrupt bit is logged as denied."""
-    a = stub_helm(
-        name="A",
-        script=[
-            SHIFT(
-                target="B",
-                reason="trying interrupt",
-            )
-        ],
-    )
-    a.can_interrupt = False
-    b = stub_helm(name="B")
-    bridge = make_bridge(helms={"A": a, "B": b}, default_helm="A")
-    visitor = make_visitor()
-
-    # Manually construct a SHIFT with interrupt=True via the script (the
-    # convenience builder used above doesn't expose interrupt).
-    a.set_script([SHIFT(target="B", reason="x", interrupt=True)])
-
-    with caplog.at_level("WARNING"):
-        await bridge.execute(visitor)
-
-    state = getattr(visitor, BRIDGE_STATE_VISITOR_ATTR)
-    assert state.current_helm == "B"
-    # The warning records the downgrade so operators can audit.
-    assert any(
-        "interrupt=True" in rec.message and "denied" in rec.message
-        for rec in caplog.records
-    )
-
-
-async def test_shift_interrupt_allowed_for_capable_helm(
-    make_bridge, make_visitor, stub_helm
-):
-    a = stub_helm(name="A", script=[SHIFT(target="B", reason="ok", interrupt=True)])
-    a.can_interrupt = True
-    b = stub_helm(name="B")
-    bridge = make_bridge(helms={"A": a, "B": b}, default_helm="A")
-    visitor = make_visitor()
-
-    await bridge.execute(visitor)
-
-    state = getattr(visitor, BRIDGE_STATE_VISITOR_ATTR)
-    assert state.current_helm == "B"
-
-
-# ---------------------------------------------------------------------------
 # Bridge auto-delegate when turn-lock is active
 # ---------------------------------------------------------------------------
 
 
-async def test_execute_auto_delegates_to_lock_owner_when_helm_cannot_interrupt(
+async def test_execute_auto_delegates_to_lock_owner(
     make_bridge, make_visitor, stub_helm, monkeypatch
 ):
-    """When ``find_turn_lock_owner`` returns a locked action and the
-    current helm has ``can_interrupt=False``, Bridge runs the locked
-    action via DELEGATE without calling helm.step()."""
+    """When ``find_turn_lock_owner`` returns a locked action, Bridge runs
+    the locked action via DELEGATE without calling helm.step() — regardless
+    of the helm. There is no helm-level escape hatch for the lock."""
     helm = stub_helm(name="A", script=[])  # script empty — helm should NOT run
-    helm.can_interrupt = False
     bridge = make_bridge(helms={"A": helm}, default_helm="A")
     visitor = make_visitor()
 
@@ -285,29 +206,23 @@ async def test_execute_auto_delegates_to_lock_owner_when_helm_cannot_interrupt(
     assert BRIDGE_STATE_VISITOR_ATTR not in visitor.__dict__
 
 
-async def test_auto_delegate_fires_regardless_of_can_interrupt(
+async def test_auto_delegate_unconditional_for_any_helm(
     make_bridge, make_visitor, stub_helm, monkeypatch
 ):
-    """Turn-lock auto-DELEGATE fires for ALL helms, including those
-    with ``can_interrupt=True`` (e.g. ReflexHelm).
+    """Turn-lock auto-DELEGATE fires for ALL helms — there is no escape.
 
-    Previously, ``can_interrupt=True`` skipped the turn-lock check so
-    Reflex could "interrupt cleanly" via SHIFT(interrupt=True). Live
-    testing exposed the mis-design: Reflex doesn't know about active
-    locks and routinely intercepted "Yep"/"ok" confirmation turns mid-
-    interview, EMITting a polite ack instead of letting the interview
-    finalise. The new contract: auto-DELEGATE always when a lock is
-    active; the rails IA's own intent classifier (e.g. interview's
-    CANCELLATION intent + interrupt_phrases) decides whether the user
-    wants to break the flow.
-
-    ``can_interrupt`` is preserved on BaseHelm for the separate
-    ``SHIFT(interrupt=True)`` mechanism inside helm.step().
+    Earlier designs let helms with ``can_interrupt=True`` bypass the
+    lock to emit ``SHIFT(interrupt=True)``. Live testing showed that
+    helms don't know about active locks and routinely mis-classified
+    fragments mid-flow. The current contract: auto-DELEGATE always
+    when a lock is active. The rails IA's own intent classifier
+    (e.g. an interview's CANCELLATION intent reading
+    ``manifest.interrupt_phrases``) decides whether the user wants
+    to break the flow.
     """
     from jvagent.action.helm.contracts import EMIT
 
     helm = stub_helm(name="A", script=[EMIT(text="reflex emit", finalize=True)])
-    helm.can_interrupt = True  # would have bypassed the check pre-fix
     bridge = make_bridge(helms={"A": helm}, default_helm="A")
     visitor = make_visitor()
 
@@ -338,7 +253,6 @@ async def test_auto_delegate_handles_action_raise(
     make_bridge, make_visitor, stub_helm, monkeypatch, publish_log
 ):
     helm = stub_helm(name="A", script=[])
-    helm.can_interrupt = False
     bridge = make_bridge(
         helms={"A": helm}, default_helm="A", denied_text="auto-delegate failed"
     )
@@ -374,7 +288,6 @@ async def test_auto_delegate_skipped_when_lock_owner_matches_current_helm(
     from jvagent.action.helm.contracts import EMIT
 
     helm = stub_helm(name="Locked", script=[EMIT(text="continuing", finalize=True)])
-    helm.can_interrupt = False
     bridge = make_bridge(helms={"Locked": helm}, default_helm="Locked")
     visitor = make_visitor()
 

@@ -30,27 +30,23 @@ BridgeInteractAction.execute(visitor)
 
 Each Bridge visit issues **at most one** model call (delegated to the current helm's `step()`). This preserves the one-model-call-per-walker-visit invariant established by ADR-0002.
 
-### `HelmStepResult` verb set (v0.1)
+### `HelmStepResult` verb set (v0.2)
 
-Verbs are a closed enum revised additively. The original v0 set was
-`EMIT | EXECUTE | SHIFT | DELEGATE | YIELD`. **v0.1** adds `CONTINUE` to support
-helms that dispatch their own tools internally (e.g. `ReasoningHelm` running
-the cockpit-style engine loop) and just need Bridge to re-enqueue them.
-Additive verbs are non-breaking; breaking changes require ADR-0008+.
+Verbs are a closed enum revised additively (or by breaking change). Revision history:
+
+- **v0** — original set: `EMIT | EXECUTE | SHIFT | DELEGATE | YIELD`.
+- **v0.1** — additive: `CONTINUE` joined to support helms that dispatch their own tools internally (e.g. `ReasoningHelm`); `DELEGATE` gained `follow_up: bool` to support multi-IA dispatch chains.
+- **v0.2** — breaking cleanup: `EXECUTE` removed (never used by any shipped helm — confused the contract). `SHIFT.interrupt` removed (Bridge always auto-DELEGATEs on active turn-locks; lock-breaking lives in the rails IA's intent classifier reading `manifest.interrupt_phrases`). `BaseHelm.can_interrupt` and `Manifest.can_interrupt` removed alongside.
+
+Additive verbs are non-breaking; breaking changes require ADR-0008+ going forward.
 
 ```python
-# jvagent/action/helm/contracts.py (proposed)
+# jvagent/action/helm/contracts.py
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, Literal, Optional, Union
 
-HelmVerb = Literal["EMIT", "EXECUTE", "CONTINUE", "SHIFT", "DELEGATE", "YIELD"]
-
-@dataclass(frozen=True)
-class ToolCall:
-    name: str                          # registry name, e.g. "memory_set", "action__handoff__open"
-    arguments: Dict[str, Any]
-    call_id: Optional[str] = None      # provider-issued id, when present
+HelmVerb = Literal["EMIT", "CONTINUE", "SHIFT", "DELEGATE", "YIELD"]
 
 @dataclass(frozen=True)
 class ShiftRecord:
@@ -61,6 +57,7 @@ class ShiftRecord:
     shift_index: int
     at_monotonic: float                # time.monotonic() — for per-shift duration math
     handoff_state: Optional[Dict[str, Any]] = None
+    routing_source: Optional[str] = None  # "initial" | "turn_lock" | "helm_shift" | "helm_delegate"
 
 @dataclass(frozen=True)
 class EMIT:
@@ -68,14 +65,6 @@ class EMIT:
     finalize: bool = True              # if False, helm intends to revisit after the emit
     channel: Optional[str] = None      # passthrough to response_bus; None = default
     metadata: Dict[str, Any] = field(default_factory=dict)
-
-@dataclass(frozen=True)
-class EXECUTE:
-    tool_calls: List[ToolCall]
-    # Bridge owns the tool registry. After dispatch, Bridge persists state on
-    # visitor._bridge_state and visitor.prepend([self]) to revisit the SAME helm.
-    # Use EXECUTE when the helm wants Bridge to own tool dispatch (e.g. a fast
-    # classifier helm with a small, allow-listed tool surface).
 
 @dataclass(frozen=True)
 class CONTINUE:
@@ -91,15 +80,16 @@ class SHIFT:
     reason: str
     transient_ack: Optional[str] = None  # if set AND target.manifest.latency_class in {deliberate, long}, Bridge emits this before shifting
     handoff_state: Optional[Dict[str, Any]] = None
-    interrupt: bool = False            # breaks turn-lock; only allowed for helms with manifest.can_interrupt = True
 
 @dataclass(frozen=True)
 class DELEGATE:
     interact_action: str               # canonical action name (matches info.yaml package.name)
     args: Optional[Dict[str, Any]] = None
+    follow_up: bool = False            # True → Bridge re-enqueues self without persona-finalize (chain mode)
     # Bridge resolves the IA via Action.get_action(<name>),
     # calls await action.execute(visitor) directly,
-    # then visitor.prepend([self]) to finalize through Bridge.
+    # then either finalizes via persona (follow_up=False) or re-enqueues itself
+    # for the next DELEGATE in a chain (follow_up=True).
 
 @dataclass(frozen=True)
 class YIELD:
@@ -107,20 +97,22 @@ class YIELD:
     No revisit. Bridge exits cleanly. The agent's downstream IAs proceed."""
     pass
 
-HelmStepResult = Union[EMIT, EXECUTE, CONTINUE, SHIFT, DELEGATE, YIELD]
+HelmStepResult = Union[EMIT, CONTINUE, SHIFT, DELEGATE, YIELD]
 ```
 
 **Semantics:**
 
-| Verb | What Bridge does | Persists state? | Re-enqueues self? | Emits HELM_SHIFT event? |
+| Verb | What Bridge does | Persists state? | Re-enqueues self? | Records ShiftRecord? |
 |---|---|---|---|---|
 | `EMIT(finalize=True)` | Publish via `response_bus`; finalize turn. | No (cleared) | No | No |
 | `EMIT(finalize=False)` | Publish; revisit current helm. | Yes | Yes | No |
-| `EXECUTE` | Dispatch tool calls (Bridge-owned registry); record results into helm-scoped state. | Yes | Yes (same helm) | No |
-| `CONTINUE` | Re-enqueue current helm; **no** state mutation by Bridge. | No (Bridge does not touch state — helm owns it) | Yes | No |
-| `SHIFT` | Emit `transient_ack` if eligible; check `tool:helm:{target}` AC; set `current_helm=target`; revisit. | Yes (with handoff_state on target's helm_states slot) | Yes | **Yes** |
-| `DELEGATE` | Resolve named IA; `await ia.execute(visitor)`; revisit Bridge. | Yes | Yes | No (separate `DELEGATION` event for I) |
+| `CONTINUE` | Re-enqueue current helm; Bridge does not touch state — helm owns it. | No | Yes | No |
+| `SHIFT` | Emit `transient_ack` if eligible; check `tool:helm:{target}` AC; set `current_helm=target`; revisit. | Yes (with handoff_state on target's helm_states slot) | Yes | **Yes** (`routing_source="helm_shift"`) |
+| `DELEGATE(follow_up=False)` | Check `tool:delegate:{action}` AC; resolve and run IA inline; persona-finalize from any pending directives; clear state. | Yes (during run) | No | **Yes** (`routing_source="helm_delegate"`) |
+| `DELEGATE(follow_up=True)` | Same as above but skip persona-finalize and re-enqueue Bridge so the helm can dispatch more IAs in a chain. | Yes | Yes | **Yes** (`routing_source="helm_delegate"`) |
 | `YIELD` | Exit Bridge; let walker continue weight chain. | Bridge clears its own state | No | No |
+
+Bridge also records ShiftRecords (and emits `helm_shift` events) on two non-verb paths: the initial helm pick at turn start (`routing_source="initial"`) and turn-lock auto-DELEGATE (`routing_source="turn_lock"`). Together with the helm-initiated `routing_source` labels above, these five values let operators reconstruct the IA-selection cascade for any turn from the trace alone.
 
 ### `BridgeState`
 
@@ -177,23 +169,21 @@ manifest:
     - "all questions answered"
     - "user says STOP, cancel, or quit"
   latency_class: deliberate          # one of: instant | quick | deliberate | long
-  turn_lock: true                    # if active, other helms must DELEGATE or interrupt
-  interrupt_phrases:                 # phrases that may break turn_lock (Reflex only)
-    - "stop"
+  turn_lock: true                    # if active, Bridge auto-DELEGATEs to this IA
+  interrupt_phrases:                 # hint phrases the IA's own intent classifier
+    - "stop"                         # may use to break its lock (e.g. interview CANCELLATION)
     - "cancel"
     - "quit"
   expected_duration_seconds: 180.0
-  can_interrupt: false               # may this helm issue SHIFT(interrupt=true)? default false
 ```
 
 **Validation rules (loader-enforced):**
 
 - `latency_class` MUST be one of `{instant, quick, deliberate, long}` if present; default `quick` if missing.
 - `turn_lock` defaults to `false`.
-- `can_interrupt` defaults to `false`. Set `true` only on Reflex-class helms or operator-defined overrides.
-- `interrupt_phrases` is informational at v0 (consulted by Reflex prompt assembly at E); loader does not enforce.
+- `interrupt_phrases` is informational; consumed by the lock-owning IA's own intent classifier (Bridge does not interpret it). Loader does not enforce.
 - `expected_duration_seconds` is informational.
-- A missing `manifest:` block yields `Manifest(latency_class="quick", turn_lock=False, can_interrupt=False)` defaults via `Action.get_manifest()`.
+- A missing `manifest:` block yields `Manifest(latency_class="quick", turn_lock=False)` defaults via `Action.get_manifest()`.
 - Per-action override in `agent.yaml.context.manifest:` MUST validate against the same schema. Overrides shallow-merge (any present field replaces; absent fields fall back to info.yaml or defaults).
 
 ### AccessControl resource taxonomy
@@ -204,6 +194,45 @@ Bridge uses the existing `AccessControlAction` unchanged. New conventions, layer
 - `tool:delegate:{action_name}` — gating a `DELEGATE` to a specific rails IA. `action_name` matches `info.yaml package.name`.
 
 Default policy: if `AccessControlAction` is absent, both are permitted (existing fail-open default for missing AC). If AC is present, both follow standard (channel, user_id, resource) rules. Denied targets cause Bridge to safe-fallback (route to default reasoning helm OR emit a configured `denied_response_text`).
+
+**`always_execute` IAs**: Bridge's walker-queue curation (`_curate_walker_queue`) applies the same `tool:delegate:{action_name}` check to every `always_execute: true` IA before including it in the curated queue. AC denial drops the IA from the turn. This matches the explicit `DELEGATE` path so all IA dispatch — explicit, auto (turn-lock), and implicit (always_execute) — flows through one AC convention.
+
+### Observability schema
+
+Per-turn observability lives on the `Interaction` node, surfaced via the standard `GET /logs/agents/{id}` endpoint. Two surfaces:
+
+**`Interaction.parameters['bridge_observability']`** — turn-level summary:
+
+```python
+{
+    "gear_trace": [ShiftRecord.to_dict(), ...],   # full sequence of helm transitions
+    "helm_timings_seconds": {"ReflexHelm": 0.27, "ReasoningHelm": 4.1, ...},
+    "helm_step_counts": {"ReflexHelm": 1, "ReasoningHelm": 3, ...},
+    "shift_count": 4,
+    "turn_started_at": <time.monotonic float>,
+    "last_emit_at": <time.monotonic float>,
+}
+```
+
+**`Interaction.observability_metrics`** — append-only event log:
+
+```python
+{
+    "event_type": "helm_shift",
+    "data": {
+        "from_helm": "ReflexHelm" | None,         # None on initial entry
+        "to_helm": "ReasoningHelm" | "<IA name>" | None,
+        "reason": "string",
+        "ack_emitted": bool,
+        "shift_index": int,
+        "at_monotonic": float,
+        "routing_source": "initial" | "turn_lock" | "helm_shift" | "helm_delegate",
+    },
+    "timestamp": <time.monotonic float>,
+}
+```
+
+The `routing_source` label tells you which layer of the IA-selection cascade made the decision; combined with `from_helm` it reconstructs the full routing trace per turn.
 
 ### Relation to ADR-0002
 

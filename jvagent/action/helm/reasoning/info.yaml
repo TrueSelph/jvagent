@@ -20,7 +20,6 @@ package:
     purpose: "Deliberate reasoning with full agency over harness + action tools."
     latency_class: deliberate
     turn_lock: false
-    can_interrupt: false
     can_emit_directly: true
     expected_duration_seconds: 30.0
   dependencies:
