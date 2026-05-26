@@ -229,6 +229,16 @@ class BridgeInteractAction(InteractAction):
         resolved = await self._resolve_helms_map()
         state = self._get_or_init_state(visitor)
 
+        # Curate the walker queue on FIRST visit per turn so non-helm
+        # InteractActions (intro, handoff, etc.) don't auto-run after
+        # Bridge yields — that would emit a stray follow-up via the
+        # walker's normal weight chain. Bridge owns the queue; other IAs
+        # only run via explicit DELEGATE / DELEGATE-by-turn-lock.
+        # Always-execute IAs are preserved so cross-cutting concerns
+        # (logging, audit) still fire.
+        if state.shift_count == 0:
+            await self._curate_walker_queue(visitor)
+
         # Resolve current helm on first visit (or whenever it has been cleared).
         if state.current_helm is None:
             initial = self._pick_initial_helm(resolved)
@@ -484,6 +494,55 @@ class BridgeInteractAction(InteractAction):
         return (
             target_helm.latency_class or ""
         ).lower() in _ACK_ELIGIBLE_LATENCY_CLASSES
+
+    # -- Walker-queue curation (BRIDGE-ROADMAP §F integration) ---------
+
+    async def _curate_walker_queue(self, visitor: "InteractWalker") -> None:
+        """Restrict the walker queue to ``{self} ∪ always_execute IAs``.
+
+        Without this, IAs sitting in the agent's weight chain (intro,
+        handoff, etc.) auto-run after Bridge yields — producing a stray
+        persona-finalize LM call per turn and breaking the contract that
+        Bridge owns the turn. Helms that want to invoke another IA must
+        do so explicitly via the ``DELEGATE`` verb.
+        """
+        try:
+            agent = await self.get_agent()
+        except Exception as exc:
+            logger.warning("bridge: get_agent failed during curate: %s", exc)
+            return
+        if agent is None:
+            return
+        try:
+            from jvagent.action.interact.base import InteractAction
+
+            actions_mgr = await agent.get_actions_manager()
+            if actions_mgr is None:
+                return
+            all_enabled = await actions_mgr.get_all_actions(enabled_only=True)
+        except Exception as exc:
+            logger.debug("bridge: curate actions enumeration failed: %s", exc)
+            return
+
+        always_run: List[Any] = []
+        my_class = self.__class__.__name__
+        for action in all_enabled:
+            if not isinstance(action, InteractAction):
+                continue
+            if action is self or action.__class__.__name__ == my_class:
+                continue
+            if bool(getattr(action, "always_execute", False)):
+                always_run.append(action)
+
+        # Sort by weight ascending so always-execute IAs visit in the
+        # walker's normal order.
+        always_run.sort(key=lambda a: int(getattr(a, "weight", 0)))
+        combined: List[Any] = [self] + always_run
+
+        try:
+            await visitor.curate_walk_path(combined)
+        except Exception as exc:
+            logger.warning("bridge: curate_walk_path failed: %s", exc)
 
     # -- Turn-lock auto-delegate (BRIDGE-ROADMAP §F) -------------------
 

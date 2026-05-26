@@ -57,9 +57,17 @@ WHEN TO PICK WHICH:
 - Trivial / greeting / smalltalk / "thanks" / single-word ack → EMIT.
 - Questions, requests, lookups, anything needing tools / memory /
   multi-step reasoning → SHIFT to the reasoning helm.
+- **Recap / summary / recall** ("what did I say", "summarize our chat",
+  "recap our conversation", "what was the first thing I asked") →
+  ALWAYS SHIFT to the reasoning helm. Never EMIT or YIELD these. The
+  reasoning helm has access to the full conversation history; trust
+  it to find the relevant turns even when the history visible to you
+  here looks empty.
 - Specific named flows (interview, handoff, etc.) → DELEGATE if the
   action's manifest activates on this kind of input.
-- Empty / abusive / nothing-to-do → YIELD.
+- YIELD is rare. Use ONLY for genuinely empty / abusive / silent
+  inputs. NEVER YIELD because you cannot answer — SHIFT instead so
+  the heavier helm gets a chance to handle it.
 
 PEER HELMS (read each helm's purpose + latency_class; pick the closest
 match for SHIFT targets):
