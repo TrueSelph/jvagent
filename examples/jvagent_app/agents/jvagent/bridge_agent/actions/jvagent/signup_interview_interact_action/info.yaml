@@ -1,0 +1,59 @@
+package:
+  # Action name in namespace/action_name format
+  name: jvagent/signup_interview_interact_action
+
+  # Package author
+  author: V75 Inc.
+
+  # Archetype: The main Action class name (same as the Action Node class)
+  archetype: SignupInterviewInteractAction
+
+  # Package version
+  version: 1.0.0
+
+  # Package metadata
+  meta:
+    title: Signup Interview Interact Action
+    description: User signup interview for registration and training scheduling
+    group: jvagent
+    type: action
+
+  # Pattern-agnostic manifest. Inherited semantics from
+  # InterviewInteractAction (turn_lock=true, deliberate latency,
+  # can_interrupt=false). Declared explicitly here so Reflex's
+  # peer-action discovery can surface this IA as a DELEGATE target —
+  # peer discovery reads each action's own info.yaml manifest and does
+  # not climb the Python class hierarchy.
+  manifest:
+    purpose: >-
+      Run the signup interview for jvagent training: collect full name,
+      training availability slot, email, and optional phone number, then
+      confirm registration.
+    activates_on:
+      - "user wants to sign up or register for jvagent training"
+      - "user wants to enroll or join jvagent training"
+    terminates_when:
+      - "all signup fields answered and confirmed"
+      - "user explicitly cancels (stop / cancel / quit)"
+    latency_class: deliberate
+    turn_lock: true
+    can_interrupt: false
+    interrupt_phrases:
+      - "stop"
+      - "cancel"
+      - "quit"
+      - "end interview"
+    expected_duration_seconds: 180.0
+
+  # Package configuration
+  config:
+    order:
+      weight: 0
+
+  # Package dependencies
+  dependencies:
+    # jvagent version requirement
+    jvagent: ~0.0.1
+    # Other action dependencies (by namespace/action_name)
+    actions: []
+

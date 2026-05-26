@@ -759,7 +759,67 @@ class BridgeInteractAction(InteractAction):
             await self._safe_fallback(visitor, state)
             return
         state.delegated_action = None
-        await visitor.prepend([self])
+        # DELEGATE hands the turn to the rails IA. The IA may have:
+        # (a) published a response directly via the response bus, OR
+        # (b) added a directive to ``interaction.directives`` expecting a
+        #     downstream PersonaAction to render it (the
+        #     ``InterviewInteractAction`` / signup flow uses this path).
+        # In Bridge composition there is no walker-driven persona pass
+        # after Bridge yields — Bridge owns the turn. So if the IA left
+        # directives behind without publishing, finalize via PersonaAction
+        # here. Idempotent: if directives is empty or the IA already
+        # published, this is a no-op.
+        await self._finalize_via_persona_if_directives(visitor)
+        # Do NOT re-enqueue Bridge — otherwise the current_helm (still
+        # pointing at the helm that issued DELEGATE) would .step() again
+        # and likely re-issue the same DELEGATE, producing an infinite
+        # loop. Mirrors the behaviour of ``_delegate_to_lock_owner``.
+        self._clear_state(visitor)
+
+    async def _finalize_via_persona_if_directives(
+        self,
+        visitor: "InteractWalker",
+    ) -> None:
+        """Render pending directives via PersonaAction.
+
+        After DELEGATE runs a rails IA, that IA may have only added
+        directives to ``interaction.directives`` (expecting PersonaAction
+        to deliver). In Bridge there is no automatic persona pass —
+        Bridge owns the turn end-to-end. This helper looks for unrendered
+        directives and calls ``PersonaAction.respond()`` to publish a
+        single user-facing reply.
+
+        Safe no-op when:
+        - PersonaAction is not installed on the agent
+        - directives list is empty
+        - ``interaction.response`` already has content (IA published
+          directly)
+        """
+        interaction = getattr(visitor, "interaction", None)
+        if interaction is None:
+            return
+        existing_response = getattr(interaction, "response", None)
+        if existing_response:
+            return
+        directives = getattr(interaction, "directives", None) or []
+        if not directives:
+            return
+        persona: Any
+        try:
+            persona = await self.get_action("PersonaAction")
+        except Exception:
+            persona = None
+        if persona is None:
+            logger.debug(
+                "bridge: DELEGATE finalize — no PersonaAction installed; "
+                "%d directive(s) will go unrendered",
+                len(directives),
+            )
+            return
+        try:
+            await persona.respond(interaction, visitor=visitor)
+        except Exception:
+            logger.exception("bridge: persona.respond failed during DELEGATE finalize")
 
     # -- YIELD ---------------------------------------------------------
 

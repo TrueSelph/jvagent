@@ -205,10 +205,30 @@ actions:
         Greet the user briefly and explain you can search documents, search the web,
         and remember preferences across the conversation.
 
-  - action: jvagent/handoff_interact_action
+  # ── Signup interview (Specialist via DELEGATE) ──
+  # InterviewInteractAction declares manifest.turn_lock: true. Once
+  # this action opens a session, Bridge auto-DELEGATEs subsequent
+  # turns to it via find_turn_lock_owner() until the session closes
+  # — Reflex / Reasoning step aside. Anchor surface is reachable
+  # from Reasoning's router; from Reflex, a SHIFT to Reasoning is
+  # the path in.
+  - action: jvagent/signup_interview_interact_action
     context:
       enabled: true
-      handoff_mode: direct_contact
+      description: "Training signup interview flow for user registration and training scheduling"
+      weight: -50
+      anchors:
+        - "User wants to sign up or register for jvagent training"
+        - "User wants to enroll or join jvagent training"
+    config:
+      model_action_type: "OpenAILanguageModelAction"
+      model: "gpt-4o-mini"
+      model_temperature: 0.1
+      model_max_tokens: 8192
+      use_history: true
+      max_statement_length: 100
+      history_limit: 3
+      auto_confirm: false
 
   - action: jvagent/persona
     context:

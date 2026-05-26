@@ -281,10 +281,16 @@ async def test_shift_persists_handoff_state_on_target(
 # ---------------------------------------------------------------------------
 
 
-async def test_delegate_runs_target_and_reenqueues(
-    make_bridge, make_visitor, stub_helm
-):
-    """DELEGATE resolves the named IA, executes it inline, then re-enqueues Bridge."""
+async def test_delegate_runs_target_and_yields(make_bridge, make_visitor, stub_helm):
+    """DELEGATE resolves the named IA, executes it inline, then yields the
+    turn to the rails IA — Bridge does NOT re-enqueue itself.
+
+    Re-enqueueing would let the helm that issued DELEGATE call ``.step()``
+    again with the same context, re-issuing the same DELEGATE in a tight
+    loop (caught in live testing with ``SignupInterviewInteractAction``).
+    Mirrors ``_delegate_to_lock_owner`` which also yields after running
+    the locked action.
+    """
     a = stub_helm(name="A", script=[DELEGATE(interact_action="HandoffIA")])
     bridge = make_bridge(helms={"A": a}, default_helm="A")
     visitor = make_visitor()
@@ -301,9 +307,9 @@ async def test_delegate_runs_target_and_reenqueues(
     await bridge.execute(visitor)
 
     assert executed["count"] == 1
-    visitor.prepend.assert_awaited_once_with([bridge])
-    state = getattr(visitor, BRIDGE_STATE_VISITOR_ATTR)
-    assert state.delegated_action is None  # cleared after execute
+    visitor.prepend.assert_not_awaited()
+    # State is cleared so the next user message starts fresh.
+    assert not hasattr(visitor, BRIDGE_STATE_VISITOR_ATTR)
 
 
 async def test_delegate_missing_target_triggers_safe_fallback(
