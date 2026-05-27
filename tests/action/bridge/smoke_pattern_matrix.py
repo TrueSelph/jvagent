@@ -15,15 +15,19 @@ Configurations the matrix supports today:
                                           bridge_agent/agent.yaml`` and re-run
                                           for each cell of the matrix.
 
-The five canonical matrix cells from BRIDGE-ROADMAP §J:
+The four canonical matrix cells from BRIDGE-ROADMAP §J:
 
 1. Cockpit (control)                    — ``cockpit_agent``
 2. Bridge + Reasoning                   — bridge_agent, ``helms: [ReasoningHelm]``
 3. Bridge + Reflex + Reasoning          — bridge_agent, ``helms: [ReflexHelm, ReasoningHelm]``
-4. Bridge + Reflex + Reasoning + Persona— bridge_agent, ``helms: [..., PersonaHelm]``
-5. Bridge + Reflex + Reasoning + Specialist
+4. Bridge + Reflex + Reasoning + Specialist
                                         — bridge_agent with an Interview /
                                           Specialist IA in the chain
+
+(The "Bridge + Reflex + Reasoning + Persona" cell was retired when
+PersonaHelm was scrapped — persona stylisation now happens directly
+inside Bridge via ``deliver_via_persona`` and isn't a separate
+matrix axis.)
 
 Workflow:
 

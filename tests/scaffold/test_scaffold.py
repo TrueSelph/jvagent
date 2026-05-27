@@ -68,9 +68,10 @@ def test_resolve_bridge_profile_includes_bridge_and_helms() -> None:
     Bridge ships the orchestrator plus the two default helms (ReflexHelm
     handles trivial turns, ReasoningHelm handles deliberate ones), plus
     persona for delivery polish and intro / handoff IAs that the
-    reasoning router can route to. PersonaHelm is intentionally NOT in
-    the default helms list — operators add it when they want a polish
-    SHIFT target (BRIDGE-ROADMAP §K).
+    reasoning router can route to. Persona stylisation happens directly
+    inside Bridge on engine-final EMITs via ``deliver_via_persona``;
+    the originally-planned dedicated ``PersonaHelm`` was scrapped in
+    May 2026 (BRIDGE-ROADMAP §G).
     """
     actions = resolve_profile_actions(None, "bridge")
     ids = {x["action"] for x in actions}

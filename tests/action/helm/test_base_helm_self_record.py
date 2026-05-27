@@ -172,8 +172,9 @@ class TestSubclassesUseStepImplNotStep:
         assert ReasoningHelm.step is BaseHelm.step
         assert "_step_impl" in ReasoningHelm.__dict__
 
-    def test_persona_helm_overrides_step_impl(self):
-        from jvagent.action.helm.persona.persona_helm import PersonaHelm
-
-        assert PersonaHelm.step is BaseHelm.step
-        assert "_step_impl" in PersonaHelm.__dict__
+    # PersonaHelm was scrapped (May 2026) — the dedicated helm was
+    # never wired into a live agent's helm chain. Bridge handles
+    # persona stylisation directly via deliver_via_persona from
+    # BridgeInteractAction._publish_emit_via_persona. The
+    # ``test_persona_helm_overrides_step_impl`` test that used to
+    # live here has been removed alongside the helm.

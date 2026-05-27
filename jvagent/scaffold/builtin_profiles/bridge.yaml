@@ -1,10 +1,11 @@
 # Bridge profile (BRIDGE-ROADMAP §K).
 #
 # Multi-helm composition: BridgeInteractAction at weight -200 orchestrates
-# ReflexHelm (sub-500ms classifier) and ReasoningHelm (cockpit-style
-# think-act-observe loop). PersonaHelm is declared as an installable
-# action — operators can add it to the ``helms:`` list to enable
-# polish-and-deliver SHIFT targets.
+# ReflexHelm (sub-500ms classifier) and ReasoningHelm (think-act-observe
+# loop). Persona stylisation is handled directly by Bridge via
+# ``deliver_via_persona`` on engine-final EMITs — no dedicated
+# PersonaHelm in the chain (the original dedicated helm was scrapped
+# in May 2026 cleanup; see BRIDGE-ROADMAP §G).
 #
 # This profile is a STARTER for new agents. It is never injected into
 # existing agents — the bootstrap layer treats agents declaratively from

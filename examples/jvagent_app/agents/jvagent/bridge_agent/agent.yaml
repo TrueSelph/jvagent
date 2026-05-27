@@ -100,9 +100,10 @@ actions:
       # Don't pretend action ("one moment") since no helm is going to act.
       fallback_text: "Sorry — I couldn't process that. Could you rephrase or try again?"
       # ``can_emit_directly: true`` lets Reflex answer trivial turns
-      # itself; set false to force every turn through ReasoningHelm /
-      # PersonaHelm (useful when polish quality matters more than
-      # latency on greetings).
+      # itself; set false to force every turn through ReasoningHelm
+      # (useful when polish quality matters more than latency on
+      # greetings, since persona stylisation only runs on the
+      # engine-final EMIT path).
       can_emit_directly: true
 
   # ── ReasoningHelm — deliberate think/act/observe loop ──
