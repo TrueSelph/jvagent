@@ -1,25 +1,25 @@
-"""Task harness tools for cockpit.
+"""Task harness tools for the engine.
 
-The cockpit engine auto-creates one **trace task** per run (see
-``CockpitEngine._auto_task_start``) and stores its ID on the visitor's
-``CockpitSession.trace_task_id``. The model's task tools below resolve to
+The engine auto-creates one **trace task** per run (see
+``Engine._auto_task_start``) and stores its ID on the visitor's
+``EngineSession.trace_task_id``. The model's task tools below resolve to
 that shared trace task whenever it exists, so model-authored plans live
 on the same task the engine is auto-recording. This keeps a single task
 per run with both engine observability and model intent in one place.
 
 Once the model calls ``task_create_plan`` the engine flips
-``CockpitSession.model_planned=True`` and stops auto-appending iteration
+``EngineSession.model_planned=True`` and stops auto-appending iteration
 steps — the model's plan drives from then on.
 """
 
 from typing import Any, List, Optional
 
-from jvagent.action.helm.reasoning.context import CockpitContext
+from jvagent.action.helm.reasoning.context import EngineContext
 from jvagent.action.helm.reasoning.session import get_session, get_session_optional
 from jvagent.tooling.tool import Tool
 
 
-def _resolve_trace_task(ctx: CockpitContext) -> Optional[Any]:
+def _resolve_trace_task(ctx: EngineContext) -> Optional[Any]:
     """Return the engine's auto-created trace task, if any."""
     session = get_session_optional(ctx.visitor)
     if session is None or not session.trace_task_id:
@@ -35,8 +35,8 @@ def _resolve_trace_task(ctx: CockpitContext) -> Optional[Any]:
     return None
 
 
-def _build_task_tools(ctx: CockpitContext) -> List[Tool]:
-    """Return harness tools that expose task tracking to the cockpit model."""
+def _build_task_tools(ctx: EngineContext) -> List[Tool]:
+    """Return harness tools that expose task tracking to the engine model."""
 
     async def _create_plan(title: str, steps: List[str], description: str = "") -> str:
         if not ctx.visitor or not ctx.conversation:
@@ -83,7 +83,7 @@ def _build_task_tools(ctx: CockpitContext) -> List[Tool]:
         try:
             task_store = ctx.visitor.tasks
             # Prefer re-purposing the engine's auto-created trace task so
-            # there's one shared task per cockpit run.
+            # there's one shared task per engine run.
             task = _resolve_trace_task(ctx)
             if task is not None:
                 # Preserve any engine-trace steps that were recorded before

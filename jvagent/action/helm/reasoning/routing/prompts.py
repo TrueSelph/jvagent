@@ -1,7 +1,35 @@
-"""Routing prompts for the cockpit Phase-1 router.
+"""Routing prompts for the Phase-1 router.
 
 Lives next to :mod:`jvagent.action.helm.reasoning.routing.router`. Engine and
 skill-catalog prompts are colocated with their respective implementations.
+
+ReasoningHelm only runs INSIDE Bridge composition (it requires a
+``BridgeState`` on the visitor and cannot be installed as a standalone
+``InteractAction``). That has two prompt-level implications:
+
+1. **Posture classification is upstream-of-router.** ReflexHelm gates the
+   turn first: empty input → YIELD; trivial smalltalk → EMIT; substantive →
+   SHIFT to Reasoning. By the time EngineRouter runs, posture is already
+   RESPOND by construction. The full STEP 0 (RESPOND/SUPPRESS/DEFER) block
+   from the standalone-Cockpit prompt costs ~400 tokens for behaviour
+   Reflex already provides.
+
+2. **canned_response is owned by Reflex.** Reflex's ``transient_ack`` on
+   SHIFT is the user-facing immediate response in Bridge composition.
+   The router's ``enable_canned_response`` is False by default in
+   ``bridge_agent.yaml`` for exactly this reason. The principle bullet
+   and schema field that describe canned_response are dead surface when
+   the flag is off.
+
+Both surfaces are now parameterized via :func:`build_routing_system_prompt`
+and :func:`build_routing_user_prompt_template`. The module-level
+``ROUTING_SYSTEM_PROMPT`` / ``ROUTING_USER_PROMPT_TEMPLATE`` constants
+are rebuilt through those factories with the full (standalone-equivalent)
+flags so importers see no diff. ``EngineRouter`` calls the factories with
+Bridge-mode flags (posture stripped, canned stripped) to take the savings.
+
+Single-source-of-truth invariant pinned by
+``tests/action/helm/reasoning/test_routing_prompt_factories.py``.
 """
 
 from __future__ import annotations
@@ -31,13 +59,21 @@ ANCHOR_DISAMBIGUATION_CLAUSE = """ANCHOR MATCHING — by INTENT, not by keywords
 
 
 # ---------------------------------------------------------------------------
-# System prompt
+# System-prompt blocks
 # ---------------------------------------------------------------------------
+#
+# Each block is a self-contained fragment of the routing system prompt.
+# ``build_routing_system_prompt`` assembles them based on caller flags.
+# Editing a block here applies to BOTH the back-compat module constant
+# (full prompt) and the Bridge-mode prompt that EngineRouter actually
+# sends — no risk of drift between the two shapes.
 
-ROUTING_SYSTEM_PROMPT = (
-    """You are a unified classification and routing intelligence for a conversational reasoning agent. First classify response posture (RESPOND/SUPPRESS/DEFER), then — only when posture is RESPOND — classify intent, select skills, and (when appropriate) emit a brief canned lead-in.
+_OPENING_FULL = """You are a unified classification and routing intelligence for a conversational reasoning agent. First classify response posture (RESPOND/SUPPRESS/DEFER), then — only when posture is RESPOND — classify intent, select skills, and (when appropriate) emit a brief canned lead-in."""
 
-STEP 0 — POSTURE (RESPOND | SUPPRESS | DEFER)
+_OPENING_BRIDGE = """You are a routing intelligence for a conversational reasoning agent. Classify intent, select skills, and select interact_actions for the current turn."""
+
+# STEP 0 — full posture block (used by standalone-Cockpit-equivalent prompt).
+_POSTURE_BLOCK_FULL = """STEP 0 — POSTURE (RESPOND | SUPPRESS | DEFER)
 Trace the flow from history to the current message. What was the most recent assistant message? How does the current user message relate?
 
 RESPOND — use when:
@@ -57,9 +93,16 @@ SUPPRESS — use ONLY when:
 
 DEFER — use ONLY when:
 - Utterance genuinely unintelligible/fragmentary ("Actually...", "wait no I") AND history lacks context
-- NEVER DEFER: User sent media; use RESPOND.
+- NEVER DEFER: User sent media; use RESPOND."""
 
-STEP 1 — ROUTE SELECTION (only when posture=RESPOND)
+# STEP 0 — Bridge-mode defensive one-liner. Reflex has already gated
+# SUPPRESS/DEFER upstream; the only case the router still needs to handle
+# is a pathological pass-through where Reflex SHIFTed something genuinely
+# unintelligible. Keeping a tiny escape hatch is cheaper than removing the
+# posture surface entirely and rewriting the parser. ~25 tokens vs ~400.
+_POSTURE_BLOCK_BRIDGE = """POSTURE — Always RESPOND. The upstream classifier (Reflex) has already gated SUPPRESS/DEFER posture before any turn reaches you. Only exception: if the utterance is truly unintelligible AND history provides no context, set posture=DEFER, skills=[], interact_actions=[]."""
+
+_ROUTE_SELECTION_BLOCK = """STEP 1 — ROUTE SELECTION (only when posture=RESPOND)
 Two route classes are available:
 
 A. **skills** — capability bundles invoked through the reasoning engine (tool-driven research / synthesis / multi-step work). Pick from the SKILLS CATALOG. Use exact skill keys, never descriptions.
@@ -69,19 +112,22 @@ DECISION RULES:
 - Choose **skills only** when the request needs tool-driven exploration / synthesis / data retrieval and no specialized handler matches.
 - Choose **interact_actions only** when a listed handler is purpose-built for this request type (e.g., explicit handoff, structured form-fill, dedicated workflow) and no engine-level reasoning is needed.
 - Choose **both** when the request needs research first AND a specialized handler afterward (engine produces output, then the interact_action runs).
-- The reasoning engine has harness tools beyond skills (memory, artifacts, task planning, conversation search). A request that doesn't match any listed skill or interact_action can still be handled — emit ``skills: []`` and ``interact_actions: []`` and the engine will figure it out.
+- The reasoning engine has harness tools beyond skills (memory, artifacts, task planning, conversation search). A request that doesn't match any listed skill or interact_action can still be handled — emit ``skills: []`` and ``interact_actions: []`` and the engine will figure it out."""
 
-CORE PRINCIPLES:
+# canned_response is permanently dropped from ReasoningHelm's prompt
+# surface (Reflex owns the transient_ack lead-in in Bridge composition).
+# The standalone-Cockpit copy at jvagent/action/cockpit/routing/prompts.py
+# keeps the full canned principles for its own use.
+_CORE_PRINCIPLES = """CORE PRINCIPLES:
 - CONVERSATIONAL intent (greetings, thanks, smalltalk) MUST have empty skills [] AND empty interact_actions [].
 - Recap / summarize / recall / "what did I say" requests are **always
   INFORMATIONAL**, never CONVERSATIONAL — even when phrased with a polite
   preamble ("Great can you recap…", "Thanks! Could you summarize…"). The
   engine path needs to run so it can read full conversation history; the
   conversational fast-path sees only a short window and produces
-  truncated or fabricated recaps.
-- canned_response (when emitted): non-conclusive **lead-in only** — a fragment or stall that the engine's main reply will continue in the same turn; never a standalone sentence that answers, refuses, advises, redirects, or closes the topic.
+  truncated or fabricated recaps."""
 
-INTENT TYPES (when posture=RESPOND):
+_INTENT_TYPES_BLOCK = """INTENT TYPES (when posture=RESPOND):
 - CONVERSATIONAL: greeting, thanks, smalltalk only; no request.
 - INFORMATIONAL: question, lookup, knowledge retrieval. **Includes recap /
   summary / recall requests** — "what did I say", "what have we discussed",
@@ -92,23 +138,58 @@ INTENT TYPES (when posture=RESPOND):
   recap request to CONVERSATIONAL.
 - INTERACTIVE: multi-turn (interview / form-fill / back-and-forth).
 - DIRECTIVE: direct command, imperative ("search for X", "remember that...", "save Z").
-- UNCLEAR: cannot determine.
+- UNCLEAR: cannot determine."""
 
-GROUNDING:
+_GROUNDING_BLOCK = """GROUNDING:
 - Use this prompt, history, the skill catalog, and any tool output as admissible evidence for posture, intent, and interpretation.
-- Do not treat general pretrained world knowledge as authoritative; when unsure, lower confidence.
+- Do not treat general pretrained world knowledge as authoritative; when unsure, lower confidence."""
 
-"""
-    + ANCHOR_DISAMBIGUATION_CLAUSE
-    + "\n"
-)
+
+def build_routing_system_prompt(
+    *,
+    include_posture_block: bool = True,
+) -> str:
+    """Assemble the routing system prompt from blocks.
+
+    Args:
+        include_posture_block: When True, embeds the full STEP 0
+            RESPOND/SUPPRESS/DEFER classification block (~400 tokens).
+            When False, replaces it with a single defensive one-liner
+            (~25 tokens) — the appropriate setting in Bridge composition
+            where Reflex has already gated posture upstream.
+
+    Returns:
+        The fully assembled routing system prompt string, terminated
+        with the anchor disambiguation clause (always included).
+
+    Note:
+        The ``canned_response`` principle bullet has been permanently
+        removed from this prompt surface — Reflex owns the
+        transient_ack lead-in in Bridge composition, so the Reasoning-
+        side router never emits a canned response. The standalone-
+        Cockpit copy at ``jvagent/action/cockpit/routing/prompts.py``
+        retains its full canned guidance for its own use.
+    """
+    opening = _OPENING_FULL if include_posture_block else _OPENING_BRIDGE
+    posture = _POSTURE_BLOCK_FULL if include_posture_block else _POSTURE_BLOCK_BRIDGE
+
+    sections = [
+        opening,
+        posture,
+        _ROUTE_SELECTION_BLOCK,
+        _CORE_PRINCIPLES,
+        _INTENT_TYPES_BLOCK,
+        _GROUNDING_BLOCK,
+        ANCHOR_DISAMBIGUATION_CLAUSE,
+    ]
+    return "\n\n".join(sections) + "\n"
 
 
 # ---------------------------------------------------------------------------
-# User-prompt template (formatted per-call by the router)
+# User-prompt template blocks
 # ---------------------------------------------------------------------------
 
-ROUTING_USER_PROMPT_TEMPLATE = """CONVERSATION STATE:
+_USER_TEMPLATE_HEADER = """CONVERSATION STATE:
 {active_tasks_section}{history_section}{prior_fragments_section}
 CURRENT USER MESSAGE:
 {utterance}
@@ -117,16 +198,23 @@ SKILLS CATALOG (JSON keys = only valid "skills" array entries):
 {skills_json}
 
 INTERACT ACTIONS CATALOG (JSON keys = only valid "interact_actions" array entries):
-{interact_actions_json}
+{interact_actions_json}"""
 
-TASK: 1) Classify posture (RESPOND/SUPPRESS/DEFER). 2) If posture=RESPOND, classify intent and fill skills + interact_actions; otherwise use skills=[], interact_actions=[], canned_response="", intent_type="UNCLEAR".
+_USER_TEMPLATE_TASK_FULL = """TASK: 1) Classify posture (RESPOND/SUPPRESS/DEFER). 2) If posture=RESPOND, classify intent and fill skills + interact_actions; otherwise use skills=[], interact_actions=[], canned_response="", intent_type="UNCLEAR"."""
 
-POSTURE RULES (recap):
+_USER_TEMPLATE_TASK_BRIDGE = (
+    """TASK: Classify intent and fill skills + interact_actions for the current turn."""
+)
+
+# The recap is a compressed re-statement of the system prompt's STEP 0.
+# Only emitted in standalone (non-Bridge) mode — when posture is already
+# upstream-gated, the recap is pure duplication.
+_USER_TEMPLATE_POSTURE_RECAP = """POSTURE RULES (recap):
 - RESPOND: greeting (always), question, request, answer to question, gratitude for help, personal-fact statement, contextually coherent message. When in doubt, RESPOND.
 - SUPPRESS: closing after exchange concluded; redundant thanks; hanging "ok" with nothing to answer. NEVER for direct answers, greetings, or new requests.
-- DEFER: genuinely unintelligible fragment AND no context. NEVER for media attachments.
+- DEFER: genuinely unintelligible fragment AND no context. NEVER for media attachments."""
 
-RULES:
+_USER_TEMPLATE_RULES = """RULES:
 1. The ">>> USER RESPONDS NOW <<<" marker in history indicates the transition to the current user message.
 2. Output posture first; then interpretation, intent_type, skills, interact_actions, confidence (and canned_response when posture=RESPOND).
 3. CONVERSATIONAL intent MUST have empty skills [] AND empty interact_actions [].
@@ -135,11 +223,11 @@ RULES:
 6. Use interact_actions ONLY when a listed handler is purpose-built for this request and no tool-driven engine work is needed.
 7. Use both skills AND interact_actions when engine work must precede a specialized handler.
 8. If the assistant's most recent message was a question and the user answers, use INTERACTIVE.
-9. Lower confidence if ambiguous{optional_instructions}
+9. Lower confidence if ambiguous{optional_instructions}"""
 
-INTERPRETATION: Brief synopsis of user intent and why this posture applies. Target one sentence, ~15-30 words.
+_USER_TEMPLATE_INTERPRETATION = """INTERPRETATION: Brief synopsis of user intent and why this posture applies. Target one sentence, ~15-30 words."""
 
-OUTPUT (JSON only):
+_USER_TEMPLATE_OUTPUT_SCHEMA = """OUTPUT (JSON only):
 {{
   "posture": "RESPOND|SUPPRESS|DEFER",
   "interpretation": "Brief synopsis of user intent and why this posture applies.",
@@ -150,22 +238,66 @@ OUTPUT (JSON only):
 }}"""
 
 
+def build_routing_user_prompt_template(
+    *,
+    include_posture_recap: bool = True,
+) -> str:
+    """Assemble the routing user-prompt template from blocks.
+
+    The returned string is a ``str.format()`` template — callers pass
+    ``active_tasks_section``, ``history_section``, ``prior_fragments_section``,
+    ``utterance``, ``skills_json``, ``interact_actions_json``,
+    ``entity_field``, ``canned_field``, and ``optional_instructions`` at
+    render time.
+
+    Args:
+        include_posture_recap: When True, includes the compressed
+            POSTURE RULES recap block (~100 tokens). When False, drops
+            both the recap and the task-line posture mention — the
+            appropriate setting in Bridge composition where the system
+            prompt's posture block has already been replaced with the
+            one-liner.
+
+    Returns:
+        Format-string template ready for ``.format(**fields)``.
+    """
+    task = (
+        _USER_TEMPLATE_TASK_FULL
+        if include_posture_recap
+        else _USER_TEMPLATE_TASK_BRIDGE
+    )
+    sections = [_USER_TEMPLATE_HEADER, task]
+    if include_posture_recap:
+        sections.append(_USER_TEMPLATE_POSTURE_RECAP)
+    sections.extend(
+        [
+            _USER_TEMPLATE_RULES,
+            _USER_TEMPLATE_INTERPRETATION,
+            _USER_TEMPLATE_OUTPUT_SCHEMA,
+        ]
+    )
+    return "\n\n".join(sections)
+
+
 # ---------------------------------------------------------------------------
-# Optional fragments
+# Module-level constants — rebuilt through the factories for single source
+# of truth. Anything that imported ROUTING_SYSTEM_PROMPT before still sees
+# the full (standalone-equivalent) prompt; EngineRouter calls the factories
+# directly with Bridge-mode flags to take the token savings.
 # ---------------------------------------------------------------------------
 
-ROUTING_CANNED_INSTRUCTIONS_TEMPLATE = """
-7. canned_response: use "" when intent_type is one of: {skip_intents}. Otherwise same language as the CURRENT USER MESSAGE; ≤{max_words} words; vary wording across turns.{persona_tone_hint}
+ROUTING_SYSTEM_PROMPT = build_routing_system_prompt(
+    include_posture_block=True,
+)
 
-   STRICT — lead-in acknowledgement ONLY (must sound incomplete; the real reply follows immediately after in the same turn):
-   - ALLOWED: hesitation, filler, or a short fragment with no full thought (e.g. "Hmm…", "One sec…", "Let me see…", "On it…", "Looking that up…" in the user's language). Reference the topic when natural ("Hmm… looking into Silvies Online…").
-   - FORBIDDEN — **no conclusive or substantive content whatsoever**: no answers, explanations, outcomes, reasons, advice, instructions to the user, refusals, limits, policy, apologies-for-limits, workarounds, redirects, or any string that could read as a finished message. If it could stand alone in chat, it is wrong.
-   - FORBIDDEN patterns (illustrative, not exhaustive): two clauses that resolve or pivot ("…, but you can…"; "…, so …"); "I can't …" / "I'm unable …" / "You should …" / "Try …" / anything that addresses the user's request without an obvious follow-on in the same bubble. Also forbidden: pre-emptive "Here's what I found…" / "Got it, here's…" — those imply the answer is already coming.
-   - BAD: "I can't check the time, but you can look at your device." — explains and concludes; belongs in the main reply only, never in canned_response.
-   - BAD: "Here's what I found about Silvies Online." — pre-empts the answer.
-   - GOOD: "Hmm…" / "Just a moment…" / "On it — pulling up Silvies Online…" — acknowledges processing only; carries zero standalone substance.
-"""
+ROUTING_USER_PROMPT_TEMPLATE = build_routing_user_prompt_template(
+    include_posture_recap=True,
+)
 
+
+# ---------------------------------------------------------------------------
+# Clarification fallbacks (used when router confidence is too low)
+# ---------------------------------------------------------------------------
 
 ROUTING_CLARIFICATION_FALLBACK_MESSAGES: List[str] = [
     "Could you tell me more about what you need?",
@@ -194,8 +326,9 @@ __all__ = [
     "ANCHOR_DISAMBIGUATION_CLAUSE",
     "ROUTING_SYSTEM_PROMPT",
     "ROUTING_USER_PROMPT_TEMPLATE",
-    "ROUTING_CANNED_INSTRUCTIONS_TEMPLATE",
     "ROUTING_CLARIFICATION_FALLBACK_MESSAGES",
     "ROUTING_CLARIFICATION_USER_PROMPT_TEMPLATE",
     "ROUTING_CLARIFICATION_PARAPHRASE_PROMPT_TEMPLATE",
+    "build_routing_system_prompt",
+    "build_routing_user_prompt_template",
 ]

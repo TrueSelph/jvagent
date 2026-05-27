@@ -1,13 +1,13 @@
-"""Conversation harness tools for cockpit."""
+"""Conversation harness tools for the engine."""
 
 from typing import Any, List
 
-from jvagent.action.helm.reasoning.context import CockpitContext
+from jvagent.action.helm.reasoning.context import EngineContext
 from jvagent.tooling.tool import Tool
 
 
-def _build_conversation_tools(ctx: CockpitContext) -> List[Tool]:
-    """Return harness tools that expose conversation search to the cockpit model."""
+def _build_conversation_tools(ctx: EngineContext) -> List[Tool]:
+    """Return harness tools that expose conversation search to the engine model."""
 
     async def _search(keyword: str, limit: int = 5) -> str:
         if not ctx.conversation:

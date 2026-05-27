@@ -1,13 +1,13 @@
-"""Skill harness tools for cockpit (deduplicated SkillCatalog usage)."""
+"""Skill harness tools for the engine (deduplicated SkillCatalog usage)."""
 
 from typing import Any, Dict, List, Optional
 
-from jvagent.action.helm.reasoning.context import CockpitContext
+from jvagent.action.helm.reasoning.context import EngineContext
 from jvagent.tooling.tool import Tool
 
 
-def _build_skill_tools(ctx: CockpitContext) -> List[Tool]:
-    """Return harness tools that expose skill discovery and reading to the cockpit model."""
+def _build_skill_tools(ctx: EngineContext) -> List[Tool]:
+    """Return harness tools that expose skill discovery and reading to the engine model."""
 
     def _get_catalog():
         """Resolve the shared SkillCatalog from visitor state (single source of truth)."""
@@ -83,12 +83,12 @@ def _build_skill_tools(ctx: CockpitContext) -> List[Tool]:
         Use when ``skill_read`` shows a skill has tools you need but they
         are not yet callable (i.e. the router did not pre-select that skill
         and no ``coactivate-with`` declaration loaded it). Activation runs
-        the same loader the cockpit uses at start-up; on the next model
+        the same loader the engine uses at start-up; on the next model
         call the new tools appear in the engine's tool list.
 
         Idempotent: re-activating an already-active skill is a no-op.
-        Bounded: per cockpit run, no more than
-        ``CockpitConfig.max_dynamic_activations`` skills may be activated
+        Bounded: per engine run, no more than
+        ``EngineConfig.max_dynamic_activations`` skills may be activated
         this way (default 10).
         """
         skill_name = (skill_name or "").strip()
@@ -147,7 +147,7 @@ def _build_skill_tools(ctx: CockpitContext) -> List[Tool]:
         if registry is None:
             return (
                 "skill_activate: tool registry is not exposed on ctx; this "
-                "cockpit run cannot accept dynamic activations."
+                "engine run cannot accept dynamic activations."
             )
 
         # Load the bundle. Import locally to avoid a circular import at
@@ -255,7 +255,7 @@ def _build_skill_tools(ctx: CockpitContext) -> List[Tool]:
                 "skill's tools are listed as available but not yet callable "
                 "(i.e. the skill was not pre-selected by the router and is "
                 "not always-active). Idempotent. Bounded by "
-                "max_dynamic_activations per cockpit run."
+                "max_dynamic_activations per engine run."
             ),
             parameters_schema={
                 "type": "object",

@@ -1,4 +1,4 @@
-"""Visitor shim for SkillCatalog.discover (self-contained for cockpit)."""
+"""Visitor shim for SkillCatalog.discover (self-contained for the engine)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any, Optional
 from jvagent.action.helm.reasoning.catalog.action_resolver import ActionResolver
 
 
-class CockpitVisitorShim:
+class EngineVisitorShim:
     """Minimal shim exposing attributes SkillCatalog expects from a visitor."""
 
     def __init__(

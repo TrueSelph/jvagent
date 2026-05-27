@@ -1,4 +1,4 @@
-"""Clock harness tool for cockpit.
+"""Clock harness tool for the engine.
 
 Exposes the current date and time so the model doesn't have to guess. Time
 is rendered in the configured app timezone (``App.timezone`` — see
@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from jvagent.action.helm.reasoning.context import CockpitContext
+from jvagent.action.helm.reasoning.context import EngineContext
 from jvagent.tooling.tool import Tool
 
 
@@ -76,7 +76,7 @@ def _format_datetime_block(dt: datetime) -> str:
     )
 
 
-def _build_clock_tools(ctx: CockpitContext) -> List[Tool]:
+def _build_clock_tools(ctx: EngineContext) -> List[Tool]:
     """Return harness tools that expose the current date/time."""
 
     async def _get_current_datetime(timezone: Optional[str] = None) -> str:

@@ -1,4 +1,4 @@
-"""Memory harness tools for cockpit.
+"""Memory harness tools for the engine.
 
 Two layers:
 
@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from jvagent.action.helm.reasoning.context import CockpitContext
+from jvagent.action.helm.reasoning.context import EngineContext
 from jvagent.tooling.tool import Tool
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ _SCOPE_ENUM = [SCOPE_AUTO, SCOPE_USER, SCOPE_CONVERSATION]
 # ----------------------------------------------------------------------
 
 
-async def _user_node(ctx: CockpitContext) -> Optional[Any]:
+async def _user_node(ctx: EngineContext) -> Optional[Any]:
     if not ctx.user_id or not ctx.agent:
         return None
     try:
@@ -68,7 +68,7 @@ def _ensure_dict(node: Any, attr: str) -> Optional[Dict[str, Any]]:
 
 
 async def _scope_view(
-    ctx: CockpitContext, scope: str
+    ctx: EngineContext, scope: str
 ) -> List[Tuple[str, Any, Dict[str, str], Dict[str, List[str]]]]:
     """Return scoped memory views: [(scope_label, node, memory, memory_tags), ...].
 
@@ -130,8 +130,8 @@ def _summary(scope_label: str, key: str, body: str, tags: List[str]) -> str:
 # ----------------------------------------------------------------------
 
 
-def _build_memory_tools(ctx: CockpitContext) -> List[Tool]:
-    """Return harness tools that expose the memory subsystem to the cockpit model."""
+def _build_memory_tools(ctx: EngineContext) -> List[Tool]:
+    """Return harness tools that expose the memory subsystem to the engine model."""
 
     # ------------------------------------------------------------------
     # Legacy reads (kept verbatim for stability)
@@ -634,7 +634,7 @@ def _build_memory_tools(ctx: CockpitContext) -> List[Tool]:
 # ----------------------------------------------------------------------
 
 
-async def render_user_memory_block(ctx: CockpitContext, max_chars: int = 4096) -> str:
+async def render_user_memory_block(ctx: EngineContext, max_chars: int = 4096) -> str:
     """Render the user's memory dict as a compact markdown block for the system prompt.
 
     Returns an empty string if there's nothing to surface or if pre-load is

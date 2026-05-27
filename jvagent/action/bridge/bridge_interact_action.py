@@ -26,7 +26,7 @@ not installed together; PATTERNS.md enforces this). Its job is to:
 5. Refuse to execute when no helms are configured.
 
 State plumbing lives on ``visitor._bridge_state`` (see :class:`BridgeState`),
-parallel to cockpit's ``visitor._skill_state``. The two never coexist on the
+parallel to the standalone Cockpit's ``visitor._skill_state``. The two never coexist on the
 same walker visit.
 """
 
@@ -74,7 +74,7 @@ _ACK_ELIGIBLE_LATENCY_CLASSES = frozenset({"deliberate", "long"})
 #
 # Helms are ``Action`` subclasses, not ``InteractAction``s — they're not in
 # the walker queue. When a helm needs the InteractAction reference that IS
-# in the queue (e.g. ``ReasoningHelm`` calling ``curate_walk_path_for_cockpit``
+# in the queue (e.g. ``ReasoningHelm`` calling ``curate_walk_path_for_engine``
 # during routed-IA queue setup), it resolves the Bridge instance via
 # :meth:`BridgeInteractAction.from_visitor` rather than reading the
 # underscore attribute directly. Centralised here so the mechanism is
@@ -107,7 +107,8 @@ class BridgeInteractAction(InteractAction):
     """
 
     weight: int = attribute(
-        default=-200, description="Execution weight (same slot as cockpit)."
+        default=-200,
+        description="Execution weight (same slot as the standalone Cockpit).",
     )
     description: str = attribute(
         default=(
@@ -153,6 +154,21 @@ class BridgeInteractAction(InteractAction):
             "default is English; override in agent.yaml for non-English "
             "deployments. This fires on rare error paths only — channel "
             "adapters that localise before publish are an alternative."
+        ),
+    )
+    enable_transient_ack: bool = attribute(
+        default=True,
+        description=(
+            "Master switch for canned/transient lead-in publishes. When "
+            "True (default), Bridge publishes Reflex's ``transient_ack`` "
+            "string on SHIFT (e.g. ``Looking that up…``) and the "
+            "``safety_net_ack_text`` on the first-emit timeout. Set to "
+            "False to suppress ALL canned lead-ins — the user sees a "
+            "brief silence until the helm produces real output. Useful "
+            "on channels where transient acks read as spam (voice / SMS) "
+            "or when you want a single deterministic response surface. "
+            'Note: ``safety_net_ack_text=""`` already disables just the '
+            "safety-net publish; this flag is the broader on/off."
         ),
     )
 
@@ -274,7 +290,7 @@ class BridgeInteractAction(InteractAction):
     ) -> None:
         """Append a ``helm_shift`` event to ``interaction.observability_metrics``.
 
-        Mirrors the structure cockpit / jvagent core already uses (``event_type``
+        Mirrors the structure the standalone Cockpit and jvagent core already uses (``event_type``
         + ``data`` + ``timestamp``) so the existing ``GET /logs/agents/{id}``
         query surface accepts these events without schema changes. See
         ``docs/logging.md`` for the canonical event taxonomy.
@@ -505,16 +521,21 @@ class BridgeInteractAction(InteractAction):
         state: BridgeState,
         verb: EMIT,
     ) -> None:
-        # On a terminal EMIT, check whether any always_execute IA
-        # (intro, handoff, etc.) has deposited an unexecuted directive
-        # this turn. If so, route the helm's draft text through
-        # PersonaAction so the directives compose with the helm's text
-        # into one cohesive response. Without this hook the directive
-        # sits unrendered (``executed=false``) and the user gets a bare
-        # helm-voice response.
+        # On a terminal EMIT, route through PersonaAction when either:
+        #   (a) the helm explicitly asked for persona stylisation
+        #       (``verb.via_persona=True`` — set by ReasoningHelm on its
+        #       engine final response so the persona wraps the engine
+        #       output), OR
+        #   (b) an always_execute IA (intro, handoff, etc.) has deposited
+        #       an unexecuted directive this turn — the helm's text
+        #       should be composed alongside those directives so the
+        #       user gets one cohesive response instead of a bare
+        #       helm-voice publish.
         handled_via_persona = False
-        if verb.finalize:
-            handled_via_persona = await self._publish_emit_via_persona_if_directives(
+        if verb.finalize and (
+            verb.via_persona or self._has_pending_directives(visitor)
+        ):
+            handled_via_persona = await self._publish_emit_via_persona(
                 visitor, state, verb
             )
         if not handled_via_persona:
@@ -532,47 +553,49 @@ class BridgeInteractAction(InteractAction):
         # Partial emit — same helm continues on next visit.
         await visitor.prepend([self])
 
-    async def _publish_emit_via_persona_if_directives(
+    @staticmethod
+    def _has_pending_directives(visitor: "InteractWalker") -> bool:
+        """True iff the current interaction carries at least one unexecuted directive."""
+        interaction = getattr(visitor, "interaction", None)
+        if interaction is None:
+            return False
+        directives = getattr(interaction, "directives", None) or []
+        for d in directives:
+            if isinstance(d, dict) and not d.get("executed", False):
+                return True
+        return False
+
+    async def _publish_emit_via_persona(
         self,
         visitor: "InteractWalker",
         state: BridgeState,
         verb: EMIT,
     ) -> bool:
-        """Route a terminal helm EMIT through PersonaAction when pending
-        IA directives are unrendered.
+        """Route a terminal helm EMIT through PersonaAction.
+
+        Two trigger modes (callers gate on either):
+
+        - ``verb.via_persona=True`` — the helm is asking for persona
+          stylisation of its final text (ReasoningHelm's engine output).
+          Uses :func:`deliver_via_persona` so skill-catalog overrides
+          (``response_mode``, ``verbatim_final``), degenerate-length
+          skip, and per-skill activation context all apply.
+        - **Pending IA directives** — an always_execute IA has
+          deposited an unexecuted directive this turn. The helm's text
+          is appended as a ``"Tell the user: …"`` directive so persona
+          composes it alongside the IA directives in one response.
 
         Returns True iff persona handled the publish (caller skips its
-        own ``self.publish``). False when no directives are pending, no
-        PersonaAction is installed, or persona fails — caller falls
-        back to direct publish.
+        own ``self.publish``). False when no PersonaAction is installed
+        or persona fails — caller falls back to direct publish.
 
-        Always_execute IAs (intro, handoff) often deposit directives
-        expecting a downstream persona render. In Bridge composition
-        there is no walker-driven persona pass after Bridge yields,
-        so without this hook those directives go unrendered.
+        Guard against double-render within a single turn (a helm that
+        EMITs partial then finalize=True; we want one persona pass).
         """
         interaction = getattr(visitor, "interaction", None)
         if interaction is None:
             return False
-        directives = getattr(interaction, "directives", None) or []
-        if not directives:
-            return False
 
-        # Only fire when at least one directive is unexecuted. Persona
-        # marks directives executed when it consumes them; without this
-        # gate we'd re-render on subsequent turns that reuse the same
-        # interaction view.
-        pending = False
-        for d in directives:
-            if isinstance(d, dict) and not d.get("executed", False):
-                pending = True
-                break
-        if not pending:
-            return False
-
-        # Guard against double-render within a single turn (e.g. helm
-        # emits finalize=False then later finalize=True; we want one
-        # persona pass, not two).
         bucket = state.helm_states.setdefault("__bridge__", {})
         if isinstance(bucket, dict) and bucket.get("directives_rendered"):
             return False
@@ -584,20 +607,96 @@ class BridgeInteractAction(InteractAction):
             persona = None
         if persona is None:
             logger.debug(
-                "bridge: pending directives but no PersonaAction installed; "
-                "publishing helm EMIT text directly (directives unrendered)"
+                "bridge: persona-routed EMIT requested but no PersonaAction "
+                "installed; publishing helm text directly"
             )
             return False
 
-        # Inject the helm's draft as a directive so persona composes it
-        # alongside the IA directives. Mirrors PersonaHelm's pattern.
         text = (verb.text or "").strip()
+
+        # Branch A — full persona delivery (skill-catalog aware).
+        # Used when the helm explicitly requested persona stylisation
+        # via ``verb.via_persona=True``. Engages the unified
+        # ``deliver_via_persona`` path with response_mode + degenerate
+        # + skill-catalog override resolution.
+        if verb.via_persona:
+            deliver_via_persona_fn = None
+            engine_result_cls = None
+            try:
+                from jvagent.action.helm.reasoning.context import EngineResult
+                from jvagent.action.helm.reasoning.delivery.persona_delivery import (
+                    deliver_via_persona,
+                )
+
+                deliver_via_persona_fn = deliver_via_persona
+                engine_result_cls = EngineResult
+            except Exception as exc:  # pragma: no cover — import failure means dead env
+                logger.warning(
+                    "bridge: deliver_via_persona import failed: %s; "
+                    "falling back to direct persona.respond",
+                    exc,
+                )
+
+            if deliver_via_persona_fn is not None:
+                metadata = verb.metadata or {}
+                activated_skills = list(metadata.get("activated_skills") or [])
+                # EngineResult is only consulted by deliver_via_persona for
+                # the ``activated_skills`` list (to resolve per-skill
+                # response_mode / verbatim_final overrides). Other fields
+                # are observability bookkeeping that the persona delivery
+                # path doesn't read — fill them with safe defaults so the
+                # dataclass construction succeeds. Skip the dataclass
+                # entirely when no skills are activated; that's also a
+                # valid signal (the skill-catalog override resolution
+                # short-circuits on an empty activated set).
+                from jvagent.action.helm.reasoning.contracts import (
+                    TerminationReason,
+                )
+
+                engine_result = (
+                    engine_result_cls(
+                        final_response=text,
+                        termination_reason=TerminationReason.COMPLETED,
+                        iterations=0,
+                        duration_seconds=0.0,
+                        activated_skills=activated_skills,
+                    )
+                    if (engine_result_cls is not None and activated_skills)
+                    else None
+                )
+                skill_catalog = (getattr(visitor, "_skill_state", None) or {}).get(
+                    "skill_catalog"
+                )
+                try:
+                    await deliver_via_persona_fn(
+                        action=self,
+                        visitor=visitor,
+                        content=text or None,
+                        response_mode=verb.response_mode or "publish",
+                        degenerate_response_max_chars=verb.degenerate_max_chars or 25,
+                        skill_catalog=skill_catalog,
+                        engine_result=engine_result,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "bridge: deliver_via_persona raised during EMIT: %s",
+                        exc,
+                    )
+                    return False
+                if isinstance(bucket, dict):
+                    bucket["directives_rendered"] = True
+                return True
+
+        # Branch B — directive-merge (helm text + pending IA directives).
+        # Used when the only reason we're here is pending directives
+        # from an always_execute IA; the helm did NOT request full
+        # persona stylisation. Append helm text as a directive so
+        # persona composes everything in one respond() call.
         if text:
             try:
                 await visitor.add_directive(f"Tell the user: {text}")
             except Exception as exc:
                 logger.debug("bridge: failed to add helm draft directive: %s", exc)
-
         try:
             await persona.respond(interaction, visitor=visitor)
         except Exception as exc:
@@ -606,7 +705,6 @@ class BridgeInteractAction(InteractAction):
                 exc,
             )
             return False
-
         if isinstance(bucket, dict):
             bucket["directives_rendered"] = True
         return True
@@ -675,7 +773,15 @@ class BridgeInteractAction(InteractAction):
 
         ack_emitted = False
         target_helm = resolved[verb.target]
-        if verb.transient_ack and self._is_ack_eligible(target_helm):
+        # Master switch: ``enable_transient_ack=False`` suppresses the
+        # SHIFT-time lead-in publish entirely. The helm still chose a
+        # transient_ack string — Bridge just drops it before publishing
+        # so observability still sees it on the ShiftRecord.
+        if (
+            self.enable_transient_ack
+            and verb.transient_ack
+            and self._is_ack_eligible(target_helm)
+        ):
             await self.publish(
                 visitor=visitor,
                 content=verb.transient_ack,
@@ -1082,6 +1188,10 @@ class BridgeInteractAction(InteractAction):
         state: BridgeState,
     ) -> None:
         """Fire the first-emit safety-net ack once per turn when the deadline lapses."""
+        # Master switch: ``enable_transient_ack=False`` disables canned
+        # lead-ins across Bridge — including the safety-net publish.
+        if not self.enable_transient_ack:
+            return
         if state.last_emit_at is not None:
             return
         # Track whether the ack already fired (separate from last_emit_at so

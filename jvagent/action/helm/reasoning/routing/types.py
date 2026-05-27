@@ -1,4 +1,4 @@
-"""Cockpit routing types and formatting utilities."""
+"""Engine routing types and formatting utilities."""
 
 import json
 import logging
@@ -66,7 +66,7 @@ ExtractedEntities = Dict[str, Any]
 
 @dataclass
 class RoutingResult:
-    """Structured routing result from CockpitRouter."""
+    """Structured routing result from EngineRouter."""
 
     posture: str = POSTURE_RESPOND
     interpretation: str = ""

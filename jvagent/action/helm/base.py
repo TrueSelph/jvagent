@@ -9,7 +9,7 @@ Subclasses MUST implement :meth:`step` and SHOULD declare a manifest in their
 package ``info.yaml`` — read via ``Action.get_manifest()``.
 
 Each helm's :meth:`step` issues **at most one** model call. This invariant
-(ADR-0002 / ADR-0007) is load-bearing across cockpit and bridge.
+(ADR-0002 / ADR-0007) is load-bearing across the standalone Cockpit and Bridge.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ class BaseHelm(Action):
 
     Subclasses inherit the standard ``Action`` lifecycle (``on_register``,
     ``on_enable``, ``on_startup``, ``on_disable``, ``on_deregister``). Helms
-    contribute neither cockpit tools nor capabilities by default; override
+    contribute neither engine tools nor capabilities by default; override
     :meth:`get_tools` / :meth:`get_capabilities` if a helm needs to expose
     either (uncommon — helms are orchestrated by Bridge, not by another helm).
 
@@ -66,8 +66,52 @@ class BaseHelm(Action):
         ),
     )
 
-    @abstractmethod
     async def step(
+        self,
+        visitor: "InteractWalker",
+        bridge_state: "BridgeState",
+    ) -> HelmStepResult:
+        """Run one helm step and record the execution.
+
+        This is a thin wrapper around :meth:`_step_impl` (which subclasses
+        override). The wrapper exists to apply the action-trace convention
+        used by ``PersonaAction.respond`` (``persona_action.py:465``): any
+        action that runs work for a turn appends its own class name to
+        ``interaction.actions``.
+
+        Because Bridge's walker-revisit pattern fires one ``step()`` per
+        visit, the recording produces an interleaved trace such as::
+
+            [BridgeInteractAction, ReflexHelm,
+             BridgeInteractAction, ReasoningHelm,
+             BridgeInteractAction, ReasoningHelm,
+             PersonaAction]
+
+        — each unit of work visible in the order it ran, matching how the
+        rails Actions trace already works.
+
+        Implementations live in :meth:`_step_impl` and follow the same
+        contract documented there (one model call max per visit, etc.).
+        Subclasses MUST override ``_step_impl``, not ``step``.
+        """
+        result = await self._step_impl(visitor, bridge_state)
+        interaction = getattr(visitor, "interaction", None)
+        if interaction is not None:
+            try:
+                interaction.record_action_execution(self.helm_name())
+            except Exception as exc:
+                # Recording is a best-effort observability hook —
+                # never fail the helm step because of a trace-write
+                # error. Persona uses the same defensive posture.
+                logger.debug(
+                    "BaseHelm: record_action_execution(%s) failed: %s",
+                    self.helm_name(),
+                    exc,
+                )
+        return result
+
+    @abstractmethod
+    async def _step_impl(
         self,
         visitor: "InteractWalker",
         bridge_state: "BridgeState",
@@ -86,8 +130,12 @@ class BaseHelm(Action):
           ``EMIT`` verb.
 
         Returns:
-            One of :class:`EMIT`, :class:`EXECUTE`, :class:`SHIFT`,
+            One of :class:`EMIT`, :class:`CONTINUE`, :class:`SHIFT`,
             :class:`DELEGATE`, :class:`YIELD`.
+
+        Self-recording on ``interaction.actions`` is handled by
+        :meth:`step` (the wrapper). Subclasses do NOT need to record
+        their own execution.
         """
 
     def helm_name(self) -> str:
@@ -104,7 +152,7 @@ class BaseHelm(Action):
     #
     # Lifted verbatim from :class:`jvagent.action.interact.base.InteractAction`
     # so helms can call ``self.publish(...)`` / ``self.publish_thought(...)``
-    # the same way cockpit-style InteractActions do. Helms are not
+    # the same way engine-style InteractActions do. Helms are not
     # InteractActions; they need their own copy because Action does not
     # provide these methods.
     # ------------------------------------------------------------------
@@ -126,7 +174,7 @@ class BaseHelm(Action):
     ) -> Optional[Any]:
         """Publish a response directly to the response bus.
 
-        Mirrors :meth:`InteractAction.publish` so duplicated cockpit code
+        Mirrors :meth:`InteractAction.publish` so duplicated delivery code
         (``deliver_final_response``, ``deliver_conversational``,
         ``deliver_via_persona``) that calls ``action.publish(...)`` works
         unchanged when ``action`` is a helm.
@@ -224,7 +272,7 @@ class BaseHelm(Action):
         """Generate a response via PersonaAction.
 
         Lifted verbatim from :meth:`InteractAction.respond` so duplicated
-        cockpit delivery helpers (``deliver_via_persona``,
+        engine delivery helpers (``deliver_via_persona``,
         ``deliver_conversational``, ``deliver_final_response``) work
         unchanged when ``action`` is a helm.
 

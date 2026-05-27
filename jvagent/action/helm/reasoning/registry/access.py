@@ -1,8 +1,8 @@
-"""Cockpit access control integration.
+"""Engine access control integration.
 
 Per-user access checks for skills, interact_actions, and individual tools
-inside the cockpit. Delegates to the agent's ``AccessControlAction.has_action_access``
-so cockpit reuses the standard ``(user_id, channel, resource)`` policy and the
+inside the engine. Delegates to the agent's ``AccessControlAction.has_action_access``
+so the engine reuses the standard ``(user_id, channel, resource)`` policy and the
 existing channel-level rules continue to work unchanged.
 
 Resource taxonomy (the ``action_label`` passed to ``has_action_access``):
@@ -61,7 +61,7 @@ async def _resolve_access_control(agent: Any) -> Optional[Any]:
     try:
         ac = await agent.get_access_control_action()
     except Exception as exc:
-        logger.debug("cockpit.access: failed to fetch AccessControlAction: %s", exc)
+        logger.debug("engine.access: failed to fetch AccessControlAction: %s", exc)
         return None
     if ac is None:
         return None
@@ -88,7 +88,7 @@ async def _is_allowed(
         )
     except Exception as exc:
         logger.warning(
-            "cockpit.access: has_action_access raised for label=%s user=%s: %s",
+            "engine.access: has_action_access raised for label=%s user=%s: %s",
             label,
             user_id,
             exc,
@@ -99,7 +99,7 @@ async def _is_allowed(
 
 
 # ---------------------------------------------------------------------------
-# Filters used by the cockpit dispatch + tool assembly paths
+# Filters used by the engine dispatch + tool assembly paths
 # ---------------------------------------------------------------------------
 
 
@@ -130,7 +130,7 @@ async def filter_routed_skills_by_access(
             allowed.append(skill)
         else:
             logger.info(
-                "cockpit.access: denying skill=%s for user=%s channel=%s",
+                "engine.access: denying skill=%s for user=%s channel=%s",
                 skill,
                 user_id,
                 channel,
@@ -165,7 +165,7 @@ async def filter_routed_interact_actions_by_access(
             allowed.append(action)
         else:
             logger.info(
-                "cockpit.access: denying interact_action=%s for user=%s channel=%s",
+                "engine.access: denying interact_action=%s for user=%s channel=%s",
                 cls_name,
                 user_id,
                 channel,
@@ -184,7 +184,7 @@ async def filter_tool_registry_by_access(
 
     AUDIT-interact MED-22: when no AccessControlAction is registered on
     the agent (or ``agent`` itself is None), this returns 0 with no
-    filtering — the cockpit runs with the full unfiltered tool set.
+    filtering — the engine runs with the full unfiltered tool set.
     Log a warning so operators notice they're shipping without access
     enforcement, instead of failing silently.
 
@@ -214,7 +214,7 @@ async def filter_tool_registry_by_access(
             registry.remove(name)
             removed += 1
             logger.info(
-                "cockpit.access: removing tool=%s for user=%s channel=%s",
+                "engine.access: removing tool=%s for user=%s channel=%s",
                 name,
                 user_id,
                 channel,

@@ -1,4 +1,4 @@
-"""Identity harness tools for cockpit.
+"""Identity harness tools for the engine.
 
 Surfaces caller identity to the model so it can address the user by name
 when one has been provided. Returns ``"unknown"`` when no name is on file —
@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from typing import Any, List, Optional
 
-from jvagent.action.helm.reasoning.context import CockpitContext
+from jvagent.action.helm.reasoning.context import EngineContext
 from jvagent.tooling.tool import Tool
 
 
-async def _load_user_node(ctx: CockpitContext) -> Optional[Any]:
+async def _load_user_node(ctx: EngineContext) -> Optional[Any]:
     if not ctx.user_id or not ctx.agent:
         return None
     try:
@@ -32,7 +32,7 @@ def _coerce_name(value: Any) -> str:
     return s
 
 
-def _build_identity_tools(ctx: CockpitContext) -> List[Tool]:
+def _build_identity_tools(ctx: EngineContext) -> List[Tool]:
     """Return harness tools that surface the caller's identity to the model."""
 
     async def _get_user_name() -> str:

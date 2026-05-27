@@ -1,10 +1,10 @@
-"""Unified discovery tool for cockpit (skills + interact_actions + tools).
+"""Unified discovery tool for the engine (skills + interact_actions + tools).
 
 Single entry point for finding the right capability for a job. The same
 implementation is used in two surfaces:
 
 - **Router** (Phase 1): permitted_kinds = {skills, interact_actions, tools}.
-  Optional, gated by ``router_use_cockpit_search`` to protect routing latency.
+  Optional, gated by ``router_use_capability_search`` to protect routing latency.
 - **Engine** (Phase 2 think-act-observe): permitted_kinds = {skills, tools}.
   ``interact_actions`` is intentionally hidden — interact-action discovery is
   a router concern; the engine has no way to invoke another InteractAction
@@ -21,7 +21,7 @@ import logging
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from jvagent.action.helm.reasoning.catalog.skill_catalog import SkillCatalog
-from jvagent.action.helm.reasoning.context import CockpitContext
+from jvagent.action.helm.reasoning.context import EngineContext
 from jvagent.tooling.tool import Tool
 
 logger = logging.getLogger(__name__)
@@ -73,7 +73,7 @@ async def _search_skills(
 
 
 async def _search_tools(
-    ctx: CockpitContext,
+    ctx: EngineContext,
     query: str,
     query_tokens: List[str],
     top_k: int,
@@ -101,14 +101,14 @@ async def _search_tools(
                             (score, f"tool:{name}", desc.strip() or "(no description)")
                         )
         except Exception as exc:
-            logger.debug("cockpit_search: action tool collection failed: %s", exc)
+            logger.debug("capability_search: action tool collection failed: %s", exc)
 
     results.sort(key=lambda x: x[0], reverse=True)
     return results[:top_k]
 
 
 async def _search_interact_actions(
-    ctx: CockpitContext,
+    ctx: EngineContext,
     query: str,
     query_tokens: List[str],
     top_k: int,
@@ -124,7 +124,7 @@ async def _search_interact_actions(
             return []
         all_actions = await actions_mgr.get_all_actions(enabled_only=True)
     except Exception as exc:
-        logger.debug("cockpit_search: interact action enumeration failed: %s", exc)
+        logger.debug("capability_search: interact action enumeration failed: %s", exc)
         return []
 
     results: List[Tuple[float, str, str]] = []
@@ -150,7 +150,7 @@ async def _search_interact_actions(
     return results[:top_k]
 
 
-def _resolve_catalog(ctx: CockpitContext) -> Optional[SkillCatalog]:
+def _resolve_catalog(ctx: EngineContext) -> Optional[SkillCatalog]:
     skill_state = getattr(ctx.visitor, "_skill_state", None) or {}
     catalog = skill_state.get("skill_catalog")
     if catalog is not None:
@@ -187,19 +187,19 @@ def _format_results(
 
 
 def _build_search_tools(
-    ctx: CockpitContext,
+    ctx: EngineContext,
     *,
     permitted_kinds: Iterable[str],
-    name: str = "cockpit_search",
+    name: str = "capability_search",
 ) -> List[Tool]:
-    """Return the unified ``cockpit_search`` tool, scoped to ``permitted_kinds``.
+    """Return the unified ``capability_search`` tool, scoped to ``permitted_kinds``.
 
     Args:
-        ctx: Cockpit context.
+        ctx: Engine context.
         permitted_kinds: Subset of {skills, interact_actions, tools} the caller
             allows. The model sees only these kinds (plus the meta-kind ``all``)
             in the schema enum.
-        name: Tool name (defaults to ``cockpit_search``).
+        name: Tool name (defaults to ``capability_search``).
     """
     permitted: Set[str] = {k for k in permitted_kinds if k in _KIND_ORDER}
     if not permitted:
@@ -280,7 +280,7 @@ def _build_search_tools(
     ]
 
 
-# Public helper used by router (no CockpitContext available pre-engine).
+# Public helper used by router (no EngineContext available pre-engine).
 async def search_for_router(
     *,
     agent: Any,
@@ -311,7 +311,7 @@ async def search_for_router(
     tools = _build_search_tools(
         ctx,  # type: ignore[arg-type]
         permitted_kinds={KIND_SKILLS, KIND_ACTIONS, KIND_TOOLS},
-        name="cockpit_search",
+        name="capability_search",
     )
     if not tools:
         return ""

@@ -1,4 +1,4 @@
-"""CockpitRouter: lightweight pre-cockpit posture classification + skill selection."""
+"""EngineRouter: lightweight pre-engine posture classification + skill selection."""
 
 import json
 import logging
@@ -10,14 +10,13 @@ from jvagent.action.helm.reasoning.catalog.skill_catalog import SkillCatalog
 from jvagent.action.helm.reasoning.catalog.skill_discovery import (
     always_active_from_skill_dir,
 )
-from jvagent.action.helm.reasoning.registry.shim import CockpitVisitorShim
+from jvagent.action.helm.reasoning.registry.shim import EngineVisitorShim
 from jvagent.action.helm.reasoning.routing.prompts import (
-    ROUTING_CANNED_INSTRUCTIONS_TEMPLATE,
     ROUTING_CLARIFICATION_FALLBACK_MESSAGES,
     ROUTING_CLARIFICATION_PARAPHRASE_PROMPT_TEMPLATE,
     ROUTING_CLARIFICATION_USER_PROMPT_TEMPLATE,
-    ROUTING_SYSTEM_PROMPT,
-    ROUTING_USER_PROMPT_TEMPLATE,
+    build_routing_system_prompt,
+    build_routing_user_prompt_template,
 )
 from jvagent.action.helm.reasoning.routing.types import (
     POSTURE_RESPOND,
@@ -34,8 +33,8 @@ from jvagent.core.cache import (
 logger = logging.getLogger(__name__)
 
 
-class CockpitRouter:
-    """Lightweight pre-cockpit router: posture classification + skill selection."""
+class EngineRouter:
+    """Lightweight pre-engine router: posture classification + skill selection."""
 
     def __init__(self, action: Any) -> None:
         self._action = action
@@ -46,48 +45,19 @@ class CockpitRouter:
         interaction = visitor.interaction
 
         if not interaction:
-            logger.warning("CockpitRouter: no interaction available")
+            logger.warning("EngineRouter: no interaction available")
             return POSTURE_RESPOND, None
 
         if interaction.interpretation:
-            logger.debug("CockpitRouter: already routed, skipping")
+            logger.debug("EngineRouter: already routed, skipping")
             return POSTURE_RESPOND, None
 
-        # Local pre-classifier — cheap heuristic that fires BEFORE any
-        # agent / model resolution. When the utterance is unambiguous
-        # smalltalk and no active task is in flight, we synthesise a
-        # converse-skill route and skip the router LLM call entirely.
-        # See ``preclassifier.py`` for the rules and bucket definitions.
-        if getattr(self._action, "enable_router_preclassifier", True):
-            from jvagent.action.helm.reasoning.routing.preclassifier import (
-                maybe_preclassify,
-            )
-
-            preclassified = maybe_preclassify(
-                visitor,
-                interaction.utterance or "",
-                enabled=True,
-            )
-            if preclassified is not None:
-                interaction.response_posture = preclassified.posture
-                interp = (preclassified.interpretation or "").strip()
-                if interp and not getattr(interaction, "interpretation", ""):
-                    try:
-                        interaction.interpretation = interp
-                    except Exception:
-                        pass
-                try:
-                    await interaction.save()
-                except Exception as exc:
-                    logger.debug(
-                        "CockpitRouter: preclassifier interaction.save failed: %s",
-                        exc,
-                    )
-                logger.debug(
-                    "CockpitRouter: pre-classifier short-circuit (%s) — skipping LLM",
-                    preclassified.raw_response,
-                )
-                return preclassified.posture, preclassified
+        # NOTE — the standalone-Cockpit ancestor runs a smalltalk
+        # pre-classifier here to short-circuit the router LLM call on
+        # greetings / thanks / goodbyes. ReasoningHelm doesn't carry
+        # that surface: smalltalk turns are caught by ReflexHelm
+        # (sub-200ms EMIT) and never reach this router. Every turn
+        # that arrives here is substantive by Reflex's construction.
 
         try:
             agent = await self._action.get_agent()
@@ -97,7 +67,7 @@ class CockpitRouter:
 
             model_action = await self._action.get_model_action(purpose="router")
             if not model_action:
-                logger.error("CockpitRouter: model action not found")
+                logger.error("EngineRouter: model action not found")
                 return POSTURE_RESPOND, None
 
             if conversation:
@@ -130,7 +100,7 @@ class CockpitRouter:
                 interaction_history = []
 
             if not skill_descriptors and not interact_action_descriptors:
-                logger.warning("CockpitRouter: no routes available")
+                logger.warning("EngineRouter: no routes available")
                 result = RoutingResult.error_result(
                     "No skills or interact_actions available for routing",
                     interaction.utterance or "",
@@ -158,36 +128,18 @@ class CockpitRouter:
                     pass
             await interaction.save()
 
-            if result.is_suppress():
-                return result.posture, result
-
-            if result.is_defer() and getattr(self._action, "enable_accumulation", True):
-                return result.posture, result
-
-            # Publish canned lead-in (LLM-generated by the routing call) before
-            # the engine runs. The strict lead-in-only rules in
-            # ``ROUTING_CANNED_INSTRUCTIONS_TEMPLATE`` keep this fragmentary
-            # and language-matched.
-            canned = result.canned_response
-            if (
-                self._enable_canned_response
-                and canned
-                and canned.strip()
-                and result.intent_type not in self._skip_canned_for_intents
-            ):
-                try:
-                    await self._action.publish(visitor, canned.strip(), transient=True)
-                    interaction.canned_response = canned.strip()
-                    await interaction.save()
-                except Exception as e:
-                    logger.warning(
-                        "CockpitRouter: failed to publish canned response: %s", e
-                    )
-
+            # Bridge composition: Reflex gates SUPPRESS/DEFER posture
+            # upstream and owns the user-facing immediate response via
+            # ``transient_ack`` on SHIFT. The router only ever sees
+            # RESPOND-class turns, so the SUPPRESS/DEFER short-circuits
+            # and canned-response publishing that the monolithic Cockpit
+            # router carried are deliberately absent here. The
+            # standalone-Cockpit copy at
+            # ``jvagent/action/cockpit/routing/router.py`` retains them.
             return result.posture, result
 
         except Exception as exc:
-            logger.error("CockpitRouter: error during routing: %s", exc, exc_info=True)
+            logger.error("EngineRouter: error during routing: %s", exc, exc_info=True)
             return POSTURE_RESPOND, None
 
     async def _run_llm_route(
@@ -216,7 +168,7 @@ class CockpitRouter:
                     cached, skill_descriptors, interact_action_descriptors
                 )
                 if cached_result is not None:
-                    logger.debug("CockpitRouter: cache hit (key=%s…)", cache_key[:12])
+                    logger.debug("EngineRouter: cache hit (key=%s…)", cache_key[:12])
                     return cached_result
 
         model_action = await self._action.get_model_action(
@@ -231,20 +183,16 @@ class CockpitRouter:
         )
 
         optional_instructions = ""
+        # canned_field is kept as an empty placeholder so the user-prompt
+        # template's ``.format()`` succeeds. The JSON schema fragment it
+        # would otherwise inject was a ``"canned_response": ""`` field —
+        # permanently absent in Bridge composition (Reflex owns the
+        # transient_ack lead-in).
         canned_field = ""
-        if self._enable_canned_response:
-            canned_field = ',\n  "canned_response": ""'
-            skip_intents = ", ".join(self._skip_canned_for_intents)
-            persona_tone_hint = await self._build_persona_tone_hint()
-            optional_instructions += ROUTING_CANNED_INSTRUCTIONS_TEMPLATE.format(
-                max_words=self._canned_response_max_words,
-                skip_intents=skip_intents,
-                persona_tone_hint=persona_tone_hint,
-            )
 
-        # Optional: enrich prompt with cockpit_search results (skills + interact_actions + tools).
-        # Off by default (latency-sensitive); enable via router_use_cockpit_search.
-        if getattr(self._action, "router_use_cockpit_search", False):
+        # Optional: enrich prompt with capability_search results (skills + interact_actions + tools).
+        # Off by default (latency-sensitive); enable via router_use_capability_search.
+        if getattr(self._action, "router_use_capability_search", False):
             try:
                 capability_section = await self._build_capability_search_section(
                     interaction.utterance or ""
@@ -252,12 +200,22 @@ class CockpitRouter:
                 if capability_section:
                     optional_instructions += "\n\n" + capability_section
             except Exception as exc:
-                logger.debug("CockpitRouter: cockpit_search enrich failed: %s", exc)
+                logger.debug("EngineRouter: capability_search enrich failed: %s", exc)
 
         active_tasks_section = self._build_active_tasks_section()
 
+        # Bridge composition optimisation (see prompts.py docstring):
+        # ReasoningHelm only runs inside Bridge, so Reflex has already gated
+        # posture upstream and ``enable_canned_response`` defaults to False
+        # (Reflex owns transient_ack). The factory builds a ~35% smaller
+        # routing prompt that strips the redundant POSTURE/canned surfaces.
+        # Per-action override (``self._action.routing_user_prompt_template``)
+        # still wins when set — the factory call is just the new default.
+        bridge_user_template = build_routing_user_prompt_template(
+            include_posture_recap=False,
+        )
         routing_user_template = getattr(
-            self._action, "routing_user_prompt_template", ROUTING_USER_PROMPT_TEMPLATE
+            self._action, "routing_user_prompt_template", bridge_user_template
         )
         prompt = routing_user_template.format(
             utterance=interaction.utterance or "",
@@ -271,11 +229,19 @@ class CockpitRouter:
             optional_instructions=optional_instructions,
         )
 
+        # Bridge-mode system prompt: posture block compressed to the
+        # one-line defensive fallback. Canned guidance is permanently
+        # absent from the Reasoning prompt surface (Reflex owns the
+        # transient_ack lead-in). ~35% smaller than the standalone-
+        # standalone-Cockpit-equivalent ROUTING_SYSTEM_PROMPT module constant.
+        # Per-action override on ``self._action.routing_system_prompt``
+        # still wins.
+        bridge_system_prompt = build_routing_system_prompt(
+            include_posture_block=False,
+        )
         response = await model_action.generate(
             prompt=prompt,
-            system=getattr(
-                self._action, "routing_system_prompt", ROUTING_SYSTEM_PROMPT
-            ),
+            system=getattr(self._action, "routing_system_prompt", bridge_system_prompt),
             temperature=getattr(self._action, "router_model_temperature", 0.1),
             max_tokens=getattr(self._action, "router_model_max_tokens", 400),
             model=getattr(self._action, "router_model", "gpt-4o-mini"),
@@ -288,24 +254,13 @@ class CockpitRouter:
         result.interact_actions = self._validate_routes(
             result.interact_actions, interact_action_descriptors
         )
-        # Promote ``converse`` to a structural skill route. ``parse_routing_response``
-        # clears actions on CONVERSATIONAL intent; if the catalog has ``converse``
-        # we inject it so the dispatch is skill-driven instead of intent-driven.
-        # Cockpit's gate checks for ``actions == ["converse"]`` and takes the
-        # persona-only fast path.
-        from jvagent.action.helm.reasoning.delivery.gates import CONVERSE_SKILL_NAMES
+        # The standalone-Cockpit copy injects a ``converse`` skill route
+        # here when intent==CONVERSATIONAL to feed its conversational
+        # fast-path. ReasoningHelm has no fast-path (Reflex owns smalltalk
+        # via EMIT); CONVERSATIONAL turns just run through the engine
+        # with no preloaded skills.
 
-        if (
-            result.intent_type == "CONVERSATIONAL"
-            and not result.actions
-            and not result.interact_actions
-        ):
-            for converse_name in CONVERSE_SKILL_NAMES:
-                if converse_name in skill_descriptors:
-                    result.actions = [converse_name]
-                    break
-
-        # Cache write — store the validated, post-injection result so a
+        # Cache write — store the validated result so a
         # repeat utterance within the TTL window skips the LLM round-trip.
         if cache_key:
             try:
@@ -313,7 +268,7 @@ class CockpitRouter:
                     cache_key, result.to_dict(), caller_enabled=True
                 )
             except Exception as exc:
-                logger.debug("CockpitRouter: cache write failed: %s", exc)
+                logger.debug("EngineRouter: cache write failed: %s", exc)
 
         return result
 
@@ -326,7 +281,7 @@ class CockpitRouter:
         """Build descriptor map for routable InteractActions on the agent.
 
         Excludes:
-        - The cockpit action itself (cannot delegate to self).
+        - The engine action itself (cannot delegate to self).
         - InteractActions with ``always_execute=True`` (they run regardless of routing).
 
         Each entry: ``{"description": "...", "weight": int}``. The class name is the
@@ -345,17 +300,17 @@ class CockpitRouter:
 
             all_actions = await actions_mgr.get_all_actions(enabled_only=True)
         except Exception as exc:
-            logger.debug("CockpitRouter: interact action enumeration failed: %s", exc)
+            logger.debug("EngineRouter: interact action enumeration failed: %s", exc)
             return {}
 
-        cockpit_class = self._action.__class__.__name__
+        helm_class = self._action.__class__.__name__
         descriptors: Dict[str, Dict[str, Any]] = {}
         for action in all_actions:
             try:
                 if not isinstance(action, InteractAction):
                     continue
                 cls_name = action.__class__.__name__
-                if cls_name == cockpit_class:
+                if cls_name == helm_class:
                     continue
                 if bool(getattr(action, "always_execute", False)):
                     continue
@@ -397,27 +352,6 @@ class CockpitRouter:
                 or bool(always_active_from_skill_dir(skill_data.get("dir", ""))),
             }
         return descriptors
-
-    async def _build_persona_tone_hint(self) -> str:
-        """Build a short tonal hint to splice into the canned-response prompt.
-
-        Returns either an empty string (no persona context available) or a
-        leading-space clause like `` (Tonally match the agent persona: …)``
-        that splices cleanly into the canned-response instructions.
-        """
-        try:
-            persona = await self._action.get_action("PersonaAction")
-            if not persona or not getattr(persona, "enabled", True):
-                return ""
-            name = (getattr(persona, "persona_name", "") or "").strip()
-            desc = (getattr(persona, "persona_description", "") or "").strip()
-            if not desc:
-                return ""
-            short = " ".join(desc.split())[:200]
-            tag = f"{name} — {short}" if name else short
-            return f' (Tonally match the agent persona: "{tag}".)'
-        except Exception:
-            return ""
 
     def _build_cache_key(self, interaction: Any, conversation: Any) -> Optional[str]:
         """Build the router cache key for the current routing call.
@@ -486,7 +420,7 @@ class CockpitRouter:
                 cached, raw_response=cached.get("raw_response", "<cache>")
             )
         except Exception as exc:
-            logger.debug("CockpitRouter: cache deserialise failed: %s", exc)
+            logger.debug("EngineRouter: cache deserialise failed: %s", exc)
             return None
         result.actions = self._validate_routes(result.actions, skill_descriptors)
         result.interact_actions = self._validate_routes(
@@ -521,7 +455,7 @@ class CockpitRouter:
         try:
             active = store.list(status="active")
         except Exception as exc:
-            logger.debug("CockpitRouter: tasks.list failed: %s", exc)
+            logger.debug("EngineRouter: tasks.list failed: %s", exc)
             return ""
         if not active:
             return ""
@@ -564,9 +498,9 @@ class CockpitRouter:
         return "\n".join(lines) + "\n\n"
 
     async def _build_capability_search_section(self, utterance: str) -> str:
-        """Run a unified cockpit_search across skills + interact_actions + tools.
+        """Run a unified capability_search across skills + interact_actions + tools.
 
-        Used only when ``router_use_cockpit_search`` is enabled. Returns a
+        Used only when ``router_use_capability_search`` is enabled. Returns a
         prompt-ready section to splice into the routing user prompt; empty
         string on any failure.
         """
@@ -577,7 +511,7 @@ class CockpitRouter:
 
             agent = await self._action.get_agent()
             conversation = getattr(self._visitor, "conversation", None)
-            shim = CockpitVisitorShim(
+            shim = EngineVisitorShim(
                 agent=agent,
                 action_resolver=None,
                 user_id=None,
@@ -604,7 +538,7 @@ class CockpitRouter:
                 + output
             )
         except Exception as exc:
-            logger.debug("CockpitRouter: capability search section failed: %s", exc)
+            logger.debug("EngineRouter: capability search section failed: %s", exc)
             return ""
 
     async def _get_cached_catalog(self, agent: Any, conversation: Any = None) -> Any:
@@ -618,7 +552,7 @@ class CockpitRouter:
             return catalog
 
         try:
-            agent_shim = CockpitVisitorShim(
+            agent_shim = EngineVisitorShim(
                 agent=agent,
                 action_resolver=None,
                 user_id=None,
@@ -636,24 +570,8 @@ class CockpitRouter:
             )
             return catalog
         except Exception as exc:
-            logger.warning("CockpitRouter: catalog discovery failed: %s", exc)
+            logger.warning("EngineRouter: catalog discovery failed: %s", exc)
             return None
-
-    @property
-    def _enable_canned_response(self) -> bool:
-        return getattr(self._action, "enable_canned_response", True)
-
-    @property
-    def _skip_canned_for_intents(self) -> List[str]:
-        return getattr(
-            self._action,
-            "skip_canned_for_intents",
-            ["CONVERSATIONAL", "UNCLEAR", "INTERACTIVE"],
-        )
-
-    @property
-    def _canned_response_max_words(self) -> int:
-        return getattr(self._action, "canned_response_max_words", 8)
 
 
 async def asyncio_gather_router(*args: Any) -> Any:

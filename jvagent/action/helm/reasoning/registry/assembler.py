@@ -1,4 +1,4 @@
-"""Cockpit tool registry: assembles harness + action + skill tools."""
+"""Engine tool registry: assembles harness + action + skill tools."""
 
 import importlib.util
 import inspect
@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from jvagent.action.helm.reasoning.catalog.action_resolver import ActionResolver
 from jvagent.action.helm.reasoning.catalog.skill_catalog import SkillCatalog
-from jvagent.action.helm.reasoning.context import CockpitContext
+from jvagent.action.helm.reasoning.context import EngineContext
 from jvagent.action.helm.reasoning.tools.artifact import _build_artifact_tools
 from jvagent.action.helm.reasoning.tools.clock import _build_clock_tools
 from jvagent.action.helm.reasoning.tools.conversation import _build_conversation_tools
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 # Skill state key used to expose the skill load report for observability.
-SKILL_LOAD_REPORT_KEY = "cockpit_skill_load_report"
+SKILL_LOAD_REPORT_KEY = "engine_skill_load_report"
 
 
 @dataclass
@@ -49,7 +49,7 @@ class SkillLoadEntry:
 
 @dataclass
 class SkillLoadReport:
-    """Aggregated outcome of a cockpit skill loading pass.
+    """Aggregated outcome of an engine skill loading pass.
 
     Persisted on ``visitor._skill_state[SKILL_LOAD_REPORT_KEY]`` so smoke
     harness, debug endpoints, and tests can inspect which tools loaded and
@@ -75,8 +75,8 @@ class SkillLoadReport:
         )
 
 
-async def assemble_cockpit_tools(ctx: CockpitContext) -> ToolRegistry:
-    """Assemble the full tool set for a cockpit run.
+async def assemble_engine_tools(ctx: EngineContext) -> ToolRegistry:
+    """Assemble the full tool set for a engine run.
 
     Merges harness service tools, action tools (via ``Action.get_tools()``),
     and skill directory tools into a single ``ToolRegistry``. After the full
@@ -108,13 +108,13 @@ async def assemble_cockpit_tools(ctx: CockpitContext) -> ToolRegistry:
     )
     if removed:
         logger.info(
-            "CockpitToolRegistry: access control removed %d tool(s) for user=%s",
+            "EngineToolRegistry: access control removed %d tool(s) for user=%s",
             removed,
             user_id,
         )
 
     logger.info(
-        "CockpitToolRegistry: %d tools registered: %s",
+        "EngineToolRegistry: %d tools registered: %s",
         len(registry),
         registry.names(),
     )
@@ -137,7 +137,7 @@ _TIER_MINIMAL = {
     "response_publish",
     "task_create_plan",
     "task_update_step",
-    "cockpit_search",
+    "capability_search",
     "skill_search",
     "skill_read",
     # Identity + clock are always included — cheap, frequently needed, and
@@ -171,18 +171,18 @@ def _resolve_tier_whitelist(tier: str) -> Optional[set]:
     if tier == "full":
         return None
     logger.warning(
-        "CockpitToolRegistry: unknown tool_tier=%r, falling back to 'standard'",
+        "EngineToolRegistry: unknown tool_tier=%r, falling back to 'standard'",
         tier,
     )
     return set(_TIER_STANDARD)
 
 
-def _register_harness_tools(registry: ToolRegistry, ctx: CockpitContext) -> None:
+def _register_harness_tools(registry: ToolRegistry, ctx: EngineContext) -> None:
     """Register memory, response, task, conversation, skill, artifact, and search harness tools.
 
     Filtered by ``cfg.tool_tier`` (``minimal``/``standard``/``full``) so the
     model's prompt isn't bloated with tools the agent does not need. Artifact
-    tools and ``cockpit_search`` remain gated by their own enable flags so
+    tools and ``capability_search`` remain gated by their own enable flags so
     operators can override the tier individually.
     """
     cfg = ctx.config
@@ -213,13 +213,13 @@ def _register_harness_tools(registry: ToolRegistry, ctx: CockpitContext) -> None
         for tool in _build_artifact_tools(ctx):
             _register(tool)
 
-    if getattr(cfg, "enable_cockpit_search", True):
+    if getattr(cfg, "enable_capability_search", True):
         # Engine-context surface: skills + tools only (no interact_actions).
         for tool in _build_search_tools(ctx, permitted_kinds={KIND_SKILLS, KIND_TOOLS}):
             _register(tool)
 
 
-async def _register_action_tools(registry: ToolRegistry, ctx: CockpitContext) -> None:
+async def _register_action_tools(registry: ToolRegistry, ctx: EngineContext) -> None:
     """Collect tools from all enabled actions via ``Action.get_tools()``."""
     if not ctx.agent:
         return
@@ -234,13 +234,13 @@ async def _register_action_tools(registry: ToolRegistry, ctx: CockpitContext) ->
             registry.register(tool, prefix="action")
     except Exception as exc:
         logger.warning(
-            "CockpitToolRegistry: failed to register action tools: %s",
+            "EngineToolRegistry: failed to register action tools: %s",
             exc,
             exc_info=True,
         )
 
 
-async def _register_skill_tools(registry: ToolRegistry, ctx: CockpitContext) -> None:
+async def _register_skill_tools(registry: ToolRegistry, ctx: EngineContext) -> None:
     """Load and register tool modules from skill bundle directories.
 
     Records every load attempt in a ``SkillLoadReport`` published on
@@ -290,7 +290,7 @@ async def _register_skill_tools(registry: ToolRegistry, ctx: CockpitContext) -> 
         added = [s for s in expanded if s not in preloaded]
         if added:
             logger.info(
-                "CockpitSkillLoad: coactivate-with expanded preloaded "
+                "EngineSkillLoad: coactivate-with expanded preloaded "
                 "skills from %s by adding %s",
                 preloaded,
                 added,
@@ -325,13 +325,13 @@ async def _register_skill_tools(registry: ToolRegistry, ctx: CockpitContext) -> 
 
     if report.entries:
         logger.info(
-            "CockpitSkillLoad: skill=%s %s",
+            "EngineSkillLoad: skill=%s %s",
             preloaded,
             report.summary_line(),
         )
         for failed in report.failed():
             logger.warning(
-                "CockpitSkillLoad: failed skill=%s file=%s reason=%s",
+                "EngineSkillLoad: failed skill=%s file=%s reason=%s",
                 failed.skill_name,
                 failed.file,
                 failed.reason,
@@ -344,7 +344,7 @@ async def load_one_skill(
     skill_data: Dict[str, Any],
     catalog: SkillCatalog,
     action_resolver: Optional[ActionResolver],
-    ctx: CockpitContext,
+    ctx: EngineContext,
     report: SkillLoadReport,
 ) -> None:
     """Public wrapper around the module-private ``_load_one_skill``.
@@ -371,7 +371,7 @@ async def _load_one_skill(
     skill_data: Dict[str, Any],
     catalog: SkillCatalog,
     action_resolver: Optional[ActionResolver],
-    ctx: CockpitContext,
+    ctx: EngineContext,
     report: SkillLoadReport,
 ) -> None:
     """Dynamically load tool modules from one skill bundle directory.
@@ -465,18 +465,18 @@ async def _load_one_skill(
 
 @dataclass(frozen=True)
 class _CachedSkillModule:
-    """Per-file load result; reused across cockpit runs while file mtime is unchanged.
+    """Per-file load result; reused across engine runs while file mtime is unchanged.
 
     The expensive parts of skill-tool loading — file I/O, ``importlib`` exec,
     ``inspect.signature`` introspection — are stable for a given source file.
     We cache them keyed on ``(absolute_path, mtime)`` so subsequent calls only
     rebuild the lightweight per-call wrapper closure that captures the
-    current ``CockpitContext.visitor``.
+    current ``EngineContext.visitor``.
 
     ``skip_reason`` is non-None when the file does NOT yield a usable tool
     (missing ``get_tool_definition`` / ``execute``, malformed schema,
     spec_from_file_location returned None). Cached "skip" entries avoid
-    repeating the same diagnostic work on every cockpit run.
+    repeating the same diagnostic work on every engine run.
     """
 
     raw_tool_name: Optional[str]
@@ -528,7 +528,7 @@ def _load_or_get_cached_module(file_path: Path, prefix: str) -> _CachedSkillModu
     """Resolve a skill source file to a ``_CachedSkillModule`` (cached).
 
     Cache key includes ``mtime`` so editing the file produces a fresh load
-    on the next cockpit run without operator intervention. Errors raised
+    on the next engine run without operator intervention. Errors raised
     during exec / ``get_tool_definition()`` propagate to the caller for
     the load report; everything else is captured as a ``skip_reason`` on
     the cached entry so the diagnostic work isn't repeated.
@@ -541,7 +541,7 @@ def _load_or_get_cached_module(file_path: Path, prefix: str) -> _CachedSkillModu
         return cached
 
     name = file_path.stem
-    mod_name = f"jvagent_cockpit_skill_{prefix}_{name}"
+    mod_name = f"jvagent_engine_skill_{prefix}_{name}"
 
     module = _import_skill_module(file_path, mod_name)
 
@@ -632,7 +632,7 @@ def clear_skill_module_cache() -> None:
     """Drop all cached skill-module load results.
 
     Call from test setup and from operator-triggered reload paths so the
-    next cockpit run does a fresh import. Production code shouldn't need
+    next engine run does a fresh import. Production code shouldn't need
     this — file mtime changes invalidate cache entries automatically.
     """
     with _SKILL_MODULE_CACHE_LOCK:
@@ -643,9 +643,9 @@ def _load_tool_module(
     file_path: Any,
     prefix: str,
     allowed_tools: set,
-    ctx: CockpitContext,
+    ctx: EngineContext,
 ) -> "tuple[Optional[Tool], Optional[str]]":
-    """Resolve a skill source file to a ``Tool`` instance for this cockpit run.
+    """Resolve a skill source file to a ``Tool`` instance for this engine run.
 
     Wraps the module-load cache so subsequent runs avoid the importlib /
     ``inspect.signature`` cost. Returns ``(tool, skip_reason)`` with
@@ -690,7 +690,7 @@ def _load_tool_module(
         # produces a Python repr (single-quoted ``{'key': 'value'}``)
         # which is NOT valid JSON, breaks downstream consumers that
         # try to json.loads the tool output (notably the SPEC §7.3
-        # tool_result envelope path on the cockpit, which now feeds
+        # tool_result envelope path on the engine, which now feeds
         # the actual dict to streaming consumers), and bloats the
         # model's context with quoted gibberish. Centralised
         # serialization in Tool.call is the right layer.

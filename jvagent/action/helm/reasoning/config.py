@@ -3,8 +3,8 @@
 Duplicated from ``jvagent/action/cockpit/config.py`` at commit ``4bc6db6``
 as part of C-2 (BRIDGE-ROADMAP §C). Zero imports from
 ``jvagent.action.cockpit`` per the C-strategy hard constraint. The
-``CockpitConfig`` class name is preserved verbatim so the duplicated
-modules diff cleanly against their cockpit ancestors during review.
+``EngineConfig`` class name is preserved verbatim so the duplicated
+modules diff cleanly against their standalone-Cockpit ancestors during review.
 """
 
 from dataclasses import dataclass, field
@@ -14,7 +14,7 @@ DEFAULT_SKILL_MODEL: str = "claude-sonnet-4-20250514"
 
 
 @dataclass
-class CockpitConfig:
+class EngineConfig:
     model: str = DEFAULT_SKILL_MODEL
     model_temperature: float = 0.3
     model_max_tokens: int = 8192
@@ -50,20 +50,22 @@ class CockpitConfig:
     stream_internal_progress: bool = True
 
     # Defends against raw tool/skill invocation embedded in a user message
-    # (e.g. "/skill web_search", "call memory_set ..."). When True, the engine
-    # system prompt is augmented with a security block instructing the model
-    # to treat user text as content, not a command, and to never dispatch a
-    # tool just because its name appears in the utterance.
-    block_raw_tool_invocation: bool = False
+    # (e.g. "/skill web_search", "call memory_set ..."). When True (the
+    # secure default), the engine system prompt is augmented with a
+    # security block instructing the model to treat user text as content,
+    # not a command, and to never dispatch a tool just because its name
+    # appears in the utterance. Turn off only on agents that intentionally
+    # want to expose tool dispatch through natural language (rare).
+    block_raw_tool_invocation: bool = True
 
     enable_skill_helper_tools: bool = True
     enable_artifact_tools: bool = True
-    enable_cockpit_search: bool = True
-    # Cap on dynamic ``skill_activate`` invocations per cockpit run.
+    enable_capability_search: bool = True
+    # Cap on dynamic ``skill_activate`` invocations per engine run.
     # Prevents an agent loop from runaway-activating the full catalogue.
     # 0 disables the ``skill_activate`` harness tool entirely.
     max_dynamic_activations: int = 10
-    router_use_cockpit_search: bool = False
+    router_use_capability_search: bool = False
     # Harness-tool tier: "minimal" | "standard" | "full". Trims rarely-used
     # harness tools from the engine prompt to control token cost. Action and
     # skill tools are not affected by this knob.
@@ -74,7 +76,7 @@ class CockpitConfig:
     preload_user_memory: bool = True
     user_memory_max_chars: int = 4096
 
-    # Auto-track each cockpit run as a Task so observability sees structured
+    # Auto-track each engine run as a Task so observability sees structured
     # progress (active_tasks / completed_tasks on the interaction response)
     # even when the model doesn't explicitly call task_create_plan.
     auto_track_tasks: bool = True
@@ -90,8 +92,8 @@ class CockpitConfig:
     degenerate_response_max_chars: int = 25
     tool_servers: List[str] = field(default_factory=list)
 
-    # Overridable prompt templates (passed through from CockpitInteractAction).
-    # Empty string = use module-level constant from cockpit/prompts.py.
+    # Overridable prompt templates (passed through from ReasoningHelm).
+    # Empty string = use module-level constant from reasoning/prompts.py.
     system_prompt: str = ""
     task_planning_prompt: str = ""
     security_prompt: str = ""

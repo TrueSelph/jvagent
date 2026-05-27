@@ -30,7 +30,23 @@ async def test_reasoning_helm_instantiates_with_cockpit_defaults():
     assert helm.max_iterations == 25
     assert helm.max_duration_seconds == 300.0
     assert helm.tool_tier == "standard"
-    assert helm.conversational_fast_path is True
+    # Conversational fast-path, canned-response, and preclassifier surfaces
+    # were stripped in the Phase-2 distillation — ReasoningHelm now does
+    # agentic-loop + skill/IA routing only.
+    for stripped in (
+        "conversational_fast_path",
+        "converse_enabled",
+        "converse_context_limit",
+        "converse_persona_prompt",
+        "enable_canned_response",
+        "canned_response_max_words",
+        "skip_canned_for_intents",
+        "enable_router_preclassifier",
+    ):
+        assert not hasattr(helm, stripped), (
+            f"ReasoningHelm should not expose {stripped!r} after Phase-2 "
+            f"distillation — it belongs to standalone Cockpit only."
+        )
 
 
 async def test_reasoning_helm_helm_name_matches_class_name():

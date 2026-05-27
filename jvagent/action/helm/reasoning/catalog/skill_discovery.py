@@ -1,4 +1,4 @@
-"""Skill discovery utilities for cockpit (self-contained, no agent_interact imports)."""
+"""Skill discovery utilities for the engine (self-contained, no agent_interact imports)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from jvagent.action.helm.reasoning.catalog.skill_catalog import SkillCatalog
-from jvagent.action.helm.reasoning.registry.shim import CockpitVisitorShim
+from jvagent.action.helm.reasoning.registry.shim import EngineVisitorShim
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ async def list_always_active_skill_names(
 ) -> List[str]:
     """Skill names that should stay pre-registered (router + explicit always-active)."""
     try:
-        shim = CockpitVisitorShim(
+        shim = EngineVisitorShim(
             agent=agent,
             action_resolver=None,
             user_id=None,

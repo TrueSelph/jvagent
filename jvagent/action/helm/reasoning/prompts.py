@@ -1,13 +1,9 @@
 """Engine-level prompts for the reasoning-helm think-act-observe loop.
 
-Duplicated from ``jvagent/action/cockpit/prompts.py`` at commit ``4bc6db6``
-as part of C-2 (BRIDGE-ROADMAP §C). Constants retain their cockpit-prefixed
-names (``COCKPIT_SYSTEM_PROMPT``, ``SECURITY_BLOCK``, …) so the duplicated
-modules diff cleanly against their cockpit ancestors during review.
-
-Original docstring follows.
-
-
+Initially duplicated from ``jvagent/action/cockpit/prompts.py`` at commit
+``4bc6db6`` as part of C-2 (BRIDGE-ROADMAP §C); constants were renamed
+to ``ENGINE_*`` in Phase 3 to reflect this module's mission
+(Bridge-orchestrated engine, not a standalone Cockpit).
 
 Mirrors the per-action ``prompts.py`` convention used elsewhere in
 ``jvagent.action`` (router, persona, retrieval, mcp, …). Routing and skill
@@ -19,14 +15,14 @@ catalog prompts live next to their respective implementations
 from __future__ import annotations
 
 # ---------------------------------------------------------------------------
-# Main engine system prompt (formatted by :class:`CockpitEngine`)
+# Main engine system prompt (formatted by :class:`Engine`)
 # ---------------------------------------------------------------------------
 
-COCKPIT_SYSTEM_PROMPT = """\
+ENGINE_SYSTEM_PROMPT = """\
 You are {agent_name}.
 {agent_description}
 {user_memory}{current_datetime}{user_identity}
-You operate a cockpit of tools in a think-act-observe loop: analyze, pick tools, execute, ground claims in results.
+You operate a suite of tools in a think-act-observe loop: analyze, pick tools, execute, ground claims in results.
 
 # Tool-use cycle
 - When calling tools, output ONLY tool calls (no surrounding text). Tool results arrive next turn.
@@ -79,7 +75,7 @@ You operate a cockpit of tools in a think-act-observe loop: analyze, pick tools,
 CAPABILITY_SEARCH_NOTE = """
 
 # Capability discovery
-Call cockpit_search with an intent phrase (e.g. 'send email', 'read pdf') to find skills/tools.
+Call capability_search with an intent phrase (e.g. 'send email', 'read pdf') to find skills/tools.
 For skills, call skill_read to load the SOP before activating."""
 
 
@@ -110,7 +106,7 @@ CITATION_INSTRUCTION = (
 
 
 __all__ = [
-    "COCKPIT_SYSTEM_PROMPT",
+    "ENGINE_SYSTEM_PROMPT",
     "CAPABILITY_SEARCH_NOTE",
     "SECURITY_BLOCK",
     "TASK_PLANNING_BLOCK",

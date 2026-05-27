@@ -55,6 +55,73 @@ DEFAULT_REFLEX_MODEL = "gpt-4o-mini"
 DEFAULT_REFLEX_MODEL_ACTION = "OpenAILanguageModelAction"
 
 
+# ---------------------------------------------------------------------------
+# Tool-invocation pattern matchers (Layer 1 of the security defense)
+# ---------------------------------------------------------------------------
+#
+# Canonical syntax that says "the user is naming a tool and asking it to
+# run directly". When the utterance matches any of these (and
+# ``block_raw_tool_invocation`` is True), Reflex returns an EMIT refusal
+# and the utterance never reaches Reasoning's engine.
+#
+# Each entry maps a label (for logging / observability) to a compiled
+# regex. The labels are stable identifiers; the regexes are tuned so
+# legitimate phrasings ("look up X", "search for Y", "could you find Z")
+# never match — only explicit tool-call syntax does.
+#
+# All patterns are anchored against the utterance with case-insensitive
+# matching and ``\b`` word boundaries to avoid matching ``recall`` /
+# ``callback`` / etc. as ``call``.
+_TOOL_INVOCATION_PATTERNS: Dict[str, "re.Pattern"] = {
+    # Dispatch-verb + snake_case identifier. Catches the canonical
+    # injection "Call capability_search with query='...'" / "execute
+    # response_publish ..." / "run web_search". Snake_case is the
+    # near-universal naming convention for engine tools, so requiring
+    # an underscore in the identifier filters out legitimate phrasings
+    # ("call you", "execute the order", "run a search"). Verbs covered:
+    # call / invoke / execute / run / dispatch / trigger.
+    "dispatch_verb_snake_case_tool": re.compile(
+        r"\b(?:call|invoke|execute|run|dispatch|trigger)" r"\s+\w*[a-z]\w*_\w+",
+        re.IGNORECASE,
+    ),
+    # Dispatch-verb + identifier + paren — function-call syntax even
+    # without an underscore. Catches "execute foo(" or "run search(" —
+    # the parens are the tell.
+    "dispatch_verb_with_parens": re.compile(
+        r"\b(?:call|invoke|execute|run|dispatch|trigger)\s+\w+\s*\(",
+        re.IGNORECASE,
+    ),
+    # Slash commands. "/skill X" / "/tool Y" / "/exec Z" — unambiguously
+    # command-style; no legitimate interpretation in a chat agent.
+    "slash_command": re.compile(r"(?:^|\s)/\w+", re.IGNORECASE),
+    # Bare ``tool_name(args)`` style invocation embedded in the message.
+    # Requires snake_case (an underscore in the identifier) to avoid
+    # matching natural-language uses of parenthesized words ("(yes)" /
+    # "(more on this below)"). Matches ``capability_search(...)`` /
+    # ``response_publish(...)`` even when the user didn't say "call".
+    "bare_snake_case_function_call": re.compile(
+        r"\b\w*[a-z]\w*_\w+\s*\(",
+        re.IGNORECASE,
+    ),
+}
+
+
+def _detect_tool_invocation_pattern(utterance: str) -> Optional[str]:
+    """Return the label of the first matching tool-invocation pattern, or None.
+
+    Pure function — no side effects. Used by :class:`ReflexHelm` to
+    short-circuit classification when an utterance carries explicit
+    tool-call syntax.
+    """
+    text = (utterance or "").strip()
+    if not text:
+        return None
+    for label, pattern in _TOOL_INVOCATION_PATTERNS.items():
+        if pattern.search(text):
+            return label
+    return None
+
+
 class ReflexHelm(BaseHelm):
     """Sub-500ms fast-classifier helm orchestrated by ``BridgeInteractAction``.
 
@@ -106,20 +173,82 @@ class ReflexHelm(BaseHelm):
     )
 
     # ------------------------------------------------------------------
+    # Tool-invocation defense (Layer 1 of the two-layer security
+    # against tool-name injection)
+    # ------------------------------------------------------------------
+    #
+    # When ``block_raw_tool_invocation`` is True (the secure default),
+    # Reflex regex-matches the user utterance for canonical tool-call
+    # syntax BEFORE issuing the classification LM call. If a pattern
+    # matches, Reflex returns an EMIT carrying ``tool_invocation_refusal_text``
+    # — the utterance never reaches Reasoning's engine, so a determined
+    # adversary's "Call X with Y" / "/skill Z" injection can't ride the
+    # SHIFT path.
+    #
+    # The companion Layer 2 lives in :class:`Engine` (engine.py): a
+    # pre-dispatch substring check that refuses tool calls when the
+    # tool's name appears literally in the user's utterance. The two
+    # layers together cover the precision/recall tradeoff — Layer 1 is
+    # the cheap broad gate, Layer 2 is the deep narrow catch.
+    #
+    # Operators that intentionally want natural-language tool dispatch
+    # (rare — developer agents) can set both flags to False.
+    block_raw_tool_invocation: bool = attribute(default=True)
+    tool_invocation_refusal_text: str = attribute(
+        default=(
+            "I don't execute tools by name. Tell me what you're trying "
+            "to do and I'll figure out the right approach."
+        ),
+        description=(
+            "Friendly refusal published when the utterance matches a "
+            "canonical tool-invocation pattern AND block_raw_tool_invocation "
+            "is True. STATIC string — override per agent in agent.yaml. "
+            "Set to empty to suppress the publish entirely (the helm "
+            "will still refuse to SHIFT)."
+        ),
+    )
+
+    # ------------------------------------------------------------------
     # Step entry point
     # ------------------------------------------------------------------
 
-    async def step(
+    async def _step_impl(
         self,
         visitor: "InteractWalker",
         bridge_state: "BridgeState",
     ) -> HelmStepResult:
-        """Run one classification + return a verb."""
+        """Run one classification + return a verb.
+
+        Called by :meth:`BaseHelm.step` (the wrapper handles the
+        action-trace self-recording via
+        ``interaction.record_action_execution``).
+        """
         utterance = (getattr(visitor, "utterance", None) or "").strip()
         if not utterance:
             # Empty utterance — yield silently (no point burning an LM call).
             logger.debug("ReflexHelm: empty utterance — yielding")
             return YIELD()
+
+        # Layer 1 of the tool-injection defense — pattern gate.
+        # Canonical "call X(...)", "/skill X", "execute X(...)", etc.
+        # never reach Reasoning. The model-side SECURITY_BLOCK (Layer 2)
+        # is a non-binding instruction the LM can ignore on determined
+        # inputs; this regex check is a hard refuse.
+        if self.block_raw_tool_invocation:
+            matched = _detect_tool_invocation_pattern(utterance)
+            if matched is not None:
+                logger.info(
+                    "ReflexHelm: blocked raw tool invocation "
+                    "(pattern=%s) — utterance=%r",
+                    matched,
+                    utterance[:120],
+                )
+                refusal = (self.tool_invocation_refusal_text or "").strip()
+                # Fall back to a minimalist refusal if the operator
+                # explicitly emptied the friendly default.
+                if not refusal:
+                    refusal = "I can't do that."
+                return EMIT(text=refusal, finalize=True)
 
         try:
             agent = await self.get_agent()

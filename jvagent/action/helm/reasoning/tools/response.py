@@ -1,14 +1,14 @@
-"""Response harness tools for cockpit (bug fix: deliver_via_persona, merged final_delivery)."""
+"""Response harness tools for the engine (bug fix: deliver_via_persona, merged final_delivery)."""
 
 from typing import Any, List, Optional
 
-from jvagent.action.helm.reasoning.context import CockpitContext
+from jvagent.action.helm.reasoning.context import EngineContext
 from jvagent.action.helm.reasoning.session import get_session
 from jvagent.tooling.tool import Tool
 
 
-def _build_response_tools(ctx: CockpitContext) -> List[Tool]:
-    """Return harness tools that expose response delivery to the cockpit model."""
+def _build_response_tools(ctx: EngineContext) -> List[Tool]:
+    """Return harness tools that expose response delivery to the engine model."""
 
     async def _publish(
         content: str,
@@ -19,7 +19,7 @@ def _build_response_tools(ctx: CockpitContext) -> List[Tool]:
         """Publish a message to the user.
 
         When finalize=True, this signals the model considers this its final answer
-        and the cockpit loop will terminate. Use finalize=False for intermediate
+        and the engine loop will terminate. Use finalize=False for intermediate
         progress updates."""
         if not ctx.response_bus or not ctx.session_id or not ctx.interaction:
             return "Error: response bus or session unavailable."

@@ -1,8 +1,8 @@
-"""Unified persona-delivery entrypoint for cockpit.
+"""Unified persona-delivery entrypoint for the engine.
 
 Replaces the three persona-handoff sites that previously duplicated mode
 resolution + verbatim/degenerate handling: ``deliver_conversational``,
-``deliver_final_response``, and ``CockpitInteractAction._finalize_via_persona``.
+``deliver_final_response``, and ``ReasoningHelm._finalize_via_persona``.
 
 Single function. Single mode resolver. Same publish / respond / respond_slim
 matrix everywhere.
@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from jvagent.action.helm.reasoning.catalog.skill_catalog import SkillCatalog
-from jvagent.action.helm.reasoning.context import CockpitResult
+from jvagent.action.helm.reasoning.context import EngineResult
 
 
 def _normalize_response_mode(raw_mode: str) -> str:
@@ -22,7 +22,7 @@ def _normalize_response_mode(raw_mode: str) -> str:
 
 
 def _resolve_effective_response_mode(
-    result: Optional[CockpitResult],
+    result: Optional[EngineResult],
     default_mode: str,
     skill_catalog: Optional[SkillCatalog],
 ) -> str:
@@ -50,9 +50,9 @@ async def deliver_via_persona(
     force_raw: bool = False,
     degenerate_response_max_chars: int = 25,
     skill_catalog: Optional[SkillCatalog] = None,
-    cockpit_result: Optional[CockpitResult] = None,
+    engine_result: Optional[EngineResult] = None,
 ) -> None:
-    """Single entrypoint for cockpit → persona response delivery.
+    """Single entrypoint for engine → persona response delivery.
 
     Decision matrix (evaluated in order):
 
@@ -68,12 +68,12 @@ async def deliver_via_persona(
        - ``persona.respond_slim(prompt=content)`` if available, else publish raw.
 
     Args:
-        action: The cockpit action (used for ``publish`` / ``respond``).
+        action: The calling action (used for ``publish`` / ``respond``).
         visitor: InteractWalker for response-bus / directives.
         content: Final response text (None for pure-respond delivery driven
             by directives accumulated on the interaction).
         response_mode: ``"publish"`` (default) or ``"respond"``. Per-skill
-            overrides from ``skill_catalog`` win when ``cockpit_result`` is
+            overrides from ``skill_catalog`` win when ``engine_result`` is
             supplied with ``activated_skills``.
         directive: Optional directive to add before ``action.respond()``.
             Only used in ``"respond"`` mode.
@@ -85,19 +85,19 @@ async def deliver_via_persona(
             adds no value — publish raw.
         skill_catalog: Optional catalog for response_mode + verbatim_final
             override resolution.
-        cockpit_result: Optional ``CockpitResult`` for activated_skills
+        engine_result: Optional ``EngineResult`` for activated_skills
             (used to resolve overrides). When None, no override is applied.
     """
     text = (content or "").strip()
     effective_mode = _resolve_effective_response_mode(
-        cockpit_result, response_mode, skill_catalog
+        engine_result, response_mode, skill_catalog
     )
 
     verbatim = False
-    if cockpit_result is not None and skill_catalog is not None:
+    if engine_result is not None and skill_catalog is not None:
         try:
             verbatim = skill_catalog.get_verbatim_final_override(
-                set(getattr(cockpit_result, "activated_skills", []) or [])
+                set(getattr(engine_result, "activated_skills", []) or [])
             )
         except Exception:
             verbatim = False

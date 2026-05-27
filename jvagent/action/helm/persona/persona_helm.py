@@ -75,12 +75,17 @@ class PersonaHelm(BaseHelm):
         default="(Persona delivery unavailable — please try again.)"
     )
 
-    async def step(
+    async def _step_impl(
         self,
         visitor: "InteractWalker",
         bridge_state: "BridgeState",
     ) -> HelmStepResult:
-        """Render the final response via PersonaAction, then yield."""
+        """Render the final response via PersonaAction, then yield.
+
+        Called by :meth:`BaseHelm.step` (the wrapper handles the
+        action-trace self-recording via
+        ``interaction.record_action_execution``).
+        """
         interaction = getattr(visitor, "interaction", None)
         if interaction is None:
             logger.warning("PersonaHelm: visitor has no interaction; yielding")

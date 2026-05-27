@@ -1,4 +1,4 @@
-"""ActionResolver and version utilities for cockpit."""
+"""ActionResolver and version utilities for the engine."""
 
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ def version_satisfies(actual: str, constraint: str) -> bool:
 class ActionResolver:
     """Resolve graph-persisted Actions by entity type for skill tool modules.
 
-    Attached to ``visitor.action_resolver`` by the cockpit action during
+    Attached to ``visitor.action_resolver`` by the helm during
     execute(). Skill tools that accept a ``visitor`` kwarg can access it via
     ``visitor.action_resolver.resolve("GoogleCalendarAction")``.
 

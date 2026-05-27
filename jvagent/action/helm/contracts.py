@@ -23,7 +23,7 @@ Verb                Bridge behavior
                     If ``finalize=False``, Bridge re-enqueues the current helm.
 ``CONTINUE``        Re-enqueue the current helm with no Bridge-side state mutation.
                     Used by helms that dispatch their own tools internally (e.g.
-                    ``ReasoningHelm`` running the cockpit-style engine loop) and
+                    ``ReasoningHelm`` running the engine-style engine loop) and
                     simply need another walker visit to continue.
 ``SHIFT``           Switch to ``target`` helm. Emits ``transient_ack`` first when the
                     target's manifest declares a ``deliberate`` or ``long`` latency
@@ -110,12 +110,36 @@ class EMIT:
     When ``finalize=True`` (the default), the turn ends and Bridge clears
     ``BridgeState``. When ``finalize=False``, Bridge publishes the partial
     output and re-enqueues the current helm so it can continue.
+
+    Persona-stylisation fields (consumed by Bridge's ``_handle_emit``):
+
+    - ``via_persona``: when True, Bridge routes ``text`` through
+      ``PersonaAction.respond`` for tone / style polish before publishing.
+      ReasoningHelm sets this on its final engine output so the agent's
+      persona wraps the engine's raw text. Reflex's trivial EMITs leave
+      it False (no need to LLM-rewrite a one-word greeting).
+    - ``response_mode``: forwarded to the persona-delivery helper.
+      Supported values: ``"publish"`` (raw publish through persona),
+      ``"respond"`` (persona ``respond()`` call), ``"verbatim_final"``
+      (skip persona, publish raw — used for skill-driven final outputs
+      where the skill already produced final-form text).
+    - ``degenerate_max_chars``: skip persona stylisation when ``text``
+      is at most this many characters (short outputs read worse after
+      persona rewording). 0 disables the heuristic.
+
+    These fields are read by Bridge — helms set them but don't act on
+    them directly. They generalise the per-helm
+    ``deliver_final_response`` path that ReasoningHelm used to call
+    in-line. Phase-2 distillation pushed that surface up into Bridge.
     """
 
     text: str
     finalize: bool = True
     channel: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    via_persona: bool = False
+    response_mode: str = "publish"
+    degenerate_max_chars: int = 0
 
 
 @dataclass(frozen=True)
@@ -127,7 +151,7 @@ class CONTINUE:
     ``BridgeState.helm_states`` — and just needs another walker visit to
     continue the loop. Bridge calls ``visitor.prepend([self])`` and returns.
 
-    ``ReasoningHelm`` uses ``CONTINUE`` because the cockpit-style engine
+    ``ReasoningHelm`` uses ``CONTINUE`` because the engine-style engine
     loop manages its own tool dispatch internally.
     """
 

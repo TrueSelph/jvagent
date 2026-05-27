@@ -1,7 +1,7 @@
 """AccessControl integration for Bridge.
 
 Bridge layers two new resource labels on top of the existing AC taxonomy
-(see ``jvagent.action.cockpit.registry.access`` for parallel cockpit
+(see ``jvagent.action.cockpit.registry.access`` for parallel standalone-Cockpit
 conventions ``skill:{name}`` / ``tool:{name}``):
 
 - ``tool:helm:{helm_name}`` — gating a helm as a ``SHIFT`` target.
@@ -9,9 +9,9 @@ conventions ``skill:{name}`` / ``tool:{name}``):
   ``DELEGATE`` target.
 
 If the agent has no ``AccessControlAction`` attached (or it is not
-enforcing), both checks pass — matching cockpit's existing fail-open
+enforcing), both checks pass — matching the standalone Cockpit's existing fail-open
 default. When AC raises an exception the check fails closed (denied), again
-matching cockpit's posture for security-relevant resources.
+matching the standalone Cockpit's posture for security-relevant resources.
 """
 
 from __future__ import annotations

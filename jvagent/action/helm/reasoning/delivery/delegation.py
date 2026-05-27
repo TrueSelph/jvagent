@@ -1,16 +1,16 @@
-"""Cockpit delegation: resolve routed interact_actions and curate walk path.
+"""Engine delegation: resolve routed interact_actions and curate walk path.
 
 When the router classifies one or more ``interact_actions`` (or both
-``interact_actions`` + ``skills``), cockpit must hand control over to those
+``interact_actions`` + ``skills``), the engine must hand control over to those
 actions via the walker. This module provides the helpers:
 
 - ``resolve_routed_interact_actions`` — turn class-name strings into
   enabled ``InteractAction`` instances on the agent (sorted by weight).
-- ``curate_walk_path_for_cockpit`` — restrict the walker's queue to
-  ``{cockpit} ∪ {routed IAs} ∪ {always_execute IAs}`` so unrelated
-  InteractActions do not run as a side effect of cockpit-as-default.
+- ``curate_walk_path_for_engine`` — restrict the walker's queue to
+  ``{engine} ∪ {routed IAs} ∪ {always_execute IAs}`` so unrelated
+  InteractActions do not run as a side effect of engine-as-default.
 - ``prepend_routed_interact_actions`` — convenience helper to put the
-  routed IAs at the front of the walker queue (used when cockpit yields
+  routed IAs at the front of the walker queue (used when the engine yields
   to them after engine completes, or when skipping the engine entirely).
 
 All helpers are defensive: an empty/missing routing result, a missing
@@ -38,7 +38,7 @@ async def resolve_routed_interact_actions(
     """Resolve routing.interact_actions class names to InteractAction instances.
 
     Returns instances sorted by ``weight`` ascending so walker visit order
-    matches the project-wide convention. Cockpit itself is filtered out
+    matches the project-wide convention. The standalone Cockpit class is filtered out
     even if mistakenly classified by the router.
     """
     names = list(routing.interact_actions or [])
@@ -54,7 +54,7 @@ async def resolve_routed_interact_actions(
         all_enabled = await actions_mgr.get_all_actions(enabled_only=True)
     except Exception as exc:
         logger.warning(
-            "cockpit.delegation: failed to enumerate enabled actions: %s", exc
+            "engine.delegation: failed to enumerate enabled actions: %s", exc
         )
         return []
 
@@ -75,7 +75,7 @@ async def resolve_routed_interact_actions(
     missing = wanted - {a.__class__.__name__ for a in matched}
     if missing:
         logger.warning(
-            "cockpit.delegation: routed interact_actions not found or disabled: %s",
+            "engine.delegation: routed interact_actions not found or disabled: %s",
             sorted(missing),
         )
 
@@ -90,7 +90,7 @@ async def collect_always_execute_interact_actions(
     """Return all enabled InteractActions with ``always_execute=True``.
 
     Excludes any class names provided in ``exclude_class_names`` (typically the
-    cockpit class — cockpit handles its own scheduling).
+    standalone Cockpit class — it handles its own scheduling).
     """
     if not agent:
         return []
@@ -103,7 +103,7 @@ async def collect_always_execute_interact_actions(
         all_enabled = await actions_mgr.get_all_actions(enabled_only=True)
     except Exception as exc:
         logger.warning(
-            "cockpit.delegation: failed to enumerate always_execute actions: %s",
+            "engine.delegation: failed to enumerate always_execute actions: %s",
             exc,
         )
         return []
@@ -121,16 +121,16 @@ async def collect_always_execute_interact_actions(
     return matched
 
 
-async def curate_walk_path_for_cockpit(
+async def curate_walk_path_for_engine(
     visitor: "InteractWalker",
-    cockpit_action: "InteractAction",
+    engine_action: "InteractAction",
     routed: List["InteractAction"],
     *,
     always_execute: List["InteractAction"],
 ) -> List["InteractAction"]:
-    """Restrict walker queue to ``{cockpit} ∪ routed ∪ always_execute`` (by weight).
+    """Restrict walker queue to ``{engine} ∪ routed ∪ always_execute`` (by weight).
 
-    Other enabled InteractActions are removed from the queue. The cockpit
+    Other enabled InteractActions are removed from the queue. The engine
     action itself is preserved at its current position in the curated set so
     revisits (walker-revisit pattern) keep functioning. Returns the curated
     list in walker-visit order.
@@ -145,7 +145,7 @@ async def curate_walk_path_for_cockpit(
         seen.add(ident)
         combined.append(action)
 
-    _add(cockpit_action)
+    _add(engine_action)
     for a in routed:
         _add(a)
     for a in always_execute:
@@ -156,7 +156,7 @@ async def curate_walk_path_for_cockpit(
     try:
         await visitor.curate_walk_path(combined)
     except Exception as exc:
-        logger.warning("cockpit.delegation: curate_walk_path failed: %s", exc)
+        logger.warning("engine.delegation: curate_walk_path failed: %s", exc)
     return combined
 
 
@@ -166,8 +166,8 @@ async def prepend_routed_interact_actions(
 ) -> None:
     """Prepend routed IAs to the walker queue (front of line).
 
-    Use when cockpit is handing off after the engine reaches a terminal step
-    (the "both" dispatch mode) or when cockpit is skipping the engine entirely
+    Use when the engine is handing off after the engine reaches a terminal step
+    (the "both" dispatch mode) or when the engine is being skipped entirely
     in favour of the routed IAs (the "interact_actions only" mode).
     """
     if not routed:
@@ -177,4 +177,4 @@ async def prepend_routed_interact_actions(
         ordered = sorted(routed, key=lambda a: int(getattr(a, "weight", 0)))
         await visitor.prepend(ordered)
     except Exception as exc:
-        logger.warning("cockpit.delegation: prepend failed: %s", exc)
+        logger.warning("engine.delegation: prepend failed: %s", exc)

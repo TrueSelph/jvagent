@@ -1,4 +1,4 @@
-"""Artifact harness tools for cockpit (session-scoped structured data on Interaction).
+"""Artifact harness tools for the engine (session-scoped structured data on Interaction).
 
 Artifacts let the model persist intermediate results — full documents, large
 tool outputs, image interpretations, file listings — within the current
@@ -13,7 +13,7 @@ Storage lives on ``Interaction.artifacts`` (a dict keyed by user-supplied
         "tags": ["tag1", "tag2"],
         "created_at": "2025-01-15T...",
         "updated_at": "2025-01-15T...",
-        "source": "cockpit"
+        "source": "engine"
     }
 
 **Read/write asymmetry.** Writes (``artifact_add`` / ``artifact_update`` /
@@ -33,7 +33,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from jvagent.action.helm.reasoning.context import CockpitContext
+from jvagent.action.helm.reasoning.context import EngineContext
 from jvagent.tooling.tool import Tool
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _interaction_artifacts(ctx: CockpitContext) -> Optional[Dict[str, Dict[str, Any]]]:
+def _interaction_artifacts(ctx: EngineContext) -> Optional[Dict[str, Dict[str, Any]]]:
     """Resolve the artifacts dict on the current interaction (creating if needed)."""
     interaction = getattr(ctx, "interaction", None)
     if interaction is None:
@@ -93,7 +93,7 @@ def _summarize(
 
 
 async def _scan_conversation_artifacts(
-    ctx: CockpitContext,
+    ctx: EngineContext,
 ) -> List[Tuple[str, Dict[str, Any], bool]]:
     """Yield (key, entry, is_current_interaction) across all interactions.
 
@@ -132,8 +132,8 @@ async def _scan_conversation_artifacts(
     return out
 
 
-def _build_artifact_tools(ctx: CockpitContext) -> List[Tool]:
-    """Return harness tools that expose artifact CRUD to the cockpit model."""
+def _build_artifact_tools(ctx: EngineContext) -> List[Tool]:
+    """Return harness tools that expose artifact CRUD to the engine model."""
 
     async def _add(key: str, data: Any, tags: Any = None) -> str:
         artifacts = _interaction_artifacts(ctx)
@@ -153,7 +153,7 @@ def _build_artifact_tools(ctx: CockpitContext) -> List[Tool]:
             "tags": _normalize_tags(tags),
             "created_at": now,
             "updated_at": now,
-            "source": "cockpit",
+            "source": "engine",
         }
         try:
             await ctx.interaction.save()

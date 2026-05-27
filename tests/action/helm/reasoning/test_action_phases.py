@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from jvagent.action.helm.reasoning.context import CockpitStepResult
+from jvagent.action.helm.reasoning.context import EngineStepResult
 from jvagent.action.helm.reasoning.contracts import TerminationReason
 from jvagent.action.helm.reasoning.reasoning_helm import ReasoningHelm
 from jvagent.action.helm.reasoning.session import SESSION_KEY, get_session
@@ -144,7 +144,7 @@ async def test_handle_step_result_tool_calls_sets_continue_outcome(monkeypatch):
     engine = MagicMock()
     engine.save_state.return_value = MagicMock()
 
-    result = CockpitStepResult(status="tool_calls", iterations=1, duration_seconds=0.1)
+    result = EngineStepResult(status="tool_calls", iterations=1, duration_seconds=0.1)
     await action._handle_step_result(visitor, engine, result)
 
     assert get_session(visitor).debug_state is engine.save_state.return_value
@@ -162,7 +162,7 @@ async def test_handle_step_result_finalize_flag_terminates_without_revisit(monke
     engine = MagicMock()
     engine.save_state.return_value = MagicMock()
 
-    result = CockpitStepResult(status="tool_calls", iterations=1, duration_seconds=0.1)
+    result = EngineStepResult(status="tool_calls", iterations=1, duration_seconds=0.1)
     await action._handle_step_result(visitor, engine, result)
 
     visitor.prepend.assert_not_called()
@@ -173,8 +173,17 @@ async def test_handle_step_result_finalize_flag_terminates_without_revisit(monke
     assert s_after.debug_state is None
 
 
-async def test_handle_step_result_terminal_clears_engine_state(monkeypatch):
-    """Terminal status (final_response) → session reset, delivery invoked."""
+async def test_handle_step_result_terminal_stashes_pending_emit(monkeypatch):
+    """Terminal status (final_response) → session reset, ``_pending_final_emit``
+    populated for :meth:`step` to surface as EMIT(via_persona=True).
+
+    Phase-2 distillation pushed ``deliver_final_response`` up into Bridge:
+    ReasoningHelm no longer invokes the delivery helper directly. Instead
+    it stashes the engine's final text and activated_skills, then
+    :meth:`step` converts that into an EMIT verb. Bridge's
+    ``_handle_emit`` checks ``via_persona=True`` and runs persona
+    stylisation via ``deliver_via_persona``.
+    """
     action = _make_action(monkeypatch)
     visitor = _make_visitor()
     sess = get_session(visitor)
@@ -183,23 +192,13 @@ async def test_handle_step_result_terminal_clears_engine_state(monkeypatch):
     sess.debug_state = MagicMock()
     engine = MagicMock()
 
-    delivery_called = {"v": False}
-
-    async def _fake_deliver(action, visitor, result, **kwargs):
-        delivery_called["v"] = True
-
-    monkeypatch.setattr(
-        "jvagent.action.helm.reasoning.reasoning_helm.deliver_final_response",
-        _fake_deliver,
-    )
-
-    # Non-empty final_response so deliver_final_response is invoked.
-    result = CockpitStepResult(
+    result = EngineStepResult(
         status="final_response",
         final_response="hello",
         termination_reason=TerminationReason.COMPLETED,
         iterations=1,
         duration_seconds=0.5,
+        activated_skills=["web_search"],
     )
 
     # Required attributes the action reads at terminal time.
@@ -214,28 +213,22 @@ async def test_handle_step_result_terminal_clears_engine_state(monkeypatch):
     assert s_after.interaction_id is None
     assert s_after.debug_state is None
     visitor.interaction.set_to_executed.assert_called_once()
-    assert delivery_called["v"] is True
+    # New contract: pending emit stashed for step() to surface.
+    pending = getattr(action, "_pending_final_emit", None)
+    assert pending is not None
+    assert pending["text"] == "hello"
+    assert pending["activated_skills"] == ["web_search"]
 
 
-async def test_handle_step_result_terminal_empty_response_skips_delivery(monkeypatch):
-    """Terminal with empty/whitespace final_response → state cleared, delivery skipped."""
+async def test_handle_step_result_terminal_empty_response_no_pending_emit(monkeypatch):
+    """Terminal with empty/whitespace final_response → no pending emit stashed."""
     action = _make_action(monkeypatch)
     visitor = _make_visitor()
     sess = get_session(visitor)
     sess.engine = MagicMock()
     engine = MagicMock()
 
-    delivery_called = {"v": False}
-
-    async def _fake_deliver(*args, **kwargs):
-        delivery_called["v"] = True
-
-    monkeypatch.setattr(
-        "jvagent.action.helm.reasoning.reasoning_helm.deliver_final_response",
-        _fake_deliver,
-    )
-
-    result = CockpitStepResult(
+    result = EngineStepResult(
         status="final_response",
         final_response="   ",
         termination_reason=TerminationReason.COMPLETED,
@@ -248,4 +241,5 @@ async def test_handle_step_result_terminal_empty_response_skips_delivery(monkeyp
     await action._handle_step_result(visitor, engine, result)
 
     visitor.interaction.set_to_executed.assert_called_once()
-    assert delivery_called["v"] is False
+    # No final response → no pending emit (step() will return YIELD).
+    assert getattr(action, "_pending_final_emit", None) is None

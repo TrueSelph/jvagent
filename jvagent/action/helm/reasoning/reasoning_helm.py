@@ -1,10 +1,10 @@
-"""``ReasoningHelm``: Bridge helm running the cockpit-style engine loop.
+"""``ReasoningHelm``: Bridge helm running the engine-style engine loop.
 
 Duplicated from ``jvagent/action/cockpit/cockpit_interact_action.py`` at
 commit ``4bc6db6`` per the C-strategy hard constraint (BRIDGE-ROADMAP §C):
 zero source-level coupling between Bridge and Cockpit.
 
-Differences vs the cockpit ancestor:
+Differences vs the standalone-Cockpit ancestor:
 
 1. Subclass of :class:`BaseHelm` (not ``InteractAction``). Helms are
    orchestrated by :class:`BridgeInteractAction`, which owns the walker
@@ -24,8 +24,8 @@ Differences vs the cockpit ancestor:
      timeout / stuck / budget) → :class:`YIELD` (delivery already
      published by ``deliver_final_response`` via :class:`PersonaAction`)
    - SUPPRESS posture / interaction missing / persona broken → :class:`YIELD`
-3. Walker-queue curation is delegated to Bridge entirely. Cockpit's
-   ``curate_walk_path_for_cockpit`` call (which mutated the walker queue
+3. Walker-queue curation is delegated to Bridge entirely. The standalone
+   Cockpit's ``curate_walk_path_for_cockpit`` call (which mutated the walker queue
    to schedule routed IAs after revisits) is removed — Bridge owns the
    queue via its own ``_curate_walker_queue``, and routed IAs are
    dispatched through the DELEGATE chain instead of being queued for
@@ -55,29 +55,20 @@ from jvagent.action.helm.reasoning.catalog.skill_catalog import SkillCatalog
 from jvagent.action.helm.reasoning.catalog.skill_discovery import (
     list_always_active_skill_names,
 )
-from jvagent.action.helm.reasoning.config import CockpitConfig
-from jvagent.action.helm.reasoning.context import CockpitContext
-from jvagent.action.helm.reasoning.contracts import TerminationReason
+from jvagent.action.helm.reasoning.config import EngineConfig
+from jvagent.action.helm.reasoning.context import EngineContext
 from jvagent.action.helm.reasoning.delivery.delegation import (
     resolve_routed_interact_actions,
 )
-from jvagent.action.helm.reasoning.delivery.gates import (
-    CONVERSE_SKILL_NAMES,
-    should_use_conversational_gate,
-)
-from jvagent.action.helm.reasoning.delivery.helpers import (
-    deliver_conversational,
-    deliver_final_response,
-)
-from jvagent.action.helm.reasoning.engine import CockpitEngine
+from jvagent.action.helm.reasoning.engine import Engine
 from jvagent.action.helm.reasoning.registry.access import (
     filter_routed_interact_actions_by_access,
     filter_routed_skills_by_access,
 )
-from jvagent.action.helm.reasoning.registry.shim import CockpitVisitorShim
+from jvagent.action.helm.reasoning.registry.shim import EngineVisitorShim
 from jvagent.action.helm.reasoning.routing.types import POSTURE_RESPOND, RoutingResult
 from jvagent.action.helm.reasoning.session import (
-    CockpitSession,
+    EngineSession,
     clear_session,
     get_session,
 )
@@ -88,10 +79,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-COCKPIT_DEFAULT_SKILL_MODEL: str = "claude-sonnet-4-20250514"
+ENGINE_DEFAULT_SKILL_MODEL: str = "claude-sonnet-4-20250514"
 
 # ReasoningHelm-owned per-run engine state lives on a single
-# ``CockpitSession`` object accessed via ``get_session``. Bridge-level state
+# ``EngineSession`` object accessed via ``get_session``. Bridge-level state
 # (current_helm, gear_trace, shift_count, etc.) is on
 # ``visitor._bridge_state``; the two are independent.
 
@@ -105,16 +96,16 @@ def _routing_clarification_fallbacks_default() -> List[str]:
 
 
 class ReasoningHelm(BaseHelm):
-    """Deliberate-class reasoning helm: cockpit-style think/act/observe loop.
+    """Deliberate-class reasoning helm: think-act-observe loop.
 
     Orchestrated by :class:`BridgeInteractAction`. Each ``step()`` call
     issues at most one model call (ADR-0002 invariant) by delegating to
-    the duplicated :class:`CockpitEngine`. The helm dispatches its own
+    the duplicated :class:`Engine`. The helm dispatches its own
     tools internally and signals back to Bridge via ``CONTINUE`` /
     ``EMIT`` / ``YIELD``.
 
-    Phase 1 (``CockpitRouter``) and Phase 2 (engine loop) are identical to
-    the cockpit equivalent; the duplication source for each module is
+    Phase 1 (``EngineRouter``) and Phase 2 (engine loop) mirror
+    the engine equivalent; the duplication source for each module is
     documented in ``jvagent/action/helm/reasoning/DUPLICATION_NOTICE.md``.
     """
 
@@ -138,6 +129,10 @@ class ReasoningHelm(BaseHelm):
     )
     can_emit_directly: bool = attribute(default=True)
 
+    # Ephemeral per-visit orchestration state (not persisted).
+    _step_outcome: Optional[str] = None
+    _pending_final_emit: Optional[Dict[str, Any]] = None
+
     def _ensure_interaction(self, visitor: "InteractWalker") -> bool:
         """Lift of ``InteractAction._ensure_interaction``.
 
@@ -149,16 +144,9 @@ class ReasoningHelm(BaseHelm):
 
     router_model: str = attribute(default="gpt-4o-mini")
     router_model_action_type: str = attribute(default="")
-    # Bridge composition owns user-facing immediate response via
-    # ReflexHelm's ``transient_ack`` on SHIFT. ReasoningHelm is plumbing —
-    # it produces the final answer only. Default ``False`` here (cockpit's
-    # standalone equivalent keeps ``True`` because there's no upstream
-    # ack producer in that pattern). Operators may set ``True`` in
-    # agent.yaml.context.manifest if they explicitly want both acks.
-    enable_canned_response: bool = attribute(default=False)
 
     model_action_type: str = attribute(default="AnthropicLanguageModelAction")
-    model: str = attribute(default=COCKPIT_DEFAULT_SKILL_MODEL)
+    model: str = attribute(default=ENGINE_DEFAULT_SKILL_MODEL)
     skills: Any = attribute(default=None)
     denied_skills: List[str] = attribute(default_factory=list)
     skills_source: str = attribute(default="both")
@@ -167,23 +155,20 @@ class ReasoningHelm(BaseHelm):
     max_dynamic_activations: int = attribute(default=10)
     response_mode: str = attribute(default="publish")
 
-    converse_enabled: bool = attribute(default=True)
-    converse_context_limit: int = attribute(default=2)
-    converse_persona_prompt: str = attribute(
-        default=(
-            "Brief, in-character replies. Greetings and small talk: natural and short. "
-            "Task-style asks: acknowledge and hand off to skills/tools."
-        ),
-    )
-    # When True, bypass the cockpit engine and reply via PersonaAction whenever
-    # the router recommends no skills and no interact_actions (in addition to
-    # the strict CONVERSATIONAL-intent path). Saves a heavy engine LLM call on
-    # greetings, smalltalk, and any utterance the router classifies as having
-    # no work to do. Set False to fall through to the engine for UNCLEAR /
-    # INFORMATIONAL intents that have no specific handler — useful when the
-    # engine's harness tools (memory, artifacts, conversation search) should
-    # still get a chance to act.
-    conversational_fast_path: bool = attribute(default=True)
+    # NOTE — surfaces deliberately absent (vs the monolithic Cockpit
+    # ancestor at jvagent.action.cockpit.cockpit_interact_action):
+    #
+    # - ``enable_canned_response`` / ``canned_response_max_words`` /
+    #   ``skip_canned_for_intents``: ReflexHelm owns the user-facing
+    #   immediate response via ``transient_ack`` on SHIFT. Canned
+    #   surface is permanently absent from ReasoningHelm.
+    # - ``converse_enabled`` / ``conversational_fast_path`` /
+    #   ``converse_persona_prompt`` / ``converse_context_limit``: the
+    #   conversational fast-path (skip-engine, persona.respond) was
+    #   removed in the Phase-2 distillation. Smalltalk that reaches
+    #   ReasoningHelm (pathological — Reflex should EMIT it directly)
+    #   runs through the engine like any other turn. ReasoningHelm's
+    #   sole mission is now agentic looping + skill/IA routing.
 
     history_limit: int = attribute(default=3)
     max_statement_length: Optional[int] = attribute(default=None)
@@ -191,10 +176,6 @@ class ReasoningHelm(BaseHelm):
 
     router_model_temperature: float = attribute(default=0.1)
     router_model_max_tokens: int = attribute(default=400)
-    canned_response_max_words: int = attribute(default=15)
-    skip_canned_for_intents: List[str] = attribute(
-        default_factory=lambda: ["CONVERSATIONAL", "UNCLEAR", "INTERACTIVE"],
-    )
 
     model_temperature: float = attribute(default=0.3)
     model_max_tokens: int = attribute(default=8192)
@@ -215,28 +196,32 @@ class ReasoningHelm(BaseHelm):
 
     enable_skill_helper_tools: bool = attribute(default=True)
     enable_artifact_tools: bool = attribute(default=True)
-    enable_cockpit_search: bool = attribute(default=True)
+    enable_capability_search: bool = attribute(default=True)
     tool_tier: str = attribute(default="standard")  # minimal | standard | full
 
-    # Phase 1 latency knobs.
-    # ``enable_router_preclassifier``: cheap local heuristic that fires
-    # before the router LLM call. When the utterance is unambiguous
-    # smalltalk (greeting / thanks / goodbye / pleasantry) and no active
-    # task is in flight, the router synthesises a converse-skill route
-    # and skips the LLM round-trip. See routing/preclassifier.py.
-    # ``enable_interact_router_cache``: opt into the in-process router
-    # cache. Cache keys fold active-task fingerprints so fragments routed
+    # Phase 1 latency knob — opt into the in-process router cache.
+    # Cache keys fold active-task fingerprints so fragments routed
     # mid-interview don't share keys with the same fragment after the
     # interview completes. TTL is governed by perf config
     # ``interact_router_cache_ttl`` (default 45s).
-    enable_router_preclassifier: bool = attribute(default=True)
+    #
+    # The standalone-Cockpit ancestor also exposes
+    # ``enable_router_preclassifier`` for short-circuiting the router LLM
+    # on smalltalk; ReasoningHelm omits it because Reflex catches
+    # smalltalk upstream (sub-200ms EMIT) and the preclassifier never
+    # fires in Bridge composition.
     enable_interact_router_cache: bool = attribute(default=False)
 
     # Hygiene flags. Each one is independently tunable; there is no umbrella
     # toggle. ``block_raw_tool_invocation`` defends the engine prompt against
-    # users naming tools by name; the other three keep the loop predictable.
-    block_raw_tool_invocation: bool = attribute(default=False)
-    router_use_cockpit_search: bool = attribute(default=False)
+    # users naming tools by name (``"call capability_search ..."``,
+    # ``"/skill X"``, ``"execute Y"``); when True it injects the
+    # ``SECURITY_BLOCK`` into the engine system prompt instructing the
+    # model to treat user text as content, not commands. Default ``True``
+    # — turn off only on agents that intentionally want to expose tool
+    # dispatch through natural language (rare).
+    block_raw_tool_invocation: bool = attribute(default=True)
+    router_use_capability_search: bool = attribute(default=False)
     preload_user_memory: bool = attribute(default=True)
     user_memory_max_chars: int = attribute(default=4096)
     auto_track_tasks: bool = attribute(default=True)
@@ -252,7 +237,7 @@ class ReasoningHelm(BaseHelm):
 
     # Overridable prompt templates (mirrors PersonaAction.system_prompt pattern).
     # Defaults are empty strings — engine falls back to module-level constants
-    # in cockpit/prompts.py when the override is blank.  Set in agent.yaml to
+    # in engine.prompts when the override is blank.  Set in agent.yaml to
     # customise engine behaviour without forking the framework.
     system_prompt: str = attribute(default="")
     task_planning_prompt: str = attribute(default="")
@@ -260,8 +245,8 @@ class ReasoningHelm(BaseHelm):
     capability_search_prompt: str = attribute(default="")
     citation_instruction: str = attribute(default="")
 
-    def _build_cockpit_config(self) -> CockpitConfig:
-        return CockpitConfig(
+    def _build_engine_config(self) -> EngineConfig:
+        return EngineConfig(
             model=self.model,
             model_temperature=self.model_temperature,
             model_max_tokens=self.model_max_tokens,
@@ -289,9 +274,9 @@ class ReasoningHelm(BaseHelm):
             block_raw_tool_invocation=bool(self.block_raw_tool_invocation),
             enable_skill_helper_tools=self.enable_skill_helper_tools,
             enable_artifact_tools=self.enable_artifact_tools,
-            enable_cockpit_search=self.enable_cockpit_search,
+            enable_capability_search=self.enable_capability_search,
             max_dynamic_activations=self.max_dynamic_activations,
-            router_use_cockpit_search=self.router_use_cockpit_search,
+            router_use_capability_search=self.router_use_capability_search,
             tool_tier=self.tool_tier,
             preload_user_memory=self.preload_user_memory,
             user_memory_max_chars=self.user_memory_max_chars,
@@ -364,12 +349,12 @@ class ReasoningHelm(BaseHelm):
         aid = getattr(agent, "id", None) or "unknown"
         if persona is None or not getattr(persona, "enabled", True):
             raise RuntimeError(
-                f"CockpitInteractAction requires an enabled PersonaAction on agent '{aid}'."
+                f"ReasoningHelm requires an enabled PersonaAction on agent '{aid}'."
             )
         desc = (getattr(persona, "persona_description", None) or "").strip()
         if not desc:
             raise RuntimeError(
-                f"CockpitInteractAction requires non-empty PersonaAction.persona_description on agent '{aid}'."
+                f"ReasoningHelm requires non-empty PersonaAction.persona_description on agent '{aid}'."
             )
         return persona
 
@@ -420,12 +405,12 @@ class ReasoningHelm(BaseHelm):
         existing = list(slot.get(self._PENDING_IAS_SLOT) or [])
         slot[self._PENDING_IAS_SLOT] = existing + names
 
-    async def step(
+    async def _step_impl(
         self,
         visitor: "InteractWalker",
         bridge_state: "BridgeState",
     ) -> HelmStepResult:
-        """Bridge entry point: run one cockpit-style step + translate to verb.
+        """Bridge entry point: run one engine step + translate to verb.
 
         Three return paths:
 
@@ -438,6 +423,10 @@ class ReasoningHelm(BaseHelm):
           closes the turn.
         - ``YIELD`` — terminal (persona already published by the engine,
           or there's nothing left to do).
+
+        Called by :meth:`BaseHelm.step` (the wrapper handles the
+        action-trace self-recording via
+        ``interaction.record_action_execution``).
         """
         # Mid-chain dispatch: if a prior visit populated pending IAs
         # (routing returned them, or engine terminated with IAs queued),
@@ -474,9 +463,31 @@ class ReasoningHelm(BaseHelm):
         if outcome == "continue":
             return CONTINUE(reason="reasoning engine requested another visit")
 
-        # Orchestration completed. It may have populated pending_ias
-        # (IA-only branch, or engine + IAs branch on terminal). If so,
-        # pop the first and start the DELEGATE chain. Otherwise yield.
+        # Orchestration produced a final engine response. Hand it to
+        # Bridge as an EMIT(via_persona=True) so Bridge owns persona
+        # stylisation. ``deliver_final_response`` is no longer called
+        # in-line — the Phase-2 distillation pushed the persona-delivery
+        # contract up into ``BridgeInteractAction._handle_emit``.
+        pending_emit = getattr(self, "_pending_final_emit", None)
+        if pending_emit is not None:
+            self._pending_final_emit = None
+            return EMIT(
+                text=pending_emit.get("text", ""),
+                finalize=True,
+                via_persona=True,
+                response_mode=self.response_mode,
+                degenerate_max_chars=self.degenerate_response_max_chars,
+                metadata={
+                    "activated_skills": list(
+                        pending_emit.get("activated_skills") or []
+                    ),
+                },
+            )
+
+        # Orchestration completed without a final response. It may have
+        # populated pending_ias (IA-only branch, or engine + IAs branch
+        # on terminal). If so, pop the first and start the DELEGATE
+        # chain. Otherwise yield.
         new_pending = list(helm_slot.get(self._PENDING_IAS_SLOT) or [])
         if new_pending:
             next_ia = new_pending[0]
@@ -487,12 +498,11 @@ class ReasoningHelm(BaseHelm):
                 follow_up=bool(remaining),
             )
 
-        # Terminal: persona delivery already published by deliver_*
-        # helpers. YIELD lets Bridge clear state without double-publishing.
+        # Nothing left to do this turn (no engine output, no queued IAs).
         return YIELD()
 
     async def _orchestrate(self, visitor: "InteractWalker") -> None:
-        """Cockpit-style orchestration body (renamed from ``execute``).
+        """Engine-style orchestration body (renamed from ``execute``).
 
         On first visit: route, set up engine, run first step.
         On revisits: restore engine state, run next step.
@@ -519,7 +529,7 @@ class ReasoningHelm(BaseHelm):
         # reset the session so routing runs on the fresh user message.
         if session.engine is not None and session.interaction_id != interaction.id:
             logger.debug(
-                "CockpitInteractAction: stale engine from interaction %s, "
+                "ReasoningHelm: stale engine from interaction %s, "
                 "current interaction %s — clearing and re-routing",
                 session.interaction_id,
                 interaction.id,
@@ -539,33 +549,28 @@ class ReasoningHelm(BaseHelm):
 
         Dispatch matrix (after posture + conversational gating):
 
-        - ``routing.actions`` only          → cockpit engine path (existing)
+        - ``routing.actions`` only          → engine path (existing)
         - ``routing.interact_actions`` only → skip engine, hand off to those IAs
         - both                              → engine first, IAs prepended on terminal
-        - neither                           → cockpit engine path (engine handles via
+        - neither                           → engine path (engine handles via
           harness tools / model decides)
         """
         interaction = visitor.interaction
 
         try:
-            from jvagent.action.helm.reasoning.routing.router import CockpitRouter
+            from jvagent.action.helm.reasoning.routing.router import EngineRouter
 
-            # Canned lead-in is generated INSIDE the routing LLM call (see
-            # ``ROUTING_CANNED_INSTRUCTIONS_TEMPLATE`` in router.py) and
-            # published from CockpitRouter.route() before the engine starts.
-            router = CockpitRouter(self)
-            posture, routing = await router.route(visitor)
-
-            if posture == "SUPPRESS":
-                # Router decided no response should be delivered this turn
-                # (e.g. ambiguous utterance during an active turn-locked task).
-                # Mark interaction complete and signal Bridge to finalise.
-                try:
-                    interaction.set_to_executed()
-                except Exception:
-                    pass
-                self._step_outcome = "yield"
-                return
+            # EngineRouter only emits RESPOND-class results in Bridge
+            # composition (Reflex gates SUPPRESS/DEFER upstream and owns
+            # the transient_ack lead-in). The conversational fast-path
+            # that the monolithic Cockpit ancestor used to skip the
+            # engine on smalltalk has also been removed — if a
+            # CONVERSATIONAL classification reaches here at all, the
+            # engine handles it. Reflex misroutes are observable and
+            # rare; the simplicity of one path is worth more than
+            # avoiding a single engine call on the rare miss.
+            router = EngineRouter(self)
+            _posture, routing = await router.route(visitor)
 
             if routing is None:
                 routing = RoutingResult(posture=POSTURE_RESPOND)
@@ -594,29 +599,13 @@ class ReasoningHelm(BaseHelm):
                 agent, routed_ias, user_id=user_id, channel=channel
             )
 
-            if should_use_conversational_gate(
-                routing,
-                converse_enabled=self.converse_enabled,
-                conversational_fast_path=self.conversational_fast_path,
-            ):
-                await deliver_conversational(
-                    self,
-                    visitor,
-                    response_mode=self.response_mode,
-                    converse_persona_prompt=self.converse_persona_prompt,
-                    converse_context_limit=self.converse_context_limit,
-                )
-                interaction.set_to_executed()
-                self._step_outcome = "yield"
-                return
-
             has_skills = bool(routing.actions)
             has_ias = bool(routed_ias)
 
             # interact_actions only → skip engine, hand off to IAs.
             # The curate above already placed the routed IAs in the walker queue
-            # in weight order; the walker will visit them after cockpit returns.
-            # We then append cockpit to the END of the walk path so it runs once
+            # in weight order; the walker will visit them after the engine returns.
+            # We then append the engine to the END of the walk path so it runs once
             # more after the IAs to invoke PersonaAction with the accumulated
             # directives — that's the user-facing response.
             session = get_session(visitor)
@@ -653,12 +642,12 @@ class ReasoningHelm(BaseHelm):
                     len(routed_ias),
                 )
 
-            # skills only OR neither → cockpit engine path.
-            await self._start_cockpit(visitor, routing, persona)
+            # skills only OR neither → engine path.
+            await self._start_engine(visitor, routing, persona)
 
         except Exception as exc:
             logger.warning(
-                "CockpitInteractAction: error in phase_route_and_setup: %s",
+                "ReasoningHelm: error in phase_route_and_setup: %s",
                 exc,
                 exc_info=True,
             )
@@ -682,7 +671,7 @@ class ReasoningHelm(BaseHelm):
         engine = session.engine
         if engine is None:
             logger.warning(
-                "CockpitInteractAction: revisit without engine; "
+                "ReasoningHelm: revisit without engine; "
                 "publishing fallback so the turn is not silently dropped"
             )
             interaction = visitor.interaction
@@ -727,7 +716,7 @@ class ReasoningHelm(BaseHelm):
         ) + 1
         if session.total_steps_this_interaction > max(1, int(self.max_iterations) * 2):
             logger.warning(
-                "CockpitInteractAction: per-interaction step cap exceeded "
+                "ReasoningHelm: per-interaction step cap exceeded "
                 "(%d steps; max_iterations=%d, ceiling=2x). Terminating turn.",
                 session.total_steps_this_interaction,
                 self.max_iterations,
@@ -735,7 +724,7 @@ class ReasoningHelm(BaseHelm):
             await self._handle_error(
                 visitor,
                 RuntimeError(
-                    "Per-interaction cockpit step cap exceeded — turn terminated"
+                    "Per-interaction engine step cap exceeded — turn terminated"
                 ),
             )
             return
@@ -746,25 +735,25 @@ class ReasoningHelm(BaseHelm):
 
         except Exception as exc:
             logger.warning(
-                "CockpitInteractAction: error in phase_continue: %s",
+                "ReasoningHelm: error in phase_continue: %s",
                 exc,
                 exc_info=True,
             )
             await self._handle_error(visitor, exc)
 
-    async def _start_cockpit(
+    async def _start_engine(
         self,
         visitor: InteractWalker,
         routing: RoutingResult,
         persona: Any,
     ) -> None:
-        """Set up the cockpit engine and run the first step."""
+        """Set up the engine and run the first step."""
         interaction = visitor.interaction
         conversation = visitor.conversation
         if not interaction or not conversation:
             return
 
-        cfg = self._build_cockpit_config()
+        cfg = self._build_engine_config()
         agent = getattr(visitor, "_agent", None)
         agent_name = getattr(persona, "persona_name", "Agent")
         agent_description = getattr(persona, "persona_description", "")
@@ -780,12 +769,11 @@ class ReasoningHelm(BaseHelm):
             if name not in preloaded:
                 preloaded.append(name)
 
-        # The converse skill is a routing alias — it has no tools and no
-        # engine workflow. If the engine is starting, the gate already let
-        # this through because OTHER skills are also routed; surfacing
-        # converse in the engine's preloaded list would be incoherent
-        # context. Strip it from the engine's view (catalog still has it).
-        preloaded = [s for s in preloaded if s not in CONVERSE_SKILL_NAMES]
+        # NOTE: the standalone-Cockpit ancestor filters a synthetic
+        # "converse" skill out of the engine's preloaded list here.
+        # ReasoningHelm has no fast-path that would inject "converse"
+        # as a route (the CONVERSATIONAL→converse promotion in
+        # EngineRouter is also stripped), so the filter is unnecessary.
 
         if routing.actions:
             skills_csv = ", ".join(routing.actions)
@@ -820,9 +808,9 @@ class ReasoningHelm(BaseHelm):
         # Skill discovery for prompt construction.
         # Persists the resolved catalog and underlying discovered_skills dict
         # on visitor._skill_state so the engine, registry, and harness tools
-        # (skill_*, cockpit_search) can all read the same source of truth.
+        # (skill_*, capability_search) can all read the same source of truth.
         try:
-            visitor_shim = CockpitVisitorShim(
+            visitor_shim = EngineVisitorShim(
                 agent,
                 None,
                 user_id=getattr(visitor, "user_id", None),
@@ -842,13 +830,11 @@ class ReasoningHelm(BaseHelm):
                 visitor._skill_state["skill_catalog"] = catalog
                 visitor._skill_state["discovered_skills"] = dict(catalog.skills)
         except Exception as exc:
-            logger.warning(
-                "CockpitInteractAction: skill discovery for prompt failed: %s", exc
-            )
+            logger.warning("ReasoningHelm: skill discovery for prompt failed: %s", exc)
 
         visitor._skill_state["interact_walker"] = visitor
 
-        ctx = CockpitContext(
+        ctx = EngineContext(
             utterance=visitor.utterance or "",
             conversation=conversation,
             interaction=interaction,
@@ -868,7 +854,7 @@ class ReasoningHelm(BaseHelm):
             publish_callback=self._build_publish_callback(visitor),
         )
 
-        engine = CockpitEngine(ctx)
+        engine = Engine(ctx)
         await engine.initialize()
 
         # Persist engine instance and interaction ID for revisit detection.
@@ -887,7 +873,7 @@ class ReasoningHelm(BaseHelm):
     async def _handle_step_result(
         self,
         visitor: InteractWalker,
-        engine: CockpitEngine,
+        engine: Engine,
         step_result: Any,
     ) -> None:
         """Process a step result: revisit for tool calls, deliver for final response."""
@@ -918,7 +904,7 @@ class ReasoningHelm(BaseHelm):
         # handled by :meth:`step` reading ``helm_states[helm_name]["pending_ias"]``
         # and emitting a DELEGATE chain. We don't need to inspect
         # ``session.pending_interact_actions`` here — that field is a
-        # cockpit-duplication artifact in :class:`CockpitSession` that
+        # engine-duplication artifact in :class:`EngineSession` that
         # Bridge code never populates.
         session.reset()
         interaction.set_to_executed()
@@ -927,31 +913,23 @@ class ReasoningHelm(BaseHelm):
         final_response = getattr(step_result, "final_response", "") or ""
 
         if final_response.strip():
-            # Build a CockpitResult-like object for delivery
-            from jvagent.action.helm.reasoning.context import CockpitResult
-
-            result = CockpitResult(
-                final_response=final_response,
-                termination_reason=getattr(
-                    step_result, "termination_reason", TerminationReason.COMPLETED
+            # Stash the final emit for :meth:`step` to convert into an
+            # EMIT(via_persona=True) verb. Bridge's ``_handle_emit``
+            # owns persona stylisation now (Phase-2 distillation pushed
+            # ``deliver_final_response`` up into Bridge so ReasoningHelm
+            # stays focused on agentic-loop + skill/IA routing). The
+            # ``activated_skills`` list is forwarded via EMIT.metadata
+            # so Bridge can resolve per-skill response_mode / verbatim
+            # overrides against the skill catalog (still on
+            # ``visitor._skill_state``).
+            self._pending_final_emit = {
+                "text": final_response,
+                "activated_skills": list(
+                    getattr(step_result, "activated_skills", []) or []
                 ),
-                iterations=getattr(step_result, "iterations", 0),
-                duration_seconds=getattr(step_result, "duration_seconds", 0.0),
-                activated_skills=getattr(step_result, "activated_skills", []),
-            )
+            }
 
-            skill_catalog = (visitor._skill_state or {}).get("skill_catalog")
-
-            await deliver_final_response(
-                self,
-                visitor,
-                result,
-                response_mode=self.response_mode,
-                degenerate_response_max_chars=self.degenerate_response_max_chars,
-                skill_catalog=skill_catalog,
-            )
-
-    # ``_finalize_via_persona`` (cockpit's IA-only mode finalizer) is
+    # ``_finalize_via_persona`` (the standalone Cockpit's IA-only mode finalizer) is
     # not duplicated here — Bridge handles persona-finalize itself after
     # the last DELEGATE in the chain via
     # ``BridgeInteractAction._finalize_via_persona_if_directives``.
@@ -1027,7 +1005,7 @@ class ReasoningHelm(BaseHelm):
     async def refresh_skills(cls, visitor: InteractWalker) -> List[str]:
         """Re-discover skills and merge any newly installed bundles into the live session.
 
-        The cockpit assembles its tool registry fresh on every step from
+        The engine assembles its tool registry fresh on every step from
         ``visitor._skill_state["discovered_skills"]``, so updating that dict
         is sufficient — no per-call registration is needed.
         """
@@ -1076,7 +1054,7 @@ class ReasoningHelm(BaseHelm):
 
     @classmethod
     async def remove_skill(cls, visitor: InteractWalker, skill_name: str) -> bool:
-        """Hot-unload *skill_name* from the current cockpit session."""
+        """Hot-unload *skill_name* from the current engine session."""
         state = getattr(visitor, "_skill_state", None)
         if state is None:
             return False

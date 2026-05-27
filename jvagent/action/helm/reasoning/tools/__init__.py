@@ -1,1 +1,1 @@
-"""Harness tools exposed to the cockpit language model."""
+"""Harness tools exposed to the engine model."""

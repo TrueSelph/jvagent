@@ -1,4 +1,4 @@
-"""Skill-catalog prompt templates rendered into the cockpit system prompt.
+"""Skill-catalog prompt templates rendered into the engine system prompt.
 
 Two intros, picked at runtime by :class:`SkillCatalog.render_*`:
 

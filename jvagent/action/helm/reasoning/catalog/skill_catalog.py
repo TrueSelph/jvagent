@@ -1,4 +1,4 @@
-"""Cockpit skill catalog: discovery, rendering, and search."""
+"""Engine skill catalog: discovery, rendering, and search."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ _SKILL_DISCOVERY_CACHE_TTL = 60
 
 
 class SkillCatalog:
-    """Skill catalog used by cockpit for discovery, rendering, and search."""
+    """Skill catalog used by the engine for discovery, rendering, and search."""
 
     # Class-level cache: {cache_key: (discovered_skills_dict, cached_at)}
     _cache: Dict[str, Tuple[Dict[str, Dict[str, Any]], datetime]] = {}

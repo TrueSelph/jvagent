@@ -75,11 +75,17 @@ class StubHelm(BaseHelm):
         in tests."""
         return dict(self._scratch()["last_state_snapshot"])
 
-    async def step(
+    async def _step_impl(
         self,
         visitor: "InteractWalker",
         bridge_state: "BridgeState",
     ) -> HelmStepResult:
+        """Stub override of the BaseHelm abstract.
+
+        The auto-recording on ``interaction.actions`` is applied by the
+        :meth:`BaseHelm.step` wrapper — tests that assert recording on a
+        StubHelm just need to mock or spy ``interaction.record_action_execution``.
+        """
         scratch = self._scratch()
         scratch["call_count"] += 1
         slot = bridge_state.helm_states.get(self.helm_name(), {})

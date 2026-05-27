@@ -5,7 +5,7 @@ turn and clears it once the turn finalizes (via ``EMIT(finalize=True)`` or
 ``YIELD``). The dataclass is intentionally simple (no methods that mutate
 helm-owned fields) so Bridge ownership boundaries stay clear.
 
-Parallel to ``visitor._skill_state`` (cockpit). The two fields do not interact;
+Parallel to ``visitor._skill_state`` (the standalone Cockpit). The two fields do not interact;
 a single agent never installs both Bridge and Cockpit (see PATTERNS.md).
 """
 

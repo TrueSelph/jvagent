@@ -4,8 +4,8 @@ Duplicated from ``jvagent/action/cockpit/session.py`` at commit ``4bc6db6``
 as part of C-2 (BRIDGE-ROADMAP §C). Zero imports from
 ``jvagent.action.cockpit`` per the C-strategy hard constraint. ``SESSION_KEY``
 remains a constant so the duplicated session object slots into
-``visitor._skill_state`` independently of cockpit — Bridge installs separately
-from cockpit (PATTERNS.md forbids coexistence on one agent).
+``visitor._skill_state`` independently of the standalone Cockpit — Bridge installs separately
+from the standalone Cockpit (PATTERNS.md forbids coexistence on one agent).
 
 NOTE: The ReasoningHelm reuses ``visitor._skill_state`` for engine state
 because (a) the engine code expects it (faithful duplication minimises diff
@@ -16,22 +16,15 @@ Original docstring follows.
 
 
 
-Pre-Phase-4 the cockpit scattered eight independent keys onto
-``visitor._skill_state`` (``cockpit_engine``, ``cockpit_state``,
-``cockpit_interaction_id``, ``cockpit_pending_interact_actions``,
-``cockpit_ia_finalize_pending``, ``cockpit_finalized``,
-``cockpit_trace_task_id``, ``cockpit_model_planned``). Stale-state
-clears had to remember every key; missing one was a frequent footgun.
-
-This module collapses all of them into a single ``CockpitSession``
-dataclass stored at ``visitor._skill_state["cockpit_session"]``. One
-``clear_session(visitor)`` call resets every cockpit-owned field at
-once.
+``EngineSession`` consolidates all engine-owned per-run state into one
+dataclass on ``visitor._skill_state`` under :data:`SESSION_KEY`. A single
+:func:`clear_session` call resets every field at once — no per-key
+bookkeeping when stale state needs flushing across walker visits.
 
 Skill-system keys (``discovered_skills``, ``skill_catalog``,
-``cockpit_skill_load_report``, ``interact_walker``, ``action_resolver``,
+``engine_skill_load_report``, ``interact_walker``, ``action_resolver``,
 ``action``) are NOT folded in — they're shared with the broader skill /
-visitor ecosystem and aren't owned by the cockpit alone.
+visitor ecosystem and aren't owned by the engine alone.
 """
 
 from __future__ import annotations
@@ -40,17 +33,19 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 # The single canonical key on ``visitor._skill_state``. Imported by the
-# action, engine, and tools — there is no other place to store cockpit-
+# helm, engine, and tools — there is no other place to store engine-
 # owned per-run state.
-SESSION_KEY = "reasoning_helm_session"  # distinct from cockpit's "cockpit_session"
+SESSION_KEY = (
+    "reasoning_helm_session"  # distinct from the standalone Cockpit's "cockpit_session"
+)
 # so a misconfigured agent with both patterns would not silently share state.
 # Bridge + Cockpit coexistence is forbidden by PATTERNS.md at the scaffolder
 # level, but defensively isolating the key prevents accidental cross-talk.
 
 
 @dataclass
-class CockpitSession:
-    """All cockpit-owned per-run state, in one place.
+class EngineSession:
+    """All engine-owned per-run state, in one place.
 
     Lifecycle:
     - First visit (Phase 1 routing) → :func:`get_session` lazily creates
@@ -64,7 +59,7 @@ class CockpitSession:
     # Phase 2 engine state.
     engine: Optional[Any] = None
     interaction_id: Optional[str] = None
-    debug_state: Optional[Any] = None  # CockpitState snapshot — observability only
+    debug_state: Optional[Any] = None  # EngineState snapshot — observability only
 
     # IA-only / "both" dispatch coordination.
     pending_interact_actions: List[Any] = field(default_factory=list)
@@ -109,8 +104,8 @@ def _ensure_skill_state(visitor: Any) -> Optional[dict]:
     return fresh
 
 
-def get_session(visitor: Any) -> CockpitSession:
-    """Return the visitor's ``CockpitSession``, creating one on first access.
+def get_session(visitor: Any) -> EngineSession:
+    """Return the visitor's ``EngineSession``, creating one on first access.
 
     Stable identity: subsequent calls within the same visitor run return
     the same instance, so callers can keep a reference.
@@ -120,16 +115,16 @@ def get_session(visitor: Any) -> CockpitSession:
         # Defensive — visitor with no mutable state bag. Return a detached
         # session so callers don't have to special-case None; mutations
         # won't survive but no crash.
-        return CockpitSession()
+        return EngineSession()
     sess = state.get(SESSION_KEY)
-    if not isinstance(sess, CockpitSession):
-        sess = CockpitSession()
+    if not isinstance(sess, EngineSession):
+        sess = EngineSession()
         state[SESSION_KEY] = sess
     return sess
 
 
-def get_session_optional(visitor: Any) -> Optional[CockpitSession]:
-    """Return the visitor's ``CockpitSession`` if one exists, else None.
+def get_session_optional(visitor: Any) -> Optional[EngineSession]:
+    """Return the visitor's ``EngineSession`` if one exists, else None.
 
     Use this in code paths that want to read state without forcing
     creation (e.g. observability hooks, error handlers).
@@ -140,11 +135,11 @@ def get_session_optional(visitor: Any) -> Optional[CockpitSession]:
     if not isinstance(state, dict):
         return None
     sess = state.get(SESSION_KEY)
-    return sess if isinstance(sess, CockpitSession) else None
+    return sess if isinstance(sess, EngineSession) else None
 
 
 def clear_session(visitor: Any) -> None:
-    """Reset every cockpit-owned field to its default.
+    """Reset every engine-owned field to its default.
 
     Equivalent to popping all eight legacy keys at once. The session
     object stays attached to ``_skill_state`` (identity preserved) so
@@ -157,7 +152,7 @@ def clear_session(visitor: Any) -> None:
 
 __all__ = [
     "SESSION_KEY",
-    "CockpitSession",
+    "EngineSession",
     "get_session",
     "get_session_optional",
     "clear_session",

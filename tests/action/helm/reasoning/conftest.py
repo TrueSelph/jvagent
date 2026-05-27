@@ -1,8 +1,8 @@
 """Shared fixtures for cockpit tests.
 
-Provides a mocked ``CockpitContext`` plus helpers to construct deterministic
+Provides a mocked ``EngineContext`` plus helpers to construct deterministic
 ``ModelActionResult`` sequences and stub tool registries. These fixtures bypass
-the real ``assemble_cockpit_tools`` path so unit tests can exercise the engine
+the real ``assemble_engine_tools`` path so unit tests can exercise the engine
 state machine and walker-revisit mechanics without booting an agent graph.
 """
 
@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from jvagent.action.helm.reasoning.config import CockpitConfig
-from jvagent.action.helm.reasoning.context import CockpitContext
+from jvagent.action.helm.reasoning.config import EngineConfig
+from jvagent.action.helm.reasoning.context import EngineContext
 from jvagent.action.model.language.base import ModelActionResult
 from jvagent.tooling.tool import Tool
 from jvagent.tooling.tool_registry import ToolRegistry
@@ -128,9 +128,9 @@ def stub_registry(stub_tool_factory):
 
 
 @pytest.fixture
-def cockpit_config() -> CockpitConfig:
-    """Default-ish CockpitConfig with tight budgets for fast tests."""
-    return CockpitConfig(
+def cockpit_config() -> EngineConfig:
+    """Default-ish EngineConfig with tight budgets for fast tests."""
+    return EngineConfig(
         model="test-model",
         model_temperature=0.0,
         model_max_tokens=1024,
@@ -152,8 +152,8 @@ def cockpit_config() -> CockpitConfig:
         stream_internal_progress=False,
         enable_skill_helper_tools=False,
         enable_artifact_tools=False,
-        enable_cockpit_search=False,
-        router_use_cockpit_search=False,
+        enable_capability_search=False,
+        router_use_capability_search=False,
         preload_user_memory=False,
         user_memory_max_chars=0,
         auto_track_tasks=False,
@@ -214,7 +214,7 @@ def mock_agent():
 
 
 @pytest.fixture
-def cockpit_ctx(
+def engine_ctx(
     cockpit_config,
     mock_persona,
     mock_visitor,
@@ -222,8 +222,8 @@ def cockpit_ctx(
     mock_interaction,
     mock_agent,
 ):
-    """A fully wired CockpitContext with mocks for graph dependencies."""
-    return CockpitContext(
+    """A fully wired EngineContext with mocks for graph dependencies."""
+    return EngineContext(
         utterance=mock_visitor.utterance,
         conversation=mock_conversation,
         interaction=mock_interaction,
@@ -244,8 +244,8 @@ def cockpit_ctx(
 
 
 @pytest.fixture
-def patch_assemble_cockpit_tools(monkeypatch, stub_registry):
-    """Patch ``assemble_cockpit_tools`` so engine.initialize() uses a stub registry.
+def patch_assemble_engine_tools(monkeypatch, stub_registry):
+    """Patch ``assemble_engine_tools`` so engine.initialize() uses a stub registry.
 
     Returns the stub registry so tests can inspect/extend it.
     """
@@ -254,7 +254,7 @@ def patch_assemble_cockpit_tools(monkeypatch, stub_registry):
         return stub_registry
 
     monkeypatch.setattr(
-        "jvagent.action.helm.reasoning.engine.assemble_cockpit_tools",
+        "jvagent.action.helm.reasoning.engine.assemble_engine_tools",
         _stub_assemble,
     )
     return stub_registry
