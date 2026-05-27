@@ -9,10 +9,33 @@ from __future__ import annotations
 from typing import List
 
 # ---------------------------------------------------------------------------
+# Anchor disambiguation clause (shared invariant with rails InteractRouter)
+# ---------------------------------------------------------------------------
+#
+# Reduces false-positive routing caused by keyword-only overlap between the
+# user's utterance and an action's anchor list. Canonical failure mode (live
+# smoke, May 2026): "Help me prepare for an interview" was routed to a
+# ``signup_interview_interact_action`` whose anchors described training
+# enrollment — the LLM latched onto the shared noun "interview" rather than
+# the verb-object intent ("help me prepare for…" vs "sign up / enroll").
+#
+# Identical text MUST appear in jvagent/action/router/prompts.py; the
+# cross-module invariant is pinned by
+# ``tests/action/router/test_anchor_disambiguation.py`` so a future edit
+# cannot silently drift one copy without the other.
+ANCHOR_DISAMBIGUATION_CLAUSE = """ANCHOR MATCHING — by INTENT, not by keywords:
+- An action's anchors and description tell you what THAT ACTION does. They are NOT a keyword filter.
+- Before routing to an action, ask: "In this turn, does the user's verb + object match the action the anchor describes?" Same noun, different verb-object = NO match.
+- When a user word appears in an anchor but the user's request is about a different topic, do NOT route to that action. Prefer an empty actions list — let the engine or persona handle it — over a low-confidence match on a shared noun.
+- Example: an action whose anchors describe "training signup interviews" must NOT match "help me prepare for a job interview". The noun "interview" overlaps but the user's request ("help me prepare for…") is unrelated to the action described ("sign up / enroll")."""
+
+
+# ---------------------------------------------------------------------------
 # System prompt
 # ---------------------------------------------------------------------------
 
-ROUTING_SYSTEM_PROMPT = """You are a unified classification and routing intelligence for a conversational reasoning agent. First classify response posture (RESPOND/SUPPRESS/DEFER), then — only when posture is RESPOND — classify intent, select skills, and (when appropriate) emit a brief canned lead-in.
+ROUTING_SYSTEM_PROMPT = (
+    """You are a unified classification and routing intelligence for a conversational reasoning agent. First classify response posture (RESPOND/SUPPRESS/DEFER), then — only when posture is RESPOND — classify intent, select skills, and (when appropriate) emit a brief canned lead-in.
 
 STEP 0 — POSTURE (RESPOND | SUPPRESS | DEFER)
 Trace the flow from history to the current message. What was the most recent assistant message? How does the current user message relate?
@@ -74,7 +97,11 @@ INTENT TYPES (when posture=RESPOND):
 GROUNDING:
 - Use this prompt, history, the skill catalog, and any tool output as admissible evidence for posture, intent, and interpretation.
 - Do not treat general pretrained world knowledge as authoritative; when unsure, lower confidence.
+
 """
+    + ANCHOR_DISAMBIGUATION_CLAUSE
+    + "\n"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +191,7 @@ Rephrase this clarification question naturally and concisely: "{template}"
 
 
 __all__ = [
+    "ANCHOR_DISAMBIGUATION_CLAUSE",
     "ROUTING_SYSTEM_PROMPT",
     "ROUTING_USER_PROMPT_TEMPLATE",
     "ROUTING_CANNED_INSTRUCTIONS_TEMPLATE",
