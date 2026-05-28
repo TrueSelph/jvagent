@@ -175,7 +175,12 @@ def _build_delegate_to_ia_tools(
         "matches an installed flow but the dispatch wasn't routed automatically. "
         "Recovery hatch — prefer to answer from your own tools when you can. "
         "Calling this tool ends the current engine turn; the named flow runs "
-        "on the next walker visit.\n\n"
+        "on the next walker visit and publishes ITS own response.\n\n"
+        "IMPORTANT: When you call this tool, do NOT call ``response_publish`` "
+        "in the same iteration. The named flow owns the user-facing response. "
+        "Publishing your own text alongside this delegation creates duplicate "
+        "or conflicting output and prevents the flow from acquiring its turn "
+        "lock cleanly.\n\n"
         f"Available flows:\n{descriptions}"
     )
 

@@ -383,7 +383,28 @@ class ReasoningHelm(BaseHelm):
         if outcome == "continue":
             return CONTINUE(reason="reasoning engine requested another visit")
 
-        # Orchestration produced a final engine response. Hand it to
+        # ADR-0009 / Wave 9f: pending IA dispatch beats pending emit.
+        # When the engine's ``delegate_to_ia`` tool fires alongside a
+        # ``response_publish`` (model may call both in the same
+        # iteration), the IA owns the user-facing response. Letting
+        # EMIT win would publish the engine's impersonation text and
+        # silently drop the IA dispatch — the IA's session would never
+        # acquire its turn lock and subsequent turns would lose
+        # auto-DELEGATE coverage. Cascade failure observed live against
+        # the signup interview flow.
+        new_pending = list(helm_slot.get(self._PENDING_IAS_SLOT) or [])
+        if new_pending:
+            # Clear any pending emit so the IA owns the response.
+            self._set_pending_final_emit(visitor, None)
+            next_ia = new_pending[0]
+            remaining = new_pending[1:]
+            helm_slot[self._PENDING_IAS_SLOT] = remaining
+            return DELEGATE(
+                interact_action=next_ia,
+                follow_up=bool(remaining),
+            )
+
+        # No pending IA dispatch — hand the engine's final response to
         # Bridge as an EMIT(via_persona=True) so Bridge owns persona
         # stylisation.
         pending_emit = self._get_pending_final_emit(visitor)
@@ -400,19 +421,6 @@ class ReasoningHelm(BaseHelm):
                         pending_emit.get("activated_skills") or []
                     ),
                 },
-            )
-
-        # Orchestration completed without a final response. The engine's
-        # ``delegate_to_ia`` tool may have appended to pending_ias —
-        # check again and start the DELEGATE chain if so.
-        new_pending = list(helm_slot.get(self._PENDING_IAS_SLOT) or [])
-        if new_pending:
-            next_ia = new_pending[0]
-            remaining = new_pending[1:]
-            helm_slot[self._PENDING_IAS_SLOT] = remaining
-            return DELEGATE(
-                interact_action=next_ia,
-                follow_up=bool(remaining),
             )
 
         return YIELD()
