@@ -77,8 +77,6 @@ actions:
       description: >
         ReasoningHelm runs the deliberate think/act/observe loop over the
         proposal skills.
-      router_model: gpt-4o-mini
-      router_model_action_type: OpenAILanguageModelAction
       model_action_type: OllamaLanguageModelAction
       model: deepseek-v4-flash:cloud
       model_max_tokens: 16384

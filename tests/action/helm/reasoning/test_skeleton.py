@@ -26,9 +26,15 @@ async def test_reasoning_helm_instantiates_with_cockpit_defaults():
     # Mirror cockpit defaults so the smoke harness compares apples-to-apples.
     assert helm.model == "claude-sonnet-4-20250514"
     assert helm.model_action_type == "AnthropicLanguageModelAction"
-    # ADR-0009: router_model is preserved as an inert config key so
-    # legacy agent.yaml files don't fail validation. The default is "".
-    assert helm.router_model == ""
+    # ADR-0009 / Wave 9b: router_* attributes deleted. Agents that still
+    # carry the YAML keys boot; the loader's unknown-context-key warning
+    # names the offending key.
+    assert not hasattr(helm, "router_model")
+    assert not hasattr(helm, "router_model_action_type")
+    assert not hasattr(helm, "router_model_temperature")
+    assert not hasattr(helm, "router_model_max_tokens")
+    assert not hasattr(helm, "enable_interact_router_cache")
+    assert not hasattr(helm, "router_use_capability_search")
     assert helm.max_iterations == 25
     assert helm.max_duration_seconds == 300.0
     assert helm.tool_tier == "standard"

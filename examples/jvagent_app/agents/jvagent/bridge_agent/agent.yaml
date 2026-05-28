@@ -5,15 +5,16 @@
 # pairs ReflexHelm (sub-500ms classifier) with ReasoningHelm (think-act-observe
 # loop).
 #
-# Architecture:
+# Architecture (post-ADR-0009):
 #   BridgeInteractAction
-#     ├─ ReflexHelm.step()                         (sub-500ms classifier; Groq)
-#     └─ ReasoningHelm.step()                      (deliberate agentic loop)
-#           ├─ Phase 1 — Router                    (router_model_action_type → OpenAI)
-#           └─ Phase 2 — Engine.step()             (model_action_type → OpenAI)
-#                 ├─ Harness service tools (memory, response, task, conversation, …)
-#                 ├─ Action tools (pageindex__*, web_search__*, mcp_filesystem__*, …)
-#                 └─ Skill bundle tools (Claude-style SKILL.md)
+#     ├─ ReflexHelm                                (sub-500ms classifier,
+#     │                                              anchor-aware peer-awareness)
+#     └─ ReasoningHelm                             (pure engine loop, full
+#                                                    tool autonomy)
+#           ├─ Harness service tools (memory, response, task, conversation, …)
+#           ├─ Action tools (pageindex__*, web_search__*, mcp_filesystem__*, …)
+#           ├─ Skill bundle tools (Claude-style SKILL.md)
+#           └─ delegate_to_ia (ADR-0009 recovery hatch for anchorless flows)
 
 agent: jvagent/bridge_agent
 version: 1.0.0
@@ -97,16 +98,15 @@ actions:
       # engine-final EMIT path).
       can_emit_directly: true
 
-  # ── ReasoningHelm — deliberate think/act/observe loop ──
-  # ReasoningHelm's mission is agentic-loop + skill/IA routing only.
-  # Canned response, conversational fast-path, smalltalk preclassifier,
-  # and posture SUPPRESS/DEFER handling are owned by ReflexHelm upstream
-  # and not accepted here.
+  # ── ReasoningHelm — pure engine loop (ADR-0009) ──
+  # ReasoningHelm runs the think-act-observe loop with full tool autonomy.
+  # The router subsystem is gone; the engine discovers what it needs
+  # through its registered tool surface (harness + skills + delegate_to_ia
+  # recovery hatch). Canned response, conversational fast-path, and
+  # posture handling were already owned by ReflexHelm upstream.
   - action: jvagent/reasoning_helm
     context:
       enabled: true
-      router_model: gpt-4o-mini
-      router_model_action_type: OpenAILanguageModelAction
       model_action_type: OpenAILanguageModelAction
       model: gpt-4.1
       skills:
@@ -130,13 +130,9 @@ actions:
       # Set to false only on agents that intentionally expose tool
       # dispatch through natural language (rare).
       block_raw_tool_invocation: true
-      # Router context depth. Smaller → faster routing prompt.
+      # Engine prompt history depth.
       history_limit: 10
       response_mode: respond
-      # Identical-utterance routing cache: short TTL, keys fold active-task
-      # fingerprints so an in-flight interview can't cross-pollute routing
-      # decisions.
-      enable_interact_router_cache: true
 
   # ── Ollama Language Model (available for routing variants; not the default) ──
   - action: jvagent/ollama_lm

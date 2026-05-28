@@ -47,7 +47,9 @@ def _metadata(namespace: str = "jvagent", name: str = "foo_ia"):
 def test_warning_fires_for_anchorless_anchor_routable_ia(caplog):
     action = _build_ia_action(purpose="some flow", anchors=[])
     with caplog.at_level(logging.WARNING, logger="jvagent.action.loader.action_loader"):
-        _warn_if_anchorless_routable_ia(action, _metadata("ns", "anchorless_ia"), "agent_x")
+        _warn_if_anchorless_routable_ia(
+            action, _metadata("ns", "anchorless_ia"), "agent_x"
+        )
     matches = [r for r in caplog.records if "no anchors declared" in r.getMessage()]
     assert matches, f"expected anchorless warning in records: {caplog.records}"
     msg = matches[0].getMessage()
@@ -64,7 +66,9 @@ def test_no_warning_when_anchors_present(caplog):
 
 
 def test_no_warning_for_pattern_orchestrator(caplog):
-    action = _build_ia_action(anchors=[], pattern_orchestrator=True, routable_by_anchor=False)
+    action = _build_ia_action(
+        anchors=[], pattern_orchestrator=True, routable_by_anchor=False
+    )
     with caplog.at_level(logging.WARNING, logger="jvagent.action.loader.action_loader"):
         _warn_if_anchorless_routable_ia(action, _metadata("ns", "bridge"), "agent")
     msgs = [r.getMessage() for r in caplog.records]
@@ -82,7 +86,9 @@ def test_no_warning_for_always_execute(caplog):
 def test_no_warning_for_chain_internal(caplog):
     action = _build_ia_action(anchors=[], routable_by_anchor=False)
     with caplog.at_level(logging.WARNING, logger="jvagent.action.loader.action_loader"):
-        _warn_if_anchorless_routable_ia(action, _metadata("ns", "confirm_payment"), "agent")
+        _warn_if_anchorless_routable_ia(
+            action, _metadata("ns", "confirm_payment"), "agent"
+        )
     msgs = [r.getMessage() for r in caplog.records]
     assert not any("no anchors declared" in m for m in msgs)
 

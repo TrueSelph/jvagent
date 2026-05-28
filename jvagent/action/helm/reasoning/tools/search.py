@@ -1,14 +1,11 @@
-"""Unified discovery tool for the engine (skills + interact_actions + tools).
+"""Unified discovery tool for the engine (skills + tools).
 
-Single entry point for finding the right capability for a job. The same
-implementation is used in two surfaces:
+Single entry point for finding the right capability for a job.
 
-- **Router** (Phase 1): permitted_kinds = {skills, interact_actions, tools}.
-  Optional, gated by ``router_use_capability_search`` to protect routing latency.
-- **Engine** (Phase 2 think-act-observe): permitted_kinds = {skills, tools}.
-  ``interact_actions`` is intentionally hidden — interact-action discovery is
-  a router concern; the engine has no way to invoke another InteractAction
-  from inside its loop.
+After ADR-0009 (router elimination) the only consumer is the engine's
+think-act-observe loop with ``permitted_kinds = {skills, tools}``.
+``interact_actions`` discovery is reserved for the engine's
+``delegate_to_ia`` recovery-hatch tool (a separate surface).
 
 The tool's JSON Schema enum for the ``kind`` parameter is dynamically built
 from ``permitted_kinds`` so the model literally cannot ask for a kind that

@@ -161,25 +161,11 @@ class ReasoningHelm(BaseHelm):
         """Return True iff the visitor carries a valid interaction."""
         return getattr(visitor, "interaction", None) is not None
 
-    # NOTE: ``router_model`` / ``router_model_action_type`` attributes are
-    # preserved as inert config keys so existing agent.yaml files don't
-    # fail validation. The router subsystem is gone (ADR-0009); these
-    # values are no longer consulted. The same applies to
-    # ``enable_interact_router_cache`` and ``router_use_capability_search``
-    # below.
-    router_model: str = attribute(
-        default="",
-        description=(
-            "Deprecated (ADR-0009): the router subsystem is gone. This "
-            "attribute is preserved as an inert config key so existing "
-            "agent.yaml files don't fail validation."
-        ),
-    )
-    router_model_action_type: str = attribute(default="")
-    enable_interact_router_cache: bool = attribute(default=False)
-    router_use_capability_search: bool = attribute(default=False)
-    router_model_temperature: float = attribute(default=0.1)
-    router_model_max_tokens: int = attribute(default=400)
+    # NOTE: legacy ``router_*`` attributes were removed in Wave 9b
+    # (ADR-0009 follow-up). agent.yaml entries that still carry them
+    # boot fine — the loader's unknown-context-key warning names the
+    # agent + action + offending key, and the orphan value is dropped
+    # silently from the action's context dict.
 
     model_action_type: str = attribute(default="AnthropicLanguageModelAction")
     model: str = attribute(default=ENGINE_DEFAULT_SKILL_MODEL)
@@ -242,10 +228,6 @@ class ReasoningHelm(BaseHelm):
             model_temperature=self.model_temperature,
             model_max_tokens=self.model_max_tokens,
             model_action_type=self.model_action_type,
-            router_model=self.router_model,
-            router_model_action_type=self.router_model_action_type or "",
-            router_model_temperature=self.router_model_temperature,
-            router_model_max_tokens=self.router_model_max_tokens,
             max_iterations=self.max_iterations,
             max_duration_seconds=self.max_duration_seconds,
             max_concurrent_tools=self.max_concurrent_tools,
@@ -267,7 +249,6 @@ class ReasoningHelm(BaseHelm):
             enable_artifact_tools=self.enable_artifact_tools,
             enable_capability_search=self.enable_capability_search,
             max_dynamic_activations=self.max_dynamic_activations,
-            router_use_capability_search=self.router_use_capability_search,
             tool_tier=self.tool_tier,
             preload_user_memory=self.preload_user_memory,
             user_memory_max_chars=self.user_memory_max_chars,
@@ -296,17 +277,11 @@ class ReasoningHelm(BaseHelm):
         return s or None
 
     def _language_model_action_type_for_purpose(self, purpose: str) -> Optional[str]:
-        skill = self._strip_model_action_type(getattr(self, "model_action_type", None))
-        router = self._strip_model_action_type(
-            getattr(self, "router_model_action_type", None)
-        )
-        if purpose == "skill":
-            return skill
-        if purpose == "router":
-            # Router is gone (ADR-0009); fall through to skill model so any
-            # leftover internal callers don't crash.
-            return router or skill
-        return skill
+        # Single model surface after ADR-0009 router elimination.
+        # ``purpose`` retained for backward-compat with callers; any
+        # value falls through to the skill model type.
+        del purpose
+        return self._strip_model_action_type(getattr(self, "model_action_type", None))
 
     async def get_model_action(
         self,

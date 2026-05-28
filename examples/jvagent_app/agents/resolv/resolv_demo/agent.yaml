@@ -61,8 +61,6 @@ actions:
         ReasoningHelm runs the deliberate think/act/observe loop. Resolv
         interview and onboarding actions are invoked when the helm
         defers to them.
-      router_model: gpt-4o-mini
-      router_model_action_type: OpenAILanguageModelAction
       model_action_type: OllamaLanguageModelAction
       model: deepseek-v4-flash:cloud
       skills: []

@@ -20,11 +20,6 @@ class EngineConfig:
     model_max_tokens: int = 8192
     model_action_type: str = "AnthropicLanguageModelAction"
 
-    router_model: str = "gpt-4o-mini"
-    router_model_action_type: str = ""
-    router_model_temperature: float = 0.1
-    router_model_max_tokens: int = 400
-
     max_iterations: int = 25
     max_duration_seconds: float = 300.0
     max_concurrent_tools: int = 5
@@ -65,7 +60,6 @@ class EngineConfig:
     # Prevents an agent loop from runaway-activating the full catalogue.
     # 0 disables the ``skill_activate`` harness tool entirely.
     max_dynamic_activations: int = 10
-    router_use_capability_search: bool = False
     # Harness-tool tier: "minimal" | "standard" | "full". Trims rarely-used
     # harness tools from the engine prompt to control token cost. Action and
     # skill tools are not affected by this knob.

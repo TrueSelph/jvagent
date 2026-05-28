@@ -61,8 +61,6 @@ actions:
       description: >
         ReasoningHelm runs the deliberate think/act/observe loop. Skills can be
         added to ``skills`` once registered on the agent.
-      router_model: gpt-4o-mini
-      router_model_action_type: OpenAILanguageModelAction
       model_action_type: OllamaLanguageModelAction
       model: glm-5.1:cloud
       skills: []                  # add skill bundles here as they are installed

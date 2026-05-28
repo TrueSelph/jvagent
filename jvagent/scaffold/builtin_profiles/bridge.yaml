@@ -59,16 +59,16 @@ actions:
       #   skip_canned_for_intents, converse_enabled,
       #   converse_context_limit, converse_persona_prompt,
       #   conversational_fast_path, enable_router_preclassifier
-      router_model: gpt-4o-mini
-      router_model_action_type: OpenAILanguageModelAction
+      # Plus the now-removed router knobs (Wave 9b / ADR-0009):
+      #   router_model, router_model_action_type, router_model_temperature,
+      #   router_model_max_tokens, enable_interact_router_cache,
+      #   router_use_capability_search
       model_action_type: OpenAILanguageModelAction
       model: gpt-4o-mini
       max_iterations: 25
       tool_tier: standard
       response_mode: respond
       skills_source: both
-      # Identical-utterance routing cache: short TTL; safe to keep on.
-      enable_interact_router_cache: true
       # Engine thought-stream + tool-progress visibility — useful for
       # long-running multi-tool turns so the user sees activity rather
       # than dead air. Reflex still owns the user-facing lead-in.

@@ -150,9 +150,7 @@ class TestToolExecution:
 
         result = await tool.execute(name="HandoffIA")
         assert result == {"ok": True, "delegated_to": "HandoffIA"}
-        assert bridge_state.helm_states["ReasoningHelm"]["pending_ias"] == [
-            "HandoffIA"
-        ]
+        assert bridge_state.helm_states["ReasoningHelm"]["pending_ias"] == ["HandoffIA"]
 
         from jvagent.action.helm.reasoning.session import get_session_optional
 

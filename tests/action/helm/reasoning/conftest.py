@@ -153,7 +153,6 @@ def engine_config() -> EngineConfig:
         enable_skill_helper_tools=False,
         enable_artifact_tools=False,
         enable_capability_search=False,
-        router_use_capability_search=False,
         preload_user_memory=False,
         user_memory_max_chars=0,
         auto_track_tasks=False,

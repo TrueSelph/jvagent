@@ -241,8 +241,6 @@ class TestDefaultValues:
 
         cfg = EngineConfig(
             model="x",
-            router_model="y",
             model_action_type="z",
-            router_model_action_type="z",
         )
         assert cfg.block_raw_tool_invocation is True

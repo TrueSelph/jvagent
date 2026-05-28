@@ -60,7 +60,11 @@ class TestAnchorRoutableTemplate:
         payload = build_manifest_payload(
             CATEGORY_ANCHOR_ROUTABLE,
             purpose="enroll user in training",
-            anchors=["user wants to enroll", "user wants to sign up", "user wants to register"],
+            anchors=[
+                "user wants to enroll",
+                "user wants to sign up",
+                "user wants to register",
+            ],
         )
         m = Manifest.from_payload(payload)
         assert m.routable_by_anchor is True
@@ -133,7 +137,11 @@ class TestTurnLockedTemplate:
         payload = build_manifest_payload(
             CATEGORY_TURN_LOCKED,
             purpose="multi-turn interview",
-            anchors=["user agrees to interview", "user wants to be interviewed", "user starts feedback"],
+            anchors=[
+                "user agrees to interview",
+                "user wants to be interviewed",
+                "user starts feedback",
+            ],
         )
         m = Manifest.from_payload(payload)
         assert m.turn_lock is True
