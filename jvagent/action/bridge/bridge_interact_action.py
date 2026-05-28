@@ -483,6 +483,15 @@ class BridgeInteractAction(InteractAction):
             "turn_started_at": state.turn_started_at,
             "last_emit_at": state.last_emit_at,
         }
+        # ADR-0008: surface the dispatch_regime that ReasoningHelm chose
+        # for this turn. Stamped on the interaction by the helm during
+        # _phase_route_and_setup; copied here so it appears in the
+        # per-turn observability snapshot regardless of whether any
+        # post-Reasoning helm_shift event fired (skill-only turns end
+        # with CONTINUE/YIELD and never re-record a helm_shift).
+        regime = getattr(interaction, "_dispatch_regime", None)
+        if regime:
+            payload["dispatch_regime"] = regime
         try:
             if isinstance(params, dict):
                 params["bridge_observability"] = payload

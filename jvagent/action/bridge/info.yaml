@@ -8,7 +8,7 @@ package:
     title: BridgeInteractAction
     description: >-
       Multi-helm orchestrator InteractAction. Composes one or more helms
-      (Reflex / Reasoning / Specialist / Persona) into a single agent slot at
+      (Reflex / Reasoning / Specialist) into a single agent slot at
       weight -200, with explicit shift verbs, shift budget, first-emit
       timeout safety net, and AccessControl gating per shift target.
     group: jvagent
