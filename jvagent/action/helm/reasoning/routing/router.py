@@ -1,9 +1,24 @@
-"""EngineRouter: lightweight pre-engine posture classification + skill selection."""
+"""EngineRouter: unified capability selection (ADR-0008).
+
+The router presents a single ``CAPABILITIES AVAILABLE`` catalog to the model
+(skills + routable interact_actions), asks the model to pick by name, then
+decodes ``kind`` from the registry to produce a :class:`RoutingResult` whose
+``selected`` list is downstream-authoritative.
+
+The router catalog excludes:
+
+- Always-execute IAs (``always_execute=True``) — scheduled by Bridge's
+  walker queue.
+- Chain-internal IAs (``manifest.routable_by_anchor=False``) — reachable
+  only via explicit DELEGATE from a parent IA.
+- The orchestrator itself (Bridge) — guard against recursion.
+
+Posture is removed: ReflexHelm gates SUPPRESS/DEFER upstream before any turn
+reaches this router.
+"""
 
 import json
 import logging
-import re
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from jvagent.action.helm.reasoning.catalog.skill_catalog import SkillCatalog
@@ -12,14 +27,11 @@ from jvagent.action.helm.reasoning.catalog.skill_discovery import (
 )
 from jvagent.action.helm.reasoning.registry.shim import EngineVisitorShim
 from jvagent.action.helm.reasoning.routing.prompts import (
-    ROUTING_CLARIFICATION_FALLBACK_MESSAGES,
-    ROUTING_CLARIFICATION_PARAPHRASE_PROMPT_TEMPLATE,
-    ROUTING_CLARIFICATION_USER_PROMPT_TEMPLATE,
     build_routing_system_prompt,
     build_routing_user_prompt_template,
 )
 from jvagent.action.helm.reasoning.routing.types import (
-    POSTURE_RESPOND,
+    CapabilityRef,
     RoutingResult,
     format_interaction_history,
     parse_routing_response,
@@ -34,46 +46,45 @@ logger = logging.getLogger(__name__)
 
 
 class EngineRouter:
-    """Lightweight pre-engine router: posture classification + skill selection."""
+    """Unified-catalog router for ReasoningHelm (ADR-0008)."""
 
     def __init__(self, action: Any) -> None:
         self._action = action
         self._visitor: Any = None
 
-    async def route(self, visitor: Any) -> Tuple[str, Optional[RoutingResult]]:
+    async def route(self, visitor: Any) -> Tuple[None, Optional[RoutingResult]]:
+        """Run the router LLM call (or hit the cache) and return the parsed result.
+
+        The first tuple element is retained for signature compatibility with
+        the legacy ``(posture, result)`` shape — it is always ``None`` under
+        ADR-0008 because posture has been removed.
+        """
         self._visitor = visitor
         interaction = visitor.interaction
 
         if not interaction:
             logger.warning("EngineRouter: no interaction available")
-            return POSTURE_RESPOND, None
+            return None, None
 
         if interaction.interpretation:
             logger.debug("EngineRouter: already routed, skipping")
-            return POSTURE_RESPOND, None
-
-        # NOTE — the standalone-Cockpit ancestor runs a smalltalk
-        # pre-classifier here to short-circuit the router LLM call on
-        # greetings / thanks / goodbyes. ReasoningHelm doesn't carry
-        # that surface: smalltalk turns are caught by ReflexHelm
-        # (sub-200ms EMIT) and never reach this router. Every turn
-        # that arrives here is substantive by Reflex's construction.
+            return None, None
 
         try:
             agent = await self._action.get_agent()
             conversation = getattr(visitor, "conversation", None)
             if not agent:
-                return POSTURE_RESPOND, None
+                return None, None
 
             model_action = await self._action.get_model_action(purpose="router")
             if not model_action:
                 logger.error("EngineRouter: model action not found")
-                return POSTURE_RESPOND, None
+                return None, None
 
             if conversation:
                 (
                     skill_descriptors,
-                    interact_action_descriptors,
+                    ia_descriptors,
                     interaction_history,
                 ) = await asyncio_gather_router(
                     self._collect_skill_descriptors(agent, conversation),
@@ -94,28 +105,30 @@ class EngineRouter:
                 )
             else:
                 skill_descriptors = await self._collect_skill_descriptors(agent, None)
-                interact_action_descriptors = (
-                    await self._collect_interact_action_descriptors()
-                )
+                ia_descriptors = await self._collect_interact_action_descriptors()
                 interaction_history = []
 
-            if not skill_descriptors and not interact_action_descriptors:
-                logger.warning("EngineRouter: no routes available")
+            if not skill_descriptors and not ia_descriptors:
+                logger.warning("EngineRouter: no capabilities available")
                 result = RoutingResult.error_result(
-                    "No skills or interact_actions available for routing",
+                    "No capabilities available for routing",
                     interaction.utterance or "",
                 )
-                return result.posture, result
+                return None, result
+
+            capability_catalog = self._build_unified_catalog(
+                skill_descriptors, ia_descriptors
+            )
 
             result = await self._run_llm_route(
                 interaction,
                 skill_descriptors,
-                interact_action_descriptors,
+                ia_descriptors,
+                capability_catalog,
                 interaction_history or [],
                 conversation,
             )
 
-            interaction.response_posture = result.posture
             # Persist the router's interpretation so downstream stages
             # (engine pre-dispatch with ``source: interpretation``, audit
             # tooling, history rendering) can read it without re-running
@@ -128,33 +141,23 @@ class EngineRouter:
                     pass
             await interaction.save()
 
-            # Bridge composition: Reflex gates SUPPRESS/DEFER posture
-            # upstream and owns the user-facing immediate response via
-            # ``transient_ack`` on SHIFT. The router only ever sees
-            # RESPOND-class turns, so the SUPPRESS/DEFER short-circuits
-            # and canned-response publishing that the monolithic Cockpit
-            # router carried are deliberately absent here. The
-            # standalone-Cockpit copy at
-            # ``jvagent/action/cockpit/routing/router.py`` retains them.
-            return result.posture, result
+            return None, result
 
         except Exception as exc:
             logger.error("EngineRouter: error during routing: %s", exc, exc_info=True)
-            return POSTURE_RESPOND, None
+            return None, None
 
     async def _run_llm_route(
         self,
         interaction: Any,
         skill_descriptors: Dict[str, Dict[str, Any]],
-        interact_action_descriptors: Dict[str, Dict[str, Any]],
+        ia_descriptors: Dict[str, Dict[str, Any]],
+        capability_catalog: Dict[str, Dict[str, Any]],
         interaction_history: List[Dict[str, Any]],
         conversation: Any,
     ) -> RoutingResult:
         # Cache check — skip LLM call when an identical (utterance,
         # active-task fingerprint) pair was routed within the cache TTL.
-        # Operator-controlled by ``enable_interact_router_cache`` perf knob;
-        # default off. Hits return a re-validated RoutingResult; misses
-        # fall through to the LLM call below and write the result back.
         cache_enabled = bool(
             getattr(self._action, "enable_interact_router_cache", False)
         )
@@ -165,7 +168,7 @@ class EngineRouter:
             cached = await get_interact_router_cache(cache_key, caller_enabled=True)
             if cached:
                 cached_result = self._restore_cached_routing_result(
-                    cached, skill_descriptors, interact_action_descriptors
+                    cached, skill_descriptors, ia_descriptors
                 )
                 if cached_result is not None:
                     logger.debug("EngineRouter: cache hit (key=%s…)", cache_key[:12])
@@ -174,8 +177,7 @@ class EngineRouter:
         model_action = await self._action.get_model_action(
             required=True, purpose="router"
         )
-        skills_json = json.dumps(skill_descriptors, indent=2)
-        interact_actions_json = json.dumps(interact_action_descriptors, indent=2)
+        capabilities_json = json.dumps(capability_catalog, indent=2)
         history_section = (
             format_interaction_history(interaction_history, conversation=conversation)
             if interaction_history
@@ -183,15 +185,8 @@ class EngineRouter:
         )
 
         optional_instructions = ""
-        # canned_field is kept as an empty placeholder so the user-prompt
-        # template's ``.format()`` succeeds. The JSON schema fragment it
-        # would otherwise inject was a ``"canned_response": ""`` field —
-        # permanently absent in Bridge composition (Reflex owns the
-        # transient_ack lead-in).
-        canned_field = ""
 
-        # Optional: enrich prompt with capability_search results (skills + interact_actions + tools).
-        # Off by default (latency-sensitive); enable via router_use_capability_search.
+        # Optional: enrich prompt with capability_search results.
         if getattr(self._action, "router_use_capability_search", False):
             try:
                 capability_section = await self._build_capability_search_section(
@@ -204,44 +199,28 @@ class EngineRouter:
 
         active_tasks_section = self._build_active_tasks_section()
 
-        # Bridge composition optimisation (see prompts.py docstring):
-        # ReasoningHelm only runs inside Bridge, so Reflex has already gated
-        # posture upstream and ``enable_canned_response`` defaults to False
-        # (Reflex owns transient_ack). The factory builds a ~35% smaller
-        # routing prompt that strips the redundant POSTURE/canned surfaces.
-        # Per-action override (``self._action.routing_user_prompt_template``)
-        # still wins when set — the factory call is just the new default.
-        bridge_user_template = build_routing_user_prompt_template(
-            include_posture_recap=False,
-        )
         routing_user_template = getattr(
-            self._action, "routing_user_prompt_template", bridge_user_template
+            self._action,
+            "routing_user_prompt_template",
+            build_routing_user_prompt_template(),
         )
         prompt = routing_user_template.format(
             utterance=interaction.utterance or "",
-            skills_json=skills_json,
-            interact_actions_json=interact_actions_json,
+            capabilities_json=capabilities_json,
             active_tasks_section=active_tasks_section,
             history_section=history_section,
             prior_fragments_section="",
-            entity_field="",
-            canned_field=canned_field,
             optional_instructions=optional_instructions,
         )
 
-        # Bridge-mode system prompt: posture block compressed to the
-        # one-line defensive fallback. Canned guidance is permanently
-        # absent from the Reasoning prompt surface (Reflex owns the
-        # transient_ack lead-in). ~35% smaller than the standalone-
-        # standalone-Cockpit-equivalent ROUTING_SYSTEM_PROMPT module constant.
-        # Per-action override on ``self._action.routing_system_prompt``
-        # still wins.
-        bridge_system_prompt = build_routing_system_prompt(
-            include_posture_block=False,
+        system_prompt = getattr(
+            self._action,
+            "routing_system_prompt",
+            build_routing_system_prompt(),
         )
         response = await model_action.generate(
             prompt=prompt,
-            system=getattr(self._action, "routing_system_prompt", bridge_system_prompt),
+            system=system_prompt,
             temperature=getattr(self._action, "router_model_temperature", 0.1),
             max_tokens=getattr(self._action, "router_model_max_tokens", 400),
             model=getattr(self._action, "router_model", "gpt-4o-mini"),
@@ -250,18 +229,8 @@ class EngineRouter:
         )
 
         result = parse_routing_response(response)
-        result.actions = self._validate_routes(result.actions, skill_descriptors)
-        result.interact_actions = self._validate_routes(
-            result.interact_actions, interact_action_descriptors
-        )
-        # The standalone-Cockpit copy injects a ``converse`` skill route
-        # here when intent==CONVERSATIONAL to feed its conversational
-        # fast-path. ReasoningHelm has no fast-path (Reflex owns smalltalk
-        # via EMIT); CONVERSATIONAL turns just run through the engine
-        # with no preloaded skills.
+        result.selected = self._validate_selected(result.selected, capability_catalog)
 
-        # Cache write — store the validated result so a
-        # repeat utterance within the TTL window skips the LLM round-trip.
         if cache_key:
             try:
                 await set_interact_router_cache(
@@ -272,20 +241,54 @@ class EngineRouter:
 
         return result
 
-    def _validate_routes(
-        self, actions: List[str], descriptors: Dict[str, Dict[str, Any]]
-    ) -> List[str]:
-        return [a for a in actions if a in descriptors]
+    def _build_unified_catalog(
+        self,
+        skill_descriptors: Dict[str, Dict[str, Any]],
+        ia_descriptors: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, Dict[str, Any]]:
+        """Merge skill + IA descriptors into a single catalog presented to the LLM.
+
+        The model only sees ``description`` (and a short ``tags`` hint for
+        skills) — ``kind`` is omitted from the prompt because the dispatch
+        decode reads it from the registry post-LLM.
+        """
+        merged: Dict[str, Dict[str, Any]] = {}
+        for name, info in skill_descriptors.items():
+            merged[name] = {
+                "description": info.get("description", ""),
+            }
+            tags = info.get("tags")
+            if tags:
+                merged[name]["tags"] = tags
+        for name, info in ia_descriptors.items():
+            merged[name] = {
+                "description": info.get("description", ""),
+            }
+        return merged
+
+    def _validate_selected(
+        self,
+        selected: List[CapabilityRef],
+        capability_catalog: Dict[str, Dict[str, Any]],
+        skill_descriptors: Optional[Dict[str, Dict[str, Any]]] = None,
+        ia_descriptors: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> List[CapabilityRef]:
+        """Drop capabilities the LLM hallucinated and re-decode ``kind`` from the registry."""
+        del skill_descriptors, ia_descriptors  # signature symmetry with cache path
+        return [c for c in selected if c.name in capability_catalog]
 
     async def _collect_interact_action_descriptors(self) -> Dict[str, Dict[str, Any]]:
         """Build descriptor map for routable InteractActions on the agent.
 
         Excludes:
-        - The engine action itself (cannot delegate to self).
-        - InteractActions with ``always_execute=True`` (they run regardless of routing).
 
-        Each entry: ``{"description": "...", "weight": int}``. The class name is the
-        key, so the router can return exact ``interact_actions`` array entries.
+        - The helm action itself (cannot delegate to self).
+        - The orchestrator wrapper (``BridgeInteractAction``) — guard
+          against recursion into Bridge.
+        - InteractActions with ``always_execute=True`` (scheduled by the
+          walker queue, not by the router).
+        - InteractActions whose manifest declares ``routable_by_anchor=False``
+          (chain-internal; reachable only via DELEGATE from a parent IA).
         """
         agent = await self._action.get_agent()
         if agent is None:
@@ -304,22 +307,7 @@ class EngineRouter:
             return {}
 
         helm_class = self._action.__class__.__name__
-        # Pattern-orchestrator exclusion (Wave-1 review item C1, May 2026):
-        # Bridge and Cockpit live at weight -200 and are not legitimate
-        # routing targets — letting them appear in the catalog risks the
-        # engine model selecting them and the resulting DELEGATE either
-        # recursing into Bridge or jumping into a sibling pattern. The
-        # standalone-Cockpit exclusion check at
-        # ``jvagent/action/helm/reasoning/routing/router.py`` (helm
-        # self-exclusion above) handles the ReasoningHelm-self case; this
-        # set handles the orchestrator wrappers. The agent-yaml validator
-        # already warns when both Bridge AND Cockpit are installed, so
-        # listing both names here is defence-in-depth — only one will
-        # ever be present in a healthy config.
-        _ORCHESTRATOR_EXCLUSIONS = {
-            "BridgeInteractAction",
-            "CockpitInteractAction",
-        }
+        _ORCHESTRATOR_EXCLUSIONS = {"BridgeInteractAction"}
         descriptors: Dict[str, Dict[str, Any]] = {}
         for action in all_actions:
             try:
@@ -332,12 +320,22 @@ class EngineRouter:
                     continue
                 if bool(getattr(action, "always_execute", False)):
                     continue
+                try:
+                    manifest = action.get_manifest()
+                    if not manifest.routable_by_anchor:
+                        continue
+                except Exception as exc:
+                    logger.debug(
+                        "EngineRouter: manifest read failed for %s: %s; "
+                        "treating as routable by default",
+                        cls_name,
+                        exc,
+                    )
                 description = (
                     getattr(action, "description", None)
                     or action.__class__.__doc__
                     or ""
                 ).strip()
-                # Trim long docstrings so the router prompt stays small.
                 short_desc = " ".join(description.split())[:240]
                 descriptors[cls_name] = {
                     "description": short_desc,
@@ -372,14 +370,6 @@ class EngineRouter:
         return descriptors
 
     def _build_cache_key(self, interaction: Any, conversation: Any) -> Optional[str]:
-        """Build the router cache key for the current routing call.
-
-        Returns None when there's not enough context (no conversation, no
-        utterance) — caller treats None as "skip cache". Active tasks are
-        folded into the fingerprint so a fragment routed when an interview
-        is in flight gets a different key than the same fragment after the
-        interview completes.
-        """
         if conversation is None:
             return None
         utterance = (interaction.utterance or "").strip()
@@ -404,8 +394,6 @@ class EngineRouter:
             active_fp = ",".join(sorted(parts))
         except Exception:
             active_fp = ""
-        # Include user_id so the cache cannot bleed routing decisions
-        # across users (AUDIT-interact-cockpit HIGH-04).
         user_id = ""
         try:
             user_id = str(getattr(self._visitor, "user_id", "") or "")
@@ -424,9 +412,9 @@ class EngineRouter:
         self,
         cached: Dict[str, Any],
         skill_descriptors: Dict[str, Dict[str, Any]],
-        interact_action_descriptors: Dict[str, Dict[str, Any]],
+        ia_descriptors: Dict[str, Dict[str, Any]],
     ) -> Optional[RoutingResult]:
-        """Rebuild a RoutingResult from a cached dict, re-validating routes.
+        """Rebuild a :class:`RoutingResult` from cache, re-validating selections.
 
         Re-validation guards against catalog drift between cache write and
         read (a skill removed from the agent's selector, an interact_action
@@ -440,28 +428,19 @@ class EngineRouter:
         except Exception as exc:
             logger.debug("EngineRouter: cache deserialise failed: %s", exc)
             return None
-        result.actions = self._validate_routes(result.actions, skill_descriptors)
-        result.interact_actions = self._validate_routes(
-            result.interact_actions, interact_action_descriptors
-        )
+        catalog = self._build_unified_catalog(skill_descriptors, ia_descriptors)
+        result.selected = self._validate_selected(result.selected, catalog)
         return result
 
     def _build_active_tasks_section(self) -> str:
         """Render active tasks on the conversation for the routing prompt.
 
         Surfaces every task with status ``active`` on the current conversation,
-        grouped by ``owner_action``. The router uses this to:
-
-        - Route fragments (``"Yes"``, ``"No"``, single tokens) back to the
-          owning interact_action when an interview / multi-step flow is in
-          progress.
-        - Avoid spawning parallel handlers for the same flow type
-          (e.g. don't pick ``FeedbackInterviewInteractAction`` while a
-          ``ReportInterviewInteractAction`` is already active).
-
+        grouped by ``owner_action``. The router uses this to route fragments
+        back to the owning interact_action when an interview / multi-step
+        flow is in progress, and to avoid spawning parallel handlers.
         Returns an empty string when there's no visitor / conversation, no
-        TaskStore, or no active tasks — keeps the prompt clean for fresh
-        conversations.
+        TaskStore, or no active tasks.
         """
         visitor = self._visitor
         if visitor is None or getattr(visitor, "conversation", None) is None:
@@ -478,10 +457,6 @@ class EngineRouter:
         if not active:
             return ""
 
-        # Group by owner_action so the model sees one entry per ongoing flow.
-        # Multiple tasks under the same owner are unusual but can happen
-        # if dedup didn't fire — collapse to one line so the prompt isn't
-        # noisy.
         seen_owners: Dict[str, Dict[str, Any]] = {}
         for handle in active:
             owner = (handle.owner_action or "").strip() or "(unspecified)"
@@ -511,17 +486,11 @@ class EngineRouter:
         lines.append(
             "Routing rule: if the current message is a fragment / short reply "
             "(yes/no/value) and an owner_action above matches a listed "
-            "INTERACT ACTION, prefer that owner over starting a parallel one."
+            "CAPABILITY, prefer that owner over starting a parallel one."
         )
         return "\n".join(lines) + "\n\n"
 
     async def _build_capability_search_section(self, utterance: str) -> str:
-        """Run a unified capability_search across skills + interact_actions + tools.
-
-        Used only when ``router_use_capability_search`` is enabled. Returns a
-        prompt-ready section to splice into the routing user prompt; empty
-        string on any failure.
-        """
         if not utterance:
             return ""
         try:
@@ -539,7 +508,7 @@ class EngineRouter:
                 response_bus=None,
                 channel=None,
             )
-            shim._agent = agent  # search_for_router reads ctx.agent
+            shim._agent = agent
             catalog = await self._get_cached_catalog(agent, conversation)
             output = await search_for_router(
                 agent=agent,

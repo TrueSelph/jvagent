@@ -220,7 +220,6 @@ The originally-planned dedicated `PersonaHelm` (an extra hop via `SHIFT(target=P
     enabled: true
     block_raw_tool_invocation: true
     stream_internal_progress: false
-    enable_canned_response: false
     sanitize_tool_errors: true
 ```
 
@@ -236,7 +235,8 @@ The originally-planned dedicated `PersonaHelm` (an extra hop via `SHIFT(target=P
 
 ### Gotchas
 
-- `ReasoningHelm` does not accept the legacy monolithic surfaces (`enable_canned_response`, `canned_response_max_words`, `skip_canned_for_intents`, `converse_enabled`, `converse_context_limit`, `converse_persona_prompt`, `conversational_fast_path`, `enable_router_preclassifier`). Reflex owns transient_ack/smalltalk, Bridge owns persona delivery. Including any of them in `agent.yaml` triggers an unknown-context-key warning at startup and the value is silently dropped.
+- `ReasoningHelm` does not accept the legacy monolithic surfaces (`enable_canned_response`, `canned_response_max_words`, `skip_canned_for_intents`, `converse_enabled`, `converse_context_limit`, `converse_persona_prompt`, `conversational_fast_path`, `enable_router_preclassifier`, `clarify_response_prompt`). Reflex owns transient_ack/smalltalk, Bridge owns persona delivery, and the router prompt no longer carries a posture surface (see [ADR-0008](../.planning/adr/0008-router-unification.md)). Including any of them in `agent.yaml` triggers an unknown-context-key warning at startup and the value is silently dropped.
+- **Dispatch regimes.** ReasoningHelm classifies each turn into one of four regimes after capability decode: `SKILLS_ONLY` (engine runs with skill-loop guidance), `IAS_ONLY` (engine LM call SKIPPED — DELEGATE chain runs and yields, saving 800–1500 ms), `MIXED` (engine runs with IA-chain-awareness, then DELEGATE chain), `NONE` (engine runs with bare persona prompt). The regime is recorded on the `helm_shift` observability event as `dispatch_regime` so operators can filter logs. See [ADR-0008](../.planning/adr/0008-router-unification.md).
 - ReflexHelm's classifier uses temperature `0.0` and a small `max_tokens` (256) by design. Don't raise these — the helm is meant to be a deterministic gate, not a generator.
 - Recap / recall questions ALWAYS SHIFT from ReflexHelm to ReasoningHelm regardless of perceived history. The reflex prompt enforces this explicitly.
 - **Locale-static strings.** A few Bridge / helm attributes are STATIC strings that don't adapt to the user's language: `safety_net_ack_text` and `denied_response_text` on Bridge, and `fallback_text` / `tool_invocation_refusal_text` on ReflexHelm. The Bridge `safety_net_ack_text` defaults to `"…"` (universal) so multilingual deployments inherit a safe placeholder; the rest default to English. Override per agent.yaml for single-language deployments, or use a channel adapter that localises before publish. Dynamic strings (Reflex's `transient_ack`, persona-rendered EMITs) DO adapt — they go through model calls that read `detected_language`.
@@ -263,7 +263,10 @@ jvagent/action/helm/                    # Helm primitives + concrete helms
   └─ reasoning/                         # ReasoningHelm package
       ├─ reasoning_helm.py
       ├─ engine.py                      # Engine (think-act-observe loop)
-      ├─ routing/router.py              # EngineRouter (Phase-1 classifier)
+      ├─ routing/router.py              # EngineRouter (unified-capability classifier)
+      ├─ routing/types.py               # CapabilityRef, DispatchRegime,
+      │                                 #   DispatchPlan, RoutingResult
+      ├─ routing/prompts.py             # Single CAPABILITIES AVAILABLE catalog
       ├─ catalog/                       # SkillCatalog, ActionResolver
       ├─ delivery/                      # gates, helpers, delegation
       ├─ registry/                      # tool assembler, access, visitor shim

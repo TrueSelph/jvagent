@@ -63,10 +63,15 @@ from jvagent.action.helm.reasoning.delivery.delegation import (
 from jvagent.action.helm.reasoning.engine import Engine
 from jvagent.action.helm.reasoning.registry.access import (
     filter_routed_interact_actions_by_access,
-    filter_routed_skills_by_access,
+    filter_selected_by_access,
 )
 from jvagent.action.helm.reasoning.registry.shim import EngineVisitorShim
-from jvagent.action.helm.reasoning.routing.types import POSTURE_RESPOND, RoutingResult
+from jvagent.action.helm.reasoning.routing.types import (
+    DispatchPlan,
+    DispatchRegime,
+    RoutingResult,
+    decode_dispatch_plan,
+)
 from jvagent.action.helm.reasoning.session import (
     EngineSession,
     clear_session,
@@ -87,12 +92,86 @@ ENGINE_DEFAULT_SKILL_MODEL: str = "claude-sonnet-4-20250514"
 # ``visitor._bridge_state``; the two are independent.
 
 
-def _routing_clarification_fallbacks_default() -> List[str]:
-    from jvagent.action.helm.reasoning.routing.router import (
-        ROUTING_CLARIFICATION_FALLBACK_MESSAGES,
+# ---------------------------------------------------------------------------
+# Regime-aware engine prompt addenda (ADR-0008 Wave 6)
+# ---------------------------------------------------------------------------
+#
+# Each constant is appended to ``agent_description`` (the engine's persona
+# preamble) based on the dispatch regime. Kept as module-level constants so
+# future edits localise to one place. The router's routing decision
+# (interpretation, intent type, the selected capabilities) is interpolated
+# in via :func:`build_skill_loop_guidance`.
+
+IA_CHAIN_AWARENESS = (
+    "\n\n# Interactive flow follow-up\n"
+    "After your response, one or more interactive flows will run to handle "
+    "the user's request. Keep your response brief and focused — the flow "
+    "will own the structured next steps. Do NOT preempt the flow's first "
+    "question; lead in only enough to acknowledge the request."
+)
+
+
+def build_skill_loop_guidance(
+    skills_csv: str,
+    intent: str,
+    interpretation: str,
+) -> str:
+    """Render the per-turn routing-decision guidance appended to agent_description.
+
+    Surfaces the router's pre-selected skills so the engine treats them as
+    the recommended SOP rather than calling ``skill_read`` defensively.
+    """
+    interp_line = f" Interpretation: {interpretation}" if interpretation else ""
+    return (
+        "\n\n# Routing decision (advisory — verify before committing)\n"
+        f"Intent: {intent}.{interp_line} "
+        f"Router pre-selected skill(s): **{skills_csv}**. "
+        "The SOP for these skills is inlined under '# Router-selected skill(s)' below, "
+        "alongside a quick index of the other catalog skills.\n"
+        "- If the recommended SOP fits the actual request, begin work with "
+        "its tools and workflow immediately. Do NOT call `skill_read` for "
+        "the recommended skill, and do NOT spend turns on memory_set, "
+        "task_create_plan, or other harness scaffolding before invoking "
+        "its primary tools.\n"
+        "- If the recommendation is the wrong fit (e.g. user actually "
+        "asked something the listed SOP does not cover), treat the "
+        "router as fallible: pick a better skill from the peer index, "
+        "call `skill_read` on it, and use ITS tools. Do NOT answer from "
+        "world knowledge while a catalog skill could plausibly satisfy "
+        "the request."
     )
 
-    return list(ROUTING_CLARIFICATION_FALLBACK_MESSAGES)
+
+def build_engine_persona_addendum(
+    plan: DispatchPlan,
+    routing: RoutingResult,
+) -> str:
+    """Assemble the regime-aware persona addendum for the engine prompt.
+
+    - ``SKILLS_ONLY`` / ``MIXED``: include the router's skill-loop guidance.
+    - ``MIXED``: also append the IA-chain-awareness note so the engine
+      keeps its response brief and lets the post-engine DELEGATE chain
+      drive the structured next steps.
+    - ``IAS_ONLY``: not called (engine is skipped).
+    - ``NONE``: returns empty string — engine runs with a bare persona prompt.
+    """
+    parts: List[str] = []
+    if (
+        plan.regime in (DispatchRegime.SKILLS_ONLY, DispatchRegime.MIXED)
+        and plan.skills
+    ):
+        skills_csv = ", ".join(c.name for c in plan.skills)
+        intent = routing.intent_type or "UNCLEAR"
+        parts.append(
+            build_skill_loop_guidance(
+                skills_csv=skills_csv,
+                intent=intent,
+                interpretation=routing.interpretation or "",
+            )
+        )
+    if plan.regime == DispatchRegime.MIXED:
+        parts.append(IA_CHAIN_AWARENESS)
+    return "".join(parts)
 
 
 class ReasoningHelm(BaseHelm):
@@ -622,105 +701,89 @@ class ReasoningHelm(BaseHelm):
             await self._phase_continue(visitor)
 
     async def _phase_route_and_setup(self, visitor: InteractWalker) -> None:
-        """First visit: route, gate, dispatch to engine and/or interact_actions.
+        """First visit: route, classify regime, dispatch.
 
-        Dispatch matrix (after posture + conversational gating):
+        Dispatch matrix (ADR-0008 regimes):
 
-        - ``routing.actions`` only          → engine path (existing)
-        - ``routing.interact_actions`` only → skip engine, hand off to those IAs
-        - both                              → engine first, IAs prepended on terminal
-        - neither                           → engine path (engine handles via
-          harness tools / model decides)
+        - ``SKILLS_ONLY`` → engine runs with skill-loop guidance.
+        - ``IAS_ONLY``    → engine SKIPPED; pop DELEGATE chain.
+        - ``MIXED``       → engine runs (skills + IA-chain-awareness); IAs
+                            queued for post-engine DELEGATE chain.
+        - ``NONE``        → engine runs with a bare persona prompt
+                            (zero-iteration response).
         """
         interaction = visitor.interaction
 
         try:
             from jvagent.action.helm.reasoning.routing.router import EngineRouter
 
-            # EngineRouter only emits RESPOND-class results in Bridge
-            # composition (Reflex gates SUPPRESS/DEFER upstream and owns
-            # the transient_ack lead-in). The conversational fast-path
-            # that the monolithic Cockpit ancestor used to skip the
-            # engine on smalltalk has also been removed — if a
-            # CONVERSATIONAL classification reaches here at all, the
-            # engine handles it. Reflex misroutes are observable and
-            # rare; the simplicity of one path is worth more than
-            # avoiding a single engine call on the rare miss.
             router = EngineRouter(self)
-            _posture, routing = await router.route(visitor)
+            _unused, routing = await router.route(visitor)
 
             if routing is None:
-                routing = RoutingResult(posture=POSTURE_RESPOND)
+                routing = RoutingResult()
 
             persona = await self._require_persona()
             agent = await self.get_agent()
             user_id = getattr(visitor, "user_id", None)
             channel = getattr(visitor, "channel", "default") or "default"
 
-            # Apply per-user access control before resolving / dispatching.
-            # Skills routed by the LLM are filtered against
-            # ``skill:{name}`` rules; interact_actions are filtered against
-            # their class names (existing access_control convention).
-            routing.actions = await filter_routed_skills_by_access(
-                agent, routing, user_id=user_id, channel=channel
+            # Apply per-user access control to the unified ``selected``
+            # list. Skills get ``skill:{name}`` rules; IAs get class-name
+            # rules. Rebuild ``routing.selected`` from the surviving
+            # capabilities so downstream regime-decode reflects access.
+            routing.selected = await filter_selected_by_access(
+                agent, routing.selected, user_id=user_id, channel=channel
             )
 
-            # Resolve and AC-filter routed interact_actions. In Bridge
-            # composition we do NOT curate the walker queue here — Bridge
-            # owns it via its own ``_curate_walker_queue`` (which already
-            # restricts the queue to ``{Bridge} ∪ always_execute IAs``
-            # on first visit). Routed IAs are dispatched one at a time
-            # via the DELEGATE chain in :meth:`step` instead.
+            # Resolve IA class names to live InteractAction instances and
+            # AC-filter again (the instance list is what DELEGATE needs).
             routed_ias = await resolve_routed_interact_actions(agent, routing)
             routed_ias = await filter_routed_interact_actions_by_access(
                 agent, routed_ias, user_id=user_id, channel=channel
             )
 
-            has_skills = bool(routing.actions)
-            has_ias = bool(routed_ias)
+            # An IA that survived selected-level AC may have been dropped
+            # during instance resolution (disabled, missing on agent) or
+            # at the instance-AC layer — keep ``selected`` consistent so
+            # the regime decode reflects what will actually dispatch.
+            surviving_ia_names = {a.__class__.__name__ for a in routed_ias}
+            routing.selected = [
+                c
+                for c in routing.selected
+                if c.kind == "skill" or c.name in surviving_ia_names
+            ]
 
-            # interact_actions only → skip engine, hand off to IAs.
-            # The curate above already placed the routed IAs in the walker queue
-            # in weight order; the walker will visit them after the engine returns.
-            # We then append the engine to the END of the walk path so it runs once
-            # more after the IAs to invoke PersonaAction with the accumulated
-            # directives — that's the user-facing response.
-            session = get_session(visitor)
+            plan = decode_dispatch_plan(routing)
+            self._record_dispatch_regime(visitor, plan)
 
-            if has_ias and not has_skills:
-                # IA-only: queue the IAs for sequenced DELEGATE dispatch
-                # via :meth:`step`. No engine call this turn — Bridge
-                # runs each IA through its ``_handle_delegate`` and
-                # finalises via persona after the LAST DELEGATE
-                # (``follow_up=False`` on the tail). Cap chain length at
-                # ``max_dynamic_activations`` so a misbehaving router
-                # can't queue an unbounded number of activations.
+            if plan.regime == DispatchRegime.IAS_ONLY:
+                # Headline ADR-0008 optimisation: skip the engine LM call
+                # entirely. Queue the IAs for sequenced DELEGATE dispatch
+                # via :meth:`step` and yield. Reflex's transient_ack on
+                # SHIFT already gave the user an immediate response, so
+                # there is nothing for the engine to add this turn.
                 self._queue_pending_ias(visitor, routed_ias)
                 logger.info(
-                    "ReasoningHelm: routing returned IA-only=%s; queued "
-                    "for DELEGATE chain (length=%d)",
+                    "ReasoningHelm: regime=IAS_ONLY; engine skipped, "
+                    "queued IA chain=%s (length=%d)",
                     [a.__class__.__name__ for a in routed_ias],
                     len(routed_ias),
                 )
                 self._set_step_outcome(visitor, "yield")
                 return
 
-            # both → run engine first; queue the IAs for post-engine
-            # DELEGATE chain. The engine path proceeds normally; on
-            # terminal state, :meth:`step` finds the queued IAs and
-            # starts the chain. Bridge finalises via persona after the
-            # last DELEGATE in the chain.
-            if has_ias and has_skills:
+            if plan.regime == DispatchRegime.MIXED:
+                # Engine first, IAs queued for post-engine DELEGATE chain.
                 self._queue_pending_ias(visitor, routed_ias)
                 logger.info(
-                    "ReasoningHelm: routing returned engine + IAs=%s; "
-                    "queued for post-engine DELEGATE chain (length=%d)",
+                    "ReasoningHelm: regime=MIXED; engine + IA chain=%s " "(length=%d)",
                     [a.__class__.__name__ for a in routed_ias],
                     len(routed_ias),
                 )
 
-            # skills only OR neither → engine path.
-            await self._start_engine(visitor, routing, persona)
+            # SKILLS_ONLY, MIXED, or NONE → engine path with regime-aware prompt.
+            await self._start_engine(visitor, routing, plan, persona)
 
         except Exception as exc:
             logger.warning(
@@ -729,6 +792,24 @@ class ReasoningHelm(BaseHelm):
                 exc_info=True,
             )
             await self._handle_error(visitor, exc)
+
+    def _record_dispatch_regime(
+        self, visitor: "InteractWalker", plan: DispatchPlan
+    ) -> None:
+        """Stash ``dispatch_regime`` for the helm_shift observability event.
+
+        Bridge reads this attribute when it appends the helm_shift event
+        payload so operators can filter logs by regime (e.g. "what
+        fraction of turns are IAS_ONLY?"). No-op when the visitor has no
+        interaction yet (shouldn't happen at this point but defensive).
+        """
+        interaction = getattr(visitor, "interaction", None)
+        if interaction is None:
+            return
+        try:
+            setattr(interaction, "_dispatch_regime", plan.regime.value)
+        except Exception:
+            pass
 
     async def _phase_continue(self, visitor: InteractWalker) -> None:
         """Revisit: reuse engine instance and run next step.
@@ -822,9 +903,10 @@ class ReasoningHelm(BaseHelm):
         self,
         visitor: InteractWalker,
         routing: RoutingResult,
+        plan: DispatchPlan,
         persona: Any,
     ) -> None:
-        """Set up the engine and run the first step."""
+        """Set up the engine and run the first step (regime-aware prompt)."""
         interaction = visitor.interaction
         conversation = visitor.conversation
         if not interaction or not conversation:
@@ -835,7 +917,8 @@ class ReasoningHelm(BaseHelm):
         agent_name = getattr(persona, "persona_name", "Agent")
         agent_description = getattr(persona, "persona_description", "")
 
-        preloaded = list(routing.actions)
+        routed_skill_names = [c.name for c in plan.skills]
+        preloaded = list(routed_skill_names)
         try:
             always_active = await list_always_active_skill_names(
                 self, agent, conversation
@@ -846,39 +929,11 @@ class ReasoningHelm(BaseHelm):
             if name not in preloaded:
                 preloaded.append(name)
 
-        # NOTE: the standalone-Cockpit ancestor filters a synthetic
-        # "converse" skill out of the engine's preloaded list here.
-        # ReasoningHelm has no fast-path that would inject "converse"
-        # as a route (the CONVERSATIONAL→converse promotion in
-        # EngineRouter is also stripped), so the filter is unnecessary.
-
-        if routing.actions:
-            skills_csv = ", ".join(routing.actions)
-            intent = routing.intent_type or "UNCLEAR"
-            interp_line = (
-                f" Interpretation: {routing.interpretation}"
-                if routing.interpretation
-                else ""
-            )
-            guidance = (
-                "\n\n# Routing decision (advisory — verify before committing)\n"
-                f"Intent: {intent}.{interp_line} "
-                f"Router pre-selected skill(s): **{skills_csv}**. "
-                "The SOP for these skills is inlined under '# Router-selected skill(s)' below, "
-                "alongside a quick index of the other catalog skills.\n"
-                "- If the recommended SOP fits the actual request, begin work with "
-                "its tools and workflow immediately. Do NOT call `skill_read` for "
-                "the recommended skill, and do NOT spend turns on memory_set, "
-                "task_create_plan, or other harness scaffolding before invoking "
-                "its primary tools.\n"
-                "- If the recommendation is the wrong fit (e.g. user actually "
-                "asked something the listed SOP does not cover), treat the "
-                "router as fallible: pick a better skill from the peer index, "
-                "call `skill_read` on it, and use ITS tools. Do NOT answer from "
-                "world knowledge while a catalog skill could plausibly satisfy "
-                "the request."
-            )
-            agent_description += guidance
+        # Regime-aware persona addendum (skill-loop guidance + IA-chain
+        # awareness). Empty string for SKILLS_ONLY with no skills (e.g.
+        # access-filtered to nothing) and NONE — engine runs with the
+        # bare persona prompt.
+        agent_description += build_engine_persona_addendum(plan, routing)
 
         model_action = await self.get_model_action(required=True)
 
@@ -927,7 +982,7 @@ class ReasoningHelm(BaseHelm):
             action=self,
             visitor=visitor,
             preloaded_skills=preloaded,
-            routed_skills=list(routing.actions or []),
+            routed_skills=list(routed_skill_names),
             publish_callback=self._build_publish_callback(visitor),
         )
 

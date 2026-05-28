@@ -39,10 +39,9 @@ from jvagent.action.helm.reflex.prompts import REFLEX_USER_PROMPT_TEMPLATE
 # land in the rendered prompt literally.
 _ADVERSARIAL_UTTERANCES = [
     # Exact placeholder names from the templates themselves.
-    "{skills_json}",
+    "{capabilities_json}",
     "{utterance}",
     "{history_section}",
-    "{interact_actions_json}",
     # Benign-looking braces (templating in other contexts).
     "What does {time} mean in your codebase?",
     "Run {x} for me please",
@@ -114,57 +113,24 @@ class TestReflexPromptBraceSafety:
 class TestRouterPromptBraceSafety:
     """``routing_user_template.format(...)`` must accept any user utterance.
 
-    The router template is more complex (eight named substitutions) so
-    we exercise it via the public factory rather than a constant.
+    The router template has six named substitutions under ADR-0008's
+    unified-catalog shape; we exercise it via the public factory.
     """
 
     @pytest.fixture(scope="class")
-    def bridge_template(self) -> str:
-        """The Bridge-mode router template (no posture recap clause)."""
-        return build_routing_user_prompt_template(include_posture_recap=False)
-
-    @pytest.fixture(scope="class")
-    def cockpit_template(self) -> str:
-        """The Cockpit-mode router template (with posture recap clause)."""
-        return build_routing_user_prompt_template(include_posture_recap=True)
+    def router_template(self) -> str:
+        """The unified-catalog router template (ADR-0008)."""
+        return build_routing_user_prompt_template()
 
     @pytest.mark.parametrize("utterance", _ADVERSARIAL_UTTERANCES)
-    def test_bridge_router_does_not_raise(
-        self, bridge_template: str, utterance: str
-    ) -> None:
-        """Bridge-mode router template accepts arbitrary user input."""
-        rendered = bridge_template.format(
+    def test_router_does_not_raise(self, router_template: str, utterance: str) -> None:
+        """Router template accepts arbitrary user input without raising."""
+        rendered = router_template.format(
             utterance=utterance,
-            skills_json="{}",
-            interact_actions_json="{}",
+            capabilities_json="{}",
             active_tasks_section="",
             history_section="",
             prior_fragments_section="",
-            entity_field="",
-            canned_field="",
-            optional_instructions="",
-        )
-        assert isinstance(rendered, str)
-        assert len(rendered) > 0
-
-    @pytest.mark.parametrize("utterance", _ADVERSARIAL_UTTERANCES)
-    def test_cockpit_router_does_not_raise(
-        self, cockpit_template: str, utterance: str
-    ) -> None:
-        """Cockpit-mode router template accepts arbitrary user input.
-
-        The Cockpit variant has an extra ``posture_recap`` clause; the
-        prompt-build path otherwise mirrors Bridge.
-        """
-        rendered = cockpit_template.format(
-            utterance=utterance,
-            skills_json="{}",
-            interact_actions_json="{}",
-            active_tasks_section="",
-            history_section="",
-            prior_fragments_section="",
-            entity_field="",
-            canned_field="",
             optional_instructions="",
         )
         assert isinstance(rendered, str)
@@ -179,18 +145,15 @@ class TestRouterPromptBraceSafety:
         ],
     )
     def test_history_section_braces_are_safe(
-        self, bridge_template: str, history_text: str
+        self, router_template: str, history_text: str
     ) -> None:
         """Braces in the history_section value (assistant or user turns) don't crash either."""
-        rendered = bridge_template.format(
+        rendered = router_template.format(
             utterance="hello",
-            skills_json="{}",
-            interact_actions_json="{}",
+            capabilities_json="{}",
             active_tasks_section="",
             history_section=history_text,
             prior_fragments_section="",
-            entity_field="",
-            canned_field="",
             optional_instructions="",
         )
         assert isinstance(rendered, str)

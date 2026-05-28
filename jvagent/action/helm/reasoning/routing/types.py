@@ -1,20 +1,33 @@
-"""Engine routing types and formatting utilities."""
+"""Engine routing types and formatting utilities.
+
+Unified-capabilities catalog (ADR-0008, Wave 6):
+
+The router emits a single :class:`RoutingResult` with ``selected: List[CapabilityRef]``
+in place of the older parallel ``actions`` / ``interact_actions`` lists. After
+the router LLM call, the dispatch decode reads each capability's ``kind``
+from the registry and produces a :class:`DispatchPlan` whose ``regime`` tells
+ReasoningHelm whether to run the engine, skip it (IAs-only), or run with a
+slim/regime-aware prompt.
+
+Backcompat shims: ``RoutingResult.actions`` / ``.skills`` / ``.interact_actions``
+remain as derived properties for one release so downstream consumers
+(observability, log queries) continue to work while they migrate to
+``.selected``. The properties are read-only — internal callers update
+``selected`` directly.
+
+Posture removal: the ``posture`` field is removed in Wave 6. ReflexHelm gates
+SUPPRESS/DEFER upstream; CLARIFY emerged from posture and is no longer
+structurally distinguished. The model produces clarifying questions naturally
+from context.
+"""
 
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from enum import Enum
+from typing import Any, Dict, List, Literal, Optional
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Posture constants
-# ---------------------------------------------------------------------------
-
-POSTURE_RESPOND = "RESPOND"
-POSTURE_SUPPRESS = "SUPPRESS"
-POSTURE_DEFER = "DEFER"
-VALID_POSTURES = (POSTURE_RESPOND, POSTURE_SUPPRESS, POSTURE_DEFER)
 
 # Declarative intent types (used by _normalize_intent_type)
 INTENT_TYPES = [
@@ -24,6 +37,69 @@ INTENT_TYPES = [
     "INTERACTIVE",
     "UNCLEAR",
 ]
+
+
+# ---------------------------------------------------------------------------
+# CapabilityRef + DispatchRegime + DispatchPlan
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CapabilityRef:
+    """A single capability selected by the router.
+
+    ``name`` is the capability's catalog key (skill name or InteractAction
+    class name). ``kind`` is populated by post-routing decode from the
+    capability registry — the model does NOT classify kind; it only picks
+    by name.
+    """
+
+    name: str
+    kind: Literal["skill", "ia"]
+
+
+class DispatchRegime(str, Enum):
+    """Four explicit regimes computed from the capability decode.
+
+    ``SKILLS_ONLY`` and ``MIXED`` run the engine LM loop with regime-aware
+    prompt assembly. ``IAS_ONLY`` skips the engine LM call entirely —
+    ReasoningHelm pops the DELEGATE chain and yields. ``NONE`` (no
+    capabilities selected) still runs the engine but with a posture-only
+    prompt and no tool surface (zero-iteration response).
+    """
+
+    SKILLS_ONLY = "skills_only"
+    IAS_ONLY = "ias_only"
+    MIXED = "mixed"
+    NONE = "none"
+
+
+@dataclass(frozen=True)
+class DispatchPlan:
+    """Regime + capability split, produced by :func:`decode_dispatch_plan`."""
+
+    regime: DispatchRegime
+    skills: List[CapabilityRef] = field(default_factory=list)
+    ias: List[CapabilityRef] = field(default_factory=list)
+
+
+def decode_dispatch_plan(routing: "RoutingResult") -> DispatchPlan:
+    """Map a :class:`RoutingResult` to a :class:`DispatchPlan`.
+
+    Reads ``routing.selected``, partitions by ``kind``, and returns the
+    regime that matches. Empty selection → :class:`DispatchRegime.NONE`.
+    """
+    skills = [c for c in routing.selected if c.kind == "skill"]
+    ias = [c for c in routing.selected if c.kind == "ia"]
+    if skills and ias:
+        regime = DispatchRegime.MIXED
+    elif skills:
+        regime = DispatchRegime.SKILLS_ONLY
+    elif ias:
+        regime = DispatchRegime.IAS_ONLY
+    else:
+        regime = DispatchRegime.NONE
+    return DispatchPlan(regime=regime, skills=skills, ias=ias)
 
 
 # ---------------------------------------------------------------------------
@@ -66,35 +142,78 @@ ExtractedEntities = Dict[str, Any]
 
 @dataclass
 class RoutingResult:
-    """Structured routing result from EngineRouter."""
+    """Structured routing result from EngineRouter (ADR-0008 shape).
 
-    posture: str = POSTURE_RESPOND
+    Fields:
+
+    - ``selected``: the unified capability list. Authoritative; everything
+      else is derived from this.
+    - ``interpretation``, ``intent_type``, ``confidence``, ``verification``,
+      ``extracted_entities``, ``needs_clarification``, ``raw_response``:
+      auxiliary metadata about the routing decision.
+
+    Backcompat properties (deprecated, one-release window):
+
+    - ``actions``: skill names — derived from ``selected``.
+    - ``skills``: alias of ``actions``.
+    - ``interact_actions``: IA class names — derived from ``selected``.
+    """
+
+    selected: List[CapabilityRef] = field(default_factory=list)
     interpretation: str = ""
     intent_type: str = "UNCLEAR"
-    actions: List[str] = field(default_factory=list)
-    interact_actions: List[str] = field(default_factory=list)
     confidence: float = 0.0
     verification: Optional[VerificationTrace] = None
     extracted_entities: ExtractedEntities = field(default_factory=dict)
-    canned_response: str = ""
     needs_clarification: bool = False
     raw_response: str = ""
 
+    # ------------------------------------------------------------------
+    # Backcompat properties (read-only).
+    # ------------------------------------------------------------------
+
+    @property
+    def actions(self) -> List[str]:
+        """Deprecated: skill names derived from ``selected``.
+
+        Internal callers should read ``selected`` directly. Kept as a
+        property for one release so observability / log consumers
+        reading ``routing.actions`` continue to work during migration.
+        """
+        return [c.name for c in self.selected if c.kind == "skill"]
+
+    @property
+    def skills(self) -> List[str]:
+        """Deprecated alias of :attr:`actions` (same data)."""
+        return self.actions
+
+    @property
+    def interact_actions(self) -> List[str]:
+        """Deprecated: IA class names derived from ``selected``.
+
+        See :attr:`actions` for the deprecation note.
+        """
+        return [c.name for c in self.selected if c.kind == "ia"]
+
+    # ------------------------------------------------------------------
+    # Serialisation
+    # ------------------------------------------------------------------
+
     def to_dict(self) -> Dict[str, Any]:
-        result = {
-            "posture": self.posture,
+        result: Dict[str, Any] = {
             "interpretation": self.interpretation,
             "intent_type": self.intent_type,
+            "selected": [{"name": c.name, "kind": c.kind} for c in self.selected],
+            # Backcompat surface for downstream consumers that read the
+            # split fields directly from the cache payload / event log.
             "actions": self.actions,
+            "interact_actions": self.interact_actions,
             "confidence": self.confidence,
             "extracted_entities": self.extracted_entities,
-            "canned_response": self.canned_response,
             "needs_clarification": self.needs_clarification,
         }
         if self.verification:
             result["verification"] = self.verification.to_dict()
-        if self.interact_actions:
-            result["interact_actions"] = self.interact_actions
         return result
 
     @classmethod
@@ -102,31 +221,12 @@ class RoutingResult:
         verification_data = data.get("verification")
         entities_data = data.get("extracted_entities", {})
 
-        has_split_schema = "interact_actions" in data or (
-            "skills" in data and "actions" not in data
-        )
-        if has_split_schema:
-            # Prefer "skills" (LLM canonical key); fall back to "actions"
-            # so cache roundtrips through ``to_dict`` (which uses
-            # "actions") deserialise correctly.
-            parsed_actions = cls._parse_actions(
-                data.get("skills", data.get("actions", []))
-            )
-            parsed_interact_actions = cls._parse_actions(
-                data.get("interact_actions", [])
-            )
-        else:
-            parsed_actions = cls._parse_actions(
-                data.get("actions", data.get("skills", []))
-            )
-            parsed_interact_actions = []
+        selected = cls._parse_selected(data)
 
         return cls(
-            posture=cls._normalize_posture(data.get("posture", POSTURE_RESPOND)),
+            selected=selected,
             interpretation=data.get("interpretation", ""),
             intent_type=cls._normalize_intent_type(data.get("intent_type", "UNCLEAR")),
-            actions=parsed_actions,
-            interact_actions=parsed_interact_actions,
             confidence=cls._parse_confidence(data.get("confidence", 0.0)),
             verification=(
                 VerificationTrace.from_dict(verification_data)
@@ -134,7 +234,6 @@ class RoutingResult:
                 else None
             ),
             extracted_entities=entities_data if isinstance(entities_data, dict) else {},
-            canned_response=data.get("canned_response", ""),
             needs_clarification=bool(data.get("needs_clarification", False)),
             raw_response=raw_response,
         )
@@ -142,24 +241,61 @@ class RoutingResult:
     @classmethod
     def error_result(cls, error_message: str, utterance: str = "") -> "RoutingResult":
         return cls(
-            posture=POSTURE_RESPOND,
+            selected=[],
             interpretation=f"Routing error: {error_message}. User said: {utterance[:50]}",
             intent_type="UNCLEAR",
-            actions=[],
             confidence=0.0,
             verification=None,
             needs_clarification=True,
         )
 
-    @staticmethod
-    def _normalize_posture(posture_value: Any) -> str:
-        if not posture_value:
-            return POSTURE_RESPOND
-        posture_str = str(posture_value).strip().upper()
-        if posture_str in VALID_POSTURES:
-            return posture_str
-        logger.warning(f"Unrecognized posture '{posture_str}', defaulting to RESPOND")
-        return POSTURE_RESPOND
+    # ------------------------------------------------------------------
+    # Parsing helpers
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _parse_selected(cls, data: Dict[str, Any]) -> List[CapabilityRef]:
+        """Build the ``selected`` list from a payload.
+
+        Accepts three shapes, in order of preference:
+
+        1. ``selected: [{"name": "...", "kind": "skill|ia"}, ...]`` — the
+           ADR-0008 canonical shape.
+        2. Split ``skills`` / ``interact_actions`` lists — legacy LLM
+           output and pre-Wave-6 cache entries.
+        3. ``actions`` field alone — older legacy shape (no IAs).
+        """
+        raw_selected = data.get("selected")
+        if isinstance(raw_selected, list) and raw_selected:
+            out: List[CapabilityRef] = []
+            for item in raw_selected:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("name", "")).strip()
+                kind = str(item.get("kind", "")).strip().lower()
+                if not name or kind not in ("skill", "ia"):
+                    continue
+                out.append(CapabilityRef(name=name, kind=kind))  # type: ignore[arg-type]
+            return out
+
+        # Legacy split-schema fallback.
+        skills_payload = data.get("skills")
+        interact_payload = data.get("interact_actions")
+        has_split = isinstance(skills_payload, list) or isinstance(
+            interact_payload, list
+        )
+        actions_payload = data.get("actions")
+        if has_split:
+            skill_names = cls._parse_names(skills_payload)
+            ia_names = cls._parse_names(interact_payload)
+        else:
+            skill_names = cls._parse_names(actions_payload)
+            ia_names = []
+
+        legacy_out: List[CapabilityRef] = []
+        legacy_out.extend(CapabilityRef(name=n, kind="skill") for n in skill_names)
+        legacy_out.extend(CapabilityRef(name=n, kind="ia") for n in ia_names)
+        return legacy_out
 
     @staticmethod
     def _normalize_intent_type(intent_value: Any) -> str:
@@ -174,19 +310,19 @@ class RoutingResult:
         return "UNCLEAR"
 
     @staticmethod
-    def _parse_actions(actions_value: Any) -> List[str]:
-        if not actions_value:
+    def _parse_names(value: Any) -> List[str]:
+        if not value:
             return []
-        if isinstance(actions_value, list):
-            return [str(a).strip() for a in actions_value if a and str(a).strip()]
-        if isinstance(actions_value, str):
+        if isinstance(value, list):
+            return [str(a).strip() for a in value if a and str(a).strip()]
+        if isinstance(value, str):
             try:
-                parsed = json.loads(actions_value)
+                parsed = json.loads(value)
                 if isinstance(parsed, list):
                     return [str(a).strip() for a in parsed if a and str(a).strip()]
-                return [actions_value.strip()] if actions_value.strip() else []
+                return [value.strip()] if value.strip() else []
             except (json.JSONDecodeError, ValueError):
-                return [actions_value.strip()] if actions_value.strip() else []
+                return [value.strip()] if value.strip() else []
         return []
 
     @staticmethod
@@ -198,15 +334,6 @@ class RoutingResult:
             return max(0.0, min(1.0, confidence))
         except (TypeError, ValueError):
             return 0.0
-
-    def is_respond(self) -> bool:
-        return self.posture == POSTURE_RESPOND
-
-    def is_suppress(self) -> bool:
-        return self.posture == POSTURE_SUPPRESS
-
-    def is_defer(self) -> bool:
-        return self.posture == POSTURE_DEFER
 
     def is_conversational(self) -> bool:
         return self.intent_type == "CONVERSATIONAL"
@@ -224,7 +351,12 @@ class RoutingResult:
 
 
 def parse_routing_response(response: str) -> RoutingResult:
-    """Parse LLM response string into RoutingResult."""
+    r"""Parse LLM response string into :class:`RoutingResult`.
+
+    Tolerates JSON wrapped in ``\`\`\`json`` fences and extra surrounding
+    prose. The CONVERSATIONAL invariant from the legacy parser is
+    preserved: CONVERSATIONAL intent forces an empty ``selected``.
+    """
     if not response:
         return RoutingResult.error_result("Empty response from LLM")
 
@@ -261,15 +393,12 @@ def parse_routing_response(response: str) -> RoutingResult:
         data = json.loads(json_str)
         result = RoutingResult.from_dict(data, raw_response=response)
 
-        # Enforce CONVERSATIONAL intent rule
-        if result.intent_type == "CONVERSATIONAL" and (
-            result.actions or result.interact_actions
-        ):
+        # CONVERSATIONAL invariant: never route to capabilities.
+        if result.intent_type == "CONVERSATIONAL" and result.selected:
             logger.debug(
-                "RoutingResult: Enforcing CONVERSATIONAL intent rule - clearing routes"
+                "RoutingResult: Enforcing CONVERSATIONAL intent rule - clearing selected"
             )
-            result.actions = []
-            result.interact_actions = []
+            result.selected = []
 
         return result
 

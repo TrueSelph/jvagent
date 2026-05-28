@@ -45,6 +45,7 @@ ACK_ELIGIBLE_LATENCY_CLASSES = frozenset({"deliberate", "long"})
 
 DEFAULT_LATENCY_CLASS = "quick"
 DEFAULT_TURN_LOCK = False
+DEFAULT_ROUTABLE_BY_ANCHOR = True
 
 
 class ManifestValidationError(ValueError):
@@ -75,6 +76,7 @@ class Manifest:
     turn_lock: bool = DEFAULT_TURN_LOCK
     interrupt_phrases: List[str] = field(default_factory=list)
     expected_duration_seconds: Optional[float] = None
+    routable_by_anchor: bool = DEFAULT_ROUTABLE_BY_ANCHOR
 
     @classmethod
     def from_payload(
@@ -122,6 +124,12 @@ class Manifest:
             expected_duration_seconds=_validate_optional_float(
                 payload, "expected_duration_seconds", strict=strict
             ),
+            routable_by_anchor=_validate_bool(
+                payload,
+                "routable_by_anchor",
+                DEFAULT_ROUTABLE_BY_ANCHOR,
+                strict=strict,
+            ),
         )
 
     def merged_with(self, override: Optional[Dict[str, Any]]) -> "Manifest":
@@ -143,6 +151,7 @@ class Manifest:
             "turn_lock": self.turn_lock,
             "interrupt_phrases": list(self.interrupt_phrases),
             "expected_duration_seconds": self.expected_duration_seconds,
+            "routable_by_anchor": self.routable_by_anchor,
         }
         merged.update(override)
         return Manifest.from_payload(merged)
@@ -164,6 +173,7 @@ class Manifest:
             "turn_lock": self.turn_lock,
             "interrupt_phrases": list(self.interrupt_phrases),
             "expected_duration_seconds": self.expected_duration_seconds,
+            "routable_by_anchor": self.routable_by_anchor,
         }
 
 
@@ -288,6 +298,7 @@ def _validate_optional_float(
 __all__ = [
     "ACK_ELIGIBLE_LATENCY_CLASSES",
     "DEFAULT_LATENCY_CLASS",
+    "DEFAULT_ROUTABLE_BY_ANCHOR",
     "DEFAULT_TURN_LOCK",
     "Manifest",
     "ManifestValidationError",

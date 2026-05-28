@@ -413,26 +413,34 @@ class BridgeInteractAction(InteractAction):
         if metrics is None:
             return
         try:
+            event_data: Dict[str, Any] = {
+                "from_helm": record.from_helm,
+                "to_helm": record.to_helm,
+                "reason": record.reason,
+                "ack_emitted": record.ack_emitted,
+                "shift_index": record.shift_index,
+                "at_monotonic": record.at_monotonic,
+                # ``routing_source`` labels which layer of the
+                # IA-selection cascade picked the target (initial /
+                # helm_shift / helm_delegate / turn_lock /
+                # safe_fallback). Operators use this to filter
+                # ``helm_shift`` events when debugging Bridge
+                # orchestration. Set on every ``record_shift`` call
+                # but historically missing from the event payload —
+                # added May 2026 per Wave-1 review (item H6).
+                "routing_source": record.routing_source,
+            }
+            # ADR-0008: include dispatch_regime when ReasoningHelm has
+            # recorded one for the current turn. Operators can filter
+            # logs to ask "what fraction of turns are IAS_ONLY?" without
+            # inferring from token counts.
+            regime = getattr(interaction, "_dispatch_regime", None)
+            if regime:
+                event_data["dispatch_regime"] = regime
             metrics.append(
                 {
                     "event_type": "helm_shift",
-                    "data": {
-                        "from_helm": record.from_helm,
-                        "to_helm": record.to_helm,
-                        "reason": record.reason,
-                        "ack_emitted": record.ack_emitted,
-                        "shift_index": record.shift_index,
-                        "at_monotonic": record.at_monotonic,
-                        # ``routing_source`` labels which layer of the
-                        # IA-selection cascade picked the target (initial /
-                        # helm_shift / helm_delegate / turn_lock /
-                        # safe_fallback). Operators use this to filter
-                        # ``helm_shift`` events when debugging Bridge
-                        # orchestration. Set on every ``record_shift`` call
-                        # but historically missing from the event payload —
-                        # added May 2026 per Wave-1 review (item H6).
-                        "routing_source": record.routing_source,
-                    },
+                    "data": event_data,
                     "timestamp": record.at_monotonic,
                 }
             )

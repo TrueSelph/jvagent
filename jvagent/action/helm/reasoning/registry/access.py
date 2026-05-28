@@ -24,7 +24,7 @@ import logging
 from typing import TYPE_CHECKING, Any, List, Optional
 
 if TYPE_CHECKING:
-    from jvagent.action.helm.reasoning.routing.types import RoutingResult
+    from jvagent.action.helm.reasoning.routing.types import CapabilityRef, RoutingResult
     from jvagent.action.interact.base import InteractAction
     from jvagent.tooling.tool_registry import ToolRegistry
 
@@ -103,6 +103,50 @@ async def _is_allowed(
 # ---------------------------------------------------------------------------
 
 
+async def filter_selected_by_access(
+    agent: Any,
+    selected: List["CapabilityRef"],
+    *,
+    user_id: Optional[str],
+    channel: str,
+) -> List["CapabilityRef"]:
+    """Strip capabilities the user can't access from ``selected``.
+
+    Skills are checked against ``skill:{name}`` labels; IAs are checked
+    against their class name (legacy convention). Returns the surviving
+    list of :class:`CapabilityRef`.
+    """
+    if not selected:
+        return list(selected)
+
+    ac = await _resolve_access_control(agent)
+    if ac is None:
+        return list(selected)
+
+    allowed: List["CapabilityRef"] = []
+    for cap in selected:
+        if cap.kind == "skill":
+            label = skill_resource_label(cap.name)
+        else:
+            label = interact_action_resource_label(cap.name)
+        if await _is_allowed(
+            ac,
+            user_id=user_id,
+            channel=channel,
+            label=label,
+        ):
+            allowed.append(cap)
+        else:
+            logger.info(
+                "engine.access: denying capability=%s kind=%s for user=%s channel=%s",
+                cap.name,
+                cap.kind,
+                user_id,
+                channel,
+            )
+    return allowed
+
+
 async def filter_routed_skills_by_access(
     agent: Any,
     routing: "RoutingResult",
@@ -110,32 +154,19 @@ async def filter_routed_skills_by_access(
     user_id: Optional[str],
     channel: str,
 ) -> List[str]:
-    """Strip skill names the user can't access. Returns the surviving list."""
-    skills = list(routing.actions or [])
-    if not skills:
-        return skills
+    """Deprecated: skill-only access filter.
 
-    ac = await _resolve_access_control(agent)
-    if ac is None:
-        return skills
-
-    allowed: List[str] = []
-    for skill in skills:
-        if await _is_allowed(
-            ac,
-            user_id=user_id,
-            channel=channel,
-            label=skill_resource_label(skill),
-        ):
-            allowed.append(skill)
-        else:
-            logger.info(
-                "engine.access: denying skill=%s for user=%s channel=%s",
-                skill,
-                user_id,
-                channel,
-            )
-    return allowed
+    Use :func:`filter_selected_by_access` instead. Retained for one release
+    as a thin wrapper over the new function so external callers that
+    haven't migrated continue to work.
+    """
+    filtered = await filter_selected_by_access(
+        agent,
+        [c for c in routing.selected if c.kind == "skill"],
+        user_id=user_id,
+        channel=channel,
+    )
+    return [c.name for c in filtered]
 
 
 async def filter_routed_interact_actions_by_access(
