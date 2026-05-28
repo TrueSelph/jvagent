@@ -172,16 +172,21 @@ class BridgeInteractAction(InteractAction):
         default="…",
         description=(
             "Text published when the first-emit timeout fires. Accepts "
-            "either a single string OR a list of strings. When a list "
-            "is provided, Bridge picks one entry at random per fire so "
-            "the lead-in doesn't feel repetitive across turns. STATIC "
-            "content — does NOT adapt to the user's language. Default "
-            "is the universal ellipsis so multilingual deployments work "
-            "without operator config. Override in agent.yaml for a "
-            "single-language deployment (e.g. "
-            '["One moment…", "One sec…", "Hmmm…"] for English-only). '
-            "Set to an empty string / empty list to disable the safety-"
-            "net publish."
+            "THREE shapes:\n"
+            "- A single string (legacy / single-locale agents).\n"
+            "- A list of strings — Bridge picks one at random per fire so "
+            "the lead-in varies across turns.\n"
+            "- A dict keyed by language name (matches Reflex's "
+            "``detected_language`` values: ``English``, ``Spanish``, "
+            "``French``, …). Each value is itself a string OR a list of "
+            "strings. Bridge looks up the user's detected language for "
+            "this turn and picks accordingly; falls back to "
+            "``default`` / ``fallback`` / ``en`` / ``English`` keys when "
+            "the language isn't keyed.\n"
+            'Default is the universal ellipsis ("…") so multilingual '
+            "deployments work without operator config. Set to an empty "
+            "string / empty list / empty dict to disable the safety-net "
+            "publish."
         ),
     )
     denied_response_text: str = attribute(
@@ -1433,7 +1438,9 @@ class BridgeInteractAction(InteractAction):
         elapsed_ms = (time.monotonic() - state.turn_started_at) * 1000.0
         if elapsed_ms < self.first_emit_timeout_ms:
             return
-        content = self._pick_safety_net_ack()
+        content = self._pick_safety_net_ack(
+            detected_language=getattr(state, "detected_language", None)
+        )
         if not content:
             return
         await self.publish(
@@ -1446,17 +1453,45 @@ class BridgeInteractAction(InteractAction):
         if isinstance(bucket, dict):
             bucket["safety_net_fired"] = True
 
-    def _pick_safety_net_ack(self) -> str:
+    # Special key used in dict-by-language config when an operator
+    # wants a fallback to apply when the user's language is unknown
+    # or not explicitly keyed. Also accepts ``"en"`` / ``"English"``
+    # case-insensitively as conventional fallbacks.
+    _SAFETY_NET_DEFAULT_LANG_KEYS = ("default", "fallback", "en", "english")
+
+    def _pick_safety_net_ack(self, detected_language: Optional[str] = None) -> str:
         """Return the safety-net ack text for this fire.
 
-        ``safety_net_ack_text`` accepts either a single string or a
-        list of strings. When a list is provided, pick one entry at
-        random per fire so the lead-in varies across turns. Empty
-        strings inside a list are filtered out so the typical
+        ``safety_net_ack_text`` accepts THREE shapes:
+
+        - A single string (legacy / single-locale agents).
+        - A list of strings — Bridge picks one entry at random per
+          fire so the lead-in varies across turns.
+        - A dict keyed by language name (matches Reflex's
+          ``detected_language`` values: ``"English"``, ``"Spanish"``,
+          ``"French"``, etc.). Each value is itself a string OR a
+          list of strings (sub-rotation). Bridge looks up the user's
+          detected language, falling back to a ``"default"`` /
+          ``"fallback"`` / ``"en"`` / ``"English"`` key when the
+          language isn't keyed. When NO fallback key exists, the
+          first dict value is used so config never silently breaks.
+
+        Empty strings inside a list are filtered out so the typical
         ``["…", "One moment…"]`` shape works as expected; an empty
         result disables the safety-net publish for this fire.
+
+        Args:
+            detected_language: Reflex's ``detected_language`` value
+                for this turn (full language name). When ``None`` or
+                empty, dict-mode picks the fallback key.
         """
         raw = self.safety_net_ack_text
+
+        # Dict-by-language: resolve to a concrete str / list first,
+        # then re-enter via list / string handling below.
+        if isinstance(raw, dict):
+            raw = self._resolve_language_keyed_safety_net(raw, detected_language)
+
         if isinstance(raw, (list, tuple)):
             options = [s for s in raw if isinstance(s, str) and s.strip()]
             if not options:
@@ -1465,6 +1500,44 @@ class BridgeInteractAction(InteractAction):
         if isinstance(raw, str):
             return raw
         return ""
+
+    def _resolve_language_keyed_safety_net(
+        self,
+        mapping: Dict[Any, Any],
+        detected_language: Optional[str],
+    ) -> Any:
+        """Pick the value from a language-keyed ``safety_net_ack_text`` dict.
+
+        Match the ``detected_language`` case-insensitively against
+        the dict keys. Falls back through
+        :data:`_SAFETY_NET_DEFAULT_LANG_KEYS` then to the first dict
+        entry so misconfiguration never silently drops the publish.
+        """
+        if not mapping:
+            return ""
+        norm = {
+            str(k).strip().lower(): v
+            for k, v in mapping.items()
+            if isinstance(k, (str, int, float))
+        }
+        lang_key = (detected_language or "").strip().lower()
+        if lang_key and lang_key in norm:
+            return norm[lang_key]
+        for fb in self._SAFETY_NET_DEFAULT_LANG_KEYS:
+            if fb in norm:
+                return norm[fb]
+        # No conventional fallback — use the first entry so the publish
+        # still fires. Operator misconfiguration (no default key, no
+        # match for the user's language) is logged at debug.
+        first_key = next(iter(mapping))
+        logger.debug(
+            "bridge: safety_net_ack_text dict has no '%s' match and no "
+            "default/fallback/en/english key; falling back to first entry "
+            "%r",
+            detected_language,
+            first_key,
+        )
+        return mapping[first_key]
 
     async def _safe_fallback(
         self,

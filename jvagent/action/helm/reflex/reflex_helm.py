@@ -305,11 +305,10 @@ class ReflexHelm(BaseHelm):
         if verb is None:
             return self._safe_default_shift("classification failed")
 
-        # Log the model's detected language for observability. This is
-        # the chain-of-thought field that the model commits to before
-        # generating user-facing content. Surfacing it makes language
-        # behavior debuggable without inspecting raw JSON. The value
-        # is informational — Bridge doesn't act on it.
+        # Stamp detected_language on BridgeState so language-adaptive
+        # Bridge surfaces (safety_net_ack_text dict-by-language picks,
+        # future locale-aware fallback text) can read it without
+        # re-running classification. Wave 9h.
         detected = (verb.get("detected_language") or "").strip()
         if detected:
             logger.debug(
@@ -317,6 +316,10 @@ class ReflexHelm(BaseHelm):
                 detected,
                 utterance[:80],
             )
+            try:
+                bridge_state.detected_language = detected
+            except Exception:
+                pass
 
         # Validate the verb's target / interact_action against the
         # actually-installed peer helms / actions. If invalid, fall back.

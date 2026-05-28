@@ -54,7 +54,7 @@ def make_bridge(monkeypatch, publish_log):
         shift_budget: Optional[int] = None,
         first_emit_timeout_ms: Optional[int] = None,
         denied_text: Optional[str] = None,
-        safety_text: Optional[str] = None,
+        safety_text: Any = None,
     ) -> BridgeInteractAction:
         helms = dict(helms or {})
         bridge = BridgeInteractAction()

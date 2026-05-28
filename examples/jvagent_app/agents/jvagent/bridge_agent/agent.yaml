@@ -66,10 +66,24 @@ actions:
       # do not. For a multilingual deployment, set them to a
       # language-neutral character ("…") or override per-channel via a
       # channel adapter that localises before publish.
+      # Bridge looks up the user's detected_language (stamped by
+      # ReflexHelm) and picks a variant at random from the matching
+      # list. ``default`` is used when the language isn't keyed.
       safety_net_ack_text:
-        - "One moment…"
-        - "One sec…"
-        - "Hmmm…"
+        English:
+          - "One moment…"
+          - "One sec…"
+          - "Hmmm…"
+        Spanish:
+          - "Un momento…"
+          - "Un segundo…"
+          - "Mmm…"
+        French:
+          - "Un instant…"
+          - "Une seconde…"
+          - "Hmm…"
+        default:
+          - "…"
       denied_response_text: "Sorry, I can't do that here."
 
   # ── ReflexHelm — sub-500ms fast classifier (BRIDGE-ROADMAP §E) ──

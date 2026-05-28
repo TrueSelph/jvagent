@@ -200,6 +200,142 @@ async def test_safety_net_empty_list_disables_publish(
     assert contents == ["done"]
 
 
+async def test_safety_net_dict_picks_by_detected_language(
+    make_bridge, make_visitor, stub_helm, publish_log
+):
+    """Dict-by-language picks the entry matching ``state.detected_language``."""
+    helm = stub_helm(
+        name="A",
+        script=[
+            CONTINUE(),
+            EMIT(text="done", finalize=True),
+        ],
+    )
+    bridge = make_bridge(
+        helms={"A": helm},
+        default_helm="A",
+        first_emit_timeout_ms=10,
+        safety_text={
+            "English": "One moment…",
+            "Spanish": "Un momento…",
+            "default": "…",
+        },
+    )
+    visitor = make_visitor()
+
+    await bridge.execute(visitor)
+    # Stamp Spanish on BridgeState before the timeout fires.
+    state = getattr(visitor, BRIDGE_STATE_VISITOR_ATTR)
+    state.detected_language = "Spanish"
+    await _force_timeout(visitor)
+    await bridge.execute(visitor)
+
+    contents = [entry["content"] for entry in publish_log]
+    safety_picks = [c for c in contents if c != "done"]
+    assert safety_picks == ["Un momento…"]
+
+
+async def test_safety_net_dict_falls_back_to_default_key(
+    make_bridge, make_visitor, stub_helm, publish_log
+):
+    """Unknown language → fallback to ``default`` key."""
+    helm = stub_helm(
+        name="A",
+        script=[
+            CONTINUE(),
+            EMIT(text="done", finalize=True),
+        ],
+    )
+    bridge = make_bridge(
+        helms={"A": helm},
+        default_helm="A",
+        first_emit_timeout_ms=10,
+        safety_text={
+            "English": "One moment…",
+            "default": "…",
+        },
+    )
+    visitor = make_visitor()
+
+    await bridge.execute(visitor)
+    state = getattr(visitor, BRIDGE_STATE_VISITOR_ATTR)
+    state.detected_language = "Klingon"  # no key match
+    await _force_timeout(visitor)
+    await bridge.execute(visitor)
+
+    contents = [entry["content"] for entry in publish_log]
+    safety_picks = [c for c in contents if c != "done"]
+    assert safety_picks == ["…"]
+
+
+async def test_safety_net_dict_supports_list_value_with_rotation(
+    make_bridge, make_visitor, stub_helm, publish_log
+):
+    """Dict values can be lists — picks a random entry from the list."""
+    helm = stub_helm(
+        name="A",
+        script=[
+            CONTINUE(),
+            EMIT(text="done", finalize=True),
+        ],
+    )
+    bridge = make_bridge(
+        helms={"A": helm},
+        default_helm="A",
+        first_emit_timeout_ms=10,
+        safety_text={
+            "English": ["One moment…", "One sec…", "Hmmm…"],
+            "default": "…",
+        },
+    )
+    visitor = make_visitor()
+
+    await bridge.execute(visitor)
+    state = getattr(visitor, BRIDGE_STATE_VISITOR_ATTR)
+    state.detected_language = "English"
+    await _force_timeout(visitor)
+    await bridge.execute(visitor)
+
+    contents = [entry["content"] for entry in publish_log]
+    safety_picks = [c for c in contents if c != "done"]
+    assert len(safety_picks) == 1
+    assert safety_picks[0] in {"One moment…", "One sec…", "Hmmm…"}
+
+
+async def test_safety_net_dict_no_default_falls_back_to_first_entry(
+    make_bridge, make_visitor, stub_helm, publish_log
+):
+    """No conventional fallback key → first dict entry wins."""
+    helm = stub_helm(
+        name="A",
+        script=[
+            CONTINUE(),
+            EMIT(text="done", finalize=True),
+        ],
+    )
+    bridge = make_bridge(
+        helms={"A": helm},
+        default_helm="A",
+        first_emit_timeout_ms=10,
+        safety_text={
+            "Spanish": "Un momento…",
+            "French": "Un instant…",
+        },
+    )
+    visitor = make_visitor()
+
+    await bridge.execute(visitor)
+    state = getattr(visitor, BRIDGE_STATE_VISITOR_ATTR)
+    state.detected_language = "English"  # not in dict, no default
+    await _force_timeout(visitor)
+    await bridge.execute(visitor)
+
+    contents = [entry["content"] for entry in publish_log]
+    safety_picks = [c for c in contents if c != "done"]
+    # First dict entry (Spanish in CPython dict-insertion-order).
+    assert safety_picks == ["Un momento…"]
+
+
 async def test_safety_net_skipped_when_text_blank(
     make_bridge, make_visitor, stub_helm, publish_log
 ):

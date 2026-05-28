@@ -55,6 +55,15 @@ class BridgeState:
     # Per-helm step counts. Useful for spotting helms that loop many
     # times via CONTINUE before producing an EMIT.
     helm_step_counts: Dict[str, int] = field(default_factory=dict)
+    # Detected language for THIS turn's user utterance. Stamped by
+    # ReflexHelm after classification (the model emits
+    # ``detected_language`` first in its JSON verb). Bridge reads it
+    # for language-adaptive surfaces — currently:
+    # ``safety_net_ack_text`` dict-by-language picks. Other Bridge
+    # text (``denied_response_text``, etc.) is operator-static.
+    # ``None`` means Reflex hasn't run yet OR didn't emit a language
+    # field. Always present after the first Reflex step.
+    detected_language: Optional[str] = None
 
     def record_shift(
         self,
