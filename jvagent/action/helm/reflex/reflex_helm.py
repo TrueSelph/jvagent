@@ -404,12 +404,18 @@ class ReflexHelm(BaseHelm):
         - Pattern orchestrators (``manifest.pattern_orchestrator``) —
           weight-routed, never anchor-routed.
         - Always-execute IAs (``always_execute=True``) — sidecar / audit
-          IAs run on every turn via Bridge's curated walker queue.
+          IAs run on every turn via Bridge's curated walker queue, no
+          anchor needed.
         - Chain-internal IAs (``manifest.routable_by_anchor=False``) —
           reached only via parent DELEGATE chains.
-        - Turn-locked IAs (``manifest.turn_lock=True``) — reached via
-          Bridge's auto-DELEGATE in ``find_turn_lock_owner``, not via
-          anchor matching.
+
+        Turn-locked IAs (``manifest.turn_lock=True``) ARE included.
+        ``find_turn_lock_owner`` only fires for mid-flight turns once
+        the IA has acquired the lock; first-entry routing still needs
+        an anchor match (or engine recovery hatch). Excluding turn_lock
+        IAs from the Reflex catalog left first-entry to Reasoning every
+        time and produced the "Reflex never DELEGATEs" gap observed in
+        live smoke against bridge_agent.
 
         IAs with no description AND no anchors are dropped — there is
         nothing for Reflex to match on. The bootstrap warning surfaces
@@ -449,10 +455,11 @@ class ReflexHelm(BaseHelm):
                 continue
             if not manifest.routable_by_anchor:
                 continue
-            if manifest.turn_lock:
-                # Turn-locked IAs are reached via Bridge auto-DELEGATE
-                # (find_turn_lock_owner), not via Reflex anchor matching.
-                continue
+            # NOTE: turn_lock IAs are intentionally NOT filtered. They
+            # need anchor-match for first entry; Bridge's
+            # find_turn_lock_owner takes over for subsequent turns
+            # once the lock is acquired (ADR-0009 §4 + post-Wave-9
+            # correction).
 
             # Dynamic anchors override static ``self.anchors`` when the
             # IA opts in via ``get_anchors(conversation)``.

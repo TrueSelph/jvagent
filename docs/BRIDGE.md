@@ -245,7 +245,7 @@ The originally-planned dedicated `PersonaHelm` (an extra hop via `SHIFT(target=P
   | Anchor-routable conversational | Reflex peer-awareness DELEGATE | **Yes** |
   | Chain-internal (`manifest.routable_by_anchor=false`) | Parent IA DELEGATE chain | No |
   | Synchronous (engine tool) | ReasoningHelm engine tool call | No |
-  | Turn-locked (`manifest.turn_lock=true`, mid-flight) | Bridge `find_turn_lock_owner` auto-DELEGATE | N/A |
+  | Turn-locked (`manifest.turn_lock=true`) | First entry: Reflex anchor DELEGATE. Subsequent turns: Bridge `find_turn_lock_owner` auto-DELEGATE | **Yes** (first entry) |
 
   Reflex's peer-awareness prompt lists anchor-routable conversational IAs with name, description, and anchors. Anchorless conversational IAs are reachable via the engine's `delegate_to_ia(name)` recovery hatch and emit a bootstrap WARNING at install time so operators see the misconfiguration.
 - ReflexHelm's classifier uses temperature `0.0` and a small `max_tokens` (256) by design. Don't raise these — the helm is meant to be a deterministic gate, not a generator.

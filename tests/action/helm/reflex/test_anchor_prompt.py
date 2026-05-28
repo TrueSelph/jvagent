@@ -153,7 +153,12 @@ class TestPeerActionFiltering:
         assert actions == []
 
     @pytest.mark.asyncio
-    async def test_excludes_turn_locked(self):
+    async def test_includes_turn_locked(self):
+        # Turn-locked IAs need anchor entry on first turn; auto-DELEGATE
+        # via find_turn_lock_owner only fires for mid-flight turns once
+        # the lock is acquired. Excluding them from Reflex's catalog
+        # left first-entry to Reasoning every time (the gap user
+        # reported post-Wave-9).
         helm = ReflexHelm()
         interview = _build_ia(
             "InterviewInteractAction",
@@ -163,7 +168,9 @@ class TestPeerActionFiltering:
         )
         agent = self._mock_agent([interview])
         actions = await helm._collect_peer_actions(agent)
-        assert actions == []
+        assert len(actions) == 1
+        assert actions[0]["name"] == "InterviewInteractAction"
+        assert actions[0]["anchors"] == ["user agrees to interview"]
 
     @pytest.mark.asyncio
     async def test_includes_anchor_routable_conversational(self):

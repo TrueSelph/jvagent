@@ -32,8 +32,6 @@ def _warn_if_anchorless_routable_ia(
     - is not a pattern orchestrator (``manifest.pattern_orchestrator``)
     - is not always-execute (``always_execute=True``)
     - is anchor-routable (``manifest.routable_by_anchor`` default ``True``)
-    - is not turn-locked (turn-locked IAs are reached via auto-DELEGATE,
-      not anchor matching)
     - declares zero anchors via :attr:`anchors` or :meth:`get_anchors`
 
     Such an IA is invisible to Reflex's peer-awareness DELEGATE path —
@@ -42,6 +40,9 @@ def _warn_if_anchorless_routable_ia(
     anchors. The warning surfaces the misconfiguration to operators at
     install time so they can fix the authoring rather than hit the
     degraded routing path silently.
+
+    Turn-locked IAs are NOT exempt: they need anchor entry on first turn
+    even though ``find_turn_lock_owner`` handles subsequent turns.
     """
     try:
         from jvagent.action.interact.base import InteractAction
@@ -58,8 +59,6 @@ def _warn_if_anchorless_routable_ia(
     if getattr(action, "always_execute", False):
         return
     if not manifest.routable_by_anchor:
-        return
-    if manifest.turn_lock:
         return
     static_anchors = [
         a
