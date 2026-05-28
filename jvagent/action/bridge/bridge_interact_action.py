@@ -795,12 +795,24 @@ class BridgeInteractAction(InteractAction):
 
         text = (verb.text or "").strip()
 
+        # Precedence (Wave 9i.4): pending directives ALWAYS go through
+        # Branch B (``persona.respond()``) regardless of ``verb.via_persona``
+        # because Branch A's ``deliver_via_persona`` path uses
+        # ``respond_slim`` which does NOT read ``interaction.directives``.
+        # If an always_execute IA (intro, handoff, …) deposited a
+        # directive this turn and we routed through Branch A, the
+        # directive would be orphaned — the user never sees the intro
+        # content. Branch B's ``persona.respond()`` composes directives
+        # + helm draft text into a single coherent reply.
+        has_pending = self._has_pending_directives(visitor)
+
         # Branch A — full persona delivery (skill-catalog aware).
         # Used when the helm explicitly requested persona stylisation
-        # via ``verb.via_persona=True``. Engages the unified
-        # ``deliver_via_persona`` path with response_mode + degenerate
-        # + skill-catalog override resolution.
-        if verb.via_persona:
+        # via ``verb.via_persona=True`` AND no IA directives are
+        # pending. Engages the unified ``deliver_via_persona`` path
+        # with response_mode + degenerate + skill-catalog override
+        # resolution.
+        if verb.via_persona and not has_pending:
             deliver_via_persona_fn = None
             engine_result_cls = None
             try:
@@ -881,10 +893,14 @@ class BridgeInteractAction(InteractAction):
                 return True
 
         # Branch B — directive-merge (helm text + pending IA directives).
-        # Used when the only reason we're here is pending directives
-        # from an always_execute IA; the helm did NOT request full
-        # persona stylisation. Append helm text as a directive so
-        # persona composes everything in one respond() call.
+        # Used whenever pending IA directives exist (regardless of
+        # ``verb.via_persona``) — the directive content must be composed
+        # into the user-facing reply, and ``persona.respond()`` is the
+        # only delivery path that reads ``interaction.directives``.
+        # Also used as the fall-through when ``verb.via_persona=False``
+        # AND directives are pending (the original pre-Wave-9i.3 trigger
+        # condition). Append helm text as an additional directive so
+        # persona composes everything in one ``respond()`` call.
         if text:
             try:
                 await visitor.add_directive(f"Tell the user: {text}")

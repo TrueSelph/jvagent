@@ -267,6 +267,92 @@ class TestPublishEmitViaPersonaBranching:
         # And persona.respond was called.
         persona.respond.assert_awaited_once()
 
+    async def test_pending_directives_beat_via_persona(self, monkeypatch):
+        """Wave 9i.4 regression: when ``via_persona=True`` AND directives are
+        pending, Branch B (``persona.respond``) wins so the directive content
+        actually reaches the user. Pre-Wave-9i.4, Branch A ran unconditionally
+        and ``respond_slim`` silently dropped the directives."""
+        persona = MagicMock(enabled=True)
+        persona.respond = AsyncMock()
+        bridge = await self._make_bridge(persona=persona, monkeypatch=monkeypatch)
+
+        # Patch deliver_via_persona so we can assert it was NOT called
+        # (Branch A must NOT fire when directives are pending).
+        deliver_called = False
+
+        async def _fake_deliver_via_persona(**kwargs):
+            nonlocal deliver_called
+            deliver_called = True
+
+        monkeypatch.setattr(
+            "jvagent.action.helm.reasoning.delivery.persona_delivery.deliver_via_persona",
+            _fake_deliver_via_persona,
+        )
+
+        visitor = MagicMock()
+        visitor.interaction.directives = [
+            {"text": "Introduce yourself as Silvie.", "executed": False},
+        ]
+        visitor.add_directive = AsyncMock()
+        visitor._skill_state = {"skill_catalog": None}
+        state = BridgeState()
+        # The Wave-9i.3-shaped Reflex EMIT: via_persona=True + smalltalk.
+        verb = EMIT(
+            text="Hi!",
+            finalize=True,
+            via_persona=True,
+            degenerate_max_chars=0,
+            delivery_intent="smalltalk_emit",
+        )
+
+        handled = await bridge._publish_emit_via_persona(visitor, state, verb)
+        assert handled is True
+        # Branch A's deliver_via_persona was NOT invoked.
+        assert deliver_called is False
+        # Branch B path: helm draft added as directive, persona.respond called.
+        visitor.add_directive.assert_awaited_once_with("Tell the user: Hi!")
+        persona.respond.assert_awaited_once()
+
+    async def test_via_persona_runs_branch_a_when_no_pending_directives(
+        self, monkeypatch
+    ):
+        """Counterpart to ``test_pending_directives_beat_via_persona``:
+        when no directives are pending, ``via_persona=True`` still routes
+        through Branch A (``deliver_via_persona``) as before."""
+        persona = MagicMock(enabled=True)
+        persona.respond = AsyncMock()
+        bridge = await self._make_bridge(persona=persona, monkeypatch=monkeypatch)
+
+        deliver_called = False
+
+        async def _fake_deliver_via_persona(**kwargs):
+            nonlocal deliver_called
+            deliver_called = True
+
+        monkeypatch.setattr(
+            "jvagent.action.helm.reasoning.delivery.persona_delivery.deliver_via_persona",
+            _fake_deliver_via_persona,
+        )
+
+        visitor = MagicMock()
+        visitor.interaction.directives = []  # no pending directives
+        visitor.add_directive = AsyncMock()
+        visitor._skill_state = {"skill_catalog": None}
+        state = BridgeState()
+        verb = EMIT(
+            text="Hi!",
+            finalize=True,
+            via_persona=True,
+            delivery_intent="smalltalk_emit",
+        )
+
+        handled = await bridge._publish_emit_via_persona(visitor, state, verb)
+        assert handled is True
+        # Branch A fired; Branch B's persona.respond did NOT.
+        assert deliver_called is True
+        persona.respond.assert_not_awaited()
+        visitor.add_directive.assert_not_awaited()
+
     async def test_double_render_guard_blocks_second_call(self, monkeypatch):
         # _publish_emit_via_persona must be idempotent within one turn —
         # if the bucket flag is already set, second call returns False.
