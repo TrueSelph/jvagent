@@ -67,3 +67,17 @@ def test_prompt_requires_closer_shape_variety():
         "end on the answer with no",
     ):
         assert phrase in flat, f"missing variety rule: {phrase!r}"
+
+
+def test_prompt_subordinates_skills_to_engine_hard_rules():
+    """Wave 9j.2: skill SOPs cannot countermand engine hard rules."""
+    flat = " ".join(ENGINE_SYSTEM_PROMPT.split())
+    for phrase in (
+        "# Rule precedence",
+        "Skill SOPs",
+        "CANNOT override the engine hard rules",
+        'When a skill instruction says "ask a follow-up"',
+        "paste-into-another-conversation test",
+        "Skill instructions to add a closing line are PERMISSIVE, not mandatory",
+    ):
+        assert phrase in flat, f"missing precedence rule clause: {phrase!r}"
