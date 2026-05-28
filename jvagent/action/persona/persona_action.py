@@ -337,10 +337,10 @@ class PersonaAction(Action):
         same model, streaming / ``_pipe_response``, voice formatting, and optional
         image interpretation as the main respond path where applicable.
 
-        ``extra_system`` is appended to ``persona_description`` so callers (notably
-        the cockpit's converse fast-path) can inject a brief instruction (for
-        example, "Reply briefly in character; match the user's tone.") without
-        paying the full ``respond()`` compose / parameter-injection cost.
+        ``extra_system`` is appended to ``persona_description`` so callers can
+        inject a brief instruction (for example, "Reply briefly in character;
+        match the user's tone.") without paying the full ``respond()`` compose
+        / parameter-injection cost.
 
         Args:
             interaction: Active interaction (utterance used if ``prompt`` is omitted).
@@ -369,8 +369,7 @@ class PersonaAction(Action):
         # prompt so the model has authoritative anchors without resorting to
         # its training-cutoff date or hallucinating a name. The full
         # ``respond()`` path injects these via the persona prompt template;
-        # ``respond_slim`` callers (notably the cockpit converse fast-path)
-        # need the same context inline.
+        # ``respond_slim`` callers need the same context inline.
         datetime_block = await self._render_datetime_context_block()
         if datetime_block:
             system = f"{system}\n\n{datetime_block}"

@@ -261,8 +261,8 @@ class SkillCatalog:
             return cls({})
         # Note: an empty selector (None / [] / "") used to short-circuit here.
         # We now let it fall through to ``apply_skill_selector`` so skills with
-        # ``always-active: true`` (e.g. ``converse``) leak through and remain
-        # available to the agent regardless of the operator's selector list.
+        # ``always-active: true`` leak through and remain available to the
+        # agent regardless of the operator's selector list.
 
         app_root = get_app_root()
         cache_key = cls._build_cache_key(

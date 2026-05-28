@@ -437,9 +437,9 @@ def apply_skill_selector(
 
     Skills whose frontmatter declares ``always-active: true`` slip through
     every selector branch (including ``None``/empty) so foundational skills
-    like ``converse`` are always available to the agent regardless of the
-    operator's explicit selector list. ``denied`` still applies to them —
-    operators can opt out by adding the skill name to the deny list.
+    are always available to the agent regardless of the operator's explicit
+    selector list. ``denied`` still applies to them — operators can opt out
+    by adding the skill name to the deny list.
     """
     always_active = {
         name: data
