@@ -1,6 +1,6 @@
 # ADR 0007 — Bridge + Helm architecture
 
-**Status**: Proposed
+**Status**: Accepted (May 2026 — shipped through Wave-2 patches; PersonaHelm dropped from the helm composition, see "Accepted-state amendments" below)
 **Date**: 2026-05-26
 **Supersedes (in spirit)**: [`adr/0002-walker-revisit-cockpit.md`](0002-walker-revisit-cockpit.md) — the walker-revisit *pattern* stays; Bridge generalizes the *composition* on top of it.
 
@@ -276,7 +276,15 @@ Neither addition modifies §3.1, §3.2, §3.3, §4, §5, §6, §7, §10, §11.1�
 ### Neutral
 
 - `CockpitInteractAction` becomes a compat shim at C (internally constructs Bridge + ReasoningHelm). External cockpit YAML unchanged.
-- `response_deliver_via_persona` tool becomes an alias issuing `SHIFT(target=PersonaHelm)` at G — original behavior preserved.
+- Persona stylisation lives in `PersonaAction` and is invoked by Bridge via `EMIT(via_persona=True)` → `BridgeInteractAction._publish_emit_via_persona` (Wave-2 distillation; see "Accepted-state amendments" below). The originally-planned dedicated `PersonaHelm` was scrapped in May 2026 — the dispatch path through `PersonaAction` performs the same stylisation without an extra helm in the chain.
+
+## Accepted-state amendments (May 2026)
+
+The ADR was promoted from **Proposed** to **Accepted** after the following deltas landed:
+
+1. **PersonaHelm scrapped.** The G milestone called for a dedicated `PersonaHelm` reachable via `SHIFT(target=PersonaHelm)`. We instead extended the `EMIT` verb with `via_persona: bool = False` and made `BridgeInteractAction._handle_emit` route through `PersonaAction.respond` when the flag is set. This is functionally equivalent (same stylisation, same `persona_capabilities` scoping) without consuming a shift-budget slot and without a separate helm step. References to PersonaHelm elsewhere in this ADR should be read as "PersonaAction invoked through `EMIT(via_persona=True)`".
+2. **Wave-1 / Wave-2 safety patches.** Five correctness items (Bridge/Cockpit excluded from the engine router catalog; `DELEGATE.args` propagated through a visitor side-channel; `helm.step()` exceptions safe-fallback; engine-error path publishes on the bus; `routing_source` in `helm_shift` events) plus three concurrency items (AC walk-down on the initial helm pick; `_step_outcome`/`_pending_final_emit` migrated off the `ReasoningHelm` singleton into `bridge_state.helm_states`; `handoff_state` merges rather than replaces). See `tests/action/bridge/test_wave1_safety_patches.py` and `test_wave2_safety_patches.py` for the contracts these patches pin.
+3. **ReasoningHelm distillation.** ReasoningHelm's mission is now agentic-loop + skill/IA routing only. The original standalone-Cockpit surfaces (canned response, conversational fast-path, smalltalk preclassifier, posture SUPPRESS/DEFER) were stripped — those concerns moved to `ReflexHelm` (transient_ack on SHIFT, smalltalk classification) and `BridgeInteractAction` (persona-via-EMIT delivery). The configuration knobs `enable_canned_response`, `canned_response_max_words`, `skip_canned_for_intents`, `converse_enabled`, `converse_context_limit`, `converse_persona_prompt`, `conversational_fast_path`, and `enable_router_preclassifier` are no longer accepted on `jvagent/reasoning_helm` context — they are warned about at startup (and silently dropped) per the YAML validator's unknown-key check.
 
 ## Alternatives considered
 

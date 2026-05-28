@@ -304,6 +304,22 @@ class EngineRouter:
             return {}
 
         helm_class = self._action.__class__.__name__
+        # Pattern-orchestrator exclusion (Wave-1 review item C1, May 2026):
+        # Bridge and Cockpit live at weight -200 and are not legitimate
+        # routing targets — letting them appear in the catalog risks the
+        # engine model selecting them and the resulting DELEGATE either
+        # recursing into Bridge or jumping into a sibling pattern. The
+        # standalone-Cockpit exclusion check at
+        # ``jvagent/action/helm/reasoning/routing/router.py`` (helm
+        # self-exclusion above) handles the ReasoningHelm-self case; this
+        # set handles the orchestrator wrappers. The agent-yaml validator
+        # already warns when both Bridge AND Cockpit are installed, so
+        # listing both names here is defence-in-depth — only one will
+        # ever be present in a healthy config.
+        _ORCHESTRATOR_EXCLUSIONS = {
+            "BridgeInteractAction",
+            "CockpitInteractAction",
+        }
         descriptors: Dict[str, Dict[str, Any]] = {}
         for action in all_actions:
             try:
@@ -311,6 +327,8 @@ class EngineRouter:
                     continue
                 cls_name = action.__class__.__name__
                 if cls_name == helm_class:
+                    continue
+                if cls_name in _ORCHESTRATOR_EXCLUSIONS:
                     continue
                 if bool(getattr(action, "always_execute", False)):
                     continue

@@ -38,8 +38,13 @@ async def resolve_routed_interact_actions(
     """Resolve routing.interact_actions class names to InteractAction instances.
 
     Returns instances sorted by ``weight`` ascending so walker visit order
-    matches the project-wide convention. The standalone Cockpit class is filtered out
-    even if mistakenly classified by the router.
+    matches the project-wide convention. Pattern-orchestrator classes
+    (Bridge, Cockpit) are filtered out even if mistakenly classified by
+    the router — they live at weight -200 and routing back into them
+    would either recurse (Bridge→Bridge) or sidestep into a sibling
+    pattern (Bridge→Cockpit). The standalone-Cockpit exclusion has been
+    in place since the original engine wire-up; Bridge was added to the
+    same set in May 2026 per Wave-1 review item C1.
     """
     names = list(routing.interact_actions or [])
     if not agent or not names:
@@ -59,13 +64,20 @@ async def resolve_routed_interact_actions(
         return []
 
     wanted: Set[str] = set(names)
-    cockpit_class = "CockpitInteractAction"
+    # Pattern-orchestrator exclusions — see docstring. Bridge AND Cockpit
+    # are both listed for defence-in-depth; the agent-yaml validator
+    # already warns if both are installed together, so in a healthy
+    # config only one will ever be present.
+    orchestrator_exclusions = {
+        "BridgeInteractAction",
+        "CockpitInteractAction",
+    }
     matched: List["InteractAction"] = []
     for action in all_enabled:
         if not isinstance(action, InteractAction):
             continue
         cls_name = action.__class__.__name__
-        if cls_name == cockpit_class:
+        if cls_name in orchestrator_exclusions:
             continue
         if cls_name in wanted:
             matched.append(action)

@@ -105,6 +105,28 @@ The `InteractAction.execute()` contract:
 
 Rationale and consequences: [`adr/0002-walker-revisit-cockpit.md`](adr/0002-walker-revisit-cockpit.md).
 
+### 3.4 Bridge orchestration pattern
+
+`BridgeInteractAction` ([`bridge/bridge_interact_action.py`](../jvagent/action/bridge/bridge_interact_action.py)) is the multi-helm orchestrator. It occupies the same `weight=-200` slot as `CockpitInteractAction` — Bridge and Cockpit are mutually exclusive on a single agent and the agent-yaml validator emits a warning when both are installed ([`adr/0007-bridge-helm-architecture.md`](adr/0007-bridge-helm-architecture.md)). Bridge extends the walker-revisit pattern with verb-based composition.
+
+**Invariants:**
+
+1. **One helm `step()` call per Bridge visit.** Each `BridgeInteractAction.execute(walker)` resolves the current helm and invokes `helm.step(visitor, bridge_state)` exactly once. A helm wishing to run another LM call must return a verb that re-enqueues Bridge (`CONTINUE`, or any verb that does not finalize the turn). Helms `step()` themselves perform AT MOST one model call.
+2. **Verb dispatch is total.** Every `step()` return value MUST be one of `EMIT | CONTINUE | SHIFT | DELEGATE | YIELD` ([`helm/contracts.py`](../jvagent/action/helm/contracts.py)). Bridge handles each verb in `_dispatch`; an unknown verb routes to `_safe_fallback` which publishes `denied_response_text` and finalises the turn.
+3. **Bridge state is per-turn.** `BridgeState` ([`bridge/state.py`](../jvagent/action/bridge/state.py)) is constructed fresh on the first visit of each interaction and stamped on the walker under `BRIDGE_STATE_VISITOR_ATTR`. It is cleared on any terminal verb (`EMIT(finalize=True)`, `YIELD`, safe-fallback). Per-helm scratch state lives under `bridge_state.helm_states[<helm_name>]` so concurrent turns on the same agent (which share singleton helm instances) cannot cross-pollute.
+4. **AccessControl gates every cascade layer.** The "cascade layers" are: `initial` (first-visit helm pick), `helm_shift` (helm returns `SHIFT`), `helm_delegate` (helm returns `DELEGATE`), `turn_lock` (auto-DELEGATE to a `manifest.turn_lock=True` IA discovered via `find_turn_lock_owner`). Each consults `check_helm_access` / `check_delegate_access`. On total denial (e.g. all helms in `helms[]` denied by AC), Bridge records a `routing_source="safe_fallback"` shift and finalises with `denied_response_text`.
+5. **Shift budget bounds per-turn helm transitions.** `shift_budget_per_turn` (default 4) caps explicit `SHIFT` verbs in a single turn. Exhaustion routes to `_safe_fallback`. Bounds helm ping-pong without imposing a strict ordering.
+6. **First-emit timeout fires once.** If no helm has emitted within `first_emit_timeout_ms` (default 2500), Bridge fires the `safety_net_ack_text` so the user gets a sign of life. The check fires at most once per turn and only between walker visits — long single-step LM calls inside one `helm.step()` are not pre-empted (deliberate; pre-emption would require timer/cancellation plumbing across helms).
+7. **Persona stylisation is a verb flag, not a helm.** A helm that wants its terminal EMIT stylised returns `EMIT(text=..., via_persona=True, finalize=True)`. Bridge's `_handle_emit` checks the flag and routes through `_publish_emit_via_persona` → `PersonaAction.respond`. No dedicated `PersonaHelm` exists (originally planned, scrapped May 2026 — see [`adr/0007`](adr/0007-bridge-helm-architecture.md) accepted-state amendments).
+8. **Walker queue is curated on first visit.** On `shift_count == 0`, Bridge calls `_curate_walker_queue` to restrict the walker's remaining queue to itself plus any `always_execute=True` IAs. This prevents non-helm IAs sitting in the agent's weight chain from auto-running after Bridge yields — the contract is that Bridge owns the turn; helms invoke other IAs only via explicit `DELEGATE`.
+9. **Pattern-orchestrator self-exclusion.** The engine router catalog and `resolve_routed_interact_actions` both filter `BridgeInteractAction` and `CockpitInteractAction` out of routable IA lists. The engine model cannot DELEGATE back into its own wrapper (defence against `Bridge→Bridge` recursion and `Bridge→Cockpit` pattern jumps).
+
+**Latency-class semantics** ([`manifest.py`](../jvagent/action/manifest.py)): each helm declares a `latency_class` in `info.yaml.manifest` (one of `instant | quick | deliberate | long`). Bridge emits `transient_ack` before SHIFTing into a `deliberate` / `long` target so the user sees a "Looking that up…" lead-in. The decision consults the manifest first, with the helm's `latency_class` attribute as fallback ([`bridge_interact_action.py:_is_ack_eligible`](../jvagent/action/bridge/bridge_interact_action.py)).
+
+**Tool-injection defense** (secure by default; see §11 invariant 12): two code-level layers refuse user-named tool dispatch independently of the model. Layer 1 (ReflexHelm regex) catches canonical syntax (`Call X(...)`, `/admin`, `run: foo_bar`); Layer 2 (Engine pre-dispatch) catches the substring match between the user's utterance and any tool the engine model decides to call. Disabled per-helm via `block_raw_tool_invocation: false` in `agent.yaml.context`.
+
+Rationale and consequences: [`adr/0007-bridge-helm-architecture.md`](adr/0007-bridge-helm-architecture.md). Implementation milestones and gate criteria: [`.planning/BRIDGE-ROADMAP.md`](BRIDGE-ROADMAP.md).
+
 ---
 
 ## 4. Action contract
@@ -341,6 +363,10 @@ There is **no persistent task queue** (no Celery / RQ). Long-lived autonomous wo
 6. `Agent.interaction_limit = 0` means **disabled**. Implementations MUST NOT prune when limit is `0` or unset.
 7. `App.update_mode` MUST reset to `run` after a successful sync; otherwise cold restarts will repeat the merge/source pass.
 8. Action endpoints registered via `@endpoint` MUST be discoverable by `_discover_action_endpoints()` ([`base.py:354`](../jvagent/action/base.py)) so deregister can clean them up. Use `/actions/{action_id}/...` path prefixes.
+9. `BridgeInteractAction` and `CockpitInteractAction` MUST NOT coexist on a single agent — both occupy `weight=-200` and ownership of the turn would be ambiguous. The agent-yaml validator emits a warning at startup; the engine router catalog AND `resolve_routed_interact_actions` independently filter both classes so a stray DELEGATE cannot recurse / cross patterns. See §3.4.
+10. Bridge helms' per-turn state (e.g. `ReasoningHelm._step_outcome`, `_pending_final_emit`) MUST live in `bridge_state.helm_states[<helm_name>]`, never as instance/class attributes on the helm singleton — multiple interactions on the same agent share the helm instance and class-attribute state would cross-pollute. See §3.4 invariant 3.
+11. `DELEGATE.args` are read by target IAs via `get_delegate_args(visitor)` ([`bridge/bridge_interact_action.py`](../jvagent/action/bridge/bridge_interact_action.py)). The visitor slot is cleared in `finally{}` after every DELEGATE so sibling delegations cannot observe stale args.
+12. Tool-injection defense is secure by default. `ReflexHelm.block_raw_tool_invocation` and `ReasoningHelm.block_raw_tool_invocation` both default to `True` and form a two-layer code-level gate (regex pattern match upstream, substring check pre-dispatch downstream) that refuses user-named tool dispatch independently of the model. Operators may disable per-helm via `agent.yaml.context.block_raw_tool_invocation: false`.
 
 ---
 
@@ -361,6 +387,7 @@ Load-bearing design choices are captured as ADRs:
 - [`adr/0004-namespace-isolation.md`](adr/0004-namespace-isolation.md)
 - [`adr/0005-app-yaml-agent-yaml-split.md`](adr/0005-app-yaml-agent-yaml-split.md)
 - [`adr/0006-jvspatial-dependency.md`](adr/0006-jvspatial-dependency.md)
+- [`adr/0007-bridge-helm-architecture.md`](adr/0007-bridge-helm-architecture.md)
 
 ---
 

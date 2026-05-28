@@ -81,6 +81,40 @@ _ACK_ELIGIBLE_LATENCY_CLASSES = frozenset({"deliberate", "long"})
 # changeable in one place.
 BRIDGE_VISITOR_ATTR = "_bridge_action"
 
+# Visitor side-channel for ``DELEGATE.args`` payloads. When a helm
+# returns ``DELEGATE(interact_action="X", args={"foo": "bar"})`` Bridge
+# stashes ``args`` here for the duration of the target's ``execute()``
+# call and clears it immediately after. Target IAs that want to consume
+# the args call :func:`get_delegate_args` (or read the underscore attr
+# directly, but the helper is the documented surface). Cleared after
+# every DELEGATE — IAs MUST NOT cache the value beyond their own
+# execute() because the next delegate target sees stale data if they do.
+#
+# Wave-1 review item C2 (May 2026) — previously ``verb.args`` was
+# silently dropped because ``target.execute(visitor)`` takes only the
+# visitor; this side-channel restores the contract.
+DELEGATE_ARGS_VISITOR_ATTR = "_delegate_args"
+
+
+def get_delegate_args(visitor: Any) -> Optional[Dict[str, Any]]:
+    """Return the ``DELEGATE.args`` payload Bridge passed for this call, or None.
+
+    Safe to call from any InteractAction's ``execute()`` body. Returns
+    None when:
+      - The IA was reached via the walker queue rather than DELEGATE
+      - The DELEGATE verb omitted ``args``
+      - The IA was reached via turn-lock auto-DELEGATE (which doesn't
+        carry helm-supplied args — the locking session owns its own state)
+
+    Args:
+        visitor: The InteractWalker passed to ``execute()``.
+
+    Returns:
+        The args dict or None. Never raises.
+    """
+    val = getattr(visitor, DELEGATE_ARGS_VISITOR_ATTR, None)
+    return val if isinstance(val, dict) else None
+
 
 class BridgeConfigurationError(RuntimeError):
     """Raised when Bridge is asked to execute without any usable helms."""
@@ -112,9 +146,11 @@ class BridgeInteractAction(InteractAction):
     )
     description: str = attribute(
         default=(
-            "Multi-helm orchestrator: composes Reflex / Reasoning / Specialist / "
-            "Persona helms with explicit shift verbs, shift budget, first-emit "
-            "timeout safety net, and AccessControl gating per shift target."
+            "Multi-helm orchestrator: composes Reflex / Reasoning / Specialist "
+            "helms with explicit shift verbs, shift budget, first-emit timeout "
+            "safety net, and AccessControl gating per shift target. Persona "
+            "stylisation is invoked via EMIT(via_persona=True) routing through "
+            "PersonaAction — no dedicated PersonaHelm."
         )
     )
 
@@ -241,7 +277,13 @@ class BridgeInteractAction(InteractAction):
         return resolved
 
     def _pick_initial_helm(self, resolved: Dict[str, BaseHelm]) -> BaseHelm:
-        """Choose the helm Bridge should start a fresh turn with."""
+        """Choose the helm Bridge should start a fresh turn with.
+
+        Pure preference logic — does NOT consult AccessControl. Callers
+        that need AC-aware selection use
+        :meth:`_pick_initial_helm_with_ac` instead. Kept as a public-ish
+        seam for tests and any future operator hook.
+        """
         if self.default_helm and self.default_helm in resolved:
             return resolved[self.default_helm]
         # Fall back to the first declared helm that resolved.
@@ -250,6 +292,82 @@ class BridgeInteractAction(InteractAction):
                 return resolved[name]
         # Last resort: any resolved helm.
         return next(iter(resolved.values()))
+
+    def _initial_helm_candidate_order(
+        self, resolved: Dict[str, BaseHelm]
+    ) -> List[str]:
+        """Return the AC walk-down order for initial helm picking.
+
+        ``default_helm`` first if it resolved; then the remaining
+        entries of ``self.helms`` in declared order; then any other
+        resolved helms not in either list (defensive — should be empty
+        in practice but covers config drift). Duplicates removed while
+        preserving order.
+        """
+        order: List[str] = []
+        if self.default_helm and self.default_helm in resolved:
+            order.append(self.default_helm)
+        for name in self.helms or []:
+            if name in resolved and name not in order:
+                order.append(name)
+        for name in resolved.keys():
+            if name not in order:
+                order.append(name)
+        return order
+
+    async def _pick_initial_helm_with_ac(
+        self,
+        visitor: "InteractWalker",
+        resolved: Dict[str, BaseHelm],
+    ) -> Optional[BaseHelm]:
+        """Walk the helm candidate list, AC-check each, return first allowed.
+
+        Wave-2 review item H1 (May 2026) — previously Bridge picked the
+        initial helm purely by ``_pick_initial_helm`` preference and
+        ran it without any AccessControl check. SHIFTs and DELEGATEs
+        already gate via ``check_helm_access`` /
+        ``check_delegate_access``; the "initial" entry path was the
+        only un-gated path. A user denied the default helm could still
+        run it because no check happened on first visit.
+
+        Behaviour:
+          - If no AccessControlAction is enforcing, every check passes
+            and this returns the same helm as ``_pick_initial_helm``.
+          - If the preferred helm is denied, walk the rest of
+            ``helms[]`` and pick the first allowed.
+          - If all helms are denied, return None — caller routes to
+            ``_safe_fallback`` so the user sees ``denied_response_text``
+            rather than running a forbidden helm.
+        """
+        try:
+            agent = await self.get_agent()
+        except Exception as exc:
+            logger.warning(
+                "bridge: get_agent failed during initial helm pick: %s", exc
+            )
+            agent = None
+
+        user_id = getattr(visitor, "user_id", None)
+        channel = getattr(visitor, "channel", "default") or "default"
+
+        for name in self._initial_helm_candidate_order(resolved):
+            try:
+                await check_helm_access(
+                    agent,
+                    helm_name=name,
+                    user_id=user_id,
+                    channel=channel,
+                )
+            except BridgeAccessDenied as denied:
+                logger.info(
+                    "bridge: initial helm %r denied by AC (resource=%s); "
+                    "trying next candidate",
+                    name,
+                    denied.resource,
+                )
+                continue
+            return resolved[name]
+        return None
 
     # ------------------------------------------------------------------
     # State plumbing
@@ -312,6 +430,15 @@ class BridgeInteractAction(InteractAction):
                         "ack_emitted": record.ack_emitted,
                         "shift_index": record.shift_index,
                         "at_monotonic": record.at_monotonic,
+                        # ``routing_source`` labels which layer of the
+                        # IA-selection cascade picked the target (initial /
+                        # helm_shift / helm_delegate / turn_lock /
+                        # safe_fallback). Operators use this to filter
+                        # ``helm_shift`` events when debugging Bridge
+                        # orchestration. Set on every ``record_shift`` call
+                        # but historically missing from the event payload —
+                        # added May 2026 per Wave-1 review (item H6).
+                        "routing_source": record.routing_source,
                     },
                     "timestamp": record.at_monotonic,
                 }
@@ -400,8 +527,34 @@ class BridgeInteractAction(InteractAction):
             await self._curate_walker_queue(visitor)
 
         # Resolve current helm on first visit (or whenever it has been cleared).
+        # Wave-2 review item H1 — AccessControl walk-down: if the user
+        # is denied the preferred helm, fall through to the next allowed
+        # helm in declaration order. If every helm is denied, route to
+        # ``_safe_fallback`` so the user sees ``denied_response_text``
+        # rather than silently running a forbidden helm.
         if state.current_helm is None:
-            initial = self._pick_initial_helm(resolved)
+            initial = await self._pick_initial_helm_with_ac(visitor, resolved)
+            if initial is None:
+                logger.warning(
+                    "bridge: all helms denied by AC at initial pick — "
+                    "safe-falling back"
+                )
+                # Record the AC denial in the gear trace so operators can
+                # see WHY the turn produced a fallback rather than helm
+                # output. Records the originally-preferred helm so the
+                # event trail names the policy resource the user hit.
+                preferred = self._pick_initial_helm(resolved).helm_name()
+                rec = state.record_shift(
+                    from_helm=None,
+                    to_helm=preferred,
+                    reason="bridge:initial:ac_denied",
+                    ack_emitted=False,
+                    at_monotonic=time.monotonic(),
+                    routing_source="safe_fallback",
+                )
+                self._record_helm_shift_event(visitor, rec)
+                await self._safe_fallback(visitor, state)
+                return
             state.current_helm = initial.helm_name()
             rec = state.record_shift(
                 from_helm=None,
@@ -455,10 +608,29 @@ class BridgeInteractAction(InteractAction):
         # Per-helm wall-clock + step-count instrumentation (BRIDGE-ROADMAP §I).
         # Each step() call accrues to ``helm_timings_seconds[helm_name]`` so
         # operators can see where a turn's time was actually spent.
+        #
+        # Exception containment (Wave-1 review item H2, May 2026):
+        # ``helm.step()`` is third-party-ish code from Bridge's perspective —
+        # helms can raise on transient LM errors, network blips, or genuine
+        # bugs. Without an ``except`` clause the exception propagates up
+        # through ``_dispatch`` to ``InteractWalker.on_visit`` and aborts
+        # the turn silently from the user's perspective (no bus publish).
+        # Catch broadly, log, and route to ``_safe_fallback`` so the user
+        # gets ``denied_response_text`` and observability captures the
+        # failure under ``routing_source="safe_fallback"``.
         helm_name = helm.helm_name()
         _t_step_start = time.monotonic()
+        result: Any = None
+        helm_raised: Optional[BaseException] = None
         try:
             result = await helm.step(visitor, state)
+        except Exception as exc:  # pragma: no cover (exercised in tests)
+            helm_raised = exc
+            logger.exception(
+                "bridge: helm %r step() raised; safe-falling back: %s",
+                helm_name,
+                exc,
+            )
         finally:
             elapsed = time.monotonic() - _t_step_start
             state.helm_timings_seconds[helm_name] = (
@@ -467,6 +639,10 @@ class BridgeInteractAction(InteractAction):
             state.helm_step_counts[helm_name] = (
                 state.helm_step_counts.get(helm_name, 0) + 1
             )
+
+        if helm_raised is not None:
+            await self._safe_fallback(visitor, state)
+            return
 
         if not self._is_valid_verb(result):
             logger.error(
@@ -791,8 +967,16 @@ class BridgeInteractAction(InteractAction):
             state.last_emit_at = time.monotonic()
 
         # Persist handoff state on the target helm's slot.
+        # Wave-2 review item M5 (May 2026) — merge into the existing
+        # slot rather than replace it. Replacing nuked any state the
+        # target helm had previously written (e.g. ReasoningHelm's
+        # ``pending_ias`` chain from an earlier visit). Merge semantics:
+        # SHIFTing helm's keys override only the slot keys it
+        # explicitly supplies; everything else the target helm wrote
+        # before survives.
         if verb.handoff_state is not None:
-            state.helm_states[verb.target] = dict(verb.handoff_state)
+            target_slot = state.helm_states.setdefault(verb.target, {})
+            target_slot.update(dict(verb.handoff_state))
 
         rec = state.record_shift(
             from_helm=current_helm.helm_name(),
@@ -811,9 +995,42 @@ class BridgeInteractAction(InteractAction):
     def _is_ack_eligible(self, target_helm: BaseHelm) -> bool:
         """Decide whether ``transient_ack`` should be emitted before a SHIFT.
 
-        At B the decision reads ``target_helm.latency_class`` directly.
-        Milestone E rewires this to consult the loaded manifest.
+        Wave-4 review item M3 (May 2026) — reads the helm's manifest
+        ``latency_class`` first, falling back to the legacy attribute
+        only when the manifest is unavailable or invalid. The manifest
+        is the documented source of truth (BRIDGE-ROADMAP §D /
+        ADR-0007); the attribute is a configuration mirror retained for
+        operators who tune via ``agent.yaml.context.latency_class``
+        without editing the action's ``info.yaml``.
+
+        Resolution order:
+          1. ``target_helm.get_manifest().latency_class`` — manifest
+             value, parsed and validated via ``Manifest.from_payload``.
+          2. ``target_helm.latency_class`` — Pydantic attribute, the
+             legacy path (kept so YAML overrides still take effect when
+             no manifest block exists).
+
+        Either source landing on ``deliberate`` or ``long`` returns
+        True; anything else (``instant``, ``quick``, missing) returns
+        False.
         """
+        # Manifest first.
+        try:
+            manifest = target_helm.get_manifest()
+            manifest_cls = (getattr(manifest, "latency_class", "") or "").lower()
+        except Exception as exc:
+            logger.debug(
+                "bridge: get_manifest() failed for helm %r — falling back "
+                "to attribute: %s",
+                getattr(target_helm, "helm_name", lambda: "?")(),
+                exc,
+            )
+            manifest_cls = ""
+
+        if manifest_cls:
+            return manifest_cls in _ACK_ELIGIBLE_LATENCY_CLASSES
+
+        # Attribute fallback.
         return (
             target_helm.latency_class or ""
         ).lower() in _ACK_ELIGIBLE_LATENCY_CLASSES
@@ -1027,6 +1244,13 @@ class BridgeInteractAction(InteractAction):
         )
         self._record_helm_shift_event(visitor, rec)
         state.delegated_action = verb.interact_action
+        # Wave-1 review item C2 — stash ``verb.args`` on the visitor so
+        # the target IA can consume them via :func:`get_delegate_args`.
+        # Cleared in ``finally`` so subsequent delegates on the same turn
+        # don't see stale args.
+        delegate_args_payload = verb.args if isinstance(verb.args, dict) else None
+        if delegate_args_payload is not None:
+            setattr(visitor, DELEGATE_ARGS_VISITOR_ATTR, delegate_args_payload)
         try:
             await target.execute(visitor)
         except Exception:
@@ -1037,6 +1261,14 @@ class BridgeInteractAction(InteractAction):
             state.delegated_action = None
             await self._safe_fallback(visitor, state)
             return
+        finally:
+            # Always clear — even on the success path — so the args dict
+            # cannot leak into a sibling DELEGATE later in the turn.
+            if delegate_args_payload is not None:
+                try:
+                    setattr(visitor, DELEGATE_ARGS_VISITOR_ATTR, None)
+                except Exception:
+                    pass
         state.delegated_action = None
         # Record the delegated IA on the interaction so turn-lock
         # detection on the NEXT turn (``find_turn_lock_owner`` reads

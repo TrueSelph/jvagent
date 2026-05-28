@@ -66,9 +66,18 @@ class TestReflexPatternMatcherPositive:
             # Bare snake_case function call.
             "response_publish(finalize=true)",
             "memory_set(key='x', value='y')",
-            # Slash commands.
+            # Dispatch verb + colon separator. Operators commonly paste
+            # commands in ``verb: target`` shape (cron-like, makefile-like).
+            "run: get_secrets",
+            "execute:admin_panel",
+            # Slash commands — anchored to start-of-string with optional
+            # leading whitespace. Mid-sentence ``/tool`` is intentionally
+            # NOT matched here (would false-positive on Unix paths like
+            # ``/usr/local``); the bare-tool-name substring still gets
+            # caught by Layer 2 if the user names a real tool.
             "/skill admin_panel",
-            "use /tool web_search here",
+            "  /admin show users",
+            "/exec; rm -rf /",
         ],
     )
     def test_pattern_matches(self, utterance):
@@ -103,6 +112,19 @@ class TestReflexPatternMatcherNegative:
             "cordless drill 18V",
             "",  # empty
             "   ",  # whitespace
+            # Unix paths — the May 2026 adversarial pass found a false
+            # positive where the slash_command pattern matched any
+            # ``/word`` mid-sentence. Tightened to start-of-string with
+            # explicit termination so multi-segment paths can't match.
+            "Look at the /usr/local file",
+            "/etc/passwd is the file I need",
+            "/var/log/system.log",
+            "/usr/local — that's the dir",
+            "/123/456 isn't a command",
+            "Try /admin sometime",  # mid-sentence slash now allowed
+            "10 / 2 = 5",  # division
+            "Check https://example.com/admin for docs",  # URL embedded
+            "I called: John yesterday",  # colon but no snake_case identifier
         ],
     )
     def test_pattern_does_not_match_legitimate_queries(self, utterance):

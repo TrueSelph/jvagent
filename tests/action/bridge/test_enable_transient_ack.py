@@ -55,9 +55,21 @@ def _capture_publishes():
 
 
 def _make_target_helm(latency: str = "deliberate") -> MagicMock:
+    """Build a mock helm whose ack-eligibility resolves correctly.
+
+    Wave-4 wired ``_is_ack_eligible`` to consult ``get_manifest()``
+    first, falling back to the attribute. The MagicMock auto-creates
+    ``get_manifest`` as a Mock-returning Mock, which fails the
+    eligibility check (its ``.latency_class`` is a Mock, not a string).
+    Provide a real Manifest so the manifest path resolves the test's
+    intended ``latency`` value.
+    """
+    from jvagent.action.manifest import Manifest
+
     helm = MagicMock()
     helm.helm_name = lambda: "ReasoningHelm"
     helm.latency_class = latency
+    helm.get_manifest = lambda: Manifest(latency_class=latency)
     return helm
 
 

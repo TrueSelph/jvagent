@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from jvagent.action.bridge.state import BRIDGE_STATE_VISITOR_ATTR, BridgeState
 from jvagent.action.helm.reasoning.context import EngineStepResult
 from jvagent.action.helm.reasoning.contracts import TerminationReason
 from jvagent.action.helm.reasoning.reasoning_helm import ReasoningHelm
@@ -53,6 +54,13 @@ def _make_visitor(interaction_id: str = "int_1") -> Any:
     visitor._skill_state = {}
     visitor.prepend = AsyncMock()
     visitor.unrecord_action_execution = AsyncMock()
+    # Wave-2 H3: ReasoningHelm's per-turn orchestration state
+    # (``step_outcome``, ``pending_final_emit``) now lives in
+    # ``bridge_state.helm_states[helm_name]`` instead of on the
+    # singleton. Tests that drive ``_orchestrate`` / ``_handle_step_result``
+    # directly must stamp a real BridgeState on the visitor so the
+    # helpers can read/write a per-turn dict.
+    setattr(visitor, BRIDGE_STATE_VISITOR_ATTR, BridgeState(turn_started_at=0.0))
     return visitor
 
 
@@ -80,7 +88,8 @@ async def test_stale_interaction_clears_state_and_reroutes(monkeypatch):
         assert s.debug_state is None
         assert s.interaction_id is None
         # Signal terminal so step() returns without further work.
-        self._step_outcome = "yield"
+        # Per Wave-2 H3 the outcome lives in bridge_state.helm_states.
+        self._set_step_outcome(v, "yield")
 
     monkeypatch.setattr(
         ReasoningHelm,
@@ -148,7 +157,8 @@ async def test_handle_step_result_tool_calls_sets_continue_outcome(monkeypatch):
     await action._handle_step_result(visitor, engine, result)
 
     assert get_session(visitor).debug_state is engine.save_state.return_value
-    assert action._step_outcome == "continue"
+    # Wave-2 H3 — outcome read from bridge_state.helm_states slot.
+    assert action._get_step_outcome(visitor) == "continue"
     visitor.prepend.assert_not_called()  # Bridge owns queue mutations
     visitor.interaction.set_to_executed.assert_not_called()
 
@@ -214,7 +224,8 @@ async def test_handle_step_result_terminal_stashes_pending_emit(monkeypatch):
     assert s_after.debug_state is None
     visitor.interaction.set_to_executed.assert_called_once()
     # New contract: pending emit stashed for step() to surface.
-    pending = getattr(action, "_pending_final_emit", None)
+    # Wave-2 H3 — buffer lives in bridge_state.helm_states.
+    pending = action._get_pending_final_emit(visitor)
     assert pending is not None
     assert pending["text"] == "hello"
     assert pending["activated_skills"] == ["web_search"]
@@ -242,4 +253,5 @@ async def test_handle_step_result_terminal_empty_response_no_pending_emit(monkey
 
     visitor.interaction.set_to_executed.assert_called_once()
     # No final response → no pending emit (step() will return YIELD).
-    assert getattr(action, "_pending_final_emit", None) is None
+    # Wave-2 H3 — read from bridge_state.helm_states slot.
+    assert action._get_pending_final_emit(visitor) is None

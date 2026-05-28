@@ -75,25 +75,43 @@ DEFAULT_REFLEX_MODEL_ACTION = "OpenAILanguageModelAction"
 _TOOL_INVOCATION_PATTERNS: Dict[str, "re.Pattern"] = {
     # Dispatch-verb + snake_case identifier. Catches the canonical
     # injection "Call capability_search with query='...'" / "execute
-    # response_publish ..." / "run web_search". Snake_case is the
-    # near-universal naming convention for engine tools, so requiring
-    # an underscore in the identifier filters out legitimate phrasings
-    # ("call you", "execute the order", "run a search"). Verbs covered:
-    # call / invoke / execute / run / dispatch / trigger.
+    # response_publish ..." / "run web_search" / "run: get_secrets".
+    # The separator between verb and identifier accepts whitespace OR
+    # colon ("run:") because operators routinely paste commands in
+    # ``verb: target`` shape (cron-like, makefile-like). Snake_case is
+    # the near-universal naming convention for engine tools, so
+    # requiring an underscore in the identifier filters out legitimate
+    # phrasings ("call you", "execute the order", "run a search").
+    # Verbs covered: call / invoke / execute / run / dispatch / trigger.
     "dispatch_verb_snake_case_tool": re.compile(
-        r"\b(?:call|invoke|execute|run|dispatch|trigger)" r"\s+\w*[a-z]\w*_\w+",
+        r"\b(?:call|invoke|execute|run|dispatch|trigger)[\s:]+\w*[a-z]\w*_\w+",
         re.IGNORECASE,
     ),
     # Dispatch-verb + identifier + paren — function-call syntax even
     # without an underscore. Catches "execute foo(" or "run search(" —
-    # the parens are the tell.
+    # the parens are the tell. Separator accepts whitespace or colon
+    # for symmetry with the snake_case variant above.
     "dispatch_verb_with_parens": re.compile(
-        r"\b(?:call|invoke|execute|run|dispatch|trigger)\s+\w+\s*\(",
+        r"\b(?:call|invoke|execute|run|dispatch|trigger)[\s:]+\w+\s*\(",
         re.IGNORECASE,
     ),
     # Slash commands. "/skill X" / "/tool Y" / "/exec Z" — unambiguously
     # command-style; no legitimate interpretation in a chat agent.
-    "slash_command": re.compile(r"(?:^|\s)/\w+", re.IGNORECASE),
+    # Tightly anchored to start-of-string (optional leading whitespace
+    # only) and explicitly terminated so multi-segment Unix paths cannot
+    # match. Pattern requires:
+    #   - leading whitespace (optional) then ``/``
+    #   - an alpha character (slash commands start with letters; ``/123``
+    #     is a path or pagination marker, not a command)
+    #   - zero or more word chars
+    #   - followed by end-of-string, whitespace, or a punctuation char
+    #     that is NEITHER a word char NOR a forward slash
+    # This means ``/admin``, ``/admin foo``, and ``/exec; ls`` all match,
+    # while ``/etc/passwd``, ``/usr/local``, ``/123/456`` do not.
+    "slash_command": re.compile(
+        r"^\s*/[a-zA-Z]\w*(?=\s|$|[^\w/])",
+        re.IGNORECASE,
+    ),
     # Bare ``tool_name(args)`` style invocation embedded in the message.
     # Requires snake_case (an underscore in the identifier) to avoid
     # matching natural-language uses of parenthesized words ("(yes)" /

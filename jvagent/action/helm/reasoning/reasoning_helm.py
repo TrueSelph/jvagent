@@ -38,7 +38,7 @@ Differences vs the standalone-Cockpit ancestor:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 
@@ -129,9 +129,88 @@ class ReasoningHelm(BaseHelm):
     )
     can_emit_directly: bool = attribute(default=True)
 
-    # Ephemeral per-visit orchestration state (not persisted).
-    _step_outcome: Optional[str] = None
-    _pending_final_emit: Optional[Dict[str, Any]] = None
+    # Per-turn orchestration state slot keys (Wave-2 review item H3,
+    # May 2026). Previously these lived as instance attributes on the
+    # ReasoningHelm singleton (one Action instance shared by all
+    # concurrent interactions on the agent). Two simultaneous turns
+    # would cross-pollute — one turn's ``_step_outcome = "yield"`` would
+    # be observed by another turn's ``_step_impl`` if the schedulers
+    # interleaved. Now both fields live under
+    # ``bridge_state.helm_states[self.helm_name()]`` which is per-turn
+    # (BridgeState is rebuilt fresh each interaction).
+    # ClassVar annotations keep these as plain class-level strings;
+    # without them Pydantic treats a single-underscore-prefixed name
+    # as a ``ModelPrivateAttr`` and assigns a descriptor instead of
+    # the raw value, breaking ``slot[self._STEP_OUTCOME_SLOT]`` lookups.
+    _STEP_OUTCOME_SLOT: ClassVar[str] = "step_outcome"
+    _PENDING_FINAL_EMIT_SLOT: ClassVar[str] = "pending_final_emit"
+
+    def _get_helm_slot(
+        self, visitor: "InteractWalker"
+    ) -> Optional[Dict[str, Any]]:
+        """Return this helm's per-turn state dict from BridgeState, or None.
+
+        None when Bridge orchestration is bypassed (tests, or a future
+        non-Bridge invocation path). Callers must defend against None
+        and treat absent state as a sensible default ("no pending emit
+        yet", etc.).
+        """
+        bridge_state = getattr(visitor, BRIDGE_STATE_VISITOR_ATTR, None)
+        if bridge_state is None:
+            return None
+        return bridge_state.helm_states.setdefault(self.helm_name(), {})
+
+    def _get_step_outcome(self, visitor: "InteractWalker") -> Optional[str]:
+        """Per-turn outcome marker for the most recent ``_orchestrate`` call.
+
+        Read by :meth:`_step_impl` after orchestration returns to decide
+        between ``CONTINUE`` and ``YIELD``. Set by the deep
+        orchestration branches in ``_phase_route_and_setup`` /
+        ``_phase_continue`` / ``_handle_step_result`` / ``_handle_error``.
+        """
+        slot = self._get_helm_slot(visitor)
+        if slot is None:
+            return None
+        return slot.get(self._STEP_OUTCOME_SLOT)
+
+    def _set_step_outcome(
+        self, visitor: "InteractWalker", value: Optional[str]
+    ) -> None:
+        slot = self._get_helm_slot(visitor)
+        if slot is None:
+            return
+        if value is None:
+            slot.pop(self._STEP_OUTCOME_SLOT, None)
+        else:
+            slot[self._STEP_OUTCOME_SLOT] = value
+
+    def _get_pending_final_emit(
+        self, visitor: "InteractWalker"
+    ) -> Optional[Dict[str, Any]]:
+        """Per-turn buffer for the final EMIT(via_persona=True) payload.
+
+        Set by ``_handle_step_result`` when the engine produces a
+        non-empty final response; consumed by ``_step_impl`` on the
+        next read and cleared. Bridge handles persona stylisation.
+        """
+        slot = self._get_helm_slot(visitor)
+        if slot is None:
+            return None
+        val = slot.get(self._PENDING_FINAL_EMIT_SLOT)
+        return val if isinstance(val, dict) else None
+
+    def _set_pending_final_emit(
+        self,
+        visitor: "InteractWalker",
+        value: Optional[Dict[str, Any]],
+    ) -> None:
+        slot = self._get_helm_slot(visitor)
+        if slot is None:
+            return
+        if value is None:
+            slot.pop(self._PENDING_FINAL_EMIT_SLOT, None)
+        else:
+            slot[self._PENDING_FINAL_EMIT_SLOT] = value
 
     def _ensure_interaction(self, visitor: "InteractWalker") -> bool:
         """Lift of ``InteractAction._ensure_interaction``.
@@ -447,7 +526,7 @@ class ReasoningHelm(BaseHelm):
         # Fresh visit (or engine still in flight): run orchestration.
         # Reset outcome marker so stale state from a prior visit can't
         # leak into the next decision.
-        self._step_outcome = None
+        self._set_step_outcome(visitor, None)
 
         try:
             await self._orchestrate(visitor)
@@ -457,9 +536,9 @@ class ReasoningHelm(BaseHelm):
                 exc,
                 exc_info=True,
             )
-            self._step_outcome = "yield"
+            self._set_step_outcome(visitor, "yield")
 
-        outcome = getattr(self, "_step_outcome", None)
+        outcome = self._get_step_outcome(visitor)
         if outcome == "continue":
             return CONTINUE(reason="reasoning engine requested another visit")
 
@@ -468,9 +547,9 @@ class ReasoningHelm(BaseHelm):
         # stylisation. ``deliver_final_response`` is no longer called
         # in-line — the Phase-2 distillation pushed the persona-delivery
         # contract up into ``BridgeInteractAction._handle_emit``.
-        pending_emit = getattr(self, "_pending_final_emit", None)
+        pending_emit = self._get_pending_final_emit(visitor)
         if pending_emit is not None:
-            self._pending_final_emit = None
+            self._set_pending_final_emit(visitor, None)
             return EMIT(
                 text=pending_emit.get("text", ""),
                 finalize=True,
@@ -625,7 +704,7 @@ class ReasoningHelm(BaseHelm):
                     [a.__class__.__name__ for a in routed_ias],
                     len(routed_ias),
                 )
-                self._step_outcome = "yield"
+                self._set_step_outcome(visitor, "yield")
                 return
 
             # both → run engine first; queue the IAs for post-engine
@@ -706,7 +785,7 @@ class ReasoningHelm(BaseHelm):
                         pass
             finally:
                 session.debug_state = None
-            self._step_outcome = "yield"
+            self._set_step_outcome(visitor, "yield")
             return
 
         # AUDIT-interact HIGH-02: enforce a per-interaction step cap that
@@ -894,9 +973,9 @@ class ReasoningHelm(BaseHelm):
                 # Tool already delivered the response — conclude
                 session.reset()
                 interaction.set_to_executed()
-                self._step_outcome = "yield"
+                self._set_step_outcome(visitor, "yield")
                 return
-            self._step_outcome = "continue"
+            self._set_step_outcome(visitor, "continue")
             return
 
         # Terminal state: final_response, timeout, budget_exhausted, stuck.
@@ -908,7 +987,7 @@ class ReasoningHelm(BaseHelm):
         # Bridge code never populates.
         session.reset()
         interaction.set_to_executed()
-        self._step_outcome = "yield"
+        self._set_step_outcome(visitor, "yield")
 
         final_response = getattr(step_result, "final_response", "") or ""
 
@@ -922,12 +1001,15 @@ class ReasoningHelm(BaseHelm):
             # so Bridge can resolve per-skill response_mode / verbatim
             # overrides against the skill catalog (still on
             # ``visitor._skill_state``).
-            self._pending_final_emit = {
-                "text": final_response,
-                "activated_skills": list(
-                    getattr(step_result, "activated_skills", []) or []
-                ),
-            }
+            self._set_pending_final_emit(
+                visitor,
+                {
+                    "text": final_response,
+                    "activated_skills": list(
+                        getattr(step_result, "activated_skills", []) or []
+                    ),
+                },
+            )
 
     # ``_finalize_via_persona`` (the standalone Cockpit's IA-only mode finalizer) is
     # not duplicated here — Bridge handles persona-finalize itself after
@@ -969,22 +1051,52 @@ class ReasoningHelm(BaseHelm):
     async def _handle_error(self, visitor: "InteractWalker", exc: Exception) -> None:
         """Handle errors during orchestration.
 
-        Clears session state, sets a fallback response on the interaction
-        if one isn't already present, and signals Bridge to finalise.
+        Clears session state, publishes a fallback message on the response
+        bus AND sets ``interaction.response`` (for non-bus channels), and
+        signals Bridge to finalise.
+
+        Wave-1 review item H5 (May 2026) — the previous implementation
+        only wrote to ``interaction.response``. Bus-subscribing channels
+        (Slack adapter, WhatsApp adapter, the streaming web client) saw
+        silence on engine errors because they consume the response-bus
+        stream rather than re-reading the interaction record. Now we
+        publish first (with ``streaming_complete=True`` so the bus
+        flushes immediately) and write ``interaction.response`` as a
+        fallback for channels that read the persisted record.
         """
         clear_session(visitor)
+        fallback_text = (
+            "I encountered an error processing your request. Please try again."
+        )
         interaction = visitor.interaction
-        if interaction:
-            if not interaction.response:
-                interaction.response = (
-                    "I encountered an error processing your request. Please try again."
+        # Skip publish if a real response was already streamed mid-loop —
+        # the user already has something on screen; an error addendum
+        # would be more confusing than helpful.
+        already_has_response = bool(
+            interaction and getattr(interaction, "response", None)
+        )
+        if not already_has_response:
+            try:
+                await self.publish(
+                    visitor=visitor,
+                    content=fallback_text,
+                    streaming_complete=True,
                 )
+            except Exception as pub_exc:
+                # Don't let publish errors mask the original failure —
+                # log and continue to the interaction-record fallback.
+                logger.warning(
+                    "reasoning_helm: failed to publish error fallback to bus: %s",
+                    pub_exc,
+                )
+            if interaction is not None:
+                interaction.response = fallback_text
                 try:
                     await interaction.save()
                 except Exception:
                     pass
         # helms not recorded by walker (Bridge owns trace)
-        self._step_outcome = "yield"
+        self._set_step_outcome(visitor, "yield")
 
     async def healthcheck(self) -> bool:
         if not self.model_action_type:

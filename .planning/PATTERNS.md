@@ -107,8 +107,9 @@ Each cell records a measurement against the current `bridge_agent.yaml` composit
 |---|---|---|---|---|---|---|
 | Bridge + Reasoning | `[ReasoningHelm]` | TBD | TBD | TBD | TBD | TBD |
 | Bridge + Reflex + Reasoning | `[ReflexHelm, ReasoningHelm]` | 29.25 | 8.69 | 20805 | 2.27 | [`matrix_j_initial_b830f42.json`](../tests/action/bridge/baselines/matrix_j_initial_b830f42.json) |
-| Bridge + Reflex + Reasoning + Persona | `[ReflexHelm, ReasoningHelm, PersonaHelm]` | TBD | TBD | TBD | TBD | TBD |
 | Bridge + Reflex + Reasoning + Specialist | `[ReflexHelm, ReasoningHelm]` + Interview IA in chain | TBD | TBD | TBD | TBD | TBD |
+
+> Persona stylisation is not a helm row — it's `PersonaAction` invoked by helms via `EMIT(via_persona=True)`. Any Bridge agent with `PersonaAction` installed and `persona_description` set will produce stylised output without a separate composition. The originally-planned `PersonaHelm` row was scrapped in May 2026 (see [`adr/0007`](adr/0007-bridge-helm-architecture.md) accepted-state amendments).
 
 ### Headline findings (first matrix run, OpenAI gpt-4o-mini Reflex)
 

@@ -999,10 +999,34 @@ class ActionLoader:
                                     break
 
                         if not property_exists:
+                            # Wave-3 review item: this warning ALREADY fired
+                            # before May 2026 but only named the action class,
+                            # not the agent or action ref — making it hard to
+                            # pinpoint WHICH agent.yaml needed editing when an
+                            # app loaded a dozen actions. The enhanced message
+                            # below includes:
+                            #   - agent name (so multi-agent apps can be
+                            #     triaged)
+                            #   - action namespace/label (so the operator
+                            #     knows which YAML entry to edit)
+                            #   - action class (kept — still the canonical
+                            #     identifier for the receiving type)
+                            # Kept at WARNING level so legacy YAMLs that
+                            # carry inert keys don't fail to boot — only the
+                            # offending field is dropped, the action still
+                            # starts.
                             logger.warning(
-                                f"Property '{key}' from agent.yaml context does not exist on "
-                                f"{action_class.__name__} or any of its inherited base classes. "
-                                f"Skipping override."
+                                "agent.yaml: unknown context key '%s' for "
+                                "action %s/%s on agent '%s' — not a field "
+                                "on %s or any base class; the override "
+                                "will be silently dropped. Remove it from "
+                                "agent.yaml or check for a typo against the "
+                                "action's model_fields.",
+                                key,
+                                metadata.namespace,
+                                metadata.name,
+                                agent_name,
+                                action_class.__name__,
                             )
                             continue
                         action_data[key] = value

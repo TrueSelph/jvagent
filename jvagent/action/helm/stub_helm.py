@@ -18,6 +18,7 @@ from jvspatial.core.annotations import attribute
 
 from jvagent.action.helm.base import BaseHelm
 from jvagent.action.helm.contracts import EMIT, HelmStepResult
+from jvagent.action.manifest import Manifest
 
 if TYPE_CHECKING:
     from jvagent.action.bridge.state import BridgeState
@@ -74,6 +75,22 @@ class StubHelm(BaseHelm):
         observed by this helm. Useful for asserting handoff_state propagation
         in tests."""
         return dict(self._scratch()["last_state_snapshot"])
+
+    def get_manifest(self) -> Manifest:
+        """Synthesise a manifest from the test-set attributes.
+
+        StubHelm has no ``info.yaml`` (it's test-only and never loaded
+        through the action loader), so the default ``Action.get_manifest``
+        would return a Manifest with the default ``latency_class="quick"``.
+        Wave-4 (May 2026) wired Bridge's ``_is_ack_eligible`` to consult
+        the manifest BEFORE the attribute — without this override, tests
+        that set ``stub.latency_class = "deliberate"`` would see Bridge
+        suppress ack-on-shift because the manifest path wins and reports
+        "quick". Synthesising a Manifest from the current attribute keeps
+        StubHelm behaving identically to a production helm whose
+        info.yaml declared the same latency_class.
+        """
+        return Manifest(latency_class=self.latency_class or "quick")
 
     async def _step_impl(
         self,
