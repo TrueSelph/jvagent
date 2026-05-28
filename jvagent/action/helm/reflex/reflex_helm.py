@@ -181,6 +181,19 @@ class ReflexHelm(BaseHelm):
     timeout_seconds: float = attribute(default=3.0)
     history_limit: int = attribute(default=4)
 
+    # When True (the default), Reflex passes
+    # ``response_format={"type": "json_object"}`` to the model adapter
+    # so OpenAI-compatible providers enforce JSON-only output at the
+    # API level. This eliminates the chain-of-thought prose preamble +
+    # markdown-fence behavior that smaller Llama models (notably Groq's
+    # ``llama-3.1-8b-instant``) exhibit despite the system prompt's
+    # explicit "no prose" instruction. The regex parser in
+    # ``_parse_json_verb`` is still the safety net for providers that
+    # don't honor the flag (older endpoints, self-hosted Ollama without
+    # JSON-grammar support). Set False if the configured provider
+    # rejects ``response_format`` outright.
+    enforce_json_mode: bool = attribute(default=True)
+
     default_shift_target: str = attribute(default="ReasoningHelm")
     # Last-resort text emitted ONLY when Reflex cannot classify AND cannot
     # SHIFT (the default target isn't an installed peer helm — usually a
@@ -665,17 +678,20 @@ class ReflexHelm(BaseHelm):
             # making the call non-debuggable from logs alone.
             # ``calling_action_name`` mirrors the same convention so the
             # event records which helm originated the call.
-            result = await model_action.query_messages(
-                messages=messages,
-                stream=False,
-                system=system_prompt,
-                prompt_for_observability=user_prompt,
-                tools=None,
-                model=self.model or None,
-                temperature=self.model_temperature,
-                max_tokens=self.model_max_tokens,
-                calling_action_name=self.helm_name(),
-            )
+            query_kwargs: Dict[str, Any] = {
+                "messages": messages,
+                "stream": False,
+                "system": system_prompt,
+                "prompt_for_observability": user_prompt,
+                "tools": None,
+                "model": self.model or None,
+                "temperature": self.model_temperature,
+                "max_tokens": self.model_max_tokens,
+                "calling_action_name": self.helm_name(),
+            }
+            if self.enforce_json_mode:
+                query_kwargs["response_format"] = {"type": "json_object"}
+            result = await model_action.query_messages(**query_kwargs)
         except Exception as exc:
             logger.warning("ReflexHelm: model call raised: %s", exc)
             return None

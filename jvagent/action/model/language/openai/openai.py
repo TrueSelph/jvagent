@@ -300,6 +300,18 @@ class OpenAILanguageModelAction(LanguageModelAction):
         if tools:
             payload["tools"] = tools
 
+        # response_format passthrough — callers (notably ReflexHelm) use
+        # ``{"type": "json_object"}`` to force JSON mode on providers that
+        # support it (OpenAI, Groq, OpenRouter). Without this, smaller
+        # Llama models tend to leak chain-of-thought prose and markdown
+        # fences before the JSON payload — see Wave 9i.1 commit for the
+        # observed 8b-instant failure mode. Groq's JSON mode requires the
+        # literal word "json" somewhere in the messages; ReflexHelm's
+        # system prompt already contains it.
+        response_format = kwargs.get("response_format")
+        if response_format is not None:
+            payload["response_format"] = response_format
+
         if is_reasoning:
             self._apply_reasoning_adjustments(payload, kwargs)
 

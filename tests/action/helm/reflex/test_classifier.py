@@ -585,3 +585,78 @@ async def test_step_model_raises_falls_back(monkeypatch):
     result = await helm.step(visitor, state)
     assert isinstance(result, SHIFT)
     assert result.target == "ReasoningHelm"
+
+
+# ---------------------------------------------------------------------------
+# JSON mode (Wave 9i.2)
+# ---------------------------------------------------------------------------
+
+
+async def test_step_passes_response_format_when_json_mode_enabled(monkeypatch):
+    """``enforce_json_mode=True`` (default) → ``response_format`` reaches the model."""
+    helm = ReflexHelm()
+    assert helm.enforce_json_mode is True  # contract: default-on
+
+    visitor = _make_visitor("hi")
+    state = _make_bridge_state()
+    peer = _make_peer_helm("ReasoningHelm", purpose="Deep reasoning")
+    agent = _make_agent(helms=[peer])
+
+    captured: dict = {}
+
+    async def _capture_query(**kwargs):
+        captured.update(kwargs)
+        result = MagicMock()
+        result.response = json.dumps({"verb": "EMIT", "text": "hi"})
+        return result
+
+    model_action = MagicMock()
+    model_action.query_messages = AsyncMock(side_effect=_capture_query)
+
+    async def _get_agent(self):
+        return agent
+
+    async def _get_model(self, required=False, **kwargs):
+        return model_action
+
+    monkeypatch.setattr(ReflexHelm, "get_agent", _get_agent)
+    monkeypatch.setattr(ReflexHelm, "get_model_action", _get_model)
+
+    await helm.step(visitor, state)
+
+    assert captured.get("response_format") == {"type": "json_object"}
+
+
+async def test_step_omits_response_format_when_json_mode_disabled(monkeypatch):
+    """``enforce_json_mode=False`` → no ``response_format`` kwarg sent."""
+    helm = ReflexHelm()
+    object.__setattr__(helm, "enforce_json_mode", False)
+
+    visitor = _make_visitor("hi")
+    state = _make_bridge_state()
+    peer = _make_peer_helm("ReasoningHelm", purpose="Deep reasoning")
+    agent = _make_agent(helms=[peer])
+
+    captured: dict = {}
+
+    async def _capture_query(**kwargs):
+        captured.update(kwargs)
+        result = MagicMock()
+        result.response = json.dumps({"verb": "EMIT", "text": "hi"})
+        return result
+
+    model_action = MagicMock()
+    model_action.query_messages = AsyncMock(side_effect=_capture_query)
+
+    async def _get_agent(self):
+        return agent
+
+    async def _get_model(self, required=False, **kwargs):
+        return model_action
+
+    monkeypatch.setattr(ReflexHelm, "get_agent", _get_agent)
+    monkeypatch.setattr(ReflexHelm, "get_model_action", _get_model)
+
+    await helm.step(visitor, state)
+
+    assert "response_format" not in captured

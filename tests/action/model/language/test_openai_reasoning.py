@@ -24,6 +24,31 @@ def test_stream_payload_includes_usage_stream_options():
     assert payload.get("stream_options", {}).get("include_usage") is True
 
 
+def test_response_format_passes_through_when_provided():
+    """Wave 9i.2: callers (notably ReflexHelm) can opt into JSON mode."""
+    action = OpenAILanguageModelAction()
+    payload = action._build_openai_payload(
+        [{"role": "user", "content": "hi"}],
+        None,
+        stream=False,
+        model="gpt-4o-mini",
+        response_format={"type": "json_object"},
+    )
+    assert payload.get("response_format") == {"type": "json_object"}
+
+
+def test_response_format_absent_when_not_provided():
+    """Default callers don't pay for the field they didn't ask for."""
+    action = OpenAILanguageModelAction()
+    payload = action._build_openai_payload(
+        [{"role": "user", "content": "hi"}],
+        None,
+        stream=False,
+        model="gpt-4o-mini",
+    )
+    assert "response_format" not in payload
+
+
 def test_matches_reasoning_model_public_api():
     action = OpenAILanguageModelAction()
     assert action.matches_reasoning_model("o3-mini")
