@@ -199,7 +199,18 @@ async def deliver_via_persona(
                 "test, drop it.\n\n"
                 "Do not add new closers of your own. Silent compliance — "
                 "ending cleanly on the answer — beats a templated invitation "
-                "every time.\n\n" + text
+                "every time.\n\n"
+                "NO REDUNDANCY WITH PUBLISHED CONTENT. If the drafted text "
+                "above re-lists product cards, file previews, link cards, or "
+                "any structured artifact that was already published to the "
+                "user this turn (titles, SKUs, prices, URLs, 'View Details' "
+                "callbacks, descriptions, numbered or bulleted lists "
+                "mirroring the cards), STRIP that redundant restatement. "
+                "Keep only content that ADDS value the cards do not carry: "
+                "a brief framing sentence, a content-additive observation "
+                "grounded in specific data the cards do not surface, or "
+                "nothing at all. The cards ARE the answer; do not narrate "
+                "them back to the user.\n\n" + text
             )
         await persona.respond_slim(
             interaction,

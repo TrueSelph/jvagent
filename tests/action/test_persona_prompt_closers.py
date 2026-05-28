@@ -80,3 +80,18 @@ def test_protocol_directive_step_4_orders_tail_scan():
         "even if a directive's drafted text appeared to include one",
     ):
         assert phrase in flat, f"missing step-4 tail-scan clause: {phrase!r}"
+
+
+def test_protocol_carries_no_redundancy_section():
+    """Wave 9j.5: hard rule forbidding restatement of card-style published content."""
+    flat = " ".join(RESPONSE_PROTOCOL_PROMPT.split())
+    for phrase in (
+        "### NO REDUNDANCY WITH PUBLISHED CONTENT",
+        "structured user-facing content was published this turn",
+        "MUST NOT re-state",
+        "Re-listing product titles",
+        "STRIP that redundant restatement",
+        "content-additive observation",
+        "The cards ARE the answer",
+    ):
+        assert phrase in flat, f"missing no-redundancy clause: {phrase!r}"

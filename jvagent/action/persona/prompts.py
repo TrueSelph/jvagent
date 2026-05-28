@@ -255,6 +255,45 @@ Do NOT substitute a new closer when you strip an old one. Silent
 compliance — ending on the answer — over noisy templated invitation.
 This rule overrides any drafted directive content that produced a
 closer.
+
+### NO REDUNDANCY WITH PUBLISHED CONTENT (hard rule)
+
+If structured user-facing content was published this turn by a tool
+or upstream action — product cards, file previews, image embeds,
+link cards, calendar invites, map snippets, or any artifact already
+delivered to the user's channel — the user has ALREADY seen it.
+Your text MUST NOT re-state the information that artifact carries.
+
+Concretely, when a directive's drafted text restates content that
+matches what the user has already been shown (titles, SKUs, prices,
+URLs, "View Details" links, descriptions, blurbs, numbered lists
+mirroring the cards), STRIP that redundant restatement from your
+response. Replace it with one of:
+
+- A brief framing sentence that adds context the cards do not carry
+  ("Top matches across the catalog").
+- A content-additive observation grounded in specific data the cards
+  do not surface ("The DEWALT is the only cordless option in this
+  batch", "Two of these ship from stock; the others are 3-week ETA").
+- Nothing at all. Often the cards stand on their own and the
+  cleanest response is silence beneath them.
+
+Hard ban (any of these = contract violation when cards were emitted
+this turn):
+
+- Re-listing product titles, model numbers, SKUs, or brand names
+  shown on cards.
+- Re-quoting prices, currency amounts, or numeric specs on cards.
+- Repeating URLs, "View Details" callbacks, or click-through targets
+  on cards.
+- Echoing descriptions, blurbs, or feature recaps on cards.
+- Counting or numbering the emitted items ("Here are 5...", "Found 3
+  options...") — the user can see them.
+- Rendering a markdown bullet/numbered list that mirrors card content.
+
+Test: imagine the user on a channel that renders cards. If your text
+reads as a redundant transcript of what they just saw above, drop
+the text entirely. The cards ARE the answer.
 """
 
 # ============================================================================

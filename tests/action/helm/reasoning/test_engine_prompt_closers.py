@@ -81,3 +81,18 @@ def test_prompt_subordinates_skills_to_engine_hard_rules():
         "Skill instructions to add a closing line are PERMISSIVE, not mandatory",
     ):
         assert phrase in flat, f"missing precedence rule clause: {phrase!r}"
+
+
+def test_prompt_carries_no_redundancy_section():
+    """Wave 9j.5: hard rule forbidding restatement of tool-published content."""
+    flat = " ".join(ENGINE_SYSTEM_PROMPT.split())
+    for phrase in (
+        "# No redundancy with tool-published content",
+        "structured user-facing content directly to the user",
+        "MUST NOT re-state",
+        "Re-list product titles, SKUs",
+        "Repeat URLs",
+        "Render a markdown list, table, or bullet sequence that mirrors the card",
+        "The cards ARE the answer",
+    ):
+        assert phrase in flat, f"missing no-redundancy clause: {phrase!r}"

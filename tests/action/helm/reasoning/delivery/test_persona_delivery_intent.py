@@ -133,6 +133,32 @@ async def test_engine_output_instruction_carries_paste_test_clause():
     assert "names specific SKUs" in extra_system
 
 
+async def test_engine_output_instruction_carries_no_redundancy_clause():
+    """Wave 9j.5: delivery instruction must order stripping of restated
+    card content. The persona is the last line of defense against the
+    engine narrating cards back to the user."""
+    persona = _make_persona()
+    action = _make_action(persona)
+    visitor = _make_visitor("Show me hammer drills")
+
+    await deliver_via_persona(
+        action=action,
+        visitor=visitor,
+        content=(
+            "Here are some hammer drills:\n"
+            "1. DEWALT IND6025 - GYD 42,500 [View Details]\n"
+            "2. STANLEY STDH8013 - GYD 28,078 [View Details]\n"
+        ),
+        response_mode="publish",
+        degenerate_response_max_chars=0,
+    )
+
+    extra_system = persona.respond_slim.call_args.kwargs["extra_system"]
+    assert "NO REDUNDANCY WITH PUBLISHED CONTENT" in extra_system
+    assert "STRIP that redundant restatement" in extra_system
+    assert "The cards ARE the answer" in extra_system
+
+
 async def test_smalltalk_intent_uses_smalltalk_instruction():
     persona = _make_persona()
     action = _make_action(persona)
