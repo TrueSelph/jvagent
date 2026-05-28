@@ -69,6 +69,70 @@ async def test_default_delivery_intent_uses_engine_output_instruction():
     assert "placeholder ack" not in extra_system
 
 
+async def test_engine_output_instruction_orders_persona_to_strip_closers():
+    """Wave 9j.3: engine_output delivery_instruction must instruct the
+    persona to ACTIVELY REMOVE invitation/options-menu closer patterns
+    from the drafted engine text, not preserve them as substantive data.
+    """
+    persona = _make_persona()
+    action = _make_action(persona)
+    visitor = _make_visitor("Show me hammer drills")
+
+    await deliver_via_persona(
+        action=action,
+        visitor=visitor,
+        content=(
+            "Here are some hammer drills. DEWALT IND6025 — GYD 42,500. "
+            "Let me know if you want details on a specific model."
+        ),
+        response_mode="publish",
+        degenerate_response_max_chars=0,
+    )
+
+    persona.respond_slim.assert_awaited_once()
+    extra_system = persona.respond_slim.call_args.kwargs["extra_system"]
+
+    # The instruction MUST explicitly tell the persona to strip closers
+    # the engine might have left in.
+    assert "STRIP any invitation closer" in extra_system
+    assert "Let me know if" in extra_system  # listed as banned pattern
+    assert "Want X or Y?" in extra_system
+    assert "Anything else I can help with?" in extra_system
+    assert "paste-into-another-conversation test" in extra_system
+
+    # And it must preserve substantive data explicitly (product names,
+    # specs, prices, URLs, citations).
+    assert "Preserve all SUBSTANTIVE data" in extra_system
+    assert "product names, specs, prices" in extra_system
+
+    # End-state: silent compliance over templated invitation.
+    assert "Silent compliance" in extra_system
+    assert "Do not add new closers" in extra_system
+
+
+async def test_engine_output_instruction_carries_paste_test_clause():
+    """The 'paste-into-another-conversation' content-specificity test
+    must appear in the persona delivery instruction — same shape as the
+    engine prompt's hard rule, so the two layers agree on which forward
+    questions are permitted."""
+    persona = _make_persona()
+    action = _make_action(persona)
+    visitor = _make_visitor("Show me drills")
+
+    await deliver_via_persona(
+        action=action,
+        visitor=visitor,
+        content="DEWALT — GYD 42,500. Want more details or a comparison?",
+        response_mode="publish",
+        degenerate_response_max_chars=0,
+    )
+
+    extra_system = persona.respond_slim.call_args.kwargs["extra_system"]
+    assert "paste-into-another-conversation test" in extra_system
+    # Content-specific forward questions may stay.
+    assert "names specific SKUs" in extra_system
+
+
 async def test_smalltalk_intent_uses_smalltalk_instruction():
     persona = _make_persona()
     action = _make_action(persona)
