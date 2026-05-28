@@ -10,7 +10,7 @@ Living roadmap for delivering the **Bridge + Helm** architecture as an additive 
 - The harness stays pattern-agnostic: [`SPEC.md`](SPEC.md) defines action contracts and walker semantics; patterns are compositions of actions on top.
 - Phase-out is **data-driven**: a pattern is deprecated only when demonstrably outperformed for its target use case, tracked in the performance ledger in [`PATTERNS.md`](PATTERNS.md).
 - **Reflex Helm** enables sub-500ms first-response turns for trivial inputs; **Reasoning Helm** preserves today's cockpit capabilities; **Specialist Helm** yields cleanly to existing rails `InteractAction`s; **Persona Helm** owns delivery polish.
-- Each helm shifts to peers via an explicit verb set on the walker. Gear shifts are walker hops — observable, streamable, access-controllable per shift.
+- Each helm shifts to peers via an explicit verb set on the walker. Helm shifts are walker hops — observable, streamable, access-controllable per shift.
 - Every milestone closes with **measured metrics** against the existing cockpit baseline (commit `7d95904`).
 - Iterative validation against `examples/jvagent_app/agents/jvagent/bridge_agent` (new) alongside `cockpit_agent` (existing).
 
@@ -26,7 +26,7 @@ Living roadmap for delivering the **Bridge + Helm** architecture as an additive 
 | F — Specialist delegation | DONE | `DELEGATE` verb wired in `BridgeInteractAction._handle_delegate`; turn-lock detection at `jvagent/action/bridge/turn_lock.py` via `find_turn_lock_owner`; `is_actively_locking_turn` opt-in protocol prevents ghost locks; `is_interrupt_allowed` gates `SHIFT(interrupt=True)`. **Refinement during impl:** Bridge auto-DELEGATEs to lock owners ALWAYS (not just when helm can_interrupt=False) because Reflex doesn't know about active locks — comment in `bridge_interact_action.py:377-389` documents the live-testing rationale. |
 | G — PersonaHelm | SCRAPPED (May 2026) | Shipped originally but never wired into any agent's helm chain. Bridge handles persona stylisation directly via `deliver_via_persona` from `BridgeInteractAction._publish_emit_via_persona` (Phase 2B refactor) — the dedicated helm added a walker visit + SHIFT verb without delivering value the direct-call path didn't already provide. Module stubbed under `jvagent/action/helm/persona/` and queued for deletion; `info.yaml` carries `enabled: false`. Test suite removed (10 PersonaHelm tests + 1 cross-helm wrapper assertion). |
 | H — Migration CLI (optional) | TODO | `jvagent app migrate-to-bridge` with `--dry-run`, `--diff`. Non-blocking for K. |
-| I — Observability | DONE | `helm_shift` events on `Interaction.observability_metrics` (`bridge_interact_action.py:227-261`); full `gear_trace` + `helm_timings_seconds` + `helm_step_counts` persisted to `Interaction.parameters['bridge_observability']` (`_persist_observability`); per-helm wall-clock + step-count instrumentation around every `step()` call. Pattern-agnostic field names. Best-effort write — never blocks a turn. |
+| I — Observability | DONE | `helm_shift` events on `Interaction.observability_metrics` (`bridge_interact_action.py:227-261`); full `shift_log` + `helm_timings_seconds` + `helm_step_counts` persisted to `Interaction.parameters['bridge_observability']` (`_persist_observability`); per-helm wall-clock + step-count instrumentation around every `step()` call. Pattern-agnostic field names. Best-effort write — never blocks a turn. |
 | J — Performance validation | IN PROGRESS | Pattern-matrix harness shipped at `tests/action/bridge/smoke_pattern_matrix.py`; first run at `b830f42` archived. Current numbers vs fresh cockpit re-baseline (both `gpt-4o-mini`): total dur +28%, tokens **-10%**, trivial-turn p50 +7%, p99 +10%. **30% trivial-turn reduction target NOT met on `gpt-4o-mini` Reflex** — provider swap to Groq `llama-3.1-8b-instant` or Cerebras is the remaining gate. Architectural ack-on-shift UX validated qualitatively in live smoke. |
 | K — Pattern parity | DONE | `bridge` profile shipped in `jvagent/scaffold/builtin_profiles/bridge.yaml`; scaffolder smoke verified (`/tmp/bridge_scaffold_test`); `docs/BRIDGE.md` mirrors `docs/COCKPIT.md`; GLOSSARY.md gains Bridge / Helm / Manifest / latency_class / ReflexHelm / ReasoningHelm / PersonaHelm / ShiftRecord / Specialist / Turn-lock / BridgeState / HelmStepResult; `CLAUDE.md` top-level points to `PATTERNS.md`; `action-authoring.md` gains a "Pattern compatibility" section. 158/158 bridge+helm+scaffold tests pass; cockpit 189/189 untouched. **No cockpit deprecation.** |
 
@@ -79,12 +79,12 @@ Inherited from cockpit. Bridge configurations are measured against the same 6-ut
 
 1. Write [`.planning/adr/0007-bridge-helm-architecture.md`](adr/0007-bridge-helm-architecture.md).
 2. Define `HelmStepResult` verbs:
-   - `EMIT(text, finalize=True)` — deliver and exit gear graph.
+   - `EMIT(text, finalize=True)` — deliver and exit the helm graph.
    - `EXECUTE(tool_calls=[...])` — dispatch, persist state, revisit current helm.
    - `SHIFT(target, reason, transient_ack=None, handoff_state=None, interrupt=False)` — switch helms.
    - `DELEGATE(interact_action, args=None)` — yield to a rails `InteractAction`.
    - `YIELD` — step aside; let next IA in agent's weight chain run.
-3. Define `BridgeState` dataclass: `current_helm`, `gear_trace: List[ShiftRecord]`, `shift_count`, `turn_started_at`, `last_emit_at`, `helm_states: Dict[str, Any]`, `delegated_action: Optional[str]`.
+3. Define `BridgeState` dataclass: `current_helm`, `shift_log: List[ShiftRecord]`, `shift_count`, `turn_started_at`, `last_emit_at`, `helm_states: Dict[str, Any]`, `delegated_action: Optional[str]`.
 4. Define `manifest` v0 schema (`info.yaml` block): `purpose`, `activates_on`, `terminates_when`, `latency_class` (`instant | quick | deliberate | long`), `turn_lock`, `interrupt_phrases`, `expected_duration_seconds`.
 5. SPEC.md §3 addendum: Bridge as a peer to Cockpit; same walker-revisit guarantees; no new walker semantics; pattern-agnostic manifest contract.
 6. PATTERNS.md drafted in parallel (catalog of supported patterns + decision tree + performance-ledger scaffold).
@@ -272,7 +272,7 @@ Inherited from cockpit. Bridge configurations are measured against the same 6-ut
 **Plan.**
 
 1. New event type: `HELM_SHIFT(from, to, reason, ack_emitted, shift_index)` logged at `INTERACTION` level.
-2. `Interaction.parameters['gear_trace']: List[ShiftRecord]` records every shift per turn (pattern-agnostic field).
+2. `Interaction.parameters['shift_log']: List[ShiftRecord]` records every shift per turn (pattern-agnostic field).
 3. `Interaction.observability_metrics` gains per-helm timing and call counts.
 4. `Interaction.usage` attributes token counts per helm.
 5. `GET /logs/agents/{id}` queries already work; document the new event type in [`docs/logging.md`](../docs/logging.md).
@@ -281,7 +281,7 @@ Inherited from cockpit. Bridge configurations are measured against the same 6-ut
 
 - Single Bridge turn produces queryable shift trace.
 - Per-helm token attribution sums to overall interaction total.
-- `gear_trace` survives interaction pruning rules.
+- `shift_log` survives interaction pruning rules.
 
 **Exit.** A Bridge turn is fully traceable from a single log query. Per-helm timing and token attribution visible in dashboards.
 

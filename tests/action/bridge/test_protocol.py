@@ -168,7 +168,7 @@ async def test_shift_to_known_helm_records_trace_and_reenqueues(
     state = getattr(visitor, BRIDGE_STATE_VISITOR_ATTR)
     assert state.current_helm == "B"
     # Two shifts: initial (None→A) and explicit (A→B).
-    assert [(r.from_helm, r.to_helm) for r in state.gear_trace] == [
+    assert [(r.from_helm, r.to_helm) for r in state.shift_log] == [
         (None, "A"),
         ("A", "B"),
     ]
@@ -212,7 +212,7 @@ async def test_shift_emits_transient_ack_on_deliberate_target(
     assert "thinking…" in contents
     state = getattr(visitor, BRIDGE_STATE_VISITOR_ATTR)
     # The recorded SHIFT (A→B) has ack_emitted=True.
-    a_to_b = next(r for r in state.gear_trace if r.from_helm == "A")
+    a_to_b = next(r for r in state.shift_log if r.from_helm == "A")
     assert a_to_b.ack_emitted is True
 
 

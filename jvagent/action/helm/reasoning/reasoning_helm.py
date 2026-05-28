@@ -8,7 +8,7 @@ Differences vs the standalone-Cockpit ancestor:
 
 1. Subclass of :class:`BaseHelm` (not ``InteractAction``). Helms are
    orchestrated by :class:`BridgeInteractAction`, which owns the walker
-   queue, shift budget, gear trace, and AC gating.
+   queue, shift budget, shift log, and AC gating.
 2. ``step(visitor, bridge_state)`` replaces ``execute(visitor)``. Returns a
    :class:`HelmStepResult` verb that Bridge dispatches:
 
@@ -83,7 +83,7 @@ ENGINE_DEFAULT_SKILL_MODEL: str = "claude-sonnet-4-20250514"
 
 # ReasoningHelm-owned per-run engine state lives on a single
 # ``EngineSession`` object accessed via ``get_session``. Bridge-level state
-# (current_helm, gear_trace, shift_count, etc.) is on
+# (current_helm, shift_log, shift_count, etc.) is on
 # ``visitor._bridge_state``; the two are independent.
 
 

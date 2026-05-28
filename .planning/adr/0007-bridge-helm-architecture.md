@@ -70,7 +70,7 @@ class EMIT:
 class CONTINUE:
     reason: Optional[str] = None
     # Helm dispatched its own tools internally this visit and just needs another
-    # walker visit. Bridge does NOT mutate helm_states / gear_trace / budget;
+    # walker visit. Bridge does NOT mutate helm_states / shift_log / budget;
     # it only calls visitor.prepend([self]). Used by ReasoningHelm, which runs
     # the cockpit-style engine loop with its own tool registry.
 
@@ -126,7 +126,7 @@ from .contracts import ShiftRecord
 @dataclass
 class BridgeState:
     current_helm: Optional[str] = None          # None at turn start; set on first resolution
-    gear_trace: List[ShiftRecord] = field(default_factory=list)
+    shift_log: List[ShiftRecord] = field(default_factory=list)
     shift_count: int = 0
     turn_started_at: float = 0.0                # time.monotonic() at first Bridge visit this turn
     last_emit_at: Optional[float] = None        # for first-emit-timeout safety net
@@ -205,7 +205,7 @@ Per-turn observability lives on the `Interaction` node, surfaced via the standar
 
 ```python
 {
-    "gear_trace": [ShiftRecord.to_dict(), ...],   # full sequence of helm transitions
+    "shift_log": [ShiftRecord.to_dict(), ...],   # full sequence of helm transitions
     "helm_timings_seconds": {"ReflexHelm": 0.27, "ReasoningHelm": 4.1, ...},
     "helm_step_counts": {"ReflexHelm": 1, "ReasoningHelm": 3, ...},
     "shift_count": 4,

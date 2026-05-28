@@ -783,7 +783,7 @@ operators don't need to scan the event stream:
 ```json
 {
   "bridge_observability": {
-    "gear_trace": [
+    "shift_log": [
       {"from_helm": null, "to_helm": "ReflexHelm", "reason": "bridge:initial",
        "ack_emitted": false, "shift_index": 0, "at_monotonic": 0.0,
        "handoff_state": null},
@@ -806,7 +806,7 @@ operators don't need to scan the event stream:
 }
 ```
 
-- **`gear_trace`** mirrors every `helm_shift` event for the turn in a
+- **`shift_log`** mirrors every `helm_shift` event for the turn in a
   single ordered list. Survives interaction pruning rules because it
   lives on `parameters`, not the volatile event stream.
 - **`helm_timings_seconds`** sums wall-clock time spent in each helm's

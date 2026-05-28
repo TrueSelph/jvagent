@@ -8,7 +8,7 @@ Covers:
   (SHIFT/DELEGATE were AC-gated, but "initial" was not). Bridge now
   walks ``default_helm`` first, then ``helms[]`` in order, picking the
   first allowed helm. If all helms are denied, routes to
-  ``_safe_fallback`` and records the AC denial in the gear trace.
+  ``_safe_fallback`` and records the AC denial in the shift log.
 
 - **H3** — ReasoningHelm per-turn orchestration state migration. The
   ``_step_outcome`` and ``_pending_final_emit`` fields previously lived
@@ -76,13 +76,13 @@ class TestInitialHelmAccessControlH1:
         visitor = make_visitor()
         await bridge.execute(visitor)
 
-        # ``_persist_observability`` writes the gear trace under
-        # ``interaction.parameters["bridge_observability"]["gear_trace"]``
+        # ``_persist_observability`` writes the shift log under
+        # ``interaction.parameters["bridge_observability"]["shift_log"]``
         # — see tests/action/bridge/test_observability.py for the pattern.
         obs = visitor.interaction.parameters.get("bridge_observability") or {}
-        gear_trace = obs.get("gear_trace") or []
-        assert gear_trace, "Bridge should record at least the initial shift"
-        first = gear_trace[0]
+        shift_log = obs.get("shift_log") or []
+        assert shift_log, "Bridge should record at least the initial shift"
+        first = shift_log[0]
         assert first["to_helm"] == "ReflexHelm"
         assert first["routing_source"] == "initial"
 
@@ -121,10 +121,10 @@ class TestInitialHelmAccessControlH1:
             "ReasoningHelm",
         ], f"AC walk-down order incorrect; got {call_log}"
         obs = visitor.interaction.parameters.get("bridge_observability") or {}
-        gear_trace = obs.get("gear_trace") or []
-        assert gear_trace, "Bridge should record the initial shift"
-        assert gear_trace[0]["to_helm"] == "ReasoningHelm"
-        assert gear_trace[0]["routing_source"] == "initial"
+        shift_log = obs.get("shift_log") or []
+        assert shift_log, "Bridge should record the initial shift"
+        assert shift_log[0]["to_helm"] == "ReasoningHelm"
+        assert shift_log[0]["routing_source"] == "initial"
 
     async def test_all_denied_safe_fallback(
         self, monkeypatch, make_bridge, make_visitor, stub_helm, publish_log
@@ -159,16 +159,16 @@ class TestInitialHelmAccessControlH1:
             f"Expected denied_response_text in publish_log; got "
             f"{[p.get('content') for p in publish_log]}"
         )
-        # The gear trace records the AC denial under safe_fallback routing_source.
+        # The shift log records the AC denial under safe_fallback routing_source.
         obs = visitor.interaction.parameters.get("bridge_observability") or {}
-        gear_trace = obs.get("gear_trace") or []
+        shift_log = obs.get("shift_log") or []
         ac_denied = [
-            rec for rec in gear_trace if rec["routing_source"] == "safe_fallback"
+            rec for rec in shift_log if rec["routing_source"] == "safe_fallback"
         ]
         assert ac_denied, (
-            f"Expected a safe_fallback gear-trace entry recording the AC "
+            f"Expected a safe_fallback shift-log entry recording the AC "
             f"denial; got routing_sources="
-            f"{[r['routing_source'] for r in gear_trace]}"
+            f"{[r['routing_source'] for r in shift_log]}"
         )
 
     async def test_candidate_order_default_first(self):

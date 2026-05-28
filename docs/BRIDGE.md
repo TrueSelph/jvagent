@@ -77,7 +77,7 @@ Revision history:
 
 ### Shift verbs and turn-lock
 
-- Every `SHIFT`, `DELEGATE`, turn-lock auto-delegate, and initial helm pick records a `ShiftRecord` on `BridgeState.gear_trace`.
+- Every `SHIFT`, `DELEGATE`, turn-lock auto-delegate, and initial helm pick records a `ShiftRecord` on `BridgeState.shift_log`.
 - A `SHIFT` to a helm whose `manifest.latency_class` is `deliberate` or `long` emits a `transient_ack` text via the response bus (default: "Working on it…") before the target helm gets its first visit.
 - Turn-lock: when an action with `manifest.turn_lock=True` is mid-workflow in the recent interaction history, Bridge **always** auto-`DELEGATE`s the next utterance to that owner — no helm-level escape. Lock-breaking lives in the rails IA's own intent classifier (e.g. an interview's CANCELLATION intent reading `manifest.interrupt_phrases`).
 
@@ -87,7 +87,7 @@ These primitives live at harness level and are usable by other patterns:
 
 - **Manifest schema** ([`jvagent/action/manifest.py`](../jvagent/action/manifest.py)) — `latency_class`, `turn_lock`, `interrupt_phrases`, `pattern_compatibility` fields on any `Action` package. Exposed via `Action.get_manifest()`.
 - **`helm_shift` observability event** ([`docs/logging.md`](logging.md)) — appended to `Interaction.observability_metrics` for every helm transition with a `routing_source` label (`initial` | `turn_lock` | `helm_shift` | `helm_delegate`).
-- **Bridge observability bundle** — `Interaction.parameters["bridge_observability"]` carries `gear_trace`, `helm_timings_seconds`, `helm_step_counts`, `shift_count`, `turn_started_at`, `last_emit_at` for the turn.
+- **Bridge observability bundle** — `Interaction.parameters["bridge_observability"]` carries `shift_log`, `helm_timings_seconds`, `helm_step_counts`, `shift_count`, `turn_started_at`, `last_emit_at` for the turn.
 
 ## Plugging Into the Interact Pipeline
 
@@ -330,7 +330,7 @@ Bridge stamps the following on each `Interaction`:
 | Surface | Key | Content |
 |---|---|---|
 | `observability_metrics` | `events[].HELM_SHIFT` | One event per shift, with `from`, `to`, `reason`, `ack_emitted`, `at_monotonic` |
-| `parameters` | `bridge_gear_trace` | Full `ShiftRecord` list serialized |
+| `parameters` | `bridge_shift_log` | Full `ShiftRecord` list serialized |
 | `parameters` | `bridge_helm_timings` | `{helm_name: total_wall_seconds}` |
 | `parameters` | `bridge_helm_step_counts` | `{helm_name: visit_count}` |
 

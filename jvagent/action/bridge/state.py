@@ -30,7 +30,7 @@ class BridgeState:
 
     Field ownership:
 
-    - **Bridge owns**: ``current_helm``, ``gear_trace``, ``shift_count``,
+    - **Bridge owns**: ``current_helm``, ``shift_log``, ``shift_count``,
       ``turn_started_at``, ``last_emit_at``, ``delegated_action``,
       ``shift_budget_remaining``, ``finalized``.
     - **Helms own** (read/write): ``helm_states[<helm_name>]``.
@@ -41,7 +41,7 @@ class BridgeState:
     """
 
     current_helm: Optional[str] = None
-    gear_trace: List[ShiftRecord] = field(default_factory=list)
+    shift_log: List[ShiftRecord] = field(default_factory=list)
     shift_count: int = 0
     turn_started_at: float = 0.0
     last_emit_at: Optional[float] = None
@@ -84,6 +84,6 @@ class BridgeState:
             handoff_state=handoff_state,
             routing_source=routing_source,
         )
-        self.gear_trace.append(rec)
+        self.shift_log.append(rec)
         self.shift_count += 1
         return rec

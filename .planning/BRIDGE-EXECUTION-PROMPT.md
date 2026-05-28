@@ -25,7 +25,7 @@ When you enter a subsystem directory to edit code, read its local `CLAUDE.md` fi
 - **No harness subsumption.** Do not modify `InteractWalker`, `response_bus`, `Conversation`/`Interaction`/`User`, or `AccessControlAction` for Bridge. Bridge is a composition of new actions on top.
 - **No forced cockpit deprecation.** Cockpit stays first-class through K. No deprecation warnings, no behavioral changes to existing cockpit YAML.
 - **Walker-revisit preserved.** Each helm's `step()` issues at most one model call. Use `visitor.prepend([self])` for revisits, matching ADR-0002.
-- **Pattern-agnostic abstractions.** Manifest schema, `HELM_SHIFT` event, `Interaction.parameters['gear_trace']` — these live at harness level (loader, observability), not under `bridge/` or `cockpit/`.
+- **Pattern-agnostic abstractions.** Manifest schema, `HELM_SHIFT` event, `Interaction.parameters['shift_log']` — these live at harness level (loader, observability), not under `bridge/` or `cockpit/`.
 - **Additive only.** Existing cockpit YAML continues to work unchanged after every milestone.
 - **One model call per walker visit.** This invariant is load-bearing across cockpit and bridge.
 

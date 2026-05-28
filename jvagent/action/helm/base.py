@@ -121,7 +121,7 @@ class BaseHelm(Action):
         Implementations:
 
         - MUST issue at most one language-model call per invocation.
-        - MUST NOT mutate ``bridge_state.gear_trace`` / ``shift_count`` —
+        - MUST NOT mutate ``bridge_state.shift_log`` / ``shift_count`` —
           Bridge owns those fields.
         - MAY read and write per-helm state via
           ``bridge_state.helm_states.setdefault(self.helm_name(), {})``.

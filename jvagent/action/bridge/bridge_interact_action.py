@@ -448,7 +448,7 @@ class BridgeInteractAction(InteractAction):
         Three fields go onto ``Interaction.parameters`` (pattern-agnostic
         observability slot):
 
-        - ``gear_trace`` — full list of :class:`ShiftRecord` dicts for the
+        - ``shift_log`` — full list of :class:`ShiftRecord` dicts for the
           turn, including the initial helm resolution.
         - ``helm_timings_seconds`` — per-helm wall-clock totals.
         - ``helm_step_counts`` — per-helm step() call counts.
@@ -467,11 +467,11 @@ class BridgeInteractAction(InteractAction):
         if params is None:
             return
         try:
-            trace = [rec.to_dict() for rec in state.gear_trace]
+            trace = [rec.to_dict() for rec in state.shift_log]
         except Exception:
             trace = []
         payload = {
-            "gear_trace": trace,
+            "shift_log": trace,
             "helm_timings_seconds": dict(state.helm_timings_seconds),
             "helm_step_counts": dict(state.helm_step_counts),
             "shift_count": state.shift_count,
@@ -535,7 +535,7 @@ class BridgeInteractAction(InteractAction):
                     "bridge: all helms denied by AC at initial pick — "
                     "safe-falling back"
                 )
-                # Record the AC denial in the gear trace so operators can
+                # Record the AC denial in the shift log so operators can
                 # see WHY the turn produced a fallback rather than helm
                 # output. Records the originally-preferred helm so the
                 # event trail names the policy resource the user hit.
@@ -891,7 +891,7 @@ class BridgeInteractAction(InteractAction):
     ) -> None:
         """Re-enqueue the current helm with no state mutation.
 
-        Bridge owns walker queue, budget, and gear trace; CONTINUE is the
+        Bridge owns walker queue, budget, and shift log; CONTINUE is the
         helm's way of saying "I've done my own work this visit (likely an
         internal model call + tool dispatch) — please visit me again."
         ``verb.reason`` is informational only and surfaces in logs.
@@ -1130,7 +1130,7 @@ class BridgeInteractAction(InteractAction):
             )
             await self._safe_fallback(visitor, state)
             return
-        # Record the auto-delegate in the gear trace so operators can
+        # Record the auto-delegate in the shift log so operators can
         # see when Bridge bypassed helm dispatch in favour of the lock
         # owner — labelled ``turn_lock`` so debugging the IA-selection
         # cascade is possible from the trace alone.
@@ -1226,7 +1226,7 @@ class BridgeInteractAction(InteractAction):
             await self._safe_fallback(visitor, state)
             return
 
-        # Record the delegation in the gear trace so operators can see
+        # Record the delegation in the shift log so operators can see
         # which IA the calling helm picked — labelled ``helm_delegate``
         # so the trace distinguishes a helm-initiated DELEGATE from
         # turn-lock auto-DELEGATE (``turn_lock``).

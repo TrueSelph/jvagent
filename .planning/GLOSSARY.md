@@ -32,7 +32,7 @@ An `InteractAction` with `run_in_background=True` ([`interact/base.py:88`](../jv
 The multi-helm deployment pattern. Implemented by [`BridgeInteractAction`](../jvagent/action/bridge/bridge_interact_action.py) at weight `-200`. Composes N helms (Reflex / Reasoning / Persona / Specialist via DELEGATE) behind one agent slot; helms shift between each other via the `HelmStepResult` verb set. Peer pattern to Cockpit; one or the other, never both, per agent. See [`../docs/BRIDGE.md`](../docs/BRIDGE.md), [`adr/0007`](adr/0007-bridge-helm-architecture.md), [`PATTERNS.md`](PATTERNS.md).
 
 ### `BridgeState`
-Per-run state persisted on `visitor._bridge_state` between walker visits (parallel to `CockpitState` on `visitor._skill_state`). Fields: current helm, shift budget remaining, gear_trace, helm_timings_seconds, helm_step_counts, ack-emitted flags. Source: [`jvagent/action/bridge/state.py`](../jvagent/action/bridge/state.py).
+Per-run state persisted on `visitor._bridge_state` between walker visits (parallel to `CockpitState` on `visitor._skill_state`). Fields: current helm, shift budget remaining, shift_log, helm_timings_seconds, helm_step_counts, ack-emitted flags. Source: [`jvagent/action/bridge/state.py`](../jvagent/action/bridge/state.py).
 
 ### `BaseModelAction`
 Base class for any model-using action (LLM, embedding, etc.). Source: `jvagent/action/model/base.py:26`. Provides retry config (`max_retries`, `retry_backoff_multiplier`, etc.).
@@ -134,7 +134,7 @@ The single jvspatial `Root` node. `App` is connected to `Root`.
 Markdown-first procedure (with optional Python tool script) the cockpit can load to instruct the model. Skills are discovered via `SkillCatalog` (`jvagent/action/cockpit/catalog/skill_catalog.py`). Distinct from `Action`s.
 
 ### `ShiftRecord`
-One entry in `BridgeState.gear_trace`. Emitted for the initial helm pick (`routing_source="initial"`), every `SHIFT` verb (`"helm_shift"`), every `DELEGATE` verb (`"helm_delegate"`), and every turn-lock auto-DELEGATE (`"turn_lock"`). Persisted as part of the `Interaction.parameters["bridge_observability"]` bundle. Fields: `from_helm`, `to_helm`, `reason`, `ack_emitted`, `shift_index`, `at_monotonic`, `handoff_state`, `routing_source`. Source: [`jvagent/action/helm/contracts.py`](../jvagent/action/helm/contracts.py).
+One entry in `BridgeState.shift_log`. Emitted for the initial helm pick (`routing_source="initial"`), every `SHIFT` verb (`"helm_shift"`), every `DELEGATE` verb (`"helm_delegate"`), and every turn-lock auto-DELEGATE (`"turn_lock"`). Persisted as part of the `Interaction.parameters["bridge_observability"]` bundle. Fields: `from_helm`, `to_helm`, `reason`, `ack_emitted`, `shift_index`, `at_monotonic`, `handoff_state`, `routing_source`. Source: [`jvagent/action/helm/contracts.py`](../jvagent/action/helm/contracts.py).
 
 ### Specialist (Bridge)
 Not a helm — a rails `InteractAction` invoked via `DELEGATE(action=...)`. Lets Bridge yield cleanly to a deterministic IA for an in-progress workflow (interview, form, gated process). AccessControl gated by `tool:delegate:{action_name}`. See [`../docs/BRIDGE.md`](../docs/BRIDGE.md).

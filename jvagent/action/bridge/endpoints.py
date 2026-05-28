@@ -1,6 +1,6 @@
 """HTTP endpoints for ``BridgeInteractAction``.
 
-No HTTP endpoints registered: Bridge observability (gear_trace,
+No HTTP endpoints registered: Bridge observability (shift_log,
 helm_timings_seconds, helm_step_counts, helm_shift events) is exposed
 via the standard ``GET /logs/agents/{id}`` endpoint reading
 ``Interaction.observability_metrics`` and

@@ -223,7 +223,7 @@ async def test_helm_shift_event_skipped_when_no_interaction_metrics(
 # ---------------------------------------------------------------------------
 
 
-async def test_persistence_writes_gear_trace_on_terminal_emit(
+async def test_persistence_writes_shift_log_on_terminal_emit(
     make_bridge, make_visitor, stub_helm
 ):
     helm = stub_helm(name="A", script=[EMIT(text="done", finalize=True)])
@@ -234,12 +234,12 @@ async def test_persistence_writes_gear_trace_on_terminal_emit(
 
     obs = _read_params(visitor)["bridge_observability"]
     assert obs["shift_count"] == 1  # the initial None→A shift
-    assert len(obs["gear_trace"]) == 1
-    assert obs["gear_trace"][0]["to_helm"] == "A"
-    assert obs["gear_trace"][0]["from_helm"] is None
+    assert len(obs["shift_log"]) == 1
+    assert obs["shift_log"][0]["to_helm"] == "A"
+    assert obs["shift_log"][0]["from_helm"] is None
 
 
-async def test_persistence_writes_gear_trace_on_yield(
+async def test_persistence_writes_shift_log_on_yield(
     make_bridge, make_visitor, stub_helm
 ):
     from jvagent.action.helm.contracts import YIELD
@@ -251,7 +251,7 @@ async def test_persistence_writes_gear_trace_on_yield(
     await bridge.execute(visitor)
 
     obs = _read_params(visitor)["bridge_observability"]
-    assert len(obs["gear_trace"]) == 1
+    assert len(obs["shift_log"]) == 1
 
 
 async def test_persistence_persists_per_helm_timings(

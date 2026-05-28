@@ -125,8 +125,8 @@ class TestEnableTransientAckShiftPath:
         )
         # Bridge still switched helms + recorded the SHIFT (ack_emitted=False).
         assert state.current_helm == "ReasoningHelm"
-        assert len(state.gear_trace) == 1
-        assert state.gear_trace[0].ack_emitted is False
+        assert len(state.shift_log) == 1
+        assert state.shift_log[0].ack_emitted is False
 
     async def test_on_publishes_shift_transient_ack(self):
         bridge = BridgeInteractAction()
@@ -151,7 +151,7 @@ class TestEnableTransientAckShiftPath:
 
         assert len(captured) == 1
         assert captured[0]["content"] == "Looking that up…"
-        assert state.gear_trace[0].ack_emitted is True
+        assert state.shift_log[0].ack_emitted is True
 
     async def test_off_skips_publish_even_when_ack_eligible(self):
         """The off-switch dominates the latency-class eligibility check.

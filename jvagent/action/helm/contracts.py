@@ -50,7 +50,7 @@ HelmVerb = Literal["EMIT", "CONTINUE", "SHIFT", "DELEGATE", "YIELD"]
 
 @dataclass(frozen=True)
 class ShiftRecord:
-    """A single entry in ``BridgeState.gear_trace``.
+    """A single entry in ``BridgeState.shift_log``.
 
     Emitted once per ``SHIFT`` verb (including the initial helm resolution at
     turn start, where ``from_helm=None``). The ``helm_shift`` observability
@@ -82,7 +82,7 @@ class ShiftRecord:
         """Serialise this record for persistence on ``Interaction.parameters``.
 
         ``handoff_state`` is dropped if it carries unserialisable values —
-        gear_trace is observability metadata, not authoritative state, so
+        shift_log is observability metadata, not authoritative state, so
         it should never fail to persist because of one record.
         """
         try:

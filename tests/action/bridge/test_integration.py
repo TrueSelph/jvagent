@@ -3,7 +3,7 @@
 Earlier Bridge tests covered the verb contract and individual handler
 methods in isolation. These integration tests exercise the full
 ``Bridge.execute()`` flow with multi-visit chains, real walker queue
-mutation, and the same gear-trace persistence the live agent produces.
+mutation, and the same shift-log persistence the live agent produces.
 
 Failure modes these tests catch that unit tests don't:
 
@@ -127,9 +127,9 @@ async def test_routing_source_records_initial_label_on_first_visit(
 
     await bridge.execute(visitor)
 
-    # Persisted on interaction.parameters["bridge_observability"]["gear_trace"].
-    trace = visitor.interaction.parameters["bridge_observability"]["gear_trace"]
-    assert trace, "gear_trace empty"
+    # Persisted on interaction.parameters["bridge_observability"]["shift_log"].
+    trace = visitor.interaction.parameters["bridge_observability"]["shift_log"]
+    assert trace, "shift_log empty"
     assert trace[0]["routing_source"] == "initial"
     assert trace[0]["from_helm"] is None
     assert trace[0]["to_helm"] == "A"
@@ -148,7 +148,7 @@ async def test_routing_source_records_helm_shift_label(
     await bridge.execute(visitor)  # initial + SHIFT
     await bridge.execute(visitor)  # B emits
 
-    trace = visitor.interaction.parameters["bridge_observability"]["gear_trace"]
+    trace = visitor.interaction.parameters["bridge_observability"]["shift_log"]
     # initial, then helm_shift
     sources = [rec["routing_source"] for rec in trace]
     assert sources == ["initial", "helm_shift"]
@@ -169,7 +169,7 @@ async def test_routing_source_records_helm_delegate_label(
 
     await bridge.execute(visitor)
 
-    trace = visitor.interaction.parameters["bridge_observability"]["gear_trace"]
+    trace = visitor.interaction.parameters["bridge_observability"]["shift_log"]
     sources = [rec["routing_source"] for rec in trace]
     assert sources == ["initial", "helm_delegate"]
 
@@ -200,7 +200,7 @@ async def test_routing_source_records_turn_lock_label(
 
     await bridge.execute(visitor)
 
-    trace = visitor.interaction.parameters["bridge_observability"]["gear_trace"]
+    trace = visitor.interaction.parameters["bridge_observability"]["shift_log"]
     sources = [rec["routing_source"] for rec in trace]
     # initial (Bridge picked the helm), then turn_lock (Bridge auto-DELEGATEd)
     assert sources == ["initial", "turn_lock"]
@@ -214,7 +214,7 @@ async def test_routing_source_records_turn_lock_label(
 async def test_multi_helm_shift_chain_records_each_transition(
     make_bridge, make_visitor, stub_helm
 ):
-    """Three helms, A→B→C→EMIT — gear_trace records every transition."""
+    """Three helms, A→B→C→EMIT — shift_log records every transition."""
     a = stub_helm(name="A", script=[SHIFT(target="B", reason="a→b")])
     b = stub_helm(name="B", script=[SHIFT(target="C", reason="b→c")])
     c = stub_helm(name="C", script=[EMIT(text="answer", finalize=True)])
@@ -230,7 +230,7 @@ async def test_multi_helm_shift_chain_records_each_transition(
     await bridge.execute(visitor)  # B → SHIFT C
     await bridge.execute(visitor)  # C → EMIT done
 
-    trace = visitor.interaction.parameters["bridge_observability"]["gear_trace"]
+    trace = visitor.interaction.parameters["bridge_observability"]["shift_log"]
     # initial, A→B, B→C
     assert len(trace) == 3
     assert trace[0]["routing_source"] == "initial"
