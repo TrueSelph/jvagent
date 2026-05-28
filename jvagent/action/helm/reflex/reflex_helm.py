@@ -37,9 +37,11 @@ from jvagent.action.helm.contracts import (
     HelmStepResult,
 )
 from jvagent.action.helm.reflex.prompts import (
+    ANCHOR_DISAMBIGUATION_CLAUSE,
     REFLEX_SYSTEM_PROMPT,
     REFLEX_USER_PROMPT_TEMPLATE,
-    render_peer_action_line,
+    render_helms_available_block,
+    render_peer_action_block,
     render_peer_helm_line,
 )
 from jvagent.action.manifest import Manifest
@@ -275,7 +277,8 @@ class ReflexHelm(BaseHelm):
             return self._safe_default_shift("agent unavailable")
 
         peer_helms = await self._collect_peer_helms(agent)
-        peer_actions = await self._collect_peer_actions(agent)
+        conversation = getattr(visitor, "conversation", None)
+        peer_actions = await self._collect_peer_actions(agent, conversation)
 
         system_prompt = self._build_system_prompt(peer_helms, peer_actions)
         history = await self._build_history(visitor)
@@ -386,13 +389,31 @@ class ReflexHelm(BaseHelm):
             )
         return peers
 
-    async def _collect_peer_actions(self, agent: Any) -> List[Dict[str, Any]]:
-        """Enumerate rails ``InteractAction`` instances with declared manifests.
+    async def _collect_peer_actions(
+        self,
+        agent: Any,
+        conversation: Optional[Any] = None,
+    ) -> List[Dict[str, Any]]:
+        """Enumerate anchor-routable ``InteractAction`` instances (ADR-0009).
 
-        Returns ``[{"name", "purpose"}]`` for use in the DELEGATE
-        candidate list. Actions without a declared ``purpose`` in their
-        manifest are filtered out — Reflex needs a description to pick
-        them.
+        Returns ``[{"name", "description", "anchors"}]`` for the
+        anchor-routable IA catalog Reflex DELEGATES into.
+
+        Exclusion filters (ADR-0009 §4):
+
+        - Pattern orchestrators (``manifest.pattern_orchestrator``) —
+          weight-routed, never anchor-routed.
+        - Always-execute IAs (``always_execute=True``) — sidecar / audit
+          IAs run on every turn via Bridge's curated walker queue.
+        - Chain-internal IAs (``manifest.routable_by_anchor=False``) —
+          reached only via parent DELEGATE chains.
+        - Turn-locked IAs (``manifest.turn_lock=True``) — reached via
+          Bridge's auto-DELEGATE in ``find_turn_lock_owner``, not via
+          anchor matching.
+
+        IAs with no description AND no anchors are dropped — there is
+        nothing for Reflex to match on. The bootstrap warning surfaces
+        these to operators at install time.
         """
         if agent is None:
             return []
@@ -411,19 +432,50 @@ class ReflexHelm(BaseHelm):
         for action in all_enabled:
             if not isinstance(action, InteractAction):
                 continue
-            # Exclude Bridge itself so Reflex can't DELEGATE to its own
-            # surrounding container.
             cls_name = action.__class__.__name__
-            if cls_name == "BridgeInteractAction":
+            # Defense-in-depth: legacy class-name exclusion preserved
+            # alongside the manifest pattern_orchestrator flag.
+            # TODO(wave-10): remove the literal once pattern_orchestrator
+            # is universally adopted.
+            if cls_name in ("BridgeInteractAction", "CockpitInteractAction"):
                 continue
             try:
                 manifest = action.get_manifest()
             except Exception:
                 continue
-            purpose = (manifest.purpose or "").strip()
-            if not purpose:
+            if manifest.pattern_orchestrator:
                 continue
-            peers.append({"name": cls_name, "purpose": purpose})
+            if getattr(action, "always_execute", False):
+                continue
+            if not manifest.routable_by_anchor:
+                continue
+            if manifest.turn_lock:
+                # Turn-locked IAs are reached via Bridge auto-DELEGATE
+                # (find_turn_lock_owner), not via Reflex anchor matching.
+                continue
+
+            # Dynamic anchors override static ``self.anchors`` when the
+            # IA opts in via ``get_anchors(conversation)``.
+            anchors: List[str] = []
+            try:
+                dyn = await action.get_anchors(conversation)
+                if dyn is not None:
+                    anchors = [a for a in dyn if isinstance(a, str) and a.strip()]
+                else:
+                    static = getattr(action, "anchors", None) or []
+                    anchors = [a for a in static if isinstance(a, str) and a.strip()]
+            except Exception:
+                static = getattr(action, "anchors", None) or []
+                anchors = [a for a in static if isinstance(a, str) and a.strip()]
+
+            description = (manifest.purpose or "").strip()
+            if not description and not anchors:
+                # Nothing to match on — skip rather than emit a noisy
+                # empty block.
+                continue
+            peers.append(
+                {"name": cls_name, "description": description, "anchors": anchors}
+            )
         return peers
 
     # ------------------------------------------------------------------
@@ -444,21 +496,36 @@ class ReflexHelm(BaseHelm):
             )
             for p in peer_helms
         ]
-        action_lines = [
-            render_peer_action_line(a["name"], purpose=a["purpose"])
+        action_blocks = [
+            render_peer_action_block(
+                a["name"],
+                description=a.get("description", ""),
+                anchors=a.get("anchors", []),
+            )
             for a in peer_actions
         ]
         peer_helms_section = (
             "\n".join(helm_lines) if helm_lines else "(no peer helms installed)"
         )
         peer_actions_section = (
-            "\n".join(action_lines)
-            if action_lines
-            else "(no rails actions with declared manifests)"
+            "\n\n".join(action_blocks)
+            if action_blocks
+            else "(no anchor-routable flows installed)"
         )
+        # The HELMS AVAILABLE block is rendered only when ≥2 deliberate
+        # (non-Reflex) helms are installed. Single-Reasoning agents see
+        # no block — prompt tokens stay tight.
+        deliberate_peers = [
+            {"name": p["name"], "purpose": p["purpose"]}
+            for p in peer_helms
+            if (p.get("latency_class") or "").lower() != "instant"
+        ]
+        helms_available_section = render_helms_available_block(deliberate_peers)
         return REFLEX_SYSTEM_PROMPT.format(
             peer_helms_section=peer_helms_section,
+            helms_available_section=helms_available_section,
             peer_actions_section=peer_actions_section,
+            anchor_disambiguation_clause=ANCHOR_DISAMBIGUATION_CLAUSE,
         )
 
     async def _build_history(self, visitor: "InteractWalker") -> str:

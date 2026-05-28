@@ -1,9 +1,11 @@
 """Tests for ``ReasoningHelm`` phase dispatch + walker-revisit mechanics.
 
-Focus: state-machine glue between Phase 1 (routing) and Phase 2 (engine step
-loop), the stale-interaction guard, and the ``_handle_step_result`` branching
-that drives the walker-revisit pattern. The router and engine are mocked so
-the tests exercise only the action's dispatch logic.
+Focus: the engine session setup vs revisit split, the stale-interaction
+guard, and the ``_handle_step_result`` branching that drives the
+walker-revisit pattern. ADR-0009 removed the router; the helm now does
+``_setup_and_first_step`` on fresh visits and ``_phase_continue`` on
+revisits. The engine is mocked so the tests exercise only the action's
+dispatch logic.
 """
 
 from __future__ import annotations
@@ -69,8 +71,8 @@ def _make_visitor(interaction_id: str = "int_1") -> Any:
 # ---------------------------------------------------------------------------
 
 
-async def test_stale_interaction_clears_state_and_reroutes(monkeypatch):
-    """Engine in state from a different interaction_id → session reset, route rerun."""
+async def test_stale_interaction_clears_state_and_resets(monkeypatch):
+    """Engine in state from a different interaction_id → session reset, fresh setup."""
     action = _make_action(monkeypatch)
     visitor = _make_visitor("int_NEW")
     sess = get_session(visitor)
@@ -78,34 +80,33 @@ async def test_stale_interaction_clears_state_and_reroutes(monkeypatch):
     sess.interaction_id = "int_OLD"
     sess.debug_state = MagicMock()
 
-    route_called = {"v": False}
+    setup_called = {"v": False}
 
-    async def _fake_phase_route(self, v):
-        route_called["v"] = True
-        # Verify session was reset by the guard before route fires.
+    async def _fake_setup(self, v):
+        setup_called["v"] = True
+        # Verify session was reset by the guard before setup fires.
         s = get_session(v)
         assert s.engine is None
         assert s.debug_state is None
         assert s.interaction_id is None
         # Signal terminal so step() returns without further work.
-        # Per Wave-2 H3 the outcome lives in bridge_state.helm_states.
         self._set_step_outcome(v, "yield")
 
     monkeypatch.setattr(
         ReasoningHelm,
-        "_phase_route_and_setup",
-        _fake_phase_route,
+        "_setup_and_first_step",
+        _fake_setup,
     )
 
     # ReasoningHelm is driven by Bridge via step(visitor, bridge_state). Call
     # the orchestration body directly to exercise the stale-state guard
     # without needing a full Bridge harness here.
     await action._orchestrate(visitor)
-    assert route_called["v"] is True
+    assert setup_called["v"] is True
 
 
-async def test_revisit_with_engine_skips_routing_and_runs_continue(monkeypatch):
-    """Engine present + interaction_id matches → _phase_continue, not _phase_route_and_setup."""
+async def test_revisit_with_engine_skips_setup_and_runs_continue(monkeypatch):
+    """Engine present + interaction_id matches → _phase_continue, not _setup_and_first_step."""
     action = _make_action(monkeypatch)
     visitor = _make_visitor("int_1")
     sess = get_session(visitor)
@@ -114,16 +115,16 @@ async def test_revisit_with_engine_skips_routing_and_runs_continue(monkeypatch):
 
     calls = []
 
-    async def _fake_route(self, v):
-        calls.append("route")
+    async def _fake_setup(self, v):
+        calls.append("setup")
 
     async def _fake_continue(self, v):
         calls.append("continue")
 
     monkeypatch.setattr(
         ReasoningHelm,
-        "_phase_route_and_setup",
-        _fake_route,
+        "_setup_and_first_step",
+        _fake_setup,
     )
     monkeypatch.setattr(
         ReasoningHelm,

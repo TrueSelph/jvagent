@@ -26,7 +26,9 @@ async def test_reasoning_helm_instantiates_with_cockpit_defaults():
     # Mirror cockpit defaults so the smoke harness compares apples-to-apples.
     assert helm.model == "claude-sonnet-4-20250514"
     assert helm.model_action_type == "AnthropicLanguageModelAction"
-    assert helm.router_model == "gpt-4o-mini"
+    # ADR-0009: router_model is preserved as an inert config key so
+    # legacy agent.yaml files don't fail validation. The default is "".
+    assert helm.router_model == ""
     assert helm.max_iterations == 25
     assert helm.max_duration_seconds == 300.0
     assert helm.tool_tier == "standard"

@@ -430,13 +430,6 @@ class BridgeInteractAction(InteractAction):
                 # added May 2026 per Wave-1 review (item H6).
                 "routing_source": record.routing_source,
             }
-            # ADR-0008: include dispatch_regime when ReasoningHelm has
-            # recorded one for the current turn. Operators can filter
-            # logs to ask "what fraction of turns are IAS_ONLY?" without
-            # inferring from token counts.
-            regime = getattr(interaction, "_dispatch_regime", None)
-            if regime:
-                event_data["dispatch_regime"] = regime
             metrics.append(
                 {
                     "event_type": "helm_shift",
@@ -483,15 +476,6 @@ class BridgeInteractAction(InteractAction):
             "turn_started_at": state.turn_started_at,
             "last_emit_at": state.last_emit_at,
         }
-        # ADR-0008: surface the dispatch_regime that ReasoningHelm chose
-        # for this turn. Stamped on the interaction by the helm during
-        # _phase_route_and_setup; copied here so it appears in the
-        # per-turn observability snapshot regardless of whether any
-        # post-Reasoning helm_shift event fired (skill-only turns end
-        # with CONTINUE/YIELD and never re-record a helm_shift).
-        regime = getattr(interaction, "_dispatch_regime", None)
-        if regime:
-            payload["dispatch_regime"] = regime
         try:
             if isinstance(params, dict):
                 params["bridge_observability"] = payload

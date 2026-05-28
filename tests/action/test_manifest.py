@@ -21,6 +21,8 @@ from jvagent.action.loader.metadata import ActionMetadata
 from jvagent.action.manifest import (
     ACK_ELIGIBLE_LATENCY_CLASSES,
     DEFAULT_LATENCY_CLASS,
+    DEFAULT_PATTERN_ORCHESTRATOR,
+    DEFAULT_ROUTABLE_BY_ANCHOR,
     DEFAULT_TURN_LOCK,
     VALID_LATENCY_CLASSES,
     Manifest,
@@ -41,6 +43,48 @@ def test_defaults_when_payload_is_none():
     assert m.turn_lock is DEFAULT_TURN_LOCK
     assert m.interrupt_phrases == []
     assert m.expected_duration_seconds is None
+    assert m.routable_by_anchor is DEFAULT_ROUTABLE_BY_ANCHOR
+    assert m.pattern_orchestrator is DEFAULT_PATTERN_ORCHESTRATOR
+
+
+def test_pattern_orchestrator_default_false():
+    m = Manifest.from_payload({})
+    assert m.pattern_orchestrator is False
+
+
+def test_pattern_orchestrator_true_when_set():
+    m = Manifest.from_payload({"pattern_orchestrator": True})
+    assert m.pattern_orchestrator is True
+
+
+def test_pattern_orchestrator_must_be_bool_lenient():
+    m = Manifest.from_payload({"pattern_orchestrator": "true"})
+    assert m.pattern_orchestrator is DEFAULT_PATTERN_ORCHESTRATOR
+
+
+def test_pattern_orchestrator_roundtrips():
+    m = Manifest.from_payload(
+        {"pattern_orchestrator": True, "routable_by_anchor": False}
+    )
+    out = m.to_dict()
+    assert out["pattern_orchestrator"] is True
+    assert out["routable_by_anchor"] is False
+    assert Manifest.from_payload(out) == m
+
+
+def test_bridge_info_yaml_marks_pattern_orchestrator():
+    """Bridge's info.yaml must mark itself as the pattern orchestrator."""
+    from pathlib import Path
+
+    import yaml
+
+    info_path = Path(__file__).resolve().parents[2] / "jvagent/action/bridge/info.yaml"
+    with info_path.open() as fh:
+        data = yaml.safe_load(fh)
+    manifest_payload = data["package"]["manifest"]
+    m = Manifest.from_payload(manifest_payload)
+    assert m.pattern_orchestrator is True
+    assert m.routable_by_anchor is False
 
 
 def test_defaults_when_payload_is_empty_dict():

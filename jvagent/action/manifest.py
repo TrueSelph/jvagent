@@ -46,6 +46,7 @@ ACK_ELIGIBLE_LATENCY_CLASSES = frozenset({"deliberate", "long"})
 DEFAULT_LATENCY_CLASS = "quick"
 DEFAULT_TURN_LOCK = False
 DEFAULT_ROUTABLE_BY_ANCHOR = True
+DEFAULT_PATTERN_ORCHESTRATOR = False
 
 
 class ManifestValidationError(ValueError):
@@ -77,6 +78,7 @@ class Manifest:
     interrupt_phrases: List[str] = field(default_factory=list)
     expected_duration_seconds: Optional[float] = None
     routable_by_anchor: bool = DEFAULT_ROUTABLE_BY_ANCHOR
+    pattern_orchestrator: bool = DEFAULT_PATTERN_ORCHESTRATOR
 
     @classmethod
     def from_payload(
@@ -130,6 +132,12 @@ class Manifest:
                 DEFAULT_ROUTABLE_BY_ANCHOR,
                 strict=strict,
             ),
+            pattern_orchestrator=_validate_bool(
+                payload,
+                "pattern_orchestrator",
+                DEFAULT_PATTERN_ORCHESTRATOR,
+                strict=strict,
+            ),
         )
 
     def merged_with(self, override: Optional[Dict[str, Any]]) -> "Manifest":
@@ -152,6 +160,7 @@ class Manifest:
             "interrupt_phrases": list(self.interrupt_phrases),
             "expected_duration_seconds": self.expected_duration_seconds,
             "routable_by_anchor": self.routable_by_anchor,
+            "pattern_orchestrator": self.pattern_orchestrator,
         }
         merged.update(override)
         return Manifest.from_payload(merged)
@@ -174,6 +183,7 @@ class Manifest:
             "interrupt_phrases": list(self.interrupt_phrases),
             "expected_duration_seconds": self.expected_duration_seconds,
             "routable_by_anchor": self.routable_by_anchor,
+            "pattern_orchestrator": self.pattern_orchestrator,
         }
 
 
@@ -298,6 +308,7 @@ def _validate_optional_float(
 __all__ = [
     "ACK_ELIGIBLE_LATENCY_CLASSES",
     "DEFAULT_LATENCY_CLASS",
+    "DEFAULT_PATTERN_ORCHESTRATOR",
     "DEFAULT_ROUTABLE_BY_ANCHOR",
     "DEFAULT_TURN_LOCK",
     "Manifest",

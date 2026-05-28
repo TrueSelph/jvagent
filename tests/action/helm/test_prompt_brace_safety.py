@@ -29,9 +29,6 @@ from __future__ import annotations
 
 import pytest
 
-from jvagent.action.helm.reasoning.routing.prompts import (
-    build_routing_user_prompt_template,
-)
 from jvagent.action.helm.reflex.prompts import REFLEX_USER_PROMPT_TEMPLATE
 
 # Adversarial utterances — every shape someone could plausibly type into
@@ -110,53 +107,11 @@ class TestReflexPromptBraceSafety:
         )
 
 
-class TestRouterPromptBraceSafety:
-    """``routing_user_template.format(...)`` must accept any user utterance.
-
-    The router template has six named substitutions under ADR-0008's
-    unified-catalog shape; we exercise it via the public factory.
-    """
-
-    @pytest.fixture(scope="class")
-    def router_template(self) -> str:
-        """The unified-catalog router template (ADR-0008)."""
-        return build_routing_user_prompt_template()
-
-    @pytest.mark.parametrize("utterance", _ADVERSARIAL_UTTERANCES)
-    def test_router_does_not_raise(self, router_template: str, utterance: str) -> None:
-        """Router template accepts arbitrary user input without raising."""
-        rendered = router_template.format(
-            utterance=utterance,
-            capabilities_json="{}",
-            active_tasks_section="",
-            history_section="",
-            prior_fragments_section="",
-            optional_instructions="",
-        )
-        assert isinstance(rendered, str)
-        assert len(rendered) > 0
-
-    @pytest.mark.parametrize(
-        "history_text",
-        [
-            "USER: hello\nASSISTANT: hi",
-            "USER: {tool_call}\nASSISTANT: response",
-            "USER: malformed { history\nASSISTANT: ok",
-        ],
-    )
-    def test_history_section_braces_are_safe(
-        self, router_template: str, history_text: str
-    ) -> None:
-        """Braces in the history_section value (assistant or user turns) don't crash either."""
-        rendered = router_template.format(
-            utterance="hello",
-            capabilities_json="{}",
-            active_tasks_section="",
-            history_section=history_text,
-            prior_fragments_section="",
-            optional_instructions="",
-        )
-        assert isinstance(rendered, str)
+# The router template brace-safety test class was removed in Wave 9
+# alongside the engine router subsystem (ADR-0009). Reflex's brace
+# safety is the only ``.format(...)`` surface that consumes raw user
+# input. The Python-level invariant pinned by
+# :class:`TestPythonStrFormatNoRecursion` below still holds.
 
 
 class TestPythonStrFormatNoRecursion:

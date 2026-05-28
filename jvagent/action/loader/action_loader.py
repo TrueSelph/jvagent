@@ -22,6 +22,63 @@ _ACTIONS_PREFIX = _importer_module._ACTIONS_PREFIX
 logger = logging.getLogger(__name__)
 
 
+def _warn_if_anchorless_routable_ia(
+    action: Action, metadata: ActionMetadata, agent_name: str
+) -> None:
+    """Emit a bootstrap WARNING for anchorless routable-candidate IAs (ADR-0009 §6).
+
+    An "anchorless routable-candidate" IA is an :class:`InteractAction` that:
+
+    - is not a pattern orchestrator (``manifest.pattern_orchestrator``)
+    - is not always-execute (``always_execute=True``)
+    - is anchor-routable (``manifest.routable_by_anchor`` default ``True``)
+    - is not turn-locked (turn-locked IAs are reached via auto-DELEGATE,
+      not anchor matching)
+    - declares zero anchors via :attr:`anchors` or :meth:`get_anchors`
+
+    Such an IA is invisible to Reflex's peer-awareness DELEGATE path —
+    the engine can still reach it via the ``delegate_to_ia`` recovery
+    hatch, but discoverability is materially worse than declaring
+    anchors. The warning surfaces the misconfiguration to operators at
+    install time so they can fix the authoring rather than hit the
+    degraded routing path silently.
+    """
+    try:
+        from jvagent.action.interact.base import InteractAction
+    except Exception:  # pragma: no cover — defensive
+        return
+    if not isinstance(action, InteractAction):
+        return
+    try:
+        manifest = action.get_manifest()
+    except Exception:
+        return
+    if manifest.pattern_orchestrator:
+        return
+    if getattr(action, "always_execute", False):
+        return
+    if not manifest.routable_by_anchor:
+        return
+    if manifest.turn_lock:
+        return
+    static_anchors = [
+        a
+        for a in (getattr(action, "anchors", None) or [])
+        if isinstance(a, str) and a.strip()
+    ]
+    if static_anchors:
+        return
+    logger.warning(
+        "agent.yaml: IA '%s/%s' on agent '%s' has no anchors declared and "
+        "routable_by_anchor is not false; it will be invisible to Reflex "
+        "peer-awareness. Add anchors to make it anchor-routable, or set "
+        "manifest.routable_by_anchor: false to mark it chain-internal.",
+        metadata.namespace,
+        metadata.name,
+        agent_name,
+    )
+
+
 class ActionLoader:
     """Loader for discovering and instantiating actions from the filesystem."""
 
@@ -1077,6 +1134,8 @@ class ActionLoader:
             action._property_override_keys = (
                 set(property_overrides.keys()) if property_overrides else set()
             )
+
+            _warn_if_anchorless_routable_ia(action, metadata, agent_name)
 
             return action
 

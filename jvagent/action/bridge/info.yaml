@@ -17,6 +17,20 @@ package:
     order:
       weight: -200
     singleton: true
+  # Pattern-agnostic manifest (ADR-0007 / ADR-0009). Bridge is the canonical
+  # pattern orchestrator — it MUST NOT be reached via anchor-routing, IA
+  # dispatch tooling, or peer-awareness DELEGATE. pattern_orchestrator: true
+  # marks it as walker-weight-routed and excludes it from any IA-dispatch
+  # surface.
+  manifest:
+    purpose: >-
+      Multi-helm orchestrator. Composes Reflex + Reasoning (+ specialist
+      helms) into a per-turn shift loop with budget, AC gating, and
+      observability. Runs by walker weight, never by anchor.
+    latency_class: instant
+    turn_lock: false
+    routable_by_anchor: false
+    pattern_orchestrator: true
   dependencies:
     jvagent: ~0.0.1
     actions: []

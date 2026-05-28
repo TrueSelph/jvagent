@@ -65,6 +65,9 @@ class ShiftRecord:
     - ``"turn_lock"`` — auto-DELEGATE to a turn-locked IA.
     - ``"helm_shift"`` — a helm emitted ``SHIFT`` to another helm.
     - ``"helm_delegate"`` — a helm emitted ``DELEGATE`` to a rails IA.
+    - ``"reflex_helm_select"`` — Reflex picked a specialist helm via
+      the ADR-0009 ``HELMS AVAILABLE`` block (multi-deliberate-helm
+      agents only).
     - ``"safe_fallback"`` — Bridge's safe-fallback path (AC denial,
       shift budget exhausted, unresolvable target).
     """

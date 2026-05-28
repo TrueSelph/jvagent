@@ -16,6 +16,10 @@ from jvagent.action.helm.reasoning.context import EngineContext
 from jvagent.action.helm.reasoning.tools.artifact import _build_artifact_tools
 from jvagent.action.helm.reasoning.tools.clock import _build_clock_tools
 from jvagent.action.helm.reasoning.tools.conversation import _build_conversation_tools
+from jvagent.action.helm.reasoning.tools.delegate_to_ia import (
+    _build_delegate_to_ia_tools,
+    _enumerate_eligible_ias,
+)
 from jvagent.action.helm.reasoning.tools.identity import _build_identity_tools
 from jvagent.action.helm.reasoning.tools.memory import _build_memory_tools
 from jvagent.action.helm.reasoning.tools.response import _build_response_tools
@@ -91,6 +95,7 @@ async def assemble_engine_tools(ctx: EngineContext) -> ToolRegistry:
     registry = ToolRegistry()
 
     _register_harness_tools(registry, ctx)
+    await _register_delegate_to_ia_tool(registry, ctx)
     await _register_action_tools(registry, ctx)
     await _register_skill_tools(registry, ctx)
 
@@ -217,6 +222,31 @@ def _register_harness_tools(registry: ToolRegistry, ctx: EngineContext) -> None:
         # Engine-context surface: skills + tools only (no interact_actions).
         for tool in _build_search_tools(ctx, permitted_kinds={KIND_SKILLS, KIND_TOOLS}):
             _register(tool)
+
+
+async def _register_delegate_to_ia_tool(
+    registry: ToolRegistry, ctx: EngineContext
+) -> None:
+    """Register the ADR-0009 ``delegate_to_ia`` recovery-hatch tool.
+
+    Omitted from the registry when no eligible interact action is
+    installed (no point exposing a tool with an empty available list).
+    Eligible = conversational IAs that are not pattern orchestrators
+    and not always-execute (see ADR-0009 §4 / §7).
+    """
+    try:
+        eligible = await _enumerate_eligible_ias(ctx)
+    except Exception as exc:
+        logger.warning(
+            "EngineToolRegistry: delegate_to_ia eligibility lookup failed: %s",
+            exc,
+            exc_info=True,
+        )
+        return
+    if not eligible:
+        return
+    for tool in _build_delegate_to_ia_tools(ctx, eligible):
+        registry.register(tool, prefix="harness")
 
 
 async def _register_action_tools(registry: ToolRegistry, ctx: EngineContext) -> None:

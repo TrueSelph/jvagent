@@ -1,38 +1,30 @@
-"""``ReasoningHelm``: Bridge helm running the engine-style engine loop.
+"""``ReasoningHelm``: pure engine-loop helm orchestrated by Bridge.
 
-Duplicated from ``jvagent/action/cockpit/cockpit_interact_action.py`` at
-commit ``4bc6db6`` per the C-strategy hard constraint (BRIDGE-ROADMAP §C):
-zero source-level coupling between Bridge and Cockpit.
+ADR-0009 simplification: the router subsystem is gone. Each ``step()``
+either initialises the engine session (first visit) or runs one
+``engine.step()`` (revisit) and translates the result into a helm verb
+Bridge dispatches:
 
-Differences vs the standalone-Cockpit ancestor:
+- tool-call iterations → ``CONTINUE`` (engine called tools internally;
+  needs another walker visit to feed observations back)
+- final response → ``EMIT(via_persona=True, finalize=True)`` (Bridge
+  routes through PersonaAction for stylisation)
+- terminal with queued ``pending_ias`` → ``DELEGATE(...)`` chain (the
+  engine's ``delegate_to_ia`` recovery hatch appended to the slot, or a
+  prior visit did)
+- nothing left → ``YIELD``
 
-1. Subclass of :class:`BaseHelm` (not ``InteractAction``). Helms are
-   orchestrated by :class:`BridgeInteractAction`, which owns the walker
-   queue, shift budget, shift log, and AC gating.
-2. ``step(visitor, bridge_state)`` replaces ``execute(visitor)``. Returns a
-   :class:`HelmStepResult` verb that Bridge dispatches:
+The engine receives the full registered tool surface (harness tools,
+synchronous IAs, skill tools) and discovers what it needs across
+iterations. There is no router pre-selection, no regime detection, no
+capability filtering by class. Skills materialise as engine tools via
+the registry's bundle-based discovery; IAs reach the engine via the
+``delegate_to_ia`` tool (anchorless conversational recovery hatch).
 
-   - tool-call iterations → :class:`CONTINUE` (helm dispatched its own
-     tools internally via the duplicated engine)
-   - routed ``interact_actions`` (IA-only or engine + IAs) → a chain of
-     :class:`DELEGATE` verbs, ``follow_up=True`` for every entry except
-     the tail (``follow_up=False`` on the last so Bridge runs persona-
-     finalize and closes the turn). Each DELEGATE is one walker visit;
-     Bridge runs the IA inline and re-enqueues this helm to dispatch
-     the next.
-   - terminal engine states with no queued IAs (final response /
-     timeout / stuck / budget) → :class:`YIELD` (delivery already
-     published by ``deliver_final_response`` via :class:`PersonaAction`)
-   - SUPPRESS posture / interaction missing / persona broken → :class:`YIELD`
-3. Walker-queue curation is delegated to Bridge entirely. The standalone
-   Cockpit's ``curate_walk_path_for_cockpit`` call (which mutated the walker queue
-   to schedule routed IAs after revisits) is removed — Bridge owns the
-   queue via its own ``_curate_walker_queue``, and routed IAs are
-   dispatched through the DELEGATE chain instead of being queued for
-   walker iteration.
-4. ``visitor.unrecord_action_execution()`` calls are dropped — the walker
-   records only :class:`BridgeInteractAction` visits; helms are invisible
-   to the walker's action trace.
+Multi-iteration walker-revisit state lives on
+``bridge_state.helm_states["ReasoningHelm"]`` (per-turn dict). The
+``pending_ias`` slot is the dispatch queue for the post-engine DELEGATE
+chain — the engine tool writes to it, ``_step_impl`` reads from it.
 """
 
 from __future__ import annotations
@@ -57,21 +49,8 @@ from jvagent.action.helm.reasoning.catalog.skill_discovery import (
 )
 from jvagent.action.helm.reasoning.config import EngineConfig
 from jvagent.action.helm.reasoning.context import EngineContext
-from jvagent.action.helm.reasoning.delivery.delegation import (
-    resolve_routed_interact_actions,
-)
 from jvagent.action.helm.reasoning.engine import Engine
-from jvagent.action.helm.reasoning.registry.access import (
-    filter_routed_interact_actions_by_access,
-    filter_selected_by_access,
-)
 from jvagent.action.helm.reasoning.registry.shim import EngineVisitorShim
-from jvagent.action.helm.reasoning.routing.types import (
-    DispatchPlan,
-    DispatchRegime,
-    RoutingResult,
-    decode_dispatch_plan,
-)
 from jvagent.action.helm.reasoning.session import (
     EngineSession,
     clear_session,
@@ -86,106 +65,19 @@ logger = logging.getLogger(__name__)
 
 ENGINE_DEFAULT_SKILL_MODEL: str = "claude-sonnet-4-20250514"
 
-# ReasoningHelm-owned per-run engine state lives on a single
-# ``EngineSession`` object accessed via ``get_session``. Bridge-level state
-# (current_helm, shift_log, shift_count, etc.) is on
-# ``visitor._bridge_state``; the two are independent.
-
-
-# ---------------------------------------------------------------------------
-# Regime-aware engine prompt addenda (ADR-0008 Wave 6)
-# ---------------------------------------------------------------------------
-#
-# Each constant is appended to ``agent_description`` (the engine's persona
-# preamble) based on the dispatch regime. Kept as module-level constants so
-# future edits localise to one place. The router's routing decision
-# (interpretation, intent type, the selected capabilities) is interpolated
-# in via :func:`build_skill_loop_guidance`.
-
-IA_CHAIN_AWARENESS = (
-    "\n\n# Interactive flow follow-up\n"
-    "After your response, one or more interactive flows will run to handle "
-    "the user's request. Keep your response brief and focused — the flow "
-    "will own the structured next steps. Do NOT preempt the flow's first "
-    "question; lead in only enough to acknowledge the request."
-)
-
-
-def build_skill_loop_guidance(
-    skills_csv: str,
-    intent: str,
-    interpretation: str,
-) -> str:
-    """Render the per-turn routing-decision guidance appended to agent_description.
-
-    Surfaces the router's pre-selected skills so the engine treats them as
-    the recommended SOP rather than calling ``skill_read`` defensively.
-    """
-    interp_line = f" Interpretation: {interpretation}" if interpretation else ""
-    return (
-        "\n\n# Routing decision (advisory — verify before committing)\n"
-        f"Intent: {intent}.{interp_line} "
-        f"Router pre-selected skill(s): **{skills_csv}**. "
-        "The SOP for these skills is inlined under '# Router-selected skill(s)' below, "
-        "alongside a quick index of the other catalog skills.\n"
-        "- If the recommended SOP fits the actual request, begin work with "
-        "its tools and workflow immediately. Do NOT call `skill_read` for "
-        "the recommended skill, and do NOT spend turns on memory_set, "
-        "task_create_plan, or other harness scaffolding before invoking "
-        "its primary tools.\n"
-        "- If the recommendation is the wrong fit (e.g. user actually "
-        "asked something the listed SOP does not cover), treat the "
-        "router as fallible: pick a better skill from the peer index, "
-        "call `skill_read` on it, and use ITS tools. Do NOT answer from "
-        "world knowledge while a catalog skill could plausibly satisfy "
-        "the request."
-    )
-
-
-def build_engine_persona_addendum(
-    plan: DispatchPlan,
-    routing: RoutingResult,
-) -> str:
-    """Assemble the regime-aware persona addendum for the engine prompt.
-
-    - ``SKILLS_ONLY`` / ``MIXED``: include the router's skill-loop guidance.
-    - ``MIXED``: also append the IA-chain-awareness note so the engine
-      keeps its response brief and lets the post-engine DELEGATE chain
-      drive the structured next steps.
-    - ``IAS_ONLY``: not called (engine is skipped).
-    - ``NONE``: returns empty string — engine runs with a bare persona prompt.
-    """
-    parts: List[str] = []
-    if (
-        plan.regime in (DispatchRegime.SKILLS_ONLY, DispatchRegime.MIXED)
-        and plan.skills
-    ):
-        skills_csv = ", ".join(c.name for c in plan.skills)
-        intent = routing.intent_type or "UNCLEAR"
-        parts.append(
-            build_skill_loop_guidance(
-                skills_csv=skills_csv,
-                intent=intent,
-                interpretation=routing.interpretation or "",
-            )
-        )
-    if plan.regime == DispatchRegime.MIXED:
-        parts.append(IA_CHAIN_AWARENESS)
-    return "".join(parts)
-
 
 class ReasoningHelm(BaseHelm):
-    """Deliberate-class reasoning helm: think-act-observe loop.
+    """Deliberate-class reasoning helm: pure think-act-observe loop.
 
     Orchestrated by :class:`BridgeInteractAction`. Each ``step()`` call
     issues at most one model call (ADR-0002 invariant) by delegating to
     the duplicated :class:`Engine`. The helm dispatches its own
     tools internally and signals back to Bridge via ``CONTINUE`` /
-    ``EMIT`` / ``YIELD``.
+    ``EMIT`` / ``DELEGATE`` / ``YIELD``.
 
-    Phase 1 (``EngineRouter``) and Phase 2 (engine loop) mirror
-    the engine equivalent; the duplication source for each module is
-    documented in ``jvagent/action/helm/reasoning/DUPLICATION_NOTICE.md``.
+    Tool surface (ADR-0009): harness tools + synchronous IA tools +
+    skill tools (via registry bundle discovery) + ``delegate_to_ia``
+    recovery hatch. No router pre-selection.
     """
 
     # ``weight`` is intentionally absent — helms are not InteractActions and
@@ -195,8 +87,8 @@ class ReasoningHelm(BaseHelm):
 
     description: str = attribute(
         default=(
-            "Reasoning helm: route posture/intent, grant the model full agency "
-            "over harness services and action tools in a think-act-observe loop."
+            "Reasoning helm: pure think-act-observe loop with full tool autonomy "
+            "(harness + skill + IA-delegation surface). No router pre-selection."
         )
     )
 
@@ -208,29 +100,18 @@ class ReasoningHelm(BaseHelm):
     )
     can_emit_directly: bool = attribute(default=True)
 
-    # Per-turn orchestration state slot keys (Wave-2 review item H3,
-    # May 2026). Previously these lived as instance attributes on the
-    # ReasoningHelm singleton (one Action instance shared by all
-    # concurrent interactions on the agent). Two simultaneous turns
-    # would cross-pollute — one turn's ``_step_outcome = "yield"`` would
-    # be observed by another turn's ``_step_impl`` if the schedulers
-    # interleaved. Now both fields live under
-    # ``bridge_state.helm_states[self.helm_name()]`` which is per-turn
-    # (BridgeState is rebuilt fresh each interaction).
-    # ClassVar annotations keep these as plain class-level strings;
-    # without them Pydantic treats a single-underscore-prefixed name
-    # as a ``ModelPrivateAttr`` and assigns a descriptor instead of
-    # the raw value, breaking ``slot[self._STEP_OUTCOME_SLOT]`` lookups.
+    # Per-turn orchestration state slot keys. Live under
+    # ``bridge_state.helm_states[self.helm_name()]``; rebuilt per turn.
+    # ClassVar annotations keep these as plain class-level strings.
     _STEP_OUTCOME_SLOT: ClassVar[str] = "step_outcome"
     _PENDING_FINAL_EMIT_SLOT: ClassVar[str] = "pending_final_emit"
+    _PENDING_IAS_SLOT: ClassVar[str] = "pending_ias"
 
     def _get_helm_slot(self, visitor: "InteractWalker") -> Optional[Dict[str, Any]]:
         """Return this helm's per-turn state dict from BridgeState, or None.
 
         None when Bridge orchestration is bypassed (tests, or a future
-        non-Bridge invocation path). Callers must defend against None
-        and treat absent state as a sensible default ("no pending emit
-        yet", etc.).
+        non-Bridge invocation path). Callers must defend against None.
         """
         bridge_state = getattr(visitor, BRIDGE_STATE_VISITOR_ATTR, None)
         if bridge_state is None:
@@ -238,13 +119,6 @@ class ReasoningHelm(BaseHelm):
         return bridge_state.helm_states.setdefault(self.helm_name(), {})
 
     def _get_step_outcome(self, visitor: "InteractWalker") -> Optional[str]:
-        """Per-turn outcome marker for the most recent ``_orchestrate`` call.
-
-        Read by :meth:`_step_impl` after orchestration returns to decide
-        between ``CONTINUE`` and ``YIELD``. Set by the deep
-        orchestration branches in ``_phase_route_and_setup`` /
-        ``_phase_continue`` / ``_handle_step_result`` / ``_handle_error``.
-        """
         slot = self._get_helm_slot(visitor)
         if slot is None:
             return None
@@ -264,12 +138,6 @@ class ReasoningHelm(BaseHelm):
     def _get_pending_final_emit(
         self, visitor: "InteractWalker"
     ) -> Optional[Dict[str, Any]]:
-        """Per-turn buffer for the final EMIT(via_persona=True) payload.
-
-        Set by ``_handle_step_result`` when the engine produces a
-        non-empty final response; consumed by ``_step_impl`` on the
-        next read and cleared. Bridge handles persona stylisation.
-        """
         slot = self._get_helm_slot(visitor)
         if slot is None:
             return None
@@ -290,16 +158,28 @@ class ReasoningHelm(BaseHelm):
             slot[self._PENDING_FINAL_EMIT_SLOT] = value
 
     def _ensure_interaction(self, visitor: "InteractWalker") -> bool:
-        """Lift of ``InteractAction._ensure_interaction``.
-
-        Helms inherit from :class:`BaseHelm` / :class:`Action`, not
-        :class:`InteractAction`, so the helper is re-declared here. Identical
-        semantics: return True iff the visitor carries a valid interaction.
-        """
+        """Return True iff the visitor carries a valid interaction."""
         return getattr(visitor, "interaction", None) is not None
 
-    router_model: str = attribute(default="gpt-4o-mini")
+    # NOTE: ``router_model`` / ``router_model_action_type`` attributes are
+    # preserved as inert config keys so existing agent.yaml files don't
+    # fail validation. The router subsystem is gone (ADR-0009); these
+    # values are no longer consulted. The same applies to
+    # ``enable_interact_router_cache`` and ``router_use_capability_search``
+    # below.
+    router_model: str = attribute(
+        default="",
+        description=(
+            "Deprecated (ADR-0009): the router subsystem is gone. This "
+            "attribute is preserved as an inert config key so existing "
+            "agent.yaml files don't fail validation."
+        ),
+    )
     router_model_action_type: str = attribute(default="")
+    enable_interact_router_cache: bool = attribute(default=False)
+    router_use_capability_search: bool = attribute(default=False)
+    router_model_temperature: float = attribute(default=0.1)
+    router_model_max_tokens: int = attribute(default=400)
 
     model_action_type: str = attribute(default="AnthropicLanguageModelAction")
     model: str = attribute(default=ENGINE_DEFAULT_SKILL_MODEL)
@@ -311,27 +191,9 @@ class ReasoningHelm(BaseHelm):
     max_dynamic_activations: int = attribute(default=10)
     response_mode: str = attribute(default="publish")
 
-    # NOTE — surfaces deliberately absent (vs the monolithic Cockpit
-    # ancestor at jvagent.action.cockpit.cockpit_interact_action):
-    #
-    # - ``enable_canned_response`` / ``canned_response_max_words`` /
-    #   ``skip_canned_for_intents``: ReflexHelm owns the user-facing
-    #   immediate response via ``transient_ack`` on SHIFT. Canned
-    #   surface is permanently absent from ReasoningHelm.
-    # - ``converse_enabled`` / ``conversational_fast_path`` /
-    #   ``converse_persona_prompt`` / ``converse_context_limit``: the
-    #   conversational fast-path (skip-engine, persona.respond) was
-    #   removed in the Phase-2 distillation. Smalltalk that reaches
-    #   ReasoningHelm (pathological — Reflex should EMIT it directly)
-    #   runs through the engine like any other turn. ReasoningHelm's
-    #   sole mission is now agentic looping + skill/IA routing.
-
     history_limit: int = attribute(default=3)
     max_statement_length: Optional[int] = attribute(default=None)
     enable_accumulation: bool = attribute(default=True)
-
-    router_model_temperature: float = attribute(default=0.1)
-    router_model_max_tokens: int = attribute(default=400)
 
     model_temperature: float = attribute(default=0.3)
     model_max_tokens: int = attribute(default=8192)
@@ -341,8 +203,6 @@ class ReasoningHelm(BaseHelm):
     reasoning_effort: Optional[str] = attribute(default="medium")
     reasoning_extra: Optional[Dict[str, Any]] = attribute(default=None)
 
-    # Single switch for internal-progress streaming
-    # (model thoughts, reasoning chunks, tool progress badges).
     stream_internal_progress: bool = attribute(default=True)
 
     max_concurrent_tools: int = attribute(default=5)
@@ -355,29 +215,7 @@ class ReasoningHelm(BaseHelm):
     enable_capability_search: bool = attribute(default=True)
     tool_tier: str = attribute(default="standard")  # minimal | standard | full
 
-    # Phase 1 latency knob — opt into the in-process router cache.
-    # Cache keys fold active-task fingerprints so fragments routed
-    # mid-interview don't share keys with the same fragment after the
-    # interview completes. TTL is governed by perf config
-    # ``interact_router_cache_ttl`` (default 45s).
-    #
-    # The standalone-Cockpit ancestor also exposes
-    # ``enable_router_preclassifier`` for short-circuiting the router LLM
-    # on smalltalk; ReasoningHelm omits it because Reflex catches
-    # smalltalk upstream (sub-200ms EMIT) and the preclassifier never
-    # fires in Bridge composition.
-    enable_interact_router_cache: bool = attribute(default=False)
-
-    # Hygiene flags. Each one is independently tunable; there is no umbrella
-    # toggle. ``block_raw_tool_invocation`` defends the engine prompt against
-    # users naming tools by name (``"call capability_search ..."``,
-    # ``"/skill X"``, ``"execute Y"``); when True it injects the
-    # ``SECURITY_BLOCK`` into the engine system prompt instructing the
-    # model to treat user text as content, not commands. Default ``True``
-    # — turn off only on agents that intentionally want to expose tool
-    # dispatch through natural language (rare).
     block_raw_tool_invocation: bool = attribute(default=True)
-    router_use_capability_search: bool = attribute(default=False)
     preload_user_memory: bool = attribute(default=True)
     user_memory_max_chars: int = attribute(default=4096)
     auto_track_tasks: bool = attribute(default=True)
@@ -392,9 +230,6 @@ class ReasoningHelm(BaseHelm):
     stuck_min_iterations: int = attribute(default=4)
 
     # Overridable prompt templates (mirrors PersonaAction.system_prompt pattern).
-    # Defaults are empty strings — engine falls back to module-level constants
-    # in engine.prompts when the override is blank.  Set in agent.yaml to
-    # customise engine behaviour without forking the framework.
     system_prompt: str = attribute(default="")
     task_planning_prompt: str = attribute(default="")
     security_prompt: str = attribute(default="")
@@ -468,6 +303,8 @@ class ReasoningHelm(BaseHelm):
         if purpose == "skill":
             return skill
         if purpose == "router":
+            # Router is gone (ADR-0009); fall through to skill model so any
+            # leftover internal callers don't crash.
             return router or skill
         return skill
 
@@ -514,52 +351,9 @@ class ReasoningHelm(BaseHelm):
             )
         return persona
 
-    # Key under ``bridge_state.helm_states[helm_name]`` where pending
-    # ``DELEGATE`` targets are queued (BRIDGE-ROADMAP §C-6 follow-up:
-    # IA-tail dispatch via DELEGATE chain). Each entry is an
-    # ``InteractAction`` class name (string). The list is mutated only
-    # from inside this helm — Bridge does not touch it.
-    _PENDING_IAS_SLOT = "pending_ias"
-
-    def _queue_pending_ias(
-        self,
-        visitor: "InteractWalker",
-        routed_ias: List[Any],
-    ) -> None:
-        """Save routed IA class names to the helm slot for DELEGATE chain.
-
-        Reads ``bridge_state`` via the centralised visitor attribute
-        (``BRIDGE_STATE_VISITOR_ATTR``) so the side-channel name is not
-        duplicated. Truncates the list to ``max_dynamic_activations`` so
-        a misbehaving router can't queue an unbounded chain.
-
-        No-op when Bridge state is missing or ``routed_ias`` is empty.
-        """
-        if not routed_ias:
-            return
-        bridge_state = getattr(visitor, BRIDGE_STATE_VISITOR_ATTR, None)
-        if bridge_state is None:
-            logger.warning(
-                "ReasoningHelm: cannot queue pending IAs — visitor has no "
-                "bridge_state (Bridge orchestration appears bypassed)."
-            )
-            return
-        cap = max(1, int(self.max_dynamic_activations or 10))
-        names = [ia.__class__.__name__ for ia in routed_ias[:cap]]
-        if len(routed_ias) > cap:
-            logger.info(
-                "ReasoningHelm: routed_ias truncated to max_dynamic_activations=%d "
-                "(was %d entries; dropped tail)",
-                cap,
-                len(routed_ias),
-            )
-        slot = bridge_state.helm_states.setdefault(self.helm_name(), {})
-        # If a chain is already in flight (engine + IAs path on a revisit),
-        # extend rather than replace — the routing call only fires once
-        # per turn, so this is defensive against a future code path that
-        # re-routes.
-        existing = list(slot.get(self._PENDING_IAS_SLOT) or [])
-        slot[self._PENDING_IAS_SLOT] = existing + names
+    # ------------------------------------------------------------------
+    # Step entry point
+    # ------------------------------------------------------------------
 
     async def _step_impl(
         self,
@@ -568,27 +362,22 @@ class ReasoningHelm(BaseHelm):
     ) -> HelmStepResult:
         """Bridge entry point: run one engine step + translate to verb.
 
-        Three return paths:
+        Verb routing:
 
         - ``CONTINUE`` — engine called tools and wants another visit.
-        - ``DELEGATE(follow_up=...)`` — one or more routed
-          ``InteractAction``s were queued during routing (or earlier
-          this turn) and the helm is dispatching them sequentially.
-          ``follow_up=True`` for every entry except the last; ``False``
-          on the final entry so Bridge runs persona-finalize and
-          closes the turn.
-        - ``YIELD`` — terminal (persona already published by the engine,
-          or there's nothing left to do).
+        - ``DELEGATE(follow_up=...)`` — ``pending_ias`` slot has at
+          least one IA queued (engine's ``delegate_to_ia`` tool, or a
+          prior DELEGATE chain visit). Pops the head and dispatches.
+        - ``EMIT(via_persona=True, finalize=True)`` — engine produced a
+          final response; Bridge stylises via PersonaAction.
+        - ``YIELD`` — terminal with nothing left to do.
 
         Called by :meth:`BaseHelm.step` (the wrapper handles the
         action-trace self-recording via
         ``interaction.record_action_execution``).
         """
-        # Mid-chain dispatch: if a prior visit populated pending IAs
-        # (routing returned them, or engine terminated with IAs queued),
-        # pop the next one and return DELEGATE without re-running
-        # orchestration. The chain runs to completion before any further
-        # routing happens this turn.
+        # Mid-chain dispatch: if pending_ias is populated, pop the next
+        # one and return DELEGATE without re-running the engine.
         helm_slot = bridge_state.helm_states.setdefault(self.helm_name(), {})
         pending = list(helm_slot.get(self._PENDING_IAS_SLOT) or [])
         if pending:
@@ -621,9 +410,7 @@ class ReasoningHelm(BaseHelm):
 
         # Orchestration produced a final engine response. Hand it to
         # Bridge as an EMIT(via_persona=True) so Bridge owns persona
-        # stylisation. ``deliver_final_response`` is no longer called
-        # in-line — the Phase-2 distillation pushed the persona-delivery
-        # contract up into ``BridgeInteractAction._handle_emit``.
+        # stylisation.
         pending_emit = self._get_pending_final_emit(visitor)
         if pending_emit is not None:
             self._set_pending_final_emit(visitor, None)
@@ -640,10 +427,9 @@ class ReasoningHelm(BaseHelm):
                 },
             )
 
-        # Orchestration completed without a final response. It may have
-        # populated pending_ias (IA-only branch, or engine + IAs branch
-        # on terminal). If so, pop the first and start the DELEGATE
-        # chain. Otherwise yield.
+        # Orchestration completed without a final response. The engine's
+        # ``delegate_to_ia`` tool may have appended to pending_ias —
+        # check again and start the DELEGATE chain if so.
         new_pending = list(helm_slot.get(self._PENDING_IAS_SLOT) or [])
         if new_pending:
             next_ia = new_pending[0]
@@ -654,18 +440,17 @@ class ReasoningHelm(BaseHelm):
                 follow_up=bool(remaining),
             )
 
-        # Nothing left to do this turn (no engine output, no queued IAs).
         return YIELD()
 
     async def _orchestrate(self, visitor: "InteractWalker") -> None:
-        """Engine-style orchestration body (renamed from ``execute``).
+        """Engine-style orchestration body.
 
-        On first visit: route, set up engine, run first step.
-        On revisits: restore engine state, run next step.
+        On first visit: initialise engine session, run first step.
+        On revisits: reuse engine, run next step.
 
-        Side-effects only — sets ``self._step_outcome`` to signal to
-        :meth:`step` whether Bridge should re-enqueue (``"continue"``) or
-        finalise (``"yield"``).
+        Side-effects only — sets ``step_outcome`` to signal to
+        :meth:`_step_impl` whether Bridge should re-enqueue
+        (``"continue"``) or finalise (``"yield"``).
         """
         if not self._ensure_interaction(visitor):
             return
@@ -682,148 +467,47 @@ class ReasoningHelm(BaseHelm):
         session = get_session(visitor)
 
         # Stale-state guard: if the engine is from a different interaction,
-        # reset the session so routing runs on the fresh user message.
+        # reset the session so a fresh setup runs on the new user message.
         if session.engine is not None and session.interaction_id != interaction.id:
             logger.debug(
                 "ReasoningHelm: stale engine from interaction %s, "
-                "current interaction %s — clearing and re-routing",
+                "current interaction %s — clearing and re-setting up",
                 session.interaction_id,
                 interaction.id,
             )
             session.reset()
 
         if session.engine is None:
-            # Fresh visit: Phase 1 (routing) + Phase 2 setup
-            await self._phase_route_and_setup(visitor)
+            # Fresh visit: set up engine + run first step.
+            await self._setup_and_first_step(visitor)
         else:
-            # Revisit: skip routing, reuse engine, run next step
-            pass  # helms not recorded by walker (Bridge owns trace)  # Avoid duplicate recording on revisit
+            # Revisit: skip setup, reuse engine, run next step.
             await self._phase_continue(visitor)
 
-    async def _phase_route_and_setup(self, visitor: InteractWalker) -> None:
-        """First visit: route, classify regime, dispatch.
+    async def _setup_and_first_step(self, visitor: "InteractWalker") -> None:
+        """First visit: build engine session, run engine.step() once.
 
-        Dispatch matrix (ADR-0008 regimes):
-
-        - ``SKILLS_ONLY`` → engine runs with skill-loop guidance.
-        - ``IAS_ONLY``    → engine SKIPPED; pop DELEGATE chain.
-        - ``MIXED``       → engine runs (skills + IA-chain-awareness); IAs
-                            queued for post-engine DELEGATE chain.
-        - ``NONE``        → engine runs with a bare persona prompt
-                            (zero-iteration response).
+        Replaces the router-driven setup-and-dispatch (ADR-0008's
+        ``_phase_route_and_setup``). No router LM call, no regime
+        detection, no IA pre-resolution.
         """
-        interaction = visitor.interaction
-
         try:
-            from jvagent.action.helm.reasoning.routing.router import EngineRouter
-
-            router = EngineRouter(self)
-            _unused, routing = await router.route(visitor)
-
-            if routing is None:
-                routing = RoutingResult()
-
             persona = await self._require_persona()
-            agent = await self.get_agent()
-            user_id = getattr(visitor, "user_id", None)
-            channel = getattr(visitor, "channel", "default") or "default"
-
-            # Apply per-user access control to the unified ``selected``
-            # list. Skills get ``skill:{name}`` rules; IAs get class-name
-            # rules. Rebuild ``routing.selected`` from the surviving
-            # capabilities so downstream regime-decode reflects access.
-            routing.selected = await filter_selected_by_access(
-                agent, routing.selected, user_id=user_id, channel=channel
-            )
-
-            # Resolve IA class names to live InteractAction instances and
-            # AC-filter again (the instance list is what DELEGATE needs).
-            routed_ias = await resolve_routed_interact_actions(agent, routing)
-            routed_ias = await filter_routed_interact_actions_by_access(
-                agent, routed_ias, user_id=user_id, channel=channel
-            )
-
-            # An IA that survived selected-level AC may have been dropped
-            # during instance resolution (disabled, missing on agent) or
-            # at the instance-AC layer — keep ``selected`` consistent so
-            # the regime decode reflects what will actually dispatch.
-            surviving_ia_names = {a.__class__.__name__ for a in routed_ias}
-            routing.selected = [
-                c
-                for c in routing.selected
-                if c.kind == "skill" or c.name in surviving_ia_names
-            ]
-
-            plan = decode_dispatch_plan(routing)
-            self._record_dispatch_regime(visitor, plan)
-
-            if plan.regime == DispatchRegime.IAS_ONLY:
-                # Headline ADR-0008 optimisation: skip the engine LM call
-                # entirely. Queue the IAs for sequenced DELEGATE dispatch
-                # via :meth:`step` and yield. Reflex's transient_ack on
-                # SHIFT already gave the user an immediate response, so
-                # there is nothing for the engine to add this turn.
-                self._queue_pending_ias(visitor, routed_ias)
-                logger.info(
-                    "ReasoningHelm: regime=IAS_ONLY; engine skipped, "
-                    "queued IA chain=%s (length=%d)",
-                    [a.__class__.__name__ for a in routed_ias],
-                    len(routed_ias),
-                )
-                self._set_step_outcome(visitor, "yield")
-                return
-
-            if plan.regime == DispatchRegime.MIXED:
-                # Engine first, IAs queued for post-engine DELEGATE chain.
-                self._queue_pending_ias(visitor, routed_ias)
-                logger.info(
-                    "ReasoningHelm: regime=MIXED; engine + IA chain=%s " "(length=%d)",
-                    [a.__class__.__name__ for a in routed_ias],
-                    len(routed_ias),
-                )
-
-            # SKILLS_ONLY, MIXED, or NONE → engine path with regime-aware prompt.
-            await self._start_engine(visitor, routing, plan, persona)
-
+            await self._start_engine(visitor, persona)
         except Exception as exc:
             logger.warning(
-                "ReasoningHelm: error in phase_route_and_setup: %s",
+                "ReasoningHelm: error setting up engine session: %s",
                 exc,
                 exc_info=True,
             )
             await self._handle_error(visitor, exc)
 
-    def _record_dispatch_regime(
-        self, visitor: "InteractWalker", plan: DispatchPlan
-    ) -> None:
-        """Stash ``dispatch_regime`` for the helm_shift observability event.
-
-        Bridge reads this attribute when it appends the helm_shift event
-        payload so operators can filter logs by regime (e.g. "what
-        fraction of turns are IAS_ONLY?"). No-op when the visitor has no
-        interaction yet (shouldn't happen at this point but defensive).
-        """
-        interaction = getattr(visitor, "interaction", None)
-        if interaction is None:
-            return
-        try:
-            setattr(interaction, "_dispatch_regime", plan.regime.value)
-        except Exception:
-            pass
-
-    async def _phase_continue(self, visitor: InteractWalker) -> None:
+    async def _phase_continue(self, visitor: "InteractWalker") -> None:
         """Revisit: reuse engine instance and run next step.
 
-        If the engine was cleared between prepend and revisit (stale-state
-        guard, error handler ``clear_session``, or a tool calling
-        ``response_publish(finalize=True)`` resetting the session), the
-        previous implementation silently returned without publishing or
-        marking the interaction executed. The walker then moved on with no
-        user-facing output for the turn. AUDIT-interact-cockpit CRIT-02.
-
-        Now: surface a generic fallback response, mark the interaction
-        executed, and clear remaining session state so the walker continues
-        cleanly without a dangling run.
+        Defensive against a cleared session — surface a fallback message
+        rather than silently dropping the turn (AUDIT-interact-cockpit
+        CRIT-02 mitigation preserved).
         """
         session = get_session(visitor)
         engine = session.engine
@@ -890,7 +574,6 @@ class ReasoningHelm(BaseHelm):
         try:
             step_result = await engine.step()
             await self._handle_step_result(visitor, engine, step_result)
-
         except Exception as exc:
             logger.warning(
                 "ReasoningHelm: error in phase_continue: %s",
@@ -901,12 +584,16 @@ class ReasoningHelm(BaseHelm):
 
     async def _start_engine(
         self,
-        visitor: InteractWalker,
-        routing: RoutingResult,
-        plan: DispatchPlan,
+        visitor: "InteractWalker",
         persona: Any,
     ) -> None:
-        """Set up the engine and run the first step (regime-aware prompt)."""
+        """Set up the engine context and run the first step.
+
+        Tool surface is the full registered set (harness + IAs +
+        skills). Preloaded skills come from always-active skills only —
+        the engine discovers other skills through ``capability_search``
+        and ``skill_activate``.
+        """
         interaction = visitor.interaction
         conversation = visitor.conversation
         if not interaction or not conversation:
@@ -914,33 +601,24 @@ class ReasoningHelm(BaseHelm):
 
         cfg = self._build_engine_config()
         agent = getattr(visitor, "_agent", None)
-        agent_name = getattr(persona, "persona_name", "Agent")
-        agent_description = getattr(persona, "persona_description", "")
 
-        routed_skill_names = [c.name for c in plan.skills]
-        preloaded = list(routed_skill_names)
         try:
             always_active = await list_always_active_skill_names(
                 self, agent, conversation
             )
         except Exception:
             always_active = []
-        for name in always_active:
-            if name not in preloaded:
-                preloaded.append(name)
+        preloaded = list(always_active)
 
-        # Regime-aware persona addendum (skill-loop guidance + IA-chain
-        # awareness). Empty string for SKILLS_ONLY with no skills (e.g.
-        # access-filtered to nothing) and NONE — engine runs with the
-        # bare persona prompt.
-        agent_description += build_engine_persona_addendum(plan, routing)
+        agent_name = getattr(persona, "persona_name", "Agent")
+        agent_description = getattr(persona, "persona_description", "")
 
         model_action = await self.get_model_action(required=True)
 
-        # Skill discovery for prompt construction.
-        # Persists the resolved catalog and underlying discovered_skills dict
-        # on visitor._skill_state so the engine, registry, and harness tools
-        # (skill_*, capability_search) can all read the same source of truth.
+        # Skill discovery for prompt construction. Persists the resolved
+        # catalog and underlying discovered_skills dict on
+        # visitor._skill_state so the engine, registry, and harness tools
+        # (skill_*, capability_search) read the same source of truth.
         try:
             visitor_shim = EngineVisitorShim(
                 agent,
@@ -982,19 +660,16 @@ class ReasoningHelm(BaseHelm):
             action=self,
             visitor=visitor,
             preloaded_skills=preloaded,
-            routed_skills=list(routed_skill_names),
+            routed_skills=[],
             publish_callback=self._build_publish_callback(visitor),
         )
 
         engine = Engine(ctx)
         await engine.initialize()
 
-        # Persist engine instance and interaction ID for revisit detection.
         session = get_session(visitor)
         session.engine = engine
         session.interaction_id = interaction.id
-        # AUDIT-interact HIGH-02: count the first step against the
-        # per-interaction ceiling. Subsequent steps fire in _phase_continue.
         session.total_steps_this_interaction = (
             session.total_steps_this_interaction or 0
         ) + 1
@@ -1002,9 +677,12 @@ class ReasoningHelm(BaseHelm):
         step_result = await engine.step()
         await self._handle_step_result(visitor, engine, step_result)
 
+        # Reference unused identifiers to keep mypy quiet across edits.
+        _ = (agent_name, agent_description, EngineSession)
+
     async def _handle_step_result(
         self,
-        visitor: InteractWalker,
+        visitor: "InteractWalker",
         engine: Engine,
         step_result: Any,
     ) -> None:
@@ -1017,13 +695,12 @@ class ReasoningHelm(BaseHelm):
         status = getattr(step_result, "status", "")
 
         if status == "tool_calls":
-            # Model called tools — persist state. The helm requests another
-            # Bridge visit via the CONTINUE verb instead of mutating the
-            # walker queue directly (Bridge owns visitor.prepend).
+            # Model called tools — persist state. The helm requests
+            # another Bridge visit via the CONTINUE verb instead of
+            # mutating the walker queue directly.
             session.debug_state = engine.save_state()
-            # Check if response_publish set the finalized flag
+            # Check if response_publish or delegate_to_ia set finalized.
             if session.finalized:
-                # Tool already delivered the response — conclude
                 session.reset()
                 interaction.set_to_executed()
                 self._set_step_outcome(visitor, "yield")
@@ -1032,28 +709,12 @@ class ReasoningHelm(BaseHelm):
             return
 
         # Terminal state: final_response, timeout, budget_exhausted, stuck.
-        # IA tail dispatch (when routing returned interact_actions) is
-        # handled by :meth:`step` reading ``helm_states[helm_name]["pending_ias"]``
-        # and emitting a DELEGATE chain. We don't need to inspect
-        # ``session.pending_interact_actions`` here — that field is a
-        # engine-duplication artifact in :class:`EngineSession` that
-        # Bridge code never populates.
         session.reset()
         interaction.set_to_executed()
         self._set_step_outcome(visitor, "yield")
 
         final_response = getattr(step_result, "final_response", "") or ""
-
         if final_response.strip():
-            # Stash the final emit for :meth:`step` to convert into an
-            # EMIT(via_persona=True) verb. Bridge's ``_handle_emit``
-            # owns persona stylisation now (Phase-2 distillation pushed
-            # ``deliver_final_response`` up into Bridge so ReasoningHelm
-            # stays focused on agentic-loop + skill/IA routing). The
-            # ``activated_skills`` list is forwarded via EMIT.metadata
-            # so Bridge can resolve per-skill response_mode / verbatim
-            # overrides against the skill catalog (still on
-            # ``visitor._skill_state``).
             self._set_pending_final_emit(
                 visitor,
                 {
@@ -1064,13 +725,7 @@ class ReasoningHelm(BaseHelm):
                 },
             )
 
-    # ``_finalize_via_persona`` (the standalone Cockpit's IA-only mode finalizer) is
-    # not duplicated here — Bridge handles persona-finalize itself after
-    # the last DELEGATE in the chain via
-    # ``BridgeInteractAction._finalize_via_persona_if_directives``.
-    # Removed at the C-6 follow-up (IA-tail dispatch via DELEGATE chain).
-
-    def _build_publish_callback(self, visitor: InteractWalker):
+    def _build_publish_callback(self, visitor: "InteractWalker"):
         """Build the callback that routes publish/thought events to the response bus."""
 
         async def _publish_cb(
@@ -1107,24 +762,12 @@ class ReasoningHelm(BaseHelm):
         Clears session state, publishes a fallback message on the response
         bus AND sets ``interaction.response`` (for non-bus channels), and
         signals Bridge to finalise.
-
-        Wave-1 review item H5 (May 2026) — the previous implementation
-        only wrote to ``interaction.response``. Bus-subscribing channels
-        (Slack adapter, WhatsApp adapter, the streaming web client) saw
-        silence on engine errors because they consume the response-bus
-        stream rather than re-reading the interaction record. Now we
-        publish first (with ``streaming_complete=True`` so the bus
-        flushes immediately) and write ``interaction.response`` as a
-        fallback for channels that read the persisted record.
         """
         clear_session(visitor)
         fallback_text = (
             "I encountered an error processing your request. Please try again."
         )
         interaction = visitor.interaction
-        # Skip publish if a real response was already streamed mid-loop —
-        # the user already has something on screen; an error addendum
-        # would be more confusing than helpful.
         already_has_response = bool(
             interaction and getattr(interaction, "response", None)
         )
@@ -1136,8 +779,6 @@ class ReasoningHelm(BaseHelm):
                     streaming_complete=True,
                 )
             except Exception as pub_exc:
-                # Don't let publish errors mask the original failure —
-                # log and continue to the interaction-record fallback.
                 logger.warning(
                     "reasoning_helm: failed to publish error fallback to bus: %s",
                     pub_exc,
@@ -1148,7 +789,6 @@ class ReasoningHelm(BaseHelm):
                     await interaction.save()
                 except Exception:
                     pass
-        # helms not recorded by walker (Bridge owns trace)
         self._set_step_outcome(visitor, "yield")
 
     async def healthcheck(self) -> bool:
@@ -1167,13 +807,8 @@ class ReasoningHelm(BaseHelm):
         return True
 
     @classmethod
-    async def refresh_skills(cls, visitor: InteractWalker) -> List[str]:
-        """Re-discover skills and merge any newly installed bundles into the live session.
-
-        The engine assembles its tool registry fresh on every step from
-        ``visitor._skill_state["discovered_skills"]``, so updating that dict
-        is sufficient — no per-call registration is needed.
-        """
+    async def refresh_skills(cls, visitor: "InteractWalker") -> List[str]:
+        """Re-discover skills and merge newly installed bundles into the live session."""
         state = getattr(visitor, "_skill_state", None)
         if state is None:
             logger.warning("refresh_skills: no _skill_state on visitor")
@@ -1218,7 +853,7 @@ class ReasoningHelm(BaseHelm):
         return newly_found
 
     @classmethod
-    async def remove_skill(cls, visitor: InteractWalker, skill_name: str) -> bool:
+    async def remove_skill(cls, visitor: "InteractWalker", skill_name: str) -> bool:
         """Hot-unload *skill_name* from the current engine session."""
         state = getattr(visitor, "_skill_state", None)
         if state is None:

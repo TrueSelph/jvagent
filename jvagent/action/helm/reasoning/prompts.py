@@ -6,10 +6,10 @@ to ``ENGINE_*`` in Phase 3 to reflect this module's mission
 (Bridge-orchestrated engine, not a standalone Cockpit).
 
 Mirrors the per-action ``prompts.py`` convention used elsewhere in
-``jvagent.action`` (router, persona, retrieval, mcp, …). Routing and skill
-catalog prompts live next to their respective implementations
-(:mod:`jvagent.action.helm.reasoning.routing.prompts` and
-:mod:`jvagent.action.helm.reasoning.catalog.prompts`).
+``jvagent.action`` (router, persona, retrieval, mcp, …). Skill catalog
+prompts live next to their implementation
+(:mod:`jvagent.action.helm.reasoning.catalog.prompts`). The router
+subsystem was removed in ADR-0009; there is no router prompt module.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ You operate a suite of tools in a think-act-observe loop: analyze, pick tools, e
 - When calling tools, output ONLY tool calls (no surrounding text). Tool results arrive next turn.
 - Continue calling tools until done; output final text (no tool calls) to respond.
 - Call response_publish(finalize=true) to end the turn early.
-- IMPORTANT: When the routing decision pre-selects skill(s) with specific tools, you MUST call those skill tools before calling response_publish. Never skip a routed skill's tools and respond directly — always run the skill first, then synthesize from its results.
+- When a skill's tools fit the user's request, call those tools before composing your final response. Skill outputs are admissible evidence; world-knowledge guesses are not.
 {task_planning}
 # Doing tasks
 - Identify the distinct parts of the request before acting.

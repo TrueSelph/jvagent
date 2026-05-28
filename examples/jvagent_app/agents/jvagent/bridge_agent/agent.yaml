@@ -137,19 +137,6 @@ actions:
       # fingerprints so an in-flight interview can't cross-pollute routing
       # decisions.
       enable_interact_router_cache: true
-      #
-      # Surfaces deliberately NOT set here (the helm no longer accepts them
-      # after the Phase-2 distillation — ReasoningHelm's mission is
-      # agentic-loop + skill/IA routing only):
-      #
-      #   enable_canned_response          → Reflex owns transient_ack
-      #   canned_response_max_words       → ditto
-      #   skip_canned_for_intents         → ditto
-      #   converse_enabled                → no conversational fast-path
-      #   converse_context_limit          → ditto
-      #   converse_persona_prompt         → ditto
-      #   conversational_fast_path        → ditto
-      #   enable_router_preclassifier     → Reflex catches smalltalk upstream
 
   # ── Ollama Language Model (available for routing variants; not the default) ──
   - action: jvagent/ollama_lm

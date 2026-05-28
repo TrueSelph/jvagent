@@ -1,11 +1,7 @@
 """Regression tests for Wave-1 Bridge safety patches (May 2026 review).
 
-Covers the five items from the external code review:
+Covers the items from the external code review that survive ADR-0009:
 
-- **C1** — Pattern-orchestrator exclusion: the engine router catalog
-  AND ``resolve_routed_interact_actions`` must filter out
-  ``BridgeInteractAction`` so the engine cannot accidentally DELEGATE
-  back into its own wrapper.
 - **C2** — ``DELEGATE.args`` propagation: when a helm returns
   ``DELEGATE(interact_action="X", args={...})`` Bridge must stash the
   args on the visitor so the target IA can read them, and clear the
@@ -19,6 +15,12 @@ Covers the five items from the external code review:
 - **H6** — ``routing_source`` in helm_shift event payload: every
   appended event must include the field so operators can filter logs
   by cascade layer.
+
+The **C1** pattern-orchestrator exclusion test was removed in Wave 9
+when the engine router subsystem was deleted (ADR-0009). The exclusion
+itself is preserved via the ``manifest.pattern_orchestrator`` flag,
+exercised by ``tests/action/test_manifest.py`` and the Reflex
+peer-awareness tests.
 """
 
 from __future__ import annotations
@@ -34,70 +36,8 @@ from jvagent.action.bridge.bridge_interact_action import (
     get_delegate_args,
 )
 from jvagent.action.helm.contracts import DELEGATE, EMIT, YIELD
-from jvagent.action.helm.reasoning.delivery.delegation import (
-    resolve_routed_interact_actions,
-)
 
 pytestmark = pytest.mark.asyncio
-
-
-# ---------------------------------------------------------------------------
-# C1 — Pattern-orchestrator exclusion
-# ---------------------------------------------------------------------------
-
-
-class TestRouterExclusionsC1:
-    """Bridge must never appear in a routable IA catalog."""
-
-    async def test_resolve_routed_excludes_bridge(self):
-        """``resolve_routed_interact_actions`` filters out BridgeInteractAction.
-
-        Even if the engine model classifier mistakenly emits
-        ``"BridgeInteractAction"`` in its routing decision, Bridge must
-        not be resolved into the actions-to-dispatch list. Recursing
-        Bridge through Bridge would be a stack-explosion bug.
-        """
-        # Fake an Actions manager that returns a Bridge instance.
-        bridge_instance = BridgeInteractAction()
-        actions_mgr = MagicMock()
-        actions_mgr.get_all_actions = AsyncMock(return_value=[bridge_instance])
-        agent = MagicMock()
-        agent.get_actions_manager = AsyncMock(return_value=actions_mgr)
-
-        # The router classified BridgeInteractAction as a target.
-        routing = MagicMock()
-        routing.interact_actions = ["BridgeInteractAction"]
-
-        matched = await resolve_routed_interact_actions(agent, routing)
-        assert matched == [], (
-            "BridgeInteractAction must be filtered out of the resolved IA list "
-            "even when classified by the router (defence against recursion)."
-        )
-
-    async def test_resolve_routed_keeps_normal_ia(self):
-        """Sanity: legitimate IAs still resolve.
-
-        The exclusion must not be over-broad. A normal user-defined IA
-        named in the routing decision must come through.
-        """
-        from jvagent.action.interact.base import InteractAction
-
-        class NormalSearchAction(InteractAction):
-            async def execute(self, visitor: Any) -> None:  # type: ignore[override]
-                return None
-
-        normal = NormalSearchAction()
-        actions_mgr = MagicMock()
-        actions_mgr.get_all_actions = AsyncMock(return_value=[normal])
-        agent = MagicMock()
-        agent.get_actions_manager = AsyncMock(return_value=actions_mgr)
-
-        routing = MagicMock()
-        routing.interact_actions = ["NormalSearchAction"]
-
-        matched = await resolve_routed_interact_actions(agent, routing)
-        assert len(matched) == 1
-        assert matched[0].__class__.__name__ == "NormalSearchAction"
 
 
 # ---------------------------------------------------------------------------

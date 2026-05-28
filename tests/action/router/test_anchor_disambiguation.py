@@ -1,4 +1,4 @@
-"""Tests for the anchor disambiguation clause in router prompts.
+"""Tests for the anchor disambiguation clause cross-module invariant.
 
 The clause was added in May 2026 after live-smoke showed
 ``"Help me prepare for an interview"`` mis-routed to a
@@ -8,10 +8,11 @@ enrollment. The router LLM (gpt-4o-mini) latched onto the shared noun
 the turn-locked signup IA then took ownership of every subsequent reply.
 
 The mitigation is a single prompt clause that lives identically in BOTH
-router prompt modules:
+prompt modules that surface anchor matching to a model:
 
 - ``jvagent.action.router.prompts`` (rails ``InteractRouter``)
-- ``jvagent.action.helm.reasoning.routing.prompts`` (helm ``CockpitRouter``)
+- ``jvagent.action.helm.reflex.prompts`` (Bridge's ReflexHelm — ADR-0009
+  moved the clause here from the deleted ``reasoning.routing.prompts``)
 
 These tests pin three invariants:
 
@@ -20,19 +21,15 @@ These tests pin three invariants:
    a regression.
 3. Each system prompt embeds the clause verbatim — a future edit that
    accidentally drops the clause text from either prompt fails the test.
-
-If a future change wants to refactor the clause (e.g. extract it to a
-shared module under ``jvagent.action.routing``), update the imports here
-and the cross-module identity invariant will continue to hold.
 """
 
 from __future__ import annotations
 
-from jvagent.action.helm.reasoning.routing.prompts import (
-    ANCHOR_DISAMBIGUATION_CLAUSE as COCKPIT_ANCHOR_CLAUSE,
+from jvagent.action.helm.reflex.prompts import (
+    ANCHOR_DISAMBIGUATION_CLAUSE as REFLEX_ANCHOR_CLAUSE,
 )
-from jvagent.action.helm.reasoning.routing.prompts import (
-    ROUTING_SYSTEM_PROMPT as COCKPIT_ROUTER_SYSTEM_PROMPT,
+from jvagent.action.helm.reflex.prompts import (
+    REFLEX_SYSTEM_PROMPT,
 )
 from jvagent.action.router.prompts import (
     ANCHOR_DISAMBIGUATION_CLAUSE as RAILS_ANCHOR_CLAUSE,
@@ -45,15 +42,15 @@ from jvagent.action.router.prompts import (
 class TestAnchorDisambiguationClauseInvariants:
     """Cross-module identity + embedding invariants."""
 
-    def test_rails_and_cockpit_clauses_are_byte_identical(self):
-        """Drift between the two copies is a regression — both router
-        prompts must teach the LLM the exact same disambiguation rule
-        so behaviour is consistent regardless of which pattern (rails or
-        Bridge/Helm) is composing the turn."""
-        assert RAILS_ANCHOR_CLAUSE == COCKPIT_ANCHOR_CLAUSE, (
+    def test_rails_and_reflex_clauses_are_byte_identical(self):
+        """Drift between the two copies is a regression — both prompts must
+        teach the LLM the exact same disambiguation rule so behaviour is
+        consistent regardless of which path (rails router or Bridge's
+        Reflex peer-awareness) is composing the turn."""
+        assert RAILS_ANCHOR_CLAUSE == REFLEX_ANCHOR_CLAUSE, (
             "ANCHOR_DISAMBIGUATION_CLAUSE has drifted between "
             "jvagent.action.router.prompts and "
-            "jvagent.action.helm.reasoning.routing.prompts. Restore them to "
+            "jvagent.action.helm.reflex.prompts. Restore them to "
             "byte-identical text."
         )
 
@@ -65,12 +62,21 @@ class TestAnchorDisambiguationClauseInvariants:
             "utterances that share nouns with action anchors."
         )
 
-    def test_clause_is_embedded_in_cockpit_system_prompt(self):
-        assert COCKPIT_ANCHOR_CLAUSE in COCKPIT_ROUTER_SYSTEM_PROMPT, (
+    def test_clause_is_embedded_in_reflex_system_prompt(self):
+        # REFLEX_SYSTEM_PROMPT carries a ``{anchor_disambiguation_clause}``
+        # placeholder that the helm fills in at assembly time. Pin both:
+        # the placeholder is present, AND the clause text appears in the
+        # rendered prompt when the placeholder is substituted.
+        rendered = REFLEX_SYSTEM_PROMPT.format(
+            peer_helms_section="-",
+            helms_available_section="",
+            peer_actions_section="-",
+            anchor_disambiguation_clause=REFLEX_ANCHOR_CLAUSE,
+        )
+        assert REFLEX_ANCHOR_CLAUSE in rendered, (
             "ANCHOR_DISAMBIGUATION_CLAUSE was removed from "
-            "ROUTING_SYSTEM_PROMPT "
-            "(jvagent.action.helm.reasoning.routing.prompts). Re-add it — "
-            "without it, the cockpit router (used by ReasoningHelm) can "
+            "REFLEX_SYSTEM_PROMPT (jvagent.action.helm.reflex.prompts). "
+            "Re-add it — without it, ReflexHelm peer-awareness can "
             "mis-route utterances that share nouns with action anchors."
         )
 
@@ -91,28 +97,17 @@ class TestAnchorDisambiguationClauseContent:
     """
 
     def test_clause_has_intent_not_keywords_headline(self):
-        # The headline frames the rule for the LLM at the top of the section.
         assert "by INTENT, not by keywords" in RAILS_ANCHOR_CLAUSE
 
     def test_clause_has_empty_list_escape_hatch(self):
-        # Without the explicit "prefer empty actions list" rule the LLM
-        # tends to pick *something* even on low confidence — a known
-        # gpt-4o-mini behaviour. This phrase is the escape hatch.
         assert (
             "Prefer an empty actions list" in RAILS_ANCHOR_CLAUSE
             or "empty actions list" in RAILS_ANCHOR_CLAUSE
         )
 
     def test_clause_has_concrete_contrast_example(self):
-        # The contrast example shipped with the clause is the actual
-        # failure observed in live smoke (May 2026). Editing it out
-        # removes the most reliable signal in the prompt.
         assert "training signup interviews" in RAILS_ANCHOR_CLAUSE
         assert "help me prepare for a job interview" in RAILS_ANCHOR_CLAUSE
 
     def test_clause_uses_verb_object_framing(self):
-        # The "verb + object" framing forces the LLM to compare predicate
-        # structures rather than vocabulary. Without this phrasing the
-        # clause becomes a generic "be careful" warning, which small
-        # models routinely ignore.
         assert "verb + object" in RAILS_ANCHOR_CLAUSE
