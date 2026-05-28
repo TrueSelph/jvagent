@@ -8,10 +8,10 @@
 
 The plugin-loadable extension surface of jvagent:
 
-- **`Action` base** ([`base.py:48`](base.py)) — Node subclass with lifecycle hooks, attribute config, endpoint registration, child-cascade delete, tool exposure to the cockpit.
+- **`Action` base** ([`base.py:48`](base.py)) — Node subclass with lifecycle hooks, attribute config, endpoint registration, child-cascade delete, tool exposure to ReasoningHelm.
 - **`InteractAction`** ([`interact/base.py:32`](interact/base.py)) — see `interact/CLAUDE.md`.
 - **Specialized bases**: `BaseModelAction`, `LanguageModelAction`, `BaseWebSearchAction`, `BaseSTTAction`, `BaseTTSAction`, `VectorStore`.
-- **Concrete plugins** organized by topic: language models, response/bus, cockpit, memory-related, channel adapters, productivity integrations, tasks. Catalog in [`/.planning/actions-catalog.md`](../../.planning/actions-catalog.md).
+- **Concrete plugins** organized by topic: language models, response/bus, bridge + helms, memory-related, channel adapters, productivity integrations, tasks. Catalog in [`/.planning/actions-catalog.md`](../../.planning/actions-catalog.md).
 - **Loader/registry** in `loader/`.
 - **Plugin contracts** in `plugin_contracts.py`.
 
@@ -22,7 +22,7 @@ The plugin-loadable extension surface of jvagent:
 | File | Purpose |
 |---|---|
 | `base.py:48` | `Action` base class (canonical) |
-| `base.py:192` | `get_tools()` — for cockpit tool registry |
+| `base.py:192` | `get_tools()` — for ReasoningHelm tool registry |
 | `base.py:180` | `get_capabilities()` — for PersonaAction prompt aggregation |
 | `base.py:225` | `delete(cascade=True)` — walks outgoing edges and cascade-deletes children |
 | `base.py:256-348` | Lifecycle hook contracts (`on_register`, `on_reload`, `post_register`, `on_startup`, `on_enable`, `on_disable`, `on_deregister`, `pulse`, `healthcheck`) |
@@ -87,7 +87,7 @@ Skeleton and full templates: [`/.planning/action-authoring.md`](../../.planning/
 - `tests/action/test_action_loader.py` — plugin loading.
 - `tests/action/test_action_endpoints.py` — endpoint discovery.
 - `tests/action/test_plugin_system.py` — plugin contracts.
-- `tests/test_tool_schema_audit.py` — cockpit tool schema sanity.
+- `tests/test_tool_schema_audit.py` — helm tool schema sanity.
 
 ```bash
 pytest tests/action/ -v
@@ -102,7 +102,7 @@ The detailed walkthrough lives at [`/.planning/action-authoring.md`](../../.plan
 1. Pick base class (Action / InteractAction / specialized).
 2. Choose namespace (`jvagent/` for core, otherwise `contrib/` or `custom/`).
 3. Create the 4-file directory.
-4. Define `attribute(...)` fields; implement lifecycle hooks + `execute` (if InteractAction) + `get_tools()` (if cockpit-exposed).
+4. Define `attribute(...)` fields; implement lifecycle hooks + `execute` (if InteractAction) + `get_tools()` (if helm-exposed).
 5. Wire endpoints under `/actions/{action_id}/...`.
 6. Add tests under `tests/action/{name}/`.
 7. Update [`actions-catalog.md`](../../.planning/actions-catalog.md).
@@ -128,7 +128,8 @@ The detailed walkthrough lives at [`/.planning/action-authoring.md`](../../.plan
 | Subdir | Local guide |
 |---|---|
 | `interact/` | [`interact/CLAUDE.md`](interact/CLAUDE.md) |
-| `cockpit/` | [`cockpit/CLAUDE.md`](cockpit/CLAUDE.md) |
+| `bridge/` | (see [`/.planning/adr/0007-bridge-helm-architecture.md`](../../.planning/adr/0007-bridge-helm-architecture.md)) |
+| `helm/` | (see [`/.planning/adr/0007-bridge-helm-architecture.md`](../../.planning/adr/0007-bridge-helm-architecture.md)) |
 | All other action dirs | Per-package `info.yaml` + class docstring |
 
 ---
@@ -136,5 +137,5 @@ The detailed walkthrough lives at [`/.planning/action-authoring.md`](../../.plan
 ## 10. Out of scope here
 
 - Walker mechanics: see `interact/CLAUDE.md`.
-- Cockpit prompt/engine specifics: see `cockpit/CLAUDE.md` and [`/docs/COCKPIT.md`](../../docs/COCKPIT.md).
+- Bridge + helm prompt/engine specifics: see [`/docs/BRIDGE.md`](../../docs/BRIDGE.md).
 - Memory graph: see `jvagent/memory/CLAUDE.md`.

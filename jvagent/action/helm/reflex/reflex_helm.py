@@ -411,10 +411,10 @@ class ReflexHelm(BaseHelm):
         for action in all_enabled:
             if not isinstance(action, InteractAction):
                 continue
-            # Exclude Bridge itself + any other top-level orchestrator IAs
-            # so Reflex can't DELEGATE to its own surrounding container.
+            # Exclude Bridge itself so Reflex can't DELEGATE to its own
+            # surrounding container.
             cls_name = action.__class__.__name__
-            if cls_name in ("BridgeInteractAction", "CockpitInteractAction"):
+            if cls_name == "BridgeInteractAction":
                 continue
             try:
                 manifest = action.get_manifest()

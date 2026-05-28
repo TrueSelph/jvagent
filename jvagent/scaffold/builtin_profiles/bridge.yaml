@@ -12,8 +12,7 @@
 # their own agent.yaml.
 #
 # Use --profile bridge to scaffold a new agent on this composition.
-# Use --profile cockpit for the standalone cockpit pattern (the current
-# scaffolder default).
+# (This is the scaffolder default.)
 actions:
   - action: jvagent/bridge
     context:
@@ -53,20 +52,13 @@ actions:
   - action: jvagent/reasoning_helm
     context:
       enabled: true
-      # ReasoningHelm in Bridge mode is the deliberate think/act/observe
-      # loop only — the Phase-2 distillation (May 2026) stripped the
-      # standalone-Cockpit surfaces. The following Cockpit-era keys are
-      # NO LONGER accepted by ReasoningHelm and would be silently
-      # ignored (or, with Wave-3 YAML validation, warn at startup) so
-      # they are deliberately omitted from this profile:
-      #   enable_canned_response          → Reflex owns transient_ack
-      #   canned_response_max_words       → ditto
-      #   skip_canned_for_intents         → ditto
-      #   converse_enabled                → no conversational fast-path
-      #   converse_context_limit          → ditto
-      #   converse_persona_prompt         → ditto
-      #   conversational_fast_path        → ditto
-      #   enable_router_preclassifier     → Reflex catches smalltalk upstream
+      # ReasoningHelm is the deliberate think/act/observe loop. Reflex
+      # owns the upstream transient_ack and smalltalk paths, so the
+      # following keys are NOT accepted (warn at startup if set):
+      #   enable_canned_response, canned_response_max_words,
+      #   skip_canned_for_intents, converse_enabled,
+      #   converse_context_limit, converse_persona_prompt,
+      #   conversational_fast_path, enable_router_preclassifier
       router_model: gpt-4o-mini
       router_model_action_type: OpenAILanguageModelAction
       model_action_type: OpenAILanguageModelAction

@@ -1,17 +1,15 @@
 """AccessControl integration for Bridge.
 
 Bridge layers two new resource labels on top of the existing AC taxonomy
-(see ``jvagent.action.cockpit.registry.access`` for parallel standalone-Cockpit
-conventions ``skill:{name}`` / ``tool:{name}``):
+(``skill:{name}`` / ``tool:{name}``):
 
 - ``tool:helm:{helm_name}`` — gating a helm as a ``SHIFT`` target.
 - ``tool:delegate:{action_name}`` — gating a rails ``InteractAction`` as a
   ``DELEGATE`` target.
 
 If the agent has no ``AccessControlAction`` attached (or it is not
-enforcing), both checks pass — matching the standalone Cockpit's existing fail-open
-default. When AC raises an exception the check fails closed (denied), again
-matching the standalone Cockpit's posture for security-relevant resources.
+enforcing), both checks pass (fail-open default). When AC raises an exception
+the check fails closed (denied), preserving security-relevant posture.
 """
 
 from __future__ import annotations

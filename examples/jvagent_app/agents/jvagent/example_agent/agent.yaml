@@ -1,11 +1,10 @@
 # Example Agent Configuration
 #
-# Demonstrates the cockpit-driven pattern: jvagent/cockpit replaces the legacy
-# jvagent/interact_router; intro, persona, signup interview, pageindex
-# retrieval, and converse interact actions all run alongside the cockpit in
-# the InteractWalker chain.
+# Bridge-driven pattern: jvagent/bridge orchestrates ReflexHelm + ReasoningHelm
+# at weight -200. Intro, persona, signup interview, and pageindex retrieval
+# actions still run in the InteractWalker chain.
 #
-# See docs/COCKPIT.md for cockpit architecture.
+# See docs/BRIDGE.md for bridge architecture.
 
 agent: jvagent/example_agent
 version: 1.0.0
@@ -14,7 +13,7 @@ jvagent: ~0.0.1
 
 context:
   alias: Example Agent
-  description: An example agent demonstrating jvagent agent configuration on cockpit
+  description: An example agent demonstrating jvagent agent configuration on bridge+helm
   enabled: true
 
 # Action assignments
@@ -28,13 +27,39 @@ actions:
       enabled: true
       description: "Introductory interact action for first-time users"
 
-  # ── Cockpit (router + agentic loop) ──────────────────────
-  - action: jvagent/cockpit
+  # ── Bridge (multi-helm orchestrator at weight -200) ──────
+  - action: jvagent/bridge
+    context:
+      enabled: true
+      helms:
+        - ReflexHelm
+        - ReasoningHelm
+      default_helm: ReflexHelm
+      shift_budget_per_turn: 4
+      first_emit_timeout_ms: 2500
+      safety_net_ack_text: "Still working on this…"
+      denied_response_text: "Sorry, I can't do that here."
+
+  # ── ReflexHelm (fast classifier) ──────────────────────────
+  - action: jvagent/reflex_helm
+    context:
+      enabled: true
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      model_temperature: 0.0
+      model_max_tokens: 256
+      timeout_seconds: 3.0
+      history_limit: 4
+      default_shift_target: ReasoningHelm
+      can_emit_directly: true
+      fallback_text: "Sorry — I couldn't process that. Could you rephrase or try again?"
+
+  # ── ReasoningHelm (router + agentic loop) ────────────────
+  - action: jvagent/reasoning_helm
     context:
       enabled: true
       description: >
-        Cockpit drives intent routing (Phase 1) and the agentic loop
-        (Phase 2). Replaces the legacy interact_router. Skills can be
+        ReasoningHelm runs the deliberate think/act/observe loop. Skills can be
         added to ``skills`` once registered on the agent.
       router_model: gpt-4o-mini
       router_model_action_type: OpenAILanguageModelAction
@@ -45,7 +70,6 @@ actions:
       max_iterations: 25
       history_limit: 5
       response_mode: respond
-      converse_enabled: true
       stream_internal_progress: true
 
   # ── Language Models ──────────────────────────────────────

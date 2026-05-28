@@ -1,9 +1,9 @@
 """Bridge — multi-helm orchestrator InteractAction.
 
-Bridge ships as a peer to :mod:`jvagent.action.cockpit`. It composes one or
-more helms (see :mod:`jvagent.action.helm`) into a single ``InteractAction``
-at weight ``-200``. Each Bridge walker visit issues at most one helm step,
-preserving the one-model-call-per-visit invariant established by ADR-0002.
+Bridge composes one or more helms (see :mod:`jvagent.action.helm`) into a
+single ``InteractAction`` at weight ``-200``. Each Bridge walker visit issues
+at most one helm step, preserving the one-model-call-per-visit invariant
+established by ADR-0002.
 
 Public exports:
 

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- **`jvagent/action/cockpit/` package fully removed (May 2026 sunset).** Bridge+Helm is the canonical pattern-orchestrator. Migrate any `jvagent/cockpit` installation to `jvagent/bridge` + `jvagent/reasoning_helm` (+ optionally `jvagent/reflex_helm`). The `_MUTUALLY_EXCLUSIVE_ORCHESTRATORS` validator check, the `CockpitInteractAction` exclusion in `helm.reasoning.delivery.delegation`, the `cockpit.yaml` scaffold profile, the `cockpit_agent` example, `docs/COCKPIT.md`, the `tests/action/cockpit/` slice, the `test_no_cockpit_imports` invariant, and the `DUPLICATION_NOTICE.md` are all gone. Skill-hub install/remove scripts now hot-load via `ReasoningHelm.refresh_skills` / `.remove_skill`. Scaffolder default switched from `cockpit` to `bridge`. See [`.planning/COCKPIT-SUNSET.md`](.planning/COCKPIT-SUNSET.md).
+
 ### Added
 
 - **Drop-in `jvagent.embed.Server` subclass mounts jvagent's HTTP routes on the host automatically.** Hosts swap `from jvspatial.api import Server` for `from jvagent.embed import Server`; the subclass overrides `get_app()` so jvagent's `@endpoint`-decorated modules (admin agents CRUD, status, app/update_mode, graph repair, memory admin, action endpoints, logging, optional google OAuth) sync onto the server *before* FastAPI snapshots the endpoint router — guaranteeing routes appear on the live ASGI app. No timing-sensitive call between `Server(...)` and `get_app()` required. Suppress with `JVAGENT_EMBED_ENDPOINTS_DISABLED=true` (or `1`/`true`/`yes`/`on`, case-insensitive); the programmatic surface (`embed.interact`, `interact_stream`, etc.) stays available. The lower-level `embed.register_jvagent_endpoints_on_host(server)` function remains available for hosts that prefer explicit control. Shared importer lives in `jvagent.core.embed_endpoints`; the standalone CLI now delegates to it for parity.

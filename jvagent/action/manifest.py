@@ -25,8 +25,7 @@ via :func:`Manifest.from_payload` so existing actions continue to work
 unchanged.
 
 This module is intentionally pattern-agnostic — it does not import from
-``jvagent.action.helm`` or ``jvagent.action.cockpit``. Both patterns
-consume the same :class:`Manifest`.
+``jvagent.action.helm``. All patterns consume the same :class:`Manifest`.
 """
 
 from __future__ import annotations

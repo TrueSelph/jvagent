@@ -1,28 +1,19 @@
-# Bridge Agent — Bridge + ReasoningHelm with full tool agency
+# Bridge Agent — Bridge + Reflex + ReasoningHelm reference configuration
 #
-# Mirrors examples/jvagent_app/agents/jvagent/cockpit_agent in capability,
-# diverges only in composition: a BridgeInteractAction at weight -200
-# orchestrates one or more helms (ReasoningHelm by default). Used as the
-# parity smoke-test target at BRIDGE-ROADMAP §C-7 — measurements against
-# this agent are compared to baseline 7d95904 (cockpit_agent).
+# The canonical "full tool agency" reference for the bridge+helm pattern.
+# A BridgeInteractAction at weight -200 orchestrates N helms — this example
+# pairs ReflexHelm (sub-500ms classifier) with ReasoningHelm (think-act-observe
+# loop).
 #
 # Architecture:
 #   BridgeInteractAction
-#     └─ ReasoningHelm.step()                     [duplicated from cockpit]
-#           ├─ Phase 1 — CockpitRouter            (router_model_action_type → OpenAI)
-#           └─ Phase 2 — CockpitEngine.step()     (model_action_type → OpenAI)
+#     ├─ ReflexHelm.step()                         (sub-500ms classifier; Groq)
+#     └─ ReasoningHelm.step()                      (deliberate agentic loop)
+#           ├─ Phase 1 — Router                    (router_model_action_type → OpenAI)
+#           └─ Phase 2 — Engine.step()             (model_action_type → OpenAI)
 #                 ├─ Harness service tools (memory, response, task, conversation, …)
 #                 ├─ Action tools (pageindex__*, web_search__*, mcp_filesystem__*, …)
 #                 └─ Skill bundle tools (Claude-style SKILL.md)
-#
-# Bridge vs Cockpit:
-#   - Cockpit is a single InteractAction at weight -200 (legacy).
-#   - Bridge is also at weight -200 but composes N helms; this example
-#     uses ReasoningHelm only. Reflex / Specialist / Persona helms ship
-#     at milestones E / F / G respectively.
-#
-# Reasoning helm config knobs mirror cockpit's exactly so the parity gate
-# at C-7 has apples-to-apples LM-call counts and prompt-token totals.
 
 agent: jvagent/bridge_agent
 version: 1.0.0
@@ -33,9 +24,9 @@ context:
   alias: Bridge Agent
   description: >-
     Bridge-pattern agent giving the model access to all harness services and
-    action tools. BridgeInteractAction at weight -200 dispatches to
-    ReasoningHelm which runs the cockpit-style think/act/observe loop.
-    Pre-loaded with pageindex_search, pageindex_docs, and web_search skills.
+    action tools. BridgeInteractAction at weight -200 dispatches to ReflexHelm
+    (classifier) and ReasoningHelm (think/act/observe loop). Pre-loaded with
+    pageindex_search, pageindex_docs, and web_search skills.
   enabled: true
   interaction_limit: 20
 
@@ -107,11 +98,10 @@ actions:
       can_emit_directly: true
 
   # ── ReasoningHelm — deliberate think/act/observe loop ──
-  # After the Phase-2 distillation, ReasoningHelm's mission is
-  # agentic-loop + skill/IA routing only. The standalone-Cockpit
-  # surfaces (canned response, conversational fast-path, smalltalk
-  # preclassifier, posture SUPPRESS/DEFER handling) are owned by
-  # ReflexHelm upstream and no longer accepted here.
+  # ReasoningHelm's mission is agentic-loop + skill/IA routing only.
+  # Canned response, conversational fast-path, smalltalk preclassifier,
+  # and posture SUPPRESS/DEFER handling are owned by ReflexHelm upstream
+  # and not accepted here.
   - action: jvagent/reasoning_helm
     context:
       enabled: true
@@ -162,12 +152,10 @@ actions:
       #   enable_router_preclassifier     → Reflex catches smalltalk upstream
 
   # ── Ollama Language Model (available for routing variants; not the default) ──
-  # Kept in parity with cockpit_agent so swapping providers in agent.yaml
-  # context is a one-line diff against either example.
   - action: jvagent/ollama_lm
     context:
       enabled: true
-      description: Ollama cloud endpoint (kept for parity with cockpit_agent)
+      description: Ollama cloud endpoint (available as a routing variant)
       api_endpoint: https://ollama.com
       # API key is env-only — set OLLAMA_API_KEY in your environment.
       model: deepseek-v4-flash:cloud

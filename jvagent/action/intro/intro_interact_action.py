@@ -28,7 +28,7 @@ class IntroInteractAction(InteractAction):
 
     Attributes:
         prompt: Introductory message template for first-time users
-        weight: Execution weight (default: -300, runs before InteractRouter and CockpitInteractAction at -200)
+        weight: Execution weight (default: -300, runs before InteractRouter and BridgeInteractAction at -200)
         anchors: Routing anchors (empty list - this runs conditionally based on user status)
     """
 
@@ -44,7 +44,7 @@ class IntroInteractAction(InteractAction):
 
     weight: int = attribute(
         default=-300,
-        description="Execution weight (runs before InteractRouter and CockpitInteractAction at -200)",
+        description="Execution weight (runs before InteractRouter and BridgeInteractAction at -200)",
     )
 
     always_execute: bool = attribute(

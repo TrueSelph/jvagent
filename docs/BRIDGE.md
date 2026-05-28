@@ -2,11 +2,11 @@
 
 ## Overview
 
-Bridge is the multi-helm deployment pattern. Where [Cockpit](COCKPIT.md) wraps a single think-act-observe loop, Bridge composes **N helms** behind a single `InteractAction` slot at weight `-200` and orchestrates **shifts** between them as walker hops. Each helm is itself an `Action` with a `step(visitor, bridge_state) → HelmStepResult` contract.
+Bridge is the canonical multi-helm deployment pattern. Bridge composes **N helms** behind a single `InteractAction` slot at weight `-200` and orchestrates **shifts** between them as walker hops. Each helm is itself an `Action` with a `step(visitor, bridge_state) → HelmStepResult` contract.
 
-The pattern targets latency-sensitive UX (voice, fast chat) and mixed workloads where trivial turns shouldn't pay the cost of a heavy reasoner. A fast classifier helm (Reflex) handles smalltalk in <300ms; deliberate turns shift to a Reasoning helm; delivery polish can shift again to a Persona helm. Each shift is observable, streamable, and AccessControl-gated.
+The pattern targets latency-sensitive UX (voice, fast chat) and mixed workloads where trivial turns shouldn't pay the cost of a heavy reasoner. A fast classifier helm (Reflex) handles smalltalk in <300ms; deliberate turns shift to a Reasoning helm; delivery polish runs through `PersonaAction` via `EMIT(via_persona=True)`. Each shift is observable, streamable, and AccessControl-gated.
 
-Bridge does NOT replace Cockpit. The two patterns coexist; operators choose per-deployment via scaffolder profile (`--profile bridge` vs `--profile cockpit`) and `agent.yaml`. See [`PATTERNS.md`](../.planning/PATTERNS.md) for the decision tree.
+Bridge is the only pattern-orchestrator that ships with jvagent today. The earlier monolithic `CockpitInteractAction` was removed in May 2026 — see [`.planning/COCKPIT-SUNSET.md`](../.planning/COCKPIT-SUNSET.md) for the migration. See [`PATTERNS.md`](../.planning/PATTERNS.md) for when to use Rails (single `InteractRouter` + per-IA chain) vs Bridge.
 
 ## Architecture
 
@@ -43,7 +43,7 @@ Bridge invariants:
 4. **Shift budget per turn** (default `4`) prevents ping-pong loops.
 5. **First-emit timeout** (default `800ms`) triggers a safety-net ack on long deliberate turns.
 
-State persists on `visitor._bridge_state` (`BridgeState` dataclass). Per-helm internal state (e.g. ReasoningHelm's `CockpitState`) lives on `visitor._skill_state`, scoped by the helm that owns the current visit.
+State persists on `visitor._bridge_state` (`BridgeState` dataclass). Per-helm internal state (e.g. ReasoningHelm's session state) lives on `visitor._skill_state`, scoped by the helm that owns the current visit.
 
 ## Helms
 
@@ -52,10 +52,10 @@ A helm is a `BaseHelm` subclass — an `Action` that implements `step()` and dec
 | Helm | Class | Latency class | Purpose |
 |---|---|---|---|
 | **ReflexHelm** | `jvagent.action.helm.reflex.ReflexHelm` | `fast` | Sub-500ms classifier. Handles greetings, smalltalk, simple acknowledgements directly via a small completion model; SHIFTs to a deliberate helm on any utterance that needs reasoning. |
-| **ReasoningHelm** | `jvagent.action.helm.reasoning.ReasoningHelm` | `deliberate` | Engine-style think-act-observe loop. One model call per walker visit; full tool surface (memory, response, task, conversation, skill, artifact, search). Independent duplication — zero imports from `cockpit/`. |
+| **ReasoningHelm** | `jvagent.action.helm.reasoning.ReasoningHelm` | `deliberate` | Engine-style think-act-observe loop. One model call per walker visit; full tool surface (memory, response, task, conversation, skill, artifact, search). |
 | **Specialist** | any rails `InteractAction` | (manifest) | Not a helm — invoked via `DELEGATE(action=...)`. Lets Bridge yield cleanly to a deterministic rails IA for an in-progress workflow (e.g. interview, form). |
 
-**Persona stylisation** is not a helm. It lives in `PersonaAction` (the same action stand-alone Cockpit uses) and is invoked by Bridge via `EMIT(via_persona=True)` → `BridgeInteractAction._publish_emit_via_persona` → `PersonaAction.respond`. A helm that wants its final output stylised returns `EMIT(text=..., via_persona=True, finalize=True)` and Bridge handles the rest. The originally-planned dedicated `PersonaHelm` was scrapped in May 2026 (see [`adr/0007`](../.planning/adr/0007-bridge-helm-architecture.md) accepted-state amendments).
+**Persona stylisation** is not a helm. It lives in `PersonaAction` and is invoked by Bridge via `EMIT(via_persona=True)` → `BridgeInteractAction._publish_emit_via_persona` → `PersonaAction.respond`. A helm that wants its final output stylised returns `EMIT(text=..., via_persona=True, finalize=True)` and Bridge handles the rest. The originally-planned dedicated `PersonaHelm` was scrapped in May 2026 (see [`adr/0007`](../.planning/adr/0007-bridge-helm-architecture.md) accepted-state amendments).
 
 ### HelmStepResult verb set (v0.2)
 
@@ -120,7 +120,7 @@ actions:
       enable_canned_response: false   # Reflex owns user-facing canned/ack
 ```
 
-The interact pipeline (`InteractWalker` → `Actions` → sorted `InteractAction` chain by weight) is fully preserved. Bridge and Cockpit cannot coexist on the same agent — the scaffolder rejects this at validate-time because both occupy weight `-200` and operator intent is ambiguous.
+The interact pipeline (`InteractWalker` → `Actions` → sorted `InteractAction` chain by weight) is fully preserved. Bridge owns the pattern-orchestrator slot at weight `-200`.
 
 ## Action Configuration
 
@@ -230,14 +230,13 @@ The originally-planned dedicated `PersonaHelm` (an extra hop via `SHIFT(target=P
 |---|---|
 | Bridge orchestration | `helms`, `default_helm`, `shift_budget_per_turn`, `first_emit_timeout_ms` |
 | Reflex classifier | Provider / model, `timeout_seconds`, `default_shift_target`, `can_emit_directly` |
-| Reasoning engine | Same surface as Cockpit (engine + router + skills + tool tier) minus `enable_canned_response` |
+| Reasoning engine | Router + engine + skills + tool tier (memory, response, task, conversation, skill, artifact, search) |
 | Persona stylisation | `PersonaAction` config (`persona_name`, `persona_description`, `persona_capabilities`); helms invoke it via `EMIT(via_persona=True)` |
 | Safety nets | `safety_net_ack_text`, `denied_response_text`, `enable_transient_ack`, `block_raw_tool_invocation` |
 
 ### Gotchas
 
-- `ReasoningHelm` in Bridge mode no longer accepts the Cockpit-monolithic surfaces (`enable_canned_response`, `canned_response_max_words`, `skip_canned_for_intents`, `converse_enabled`, `converse_context_limit`, `converse_persona_prompt`, `conversational_fast_path`, `enable_router_preclassifier`). These were stripped in the May 2026 Phase-2 distillation — Reflex owns transient_ack/smalltalk, Bridge owns persona delivery. Including any of them in `agent.yaml` triggers an unknown-context-key warning at startup and the value is silently dropped.
-- ReasoningHelm and `CockpitInteractAction` cannot coexist on the same agent. The Bridge composition fully replaces Cockpit. `agent_yaml_validator` warns when both are installed.
+- `ReasoningHelm` does not accept the legacy monolithic surfaces (`enable_canned_response`, `canned_response_max_words`, `skip_canned_for_intents`, `converse_enabled`, `converse_context_limit`, `converse_persona_prompt`, `conversational_fast_path`, `enable_router_preclassifier`). Reflex owns transient_ack/smalltalk, Bridge owns persona delivery. Including any of them in `agent.yaml` triggers an unknown-context-key warning at startup and the value is silently dropped.
 - ReflexHelm's classifier uses temperature `0.0` and a small `max_tokens` (256) by design. Don't raise these — the helm is meant to be a deterministic gate, not a generator.
 - Recap / recall questions ALWAYS SHIFT from ReflexHelm to ReasoningHelm regardless of perceived history. The reflex prompt enforces this explicitly.
 - **Locale-static strings.** A few Bridge / helm attributes are STATIC strings that don't adapt to the user's language: `safety_net_ack_text` and `denied_response_text` on Bridge, and `fallback_text` / `tool_invocation_refusal_text` on ReflexHelm. The Bridge `safety_net_ack_text` defaults to `"…"` (universal) so multilingual deployments inherit a safe placeholder; the rest default to English. Override per agent.yaml for single-language deployments, or use a channel adapter that localises before publish. Dynamic strings (Reflex's `transient_ack`, persona-rendered EMITs) DO adapt — they go through model calls that read `detected_language`.
@@ -261,7 +260,7 @@ jvagent/action/helm/                    # Helm primitives + concrete helms
   │   ├─ reflex_helm.py                 # Fast classifier helm
   │   ├─ prompts.py
   │   └─ info.yaml
-  └─ reasoning/                         # Independent duplication of cockpit
+  └─ reasoning/                         # ReasoningHelm package
       ├─ reasoning_helm.py
       ├─ engine.py                      # Engine (think-act-observe loop)
       ├─ routing/router.py              # EngineRouter (Phase-1 classifier)
@@ -269,7 +268,6 @@ jvagent/action/helm/                    # Helm primitives + concrete helms
       ├─ delivery/                      # gates, helpers, delegation
       ├─ registry/                      # tool assembler, access, visitor shim
       ├─ tools/                         # response, memory, task, skill, …
-      ├─ DUPLICATION_NOTICE.md          # Per-file source attribution from cockpit
       └─ info.yaml
 
 # Persona stylisation lives in jvagent/action/persona/ (PersonaAction) and is
@@ -279,7 +277,7 @@ jvagent/action/helm/                    # Helm primitives + concrete helms
 jvagent/action/manifest.py              # Pattern-agnostic Manifest schema
 ```
 
-The duplication notice ([`jvagent/action/helm/reasoning/DUPLICATION_NOTICE.md`](../jvagent/action/helm/reasoning/DUPLICATION_NOTICE.md)) records the source commit of every duplicated file from cockpit. Drift is expected: Bridge and Cockpit can evolve independently. The invariant guard `tests/action/bridge/test_no_cockpit_imports.py` prevents accidental cross-imports.
+ReasoningHelm was originally forked from the (now-removed) `CockpitInteractAction` engine and has since diverged. See [`.planning/COCKPIT-SUNSET.md`](../.planning/COCKPIT-SUNSET.md) for the May 2026 sunset of the cockpit pattern.
 
 ## Implementing a New Helm
 
@@ -341,5 +339,4 @@ See [`docs/logging.md`](logging.md) → "Bridge Observability" for query example
 - [`.planning/PATTERNS.md`](../.planning/PATTERNS.md) — pattern catalog + performance ledger
 - [`.planning/adr/0007-bridge-helm-architecture.md`](../.planning/adr/0007-bridge-helm-architecture.md) — Bridge + Helm architecture decision
 - [`.planning/BRIDGE-ROADMAP.md`](../.planning/BRIDGE-ROADMAP.md) — build plan
-- [`docs/COCKPIT.md`](COCKPIT.md) — Cockpit reference (companion pattern)
 - [`docs/logging.md`](logging.md) — observability schema (Bridge events)

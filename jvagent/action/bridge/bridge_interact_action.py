@@ -1,7 +1,6 @@
 """``BridgeInteractAction`` — multi-helm orchestrator at weight ``-200``.
 
-Bridge sits in the same agent slot as ``CockpitInteractAction`` (the two are
-not installed together; PATTERNS.md enforces this). Its job is to:
+Bridge is the pattern-orchestrator InteractAction. Its job is to:
 
 1. Resolve the **current helm** for the turn (defaulting to ``default_helm`` or
    the first entry of ``helms`` when no turn state exists yet).
@@ -25,9 +24,7 @@ not installed together; PATTERNS.md enforces this). Its job is to:
    timeout safety-net** (default 800ms). Both feed the safe-fallback path.
 5. Refuse to execute when no helms are configured.
 
-State plumbing lives on ``visitor._bridge_state`` (see :class:`BridgeState`),
-parallel to the standalone Cockpit's ``visitor._skill_state``. The two never coexist on the
-same walker visit.
+State plumbing lives on ``visitor._bridge_state`` (see :class:`BridgeState`).
 """
 
 from __future__ import annotations
@@ -142,7 +139,7 @@ class BridgeInteractAction(InteractAction):
 
     weight: int = attribute(
         default=-200,
-        description="Execution weight (same slot as the standalone Cockpit).",
+        description="Execution weight (pattern-orchestrator slot at -200).",
     )
     description: str = attribute(
         default=(
@@ -404,7 +401,7 @@ class BridgeInteractAction(InteractAction):
     ) -> None:
         """Append a ``helm_shift`` event to ``interaction.observability_metrics``.
 
-        Mirrors the structure the standalone Cockpit and jvagent core already uses (``event_type``
+        Mirrors the structure jvagent core already uses (``event_type``
         + ``data`` + ``timestamp``) so the existing ``GET /logs/agents/{id}``
         query surface accepts these events without schema changes. See
         ``docs/logging.md`` for the canonical event taxonomy.

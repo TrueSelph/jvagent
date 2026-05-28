@@ -48,5 +48,5 @@ class SecretAction(Action):
     assert len(actions) == 1
     action = actions[0]
     assert action.timeout == 30
-    assert "Property 'api_key' from agent.yaml context does not exist on" in caplog.text
-    assert "Property 'token' from agent.yaml context does not exist on" in caplog.text
+    assert "unknown context key 'api_key' for action" in caplog.text
+    assert "unknown context key 'token' for action" in caplog.text

@@ -47,7 +47,7 @@ tags:
 ## Dependencies
 
 - **LaTeX / Tectonic** (preferred): not installable via pip. Either install a full TeX distribution (TeX Live, MacTeX, MiKTeX) so `xelatex`, `pdflatex`, or `lualatex` is on `PATH`, or install the standalone [Tectonic](https://tectonic-typesetting.github.io/) CLI (`tectonic` on `PATH`) for a smaller footprint. See comments in `resources/requirements.txt` for typical install commands.
-- **WeasyPrint** (fallback for `pdf_generation__pandoc_fallback`): add `weasyprint` to `package.dependencies.pip` on the app’s `CockpitInteractAction` `info.yaml` (auto-install on action load), or `pip install weasyprint` manually. See `resources/requirements.txt` in this bundle. Some platforms need extra OS libraries (Cairo, Pango, etc.); follow [WeasyPrint install](https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#installation) if import fails.
+- **WeasyPrint** (fallback for `pdf_generation__pandoc_fallback`): add `weasyprint` to `package.dependencies.pip` on the app’s `ReasoningHelm` `info.yaml` (auto-install on action load), or `pip install weasyprint` manually. See `resources/requirements.txt` in this bundle. Some platforms need extra OS libraries (Cairo, Pango, etc.); follow [WeasyPrint install](https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#installation) if import fails.
 
 ## Scope
 

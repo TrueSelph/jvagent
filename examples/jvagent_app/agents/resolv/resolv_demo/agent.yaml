@@ -1,12 +1,11 @@
 # Resolv Demo Agent
 #
-# Demonstrates the cockpit-driven pattern combined with multi-channel access
-# control: jvagent/cockpit replaces the legacy jvagent/interact_router and
-# coexists with the resolv interview/onboarding/subscription actions, the
-# pageindex retrieval action, the access_control_action, and the WhatsApp
-# adapter.
+# Bridge-driven pattern combined with multi-channel access control:
+# jvagent/bridge orchestrates ReflexHelm + ReasoningHelm and coexists with the
+# resolv interview/onboarding/subscription actions, the pageindex retrieval
+# action, the access_control_action, and the WhatsApp adapter.
 #
-# See docs/COCKPIT.md for cockpit architecture.
+# See docs/BRIDGE.md for bridge architecture.
 
 agent: resolv/resolv_demo
 version: 1.0.0
@@ -15,7 +14,7 @@ jvagent: ~0.0.1
 
 context:
   alias: Resolv Demo Agent
-  description: A demo agent for Resolv on the cockpit pattern
+  description: A demo agent for Resolv on the bridge+helm pattern
   enabled: true
   interaction_limit: 10  # Optional limit on number of interactions (resets after reaching limit)
 
@@ -27,15 +26,41 @@ actions:
       description: "Onboarding action is used to register user and subscribe them to default groups."
       weight: -200
 
-  # ── Cockpit (router + agentic loop) ──────────────────────
-  - action: jvagent/cockpit
+  # ── Bridge (multi-helm orchestrator at weight -200) ──────
+  - action: jvagent/bridge
+    context:
+      enabled: true
+      helms:
+        - ReflexHelm
+        - ReasoningHelm
+      default_helm: ReflexHelm
+      shift_budget_per_turn: 4
+      first_emit_timeout_ms: 2500
+      safety_net_ack_text: "Still working on this…"
+      denied_response_text: "Sorry, I can't do that here."
+
+  # ── ReflexHelm (fast classifier) ──────────────────────────
+  - action: jvagent/reflex_helm
+    context:
+      enabled: true
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      model_temperature: 0.0
+      model_max_tokens: 256
+      timeout_seconds: 3.0
+      history_limit: 4
+      default_shift_target: ReasoningHelm
+      can_emit_directly: true
+      fallback_text: "Sorry — I couldn't process that. Could you rephrase or try again?"
+
+  # ── ReasoningHelm (router + agentic loop) ────────────────
+  - action: jvagent/reasoning_helm
     context:
       enabled: true
       description: >
-        Cockpit drives intent routing (Phase 1) and the agentic loop
-        (Phase 2). Replaces the legacy interact_router. Resolv interview
-        and onboarding actions remain in the chain and are invoked when
-        the cockpit defers to them.
+        ReasoningHelm runs the deliberate think/act/observe loop. Resolv
+        interview and onboarding actions are invoked when the helm
+        defers to them.
       router_model: gpt-4o-mini
       router_model_action_type: OpenAILanguageModelAction
       model_action_type: OllamaLanguageModelAction
@@ -51,7 +76,7 @@ actions:
   - action: jvagent/ollama_lm
     context:
       enabled: true
-      description: "Ollama cloud endpoint — primary engine for the cockpit agentic loop"
+      description: "Ollama cloud endpoint — primary engine for the reasoning helm agentic loop"
       api_endpoint: https://ollama.com
       # API key is env-only — set OLLAMA_API_KEY in your environment.
       model: deepseek-v4-flash:cloud

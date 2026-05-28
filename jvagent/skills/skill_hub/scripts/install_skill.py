@@ -201,11 +201,11 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any = None) -> Any:
         # can see the newly installed skill without restarting.
         hot_loaded = []
         try:
-            from jvagent.action.cockpit.cockpit_interact_action import (
-                CockpitInteractAction,
+            from jvagent.action.helm.reasoning.reasoning_helm import (
+                ReasoningHelm,
             )
 
-            newly_found = await CockpitInteractAction.refresh_skills(visitor)
+            newly_found = await ReasoningHelm.refresh_skills(visitor)
             if skill_name in newly_found:
                 hot_loaded = newly_found
         except Exception as exc:

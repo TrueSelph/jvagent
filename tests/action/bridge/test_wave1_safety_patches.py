@@ -3,9 +3,9 @@
 Covers the five items from the external code review:
 
 - **C1** — Pattern-orchestrator exclusion: the engine router catalog
-  AND ``resolve_routed_interact_actions`` must both filter out
-  ``BridgeInteractAction`` and ``CockpitInteractAction`` so the engine
-  cannot accidentally DELEGATE back into its own wrapper.
+  AND ``resolve_routed_interact_actions`` must filter out
+  ``BridgeInteractAction`` so the engine cannot accidentally DELEGATE
+  back into its own wrapper.
 - **C2** — ``DELEGATE.args`` propagation: when a helm returns
   ``DELEGATE(interact_action="X", args={...})`` Bridge must stash the
   args on the visitor so the target IA can read them, and clear the
@@ -47,7 +47,7 @@ pytestmark = pytest.mark.asyncio
 
 
 class TestRouterExclusionsC1:
-    """Bridge and Cockpit must never appear in a routable IA catalog."""
+    """Bridge must never appear in a routable IA catalog."""
 
     async def test_resolve_routed_excludes_bridge(self):
         """``resolve_routed_interact_actions`` filters out BridgeInteractAction.
@@ -73,38 +73,6 @@ class TestRouterExclusionsC1:
             "BridgeInteractAction must be filtered out of the resolved IA list "
             "even when classified by the router (defence against recursion)."
         )
-
-    async def test_resolve_routed_excludes_cockpit(self):
-        """``resolve_routed_interact_actions`` filters out CockpitInteractAction.
-
-        Cockpit at -200 is the legacy sibling of Bridge; routing into
-        it from inside a Bridge agent would jump patterns mid-turn.
-        """
-        # ``InteractAction`` is abstract — provide a no-op execute() so
-        # the test double is instantiable. The filter uses
-        # ``__class__.__name__`` so we rename the class afterwards to
-        # match the orchestrator name the filter is looking for.
-        from jvagent.action.interact.base import InteractAction
-
-        class FakeCockpit(InteractAction):
-            async def execute(self, visitor: Any) -> None:  # type: ignore[override]
-                return None
-
-        FakeCockpit.__name__ = "CockpitInteractAction"
-        fake_cockpit = FakeCockpit()
-
-        actions_mgr = MagicMock()
-        actions_mgr.get_all_actions = AsyncMock(return_value=[fake_cockpit])
-        agent = MagicMock()
-        agent.get_actions_manager = AsyncMock(return_value=actions_mgr)
-
-        routing = MagicMock()
-        routing.interact_actions = ["CockpitInteractAction"]
-
-        matched = await resolve_routed_interact_actions(agent, routing)
-        assert (
-            matched == []
-        ), "CockpitInteractAction must be filtered out of the resolved IA list."
 
     async def test_resolve_routed_keeps_normal_ia(self):
         """Sanity: legitimate IAs still resolve.

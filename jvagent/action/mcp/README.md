@@ -97,7 +97,7 @@ From an **InteractAction** (or any action that can call `get_action`):
 - `mcp = await self.get_action(MCPAction)` then `result = await mcp.fulfill("What's the weather in Kansas tomorrow?", user_id=self.user_id)`.
 - `fulfill()` aggregates tools across all enabled configured servers and asks the model to choose `{server_name, tool_name, arguments}`. Pass `user_id` so the per-user sandbox folder is used instead of the shared `anonymous` default.
 
-From cockpit / `ToolExecutor` integration:
+From ReasoningHelm / `ToolExecutor` integration:
 
 - `tool_servers` still references server names (`servers[].name`).
 - `ToolExecutor` registers tools with collision-safe names like `mcp_<server>_<tool>` internally and dispatches to the owning server.

@@ -46,7 +46,7 @@ Do NOT pick `converse` when:
 
 ## Workflow
 
-The cockpit handles dispatch structurally for this skill: when `converse` is
+The helm handles dispatch structurally for this skill: when `converse` is
 the only routed skill, the engine is bypassed entirely and the utterance is
 delivered to PersonaAction directly. There is no tool to call. Keep the
 reply short, in-character, and aligned with the user's tone.

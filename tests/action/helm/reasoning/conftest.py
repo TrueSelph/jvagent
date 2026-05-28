@@ -1,4 +1,4 @@
-"""Shared fixtures for cockpit tests.
+"""Shared fixtures for reasoning helm tests.
 
 Provides a mocked ``EngineContext`` plus helpers to construct deterministic
 ``ModelActionResult`` sequences and stub tool registries. These fixtures bypass
@@ -128,7 +128,7 @@ def stub_registry(stub_tool_factory):
 
 
 @pytest.fixture
-def cockpit_config() -> EngineConfig:
+def engine_config() -> EngineConfig:
     """Default-ish EngineConfig with tight budgets for fast tests."""
     return EngineConfig(
         model="test-model",
@@ -215,7 +215,7 @@ def mock_agent():
 
 @pytest.fixture
 def engine_ctx(
-    cockpit_config,
+    engine_config,
     mock_persona,
     mock_visitor,
     mock_conversation,
@@ -229,7 +229,7 @@ def engine_ctx(
         interaction=mock_interaction,
         agent=mock_agent,
         model_action=ScriptedModelAction([]),  # will be overridden per test
-        config=cockpit_config,
+        config=engine_config,
         response_bus=mock_visitor.response_bus,
         session_id=mock_visitor.session_id,
         channel=mock_visitor.channel,

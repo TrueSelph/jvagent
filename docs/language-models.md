@@ -1,6 +1,6 @@
 # Language model actions (HTTP retries)
 
-`BaseModelAction` (including all `LanguageModelAction` providers: OpenAI, Ollama, Anthropic, OpenRouter) supports automatic retries for **transient** HTTP failures so a single timeout or connection blip does not abort long-running flows (e.g. `CockpitInteractAction` think-act-observe loops).
+`BaseModelAction` (including all `LanguageModelAction` providers: OpenAI, Ollama, Anthropic, OpenRouter) supports automatic retries for **transient** HTTP failures so a single timeout or connection blip does not abort long-running flows (e.g. `ReasoningHelm` think-act-observe loops).
 
 ## Defaults
 
@@ -57,8 +57,8 @@ Native OpenAI **reasoning** / “thinking” models (e.g. `o1*`, `o3*`, `o4-mini
 
 Configure effort in either of these ways:
 
-1. **`reasoning_effort`** on `jvagent/openai_lm` or on `jvagent/cockpit_interact_action` (recommended for OpenAI).
-2. Legacy nested form **`reasoning: { effort: medium }`** on the cockpit action — it is translated to top-level `reasoning_effort` for native OpenAI only.
+1. **`reasoning_effort`** on `jvagent/openai_lm` or on `jvagent/reasoning_helm` (recommended for OpenAI).
+2. Legacy nested form **`reasoning: { effort: medium }`** on the reasoning helm — it is translated to top-level `reasoning_effort` for native OpenAI only.
 
 **OpenRouter** (`OpenRouterLanguageModelAction`) does **not** apply this reshaping: it keeps the nested `reasoning: { effort: ... }` body OpenRouter expects. Use the `reasoning` dict there as before.
 
@@ -70,19 +70,19 @@ Example (`agent.yaml`):
     model: o3-mini
     timeout: 180
     reasoning_effort: medium
-- action: jvagent/cockpit_interact_action
+- action: jvagent/reasoning_helm
   context:
     model_action_type: OpenAILanguageModelAction
     model: gpt-5.1-2025-11-13
     reasoning_effort: low
 ```
 
-## Loop integration (CockpitInteractAction)
+## Loop integration (ReasoningHelm)
 
-`CockpitInteractAction` passes a provider-agnostic `ReasoningModelConfig` to the
+`ReasoningHelm` passes a provider-agnostic `ReasoningModelConfig` to the
 active `LanguageModelAction` and providers translate it to native API kwargs.
 
-Generic fields exposed on `CockpitInteractAction`:
+Generic fields exposed on `ReasoningHelm`:
 
 - `reasoning_effort` (`minimal|low|medium|high`)
 - `reasoning_budget_tokens` (budgeted thinking profile)

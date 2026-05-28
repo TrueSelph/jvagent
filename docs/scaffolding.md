@@ -100,7 +100,7 @@ Used with `jvagent app create --agent ...` and as the positional argument to `jv
 
 1. `profiles/<key>.yaml` (or `profiles/<key>` as a file)
 2. `profiles/builtin/<key>.yaml`
-3. Built-in packaged profiles: `cockpit` (default for new agents), `minimal`, `conversational`, `whatsapp_voice`, `research`
+3. Built-in packaged profiles: `bridge` (default for new agents), `minimal`, `conversational`, `whatsapp_voice`, `research`
 
 Built-in profiles can **extend** other profiles (`extends:`) and pull in more YAML via `include:` (see **Profile YAML** below).
 
@@ -174,7 +174,7 @@ jvagent --update
 
 ## Skill catalogs and custom skills
 
-Cockpit agents support two skill sources:
+Bridge+ReasoningHelm agents support two skill sources:
 
 1. Built-in reusable skill catalog shipped with jvagent (`jvagent/skills/*`)
 2. App-local custom skills in `agents/<ns>/<id>/skills/<skill_name>/SKILL.md`
@@ -182,7 +182,7 @@ Cockpit agents support two skill sources:
 When a skill name exists in both, app-local overrides built-in.
 
 Runtime exposure is controlled per agent in `agents/<ns>/<id>/agent.yaml` on
-`jvagent/cockpit_interact_action` via:
+`jvagent/reasoning_helm` via:
 
 - `skills`: `-all` or a list of names/globs (default unset = expose none)
 - `denied_skills`: optional subtractive names/globs
