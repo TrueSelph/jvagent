@@ -69,6 +69,12 @@ actions:
       # Bridge looks up the user's detected_language (stamped by
       # ReflexHelm) and picks a variant at random from the matching
       # list. ``default`` is used when the language isn't keyed.
+      # ``default`` is consulted ONLY when the safety-net fires before
+      # ReflexHelm has stamped ``detected_language`` on BridgeState
+      # (typical when Reflex itself is slower than first_emit_timeout_ms,
+      # or fails outright). A bare "…" reads as broken text — use the
+      # same shape as the English bucket so the user sees a natural
+      # lead-in even on the worst-case timing path.
       safety_net_ack_text:
         English:
           - "One moment…"
@@ -83,7 +89,8 @@ actions:
           - "Une seconde…"
           - "Hmm…"
         default:
-          - "…"
+          - "One moment…"
+          - "One sec…"
       denied_response_text: "Sorry, I can't do that here."
 
   # ── ReflexHelm — sub-500ms fast classifier (BRIDGE-ROADMAP §E) ──
