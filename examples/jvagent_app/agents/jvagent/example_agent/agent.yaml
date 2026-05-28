@@ -37,7 +37,10 @@ actions:
       default_helm: ReflexHelm
       shift_budget_per_turn: 4
       first_emit_timeout_ms: 2500
-      safety_net_ack_text: "Still working on this…"
+      safety_net_ack_text:
+        - "One moment…"
+        - "One sec…"
+        - "Hmmm…"
       denied_response_text: "Sorry, I can't do that here."
 
   # ── ReflexHelm (fast classifier) ──────────────────────────

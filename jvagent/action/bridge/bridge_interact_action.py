@@ -30,6 +30,7 @@ State plumbing lives on ``visitor._bridge_state`` (see :class:`BridgeState`).
 from __future__ import annotations
 
 import logging
+import random
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -167,15 +168,20 @@ class BridgeInteractAction(InteractAction):
         default=DEFAULT_FIRST_EMIT_TIMEOUT_MS,
         description="If no EMIT by this deadline, fire safety-net ack once (default 800).",
     )
-    safety_net_ack_text: str = attribute(
+    safety_net_ack_text: Any = attribute(
         default="…",
         description=(
-            "Text published when the first-emit timeout fires. STATIC string "
-            "— does NOT adapt to the user's language. Default is the "
-            "universal ellipsis so multilingual deployments work without "
-            "operator config. Override in agent.yaml for a single-language "
-            'deployment (e.g. "Working on it…" for English-only). Set to '
-            "an empty string to disable the safety-net publish."
+            "Text published when the first-emit timeout fires. Accepts "
+            "either a single string OR a list of strings. When a list "
+            "is provided, Bridge picks one entry at random per fire so "
+            "the lead-in doesn't feel repetitive across turns. STATIC "
+            "content — does NOT adapt to the user's language. Default "
+            "is the universal ellipsis so multilingual deployments work "
+            "without operator config. Override in agent.yaml for a "
+            "single-language deployment (e.g. "
+            '["One moment…", "One sec…", "Hmmm…"] for English-only). '
+            "Set to an empty string / empty list to disable the safety-"
+            "net publish."
         ),
     )
     denied_response_text: str = attribute(
@@ -1427,17 +1433,38 @@ class BridgeInteractAction(InteractAction):
         elapsed_ms = (time.monotonic() - state.turn_started_at) * 1000.0
         if elapsed_ms < self.first_emit_timeout_ms:
             return
-        if not self.safety_net_ack_text:
+        content = self._pick_safety_net_ack()
+        if not content:
             return
         await self.publish(
             visitor=visitor,
-            content=self.safety_net_ack_text,
+            content=content,
             transient=True,
         )
         state.last_emit_at = time.monotonic()
         bucket = state.helm_states.setdefault("__bridge__", {})
         if isinstance(bucket, dict):
             bucket["safety_net_fired"] = True
+
+    def _pick_safety_net_ack(self) -> str:
+        """Return the safety-net ack text for this fire.
+
+        ``safety_net_ack_text`` accepts either a single string or a
+        list of strings. When a list is provided, pick one entry at
+        random per fire so the lead-in varies across turns. Empty
+        strings inside a list are filtered out so the typical
+        ``["…", "One moment…"]`` shape works as expected; an empty
+        result disables the safety-net publish for this fire.
+        """
+        raw = self.safety_net_ack_text
+        if isinstance(raw, (list, tuple)):
+            options = [s for s in raw if isinstance(s, str) and s.strip()]
+            if not options:
+                return ""
+            return random.choice(options)
+        if isinstance(raw, str):
+            return raw
+        return ""
 
     async def _safe_fallback(
         self,

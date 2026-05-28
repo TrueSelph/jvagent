@@ -116,6 +116,90 @@ async def test_safety_net_fires_at_most_once_per_turn(
     assert contents.count("working-on-it") == 1
 
 
+async def test_safety_net_picks_from_list_of_variants(
+    make_bridge, make_visitor, stub_helm, publish_log
+):
+    """``safety_net_ack_text`` as a list rotates per fire."""
+    helm = stub_helm(
+        name="A",
+        script=[
+            CONTINUE(),
+            EMIT(text="done", finalize=True),
+        ],
+    )
+    bridge = make_bridge(
+        helms={"A": helm},
+        default_helm="A",
+        first_emit_timeout_ms=10,
+        safety_text=["One moment…", "One sec…", "Hmmm…"],
+    )
+    visitor = make_visitor()
+
+    await bridge.execute(visitor)
+    await _force_timeout(visitor)
+    await bridge.execute(visitor)
+
+    contents = [entry["content"] for entry in publish_log]
+    safety_picks = [c for c in contents if c != "done"]
+    assert len(safety_picks) == 1
+    assert safety_picks[0] in {"One moment…", "One sec…", "Hmmm…"}
+
+
+async def test_safety_net_list_filters_empty_entries(
+    make_bridge, make_visitor, stub_helm, publish_log
+):
+    """Empty / whitespace strings in the list are skipped."""
+    helm = stub_helm(
+        name="A",
+        script=[
+            CONTINUE(),
+            EMIT(text="done", finalize=True),
+        ],
+    )
+    bridge = make_bridge(
+        helms={"A": helm},
+        default_helm="A",
+        first_emit_timeout_ms=10,
+        safety_text=["", "   ", "OnlyValid…"],
+    )
+    visitor = make_visitor()
+
+    await bridge.execute(visitor)
+    await _force_timeout(visitor)
+    await bridge.execute(visitor)
+
+    contents = [entry["content"] for entry in publish_log]
+    safety_picks = [c for c in contents if c != "done"]
+    assert safety_picks == ["OnlyValid…"]
+
+
+async def test_safety_net_empty_list_disables_publish(
+    make_bridge, make_visitor, stub_helm, publish_log
+):
+    """Empty list disables the safety-net publish entirely."""
+    helm = stub_helm(
+        name="A",
+        script=[
+            CONTINUE(),
+            EMIT(text="done", finalize=True),
+        ],
+    )
+    bridge = make_bridge(
+        helms={"A": helm},
+        default_helm="A",
+        first_emit_timeout_ms=10,
+        safety_text=[],
+    )
+    visitor = make_visitor()
+
+    await bridge.execute(visitor)
+    await _force_timeout(visitor)
+    await bridge.execute(visitor)
+
+    contents = [entry["content"] for entry in publish_log]
+    assert contents == ["done"]
+
+
 async def test_safety_net_skipped_when_text_blank(
     make_bridge, make_visitor, stub_helm, publish_log
 ):
