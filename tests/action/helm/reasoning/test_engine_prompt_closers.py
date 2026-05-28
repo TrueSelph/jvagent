@@ -96,3 +96,30 @@ def test_prompt_carries_no_redundancy_section():
         "The cards ARE the answer",
     ):
         assert phrase in flat, f"missing no-redundancy clause: {phrase!r}"
+
+
+def test_prompt_carries_skill_dispatch_hard_rule():
+    """Wave 9j.7: skill dispatch is mandatory when skills match the query."""
+    flat = " ".join(ENGINE_SYSTEM_PROMPT.split())
+    for phrase in (
+        "# Skill dispatch (hard rule)",
+        "you MUST call the matching skill's tools",
+        "follow-up questions, objection handling",
+        "Answering from conversation history alone, or from pretrained knowledge alone, is NOT acceptable",
+        '"Why so expensive?"',
+        "Do NOT produce a generic",
+        "because of materials and labor",
+    ):
+        assert phrase in flat, f"missing skill-dispatch clause: {phrase!r}"
+
+
+def test_prompt_no_redundancy_scope_clarified():
+    """Wave 9j.7: no-redundancy applies to FINAL TEXT only, not tool dispatch."""
+    flat = " ".join(ENGINE_SYSTEM_PROMPT.split())
+    for phrase in (
+        "SCOPE: this rule constrains your FINAL TEXT only",
+        "does NOT discourage tool dispatch",
+        "Calling tools is mandatory when skills match",
+        "restating their visible output is forbidden",
+    ):
+        assert phrase in flat, f"missing scope-clarification clause: {phrase!r}"
