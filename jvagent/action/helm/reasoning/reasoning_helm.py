@@ -222,6 +222,24 @@ class ReasoningHelm(BaseHelm):
     capability_search_prompt: str = attribute(default="")
     citation_instruction: str = attribute(default="")
 
+    # User-facing fallback messages (Wave 9j.6). Returned to the user
+    # when the engine terminates without producing a normal final
+    # response. Defaults are neutral — no internal mechanics, no
+    # banned closer phrases. Operators can override per-channel or
+    # per-deployment in agent.yaml.
+    time_cap_response_text: str = attribute(
+        default="I wasn't able to finish that. Please rephrase or simplify the request."
+    )
+    iter_cap_response_text: str = attribute(
+        default="I wasn't able to finish that. Please rephrase or simplify the request."
+    )
+    stuck_response_text: str = attribute(
+        default="I wasn't able to finish that. Please rephrase or simplify the request."
+    )
+    error_response_text: str = attribute(
+        default="Something went wrong. Please try again."
+    )
+
     def _build_engine_config(self) -> EngineConfig:
         return EngineConfig(
             model=self.model,
@@ -267,6 +285,10 @@ class ReasoningHelm(BaseHelm):
             security_prompt=self.security_prompt or "",
             capability_search_prompt=self.capability_search_prompt or "",
             citation_instruction=self.citation_instruction or "",
+            time_cap_response_text=self.time_cap_response_text,
+            iter_cap_response_text=self.iter_cap_response_text,
+            stuck_response_text=self.stuck_response_text,
+            error_response_text=self.error_response_text,
         )
 
     @staticmethod
@@ -745,10 +767,16 @@ class ReasoningHelm(BaseHelm):
         Clears session state, publishes a fallback message on the response
         bus AND sets ``interaction.response`` (for non-bus channels), and
         signals Bridge to finalise.
+
+        The fallback text comes from ``self.error_response_text`` (Wave
+        9j.6) so operators can override per-deployment. The default is
+        neutral — no "I encountered an error processing your request"
+        which leaked internal-failure framing — just "Something went
+        wrong. Please try again." with no banned closer phrases.
         """
         clear_session(visitor)
-        fallback_text = (
-            "I encountered an error processing your request. Please try again."
+        fallback_text = self.error_response_text or (
+            "Something went wrong. Please try again."
         )
         interaction = visitor.interaction
         already_has_response = bool(

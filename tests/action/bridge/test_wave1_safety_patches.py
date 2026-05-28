@@ -298,12 +298,17 @@ class TestReasoningErrorBusPublishH5:
             f"Expected exactly one bus publish on the error path; got "
             f"{len(published)}: {published}"
         )
-        assert "error processing your request" in published[0]["content"], (
-            f"Bus publish should contain the fallback text; got "
-            f"{published[0]['content']!r}"
+        # Wave 9j.6: fallback text is configurable. Default is "Something
+        # went wrong. Please try again." — sanitized (no
+        # "error processing your request" internal-failure framing).
+        # Assert via the helm's configured value so the test stays valid
+        # if an operator overrides the default.
+        assert published[0]["content"] == helm.error_response_text, (
+            f"Bus publish should match helm.error_response_text "
+            f"({helm.error_response_text!r}); got {published[0]['content']!r}"
         )
         # And interaction.response is also set for non-bus channels.
-        assert "error processing your request" in interaction.response
+        assert interaction.response == helm.error_response_text
 
     async def test_handle_error_skips_publish_if_response_already_streamed(
         self,

@@ -310,7 +310,15 @@ class Engine:
         elapsed = time.monotonic() - self._start
         cfg = self.ctx.config
 
-        # Budget checks
+        # Budget checks.
+        #
+        # The user-facing ``final_response`` is sourced from the operator-
+        # configurable fallback strings on ``EngineConfig`` (Wave 9j.6).
+        # Defaults are sanitized — no "I've reached the maximum number of
+        # steps", no "let me know if you'd like me to continue", no other
+        # leaks of internal mechanics. The hardcoded prior text violated
+        # the engine system-prompt rule "Never reveal tool errors,
+        # internal failures, or developer-facing messages to the user".
         if elapsed >= cfg.max_duration_seconds:
             await self._auto_task_finalize(
                 success=False,
@@ -319,7 +327,7 @@ class Engine:
             )
             return EngineStepResult(
                 status="timeout",
-                final_response="I was unable to complete the task within the time limit.",
+                final_response=cfg.time_cap_response_text,
                 termination_reason=TerminationReason.TIME_CAP,
                 iterations=self._iteration,
                 duration_seconds=elapsed,
@@ -334,10 +342,7 @@ class Engine:
             )
             return EngineStepResult(
                 status="budget_exhausted",
-                final_response=(
-                    "I've reached the maximum number of steps for this task without "
-                    "completing it. Please let me know if you'd like me to continue."
-                ),
+                final_response=cfg.iter_cap_response_text,
                 termination_reason=TerminationReason.ITER_CAP,
                 iterations=self._iteration,
                 duration_seconds=elapsed,
@@ -559,7 +564,11 @@ class Engine:
                     activated_skills=list(self._activated_skills),
                 )
 
-            # Stuck detection
+            # Stuck detection — same sanitization rule applies.
+            # The prior hardcoded text ("I seem to be making the same
+            # actions repeatedly without progress. Let me try a different
+            # approach.") leaked internal mechanics and didn't actually
+            # try a different approach (the engine had already returned).
             if self._check_stuck():
                 await self._auto_task_finalize(
                     success=False,
@@ -568,10 +577,7 @@ class Engine:
                 )
                 return EngineStepResult(
                     status="stuck",
-                    final_response=(
-                        "I seem to be making the same actions repeatedly without progress. "
-                        "Let me try a different approach."
-                    ),
+                    final_response=cfg.stuck_response_text,
                     termination_reason=TerminationReason.STUCK,
                     iterations=self._iteration,
                     duration_seconds=time.monotonic() - self._start,

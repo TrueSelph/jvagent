@@ -93,3 +93,21 @@ class EngineConfig:
     security_prompt: str = ""
     capability_search_prompt: str = ""
     citation_instruction: str = ""
+
+    # ── User-facing fallback messages (Wave 9j.6) ────────────────────
+    # Returned as ``EngineStepResult.final_response`` when the engine
+    # terminates without producing a user-facing answer. Defaults are
+    # neutral and free of (a) internal mechanics ("maximum number of
+    # steps", "time limit"), (b) banned closer phrases ("let me know
+    # if", "feel free to", "anything else"), and (c) options-menu
+    # shapes. Operators can override per-deployment.
+    time_cap_response_text: str = (
+        "I wasn't able to finish that. Please rephrase or simplify the request."
+    )
+    iter_cap_response_text: str = (
+        "I wasn't able to finish that. Please rephrase or simplify the request."
+    )
+    stuck_response_text: str = (
+        "I wasn't able to finish that. Please rephrase or simplify the request."
+    )
+    error_response_text: str = "Something went wrong. Please try again."
