@@ -516,11 +516,22 @@ class InterviewInteractAction(InteractAction, ABC):
 
         Subclasses may override _standard_interview_anchor_templates to customize
         or suppress standard anchors (e.g., set to [] for implementation-specific only).
+
+        ADR-0009 / Wave 9e: the user-configured (entry-only) anchor list
+        is preserved on ``self._entry_anchors`` so :meth:`get_anchors`
+        can return only entry anchors when no active session exists.
+        Reflex's small classifier was confused by the 7 mid-flight
+        state-derived anchors on first-entry routing — narrowing the
+        catalog to entry anchors restores clean intent matching.
         """
         # Get current anchors value (may be from agent.yaml override)
         current_anchors = getattr(self, "anchors", [])
         if not isinstance(current_anchors, list):
             current_anchors = []
+
+        # Stash user-configured anchors BEFORE the standard merge so
+        # state-aware ``get_anchors`` can return only the entry subset.
+        self._entry_anchors = list(current_anchors)
 
         # Generate context-specific standard anchors using class name
         interview_type = self.get_class_name()
@@ -535,6 +546,55 @@ class InterviewInteractAction(InteractAction, ABC):
 
         # Update the anchors attribute
         self.anchors = merged_anchors
+
+    async def get_anchors(
+        self, conversation: Optional[Any] = None
+    ) -> Optional[List[str]]:
+        """State-aware anchor surface (ADR-0009 / Wave 9e).
+
+        Returns:
+        - When an ACTIVE / REVIEW session exists on ``conversation``:
+          the full merged list (entry + state-derived anchors) so
+          Reflex / the router can recognise mid-flight utterances like
+          ``"User answers SignupInterviewInteractAction question"``.
+        - Otherwise (no active session yet, or terminated): only the
+          user-configured entry anchors. The 7 state-derived anchors
+          are filtered out so Reflex's small classifier sees a clean
+          entry-intent surface — fixes the live-smoke observation that
+          gpt-4o-mini ignored DELEGATE on a clear "register for
+          training" anchor match because the 9-anchor catalog included
+          state noise.
+
+        Falls back to ``None`` (meaning "use static ``self.anchors``")
+        on any error so a broken session lookup never silently strips
+        the catalog for a real interview that's mid-flight.
+        """
+        terminal_values = {
+            InterviewState.COMPLETED.value,
+            InterviewState.CANCELLED.value,
+        }
+        entry_anchors = list(getattr(self, "_entry_anchors", []) or [])
+        try:
+            if conversation is None:
+                return entry_anchors or None
+            active_session = await conversation.node(
+                node=[{"InterviewSession": {"state": {"$nin": list(terminal_values)}}}],
+                interview_type=self.get_class_name(),
+            )
+            if active_session is None:
+                # No active session → return entry-only.
+                return entry_anchors or None
+            # Active session → expose full catalog so mid-flight
+            # responses are recognisable.
+            return None
+        except Exception as exc:
+            logger.debug(
+                "%s.get_anchors: session lookup failed: %s — "
+                "falling back to static anchors",
+                self.get_class_name(),
+                exc,
+            )
+            return None
 
     def get_state_event_message(self, state: str) -> str:
         """Get formatted state event message for the current interview.
