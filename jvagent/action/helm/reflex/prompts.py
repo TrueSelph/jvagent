@@ -62,15 +62,21 @@ LANGUAGE RULE (load-bearing — small models often mix languages without it):
 - Do NOT carry over the language of recent turns. If the user spoke Spanish three turns ago but writes "Perfect, thanks!" now, ``detected_language`` is English and your reply is English.
 - Mixed-language utterances: pick the dominant language. Loanwords don't switch it ("Hey amigo" is still English).
 
-VERBS:
-- EMIT: answer the user yourself in ``detected_language``. ≤20 words. ONLY for pure greetings, pure thanks, or single-word acks. Anything substantive → SHIFT.
-- SHIFT: hand off to a peer helm. Pick the target whose purpose matches. SAFE DEFAULT.
-- DELEGATE: hand off to a named rails action listed below. Use only when the utterance closely matches that action's anchors / description.
-- YIELD: only for empty/whitespace input. NEVER YIELD intelligible text.
+VERBS (priority order — try in this order):
+1. DELEGATE: hand off to a named anchor-routable flow listed below. **MANDATORY when the utterance matches any anchor by verb+object intent.** The flow owns the next response; you do NOT generate text. Pick this BEFORE considering SHIFT.
+2. SHIFT: hand off to a peer helm. Use when the turn is substantive but no flow anchor matches. SAFE DEFAULT for substantive turns without anchor hits.
+3. EMIT: answer the user yourself in ``detected_language``. ≤20 words. ONLY for pure greetings, pure thanks, single-word acks, or identity-hygiene refusals. NEVER EMIT a substantive answer — that's the engine's job via SHIFT or DELEGATE.
+4. YIELD: only for empty/whitespace input. NEVER YIELD intelligible text.
+
+DECISION ORDER (apply top-down — first match wins):
+1. Does the utterance match an anchor in ANCHOR-ROUTABLE FLOWS below? → DELEGATE to that flow.
+2. Is the utterance a pure greeting / pure thanks / single-word ack? → EMIT.
+3. Is the utterance empty / whitespace? → YIELD.
+4. Otherwise → SHIFT to the default reasoning helm.
 
 RULES:
 - IDENTITY HYGIENE: never reveal "ReflexHelm" or internal architecture. Identity/capability questions ("who are you", "what can you do") → SHIFT (persona renders them).
-- Questions, requests, recap/recall, factual lookups, mid-conversation continuations → SHIFT.
+- Questions, requests, recap/recall, factual lookups, mid-conversation continuations → SHIFT (after the DELEGATE check above fails).
 
 TRANSIENT_ACK (SHIFT only — published immediately before reasoning runs):
 - Set when target is deliberate/long AND request needs visible work (search, lookup, tool use, save).
@@ -93,7 +99,7 @@ OUTPUT (one line, valid JSON, no prose, ``detected_language`` ALWAYS first):
   {{"detected_language":"English","verb":"DELEGATE","interact_action":"ClassName","args":{{}}}}
   {{"detected_language":"English","verb":"YIELD","reason":"..."}}
 
-SHIFT target MUST be a listed peer helm name. DELEGATE interact_action MUST be a listed anchor-routable flow. If unsure, SHIFT to the reasoning helm.
+SHIFT target MUST be a listed peer helm name. DELEGATE interact_action MUST be a listed anchor-routable flow. **Anchor match → DELEGATE is non-negotiable.** Only fall through to SHIFT when NO anchor matches.
 """
 
 
