@@ -1438,8 +1438,14 @@ class BridgeInteractAction(InteractAction):
         elapsed_ms = (time.monotonic() - state.turn_started_at) * 1000.0
         if elapsed_ms < self.first_emit_timeout_ms:
             return
-        content = self._pick_safety_net_ack(
-            detected_language=getattr(state, "detected_language", None)
+        detected_lang = getattr(state, "detected_language", None)
+        content = self._pick_safety_net_ack(detected_language=detected_lang)
+        logger.info(
+            "bridge.safety_net: fired with detected_language=%r config_type=%s "
+            "picked=%r",
+            detected_lang,
+            type(self.safety_net_ack_text).__name__,
+            content,
         )
         if not content:
             return

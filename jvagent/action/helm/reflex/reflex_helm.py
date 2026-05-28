@@ -311,15 +311,17 @@ class ReflexHelm(BaseHelm):
         # re-running classification. Wave 9h.
         detected = (verb.get("detected_language") or "").strip()
         if detected:
-            logger.debug(
-                "ReflexHelm: detected_language=%r for utterance %r",
+            logger.info(
+                "ReflexHelm: stamping bridge_state.detected_language=%r "
+                "(utterance=%r, bridge_state_type=%s)",
                 detected,
                 utterance[:80],
+                type(bridge_state).__name__,
             )
             try:
                 bridge_state.detected_language = detected
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("ReflexHelm: detected_language stamp failed: %s", exc)
 
         # Validate the verb's target / interact_action against the
         # actually-installed peer helms / actions. If invalid, fall back.
