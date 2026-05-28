@@ -103,14 +103,30 @@ def test_prompt_carries_skill_dispatch_hard_rule():
     flat = " ".join(ENGINE_SYSTEM_PROMPT.split())
     for phrase in (
         "# Skill dispatch (hard rule)",
-        "you MUST call the matching skill's tools",
+        "call the matching skill's tools before composing your final response",
         "follow-up questions, objection handling",
-        "Answering from conversation history alone, or from pretrained knowledge alone, is NOT acceptable",
         '"Why so expensive?"',
         "Do NOT produce a generic",
         "because of materials and labor",
     ):
         assert phrase in flat, f"missing skill-dispatch clause: {phrase!r}"
+
+
+def test_prompt_carries_skill_dispatch_bounds():
+    """Wave 9j.8: skill dispatch is bounded — one-shot per skill, max 3 skills,
+    no looping, fallback to history-based answer."""
+    flat = " ".join(ENGINE_SYSTEM_PROMPT.split())
+    for phrase in (
+        "# Skill dispatch bounds (hard rule",
+        "AT MOST ONCE per turn",
+        "do NOT retry the same skill with a reworded query",
+        "Try AT MOST 3 distinct skills per turn",
+        '"Use skills" and "do not loop" are equally binding',
+        "Answering from conversation history alone IS acceptable when",
+        "No skill matches the query domain",
+        "Skill calls in this turn returned empty",
+    ):
+        assert phrase in flat, f"missing skill-dispatch-bounds clause: {phrase!r}"
 
 
 def test_prompt_no_redundancy_scope_clarified():
