@@ -33,9 +33,7 @@ def _helm_with_manifest(latency_class: str, attribute_class: str = "instant") ->
     """
     helm = MagicMock()
     helm.latency_class = attribute_class
-    helm.get_manifest = MagicMock(
-        return_value=Manifest(latency_class=latency_class)
-    )
+    helm.get_manifest = MagicMock(return_value=Manifest(latency_class=latency_class))
     helm.helm_name = MagicMock(return_value="FakeHelm")
     return helm
 
@@ -108,9 +106,7 @@ class TestAckEligibleLatencyClassSet:
         """The set must remain ``{deliberate, long}`` — adding more without
         updating the prompt/UX contract risks a noisy ack on every shift.
         """
-        assert _ACK_ELIGIBLE_LATENCY_CLASSES == frozenset(
-            {"deliberate", "long"}
-        )
+        assert _ACK_ELIGIBLE_LATENCY_CLASSES == frozenset({"deliberate", "long"})
 
     @pytest.mark.parametrize(
         "latency_class,expected",
@@ -124,9 +120,7 @@ class TestAckEligibleLatencyClassSet:
             ("", False),
         ],
     )
-    def test_each_class_via_manifest(
-        self, latency_class: str, expected: bool
-    ) -> None:
+    def test_each_class_via_manifest(self, latency_class: str, expected: bool) -> None:
         bridge = BridgeInteractAction()
         if latency_class:
             helm = _helm_with_manifest(
@@ -138,8 +132,6 @@ class TestAckEligibleLatencyClassSet:
             # the overall result is False regardless of which path runs.
             helm = MagicMock()
             helm.latency_class = "instant"
-            helm.get_manifest = MagicMock(
-                return_value=Manifest(latency_class="")
-            )
+            helm.get_manifest = MagicMock(return_value=Manifest(latency_class=""))
             helm.helm_name = MagicMock(return_value="FakeHelm")
         assert bridge._is_ack_eligible(helm) is expected

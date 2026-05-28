@@ -293,9 +293,7 @@ class BridgeInteractAction(InteractAction):
         # Last resort: any resolved helm.
         return next(iter(resolved.values()))
 
-    def _initial_helm_candidate_order(
-        self, resolved: Dict[str, BaseHelm]
-    ) -> List[str]:
+    def _initial_helm_candidate_order(self, resolved: Dict[str, BaseHelm]) -> List[str]:
         """Return the AC walk-down order for initial helm picking.
 
         ``default_helm`` first if it resolved; then the remaining
@@ -342,9 +340,7 @@ class BridgeInteractAction(InteractAction):
         try:
             agent = await self.get_agent()
         except Exception as exc:
-            logger.warning(
-                "bridge: get_agent failed during initial helm pick: %s", exc
-            )
+            logger.warning("bridge: get_agent failed during initial helm pick: %s", exc)
             agent = None
 
         user_id = getattr(visitor, "user_id", None)

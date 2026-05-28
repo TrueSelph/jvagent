@@ -145,9 +145,7 @@ class ReasoningHelm(BaseHelm):
     _STEP_OUTCOME_SLOT: ClassVar[str] = "step_outcome"
     _PENDING_FINAL_EMIT_SLOT: ClassVar[str] = "pending_final_emit"
 
-    def _get_helm_slot(
-        self, visitor: "InteractWalker"
-    ) -> Optional[Dict[str, Any]]:
+    def _get_helm_slot(self, visitor: "InteractWalker") -> Optional[Dict[str, Any]]:
         """Return this helm's per-turn state dict from BridgeState, or None.
 
         None when Bridge orchestration is bypassed (tests, or a future

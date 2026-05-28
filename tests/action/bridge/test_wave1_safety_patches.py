@@ -102,9 +102,9 @@ class TestRouterExclusionsC1:
         routing.interact_actions = ["CockpitInteractAction"]
 
         matched = await resolve_routed_interact_actions(agent, routing)
-        assert matched == [], (
-            "CockpitInteractAction must be filtered out of the resolved IA list."
-        )
+        assert (
+            matched == []
+        ), "CockpitInteractAction must be filtered out of the resolved IA list."
 
     async def test_resolve_routed_keeps_normal_ia(self):
         """Sanity: legitimate IAs still resolve.
@@ -140,9 +140,7 @@ class TestRouterExclusionsC1:
 class TestDelegateArgsPropagationC2:
     """Helm-supplied DELEGATE.args reach the target IA via the visitor."""
 
-    async def test_args_visible_to_target(
-        self, make_bridge, make_visitor, stub_helm
-    ):
+    async def test_args_visible_to_target(self, make_bridge, make_visitor, stub_helm):
         """Target IA sees ``verb.args`` through ``get_delegate_args(visitor)``.
 
         Constructs a fake target IA that records what
@@ -408,8 +406,8 @@ class TestReasoningErrorBusPublishH5:
         answer before the engine errored. Tacking on "...I encountered
         an error..." would be more confusing than helpful.
         """
-        from jvagent.action.helm.reasoning.reasoning_helm import ReasoningHelm
         from jvagent.action.helm.reasoning import reasoning_helm as rh_mod
+        from jvagent.action.helm.reasoning.reasoning_helm import ReasoningHelm
 
         helm = ReasoningHelm()
         published: List[Dict[str, Any]] = []
@@ -463,7 +461,8 @@ class TestRoutingSourceInEventH6:
         await bridge.execute(visitor)
 
         events = [
-            e for e in visitor.interaction.observability_metrics
+            e
+            for e in visitor.interaction.observability_metrics
             if e.get("event_type") == "helm_shift"
         ]
         assert events, "Expected at least one helm_shift event"
@@ -499,7 +498,8 @@ class TestRoutingSourceInEventH6:
         await bridge.execute(visitor)
 
         events = [
-            e for e in visitor.interaction.observability_metrics
+            e
+            for e in visitor.interaction.observability_metrics
             if e.get("event_type") == "helm_shift"
         ]
         delegate_events = [

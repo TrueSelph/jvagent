@@ -94,9 +94,7 @@ class TestInitialHelmAccessControlH1:
 
         call_log: List[str] = []
 
-        async def fake_check_helm_access(
-            agent, *, helm_name, user_id, channel
-        ) -> None:
+        async def fake_check_helm_access(agent, *, helm_name, user_id, channel) -> None:
             call_log.append(helm_name)
             if helm_name == "ReflexHelm":
                 raise BridgeAccessDenied(
@@ -104,9 +102,7 @@ class TestInitialHelmAccessControlH1:
                 )
             return None  # allow
 
-        monkeypatch.setattr(
-            bridge_mod, "check_helm_access", fake_check_helm_access
-        )
+        monkeypatch.setattr(bridge_mod, "check_helm_access", fake_check_helm_access)
 
         reflex = stub_helm(name="ReflexHelm", script=[YIELD()])
         reasoning = stub_helm(name="ReasoningHelm", script=[YIELD()])
@@ -120,9 +116,10 @@ class TestInitialHelmAccessControlH1:
         await bridge.execute(visitor)
 
         # AC was consulted for both — default first (denied), then next.
-        assert call_log == ["ReflexHelm", "ReasoningHelm"], (
-            f"AC walk-down order incorrect; got {call_log}"
-        )
+        assert call_log == [
+            "ReflexHelm",
+            "ReasoningHelm",
+        ], f"AC walk-down order incorrect; got {call_log}"
         obs = visitor.interaction.parameters.get("bridge_observability") or {}
         gear_trace = obs.get("gear_trace") or []
         assert gear_trace, "Bridge should record the initial shift"
@@ -187,9 +184,11 @@ class TestInitialHelmAccessControlH1:
         }
         order = bridge._initial_helm_candidate_order(resolved)
         # default first, then helms[] in declared order (deduped).
-        assert order == ["ReasoningHelm", "ReflexHelm", "SpecialistHelm"], (
-            f"Candidate order wrong; got {order}"
-        )
+        assert order == [
+            "ReasoningHelm",
+            "ReflexHelm",
+            "SpecialistHelm",
+        ], f"Candidate order wrong; got {order}"
 
     async def test_candidate_order_no_default(self):
         """No default_helm → walk in declared helms[] order."""
@@ -327,6 +326,7 @@ class TestReasoningHelmPerTurnStateH3:
         """
         helm = ReasoningHelm()
         bare_visitor = MagicMock()
+
         # Remove bridge_state attribute (MagicMock auto-creates everything).
         # Use a real plain object instead so getattr() honestly returns None.
         class Bare:
@@ -395,12 +395,12 @@ class TestHandoffStateMergeM5:
             f"pending_ias was clobbered by handoff_state merge — "
             f"slot is now {slot!r}"
         )
-        assert slot.get("step_outcome") == "yield", (
-            f"step_outcome was clobbered — slot is {slot!r}"
-        )
-        assert slot.get("new_key") == "new_value", (
-            f"new key from handoff_state missing — slot is {slot!r}"
-        )
+        assert (
+            slot.get("step_outcome") == "yield"
+        ), f"step_outcome was clobbered — slot is {slot!r}"
+        assert (
+            slot.get("new_key") == "new_value"
+        ), f"new key from handoff_state missing — slot is {slot!r}"
 
     async def test_handoff_state_overrides_overlapping_keys(
         self, make_bridge, make_visitor, stub_helm
