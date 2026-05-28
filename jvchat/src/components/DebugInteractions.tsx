@@ -30,6 +30,38 @@ function debugCodePanelClass(isDark: boolean) {
     : "bg-zinc-100 border border-zinc-300 text-zinc-900 placeholder-zinc-600";
 }
 
+/**
+ * Build a human-readable label for an observability metric.
+ *
+ * Bridge observability mixes event types on the same Interaction
+ * (helm_shift, model_call, etc.). Without the event_type prefix and a
+ * type-specific summary, helm_shift events render as bare "Interaction"
+ * rows that the inspector can't fill — produces dead-air gaps in the UI.
+ */
+function formatMetricLabel(metric: any): string {
+  const data = metric?.data || {};
+  const eventType = metric?.event_type || "";
+  if (eventType === "helm_shift") {
+    const from = data.from_helm || "(start)";
+    const to = data.to_helm || "?";
+    const src = data.routing_source ? ` · ${data.routing_source}` : "";
+    return `helm_shift: ${from} → ${to}${src}`;
+  }
+  if (eventType === "model_call") {
+    const head =
+      typeof data.response === "string" && data.response.trim()
+        ? data.response
+        : data.model || "model_call";
+    return `model_call · ${head}`;
+  }
+  if (eventType) {
+    // Surface any other event type explicitly so it's never opaque.
+    return eventType;
+  }
+  // Legacy / unknown payload — fall back to the historical heuristic.
+  return data.response || data.model || "Interaction";
+}
+
 function ResponseJsonOrText({
   value,
   isDark,
@@ -186,6 +218,14 @@ export function DebugInteractions({
 
         setSelectedInteraction({
           id: metric.id,
+          // ADR-0009 / observability: every metric carries event_type +
+          // data. Surface both so the inspector can render type-specific
+          // payloads (helm_shift, model_call, etc.) rather than treating
+          // every entry as a model_call (the historical default that
+          // produced "[N] Interaction" placeholder rows with empty
+          // prompt fields for helm_shift events).
+          event_type: metric.event_type || "model_call",
+          raw_data: pd,
           data: {
             user_prompt: pd.user_prompt || pd.prompt || "",
             system_prompt: pd.system_prompt || "",
@@ -1095,13 +1135,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                       effectiveParents[selectedParentIndex]?.metrics.map(
                         (m: any, mi: number) => (
                           <option key={mi} value={mi}>
-                            [{mi + 1}]{" "}
-                            {truncate(
-                              m.data?.response ||
-                                m.data?.model ||
-                                "Interaction",
-                              100,
-                            )}
+                            [{mi + 1}] {truncate(formatMetricLabel(m), 100)}
                           </option>
                         ),
                       )}
@@ -1138,6 +1172,43 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
               className={`rounded-lg shadow-sm p-6 border ${effectiveDarkMode ? "bg-zinc-800 border-zinc-700" : "bg-white border-zinc-200"}`}
             >
               <div className="space-y-6">
+                {/* Event Type badge — every metric carries an
+                    event_type; surfacing it inline makes the inspector
+                    self-describing (helm_shift events used to render
+                    blank because the UI assumed model_call). */}
+                {selectedInteraction.event_type && (
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-mono ${
+                        effectiveDarkMode
+                          ? "bg-zinc-700 text-zinc-200 border border-zinc-600"
+                          : "bg-zinc-100 text-zinc-800 border border-zinc-300"
+                      }`}
+                    >
+                      event_type: {selectedInteraction.event_type}
+                    </span>
+                  </div>
+                )}
+                {/* Non-model_call events (helm_shift, etc.) carry no
+                    prompts. Show the raw data block first so the
+                    operator has full observability of the event payload
+                    — gaps that prompted Wave 9c. */}
+                {selectedInteraction.event_type !== "model_call" &&
+                  selectedInteraction.raw_data && (
+                    <div>
+                      <label
+                        className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}
+                      >
+                        Event Data
+                      </label>
+                      <JsonViewer
+                        data={selectedInteraction.raw_data}
+                        dark={effectiveDarkMode}
+                        defaultExpandDepth={3}
+                        maxHeight="min(55vh, 520px)"
+                      />
+                    </div>
+                  )}
                 {/* Original Response */}
                 {selectedInteraction.data.response && (
                   <div>
@@ -1150,50 +1221,62 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     />
                   </div>
                 )}
-                {/* User Prompt */}
-                <div>
-                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}>
-                    User Prompt
-                  </label>
-                  <textarea
-                    ref={userRef}
-                    value={selectedInteraction.data.user_prompt}
-                    onChange={(e) => {
-                      setSelectedInteraction({
-                        ...selectedInteraction,
-                        data: {
-                          ...selectedInteraction.data,
-                          user_prompt: e.target.value,
-                        },
-                      });
-                    }}
-                    className={`w-full p-3 rounded text-sm font-mono ${debugCodePanelClass(effectiveDarkMode)}`}
-                    style={{ overflow: "hidden" }}
-                  />
-                </div>
-                {/* System Prompt */}
-                <div>
-                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}>
-                    System Prompt
-                  </label>
-                  <textarea
-                    ref={systemRef}
-                    value={selectedInteraction.data.system_prompt}
-                    onChange={(e) => {
-                      setSelectedInteraction({
-                        ...selectedInteraction,
-                        data: {
-                          ...selectedInteraction.data,
-                          system_prompt: e.target.value,
-                        },
-                      });
-                    }}
-                    className={`w-full p-3 rounded text-sm font-mono ${debugCodePanelClass(effectiveDarkMode)}`}
-                    style={{ overflow: "hidden" }}
-                  />
-                </div>
-                {/* History - Only show if exists */}
-                {showHistory && (
+                {/* Prompt/history/model surfaces only apply to
+                    model_call entries. helm_shift events carry no
+                    prompts; hiding the placeholders avoids the empty
+                    text-area gaps that prompted Wave 9c. */}
+                {selectedInteraction.event_type === "model_call" && (
+                  <>
+                    {/* User Prompt */}
+                    <div>
+                      <label
+                        className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}
+                      >
+                        User Prompt
+                      </label>
+                      <textarea
+                        ref={userRef}
+                        value={selectedInteraction.data.user_prompt}
+                        onChange={(e) => {
+                          setSelectedInteraction({
+                            ...selectedInteraction,
+                            data: {
+                              ...selectedInteraction.data,
+                              user_prompt: e.target.value,
+                            },
+                          });
+                        }}
+                        className={`w-full p-3 rounded text-sm font-mono ${debugCodePanelClass(effectiveDarkMode)}`}
+                        style={{ overflow: "hidden" }}
+                      />
+                    </div>
+                    {/* System Prompt */}
+                    <div>
+                      <label
+                        className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}
+                      >
+                        System Prompt
+                      </label>
+                      <textarea
+                        ref={systemRef}
+                        value={selectedInteraction.data.system_prompt}
+                        onChange={(e) => {
+                          setSelectedInteraction({
+                            ...selectedInteraction,
+                            data: {
+                              ...selectedInteraction.data,
+                              system_prompt: e.target.value,
+                            },
+                          });
+                        }}
+                        className={`w-full p-3 rounded text-sm font-mono ${debugCodePanelClass(effectiveDarkMode)}`}
+                        style={{ overflow: "hidden" }}
+                      />
+                    </div>
+                  </>
+                )}
+                {/* History - Only show if exists AND model_call event */}
+                {selectedInteraction.event_type === "model_call" && showHistory && (
                   <div>
                     <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}>
                       History (JSON)
@@ -1227,36 +1310,43 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     </div>
                   </div>
                 )}
-                {/* Model */}
-                <div>
-                  <label className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}>
-                    Model
-                  </label>
-                  <input
-                    type="text"
-                    value={selectedInteraction.data.model}
-                    onChange={(e) =>
-                      setSelectedInteraction({
-                        ...selectedInteraction,
-                        data: {
-                          ...selectedInteraction.data,
-                          model: e.target.value,
-                        },
-                      })
-                    }
-                    className={`w-full p-2 rounded text-sm font-mono ${debugCodePanelClass(effectiveDarkMode)}`}
-                  />
-                </div>
-                {/* Test Button */}
-                <div className="flex justify-end">
-                  <button
-                    onClick={handleTest}
-                    disabled={testing || !modelAction}
-                    className="px-6 py-2 bg-zinc-600 text-white rounded-lg font-medium hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {testing ? "Testing..." : "🧪 Run Test"}
-                  </button>
-                </div>
+                {/* Model — model_call only. */}
+                {selectedInteraction.event_type === "model_call" && (
+                  <div>
+                    <label
+                      className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}
+                    >
+                      Model
+                    </label>
+                    <input
+                      type="text"
+                      value={selectedInteraction.data.model}
+                      onChange={(e) =>
+                        setSelectedInteraction({
+                          ...selectedInteraction,
+                          data: {
+                            ...selectedInteraction.data,
+                            model: e.target.value,
+                          },
+                        })
+                      }
+                      className={`w-full p-2 rounded text-sm font-mono ${debugCodePanelClass(effectiveDarkMode)}`}
+                    />
+                  </div>
+                )}
+                {/* Test Button — only meaningful for model_call events
+                    (helm_shift, etc. carry no prompts). */}
+                {selectedInteraction.event_type === "model_call" && (
+                  <div className="flex justify-end">
+                    <button
+                      onClick={handleTest}
+                      disabled={testing || !modelAction}
+                      className="px-6 py-2 bg-zinc-600 text-white rounded-lg font-medium hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {testing ? "Testing..." : "🧪 Run Test"}
+                    </button>
+                  </div>
+                )}
                 {/* Test Result */}
                 {testResult && (
                   <div>
@@ -1324,8 +1414,10 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
             </div>
           )}
 
-          {/* Improve Prompt Section */}
-          {!loading && selectedInteraction && (
+          {/* Improve Prompt Section — model_call only. */}
+          {!loading &&
+            selectedInteraction &&
+            selectedInteraction.event_type === "model_call" && (
             <div
               className={`rounded-lg shadow-sm p-6 border mt-6 ${effectiveDarkMode ? "bg-zinc-800 border-zinc-700" : "bg-white border-zinc-200"}`}
             >
