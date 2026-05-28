@@ -119,8 +119,10 @@ class EMIT:
     - ``via_persona``: when True, Bridge routes ``text`` through
       ``PersonaAction.respond`` for tone / style polish before publishing.
       ReasoningHelm sets this on its final engine output so the agent's
-      persona wraps the engine's raw text. Reflex's trivial EMITs leave
-      it False (no need to LLM-rewrite a one-word greeting).
+      persona wraps the engine's raw text. Reflex (Wave 9i.3) sets it
+      on trivial smalltalk EMITs with ``delivery_intent="smalltalk_emit"``
+      so the persona produces a brief in-character greeting/ack instead
+      of a bare classifier-generated string.
     - ``response_mode``: forwarded to the persona-delivery helper.
       Supported values: ``"publish"`` (raw publish through persona),
       ``"respond"`` (persona ``respond()`` call), ``"verbatim_final"``
@@ -128,7 +130,16 @@ class EMIT:
       where the skill already produced final-form text).
     - ``degenerate_max_chars``: skip persona stylisation when ``text``
       is at most this many characters (short outputs read worse after
-      persona rewording). 0 disables the heuristic.
+      persona rewording). ``0`` disables the heuristic — every EMIT
+      goes through persona regardless of length. Set to ``-1`` to
+      request Bridge's caller-default (currently 25); positive values
+      are honored literally.
+    - ``delivery_intent``: hints the persona-delivery helper what KIND
+      of stylisation to apply. ``"engine_output"`` (default) wraps a
+      pre-composed engine answer in persona voice. ``"smalltalk_emit"``
+      treats ``text`` as a brief Reflex-generated placeholder and asks
+      persona to produce a short in-character greeting/ack matching
+      the user's utterance.
 
     These fields are read by Bridge — helms set them but don't act on
     them directly. They generalise the per-helm
@@ -143,6 +154,7 @@ class EMIT:
     via_persona: bool = False
     response_mode: str = "publish"
     degenerate_max_chars: int = 0
+    delivery_intent: str = "engine_output"
 
 
 @dataclass(frozen=True)

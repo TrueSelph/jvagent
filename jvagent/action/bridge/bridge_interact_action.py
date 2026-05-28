@@ -848,15 +848,27 @@ class BridgeInteractAction(InteractAction):
                 skill_catalog = (getattr(visitor, "_skill_state", None) or {}).get(
                     "skill_catalog"
                 )
+                # Wave 9i.3: honor ``verb.degenerate_max_chars=0`` literally
+                # per the EMIT contract docstring ("0 disables the heuristic").
+                # The prior ``or 25`` collapsed 0 to the default, defeating
+                # Reflex EMIT's need to always stylize short greetings/acks.
+                # ``-1`` is the explicit sentinel for "use Bridge default"
+                # (currently 25); positive values pass through unchanged.
+                requested_degen = verb.degenerate_max_chars
+                if requested_degen < 0:
+                    degenerate_for_call = 25
+                else:
+                    degenerate_for_call = requested_degen
                 try:
                     await deliver_via_persona_fn(
                         action=self,
                         visitor=visitor,
                         content=text or None,
                         response_mode=verb.response_mode or "publish",
-                        degenerate_response_max_chars=verb.degenerate_max_chars or 25,
+                        degenerate_response_max_chars=degenerate_for_call,
                         skill_catalog=skill_catalog,
                         engine_result=engine_result,
+                        delivery_intent=verb.delivery_intent,
                     )
                 except Exception as exc:
                     logger.warning(

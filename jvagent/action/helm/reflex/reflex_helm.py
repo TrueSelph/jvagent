@@ -194,6 +194,17 @@ class ReflexHelm(BaseHelm):
     # rejects ``response_format`` outright.
     enforce_json_mode: bool = attribute(default=True)
 
+    # When True (Wave 9i.3 default), Reflex EMITs are tagged
+    # ``via_persona=True`` + ``delivery_intent="smalltalk_emit"`` so
+    # Bridge routes them through PersonaAction. The classifier-generated
+    # text is treated as a placeholder hint and the persona produces a
+    # brief in-character greeting/ack matching the user's utterance.
+    # Set False to restore the pre-Wave-9i.3 behavior where Reflex
+    # publishes its ≤20-word EMIT text raw — faster (no extra LM call)
+    # but bypasses the agent's persona voice entirely. Operators on
+    # latency-critical channels (SMS, IVR) may prefer raw.
+    stylize_emit_via_persona: bool = attribute(default=True)
+
     default_shift_target: str = attribute(default="ReasoningHelm")
     # Last-resort text emitted ONLY when Reflex cannot classify AND cannot
     # SHIFT (the default target isn't an installed peer helm — usually a
@@ -781,7 +792,21 @@ class ReflexHelm(BaseHelm):
                 return self._safe_default_shift(
                     f"EMIT on {reason} (defensive override)"
                 )
-            return EMIT(text=text, finalize=True)
+            # Wave 9i.3: Reflex EMITs route through PersonaAction with
+            # smalltalk delivery semantics. The classifier-generated
+            # ``text`` is a placeholder hint — persona produces the
+            # actual user-facing greeting/ack in character. Without
+            # this, trivial EMITs (e.g. "Hi", "You're welcome.") landed
+            # raw and bypassed the agent's persona voice entirely.
+            # ``degenerate_max_chars=0`` is non-negotiable here: short
+            # greetings are the WHOLE POINT of stylising this path.
+            return EMIT(
+                text=text,
+                finalize=True,
+                via_persona=self.stylize_emit_via_persona,
+                degenerate_max_chars=0,
+                delivery_intent="smalltalk_emit",
+            )
 
         if verb == "SHIFT":
             target = (parsed.get("target") or "").strip()

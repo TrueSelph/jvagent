@@ -51,6 +51,7 @@ async def deliver_via_persona(
     degenerate_response_max_chars: int = 25,
     skill_catalog: Optional[SkillCatalog] = None,
     engine_result: Optional[EngineResult] = None,
+    delivery_intent: str = "engine_output",
 ) -> None:
     """Single entrypoint for engine → persona response delivery.
 
@@ -87,6 +88,14 @@ async def deliver_via_persona(
             override resolution.
         engine_result: Optional ``EngineResult`` for activated_skills
             (used to resolve overrides). When None, no override is applied.
+        delivery_intent: Stylisation flavor for the respond_slim branch.
+            ``"engine_output"`` (default) treats ``content`` as a
+            pre-composed answer the persona should rephrase in voice.
+            ``"smalltalk_emit"`` (Wave 9i.3) treats ``content`` as a
+            brief Reflex-generated placeholder and asks persona to
+            produce a short in-character greeting/ack matching the
+            user's utterance — the placeholder text is hinted to the
+            persona but not held as the final answer.
     """
     text = (content or "").strip()
     effective_mode = _resolve_effective_response_mode(
@@ -135,14 +144,33 @@ async def deliver_via_persona(
     ):
         interaction = visitor.interaction
         user_utterance = (interaction.utterance or "").strip() if interaction else ""
-        delivery_instruction = (
-            "You produced the following content in response to the user's "
-            "message. Deliver it naturally in your voice — this IS your "
-            "answer, not something the user told you. Do not thank the "
-            "user for it, do not say 'That's correct', do not add "
-            "invitation closers. Reshape for natural delivery while "
-            "preserving all substantive data.\n\n" + text
-        )
+        if delivery_intent == "smalltalk_emit":
+            # Reflex-generated placeholder. The persona should treat it
+            # as a hint — produce a brief greeting/ack in character that
+            # matches the user's utterance and tone, NOT rephrase the
+            # placeholder verbatim. Single-sentence ceiling keeps the
+            # latency win of the EMIT path; "no explanations" prevents
+            # the persona from pivoting into a substantive answer that
+            # belongs in Reasoning.
+            delivery_instruction = (
+                "The user just said: '" + (user_utterance or "(empty)") + "'.\n"
+                "Reply with a brief in-character greeting, acknowledgment, "
+                "or short conversational beat — at most one sentence. "
+                "Match the user's tone and language. Do NOT explain what "
+                "you can do. Do NOT pivot to a substantive answer. Do NOT "
+                "ask a follow-up question unless the user did. A bare "
+                "placeholder ack was drafted ('" + text + "'); use it as "
+                "a hint, not a verbatim script."
+            )
+        else:
+            delivery_instruction = (
+                "You produced the following content in response to the user's "
+                "message. Deliver it naturally in your voice — this IS your "
+                "answer, not something the user told you. Do not thank the "
+                "user for it, do not say 'That's correct', do not add "
+                "invitation closers. Reshape for natural delivery while "
+                "preserving all substantive data.\n\n" + text
+            )
         await persona.respond_slim(
             interaction,
             visitor,

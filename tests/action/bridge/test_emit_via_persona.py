@@ -52,6 +52,15 @@ class TestEmitContractFields:
         assert verb.degenerate_max_chars == 25
         assert verb.metadata["activated_skills"] == ["web_search"]
 
+    def test_emit_delivery_intent_defaults_to_engine_output(self):
+        """Engine final-response path is the default flavor (Wave 9i.3)."""
+        verb = EMIT(text="hi")
+        assert verb.delivery_intent == "engine_output"
+
+    def test_emit_smalltalk_intent_round_trips(self):
+        verb = EMIT(text="hi", delivery_intent="smalltalk_emit")
+        assert verb.delivery_intent == "smalltalk_emit"
+
 
 class TestHasPendingDirectives:
     """The ``_has_pending_directives`` helper that gates the
@@ -160,6 +169,74 @@ class TestPublishEmitViaPersonaBranching:
         # engine_result is constructed only when activated_skills is non-empty
         assert captured["engine_result"] is not None
         assert list(captured["engine_result"].activated_skills) == ["web_search"]
+
+    async def test_via_persona_branch_honors_degenerate_zero(self, monkeypatch):
+        """Wave 9i.3: ``degenerate_max_chars=0`` reaches delivery literally
+        (no ``or 25`` collapse) so short Reflex smalltalk EMITs always
+        stylize through persona."""
+        bridge = await self._make_bridge(
+            persona=MagicMock(enabled=True), monkeypatch=monkeypatch
+        )
+
+        captured = {}
+
+        async def _fake_deliver_via_persona(**kwargs):
+            captured.update(kwargs)
+
+        monkeypatch.setattr(
+            "jvagent.action.helm.reasoning.delivery.persona_delivery.deliver_via_persona",
+            _fake_deliver_via_persona,
+        )
+
+        visitor = MagicMock()
+        visitor.interaction.directives = []
+        visitor._skill_state = {"skill_catalog": None}
+        state = BridgeState()
+        verb = EMIT(
+            text="Hi!",  # 3-char smalltalk EMIT
+            finalize=True,
+            via_persona=True,
+            degenerate_max_chars=0,
+            delivery_intent="smalltalk_emit",
+        )
+
+        handled = await bridge._publish_emit_via_persona(visitor, state, verb)
+        assert handled is True
+        assert captured["degenerate_response_max_chars"] == 0
+        assert captured["delivery_intent"] == "smalltalk_emit"
+
+    async def test_via_persona_branch_negative_degenerate_uses_default(
+        self, monkeypatch
+    ):
+        """Wave 9i.3: ``-1`` is the explicit sentinel for Bridge default (25)."""
+        bridge = await self._make_bridge(
+            persona=MagicMock(enabled=True), monkeypatch=monkeypatch
+        )
+
+        captured = {}
+
+        async def _fake_deliver_via_persona(**kwargs):
+            captured.update(kwargs)
+
+        monkeypatch.setattr(
+            "jvagent.action.helm.reasoning.delivery.persona_delivery.deliver_via_persona",
+            _fake_deliver_via_persona,
+        )
+
+        visitor = MagicMock()
+        visitor.interaction.directives = []
+        visitor._skill_state = {"skill_catalog": None}
+        state = BridgeState()
+        verb = EMIT(
+            text="Some answer.",
+            finalize=True,
+            via_persona=True,
+            degenerate_max_chars=-1,  # sentinel: use Bridge default
+        )
+
+        handled = await bridge._publish_emit_via_persona(visitor, state, verb)
+        assert handled is True
+        assert captured["degenerate_response_max_chars"] == 25
 
     async def test_directive_merge_branch_uses_persona_respond(self, monkeypatch):
         # No via_persona, but pending directives — go through the legacy

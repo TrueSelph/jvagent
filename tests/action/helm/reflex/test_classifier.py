@@ -183,6 +183,11 @@ async def test_step_emit_when_classifier_picks_emit(monkeypatch):
     assert isinstance(result, EMIT)
     assert result.text == "Hey there!"
     assert result.finalize is True
+    # Wave 9i.3: Reflex EMITs request persona stylisation by default so
+    # the classifier-generated placeholder picks up the agent's voice.
+    assert result.via_persona is True
+    assert result.delivery_intent == "smalltalk_emit"
+    assert result.degenerate_max_chars == 0
 
 
 async def test_step_shift_to_known_peer(monkeypatch):
@@ -660,3 +665,34 @@ async def test_step_omits_response_format_when_json_mode_disabled(monkeypatch):
     await helm.step(visitor, state)
 
     assert "response_format" not in captured
+
+
+# ---------------------------------------------------------------------------
+# Smalltalk EMIT stylisation (Wave 9i.3)
+# ---------------------------------------------------------------------------
+
+
+async def test_emit_stylisation_can_be_disabled(monkeypatch):
+    """``stylize_emit_via_persona=False`` → bare EMIT (pre-Wave-9i.3 shape)."""
+    helm = ReflexHelm()
+    object.__setattr__(helm, "stylize_emit_via_persona", False)
+
+    visitor = _make_visitor("Hi")
+    state = _make_bridge_state()
+    peer = _make_peer_helm("ReasoningHelm", purpose="Deep reasoning")
+    agent = _make_agent(helms=[peer])
+
+    _patch_helm(
+        monkeypatch,
+        helm,
+        agent=agent,
+        model_response=json.dumps({"verb": "EMIT", "text": "Hi!"}),
+    )
+
+    result = await helm.step(visitor, state)
+    assert isinstance(result, EMIT)
+    # Operator chose raw EMIT for latency. ``delivery_intent`` is still
+    # set (it's metadata, not a routing decision), but ``via_persona``
+    # is False so Bridge publishes bare.
+    assert result.via_persona is False
+    assert result.degenerate_max_chars == 0
