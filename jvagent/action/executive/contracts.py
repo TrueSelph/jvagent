@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Union
 
 # Visitor attribute carrying the per-turn working memory (ADR-0010 §2.1).
-# Parallel to Bridge's ``_bridge_state`` / Cockpit's ``_skill_state``.
+# Holds the orchestrator's per-turn state for the duration of the frame.
 WORKING_MEMORY_VISITOR_ATTR = "_executive_wm"
 
 # How a center's RETURN should be delivered (ADR-0010 §2.2):
@@ -120,7 +120,7 @@ class STEP:
     """Center did internal work this tick (tools / a rails IA) — recruit again.
 
     ``scratch`` is merged into the center's frame scratch for the next tick.
-    Mirrors Bridge's ``CONTINUE``.
+    Signals the scheduler to recruit this center again on the next tick.
     """
 
     scratch: Optional[Dict[str, Any]] = None

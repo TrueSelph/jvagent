@@ -162,7 +162,7 @@ class Interaction(DeferredSaveMixin, Node):
         description="Aggregated usage (tokens, model calls) for this interaction",
     )
 
-    # Cockpit artifacts (session-scoped structured data)
+    # Orchestrator artifacts (session-scoped structured data)
     artifacts: Dict[str, Dict[str, Any]] = attribute(
         default_factory=dict,
         description=(

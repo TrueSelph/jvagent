@@ -1,6 +1,6 @@
 # Skill Bundles Standard
 
-`jvagent` skill bundles are Claude-compatible modular capabilities consumed by `ReasoningHelm`.
+`jvagent` skill bundles are Claude-compatible modular capabilities consumed by the Executive's Skills center.
 Each skill combines instruction content (`SKILL.md`) with optional executable tool modules and support assets.
 
 ## Canonical Structure
@@ -146,11 +146,11 @@ Avoid relative imports that depend on runtime working directory.
 
 Skills are lazily activated through progressive disclosure:
 
-1. `ReasoningHelm` resolves skill bundles from configured sources.
+1. The Skills center resolves skill bundles from configured sources.
 2. Metadata is registered, but tool modules are hidden initially.
 3. LLM sees only `read_skill` and the skill index.
 4. LLM calls `read_skill(skill_name=...)`.
-5. The helm tool registry loads tools from that bundle and returns the SOP.
+5. The Skills center loads tools from that bundle and returns the SOP.
 6. Newly activated tools become available on the next loop iteration.
 
 This mirrors the Claude skill model: discover first, activate only when needed.
@@ -173,7 +173,7 @@ App-local skill > built-in skill (same name => app-local overrides)
 Configure from `agent.yaml`:
 
 ```yaml
-- action: jvagent/reasoning_helm
+- action: jvagent/skills_center
   context:
     skills: -all
     denied_skills:
@@ -250,6 +250,6 @@ from jvagent.scaffold.skill_resolve import (
 
 ## See Also
 
-- [Bridge](../../docs/BRIDGE.md)
+- [Executive + Centers](../../docs/EXECUTIVE.md)
 - [`MCPAction` README](../action/mcp/README.md)
 - `fileinterface` bundle in `jvagent/skills/fileinterface/`

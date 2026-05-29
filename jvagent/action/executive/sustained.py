@@ -10,7 +10,7 @@ Sustained activation (turn-lock) is persisted on the conversation's declarative
    duplicate executive record. This is the unification the context key blocked.
 
 Helpers are best-effort: any error degrades to "no sustained activation".
-Imports ``jvagent.memory.task_store`` (neutral) — nothing from bridge/helm.
+Imports ``jvagent.memory.task_store`` (neutral) — nothing pattern-specific.
 """
 
 from __future__ import annotations

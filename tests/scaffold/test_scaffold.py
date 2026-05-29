@@ -46,38 +46,37 @@ def test_resolve_conversational_extends(tmp_path: Path) -> None:
     assert "jvagent/intro_interact_action" in ids
 
 
-def test_resolve_bridge_profile_includes_bridge_and_helms() -> None:
-    """The bridge profile produces a complete Reflex+Reasoning starter agent.
+def test_resolve_executive_profile_includes_executive_and_centers() -> None:
+    """The executive profile produces a complete Executive+Centers starter agent.
 
-    Bridge ships the orchestrator plus the two default helms (ReflexHelm
-    handles trivial turns, ReasoningHelm handles deliberate ones), plus
-    persona for delivery polish and intro / handoff IAs that the
-    reasoning router can route to. Persona stylisation happens directly
-    inside Bridge on engine-final EMITs via ``deliver_via_persona``.
+    The executive ships the orchestrator (ExecutiveInteractAction at -200)
+    plus the Skills / IA / Persona centers, an OpenAI language model, the
+    persona used for delivery, and intro / handoff IAs.
     """
-    actions = resolve_profile_actions(None, "bridge")
+    actions = resolve_profile_actions(None, "executive")
     ids = {x["action"] for x in actions}
-    assert "jvagent/bridge" in ids
-    assert "jvagent/reflex_helm" in ids
-    assert "jvagent/reasoning_helm" in ids
+    assert "jvagent/executive" in ids
+    assert "jvagent/skills_center" in ids
+    assert "jvagent/ia_center" in ids
+    assert "jvagent/persona_center" in ids
     assert "jvagent/persona" in ids
     assert "jvagent/openai_lm" in ids
     assert "jvagent/intro_interact_action" in ids
     assert "jvagent/handoff_interact_action" in ids
 
 
-def test_create_app_default_profile_is_bridge(tmp_path: Path) -> None:
-    """Calling create_app with no explicit default_profile picks bridge.
+def test_create_app_default_profile_is_executive(tmp_path: Path) -> None:
+    """Calling create_app with no explicit default_profile picks executive.
 
     Existing apps (those that already have agent.yaml files) are NOT
     affected — the default_profile only governs newly-scaffolded agents.
     """
-    out = tmp_path / "bridge_app"
+    out = tmp_path / "exec_app"
     create_app(
         CreateAppContext(
             output_dir=out,
-            app_id="bg_app",
-            title="Bg App",
+            app_id="ex_app",
+            title="Ex App",
             description="Desc",
             author="Tester",
             agent_specs=["jvagent/bot"],  # no @profile → default kicks in
@@ -90,8 +89,8 @@ def test_create_app_default_profile_is_bridge(tmp_path: Path) -> None:
     with open(agent_yaml_path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     action_ids = {a.get("action") for a in (data.get("actions") or [])}
-    assert "jvagent/bridge" in action_ids
-    assert "jvagent/reasoning_helm" in action_ids
+    assert "jvagent/executive" in action_ids
+    assert "jvagent/skills_center" in action_ids
     assert "jvagent/persona" in action_ids
 
 

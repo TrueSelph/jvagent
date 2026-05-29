@@ -10,7 +10,7 @@
 tests/
 ├── conftest.py              # session-level fixtures
 ├── action/                  # per-action unit tests
-│   ├── cockpit/             # cockpit engine, routing, stuck detection
+│   ├── executive/           # executive loop, centers, working memory
 │   ├── interact/            # walker bootstrap + visit semantics
 │   ├── gating/              # access control + always_execute
 │   ├── interview/           # branching, convergence, pruning
@@ -59,8 +59,8 @@ tests/
 
 ```bash
 pytest tests/                      # everything (slow)
-pytest tests/action/cockpit/ -v    # one subsystem
-pytest tests/action/cockpit/test_engine.py::test_step -v   # one test
+pytest tests/action/executive/ -v  # one subsystem
+pytest tests/action/executive/test_loop.py -v   # one test file
 pytest -k pruning                  # by keyword
 pytest --lf                        # last-failed only
 pytest -x                          # stop on first failure
@@ -90,7 +90,7 @@ Add at least one test slice:
 | `memory/` | `tests/memory/` + regression in `tests/test_comprehensive_pruning.py` if it affects pruning |
 | `action/{name}/` | `tests/action/{name}/` |
 | `action/interact/` | `tests/action/interact/` + `tests/action/gating/` if access control changes |
-| `action/cockpit/` | `tests/action/cockpit/` |
+| `action/executive/` | `tests/action/executive/` |
 | `cli/` | `tests/cli/` |
 | Tool schemas | check `tests/test_tool_schema_audit.py` still passes; add cases |
 

@@ -1,10 +1,10 @@
 # Executive Architecture
 
-The **Executive** pattern is a brain-shaped, additive deployment pattern: one central executive recruits specialist *centers* and voices through a single persona egress. It ships as a peer to Rails, Cockpit, and Bridge — the harness is unchanged. See [`adr/0010-executive-centers-architecture.md`](../.planning/adr/0010-executive-centers-architecture.md) for the decision record and [`EXECUTIVE-ROADMAP.md`](../.planning/EXECUTIVE-ROADMAP.md) for the build.
+The **Executive** pattern is a brain-shaped, additive deployment pattern: one central executive recruits specialist *centers* and voices through a single persona egress. It ships as a peer to the Rails pattern — the harness is unchanged. See [`adr/0010-executive-centers-architecture.md`](../.planning/adr/0010-executive-centers-architecture.md) for the decision record and [`EXECUTIVE-ROADMAP.md`](../.planning/EXECUTIVE-ROADMAP.md) for the build.
 
 ## Overview
 
-`ExecutiveInteractAction` (weight `-200`, mutually exclusive with Bridge/Cockpit) owns a **frame-stack control loop** that runs the whole turn inside one `execute()` call — no walker-revisit. It is the agent's prefrontal cortex: it engages trivial conversation, knows all centers via a capability registry, holds working memory, activates centers (the only component that does), integrates their results, and decides when to respond.
+`ExecutiveInteractAction` (weight `-200`) owns a **frame-stack control loop** that runs the whole turn inside one `execute()` call — no walker-revisit. It is the agent's prefrontal cortex: it engages trivial conversation, knows all centers via a capability registry, holds working memory, activates centers (the only component that does), integrates their results, and decides when to respond.
 
 ```
 Reflex (no model): anchor hit / open session?  ──► activate that center directly
@@ -103,4 +103,4 @@ A skill is **judgment over capability, not capability** (ADR-0011). Tools answer
 
 - Action tools and native SOP skills are both wired. **Self-contained Claude skill bundles** (SKILL.md + scripts in a sandbox) are a separate substrate — deferred to a future wave (ADR-0011).
 - `_build_registry` enumerates anchored rails IAs; skill capabilities are not yet enumerated into the *routing* registry (they're discovered inside the Skills center instead).
-- Live-provider smoke + a performance ledger entry vs Bridge (the in-tree smoke mocks leaf model calls).
+- Live-provider smoke + a performance ledger entry (the in-tree smoke mocks leaf model calls).

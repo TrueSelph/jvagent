@@ -12,7 +12,7 @@ A modular AI-agent platform built on [jvspatial](.planning/jvspatial-integration
 
 - An *app* declares one or more *agents* in YAML.
 - Each agent owns a graph of *actions* (plugins) plus a per-user memory subgraph (`User → Conversation → Interaction`).
-- Incoming traffic at `POST /agents/{id}/interact` becomes an `Interaction`; an `InteractWalker` visits the agent's `InteractAction`s in weight order; the **Bridge** action orchestrates one or more **helms** (ReflexHelm + ReasoningHelm) in a walker-revisit model loop with full agency over harness services and action tools.
+- Incoming traffic at `POST /agents/{id}/interact` becomes an `Interaction`; an `InteractWalker` visits the agent's `InteractAction`s in weight order; the **Executive** action (weight `-200`) runs the whole turn in a single frame-stack control loop, recruiting specialist **centers** (Skills, IA, Persona) and voicing through the Persona center.
 - Production-shaped: namespaced plugins, lifecycle hooks, response bus with channel adapters, rolling-window memory pruning, separate logs DB.
 
 Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email / web), long-running autonomous agents.
@@ -25,8 +25,8 @@ Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email /
 |---|---|
 | **Get the big picture** | [`.planning/PROJECT.md`](.planning/PROJECT.md) |
 | **Look up normative semantics** (invariants, contracts) | [`.planning/SPEC.md`](.planning/SPEC.md) |
-| **Choose a deployment pattern** (Rails / Bridge) | [`.planning/PATTERNS.md`](.planning/PATTERNS.md) |
-| **See diagrams** (boot, interact, bridge, pruning) | [`.planning/architecture.md`](.planning/architecture.md) |
+| **Choose a deployment pattern** (Rails / Executive) | [`.planning/PATTERNS.md`](.planning/PATTERNS.md) |
+| **See diagrams** (boot, interact, executive, pruning) | [`.planning/architecture.md`](.planning/architecture.md) |
 | **Define a term** | [`.planning/GLOSSARY.md`](.planning/GLOSSARY.md) |
 | **Build a new action** | [`.planning/action-authoring.md`](.planning/action-authoring.md) |
 | **See every existing action** | [`.planning/actions-catalog.md`](.planning/actions-catalog.md) |
@@ -34,7 +34,7 @@ Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email /
 | **Understand memory pruning** | [`.planning/memory-and-pruning.md`](.planning/memory-and-pruning.md) |
 | **Tune / query logging** | [`.planning/observability.md`](.planning/observability.md) + [`docs/logging.md`](docs/logging.md) |
 | **Find a config key** | [`.planning/configuration-keys.md`](.planning/configuration-keys.md) + [`docs/environment-keys-reference.md`](docs/environment-keys-reference.md) |
-| **Understand the bridge + helm pattern** | [`docs/BRIDGE.md`](docs/BRIDGE.md) + [`.planning/adr/0007-bridge-helm-architecture.md`](.planning/adr/0007-bridge-helm-architecture.md) |
+| **Understand the Executive + Centers pattern** | [`docs/EXECUTIVE.md`](docs/EXECUTIVE.md) + [`.planning/adr/0010-executive-centers-architecture.md`](.planning/adr/0010-executive-centers-architecture.md) |
 | **Run jvagent locally** | [`.planning/runbooks/local-dev.md`](.planning/runbooks/local-dev.md) |
 | **Add a new action end-to-end** | [`.planning/runbooks/add-action.md`](.planning/runbooks/add-action.md) |
 | **Send a proactive (agent-initiated) message** | [`docs/proactive-messages.md`](docs/proactive-messages.md) |
@@ -61,7 +61,7 @@ Source anchors:
 - Action base: [`jvagent/action/base.py:48`](jvagent/action/base.py)
 - InteractAction: [`jvagent/action/interact/base.py:32`](jvagent/action/interact/base.py)
 - InteractWalker: `jvagent/action/interact/interact_walker.py:50+`
-- Bridge: [`jvagent/action/bridge/bridge_interact_action.py`](jvagent/action/bridge/bridge_interact_action.py) + helms under [`jvagent/action/helm/`](jvagent/action/helm/)
+- Executive: [`jvagent/action/executive/executive_interact_action.py`](jvagent/action/executive/executive_interact_action.py) + centers under [`jvagent/action/executive/centers/`](jvagent/action/executive/centers/)
 - Conversation + pruning: `jvagent/memory/conversation.py:250-367`
 
 ---
@@ -110,7 +110,7 @@ jvagent app create --yes --dir ./my_app --app-id my_app --title "My App" \
 
 # Tests
 pytest tests/                        # all
-pytest tests/action/bridge/ -v       # one slice
+pytest tests/action/executive/ -v    # one slice
 pre-commit run --all-files           # full lint pass
 
 # Lint / type
@@ -176,8 +176,7 @@ Full CLI reference in [`jvagent/cli/CLAUDE.md`](jvagent/cli/CLAUDE.md) and [`doc
 
 ## 9. Roadmap and in-flight work
 
-- In-progress roadmap: [`.planning/BRIDGE-ROADMAP.md`](.planning/BRIDGE-ROADMAP.md).
-- Per-subsystem codebase intel: [`.planning/codebase/`](.planning/codebase/).
+- Executive build roadmap: [`.planning/EXECUTIVE-ROADMAP.md`](.planning/EXECUTIVE-ROADMAP.md).
 - ADRs: [`.planning/adr/`](.planning/adr/).
 
 ---

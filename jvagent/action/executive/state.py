@@ -18,9 +18,9 @@ from typing import Any, Dict, List, Optional
 
 from jvagent.action.executive.contracts import Brief, Result
 
-# Default ceiling on center activations + executive ticks per turn. Replaces
-# Bridge's shift-budget + jvspatial's max_visits_per_node. Generous enough for
-# multi-center integration, tight enough to bound a runaway loop.
+# Default ceiling on center activations + executive ticks per turn. Bounds
+# the activation loop alongside jvspatial's max_visits_per_node. Generous
+# enough for multi-center integration, tight enough to bound a runaway loop.
 DEFAULT_ACTIVATION_BUDGET = 16
 
 
@@ -55,9 +55,9 @@ class Frame:
 
     ``actor`` is ``"executive"`` or a center name. ``brief`` is the task the
     Executive handed a center (``None`` for the Executive's own frame).
-    ``scratch`` is the center's private per-turn working state — the analogue
-    of Bridge's ``helm_states[name]`` slot, but frame-local so concurrent
-    turns on shared center singletons cannot cross-pollinate.
+    ``scratch`` is the center's private per-turn working state — a per-center
+    state slot that is frame-local so concurrent turns on shared center
+    singletons cannot cross-pollinate.
     """
 
     actor: str

@@ -17,9 +17,9 @@ package:
     order:
       weight: -200
     singleton: true
-  # Pattern-agnostic manifest (ADR-0007 / ADR-0009 / ADR-0010). Executive is a
-  # pattern orchestrator: walker-weight-routed, excluded from anchor-routing and
-  # IA-dispatch surfaces. Mutually exclusive with Bridge/Cockpit (shared -200).
+  # Pattern-agnostic manifest (ADR-0010). Executive is a pattern orchestrator:
+  # walker-weight-routed, excluded from anchor-routing and IA-dispatch surfaces.
+  # The single pattern orchestrator at the -200 slot.
   manifest:
     purpose: >-
       Central executive. Recruits specialist centers, integrates their

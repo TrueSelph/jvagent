@@ -15,8 +15,8 @@ package:
   config:
     order:
       weight: 0
-  # Pattern-agnostic manifest (BRIDGE-ROADMAP §D / ADR-0007 v0). Consumed
-  # by helms and schedulers for routing hints; ignored by patterns that
+  # Pattern-agnostic manifest (ADR-0010). Consumed
+  # by pattern orchestrators and schedulers for routing hints; ignored by patterns that
   # don't read it.
   manifest:
     purpose: >-

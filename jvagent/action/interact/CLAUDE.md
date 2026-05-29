@@ -53,7 +53,7 @@ The HTTP-facing interaction pipeline:
 5. **`execute()` is called inside a walker `visiting()` context** — `visitor.here` is set to the action node. Don't break that contract by mutating the walker queue from inside without using `visitor.visit()` / `visitor.prepend()`.
 6. **`publish()` requires `visitor.response_bus` + `visitor.session_id`** ([`base.py:237-246`](base.py)). Early-return with a warning if either is missing.
 7. **`publish()` with `stream=None` defaults to `visitor.stream`** ([`base.py:255`](base.py)). For non-streaming channels (WhatsApp), this is set False on the walker.
-8. **Walker-revisit pattern**: an action MAY call `visitor.prepend([self])` to be re-visited. State must be persisted on `visitor._skill_state` between visits. The cockpit uses this; see `cockpit/CLAUDE.md`.
+8. **Walker-revisit capability**: `visitor.prepend([self])` exists as a walker primitive — an action MAY enqueue itself (or another node) to be visited again. No shipped pattern currently relies on multi-visit turns; the Executive runs its whole turn in a single `execute()` call (no revisit), carrying state on `visitor._executive_wm` instead.
 
 ---
 
@@ -117,7 +117,7 @@ pytest tests/action/interact/ tests/action/gating/ -v
 |---|---|
 | Top-level `InteractAction` with children but no `visitor.visit(child)` call in `execute()` | Children never run. Explicitly route. |
 | Calling `publish()` with `stream=True` on a non-streaming channel | Adapter mishandles. Pass `stream=False` or let visitor.stream propagate. |
-| `await visitor.visit(self)` for re-visit | Cycle risk; walker may trip `max_visits_per_node=100`. Use `visitor.prepend([self])` with state on `visitor._skill_state` (cockpit pattern). |
+| `await visitor.visit(self)` for re-visit | Cycle risk; walker may trip `max_visits_per_node=100`. If you must re-enqueue, use `visitor.prepend([self])` and persist state explicitly (no shipped pattern needs this — the Executive avoids re-visits entirely). |
 | Setting `run_in_background=True` on an action that emits the user response | Response never reaches the client. Background = post-response only. |
 | Long sleeps in `execute()` | Blocks the walker; latency spike. Use background or task_dispatcher. |
 | Reading `visitor.interaction` in a background action | It's closed/saved by then — read-only, don't mutate. |
@@ -135,6 +135,5 @@ pytest tests/action/interact/ tests/action/gating/ -v
 
 ## 9. Out of scope here
 
-- The cockpit's walker-revisit specifics (Phase 1 router + Phase 2 engine): see `cockpit/CLAUDE.md`.
 - Memory graph mutation: see `jvagent/memory/CLAUDE.md`.
 - Channel adapters: see `jvagent/action/response/`.

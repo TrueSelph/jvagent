@@ -529,7 +529,7 @@ class PersonaAction(Action):
     async def _render_datetime_context_block(self) -> str:
         """Build a temporal-anchor block for the system prompt.
 
-        Returns the same multi-format datetime view exposed by the cockpit
+        Returns the same multi-format datetime view exposed by the
         ``get_current_datetime`` tool so the model treats both surfaces as
         the single source of truth. Empty string on resolution failure —
         the caller's prompt stays valid; the model will fall back to the

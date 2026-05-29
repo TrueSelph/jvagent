@@ -5,12 +5,12 @@ Two resource labels layer on the existing AC taxonomy
 
 - ``tool:center:{name}`` — gating a center as an ACTIVATE target.
 - ``tool:delegate:{name}`` — gating a rails ``InteractAction`` run inside the
-  IA center (shares the label Bridge uses so AC policies are portable).
+  IA center (uses a stable label so AC policies stay portable across patterns).
 
 Fail-open when no enforcing ``AccessControlAction`` is attached; fail-closed
-when AC raises. This module deliberately does **not** import from
-``jvagent.action.bridge`` — the convention is re-implemented (ADR-0010 §6
-isolation discipline).
+when AC raises. This module deliberately does **not** import from any other
+pattern — the convention is re-implemented here (ADR-0010 §6 isolation
+discipline).
 """
 
 from __future__ import annotations

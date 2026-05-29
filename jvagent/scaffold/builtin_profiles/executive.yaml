@@ -11,7 +11,7 @@
 #     ├─ IACenter       (hardened anchored rails InteractActions)
 #     └─ PersonaCenter  (language/identity — voices ALL output)
 #
-# Mutually exclusive with the bridge / cockpit orchestrators (shared -200 slot).
+# The single pattern orchestrator at the -200 slot.
 # Use --profile executive to scaffold a new agent on this composition.
 actions:
   - action: jvagent/executive

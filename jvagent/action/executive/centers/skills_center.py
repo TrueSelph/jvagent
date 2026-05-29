@@ -5,7 +5,7 @@ loop over a pluggable tool surface. One model call per tick: the model picks a
 tool (the center runs it and re-enters via ``STEP``) or gives a final answer
 (``RETURN``). Bounded by ``max_iterations``.
 
-Deliberately self-contained — it does NOT import the reasoning helm. The tool
+Deliberately self-contained — it does NOT import any external orchestrator. The tool
 surface is resolved from the agent's enabled actions via their ``get_tools()``
 (web_search, pageindex, calendar, …), each wrapped as a :class:`SkillTool`;
 tests/bespoke wiring may inject a fixed surface via :meth:`set_tools`. An empty

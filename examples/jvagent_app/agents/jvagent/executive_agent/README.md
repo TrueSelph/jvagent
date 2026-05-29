@@ -54,6 +54,6 @@ intro_interact_action runs BEFORE the executive (pipeline citizenship)
   agent's `actions/`) is the demo's anchored, turn-locking rails IA. Its
   `manifest.turn_lock=true` is what makes the IA center report a sustained
   activation — swap in your own anchored `InteractAction`s the same way.
-- This agent occupies weight `-200`; it cannot be combined with
-  `bridge`/`cockpit` *within the same agent*, but runs fine as a separate agent
-  beside `bridge_agent` in this app.
+- This agent occupies weight `-200` as the single pattern orchestrator for its
+  agent; it owns the turn end-to-end *within the same agent*, but runs fine as a
+  separate agent beside others in this app.

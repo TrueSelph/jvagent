@@ -87,15 +87,16 @@ def test_agent_loader_emits_validation_warning(tmp_path, caplog):
 
 
 def test_exclusion_check_ignores_non_orchestrator_actions():
-    """Bridge with rails IAs and helms validates clean."""
+    """An executive + centers composition validates clean."""
     from jvagent.core.agent_yaml_validator import validate_agent_yaml
 
     payload = {
-        "agent": "jvagent/example_agent",
+        "agent": "jvagent/executive_agent",
         "actions": [
-            {"action": "jvagent/bridge"},
-            {"action": "jvagent/reflex_helm"},
-            {"action": "jvagent/reasoning_helm"},
+            {"action": "jvagent/executive"},
+            {"action": "jvagent/skills_center"},
+            {"action": "jvagent/ia_center"},
+            {"action": "jvagent/persona_center"},
             {"action": "jvagent/persona"},
             {"action": "jvagent/intro_interact_action"},
         ],

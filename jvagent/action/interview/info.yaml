@@ -19,10 +19,10 @@ package:
     group: jvagent
     type: interact_action
 
-  # Pattern-agnostic manifest (BRIDGE-ROADMAP §D / ADR-0007 v0). Consumed
-  # by helms and schedulers for routing hints; ignored by patterns that
+  # Pattern-agnostic manifest (ADR-0010). Consumed
+  # by pattern orchestrators and schedulers for routing hints; ignored by patterns that
   # don't read it. ``turn_lock: true`` because an interview spans multiple
-  # turns and other helms should not interleave.
+  # turns and other orchestrated units should not interleave.
   manifest:
     purpose: >-
       Conduct a structured multi-turn interview with the user across a

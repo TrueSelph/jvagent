@@ -634,7 +634,7 @@ class Actions(Node):
         """Collect Tool instances from all actions via ``Action.get_tools()``.
 
         Iterates all enabled actions and calls ``get_tools()`` on each,
-        returning a flat list of ``Tool`` instances for cockpit runs.
+        returning a flat list of ``Tool`` instances for agentic-loop runs.
 
         Args:
             enabled_only: If True, only collect from enabled actions.

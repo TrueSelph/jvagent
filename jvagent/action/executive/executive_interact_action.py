@@ -19,7 +19,7 @@ import json
 import logging
 import re
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
 
 from jvspatial.core.annotations import attribute
 
@@ -37,6 +37,7 @@ from jvagent.action.executive.contracts import (
     WORKING_MEMORY_VISITOR_ATTR,
     YIELD,
     Brief,
+    OnDone,
     Result,
     is_center_directive,
     is_executive_directive,
@@ -77,29 +78,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Class names of competing pattern orchestrators that share the -200 slot.
-_CONFLICTING_ORCHESTRATORS = ("BridgeInteractAction", "CockpitInteractAction")
-
-
-def detect_pattern_conflict(class_names: List[str]) -> Optional[str]:
-    """Return a warning message if Executive co-installs with Bridge/Cockpit.
-
-    All three occupy weight ``-200`` and turn ownership would be ambiguous
-    (ADR-0010 §3 inv. 7 / SPEC §11 inv. 9). Returns ``None`` when there is no
-    conflict.
-    """
-    names = set(class_names)
-    if "ExecutiveInteractAction" not in names:
-        return None
-    clash = [n for n in _CONFLICTING_ORCHESTRATORS if n in names]
-    if not clash:
-        return None
-    return (
-        "ExecutiveInteractAction cannot coexist with "
-        + " / ".join(clash)
-        + " — all occupy weight -200. Install exactly one pattern orchestrator."
-    )
-
 
 class ExecutiveInteractAction(InteractAction):
     """Central-executive orchestrator (ADR-0010).
@@ -115,7 +93,7 @@ class ExecutiveInteractAction(InteractAction):
 
     weight: int = attribute(
         default=-200,
-        description="Pattern-orchestrator slot at -200 (mutually exclusive with Bridge/Cockpit).",
+        description="Pattern-orchestrator slot at -200 (the sole turn orchestrator).",
     )
     description: str = attribute(
         default=(
@@ -390,7 +368,7 @@ class ExecutiveInteractAction(InteractAction):
         if not ia_name:
             return True
         try:
-            action = await self.get_action(str(ia_name))
+            action = cast(Optional[Any], await self.get_action(str(ia_name)))
             manifest = action.get_manifest() if action else None
         except Exception as exc:
             logger.debug(
@@ -597,9 +575,11 @@ class ExecutiveInteractAction(InteractAction):
             center = (obj.get("center") or "").strip()
             if center not in activatable:
                 return None
-            on_done = obj.get("on_done") or "integrate"
-            if on_done not in ("voice", "integrate"):
-                on_done = "integrate"
+            _raw_on_done = obj.get("on_done") or "integrate"
+            on_done: OnDone = cast(
+                OnDone,
+                _raw_on_done if _raw_on_done in ("voice", "integrate") else "integrate",
+            )
             ack = obj.get("ack")
             ack = ack.strip() if isinstance(ack, str) and ack.strip() else None
             return ACTIVATE(
@@ -967,4 +947,4 @@ def _parse_json_object(raw: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-__all__ = ["ExecutiveInteractAction", "detect_pattern_conflict"]
+__all__ = ["ExecutiveInteractAction"]

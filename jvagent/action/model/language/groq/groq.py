@@ -3,7 +3,7 @@
 Provides integration with Groq's OpenAI-compatible inference API. Groq
 runs Llama and Mixtral models on dedicated LPU hardware with very low
 latency (sub-200ms p50 on small models), making it the typical provider
-choice for :class:`ReflexHelm` in Bridge deployments.
+choice for a fast first-response classifier.
 
 Because the API is OpenAI-compatible at the wire level, this class is a
 thin subclass of :class:`OpenAILanguageModelAction` that only changes:
@@ -47,13 +47,10 @@ class GroqLanguageModelAction(OpenAILanguageModelAction):
     latency can override to ``llama-3.3-70b-versatile``.
 
     Examples:
-        Reflex helm pointing at Groq for sub-500ms first-response:
+        A fast first-response classifier pointing at Groq for sub-500ms
+        first-response:
 
         >>> # agent.yaml
-        >>> - action: jvagent/reflex_helm
-        >>>   context:
-        >>>     model_action_type: GroqLanguageModelAction
-        >>>     model: llama-3.1-8b-instant
         >>> - action: jvagent/groq_lm
         >>>   context:
         >>>     enabled: true
@@ -86,7 +83,7 @@ class GroqLanguageModelAction(OpenAILanguageModelAction):
 
         When ``GROQ_API_KEY`` is unset, returns an empty string. The
         OpenAI-parent ``_query`` path then raises before any HTTP call,
-        and the calling helm (typically ReflexHelm) catches the
+        and the caller catches the
         exception and falls through to its safe-default path.
         """
         return self.api_key_from_context("GROQ_API_KEY")

@@ -12,7 +12,7 @@ class Tool:
     A ``Tool`` bundles metadata (name, description, JSON Schema parameters) with
     an async dispatch function that accepts keyword arguments and returns a
     ``ToolResult``.  Each Action exposes its capabilities as ``Tool`` instances;
-    harness services expose themselves as tools so the cockpit model can call them.
+    harness services expose themselves as tools so the tool-calling model can call them.
     """
 
     name: str

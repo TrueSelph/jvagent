@@ -68,7 +68,7 @@ class ActionMetadata:
         self.config = package.get("config", {})
         self.dependencies = package.get("dependencies", {})
 
-        # Pattern-agnostic manifest block (BRIDGE-ROADMAP §D / ADR-0007 v0).
+        # Pattern-agnostic manifest block (ADR-0010).
         # Located under ``package.manifest`` so it sits alongside ``meta``
         # and ``config``. Optional — missing yields an empty dict here and
         # safe defaults at ``Action.get_manifest()`` resolve time.

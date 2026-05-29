@@ -1,21 +1,22 @@
-"""Pattern-agnostic ``Manifest`` schema (BRIDGE-ROADMAP §D, ADR-0007 v0).
+"""Pattern-agnostic ``Manifest`` schema (ADR-0010).
 
 A manifest is an OPTIONAL block in an action's ``info.yaml`` that surfaces
-runtime routing hints to any helm or scheduler that wants to consume them:
+runtime routing hints to any pattern orchestrator or scheduler that wants to
+consume them:
 
 - ``purpose`` — short human-readable description of what the action does.
 - ``activates_on`` — triggers / phrases that suggest this action is appropriate.
 - ``terminates_when`` — completion / interrupt conditions.
 - ``latency_class`` — one of ``instant | quick | deliberate | long``.
-  Helms use this to decide whether to publish an ack-on-shift before
+  Orchestrators use this to decide whether to publish an ack-on-shift before
   delegating to the action.
-- ``turn_lock`` — when True, other helms must DELEGATE or interrupt rather
-  than running in parallel during this action's lifetime (think
-  multi-turn forms).
+- ``turn_lock`` — when True, other orchestrated units must DELEGATE or
+  interrupt rather than running in parallel during this action's lifetime
+  (think multi-turn forms).
 - ``interrupt_phrases`` — phrases that may break ``turn_lock``. Read by
   the lock-owning rails IA's own intent classifier (e.g. an interview's
-  CANCELLATION state). NOT a Bridge-level mechanic — Bridge always
-  auto-DELEGATEs to the lock owner regardless of helm or utterance.
+  CANCELLATION state). NOT an orchestrator-level mechanic — the orchestrator
+  always auto-DELEGATEs to the lock owner regardless of unit or utterance.
 - ``expected_duration_seconds`` — operator hint; not enforced.
 
 The manifest is read at loader-level (``loader/info_yaml.py``) into
@@ -25,7 +26,8 @@ via :func:`Manifest.from_payload` so existing actions continue to work
 unchanged.
 
 This module is intentionally pattern-agnostic — it does not import from
-``jvagent.action.helm``. All patterns consume the same :class:`Manifest`.
+any pattern's orchestrator package. All patterns consume the same
+:class:`Manifest`.
 """
 
 from __future__ import annotations
@@ -38,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 
 # Valid latency classes (ordered fast → slow). The order is consulted by
-# helms when deciding ack-on-shift policy: anything past ``quick`` warrants
+# the orchestrator when deciding ack-on-shift policy: anything past ``quick`` warrants
 # an ack publish before the shift to avoid perceived dead air.
 VALID_LATENCY_CLASSES = ("instant", "quick", "deliberate", "long")
 ACK_ELIGIBLE_LATENCY_CLASSES = frozenset({"deliberate", "long"})
@@ -77,7 +79,7 @@ class Manifest:
     latency_class: str = DEFAULT_LATENCY_CLASS
     turn_lock: bool = DEFAULT_TURN_LOCK
     interrupt_phrases: List[str] = field(default_factory=list)
-    # When False, a scheduler/helm holding this action's turn-lock MUST forward
+    # When False, a scheduler holding this action's turn-lock MUST forward
     # every utterance to the action (the action owns its own cancellation via
     # its intent classifier) rather than stealing "interrupt" turns away from
     # it. When True (default), higher-level interrupt handling may break the

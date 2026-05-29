@@ -32,7 +32,7 @@ def convert_messages_for_provider(
 ) -> List[Dict[str, Any]]:
     """Convert internal message format to provider-specific format.
 
-    The cockpit / agentic loop maintains messages in OpenAI-compatible format
+    The agentic loop maintains messages in OpenAI-compatible format
     (``tool_calls`` at message level, ``tool`` role for results). Anthropic
     requires:
         - ``tool_calls`` become ``tool_use`` content blocks on the assistant

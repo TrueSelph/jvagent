@@ -119,10 +119,10 @@ def _handle_app_create(rest: List[str], *, default_cwd: str) -> None:
     )
     parser.add_argument(
         "--profile",
-        default="cockpit",
+        default="executive",
         help=(
             "Default profile for agents without @profile. "
-            "Builtins: cockpit (default), minimal, conversational, research, "
+            "Builtins: executive (default), minimal, conversational, research, "
             "whatsapp_voice."
         ),
     )

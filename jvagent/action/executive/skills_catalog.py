@@ -9,7 +9,7 @@ order, how to interpret results.
 Discovery reuses the **pattern-neutral** resolver in
 ``jvagent.scaffold.skill_resolve`` (builtin ``jvagent.skills`` + app-local
 ``agents/<ns>/<agent>/skills/*``), so this stays isolation-clean — it imports
-nothing from ``bridge`` / ``helm`` / ``cockpit``.
+nothing from other patterns.
 
 Self-contained Claude skill *bundles* that ship their own executable scripts
 are a different substrate (sandboxed execution) — out of scope here; see
@@ -54,7 +54,7 @@ def discover_skill_docs(
 
     Best-effort: returns ``[]`` on any failure (no app root, missing agent
     fields, resolver error). ``skills_source``: ``both`` | ``local`` | ``app``
-    | ``registry`` | ``builtin`` (mirrors the bridge knob; ``local``/``app``
+    | ``registry`` | ``builtin`` (``local``/``app``
     drop built-ins, ``registry``/``builtin`` keep built-ins).
     """
     if agent is None:

@@ -271,7 +271,7 @@ class CacheManager:
         # bleed across users even if a future refactor reuses a single
         # ``conversation_id`` across multiple Users (group chat / shared
         # session). Routing decisions carry per-user interpretation text.
-        # AUDIT-interact-cockpit HIGH-04.
+        # AUDIT-interact HIGH-04.
         payload = json.dumps(
             {
                 "conversation_id": conversation_id,

@@ -194,7 +194,7 @@ class Action(Node):
     def get_manifest(self) -> "Manifest":
         """Return the pattern-agnostic :class:`Manifest` for this action.
 
-        Resolution order (BRIDGE-ROADMAP §D / ADR-0007 v0):
+        Resolution order (ADR-0010):
 
         1. ``self.metadata['manifest']`` from ``info.yaml`` (raw dict),
            parsed into a :class:`Manifest` via ``Manifest.from_payload``.
@@ -217,7 +217,7 @@ class Action(Node):
         return Manifest.from_payload(raw)
 
     async def get_tools(self) -> List[Any]:
-        """Return Tool instances this action exposes for cockpit runs.
+        """Return Tool instances this action exposes for agentic-loop runs.
 
         Override in subclasses that provide executable tools callable by the
         language model. Each Tool wraps a named function with a JSON Schema

@@ -13,7 +13,7 @@ Six categories per ADR-0009:
 2. **chain_internal** — invoked only via DELEGATE from a parent IA.
 3. **always_execute** — runs on every turn (intro, audit, telemetry).
 4. **synchronous** — engine tool returning a value to the model loop.
-5. **pattern_orchestrator** — Bridge-like; weight-routed orchestrator.
+5. **pattern_orchestrator** — weight-routed orchestrator (like the Executive).
 6. **turn_locked** — multi-turn flow with `manifest.turn_lock: true`.
 
 Each template produces a manifest dict that can be merged into a fresh
@@ -95,7 +95,7 @@ CATEGORY_SPECS: Dict[str, CategorySpec] = {
         key=CATEGORY_PATTERN_ORCHESTRATOR,
         label="Pattern orchestrator",
         description=(
-            "Runs by walker weight (Bridge-like). Only one orchestrator "
+            "Runs by walker weight (like the Executive). Only one orchestrator "
             "per agent. Requires explicit confirmation — this is rare."
         ),
         requires_anchors=False,
@@ -106,8 +106,8 @@ CATEGORY_SPECS: Dict[str, CategorySpec] = {
         label="Turn-locked (multi-turn flow)",
         description=(
             "Owns the turn end-to-end across multiple visits. Reached via "
-            "Bridge auto-DELEGATE; can also be anchor-routable on first "
-            "entry."
+            "the orchestrator's auto-DELEGATE; can also be anchor-routable on "
+            "first entry."
         ),
         requires_anchors=False,
         requires_pattern_orchestrator_confirmation=False,

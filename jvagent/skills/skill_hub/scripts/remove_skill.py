@@ -98,20 +98,10 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any = None) -> Any:
     except Exception as exc:
         logger.warning("Failed to update agent.yaml: %s", exc, exc_info=True)
 
-    # Hot-unload from current session
+    # Hot-unload from a running session is no longer supported (the legacy
+    # in-session skill catalog was removed). The skill is gone from disk and
+    # agent.yaml; a session restart clears it from memory.
     hot_unloaded = False
-    try:
-        from jvagent.action.helm.reasoning.reasoning_helm import (
-            ReasoningHelm,
-        )
-
-        hot_unloaded = await ReasoningHelm.remove_skill(visitor, skill_name)
-    except Exception as exc:
-        logger.warning(
-            "Hot-unload failed (skill removed from disk but still in session): %s",
-            exc,
-            exc_info=True,
-        )
 
     msg_parts = [f"Skill '{skill_name}' removed successfully."]
     if hot_unloaded:

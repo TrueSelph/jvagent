@@ -904,9 +904,10 @@ class InterviewInteractAction(InteractAction, ABC):
             await self.question_builder.build_question_graph()
 
     async def is_actively_locking_turn(self, visitor: "InteractWalker") -> bool:
-        """Tell Bridge whether the interview still owns a turn lock.
+        """Tell the orchestrator whether the interview still owns a turn lock.
 
-        Bridge consults this in two places:
+        The Executive's IA center consults this to decide whether the
+        turn-lock is still held, in two places:
 
         1. ``find_turn_lock_owner`` — on the NEW turn, before any IA
            has run, to decide whether to auto-DELEGATE. At this point

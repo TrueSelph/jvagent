@@ -172,8 +172,8 @@ async def bootstrap(
         ensure_admin,
     )
 
-    # Pin the global app_root used by app-config readers and the
-    # SkillCatalog's filesystem walker. The standalone CLI sets this
+    # Pin the global app_root used by app-config readers and skill
+    # discovery's filesystem walker. The standalone CLI sets this
     # from its working directory; under embed mode the host process's
     # cwd is unrelated to the agent app so we set it explicitly here.
     if resolved_root:
@@ -337,7 +337,7 @@ async def interact(
 ) -> Dict[str, Any]:
     """In-process equivalent of ``POST /agents/{agent_id}/interact`` (non-streaming).
 
-    Drives jvagent's full interact pipeline (Cockpit routing → InteractWalker
+    Drives jvagent's full interact pipeline (orchestrator routing → InteractWalker
     traversal → response builder) without any HTTP layer. Hosts use this
     when they own their own request surface (auth, rate-limit, framing) and
     just want jvagent to produce a single consolidated agent response.

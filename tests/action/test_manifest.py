@@ -72,13 +72,15 @@ def test_pattern_orchestrator_roundtrips():
     assert Manifest.from_payload(out) == m
 
 
-def test_bridge_info_yaml_marks_pattern_orchestrator():
-    """Bridge's info.yaml must mark itself as the pattern orchestrator."""
+def test_executive_info_yaml_marks_pattern_orchestrator():
+    """The Executive's info.yaml must mark itself as the pattern orchestrator."""
     from pathlib import Path
 
     import yaml
 
-    info_path = Path(__file__).resolve().parents[2] / "jvagent/action/bridge/info.yaml"
+    info_path = (
+        Path(__file__).resolve().parents[2] / "jvagent/action/executive/info.yaml"
+    )
     with info_path.open() as fh:
         data = yaml.safe_load(fh)
     manifest_payload = data["package"]["manifest"]

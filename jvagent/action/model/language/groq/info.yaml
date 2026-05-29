@@ -19,7 +19,7 @@ package:
     description: >-
       LLM integration for Groq's OpenAI-compatible inference API. Optimised
       for ultra-low-latency completion (sub-200ms p50 on small Llama models)
-      — the typical Reflex helm provider in Bridge deployments where
+      — the typical provider for a fast first-response classifier where
       first-response latency matters.
     group: jvagent
     type: language_model_action

@@ -197,23 +197,10 @@ async def execute(arguments: Dict[str, Any], *, visitor: Any = None) -> Any:
         except Exception as exc:
             logger.warning("Failed to update agent.yaml: %s", exc, exc_info=True)
 
-        # Hot-load: refresh the in-memory skill state so the current session
-        # can see the newly installed skill without restarting.
-        hot_loaded = []
-        try:
-            from jvagent.action.helm.reasoning.reasoning_helm import (
-                ReasoningHelm,
-            )
-
-            newly_found = await ReasoningHelm.refresh_skills(visitor)
-            if skill_name in newly_found:
-                hot_loaded = newly_found
-        except Exception as exc:
-            logger.warning(
-                "Hot-load refresh failed (skill still works on next interaction): %s",
-                exc,
-                exc_info=True,
-            )
+        # Hot-load into a running session is no longer supported (the legacy
+        # in-session skill catalog was removed). The skill is on disk and in
+        # agent.yaml; it is picked up on the next interaction / session start.
+        hot_loaded: list = []
 
         # Build message
         msg_parts = [f"Skill '{skill_name}' installed successfully."]

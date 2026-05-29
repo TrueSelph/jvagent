@@ -462,7 +462,7 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
 - **Simplified API**: Pass directives and parameters directly to `respond()` method
 - **Bulk Operations**: Use `add_directives()` and `add_parameters()` for efficient batch operations
 - **Automatic Persistence**: Interactions are automatically saved after adding directives/parameters
-- **Routing Support**: Can be routed via InteractRouter based on anchor statements, or use **`jvagent/bridge` + `jvagent/reasoning_helm`** ([Bridge](docs/BRIDGE.md)) for unified LLM routing plus skills via the helm pattern
+- **Routing Support**: Can be routed via InteractRouter based on anchor statements, or use **`jvagent/executive`** ([Executive + Centers](docs/EXECUTIVE.md)) for unified LLM routing plus skills via the centers pattern
 
 See the [InteractAction API Guide](jvagent/action/interact/README.md) for complete documentation.
 
@@ -1059,7 +1059,7 @@ InteractActions are actions that participate in the interact subsystem. They ser
 **Architecture:**
 - InteractActions are modular execution points in a chain
 - The InteractWalker traverses and executes the modular pipeline
-- Core actions like InteractRouter or **BridgeInteractAction** ([guide](docs/BRIDGE.md)) alter/curate the walker's path based on input
+- Core actions like InteractRouter or **ExecutiveInteractAction** ([guide](docs/EXECUTIVE.md)) alter/curate the walker's path based on input
 - InteractActions may have branches of other InteractActions
 - **Top-level InteractActions** (directly connected to the Actions branch node) **must explicitly route the walker to their children** conditionally - the walker does not automatically traverse child actions from top-level actions
 
@@ -1138,7 +1138,7 @@ OpenAI actions read credentials from environment (`OPENAI_API_KEY`).
 
 **Core Action Documentation:**
 - [InteractAction API Guide](jvagent/action/interact/README.md) - Complete guide to InteractAction API including `respond()` method
-- [Bridge](docs/BRIDGE.md) - Multi-helm orchestrator (`BridgeInteractAction` + `ReflexHelm` + `ReasoningHelm`); routing, skills, interact-action targets, think-act-observe loop
+- [Executive + Centers](docs/EXECUTIVE.md) - Central executive (`ExecutiveInteractAction`) recruiting Skills / IA / Persona centers; routing, skills, anchored interact-action targets, think-act-observe loop
 - [InteractRouter](jvagent/action/router/README.md) - Standalone intent-based routing
 - [RetrievalInteractAction](jvagent/action/retrieval/README.md) - Vector store retrieval with simplified API
 - [IntroInteractAction](jvagent/action/intro/README.md) - First-time user welcome messages
@@ -2085,7 +2085,7 @@ Agent-targeted reference docs live under [`.planning/`](.planning/). Start here 
 - [Agent Master Guide](CLAUDE.md) — entry point for any AI agent (also surfaced as [AGENTS.md](AGENTS.md))
 - [Project vision](.planning/PROJECT.md) — what jvagent is and isn't
 - [SPEC](.planning/SPEC.md) — normative semantics, invariants, lifecycle contracts
-- [Architecture diagrams](.planning/architecture.md) — boot, interact, bridge, pruning
+- [Architecture diagrams](.planning/architecture.md) — boot, interact, executive, pruning
 - [Glossary](.planning/GLOSSARY.md)
 - [Action authoring contract](.planning/action-authoring.md)
 - [Actions catalog](.planning/actions-catalog.md) — inventory of every action
@@ -2115,7 +2115,7 @@ Agent-targeted reference docs live under [`.planning/`](.planning/). Start here 
 ### Action Modules
 
 - [InteractAction API](jvagent/action/interact/README.md)
-- [Bridge package](docs/BRIDGE.md) — `BridgeInteractAction` + helms source layout
+- [Executive package](docs/EXECUTIVE.md) — `ExecutiveInteractAction` + centers source layout
 - [InteractRouter](jvagent/action/router/README.md)
 - [RetrievalInteractAction](jvagent/action/retrieval/README.md)
 - [IntroInteractAction](jvagent/action/intro/README.md)

@@ -721,15 +721,15 @@ class InteractWalker(Walker):
         current queue AND in ``actions`` are kept. Actions not in the
         queue are NOT prepended — they would otherwise cause re-entry
         loops when the supplied list contains the action that is
-        currently being visited (e.g. cockpit's own self-re-add path
-        via ``curate_walk_path_for_cockpit``).
+        currently being visited (e.g. an orchestrator's own self-re-add
+        path).
 
         AUDIT-interact CRIT-03 fix: the original silent-drop of routed
         sub-InteractActions stays in place at this layer — drop is a
-        precondition for the cockpit's walker-revisit loop, not a bug.
+        precondition for the orchestrator's walker-revisit loop, not a bug.
         Callers that need to ROUTE TO a sub-IA must instead use
         :meth:`visit` / :meth:`prepend` explicitly. The previous Wave B
-        attempt to "include" un-queued actions caused infinite cockpit
+        attempt to "include" un-queued actions caused infinite orchestrator
         re-entry; this revert preserves correctness.
 
         AUDIT-interact MED-13: items lacking ``.id`` are skipped with a

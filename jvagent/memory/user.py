@@ -73,7 +73,7 @@ class User(Node):
         default_factory=dict,
         description=(
             "General-purpose user-scoped memory: a flat key→markdown map. "
-            "Cross-session, persists with the user. Used by the cockpit's "
+            "Cross-session, persists with the user. Used by the agentic loop's "
             "memory_set / memory_get / memory_append / memory_search tools."
         ),
     )

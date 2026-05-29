@@ -3,7 +3,7 @@
 A brain-shaped agent composition: one :class:`ExecutiveInteractAction`
 (prefrontal cortex) recruits specialist :class:`BaseCenter` leaves (skills, IA)
 and voices through a Persona center, on a frame-stack control loop. Ships as a
-peer to Rails / Cockpit / Bridge — no harness changes.
+peer to the Rails pattern — no harness changes.
 """
 
 from jvagent.action.executive.base import BaseCenter
@@ -19,13 +19,11 @@ from jvagent.action.executive.contracts import (
 )
 from jvagent.action.executive.executive_interact_action import (
     ExecutiveInteractAction,
-    detect_pattern_conflict,
 )
 from jvagent.action.executive.state import WorkingMemory
 
 __all__ = [
     "ExecutiveInteractAction",
-    "detect_pattern_conflict",
     "BaseCenter",
     "TurnContext",
     "WorkingMemory",

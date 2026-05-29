@@ -734,104 +734,53 @@ result = await archive_service.archive_error_logs(
 
 ---
 
-## Bridge Observability (BRIDGE-ROADMAP §I)
+## Executive Observability
 
-When an agent uses the Bridge pattern (`jvagent/bridge` action + helms),
-each turn produces additional observability metadata on the
-`Interaction` node. All of it is queryable through the standard
-`GET /logs/agents/{agent_id}` endpoint plus direct reads of the
-interaction node from a notebook / debug page.
+When an agent uses the **Executive** pattern (`jvagent/executive` action +
+centers — see [`EXECUTIVE.md`](EXECUTIVE.md)), each turn produces additional
+observability metadata on the `Interaction` node. All of it is queryable
+through the standard `GET /logs/agents/{agent_id}` endpoint plus direct
+reads of the interaction node from a notebook / debug page.
 
-### `helm_shift` event (observability_metrics)
+### `center_activation` event (observability_metrics)
 
-Every helm transition appends a `helm_shift` event to
-`Interaction.observability_metrics`. Two transitions fire on a typical
-turn:
-
-1. **Initial helm resolution** (`from_helm: null`, `to_helm: <default>`,
-   `reason: "bridge:initial"`).
-2. **Each explicit `SHIFT` verb** issued by a helm.
+Every center activation appends a `center_activation` event to
+`Interaction.observability_metrics`. The Executive is the only component
+that activates centers, so the trace is a flat, ordered list of the
+centers it recruited during the turn.
 
 Event shape:
 
 ```json
 {
-  "event_type": "helm_shift",
+  "event_type": "center_activation",
   "data": {
-    "from_helm": "ReflexHelm",
-    "to_helm": "ReasoningHelm",
+    "center": "SkillsCenter",
+    "verb": "ACTIVATE",
+    "on_done": "integrate",
     "reason": "needs lookup",
-    "ack_emitted": true,
-    "shift_index": 1,
+    "activation_index": 1,
     "at_monotonic": 12.345
   },
   "timestamp": 12.345
 }
 ```
 
-`shift_index` is monotonic per turn. `ack_emitted` reports whether
-Bridge published a `transient_ack` before the shift (only for
-deliberate/long-class targets per the manifest).
-
-### `bridge_observability` payload (Interaction.parameters)
-
-When a Bridge turn finalises (via `EMIT(finalize=True)` or `YIELD`),
-Bridge writes a `bridge_observability` block onto
-`Interaction.parameters`. The block summarises the whole turn so
-operators don't need to scan the event stream:
-
-```json
-{
-  "bridge_observability": {
-    "shift_log": [
-      {"from_helm": null, "to_helm": "ReflexHelm", "reason": "bridge:initial",
-       "ack_emitted": false, "shift_index": 0, "at_monotonic": 0.0,
-       "handoff_state": null},
-      {"from_helm": "ReflexHelm", "to_helm": "ReasoningHelm",
-       "reason": "needs lookup", "ack_emitted": true, "shift_index": 1,
-       "at_monotonic": 1.42, "handoff_state": null}
-    ],
-    "helm_timings_seconds": {
-      "ReflexHelm": 0.41,
-      "ReasoningHelm": 5.83
-    },
-    "helm_step_counts": {
-      "ReflexHelm": 1,
-      "ReasoningHelm": 1
-    },
-    "shift_count": 2,
-    "turn_started_at": 0.0,
-    "last_emit_at": 5.83
-  }
-}
-```
-
-- **`shift_log`** mirrors every `helm_shift` event for the turn in a
-  single ordered list. Survives interaction pruning rules because it
-  lives on `parameters`, not the volatile event stream.
-- **`helm_timings_seconds`** sums wall-clock time spent in each helm's
-  `step()` across all visits. Useful for identifying which helm
-  dominated the turn's latency.
-- **`helm_step_counts`** tracks how many times each helm's `step()`
-  was called. A helm that loops many times via `CONTINUE` will show a
-  high count.
-- **`turn_started_at` / `last_emit_at`** anchor the turn on the
-  process's monotonic clock (relative, not wall clock — for ordering
-  and elapsed-time math, not absolute timestamps).
+`activation_index` is monotonic per turn. `on_done` reports whether the
+center's result is voiced directly (`"voice"`) or returned to the
+Executive to integrate (`"integrate"`).
 
 ### Querying examples
 
-Bridge observability rides on the existing interaction record, so the
+Executive observability rides on the existing interaction record, so the
 same `interaction_id`-based queries work:
 
 ```bash
-# Fetch interactions whose helm_shift events name ReasoningHelm
-curl "http://localhost:8000/logs/agents/jvagent/bridge_agent?event_type=helm_shift" \
+# Fetch interactions whose center_activation events name SkillsCenter
+curl "http://localhost:8000/logs/agents/jvagent/executive_agent?event_type=center_activation" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Per-helm token attribution (Bridge §I — deferred): direct attribution
-of `LM call → originating helm` arrives when the per-helm
-`model_action` tagging lands. Until then, `Interaction.usage` sums
-tokens across all helms in the turn.
+Per-center token attribution is summed across the turn: `Interaction.usage`
+totals tokens for every center activated during the turn.
 

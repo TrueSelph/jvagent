@@ -10,7 +10,7 @@ Each capability names the **center** that handles it (e.g. an anchored IA is
 handled by the IA center). This keeps the depth-1 star: the reflex/Executive
 activate a *center*, and the center runs the underlying IA/skill.
 
-This module is pattern-local and imports nothing from ``bridge`` / ``cockpit``.
+This module is pattern-local and imports nothing from other patterns.
 """
 
 from __future__ import annotations
