@@ -75,6 +75,9 @@ config:
 # Agents are discovered from agents/{namespace}/{agent_name}/ and installed from this list.
 agents:
   - jvagent/bridge_agent
+  # Executive + Centers demo (ADR-0010). Uncomment to install and run it
+  # alongside bridge_agent. See agents/jvagent/executive_agent/README.md.
+  - jvagent/executive_agent
   # - jvagent/example_agent
   # - jvagent/proposal_agent
   # - resolv/resolv_demo

@@ -45,6 +45,7 @@ ACK_ELIGIBLE_LATENCY_CLASSES = frozenset({"deliberate", "long"})
 
 DEFAULT_LATENCY_CLASS = "quick"
 DEFAULT_TURN_LOCK = False
+DEFAULT_CAN_INTERRUPT = True
 DEFAULT_ROUTABLE_BY_ANCHOR = True
 DEFAULT_PATTERN_ORCHESTRATOR = False
 
@@ -76,6 +77,12 @@ class Manifest:
     latency_class: str = DEFAULT_LATENCY_CLASS
     turn_lock: bool = DEFAULT_TURN_LOCK
     interrupt_phrases: List[str] = field(default_factory=list)
+    # When False, a scheduler/helm holding this action's turn-lock MUST forward
+    # every utterance to the action (the action owns its own cancellation via
+    # its intent classifier) rather than stealing "interrupt" turns away from
+    # it. When True (default), higher-level interrupt handling may break the
+    # lock. See ADR-0010 §2.5 (Executive reflex interrupt bypass).
+    can_interrupt: bool = DEFAULT_CAN_INTERRUPT
     expected_duration_seconds: Optional[float] = None
     routable_by_anchor: bool = DEFAULT_ROUTABLE_BY_ANCHOR
     pattern_orchestrator: bool = DEFAULT_PATTERN_ORCHESTRATOR
@@ -123,6 +130,9 @@ class Manifest:
             interrupt_phrases=_validate_string_list(
                 payload, "interrupt_phrases", strict=strict
             ),
+            can_interrupt=_validate_bool(
+                payload, "can_interrupt", DEFAULT_CAN_INTERRUPT, strict=strict
+            ),
             expected_duration_seconds=_validate_optional_float(
                 payload, "expected_duration_seconds", strict=strict
             ),
@@ -158,6 +168,7 @@ class Manifest:
             "latency_class": self.latency_class,
             "turn_lock": self.turn_lock,
             "interrupt_phrases": list(self.interrupt_phrases),
+            "can_interrupt": self.can_interrupt,
             "expected_duration_seconds": self.expected_duration_seconds,
             "routable_by_anchor": self.routable_by_anchor,
             "pattern_orchestrator": self.pattern_orchestrator,
@@ -181,6 +192,7 @@ class Manifest:
             "latency_class": self.latency_class,
             "turn_lock": self.turn_lock,
             "interrupt_phrases": list(self.interrupt_phrases),
+            "can_interrupt": self.can_interrupt,
             "expected_duration_seconds": self.expected_duration_seconds,
             "routable_by_anchor": self.routable_by_anchor,
             "pattern_orchestrator": self.pattern_orchestrator,

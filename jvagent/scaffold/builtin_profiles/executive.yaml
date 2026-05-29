@@ -1,0 +1,84 @@
+# Executive profile (ADR-0010 / EXECUTIVE-ROADMAP §M8).
+#
+# Brain-shaped composition: ExecutiveInteractAction at weight -200 is the
+# central executive (light model). It engages trivial conversation, activates
+# specialist CENTERS, integrates their results in working memory, and voices
+# through the Persona center (the sole egress). A deterministic reflex path
+# routes anchored/turn-locked pathways straight to the IA center.
+#
+#   ExecutiveInteractAction (-200)
+#     ├─ SkillsCenter   (think-act-observe over the skill/tool surface)
+#     ├─ IACenter       (hardened anchored rails InteractActions)
+#     └─ PersonaCenter  (language/identity — voices ALL output)
+#
+# Mutually exclusive with the bridge / cockpit orchestrators (shared -200 slot).
+# Use --profile executive to scaffold a new agent on this composition.
+actions:
+  - action: jvagent/executive
+    context:
+      enabled: true
+      centers:
+        - SkillsCenter
+        - IACenter
+        - PersonaCenter
+      persona_center: PersonaCenter
+      ia_center: IACenter
+      activation_budget: 16
+      # Light model drives the executive's answer-or-route decision.
+      model: gpt-4o-mini
+      model_action_type: OpenAILanguageModelAction
+      model_temperature: 0.2
+      clarify_text: "Sorry, I didn't quite catch that — could you rephrase?"
+      denied_response_text: "Sorry, I can't do that here."
+
+  - action: jvagent/skills_center
+    context:
+      enabled: true
+      # Heavy model for deliberate reasoning.
+      model: gpt-4o-mini
+      model_action_type: OpenAILanguageModelAction
+      model_temperature: 0.2
+      max_iterations: 8
+
+  - action: jvagent/ia_center
+    context:
+      enabled: true
+
+  - action: jvagent/persona_center
+    context:
+      enabled: true
+
+  - action: jvagent/openai_lm
+    context:
+      enabled: true
+      description: OpenAI language model (OPENAI_API_KEY in .env)
+      api_endpoint: https://api.openai.com/v1
+      model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 4096
+      timeout: 60
+
+  - action: jvagent/persona
+    context:
+      enabled: true
+      description: Agent persona — voices final responses (used by the Persona center)
+      persona_name: __JVAGENT_SCAFFOLD_AGENT_TITLE__
+      persona_description: __JVAGENT_SCAFFOLD_AGENT_DESCRIPTION__
+      persona_capabilities:
+        - Answer user questions helpfully and concisely
+        - Use specialist centers to reason and run structured flows
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      model_temperature: 0.1
+      model_max_tokens: 8192
+
+  - action: jvagent/intro_interact_action
+    context:
+      enabled: true
+      description: First-time-user intro (always_execute) — runs before the executive in the weight chain
+
+  - action: jvagent/handoff_interact_action
+    context:
+      enabled: true
+      description: Hands off to a human — runnable via the IA center
+      mode: direct_contact
