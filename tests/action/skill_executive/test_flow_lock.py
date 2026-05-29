@@ -54,7 +54,16 @@ def _spy_model(monkeypatch):
     """Count model round-trips; each returns a no-op 'final' decision."""
     calls = {"n": 0}
 
-    async def _m(self, visitor, utterance, history, tools, observations, flow_note=""):
+    async def _m(
+        self,
+        visitor,
+        utterance,
+        history,
+        tools,
+        observations,
+        flow_note="",
+        skills_section="",
+    ):
         calls["n"] += 1
         return {"action": "final", "answer": ""}
 

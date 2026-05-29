@@ -24,7 +24,7 @@ import inspect
 import logging
 import re
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, FrozenSet, List, Optional, Set
 
 from jvspatial.core.annotations import attribute
 
@@ -43,6 +43,7 @@ from jvagent.action.skill_executive.prompts import (
     SKILL_EXECUTIVE_SYSTEM_PROMPT,
     SKILL_EXECUTIVE_USER_PROMPT_TEMPLATE,
     render_history_section,
+    render_skills_section,
 )
 from jvagent.action.skill_executive.skills import discover_skill_docs
 from jvagent.action.skill_executive.tools import (
@@ -235,6 +236,7 @@ class SkillExecutiveInteractAction(InteractAction):
         visible: Set[str],
         flow_owner: Optional[str],
         utterance: str,
+        skill_docs: Optional[List[Any]] = None,
     ) -> Dict[str, SkillTool]:
         """Build the full tool surface and populate ``visible`` (the prompt set).
 
@@ -332,8 +334,10 @@ class SkillExecutiveInteractAction(InteractAction):
 
         # Native SOP skills (progressive disclosure; meta-tools visible).
         docs = self._discover_skills(agent)
+        if skill_docs is not None:
+            skill_docs.extend(docs)
         for name, t in build_skill_meta_tools(
-            docs, set(tools.keys()), activated
+            docs, set(tools.keys()), activated, visible
         ).items():
             tools[name] = t
             visible.add(name)
@@ -414,14 +418,17 @@ class SkillExecutiveInteractAction(InteractAction):
     async def _run_loop(self, visitor: "InteractWalker") -> None:
         activated: List[str] = []
         visible: Set[str] = set()
+        skill_docs: List[Any] = []
         utterance = getattr(visitor, "utterance", "") or ""
 
         # Resolve the active flow first so the surface gates its tool into the
         # prompt only when relevant (active flow, or anchor-relevant utterance).
         flow_owner = active_flow_owner(visitor)
         tools = await self._assemble_tools(
-            visitor, activated, visible, flow_owner, utterance
+            visitor, activated, visible, flow_owner, utterance, skill_docs
         )
+        skill_names = {getattr(d, "name", "") for d in skill_docs}
+        skills_section = render_skills_section(skill_docs)
 
         # Hard turn-lock (lock_active_flow): when a control-task points to an IA
         # that furnished a tool, restrict the callable surface to that one tool
@@ -449,6 +456,8 @@ class SkillExecutiveInteractAction(InteractAction):
         history = await self._history(visitor)
         ticks = 0
         ended_via = "budget"
+        last_sig: Optional[tuple] = None
+        repeats = 0
 
         try:
             while budget > 0:
@@ -456,12 +465,18 @@ class SkillExecutiveInteractAction(InteractAction):
                 ticks += 1
                 visible_tools = [tools[n] for n in visible if n in tools]
                 decision = await self._run_model(
-                    visitor, utterance, history, visible_tools, observations, flow_note
+                    visitor,
+                    utterance,
+                    history,
+                    visible_tools,
+                    observations,
+                    flow_note,
+                    skills_section,
                 )
                 if decision is None:
                     ended_via = "no_decision"
                     return
-                action, tool_name, args = self._normalize(decision, tools)
+                action, tool_name, args = self._normalize(decision, tools, skill_names)
                 if action == "final":
                     answer = _text_candidate(decision)
                     if answer:
@@ -483,6 +498,28 @@ class SkillExecutiveInteractAction(InteractAction):
                     observations.append(
                         {"tool": tool_name, "args": args, "observation": obs}
                     )
+                    # Repeat guard: a model that keeps choosing the same tool with
+                    # the same args makes no progress (e.g. re-activating a skill).
+                    # Nudge once, then break before the budget is wasted.
+                    sig = (tool_name, str(args))
+                    repeats = repeats + 1 if sig == last_sig else 0
+                    last_sig = sig
+                    if repeats == 2:
+                        observations.append(
+                            {
+                                "tool": "(guard)",
+                                "args": {},
+                                "observation": (
+                                    f"(You have already called {tool_name} with "
+                                    "this input and got the same result. Do NOT "
+                                    "repeat it — use a different tool or finish "
+                                    'with action "final".)'
+                                ),
+                            }
+                        )
+                    elif repeats >= 3:
+                        ended_via = "repeat_guard"
+                        return
                     # End the turn once the user has been addressed: a persona
                     # reply (by name) or a terminal IA-tool that owns its own
                     # output. This also stops a model that keeps choosing the
@@ -567,7 +604,11 @@ class SkillExecutiveInteractAction(InteractAction):
         await self.publish(visitor=visitor, content=answer)
 
     @staticmethod
-    def _normalize(decision: Dict[str, Any], tools: Dict[str, SkillTool]):
+    def _normalize(
+        decision: Dict[str, Any],
+        tools: Dict[str, SkillTool],
+        skill_names: Optional[Set[str]] = None,
+    ):
         """Normalize a model decision into ``(action, tool_name, args)``.
 
         Tolerant of common near-miss shapes the model emits, e.g.
@@ -576,22 +617,56 @@ class SkillExecutiveInteractAction(InteractAction):
         with no ``action``. For the persona text tools (``reply``/``respond``),
         the text is salvaged from ``answer``/``text``/``content``/``message``
         into ``args.text`` so a near-miss shape doesn't waste the step budget.
+
+        Skills aren't tools — they run through the ``use_skill`` meta-tool — but
+        the model routinely addresses a skill *as if* it were a tool, e.g.
+        ``{"action":"use_skill","tool":"research"}``, ``{"action":"research"}``
+        or ``{"tool":"research"}``. Any of these is rewritten to
+        ``use_skill(name=<skill>)`` so a named skill actually activates instead
+        of dispatching a non-existent tool.
         """
-        action = (decision.get("action") or "").strip().lower()
+        raw_action = (decision.get("action") or "").strip()
+        action = raw_action.lower()
         tool_field = (decision.get("tool") or "").strip()
+        args = decision.get("args") if isinstance(decision.get("args"), dict) else {}
         text = _text_candidate(decision)
+
+        names: FrozenSet[str] = frozenset(skill_names) if skill_names else frozenset()
+
+        def _named_skill(*candidates: Any) -> str:
+            for cand in candidates:
+                c = (cand or "").strip() if isinstance(cand, str) else ""
+                if c and c in names:
+                    return c
+            return ""
+
+        if names and "use_skill" in tools:
+            if action == "use_skill" or tool_field == "use_skill":
+                skill = (args.get("name") or args.get("skill") or "").strip()
+                if not skill:
+                    skill = _named_skill(
+                        tool_field if tool_field != "use_skill" else "",
+                        args.get("topic"),
+                        args.get("query"),
+                        raw_action if raw_action.lower() != "use_skill" else "",
+                    )
+            else:
+                # A skill name standing in for the action or tool field.
+                skill = _named_skill(raw_action, tool_field)
+            if skill:
+                return "tool", "use_skill", {"name": skill}
+
         if action not in ("tool", "final"):
             if tool_field:
                 action = "tool"
             elif action in tools:
-                tool_field = decision.get("action") or ""
+                tool_field = raw_action
                 action = "tool"
             elif text and "reply" in tools:
                 # Bare text with no recognizable action → speak it.
                 tool_field, action = "reply", "tool"
             elif text:
                 action = "final"
-        args = decision.get("args") if isinstance(decision.get("args"), dict) else {}
         if (
             action == "tool"
             and tool_field in ("reply", "respond")
@@ -661,6 +736,7 @@ class SkillExecutiveInteractAction(InteractAction):
         tools: List[SkillTool],
         observations: List[Dict[str, Any]],
         flow_note: str = "",
+        skills_section: str = "",
     ) -> Optional[Dict[str, Any]]:
         """One model call → parsed JSON decision. Overridden/mocked in tests."""
         model_action = await self.get_model_action(required=False)
@@ -670,7 +746,9 @@ class SkillExecutiveInteractAction(InteractAction):
             )
             return None
         system_prompt = SKILL_EXECUTIVE_SYSTEM_PROMPT.format(
-            tools_section=render_tools_section(tools)
+            tools_section=render_tools_section(tools),
+            skills_section=skills_section
+            or "(no skills available — use tools directly)",
         )
         if flow_note:
             system_prompt = f"{system_prompt}\n\nFLOW IN PROGRESS:\n{flow_note}"

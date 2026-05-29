@@ -77,7 +77,14 @@ def make_skill_executive(monkeypatch, publish_log):
         seq = list(decisions or [])
 
         async def _run_model(
-            self, visitor, utterance, history, tools, observations, flow_note=""
+            self,
+            visitor,
+            utterance,
+            history,
+            tools,
+            observations,
+            flow_note="",
+            skills_section="",
         ):
             return seq.pop(0) if seq else {"action": "final", "answer": ""}
 

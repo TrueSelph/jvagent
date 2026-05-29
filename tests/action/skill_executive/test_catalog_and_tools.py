@@ -97,3 +97,81 @@ async def test_skill_meta_tools_progressive_disclosure_and_missing_warning():
 
 async def test_skill_meta_tools_empty_when_no_docs():
     assert build_skill_meta_tools([], set(), []) == {}
+
+
+async def test_use_skill_surfaces_allowed_tools_into_visible():
+    doc = SkillDoc(
+        name="web_lookup",
+        description="Look something up.",
+        body="SOP body: call the tool then summarize.",
+        requires_tools=("web_search__search", "missing_tool"),
+    )
+    visible: set = set()
+    activated: list = []
+    available = {"web_search__search"}  # missing_tool is NOT on the surface
+    tools = build_skill_meta_tools([doc], available, activated, visible)
+
+    out = await tools["use_skill"].run({"name": "web_lookup"})
+
+    assert "web_search__search" in visible  # present tool surfaced for the model
+    assert "missing_tool" not in visible  # absent tool not surfaced
+    assert "web_lookup" in activated
+    assert "Tools now callable" in out and "web_search__search" in out
+    assert "not currently available" in out  # missing tool warned
+    assert "SOP body" in out  # procedure delivered
+
+
+async def test_use_skill_without_visible_set_is_noop_on_surface():
+    doc = SkillDoc(name="s", description="d", body="b", requires_tools=("t",))
+    tools = build_skill_meta_tools([doc], {"t"}, [])  # no visible set passed
+    out = await tools["use_skill"].run({"name": "s"})
+    assert "Activated skill 's'" in out
+
+
+async def test_render_skills_section():
+    from jvagent.action.skill_executive.prompts import render_skills_section
+
+    assert "no skills available" in render_skills_section([])
+    out = render_skills_section(
+        [SkillDoc(name="research", description="Investigate a topic.", body="b")]
+    )
+    assert "- research: Investigate a topic." in out
+
+
+async def test_system_prompt_lists_skills_and_priority_rule():
+    from jvagent.action.skill_executive.prompts import (
+        SKILL_EXECUTIVE_SYSTEM_PROMPT,
+        render_skills_section,
+    )
+
+    sp = SKILL_EXECUTIVE_SYSTEM_PROMPT.format(
+        tools_section="- reply: ...",
+        skills_section=render_skills_section(
+            [SkillDoc(name="research", description="Investigate.", body="b")]
+        ),
+    )
+    assert "AVAILABLE SKILLS" in sp  # skills listed inline, not just behind find_skill
+    assert "Skills first" in sp  # priority rule present
+    assert "research" in sp  # the concrete skill is named
+
+
+async def test_use_skill_is_idempotent():
+    doc = SkillDoc(
+        name="research",
+        description="d",
+        body="FULL SOP BODY HERE",
+        requires_tools=("web_search__search",),
+    )
+    visible: set = set()
+    activated: list = []
+    tools = build_skill_meta_tools([doc], {"web_search__search"}, activated, visible)
+
+    first = await tools["use_skill"].run({"name": "research"})
+    assert "FULL SOP BODY HERE" in first  # SOP delivered on first activation
+    assert activated == ["research"]
+
+    second = await tools["use_skill"].run({"name": "research"})
+    assert "already active" in second.lower()  # idempotent directive
+    assert "FULL SOP BODY HERE" not in second  # SOP not re-dumped
+    assert activated == ["research"]  # not duplicated
+    assert "web_search__search" in visible  # tools still surfaced

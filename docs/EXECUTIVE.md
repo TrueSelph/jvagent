@@ -124,14 +124,33 @@ jvagent/action/skill_executive/
 
 ## Skills (native SOP overlay)
 
-A skill is **judgment over capability, not capability** (ADR-0011). Tools answer "can I do X"; a skill is a standard operating procedure that *coordinates* the tools the agent already has. So a jvagent-native skill is a `SKILL.md` body that references action tools by their `namespace__tool` name and carries no executable code.
+A skill is **judgment over capability, not capability** (ADR-0011). Tools answer "can I do X"; a skill is a standard operating procedure that *coordinates* the tools the agent already has. So a jvagent-native **jvSkill** is a `SKILL.md` body that references action tools by their `namespace__tool` name (via `allowed-tools`) and carries **no executable code or bundle** — the convention is to coordinate existing actions-as-tools. (Self-contained Claude skill bundles are a later substrate; see below.)
 
-- Discovery: [`jvagent/action/skill_executive/skills.py`](../jvagent/action/skill_executive/skills.py) reuses the neutral `jvagent.scaffold.skill_resolve` (built-in `jvagent.skills` + app-local `agents/<ns>/<agent>/skills/*`). Config: `skills_source` (`both|local|app|registry|builtin`) plus a `skills` selector — no explicit per-skill list.
-- Exposure: the orchestrator adds `find_skill` / `use_skill` meta-tools (progressive disclosure). `use_skill` returns the SOP body as an observation, so it persists for the rest of the loop. No change to routing or the one-call-per-tick contract.
-- `allowed-tools` is a **soft dependency** — a skill activates even if a referenced tool is missing, but the loop warns so the model won't follow an unexecutable step.
+**Sources** — discovery ([`skill_executive/skills.py`](../jvagent/action/skill_executive/skills.py)) reuses the neutral `jvagent.scaffold.skill_resolve` over two locations, selected by `skills_source`:
+
+| `skills_source` | Loads from |
+|---|---|
+| `app` | adjacent `agents/<ns>/<agent>/skills/*` only |
+| `library` | built-in `jvagent/skills/*` only |
+| `both` (default) | both, app-local overriding built-in by name |
+
+Aliases `local`→`app` and `builtin`→`library` are accepted; `registry` is retired (treated as `library`).
+
+**Selecting which skills** — `skills` is either `-all` (every discovered skill) or a **finite list of names** (fnmatch patterns) in the descriptor, e.g. `skills: [research, web_lookup]`. `denied_skills` subtracts; a skill with `always-active: true` in its frontmatter loads regardless of the selector.
+
+**Exposure + execution** — the loaded skills (name + description) are listed inline in the system prompt under **AVAILABLE SKILLS**, and the prompt's first rule is **skills-first**: *if a listed skill matches the user's task, activate it with `use_skill` before any ad-hoc tool call.* This makes skills preferred over tool-only handling rather than only discoverable on demand. The orchestrator also adds `find_skill` / `use_skill` meta-tools: `find_skill` searches names+descriptions (for larger catalogs); `use_skill` activates one by name — it returns the SOP body as an observation (persisting for the rest of the loop) **and surfaces the skill's `allowed-tools` into the loop's callable set**, so the model can immediately invoke the tools the procedure names. `use_skill` is **idempotent** (re-activating an already-active skill returns a short "proceed" directive instead of re-dumping the SOP), and a loop **repeat-guard** breaks any tool that's called repeatedly with identical args. `allowed-tools` is a **soft dependency** — a skill still activates if a referenced tool is absent, but the activation observation warns so the model won't follow an unexecutable step.
+
+```yaml
+actions:
+  - action: jvagent/skill_executive
+    context:
+      skills_source: both          # app | library | both
+      skills: [research, web_lookup]   # finite list, or "-all"
+      denied_skills: []
+```
 
 ## Known follow-ups
 
-- Action tools and native SOP skills are both wired. **Self-contained Claude skill bundles** (SKILL.md + scripts in a sandbox) are a separate substrate — deferred to a future wave (ADR-0011).
+- jvSkills (SOP coordinating actions-as-tools) are wired. **Self-contained Claude skill bundles** (`SKILL.md` + scripts in a sandbox) are a separate substrate — deferred to a future wave (ADR-0011).
 - First-entry routing accuracy now depends on model tool-selection (anchors-in-description + a routing nudge + tests mitigate this); trivial-turn latency, since every non-flow turn enters the loop (mitigated by the slim tool catalog and a `converse` fast-reply skill). Both measured at rollout.
 - Live-provider smoke + a performance ledger entry (the in-tree smoke mocks leaf model calls).

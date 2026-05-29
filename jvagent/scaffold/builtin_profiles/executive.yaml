@@ -20,6 +20,11 @@ actions:
       # Deterministic turn-lock: an active flow's IA owns each turn until it
       # clears its task. Set false for model-mediated (interruptible) continuation.
       lock_active_flow: true
+      # Native SOP skills. skills_source: app (adjacent skills/) | library
+      # (jvagent/skills) | both. `skills` is "-all" or a finite list of names,
+      # e.g. [research, answer].
+      skills_source: both
+      skills: "-all"
       clarify_text: "Sorry, I didn't quite catch that — could you rephrase?"
 
   - action: jvagent/openai_lm

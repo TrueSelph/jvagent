@@ -20,6 +20,10 @@ description matches the user's intent.
 AVAILABLE TOOLS:
 {tools_section}
 
+AVAILABLE SKILLS — standard operating procedures for whole tasks. PREFER a \
+matching skill over ad-hoc tool calls:
+{skills_section}
+
 Each step, choose ONE:
 - Use a tool:
   {{"action": "tool", "tool": "<exact name>", "args": {{...}}}}
@@ -27,13 +31,17 @@ Each step, choose ONE:
   {{"action": "final", "answer": "<optional closing text>"}}
 
 Rules:
+- **Skills first.** If any AVAILABLE SKILL matches the user's task, activate it \
+with ``use_skill`` ({{"action":"tool","tool":"use_skill","args":{{"name":"<skill>"}}}}) \
+BEFORE making ad-hoc tool calls, then follow its procedure. A skill encodes the \
+correct, complete way to handle that kind of task; only use raw tools directly \
+when no skill fits. Don't re-activate a skill that's already active — proceed \
+with its steps.
 - For greetings, smalltalk, acknowledgements, and anything answerable from the \
 conversation, call the ``reply`` tool with your text — keep it brief and \
 natural. Use ``respond`` when a persona-framed answer is wanted.
 - For factual lookups, current events, specific data, or calculations, use the \
 matching tool — do NOT answer from memory or guess.
-- If the task is procedural or multi-step and ``find_skill`` / ``use_skill`` \
-are available, check for a standard operating procedure first, then follow it.
 - If a request matches a structured flow's tool (e.g. a signup interview), call \
 that tool to start it.
 - Use ``find_tool`` to discover tools when the surface is large and the one you \
@@ -56,6 +64,27 @@ Steps taken this turn:
 Reply with one JSON object for your next step."""
 
 
+def render_skills_section(docs: list) -> str:
+    """Render available skills as ``- name: description`` for the prompt.
+
+    Listing skills inline (rather than only behind ``find_skill``) is what lets
+    the model prefer a matching skill over ad-hoc tool calls.
+    """
+    if not docs:
+        return "(no skills available — use tools directly)"
+    lines = []
+    for d in docs:
+        name = getattr(d, "name", "") or (
+            d.get("name", "") if isinstance(d, dict) else ""
+        )
+        desc = getattr(d, "description", "") or (
+            d.get("description", "") if isinstance(d, dict) else ""
+        )
+        desc = (desc or "").strip()
+        lines.append(f"- {name}: {desc}" if desc else f"- {name}")
+    return "\n".join(lines)
+
+
 def render_history_section(history: list) -> str:
     """Render a list of ``{role, content}`` messages, or '(none)' when empty."""
     if not history:
@@ -73,4 +102,5 @@ __all__ = [
     "SKILL_EXECUTIVE_SYSTEM_PROMPT",
     "SKILL_EXECUTIVE_USER_PROMPT_TEMPLATE",
     "render_history_section",
+    "render_skills_section",
 ]

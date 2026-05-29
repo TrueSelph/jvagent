@@ -36,8 +36,11 @@ def discover_skill_docs(
 ) -> List[SkillDoc]:
     """Discover native SOP skills for ``agent`` via the neutral resolver.
 
-    Best-effort: returns ``[]`` on any failure. ``skills_source``:
-    ``both`` | ``local`` | ``app`` | ``registry`` | ``builtin``.
+    Best-effort: returns ``[]`` on any failure. ``skills_source`` is one of
+    ``app`` (adjacent ``agents/<ns>/<agent>/skills``), ``library`` (built-in
+    ``jvagent/skills``), or ``both`` (default). Aliases: ``local``→``app``,
+    ``builtin``→``library``; ``registry`` is retired (treated as ``library``).
+    ``selector`` is ``-all`` or a list of skill-name patterns (fnmatch).
     """
     if agent is None:
         return []
@@ -57,8 +60,25 @@ def discover_skill_docs(
     if not app_root or not namespace or not name:
         return []
 
-    source = (skills_source or "both").strip().lower()
-    include_builtin = source in ("both", "builtin", "registry")
+    # Canonical sources: ``app`` (adjacent agents/<ns>/<agent>/skills),
+    # ``library`` (built-in jvagent/skills), or ``both``. Older values are kept
+    # working as aliases; ``registry`` is retired (no registry backend) and
+    # treated as ``library``.
+    raw = (skills_source or "both").strip().lower()
+    source = {"local": "app", "builtin": "library", "registry": "library"}.get(raw, raw)
+    if raw == "registry":
+        logger.warning(
+            "skill_executive.skills: skills_source='registry' is deprecated; "
+            "using 'library' (jvagent/skills)."
+        )
+    if source not in ("app", "library", "both"):
+        logger.debug(
+            "skill_executive.skills: unknown skills_source %r; defaulting to 'both'",
+            raw,
+        )
+        source = "both"
+
+    include_builtin = source in ("both", "library")
     try:
         bundles = resolve_merged_skill_bundles(
             str(app_root), namespace, name, include_builtin=include_builtin
@@ -67,8 +87,12 @@ def discover_skill_docs(
         logger.debug("skill_executive.skills: bundle resolution failed: %s", exc)
         return []
 
-    if source in ("local", "app"):
+    # ``app`` keeps only adjacent skills; ``library`` keeps only built-ins
+    # (resolve_merged_skill_bundles always folds in app-local, so filter here).
+    if source == "app":
         bundles = {k: v for k, v in bundles.items() if v.get("source") != "builtin"}
+    elif source == "library":
+        bundles = {k: v for k, v in bundles.items() if v.get("source") != "app"}
 
     try:
         kept = apply_skill_selector(bundles, selector or "-all", denied or None)

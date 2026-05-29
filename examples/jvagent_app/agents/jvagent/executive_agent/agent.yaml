@@ -36,6 +36,13 @@ actions:
       # Deterministic turn-lock: an active flow's IA owns each turn until it
       # clears its task. Set false for model-mediated (interruptible) continuation.
       lock_active_flow: true
+      # Native SOP skills. Source: app (adjacent skills/) | library
+      # (jvagent/skills) | both. `skills` is a finite list of names to load
+      # (fnmatch patterns ok); use "-all" for every discovered skill.
+      skills_source: both
+      skills:
+        - web_lookup      # app-local (agents/jvagent/executive_agent/skills/)
+        - research        # library (jvagent/skills/)
 
   - action: jvagent/serper_web_search
     context:
