@@ -1386,6 +1386,89 @@ class PersonaAction(Action):
             )
             raise
 
+    def get_tools(self) -> List[Any]:
+        """Furnish ``reply`` / ``respond`` tools for the SkillExecutive (ADR-0012).
+
+        - ``reply`` — thin publish of literal text (no model re-framing), for
+          fast conversational banter / acknowledgements.
+        - ``respond`` — persona-framed reply: injects the given text and
+          composes it through ``respond`` so the agent's identity/voice applies.
+
+        Both require the per-turn ``visitor``; the SkillExecutive binds it when
+        it assembles the tool surface (the model supplies only ``text``).
+        """
+        from jvagent.tooling.tool import Tool
+
+        return [
+            Tool(
+                name="reply",
+                description=(
+                    "Reply to the user with literal text (no re-framing). Use for "
+                    "greetings, acknowledgements, and brief conversational banter."
+                ),
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string", "description": "The reply text."}
+                    },
+                    "required": ["text"],
+                },
+                execute=self._tool_reply,
+            ),
+            Tool(
+                name="respond",
+                description=(
+                    "Reply to the user in the agent's persona voice. Use when a "
+                    "styled, identity-consistent response is wanted."
+                ),
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "text": {
+                            "type": "string",
+                            "description": "What to convey; will be voiced in persona.",
+                        }
+                    },
+                    "required": ["text"],
+                },
+                execute=self._tool_respond,
+            ),
+        ]
+
+    async def _tool_reply(self, visitor: Any = None, text: str = "") -> Any:
+        """Thin publish of literal ``text`` (no model call)."""
+        from jvagent.tooling.tool_result import ToolResult
+
+        text = (text or "").strip()
+        if not text:
+            return ToolResult(content="(nothing to reply)")
+        interaction = getattr(visitor, "interaction", None)
+        if interaction is None:
+            return ToolResult(content="(no interaction)")
+        try:
+            await self._pipe_response(text, interaction, visitor, streaming=False)
+        except Exception as e:
+            logger.warning(f"PersonaAction._tool_reply: publish failed: {e}")
+            return ToolResult(content=f"(reply failed: {e})")
+        return ToolResult(content="(replied to user)")
+
+    async def _tool_respond(self, visitor: Any = None, text: str = "") -> Any:
+        """Persona-framed reply: inject ``text`` as a directive and compose."""
+        from jvagent.tooling.tool_result import ToolResult
+
+        text = (text or "").strip()
+        interaction = getattr(visitor, "interaction", None)
+        if interaction is None:
+            return ToolResult(content="(no interaction)")
+        try:
+            if text and hasattr(visitor, "add_directives"):
+                await visitor.add_directives([f"Tell the user: {text}"])
+            generated = await self.respond(interaction, visitor=visitor)
+        except Exception as e:
+            logger.warning(f"PersonaAction._tool_respond: respond failed: {e}")
+            return ToolResult(content=f"(respond failed: {e})")
+        return ToolResult(content="(responded to user)" if generated else "(no output)")
+
     async def healthcheck(self) -> bool:
         """Check if the PersonaAction is healthy.
 

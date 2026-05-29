@@ -1,19 +1,9 @@
-"""Skill catalog for the Executive's Skills center (ADR-0010 / ADR-0011).
+"""Native SOP skill discovery for the SkillExecutive (ADR-0011 / ADR-0012).
 
-A **jvagent-native skill is an SOP overlay**, not a capability: a markdown
-procedure (the SKILL.md body) that *references existing action tools by their
-canonical ``namespace__tool`` name*. Execution comes from the agent's actions
-(`get_tools()`); the skill only adds judgment — when to use which tool, in what
-order, how to interpret results.
-
-Discovery reuses the **pattern-neutral** resolver in
-``jvagent.scaffold.skill_resolve`` (builtin ``jvagent.skills`` + app-local
-``agents/<ns>/<agent>/skills/*``), so this stays isolation-clean — it imports
-nothing from other patterns.
-
-Self-contained Claude skill *bundles* that ship their own executable scripts
-are a different substrate (sandboxed execution) — out of scope here; see
-ADR-0011.
+A jvagent-native skill is an SOP overlay (a SKILL.md body referencing existing
+action tools by ``namespace__tool`` name), not executable capability. Discovery
+reuses the pattern-neutral resolver in ``jvagent.scaffold.skill_resolve`` so this
+stays isolation-clean.
 """
 
 from __future__ import annotations
@@ -27,13 +17,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class SkillDoc:
-    """A native SOP skill: a procedure that coordinates existing tools.
-
-    ``requires_tools`` is the skill's declared tool surface (from SKILL.md
-    ``allowed-tools``) — treated as a soft dependency: the skill still
-    activates if a tool is missing, but the Skills center warns so the model
-    won't blindly follow a step it can't execute.
-    """
+    """A native SOP skill: a procedure that coordinates existing tools."""
 
     name: str
     description: str
@@ -52,10 +36,8 @@ def discover_skill_docs(
 ) -> List[SkillDoc]:
     """Discover native SOP skills for ``agent`` via the neutral resolver.
 
-    Best-effort: returns ``[]`` on any failure (no app root, missing agent
-    fields, resolver error). ``skills_source``: ``both`` | ``local`` | ``app``
-    | ``registry`` | ``builtin`` (``local``/``app``
-    drop built-ins, ``registry``/``builtin`` keep built-ins).
+    Best-effort: returns ``[]`` on any failure. ``skills_source``:
+    ``both`` | ``local`` | ``app`` | ``registry`` | ``builtin``.
     """
     if agent is None:
         return []
@@ -66,7 +48,7 @@ def discover_skill_docs(
             resolve_merged_skill_bundles,
         )
     except Exception as exc:  # pragma: no cover - import wiring
-        logger.debug("skills_catalog: resolver import failed: %s", exc)
+        logger.debug("skill_executive.skills: resolver import failed: %s", exc)
         return []
 
     app_root = get_app_root()
@@ -82,7 +64,7 @@ def discover_skill_docs(
             str(app_root), namespace, name, include_builtin=include_builtin
         )
     except Exception as exc:
-        logger.debug("skills_catalog: bundle resolution failed: %s", exc)
+        logger.debug("skill_executive.skills: bundle resolution failed: %s", exc)
         return []
 
     if source in ("local", "app"):
@@ -91,7 +73,7 @@ def discover_skill_docs(
     try:
         kept = apply_skill_selector(bundles, selector or "-all", denied or None)
     except Exception as exc:
-        logger.debug("skills_catalog: selector failed: %s", exc)
+        logger.debug("skill_executive.skills: selector failed: %s", exc)
         kept = bundles
 
     docs: List[SkillDoc] = []

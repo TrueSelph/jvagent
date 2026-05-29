@@ -73,13 +73,13 @@ def test_pattern_orchestrator_roundtrips():
 
 
 def test_executive_info_yaml_marks_pattern_orchestrator():
-    """The Executive's info.yaml must mark itself as the pattern orchestrator."""
+    """The SkillExecutive's info.yaml must mark itself as the pattern orchestrator."""
     from pathlib import Path
 
     import yaml
 
     info_path = (
-        Path(__file__).resolve().parents[2] / "jvagent/action/executive/info.yaml"
+        Path(__file__).resolve().parents[2] / "jvagent/action/skill_executive/info.yaml"
     )
     with info_path.open() as fh:
         data = yaml.safe_load(fh)

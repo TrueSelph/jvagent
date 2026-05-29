@@ -1,52 +1,26 @@
-# Executive profile (ADR-0010 / EXECUTIVE-ROADMAP §M8).
+# Executive profile (ADR-0012).
 #
-# Brain-shaped composition: ExecutiveInteractAction at weight -200 is the
-# central executive (light model). It engages trivial conversation, activates
-# specialist CENTERS, integrates their results in working memory, and voices
-# through the Persona center (the sole egress). A deterministic reflex path
-# routes anchored/turn-locked pathways straight to the IA center.
-#
-#   ExecutiveInteractAction (-200)
-#     ├─ SkillsCenter   (think-act-observe over the skill/tool surface)
-#     ├─ IACenter       (hardened anchored rails InteractActions)
-#     └─ PersonaCenter  (language/identity — voices ALL output)
+# A single model-driven orchestrator. SkillExecutiveInteractAction at weight
+# -200 resumes an active flow if one owns the turn (deterministic continuation),
+# otherwise runs a think-act-observe loop over the agent's unified tool surface:
+# the persona's reply/respond tools, anchored interact-actions exposed as tools,
+# plain action tools, core tools, and native SOP skills. Routing is tool
+# selection; turn-lock is an emergent property of a flow that isn't done.
 #
 # The single pattern orchestrator at the -200 slot.
 # Use --profile executive to scaffold a new agent on this composition.
 actions:
-  - action: jvagent/executive
+  - action: jvagent/skill_executive
     context:
       enabled: true
-      centers:
-        - SkillsCenter
-        - IACenter
-        - PersonaCenter
-      persona_center: PersonaCenter
-      ia_center: IACenter
+      model: gpt-4o-mini
+      model_action_type: OpenAILanguageModelAction
+      model_temperature: 0.2
       activation_budget: 16
-      # Light model drives the executive's answer-or-route decision.
-      model: gpt-4o-mini
-      model_action_type: OpenAILanguageModelAction
-      model_temperature: 0.2
+      # Deterministic turn-lock: an active flow's IA owns each turn until it
+      # clears its task. Set false for model-mediated (interruptible) continuation.
+      lock_active_flow: true
       clarify_text: "Sorry, I didn't quite catch that — could you rephrase?"
-      denied_response_text: "Sorry, I can't do that here."
-
-  - action: jvagent/skills_center
-    context:
-      enabled: true
-      # Heavy model for deliberate reasoning.
-      model: gpt-4o-mini
-      model_action_type: OpenAILanguageModelAction
-      model_temperature: 0.2
-      max_iterations: 8
-
-  - action: jvagent/ia_center
-    context:
-      enabled: true
-
-  - action: jvagent/persona_center
-    context:
-      enabled: true
 
   - action: jvagent/openai_lm
     context:
@@ -61,12 +35,12 @@ actions:
   - action: jvagent/persona
     context:
       enabled: true
-      description: Agent persona — voices final responses (used by the Persona center)
+      description: Agent persona — furnishes the reply/respond tools and voices replies
       persona_name: __JVAGENT_SCAFFOLD_AGENT_TITLE__
       persona_description: __JVAGENT_SCAFFOLD_AGENT_DESCRIPTION__
       persona_capabilities:
         - Answer user questions helpfully and concisely
-        - Use specialist centers to reason and run structured flows
+        - Reason with tools and run structured flows
       model_action_type: OpenAILanguageModelAction
       model: gpt-4o-mini
       model_temperature: 0.1
@@ -80,5 +54,5 @@ actions:
   - action: jvagent/handoff_interact_action
     context:
       enabled: true
-      description: Hands off to a human — runnable via the IA center
+      description: Hands off to a human — exposed to the executive as a routable tool
       mode: direct_contact

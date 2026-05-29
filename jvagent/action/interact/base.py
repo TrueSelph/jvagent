@@ -144,6 +144,81 @@ class InteractAction(Action, ABC):
         """
         return None
 
+    def routing_triggers(self) -> List[str]:
+        """Clean entry-intent phrases used to route to this IA, in priority order.
+
+        The routing signal is the action's **manifest** ``activates_on`` (the
+        designed-for-routing entry triggers), falling back to the static
+        ``anchors`` only when no manifest is declared. This deliberately
+        excludes any runtime-merged mid-flight anchors (e.g. an interview's
+        cancel/update/confirm/skip/decline continuation intents), which describe
+        *in-flow* behavior, not first-entry routing, and would otherwise bloat
+        the tool description and over-match the relevance gate.
+        """
+        try:
+            manifest = self.get_manifest()
+        except Exception:
+            manifest = None
+        activates_on = list(getattr(manifest, "activates_on", None) or [])
+        if activates_on:
+            return activates_on
+        return list(self.anchors or [])
+
+    async def get_tools(self) -> List[Any]:
+        """Expose this interact-action to the agentic loop as a routable tool.
+
+        A routable (non-``always_execute``, has routing triggers) IA furnishes a
+        single tool whose **description is its manifest purpose plus its entry
+        triggers** (so a tool-using model selects it on intent) and whose call
+        **forwards to ``execute(visitor)``** — the orchestrator passes the
+        per-turn ``visitor`` through at dispatch time. IAs without routing
+        triggers (or ``always_execute``) expose no tool. This is how IAs
+        participate in the SkillExecutive's unified tool surface (ADR-0012).
+        """
+        if getattr(self, "always_execute", False):
+            return []
+        triggers = self.routing_triggers()
+        if not triggers:
+            return []
+        from jvagent.tooling.tool import Tool
+
+        try:
+            purpose = (getattr(self.get_manifest(), "purpose", "") or "").strip()
+        except Exception:
+            purpose = ""
+        desc = (purpose or (self.description or "")).strip()
+        desc = (desc + " ").strip() + "Use when: " + "; ".join(triggers[:6])
+        return [
+            Tool(
+                name=self.get_class_name(),
+                description=desc,
+                parameters_schema={"type": "object", "properties": {}},
+                execute=self._run_as_executive_tool,
+            )
+        ]
+
+    async def _run_as_executive_tool(self, visitor: Any = None, **kwargs: Any) -> Any:
+        """Tool entrypoint: run this IA's ``execute`` with the supplied visitor.
+
+        The orchestrator injects ``visitor`` when it dispatches the tool. The IA
+        owns its own user-facing output (it publishes or leaves directives), so
+        a short status observation is returned to the loop.
+        """
+        from jvagent.tooling.tool_result import ToolResult
+
+        if visitor is None:
+            return ToolResult(content="(no visitor available)")
+        try:
+            await self.execute(visitor)
+        except Exception as exc:
+            logger.warning(
+                "%s: execute() raised when run as a tool: %s",
+                self.get_class_name(),
+                exc,
+            )
+            return ToolResult(content=f"(flow error: {exc})")
+        return ToolResult(content=f"(ran {self.get_class_name()})")
+
     @abstractmethod
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute the action's logic on the interaction.

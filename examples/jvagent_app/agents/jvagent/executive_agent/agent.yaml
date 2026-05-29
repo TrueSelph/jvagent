@@ -1,18 +1,14 @@
-# Executive Agent — Executive + Centers reference configuration (ADR-0010)
+# Executive Agent — SkillExecutive reference configuration (ADR-0012)
 #
-# The reference agent for the brain-shaped Executive pattern. An
-# ExecutiveInteractAction at weight -200 is the central executive: it engages
-# light conversation, activates specialist CENTERS, integrates their results in
-# working memory, and voices through the Persona center (the sole egress). A
-# deterministic reflex path routes anchored / turn-locked pathways straight to
-# the IA center.
+# The reference agent for the single-orchestrator SkillExecutive pattern. A
+# SkillExecutiveInteractAction at weight -200 owns the whole turn: it resumes an
+# active flow if one owns the turn (deterministic continuation), otherwise runs
+# a think-act-observe loop over the agent's unified tool surface — the persona's
+# reply/respond tools, anchored interact-actions exposed as tools, plain action
+# tools (web search), core tools, and native SOP skills. Routing is tool
+# selection; turn-lock is an emergent property of a flow that isn't done.
 #
-#   ExecutiveInteractAction (-200)
-#     ├─ SkillsCenter   (think-act-observe over the skill/tool surface)
-#     ├─ IACenter       (hardened anchored rails InteractActions)
-#     └─ PersonaCenter  (language/identity — voices ALL output)
-#
-# Mutually exclusive with bridge_agent / cockpit (shared -200 slot).
+# The single pattern orchestrator at the -200 slot.
 
 agent: jvagent/executive_agent
 version: 1.0.0
@@ -22,47 +18,31 @@ jvagent: ~0.0.1
 context:
   alias: Executive Agent
   description: >-
-    Executive-pattern agent. ExecutiveInteractAction (-200) recruits the Skills,
-    IA, and Persona centers on a frame-stack control loop — one model call per
-    tick, no peer shifts. Persona is the sole egress.
+    SkillExecutive-pattern agent. One orchestrator (-200) resumes active flows,
+    otherwise reasons and acts over the agent's tool surface, replying through
+    the persona's reply/respond tools.
   enabled: true
   interaction_limit: 20
 
 actions:
-  # ── ExecutiveInteractAction — central executive (orchestrator) ──
-  - action: jvagent/executive
+  # ── SkillExecutiveInteractAction — the single orchestrator ──
+  - action: jvagent/skill_executive
     context:
       enabled: true
-      centers:
-        - SkillsCenter
-        - IACenter
-        - PersonaCenter
-      persona_center: PersonaCenter
-      ia_center: IACenter
-      activation_budget: 16
       model: gpt-4o-mini
       model_action_type: OpenAILanguageModelAction
       model_temperature: 0.2
+      activation_budget: 16
+      # Deterministic turn-lock: an active flow's IA owns each turn until it
+      # clears its task. Set false for model-mediated (interruptible) continuation.
+      lock_active_flow: true
 
-  # ── Specialist centers (leaves) ──
-  - action: jvagent/skills_center
-    context:
-      enabled: true
-      model: gpt-4.1
-      model_action_type: OpenAILanguageModelAction
-      max_iterations: 8
-
-  - action: jvagent/ia_center
-    context:
-      enabled: true
-
-  - action: jvagent/persona_center
-    context:
-      enabled: true
-
-  # Retrieval tool surfaced to the Skills center via get_tools() → web_search__search.
-  # Requires SERPER_API_KEY in .env. The Skills center wraps it as a SkillTool.
   - action: jvagent/serper_web_search
+    context:
+      enabled: true
+
+  # Always-execute IA runs BEFORE the executive in the weight chain.
+  - action: jvagent/intro_interact_action
     context:
       enabled: true
 
@@ -81,33 +61,20 @@ actions:
       enabled: true
       persona_name: Executive Agent
       persona_description: >-
-        A helpful assistant that reasons with specialist centers and speaks in a
-        clear, concise voice.
+        A helpful assistant that reasons with tools and speaks in a clear,
+        concise voice.
       persona_capabilities:
         - Answer questions helpfully and concisely
-        - Reason with tools via the skills center
-        - Run structured flows via the IA center
+        - Reason with tools and run structured flows
       model_action_type: OpenAILanguageModelAction
       model: gpt-4o-mini
       model_temperature: 0.1
       model_max_tokens: 8192
 
-  # Always-execute IA runs BEFORE the executive in the weight chain
-  # (pipeline citizenship — the executive does not curate the queue).
-  - action: jvagent/intro_interact_action
-    context:
-      enabled: true
-
-  # Anchored, turn-locking rails IA — gives the IA center something concrete to
-  # run. The reflex matches these anchors and routes straight to the IA center
-  # (no executive model call); because the interview declares turn_lock=true,
-  # the IA center reports it as a SUSTAINED ACTIVATION that working memory
-  # persists and the reflex resumes on the next turn until the flow completes
-  # or the user interrupts ("stop" / "cancel" / "quit").
   - action: jvagent/signup_interview_interact_action
     context:
       enabled: true
-      description: "Training signup interview — anchored, turn-locking rails flow run by the IA center"
+      description: "Training signup interview — anchored, turn-locking flow"
       anchors:
         - "sign up for jvagent training"
         - "register for jvagent training"

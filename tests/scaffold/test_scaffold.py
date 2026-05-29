@@ -46,23 +46,24 @@ def test_resolve_conversational_extends(tmp_path: Path) -> None:
     assert "jvagent/intro_interact_action" in ids
 
 
-def test_resolve_executive_profile_includes_executive_and_centers() -> None:
-    """The executive profile produces a complete Executive+Centers starter agent.
+def test_resolve_executive_profile_includes_skill_executive() -> None:
+    """The executive profile produces a complete SkillExecutive starter agent.
 
-    The executive ships the orchestrator (ExecutiveInteractAction at -200)
-    plus the Skills / IA / Persona centers, an OpenAI language model, the
-    persona used for delivery, and intro / handoff IAs.
+    The profile ships the single orchestrator (SkillExecutiveInteractAction at
+    -200), an OpenAI language model, the persona (which furnishes reply/respond
+    tools and voicing), and intro / handoff IAs.
     """
     actions = resolve_profile_actions(None, "executive")
     ids = {x["action"] for x in actions}
-    assert "jvagent/executive" in ids
-    assert "jvagent/skills_center" in ids
-    assert "jvagent/ia_center" in ids
-    assert "jvagent/persona_center" in ids
+    assert "jvagent/skill_executive" in ids
     assert "jvagent/persona" in ids
     assert "jvagent/openai_lm" in ids
     assert "jvagent/intro_interact_action" in ids
     assert "jvagent/handoff_interact_action" in ids
+    # Centers no longer exist in the composition.
+    assert "jvagent/skills_center" not in ids
+    assert "jvagent/ia_center" not in ids
+    assert "jvagent/persona_center" not in ids
 
 
 def test_create_app_default_profile_is_executive(tmp_path: Path) -> None:
@@ -89,8 +90,7 @@ def test_create_app_default_profile_is_executive(tmp_path: Path) -> None:
     with open(agent_yaml_path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     action_ids = {a.get("action") for a in (data.get("actions") or [])}
-    assert "jvagent/executive" in action_ids
-    assert "jvagent/skills_center" in action_ids
+    assert "jvagent/skill_executive" in action_ids
     assert "jvagent/persona" in action_ids
 
 
