@@ -481,7 +481,7 @@ class SkillExecutiveInteractAction(InteractAction):
     async def _maybe_voice_final(self, visitor: "InteractWalker", answer: str) -> None:
         """If the loop ends with text but nothing was voiced, publish it once."""
         interaction = getattr(visitor, "interaction", None)
-        if interaction is not None and (getattr(interaction, "response", "") or ""):
+        if interaction is not None and interaction.response:
             return  # already voiced via reply/respond/IA
         await self.publish(visitor=visitor, content=answer)
 
