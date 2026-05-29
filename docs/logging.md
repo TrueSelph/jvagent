@@ -736,51 +736,58 @@ result = await archive_service.archive_error_logs(
 
 ## Executive Observability
 
-When an agent uses the **Executive** pattern (`jvagent/executive` action +
-centers — see [`EXECUTIVE.md`](EXECUTIVE.md)), each turn produces additional
-observability metadata on the `Interaction` node. All of it is queryable
-through the standard `GET /logs/agents/{agent_id}` endpoint plus direct
-reads of the interaction node from a notebook / debug page.
+When an agent uses the **SkillExecutive** pattern (`jvagent/skill_executive` —
+see [`EXECUTIVE.md`](EXECUTIVE.md)), each turn appends an `executive_activation`
+event to `Interaction.observability_metrics` alongside the per-`model_call`
+events. It is queryable through the standard `GET /logs/agents/{agent_id}`
+endpoint plus direct reads of the interaction node.
 
-### `center_activation` event (observability_metrics)
+### `executive_activation` event (observability_metrics)
 
-Every center activation appends a `center_activation` event to
-`Interaction.observability_metrics`. The Executive is the only component
-that activates centers, so the trace is a flat, ordered list of the
-centers it recruited during the turn.
+The orchestrator records one event per turn summarizing how it ran: the
+continuation mode, the tools it invoked (in order), ticks consumed, and how
+the turn ended. This is the turn-level trace the individual `model_call`
+events don't capture. (Supersedes the retired `center_activation` event — the
+Executive + Centers pattern was replaced by the single orchestrator in
+ADR-0012/0013.)
 
 Event shape:
 
 ```json
 {
-  "event_type": "center_activation",
+  "event_type": "executive_activation",
   "data": {
-    "center": "SkillsCenter",
-    "verb": "ACTIVATE",
-    "on_done": "integrate",
-    "reason": "needs lookup",
-    "activation_index": 1,
-    "at_monotonic": 12.345
+    "continuation_mode": "model_mediated",
+    "flow_owner": null,
+    "lock_active_flow": true,
+    "tools_invoked": ["web_search__search", "respond"],
+    "tick_count": 2,
+    "budget": 16,
+    "ended_via": "respond",
+    "skills_used": []
   },
-  "timestamp": 12.345
+  "timestamp": 1780087622.2
 }
 ```
 
-`activation_index` is monotonic per turn. `on_done` reports whether the
-center's result is voiced directly (`"voice"`) or returned to the
-Executive to integrate (`"integrate"`).
+- `continuation_mode`: `none` (no active flow), `locked` (deterministic
+  turn-lock — surface restricted to the active flow's IA tool), or
+  `model_mediated` (active flow surfaced, model chose).
+- `flow_owner`: class name of the active flow's IA, or `null`.
+- `tools_invoked`: tools the loop dispatched this turn, in order.
+- `tick_count`: think-act-observe iterations (model calls) in the loop;
+  `0` for a locked turn (dispatched without a model round-trip).
+- `ended_via`: `reply` | `respond` | `ia_tool` | `final` | `locked` |
+  `budget` | `no_decision` | `unknown`.
 
 ### Querying examples
 
-Executive observability rides on the existing interaction record, so the
-same `interaction_id`-based queries work:
-
 ```bash
-# Fetch interactions whose center_activation events name SkillsCenter
-curl "http://localhost:8000/logs/agents/jvagent/executive_agent?event_type=center_activation" \
+# Fetch interactions whose turn ran in deterministic turn-lock mode
+curl "http://localhost:8000/logs/agents/<agent_id>?filter={\"context.log_data.interaction_data.observability_metrics.data.continuation_mode\":\"locked\"}" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Per-center token attribution is summed across the turn: `Interaction.usage`
-totals tokens for every center activated during the turn.
+Per-turn token attribution is summed across the turn in `Interaction.usage`
+(every `model_call` this turn, regardless of which tool issued it).
 

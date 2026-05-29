@@ -7,6 +7,8 @@ the routing decision without a live TaskStore or model."""
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 import jvagent.action.skill_executive.skill_executive_interact_action as sei
@@ -15,6 +17,25 @@ from jvagent.action.skill_executive.skill_executive_interact_action import (
 )
 
 pytestmark = pytest.mark.asyncio
+
+
+def _capture_visitor(make_visitor, **kw):
+    """A visitor whose interaction collects observability_metrics in a real list."""
+    v = make_visitor(**kw)
+    v.interaction.observability_metrics = []
+    v.interaction.save = AsyncMock()
+    return v
+
+
+def _activation(v):
+    return next(
+        (
+            e
+            for e in v.interaction.observability_metrics
+            if e.get("event_type") == "executive_activation"
+        ),
+        None,
+    )
 
 
 def _signup(flow_stub_cls, on_exec=None):
@@ -91,3 +112,40 @@ async def test_lock_on_no_active_task_runs_loop(
 
     assert ran["n"] == 0  # nothing to lock onto
     assert calls["n"] >= 1  # normal loop runs the model
+
+
+async def test_executive_activation_event_recorded_per_mode(
+    make_skill_executive, make_visitor, flow_stub_cls, monkeypatch
+):
+    ia = _signup(flow_stub_cls)
+
+    # locked: surface restricted to the IA tool
+    ex = make_skill_executive(actions=[ia], action_registry={"SignupIA": ia})
+    monkeypatch.setattr(sei, "active_flow_owner", lambda v: "SignupIA")
+    _spy_model(monkeypatch)
+    v = _capture_visitor(make_visitor, utterance="x")
+    await ex.execute(v)
+    ev = _activation(v)
+    assert ev is not None
+    assert ev["data"]["continuation_mode"] == "locked"
+    assert ev["data"]["flow_owner"] == "SignupIA"
+    assert ev["data"]["ended_via"] == "locked"
+    assert ev["data"]["tools_invoked"] == ["SignupIA"]
+
+    # model-mediated: flow active but lock off
+    ex2 = make_skill_executive(actions=[ia], action_registry={"SignupIA": ia})
+    ex2.lock_active_flow = False
+    _spy_model(monkeypatch)
+    v2 = _capture_visitor(make_visitor, utterance="x")
+    await ex2.execute(v2)
+    ev2 = _activation(v2)
+    assert ev2 is not None and ev2["data"]["continuation_mode"] == "model_mediated"
+
+    # none: no active flow
+    ex3 = make_skill_executive(actions=[ia], action_registry={"SignupIA": ia})
+    monkeypatch.setattr(sei, "active_flow_owner", lambda v: None)
+    _spy_model(monkeypatch)
+    v3 = _capture_visitor(make_visitor, utterance="x")
+    await ex3.execute(v3)
+    ev3 = _activation(v3)
+    assert ev3 is not None and ev3["data"]["continuation_mode"] == "none"

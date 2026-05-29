@@ -20,8 +20,10 @@ an emergent flow property.
 
 from __future__ import annotations
 
+import inspect
 import logging
 import re
+import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from jvspatial.core.annotations import attribute
@@ -429,6 +431,15 @@ class SkillExecutiveInteractAction(InteractAction):
         # off-topic; interruption/cancel is the IA's own concern.
         if self.lock_active_flow and flow_owner and flow_owner in tools:
             await tools[flow_owner].run({})
+            await self._record_executive_activation(
+                visitor,
+                continuation_mode="locked",
+                flow_owner=flow_owner,
+                tools_invoked=[flow_owner],
+                tick_count=0,
+                ended_via="locked",
+                activated=activated,
+            )
             return
 
         flow_note = active_flow_note(flow_owner) if flow_owner else ""
@@ -436,47 +447,117 @@ class SkillExecutiveInteractAction(InteractAction):
         observations: List[Dict[str, Any]] = []
         budget = max(1, int(self.activation_budget))
         history = await self._history(visitor)
+        ticks = 0
+        ended_via = "budget"
 
-        while budget > 0:
-            budget -= 1
-            visible_tools = [tools[n] for n in visible if n in tools]
-            decision = await self._run_model(
-                visitor, utterance, history, visible_tools, observations, flow_note
-            )
-            if decision is None:
-                return
-            action, tool_name, args = self._normalize(decision, tools)
-            if action == "final":
-                answer = _text_candidate(decision)
-                if answer:
-                    await self._maybe_voice_final(visitor, answer)
-                return
-            if action == "tool":
-                tool = tools.get(tool_name)
-                if tool is None:
-                    obs = f"(no such tool: {tool_name})"
-                else:
-                    try:
-                        obs = await tool.run(args)
-                    except Exception as exc:
-                        logger.warning(
-                            "skill_executive: tool %r raised: %s", tool_name, exc
-                        )
-                        obs = f"(tool error: {exc})"
-                observations.append(
-                    {"tool": tool_name, "args": args, "observation": obs}
+        try:
+            while budget > 0:
+                budget -= 1
+                ticks += 1
+                visible_tools = [tools[n] for n in visible if n in tools]
+                decision = await self._run_model(
+                    visitor, utterance, history, visible_tools, observations, flow_note
                 )
-                # End the turn once the user has been addressed: a persona reply
-                # (by name) or a terminal IA-tool that owns its own output. This
-                # also stops a model that keeps choosing the same tool from
-                # looping until the budget is exhausted.
-                if tool_name in ("reply", "respond") or (
-                    tool is not None and tool.terminal
-                ):
+                if decision is None:
+                    ended_via = "no_decision"
                     return
-                continue
-            # Unknown action — stop rather than loop.
+                action, tool_name, args = self._normalize(decision, tools)
+                if action == "final":
+                    answer = _text_candidate(decision)
+                    if answer:
+                        await self._maybe_voice_final(visitor, answer)
+                    ended_via = "final"
+                    return
+                if action == "tool":
+                    tool = tools.get(tool_name)
+                    if tool is None:
+                        obs = f"(no such tool: {tool_name})"
+                    else:
+                        try:
+                            obs = await tool.run(args)
+                        except Exception as exc:
+                            logger.warning(
+                                "skill_executive: tool %r raised: %s", tool_name, exc
+                            )
+                            obs = f"(tool error: {exc})"
+                    observations.append(
+                        {"tool": tool_name, "args": args, "observation": obs}
+                    )
+                    # End the turn once the user has been addressed: a persona
+                    # reply (by name) or a terminal IA-tool that owns its own
+                    # output. This also stops a model that keeps choosing the
+                    # same tool from looping until the budget is exhausted.
+                    if tool_name in ("reply", "respond") or (
+                        tool is not None and tool.terminal
+                    ):
+                        ended_via = (
+                            tool_name
+                            if tool_name in ("reply", "respond")
+                            else "ia_tool"
+                        )
+                        return
+                    continue
+                # Unknown action — stop rather than loop.
+                ended_via = "unknown"
+                return
+        finally:
+            await self._record_executive_activation(
+                visitor,
+                continuation_mode="model_mediated" if flow_owner else "none",
+                flow_owner=flow_owner,
+                tools_invoked=[o.get("tool") for o in observations],
+                tick_count=ticks,
+                ended_via=ended_via,
+                activated=activated,
+            )
+
+    async def _record_executive_activation(
+        self,
+        visitor: "InteractWalker",
+        *,
+        continuation_mode: str,
+        flow_owner: Optional[str],
+        tools_invoked: List[Optional[str]],
+        tick_count: int,
+        ended_via: str,
+        activated: List[str],
+    ) -> None:
+        """Append a per-turn ``executive_activation`` event to
+        ``interaction.observability_metrics``.
+
+        The orchestrator's own trace — continuation mode, the tools it invoked,
+        ticks consumed, and how the turn ended — recorded alongside the
+        per-``model_call`` events (it does not replace or alter them). This is
+        the turn-level story the model-call events alone don't tell. Best-effort;
+        never breaks the turn.
+        """
+        interaction = getattr(visitor, "interaction", None)
+        metrics = getattr(interaction, "observability_metrics", None)
+        if metrics is None or not hasattr(metrics, "append"):
             return
+        event = {
+            "event_type": "executive_activation",
+            "data": {
+                "continuation_mode": continuation_mode,
+                "flow_owner": flow_owner,
+                "lock_active_flow": bool(self.lock_active_flow),
+                "tools_invoked": [t for t in tools_invoked if t],
+                "tick_count": int(tick_count),
+                "budget": int(self.activation_budget),
+                "ended_via": ended_via,
+                "skills_used": list(activated or []),
+            },
+            "timestamp": time.time(),
+        }
+        try:
+            metrics.append(event)
+            saver = getattr(interaction, "save", None)
+            if callable(saver):
+                result = saver()
+                if inspect.isawaitable(result):
+                    await result
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("skill_executive: activation record failed: %s", exc)
 
     async def _maybe_voice_final(self, visitor: "InteractWalker", answer: str) -> None:
         """If the loop ends with text but nothing was voiced, publish it once."""
