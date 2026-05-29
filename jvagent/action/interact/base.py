@@ -217,7 +217,45 @@ class InteractAction(Action, ABC):
                 exc,
             )
             return ToolResult(content=f"(flow error: {exc})")
+        # Log this IA in the interaction's executed-action list. The walker only
+        # records actions it visits directly; an IA reached through its tool is
+        # dispatched by the orchestrator, so without this it would be missing
+        # from interaction.actions.
+        await self._record_executed_as_tool(visitor)
         return ToolResult(content=f"(ran {self.get_class_name()})")
+
+    async def _record_executed_as_tool(self, visitor: Any) -> None:
+        """Record this IA as executed when it is reached via its ``get_tools()``
+        tool rather than a direct walker visit.
+
+        Prefers the walker's ``record_action_execution`` (records on the
+        interaction and persists); falls back to recording on the interaction
+        directly. Defensive — recording never breaks the tool call.
+        """
+        import inspect
+
+        name = self.get_class_name()
+        recorder = getattr(visitor, "record_action_execution", None)
+        if callable(recorder):
+            try:
+                result = recorder(name)
+                if inspect.isawaitable(result):
+                    await result
+                return
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("%s: tool-path action record failed: %s", name, exc)
+        interaction = getattr(visitor, "interaction", None)
+        rec = getattr(interaction, "record_action_execution", None)
+        if callable(rec):
+            try:
+                rec(name)
+                saver = getattr(interaction, "save", None)
+                if callable(saver):
+                    result = saver()
+                    if inspect.isawaitable(result):
+                        await result
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("%s: tool-path action record failed: %s", name, exc)
 
     @abstractmethod
     async def execute(self, visitor: "InteractWalker") -> None:

@@ -61,6 +61,30 @@ async def test_interactaction_get_tools_furnishes_anchored_forwarding_tool(monke
     assert isinstance(result, ToolResult)
 
 
+async def test_ia_tool_records_action_execution(monkeypatch):
+    """An IA reached via its tool registers itself in the interaction's
+    executed-action log (it would otherwise be missing — the walker only records
+    actions it visits directly)."""
+    from jvagent.action.interview.interview_interact_action import (
+        InterviewInteractAction,
+    )
+
+    iv = InterviewInteractAction()
+    iv.anchors = ["sign up for training"]
+
+    async def _exec(self, visitor):
+        pass
+
+    monkeypatch.setattr(InterviewInteractAction, "execute", _exec)
+
+    v = _visitor()
+    v.record_action_execution = AsyncMock()
+    tools = await iv.get_tools()
+    await tools[0].call(visitor=v)
+
+    v.record_action_execution.assert_awaited_once_with(iv.get_class_name())
+
+
 async def test_get_tools_routes_on_manifest_not_bloated_anchors(monkeypatch):
     """Issue #1: routing metadata is the manifest (purpose + activates_on), not
     the runtime-merged anchor catalog — so continuation intents (cancel/confirm/
