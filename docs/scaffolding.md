@@ -182,11 +182,11 @@ Executive agents (via the SkillExecutive's native SOP skills) support two skill 
 When a skill name exists in both, app-local overrides built-in.
 
 Runtime exposure is controlled per agent in `agents/<ns>/<id>/agent.yaml` on
-`jvagent/skills_center` via:
+the `jvagent/skill_executive` action via:
 
 - `skills`: `-all` or a list of names/globs (default unset = expose none)
 - `denied_skills`: optional subtractive names/globs
-- `skills_source`: `builtin`, `app`, `both`, or `none`
+- `skills_source`: `library` (alias `builtin`), `app` (alias `local`), or `both`
 
 ### Skill commands
 

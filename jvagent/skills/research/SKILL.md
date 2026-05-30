@@ -1,7 +1,10 @@
 ---
 name: research
 description: Investigate a topic with evidence-first synthesis and citations.
-version: 1
+allowed-tools:
+  - web_search__search
+  - web_fetch__fetch
+version: 2
 tags:
   - research
   - synthesis
