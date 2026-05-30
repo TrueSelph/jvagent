@@ -231,15 +231,11 @@ class ReplyAction(Action):
             self.get_channel_format(channel)
         )
 
-        # Any queued shaping (directives, parameters, or channel format) forces a
-        # respond. Enqueue the message as a real directive so the whole queue —
-        # the message plus any pending directives/parameters — is composed
-        # together and the message can never be overridden (e.g. a first-contact
-        # intro directive). respond() then reads the queue.
+        # Any queued shaping (directives, parameters, or channel format) routes
+        # through respond(), which enqueues the message as a directive so the
+        # whole queue composes together and the message is never overridden.
         if directive_items or has_params or has_format:
-            if text and interaction is not None:
-                interaction.add_directive(text, self.get_class_name())
-            return bool(await self.respond(interaction, visitor=visitor))
+            return bool(await self.respond(interaction, visitor=visitor, text=text))
         if not text:
             return False
         return await self.publish(text, visitor)
@@ -266,12 +262,32 @@ class ReplyAction(Action):
         present it's just identity + voice rules. Applied directives/parameters
         are marked executed. Falls back to a thin publish if no model action.
 
-        Note: ``reply`` enqueues its message as a directive when any shaping is
-        queued, so the message arrives here as part of the directive queue and
-        is composed *with* the others, never overridden by them.
+        Note: when called with an explicit ``text`` while the interaction already
+        has queued directives/parameters, the message is enqueued as a directive
+        here (so it lands in ``interaction.directives``) and composed *with* the
+        others — never overridden. Both egress tools (reply/respond) funnel here.
         """
         interaction = interaction or getattr(visitor, "interaction", None)
         base = (text or "").strip()
+        # If the interaction already carries queued directives/parameters, enqueue
+        # the explicit message as a real directive (so it lands in
+        # interaction.directives) and let the whole queue compose together — the
+        # message is never overridden. Covers both the reply and respond egress
+        # tools (both funnel here).
+        if (
+            base
+            and interaction is not None
+            and directives is None
+            and (
+                self._directive_items(interaction)
+                or self._collect_parameters(None, interaction)
+            )
+        ):
+            try:
+                interaction.add_directive(base, self.get_class_name())
+                base = ""
+            except Exception:
+                pass
         directive_text = self._collect_directive_text(directives, interaction)
         parameters_text = self._collect_parameters(parameters, interaction)
 

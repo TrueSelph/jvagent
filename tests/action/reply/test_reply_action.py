@@ -146,45 +146,57 @@ async def test_reply_directive_does_not_override_message(monkeypatch):
     assert "Introduce yourself" in sysprompt
 
 
-async def test_reply_enqueues_message_as_directive(monkeypatch):
-    """With queued directives, reply enqueues the message as a real directive on
-    the interaction and responds over the queue (no transient args)."""
+async def test_reply_routes_shaping_to_respond(monkeypatch):
+    """Any queued shaping routes the message through respond() (which enqueues)."""
     ra = ReplyAction()
     captured = {}
 
-    async def _respond(
-        self, interaction=None, visitor=None, *, text=None, directives=None, **k
-    ):
+    async def _respond(self, interaction=None, visitor=None, *, text=None, **k):
         captured["text"] = text
-        captured["directives"] = directives
         return "ok"
 
     monkeypatch.setattr(ReplyAction, "respond", _respond)
     v = _visitor_with(directives=[{"content": "Introduce yourself."}])
     assert await ra.reply("Report saved.", v) is True
-    assert captured["text"] is None and captured["directives"] is None
+    assert captured["text"] == "Report saved."  # message passed to respond
+
+
+async def test_respond_enqueues_message_as_directive(monkeypatch):
+    """respond() with an explicit message + a queued directive enqueues the
+    message as a real directive on the interaction (so it lands in
+    interaction.directives) and MANDATORYs the whole queue."""
+    ra = ReplyAction()
+    _patch_agent(monkeypatch)
+    model = MagicMock()
+    model.generate = AsyncMock(return_value="Everest. 169. I'm Ada.")
+
+    async def _ma(self, required=False):
+        return model
+
+    monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
+    v = _visitor_with(directives=[{"content": "Introduce yourself."}])
+    await ra.respond(v.interaction, visitor=v, text="Everest is tallest; 169.")
     # The message is now a real queued directive alongside the intro.
     contents = [d["content"] for d in v.interaction.directives]
-    assert "Report saved." in contents and "Introduce yourself." in contents
+    assert "Everest is tallest; 169." in contents and "Introduce yourself." in contents
+    sysprompt = model.generate.call_args.kwargs["system"]
+    assert "MANDATORY" in sysprompt and "Everest" in sysprompt
 
 
-async def test_reply_enqueues_message_with_params_only(monkeypatch):
-    """Queued parameters (no directives) also enqueue the message as a directive
-    and force a respond — parameters and/or directives handled uniformly."""
+async def test_respond_enqueues_message_with_params_only(monkeypatch):
+    """Queued parameters (no directives) also enqueue the message as a directive."""
     ra = ReplyAction()
-    captured = {}
+    _patch_agent(monkeypatch)
+    model = MagicMock()
+    model.generate = AsyncMock(return_value="ok")
 
-    async def _respond(
-        self, interaction=None, visitor=None, *, text=None, directives=None, **k
-    ):
-        captured["text"] = text
-        return "ok"
+    async def _ma(self, required=False):
+        return model
 
-    monkeypatch.setattr(ReplyAction, "respond", _respond)
+    monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
     v = _visitor_with(parameters=[{"condition": "asked price", "response": "$9"}])
-    assert await ra.reply("Sure.", v) is True
-    assert captured["text"] is None
-    assert [d["content"] for d in v.interaction.directives] == ["Sure."]
+    await ra.respond(v.interaction, visitor=v, text="Sure.")
+    assert "Sure." in [d["content"] for d in v.interaction.directives]
 
 
 async def test_reply_applies_parameters(monkeypatch):
