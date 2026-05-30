@@ -107,9 +107,7 @@ class GoogleGmailAction(GoogleAction):
             )
 
         async def _get(message_id: str, fmt: str = "full") -> str:
-            return json.dumps(
-                await action.get_message(message_id, fmt=fmt), indent=2
-            )
+            return json.dumps(await action.get_message(message_id, fmt=fmt), indent=2)
 
         async def _mark_read(message_id: str) -> str:
             return json.dumps(await action.mark_read(message_id), indent=2)

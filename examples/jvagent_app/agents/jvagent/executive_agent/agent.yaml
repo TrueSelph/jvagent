@@ -78,6 +78,14 @@ actions:
       max_duration_seconds: 0             # 0 disables the wall-clock cap
       max_statement_length:               # soft reply-length cap (chars); blank = off
 
+      # -- Prompt surface: every sub-prompt defaults to its constant in
+      # jvagent/action/skill_executive/prompts.py and is overridable here
+      # (system_prompt, user_prompt, tool_use_policy_prompt, flow_in_progress_prompt,
+      # length_limit_prompt, finalize_prompt, no_skills_text). They are str.format
+      # templates — keep the placeholders and double literal { } as {{ }}. The
+      # simplest, safe knob is additive extra instructions:
+      # system_prompt_extra: "House style: warm, concise, never use emojis."
+
       # -- Tooling / egress-UX.
       tool_tier: standard                 # minimal | standard | full
       tool_call_timeout: 0                # per-tool-call timeout (s); 0 disables

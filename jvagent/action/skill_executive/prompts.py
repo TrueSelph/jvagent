@@ -76,6 +76,26 @@ Steps taken this turn:
 
 Reply with one JSON object for your next step."""
 
+# Placeholder shown in the system prompt's AVAILABLE SKILLS slot when none load.
+NO_SKILLS_AVAILABLE = "(no skills available — use tools directly)"
+
+# Appended to the system prompt while a turn-spanning flow is active. Placeholder:
+# {flow_note} (a short description of the in-progress flow).
+FLOW_IN_PROGRESS_PROMPT = "FLOW IN PROGRESS:\n{flow_note}"
+
+# Appended when ``max_statement_length`` is set. Placeholder: {max_chars}.
+LENGTH_LIMIT_PROMPT = (
+    "LENGTH LIMIT: Keep your reply to the user under {max_chars} characters."
+)
+
+# Appended on the final (partial-compose) tick when the budget/time is exhausted.
+FINALIZE_PROMPT = (
+    "STEP LIMIT REACHED: Do NOT call any tool. Reply to the user now with your "
+    "best, most complete answer using what you have already gathered. Return "
+    'action "final" with your answer (and any link/path to work you produced '
+    "this turn)."
+)
+
 # Appended to the loop system prompt only when ``block_raw_tool_invocation`` is
 # on: tool selection is the agent's job, not the user's to dictate. The user
 # states a goal; the agent decides which tools (if any) achieve it.
@@ -149,6 +169,10 @@ __all__ = [
     "SKILL_EXECUTIVE_SYSTEM_PROMPT",
     "SKILL_EXECUTIVE_USER_PROMPT_TEMPLATE",
     "TOOL_USE_POLICY",
+    "NO_SKILLS_AVAILABLE",
+    "FLOW_IN_PROGRESS_PROMPT",
+    "LENGTH_LIMIT_PROMPT",
+    "FINALIZE_PROMPT",
     "render_history_section",
     "render_identity_section",
     "render_skills_section",

@@ -840,7 +840,7 @@ class GoogleSheetsAction(GoogleAction):
             rows: Optional[int] = None,
             cols: Optional[int] = None,
             hidden: Optional[bool] = None,
-            tab_color: Optional[str] = None,
+            tab_color: Optional[Dict[str, float]] = None,
         ) -> str:
             result = await action.update_worksheet(
                 worksheet_title=worksheet_title,
@@ -1121,8 +1121,8 @@ class GoogleSheetsAction(GoogleAction):
                             "description": "Whether the worksheet is hidden",
                         },
                         "tab_color": {
-                            "type": "string",
-                            "description": "Tab color as a hex string (e.g. '#FF0000')",
+                            "type": "object",
+                            "description": 'Tab color with RGB components 0–1, e.g. {"red": 1, "green": 0, "blue": 0}',
                         },
                     },
                     "required": ["worksheet_title"],

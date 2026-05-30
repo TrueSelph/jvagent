@@ -199,8 +199,8 @@ class MicrosoftOutlookMailAction(MicrosoftAction):
             )
 
         async def _mark_read(message_id: str, user_id: str = "me") -> str:
-            result = await action.mark_read(message_id, user_id=user_id)
-            return json.dumps(result if result is not None else {}, indent=2)
+            await action.mark_read(message_id, user_id=user_id)
+            return json.dumps({"success": True}, indent=2)
 
         async def _get_profile(user_id: str = "me") -> str:
             return json.dumps(await action.get_profile(user_id=user_id), indent=2)

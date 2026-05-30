@@ -174,6 +174,29 @@ See [`docs/EXECUTIVE.md`](../../docs/EXECUTIVE.md) for the full pattern. Highlig
 | `skills` | `-all` | which skills to load: `-all`, or a finite list of names/fnmatch patterns (e.g. `[research, web_lookup]`) |
 | `denied_skills` | `[]` | skill names/patterns to exclude (subtracts from `skills`) |
 
+### Prompt surface (overridable)
+
+Every sub-prompt is a config key defaulting to the matching constant in
+[`prompts.py`](../../jvagent/action/skill_executive/prompts.py); override any
+from `agent.yaml`. These are `str.format` templates — preserve the placeholders
+listed and double any literal `{`/`}` (write `{{` / `}}`). A malformed override
+(unknown placeholder, unbalanced brace) falls back to the built-in for that
+piece and logs a warning, so a bad string never breaks a turn.
+
+| Key | Placeholders | Effect |
+|---|---|---|
+| `system_prompt` | `{identity_section}` `{tools_section}` `{skills_section}` | the main system-prompt body |
+| `system_prompt_extra` | — | extra text appended after the base body (safe additive; no placeholders needed) |
+| `user_prompt` | `{history_section}` `{utterance}` `{observations_section}` | the per-tick user prompt |
+| `tool_use_policy_prompt` | — | appended when `block_raw_tool_invocation` is on |
+| `flow_in_progress_prompt` | `{flow_note}` | appended while a flow is active |
+| `length_limit_prompt` | `{max_chars}` | appended when `max_statement_length` is set |
+| `finalize_prompt` | — | appended on the partial-compose finalize tick |
+| `no_skills_text` | — | shown in the AVAILABLE SKILLS slot when none load |
+
+(The agent's identity comes from the Agent's `alias` + `role` (ADR-0014), not
+from these keys.)
+
 ### Model gearing (ADR-0016)
 
 Set `light_model` to engage gearing; empty = single-model (current `model*` used everywhere).

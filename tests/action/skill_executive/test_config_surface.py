@@ -17,6 +17,89 @@ from jvagent.action.skill_executive.skill_executive_interact_action import (
 pytestmark = pytest.mark.asyncio
 
 
+# --- System-prompt override -----------------------------------------------
+
+
+def _compose(ex):
+    return ex._compose_system_prompt(
+        identity_section="You are Ada.\n\n",
+        tools_section="- reply: say something",
+        skills_section="- research: investigate",
+    )
+
+
+async def test_system_prompt_default_is_builtin():
+    ex = SkillExecutiveInteractAction()
+    out = _compose(ex)
+    assert "You are Ada." in out
+    assert "- reply: say something" in out
+    assert "- research: investigate" in out
+    assert "AVAILABLE TOOLS:" in out  # built-in body present
+
+
+async def test_system_prompt_extra_is_appended():
+    ex = SkillExecutiveInteractAction()
+    ex.system_prompt_extra = "HOUSE RULE: always greet in French."
+    out = _compose(ex)
+    assert "AVAILABLE TOOLS:" in out  # built-in still there
+    assert out.rstrip().endswith("HOUSE RULE: always greet in French.")
+
+
+async def test_system_prompt_override_replaces_body():
+    ex = SkillExecutiveInteractAction()
+    # str.format template — literal JSON braces must be doubled.
+    ex.system_prompt = (
+        "{identity_section}CUSTOM EXECUTIVE. Tools:\n{tools_section}\n"
+        'Skills:\n{skills_section}\nReply with {{"action": "final"}}.'
+    )
+    out = _compose(ex)
+    assert "CUSTOM EXECUTIVE." in out
+    assert "AVAILABLE TOOLS:" not in out  # built-in body replaced
+    assert "You are Ada." in out  # identity token substituted
+    assert "- reply: say something" in out and "- research: investigate" in out
+    assert '{"action": "final"}' in out  # doubled braces collapse to one
+
+
+async def test_system_prompt_override_bad_placeholder_falls_back():
+    ex = SkillExecutiveInteractAction()
+    ex.system_prompt = "Broken {unknown_token} template"  # KeyError on format
+    out = _compose(ex)
+    assert "AVAILABLE TOOLS:" in out  # fell back to built-in default
+    assert "- reply: say something" in out
+
+
+async def test_system_prompt_override_and_extra_combine():
+    ex = SkillExecutiveInteractAction()
+    ex.system_prompt = "CUSTOM {tools_section} // {skills_section}"
+    ex.system_prompt_extra = "AND BE BRIEF."
+    out = _compose(ex)
+    assert out.startswith("CUSTOM ")
+    assert out.rstrip().endswith("AND BE BRIEF.")
+
+
+async def test_subprompts_default_to_constants():
+    from jvagent.action.skill_executive import prompts as P
+
+    ex = SkillExecutiveInteractAction()
+    assert ex.system_prompt == P.SKILL_EXECUTIVE_SYSTEM_PROMPT
+    assert ex.user_prompt == P.SKILL_EXECUTIVE_USER_PROMPT_TEMPLATE
+    assert ex.tool_use_policy_prompt == P.TOOL_USE_POLICY
+    assert ex.flow_in_progress_prompt == P.FLOW_IN_PROGRESS_PROMPT
+    assert ex.length_limit_prompt == P.LENGTH_LIMIT_PROMPT
+    assert ex.finalize_prompt == P.FINALIZE_PROMPT
+    assert ex.no_skills_text == P.NO_SKILLS_AVAILABLE
+
+
+async def test_fmt_helper_falls_back_on_bad_template():
+    # Bad override → built-in default used; good override → applied.
+    assert (
+        SkillExecutiveInteractAction._fmt("hi {x}", "DEF {x}", x="there") == "hi there"
+    )
+    assert (
+        SkillExecutiveInteractAction._fmt("bad {nope}", "DEF {x}", x="ok") == "DEF ok"
+    )
+
+
 # --- Phase 1: reasoning passthrough ---------------------------------------
 
 

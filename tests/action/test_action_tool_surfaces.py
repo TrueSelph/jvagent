@@ -2,6 +2,7 @@
 (ADR-0012 — actions are first-class tools). Locks in the retrofit that let us
 delete the redundant skill bundles. Each action is skipped gracefully if its
 optional integration deps are absent in the test environment."""
+
 from __future__ import annotations
 
 import importlib

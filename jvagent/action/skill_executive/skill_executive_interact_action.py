@@ -41,6 +41,10 @@ from jvagent.action.skill_executive.continuation import (
 )
 from jvagent.action.skill_executive.core_tools import build_core_tools
 from jvagent.action.skill_executive.prompts import (
+    FINALIZE_PROMPT,
+    FLOW_IN_PROGRESS_PROMPT,
+    LENGTH_LIMIT_PROMPT,
+    NO_SKILLS_AVAILABLE,
     SKILL_EXECUTIVE_SYSTEM_PROMPT,
     SKILL_EXECUTIVE_USER_PROMPT_TEMPLATE,
     TOOL_USE_POLICY,
@@ -188,6 +192,52 @@ class SkillExecutiveInteractAction(InteractAction):
     history_limit: int = attribute(default=4)
     clarify_text: str = attribute(
         default="Sorry, I didn't quite catch that — could you rephrase?",
+    )
+    # -- Prompt surface (every sub-prompt is overridable from agent.yaml).
+    # Each defaults to the constant in prompts.py; placeholders shown below must
+    # be preserved when overriding, and literal ``{`` / ``}`` doubled (``{{`` /
+    # ``}}``) since these are str.format templates.
+    system_prompt: str = attribute(
+        default=SKILL_EXECUTIVE_SYSTEM_PROMPT,
+        description=(
+            "The executive's main system-prompt body. Placeholders: "
+            "{identity_section}, {tools_section}, {skills_section}."
+        ),
+    )
+    system_prompt_extra: str = attribute(
+        default="",
+        description=(
+            "Extra instructions appended to the system prompt each tick (after "
+            "the base body, before the dynamic flow/length/policy sections). "
+            "Safe additive override — leaves the base contract intact."
+        ),
+    )
+    user_prompt: str = attribute(
+        default=SKILL_EXECUTIVE_USER_PROMPT_TEMPLATE,
+        description=(
+            "Per-tick user-prompt template. Placeholders: {history_section}, "
+            "{utterance}, {observations_section}."
+        ),
+    )
+    tool_use_policy_prompt: str = attribute(
+        default=TOOL_USE_POLICY,
+        description="Appended when block_raw_tool_invocation is on.",
+    )
+    flow_in_progress_prompt: str = attribute(
+        default=FLOW_IN_PROGRESS_PROMPT,
+        description="Appended while a flow is active. Placeholder: {flow_note}.",
+    )
+    length_limit_prompt: str = attribute(
+        default=LENGTH_LIMIT_PROMPT,
+        description="Appended when max_statement_length is set. Placeholder: {max_chars}.",
+    )
+    finalize_prompt: str = attribute(
+        default=FINALIZE_PROMPT,
+        description="Appended on the partial-compose finalize tick (no placeholders).",
+    )
+    no_skills_text: str = attribute(
+        default=NO_SKILLS_AVAILABLE,
+        description="Shown in the AVAILABLE SKILLS slot when no skills load.",
     )
     lock_active_flow: bool = attribute(
         default=True,
@@ -1239,6 +1289,49 @@ class SkillExecutiveInteractAction(InteractAction):
             getattr(agent, "role", "") or "",
         )
 
+    @staticmethod
+    def _fmt(template: str, default: str, **kwargs: Any) -> str:
+        """``template.format(**kwargs)`` with a safe fallback.
+
+        Overridable prompt templates come from agent.yaml; a malformed override
+        (unknown placeholder, unescaped brace) must not crash a turn. On a format
+        error we fall back to the built-in ``default`` (and ultimately the raw
+        template) and log once.
+        """
+        try:
+            return template.format(**kwargs)
+        except (KeyError, IndexError, ValueError) as exc:
+            logger.warning(
+                "skill_executive: prompt override failed to format (%s); "
+                "using the built-in default for this piece",
+                exc,
+            )
+            try:
+                return default.format(**kwargs)
+            except (KeyError, IndexError, ValueError):
+                return template
+
+    def _compose_system_prompt(
+        self,
+        *,
+        identity_section: str,
+        tools_section: str,
+        skills_section: str,
+    ) -> str:
+        """Build the base system prompt from the (overridable) ``system_prompt``
+        template, then append ``system_prompt_extra`` if set."""
+        base = self._fmt(
+            self.system_prompt,
+            SKILL_EXECUTIVE_SYSTEM_PROMPT,
+            identity_section=identity_section,
+            tools_section=tools_section,
+            skills_section=skills_section,
+        )
+        extra = (self.system_prompt_extra or "").strip()
+        if extra:
+            base = f"{base}\n\n{extra}"
+        return base
+
     async def _routable_flow_tool_names(self) -> Set[str]:
         """Class names of routable IAs exposed as tools (flow continuation keys)."""
         agent = await self._safe_agent()
@@ -1379,29 +1472,32 @@ class SkillExecutiveInteractAction(InteractAction):
                 "skill_executive: no model action (%s)", self.model_action_type
             )
             return None
-        system_prompt = SKILL_EXECUTIVE_SYSTEM_PROMPT.format(
+        system_prompt = self._compose_system_prompt(
             identity_section=await self._render_identity(),
             tools_section=render_tools_section(tools),
-            skills_section=skills_section
-            or "(no skills available — use tools directly)",
+            skills_section=skills_section or self.no_skills_text,
         )
         if flow_note:
-            system_prompt = f"{system_prompt}\n\nFLOW IN PROGRESS:\n{flow_note}"
+            note = self._fmt(
+                self.flow_in_progress_prompt,
+                FLOW_IN_PROGRESS_PROMPT,
+                flow_note=flow_note,
+            )
+            system_prompt = f"{system_prompt}\n\n{note}"
         if self.max_statement_length and self.max_statement_length > 0:
-            system_prompt = (
-                f"{system_prompt}\n\nLENGTH LIMIT: Keep your reply to the user "
-                f"under {int(self.max_statement_length)} characters."
+            limit = self._fmt(
+                self.length_limit_prompt,
+                LENGTH_LIMIT_PROMPT,
+                max_chars=int(self.max_statement_length),
             )
+            system_prompt = f"{system_prompt}\n\n{limit}"
         if self.block_raw_tool_invocation:
-            system_prompt = f"{system_prompt}\n\n{TOOL_USE_POLICY}"
+            system_prompt = f"{system_prompt}\n\n{self.tool_use_policy_prompt}"
         if finalize:
-            system_prompt = (
-                f"{system_prompt}\n\nSTEP LIMIT REACHED: Do NOT call any tool. "
-                "Reply to the user now with your best, most complete answer using "
-                'what you have already gathered. Return action "final" with your '
-                "answer (and any link/path to work you produced this turn)."
-            )
-        user_prompt = SKILL_EXECUTIVE_USER_PROMPT_TEMPLATE.format(
+            system_prompt = f"{system_prompt}\n\n{self.finalize_prompt}"
+        user_prompt = self._fmt(
+            self.user_prompt,
+            SKILL_EXECUTIVE_USER_PROMPT_TEMPLATE,
             history_section=render_history_section(history),
             utterance=utterance or "(no message)",
             observations_section=render_observations_section(observations),
