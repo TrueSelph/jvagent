@@ -225,12 +225,22 @@ class ReplyAction(Action):
         text = (text or "").strip()
         interaction = getattr(visitor, "interaction", None)
         channel = getattr(visitor, "channel", "default") or "default"
-        has_shaping = (
-            bool(self._collect_directive_text(None, interaction))
-            or bool(self._collect_parameters(None, interaction))
-            or (self.apply_channel_format and bool(self.get_channel_format(channel)))
+        directive_items = self._directive_items(interaction)
+        has_params = bool(self._collect_parameters(None, interaction))
+        has_format = self.apply_channel_format and bool(
+            self.get_channel_format(channel)
         )
-        if has_shaping:
+
+        # Queued directives: promote the message to a directive and respond over
+        # the whole set, so every queued directive is considered together and the
+        # message can never be overridden by them (e.g. a first-contact intro).
+        if directive_items:
+            combined = ([{"content": text}] if text else []) + directive_items
+            return bool(
+                await self.respond(interaction, visitor=visitor, directives=combined)
+            )
+        # No directives, but parameters/channel-format still shape the reply.
+        if has_params or has_format:
             return bool(await self.respond(interaction, visitor=visitor, text=text))
         if not text:
             return False
@@ -254,25 +264,18 @@ class ReplyAction(Action):
         ``interaction.utterance``. **Directives** and **parameters** (from the
         args or the interaction) shape the *system* prompt: parameters as
         conditional rules, directives as mandatory instructions when they are
-        additional to base text. When an explicit message arrives *with* queued
-        directives, the message is folded in as the lead directive so the two
-        compose together (a directive can never override the reply's substance).
-        With neither present it's just identity + voice rules. Falls back to a
-        thin publish if no model action is available.
+        additional to base text. With neither present it's just identity + voice
+        rules. Falls back to a thin publish if no model action is available.
+
+        Note: when ``reply`` has queued directives it promotes the message to a
+        directive and calls this with ``directives=[message, …]`` and no
+        ``text`` — so the message is composed *with* the directives, never
+        overridden by them.
         """
         interaction = interaction or getattr(visitor, "interaction", None)
         base = (text or "").strip()
         directive_text = self._collect_directive_text(directives, interaction)
         parameters_text = self._collect_parameters(parameters, interaction)
-
-        # Queued directives + an explicit message: fold the message in as the
-        # lead directive so it is composed WITH the directives, never overridden
-        # by the MANDATORY directive block (e.g. a first-contact intro directive
-        # must not replace a task-completion reply). The message and the pending
-        # directives then voice together.
-        if base and directive_text:
-            directive_text = f"Tell the user: {base}\n{directive_text}"
-            base = ""
 
         # Base content (the prompt): explicit text, else the directives, else the
         # user's utterance. Directives go to the *system* (as instructions) only
@@ -335,6 +338,17 @@ class ReplyAction(Action):
                 except Exception:
                     pass
         return response or ""
+
+    @staticmethod
+    def _directive_items(interaction: Any) -> List[Any]:
+        """The interaction's unexecuted directive items (raw list), or []."""
+        if interaction is None:
+            return []
+        try:
+            items = interaction.get_unexecuted_directives()
+        except Exception:
+            items = None
+        return list(items) if isinstance(items, (list, tuple)) else []
 
     @staticmethod
     def _collect_directive_text(

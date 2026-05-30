@@ -109,6 +109,29 @@ async def test_reply_directive_does_not_override_message(monkeypatch):
     assert "Introduce yourself" in prompt
 
 
+async def test_reply_promotes_message_to_directive(monkeypatch):
+    """With queued directives, reply forces a respond and promotes the message to
+    the lead directive (no base text) so the whole set composes together."""
+    ra = ReplyAction()
+    captured = {}
+
+    async def _respond(
+        self, interaction=None, visitor=None, *, text=None, directives=None, **k
+    ):
+        captured["text"] = text
+        captured["directives"] = directives
+        return "ok"
+
+    monkeypatch.setattr(ReplyAction, "respond", _respond)
+    v = _visitor_with(directives=[{"content": "Introduce yourself."}])
+    assert await ra.reply("Report saved.", v) is True
+    assert captured["text"] is None  # no base text — message is now a directive
+    assert [d.get("content") for d in captured["directives"]] == [
+        "Report saved.",
+        "Introduce yourself.",
+    ]
+
+
 async def test_reply_applies_parameters(monkeypatch):
     ra = ReplyAction()
     _patch_agent(monkeypatch)
