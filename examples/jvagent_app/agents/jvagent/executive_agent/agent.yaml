@@ -111,6 +111,13 @@ actions:
     context:
       enabled: true
 
+  # Read full pages after a search surfaces URLs (web_fetch__fetch). SSRF-guarded
+  # by default; raises research quality and cuts redundant snippet searches.
+  - action: jvagent/web_fetch
+    context:
+      enabled: true
+      max_chars: 8000
+
   # Always-execute IA runs BEFORE the executive in the weight chain.
   - action: jvagent/intro_interact_action
     context:

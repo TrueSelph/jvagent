@@ -1,0 +1,22 @@
+package:
+  name: jvagent/web_fetch
+  author: V75 Inc.
+  archetype: WebFetchAction
+  version: 1.0.0
+  meta:
+    title: Web Fetch Action
+    description: >-
+      Fetch a public web page and return its main content as clean markdown
+      (or text). Pairs with web_search to let an agent read full sources after
+      a search surfaces URLs. SSRF-guarded; size/type/timeout bounded.
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - "httpx"
+      - "beautifulsoup4"
+      - "markdownify"

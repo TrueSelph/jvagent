@@ -113,7 +113,13 @@ actions:
     context: { enabled: true }
   - action: jvagent/handoff
     context: { enabled: true }
+  - action: jvagent/serper_web_search    # search the web (titles/links/snippets)
+    context: { enabled: true }
+  - action: jvagent/web_fetch            # read a source in full after searching
+    context: { enabled: true }
 ```
+
+Pair `web_search` with `web_fetch`: search surfaces URLs, then `web_fetch__fetch` reads the top sources as clean markdown — far more efficient (and better grounded) than re-searching snippets. `web_fetch` is SSRF-guarded by default (blocks loopback/private/link-local hosts) and frames fetched text as untrusted so it composes with the loop's anti-injection boundaries.
 
 ### Extended config surface (ADR-0015)
 
