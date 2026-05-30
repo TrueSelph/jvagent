@@ -44,7 +44,7 @@ actions:
       light_model_max_tokens: 1024
       escalate_after_tool_calls: 2       # heavy after this many substantive tool calls
       escalate_on_skill: true            # activating a skill escalates immediately
-      
+
       # HEAVY profile — the reasoning model, used once a turn proves multi-step.
       model: kimi-k2.6:cloud
       model_action_type: OllamaLanguageModelAction

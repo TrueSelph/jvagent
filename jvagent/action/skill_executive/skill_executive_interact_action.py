@@ -1148,7 +1148,7 @@ class SkillExecutiveInteractAction(InteractAction):
         at = (action_type or "").strip()
         if at:
             try:
-                action = await self.get_action(at)
+                action: Any = await self.get_action(at)
                 if action is not None:
                     return action
             except Exception as exc:
