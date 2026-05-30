@@ -38,11 +38,23 @@ VOICE_RULES = (
     "End on the substantive answer — no invitation closers ('let me know', "
     "'feel free to ask', 'anything else?'). Speak in the user's language with a "
     "natural, concise voice. Never claim to be an AI language model or name a "
-    "model provider. Deliver the message faithfully and completely; never deny "
-    "or disclaim a capability and never contradict the instructions — do not say "
-    "you cannot research, browse the web, or create/save files. Any task the "
-    "instructions describe as done IS done; your job is only to voice it, not to "
-    "re-judge whether it was possible."
+    "model provider."
+)
+
+# Directive / parameter framing (the essential, non-bloated core borrowed from
+# PersonaAction). Numbered + "execute ALL" makes the compose model treat every
+# queued directive — including the message itself — as a must-do item, so it
+# never drops the real reply in favour of a styling directive (e.g. an intro).
+DIRECTIVES_SECTION = (
+    "MANDATORY — execute ALL {count} of the following in your reply (your "
+    "response is non-compliant if any is missing). The directives define WHAT "
+    "to convey; your identity and voice define HOW. Deliver each faithfully — "
+    "do not deny or disclaim a capability; if one is genuinely impossible, say "
+    "briefly why instead:\n{directive_list}"
+)
+PARAMETERS_SECTION = (
+    "CONDITIONAL RULES — apply each only when its condition is true "
+    "(parameters shape HOW; directives define WHAT):\n{parameter_list}"
 )
 
 # Channel formatting (the "format" axis), keyed by normalized channel name. The
@@ -120,7 +132,7 @@ class ReplyAction(Action):
         self,
         *,
         extra_system: Optional[str] = None,
-        directives_text: str = "",
+        directive_items: Optional[List[str]] = None,
         parameters_text: str = "",
         format_text: str = "",
     ) -> str:
@@ -136,14 +148,14 @@ class ReplyAction(Action):
                 "channel:\n" + format_text
             )
         if parameters_text:
+            parts.append(PARAMETERS_SECTION.format(parameter_list=parameters_text))
+        items = [c for c in (directive_items or []) if c]
+        if items:
+            directive_list = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(items))
             parts.append(
-                "CONDITIONAL RULES — apply each whose condition matches this "
-                "turn:\n" + parameters_text
-            )
-        if directives_text:
-            parts.append(
-                "MANDATORY — accomplish each of these in your reply:\n"
-                + directives_text
+                DIRECTIVES_SECTION.format(
+                    count=len(items), directive_list=directive_list
+                )
             )
         if extra_system and extra_system.strip():
             parts.append(extra_system.strip())
@@ -292,19 +304,18 @@ class ReplyAction(Action):
                 base = ""
             except Exception:
                 pass
-        directive_text = self._collect_directive_text(directives, interaction)
+        directive_contents = self._directive_contents(directives, interaction)
         parameters_text = self._collect_parameters(parameters, interaction)
 
-        # Directives are reply *instructions* and always go through the MANDATORY
-        # system framing, so a multi-directive queue (e.g. the answer + an intro)
-        # is fully addressed and never reduced to one. The prompt carries
+        # Directives are reply *instructions* and always go through the numbered
+        # MANDATORY framing, so a multi-directive queue (e.g. the answer + an
+        # intro) is fully addressed and never reduced to one. The prompt carries
         # context: explicit base text, else the user's utterance.
         content = base
         if not content and interaction is not None:
             content = (getattr(interaction, "utterance", "") or "").strip()
-        if not content and not directive_text and not parameters_text:
+        if not content and not directive_contents and not parameters_text:
             return ""
-        directives_for_system = directive_text
         channel = getattr(visitor, "channel", "default") or "default"
         format_text = (
             self.get_channel_format(channel) if self.apply_channel_format else ""
@@ -317,7 +328,7 @@ class ReplyAction(Action):
 
         system = await self._system_prompt(
             extra_system=extra_system,
-            directives_text=directives_for_system,
+            directive_items=directive_contents,
             parameters_text=parameters_text,
             format_text=format_text,
         )
@@ -375,10 +386,11 @@ class ReplyAction(Action):
         return list(items) if isinstance(items, (list, tuple)) else []
 
     @staticmethod
-    def _collect_directive_text(
+    def _directive_contents(
         directives: Optional[List[Any]], interaction: Any
-    ) -> str:
-        """Pull text from explicit ``directives`` or the interaction's unexecuted ones."""
+    ) -> List[str]:
+        """Directive content strings from explicit ``directives`` or the
+        interaction's unexecuted ones (one per directive, for numbering)."""
         items = directives
         if items is None and interaction is not None:
             try:
@@ -387,15 +399,23 @@ class ReplyAction(Action):
                 items = None
         if not isinstance(items, (list, tuple)):
             items = []
-        lines: List[str] = []
+        out: List[str] = []
         for d in items:
-            if isinstance(d, dict):
-                val = (d.get("content") or "").strip()
-            else:
-                val = str(d).strip()
+            val = (
+                (d.get("content") or "").strip()
+                if isinstance(d, dict)
+                else str(d).strip()
+            )
             if val:
-                lines.append(val)
-        return "\n".join(lines).strip()
+                out.append(val)
+        return out
+
+    @classmethod
+    def _collect_directive_text(
+        cls, directives: Optional[List[Any]], interaction: Any
+    ) -> str:
+        """Joined directive text (used for has-shaping checks)."""
+        return "\n".join(cls._directive_contents(directives, interaction)).strip()
 
     @staticmethod
     def _collect_parameters(parameters: Optional[List[Any]], interaction: Any) -> str:

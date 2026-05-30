@@ -34,11 +34,9 @@ class IntroInteractAction(InteractAction):
 
     directive: str = attribute(
         default=(
-            "Briefly greet the user by name (one short sentence). Do NOT list, "
-            "describe, or speculate about your capabilities or limitations, and "
-            "do not mention any knowledge cutoff, training date, underlying "
-            "model, or provider. If the turn also answers a request or reports "
-            "completed work, deliver that — the greeting is secondary."
+            "Introduce yourself by name and briefly explain how you can help. "
+            "Do not mention any knowledge cutoff, training date, underlying "
+            "model, or provider."
         ),
         description="Introductory message for first-time users",
     )

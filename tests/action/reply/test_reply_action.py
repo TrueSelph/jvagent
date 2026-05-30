@@ -296,14 +296,19 @@ async def test_reply_empty_is_noop():
     assert v.interaction.response == ""
 
 
-async def test_voice_rules_forbid_capability_disclaimers():
-    """The voice rules guard against the compose model hallucinating a false
-    'I can't research / create files' disclaimer that drops the real message."""
-    from jvagent.action.reply.reply_action import VOICE_RULES
-
-    low = VOICE_RULES.lower()
-    assert "do not say you cannot" in low
-    assert "faithfully" in low
+async def test_directives_framed_numbered_and_mandatory(monkeypatch):
+    """Borrowed-from-Persona framing: directives are numbered under an
+    'execute ALL' MANDATORY header (so the compose model addresses every one,
+    including the message), with the WHAT/HOW + faithfulness guidance."""
+    ra = ReplyAction()
+    _patch_agent(monkeypatch)
+    sp = await ra._system_prompt(
+        directive_items=["Tell the user the report is saved.", "Introduce yourself."]
+    )
+    assert "MANDATORY — execute ALL 2" in sp
+    assert "1. Tell the user the report is saved." in sp
+    assert "2. Introduce yourself." in sp
+    assert "do not deny or disclaim a capability" in sp.lower()
 
 
 async def test_identity_and_system_prompt(monkeypatch):
