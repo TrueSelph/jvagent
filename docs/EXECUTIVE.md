@@ -122,7 +122,7 @@ All off/neutral by default — the reference agent is unchanged. Full table in [
 - **Reasoning** (reasoning-capable models only): `reasoning_enabled`, `reasoning_effort` (low/medium/high), `reasoning_budget_tokens`, `reasoning_extra`. Threaded into the loop's model call; the executive profile owns its own reasoning level.
 - **Thinking stream** (needs a live bus): `stream_internal_progress` emits each tick as a transient `thought`; `stream_reasoning_trace` surfaces `result.thinking_content`.
 - **Budgets**: `max_duration_seconds` (wall-clock, alongside `activation_budget`), `max_statement_length` (soft prompt cap), `history_limit` (loop working context; the rolling memory window is the agent-level `interaction_limit`).
-- **Tooling / UX**: `tool_tier` (minimal/standard/full), `tool_call_timeout`, `block_raw_tool_invocation`, `enable_transient_ack` + `first_emit_timeout_ms` + `safety_net_ack_text`.
+- **Tooling / UX**: `tool_tier` (minimal/standard/full), `tool_call_timeout`, `enable_transient_ack` + `first_emit_timeout_ms` + `safety_net_ack_text`. `block_raw_tool_invocation` does two things: (1) only surfaced (visible) tools are callable — hidden ones need `find_tool`/a skill; and (2) it adds a **tool-use policy** to the loop prompt so the user can't steer tool selection — naming a tool/function/argument is treated as intent, not a command; the user states a goal and the agent chooses the tools.
 - **MCP tool servers**: `tool_servers` (`-all` or action-name list) pulls tools from `jvagent/mcp` `MCPAction`(s); they surface as `mcp_<server>__<tool>` and route per-user (the loop binds the dispatch context for the turn). `max_concurrent_tools` bounds concurrency.
 
 ```yaml

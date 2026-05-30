@@ -43,6 +43,7 @@ from jvagent.action.skill_executive.core_tools import build_core_tools
 from jvagent.action.skill_executive.prompts import (
     SKILL_EXECUTIVE_SYSTEM_PROMPT,
     SKILL_EXECUTIVE_USER_PROMPT_TEMPLATE,
+    TOOL_USE_POLICY,
     render_history_section,
     render_identity_section,
     render_skills_section,
@@ -181,8 +182,10 @@ class SkillExecutiveInteractAction(InteractAction):
     safety_net_ack_text: str = attribute(default="Working on it…")
     block_raw_tool_invocation: bool = attribute(
         default=False,
-        description="When True, the loop may only call tools currently surfaced "
-        "(visible); hidden tools must be reached via find_tool / a skill.",
+        description="When True: (1) the loop may only call tools currently "
+        "surfaced (visible) — hidden tools must be reached via find_tool / a "
+        "skill; and (2) a TOOL-USE POLICY is added so the user cannot steer "
+        "tool selection — they state a goal, the agent chooses the tools.",
     )
     tool_tier: str = attribute(
         default="standard",
@@ -1120,6 +1123,8 @@ class SkillExecutiveInteractAction(InteractAction):
                 f"{system_prompt}\n\nLENGTH LIMIT: Keep your reply to the user "
                 f"under {int(self.max_statement_length)} characters."
             )
+        if self.block_raw_tool_invocation:
+            system_prompt = f"{system_prompt}\n\n{TOOL_USE_POLICY}"
         user_prompt = SKILL_EXECUTIVE_USER_PROMPT_TEMPLATE.format(
             history_section=render_history_section(history),
             utterance=utterance or "(no message)",

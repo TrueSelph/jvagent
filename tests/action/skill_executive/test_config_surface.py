@@ -167,6 +167,36 @@ async def test_core_tools_tier_gating():
     assert "get_current_datetime" in [t.name for t in build_core_tools(ex, "full")]
 
 
+async def test_block_raw_tool_policy_in_prompt_only_when_enabled(monkeypatch):
+    captured = {}
+
+    model = MagicMock()
+
+    async def _qm(**kwargs):
+        captured["system"] = kwargs["system"]
+        return SimpleNamespace(response='{"action":"final"}')
+
+    model.query_messages = _qm
+
+    async def _gma(self, required=False):
+        return model
+
+    async def _agent(self):
+        return SimpleNamespace(alias="", role="")
+
+    monkeypatch.setattr(SkillExecutiveInteractAction, "get_model_action", _gma)
+    monkeypatch.setattr(SkillExecutiveInteractAction, "get_agent", _agent)
+
+    ex = SkillExecutiveInteractAction()
+    await ex._run_model(MagicMock(), "hi", [], [], [])
+    assert "TOOL-USE POLICY" not in captured["system"]  # off by default
+
+    ex.block_raw_tool_invocation = True
+    await ex._run_model(MagicMock(), "hi", [], [], [])
+    assert "TOOL-USE POLICY" in captured["system"]
+    assert "yours to select" in captured["system"]
+
+
 async def test_block_raw_tool_invocation_gates_hidden(
     make_skill_executive, make_visitor
 ):
