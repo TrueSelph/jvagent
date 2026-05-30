@@ -109,13 +109,23 @@ async def test_assimilate_tool_coalesces_content_alias(monkeypatch):
     assert seen["doc_name"] == "Greeting"
     assert '"ok": true' in out
 
+    # The exact alias the model used in the field ('source').
+    seen.clear()
+    await assim.execute(source="https://example.com/x.pdf")
+    assert seen["doc"] == "https://example.com/x.pdf"
+
+    # Any stray string kwarg is treated as the document (only doc/doc_name exist).
+    seen.clear()
+    await assim.execute(whatever_arg="some text")
+    assert seen["doc"] == "some text"
+
     # And the canonical name still works.
     seen.clear()
     await assim.execute(doc="plain")
     assert seen["doc"] == "plain"
 
     # Missing entirely → actionable error, not a crash.
-    err = await assim.execute(foo="bar")
+    err = await assim.execute()
     assert "no document provided" in err
 
 

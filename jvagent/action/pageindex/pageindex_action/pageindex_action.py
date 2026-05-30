@@ -538,24 +538,51 @@ class PageIndexAction(Action):
                 return "No matching documents found."
             return json.dumps(results, indent=2)
 
+        # Aliases a model might use for doc_name instead of the canonical name.
+        _name_aliases = ("name", "title", "doc_title", "filename", "file_name")
+
         async def _assimilate(doc: str = "", doc_name: str = "", **kwargs) -> str:
             import json
 
-            # Models reach for plausible aliases (content / text / url / path);
-            # coalesce them so a near-miss arg name doesn't error the tool.
-            if not doc:
-                for alias in ("content", "text", "document", "url", "file", "path"):
-                    val = kwargs.get(alias)
-                    if val:
-                        doc = val
-                        break
             if not doc_name:
-                doc_name = kwargs.get("name") or kwargs.get("title") or ""
+                for alias in _name_aliases:
+                    if kwargs.get(alias):
+                        doc_name = kwargs.pop(alias)
+                        break
+            # Coalesce the document argument. Lesser models reach for plausible
+            # names (source / content / text / url / file / path / data ...);
+            # accept the known aliases first, then fall back to ANY remaining
+            # non-empty string kwarg — the tool only takes doc + doc_name, so a
+            # stray string is the document. A near-miss arg name never errors.
+            if not doc:
+                for alias in (
+                    "source",
+                    "content",
+                    "text",
+                    "document",
+                    "doc_content",
+                    "url",
+                    "file",
+                    "path",
+                    "file_path",
+                    "data",
+                    "body",
+                    "input",
+                ):
+                    if kwargs.get(alias):
+                        doc = kwargs[alias]
+                        break
+            if not doc:
+                for value in kwargs.values():
+                    if isinstance(value, str) and value.strip():
+                        doc = value
+                        break
             if not doc:
                 return json.dumps(
                     {
-                        "error": "no document provided: pass the text, URL, or "
-                        "file path in the 'doc' argument"
+                        "error": "no document provided. Pass the document text, "
+                        "an http(s) URL, or a file path as the 'doc' argument, "
+                        'e.g. {"doc": "https://example.com/report.pdf"}.'
                     },
                     indent=2,
                 )
@@ -602,28 +629,37 @@ class PageIndexAction(Action):
             Tool(
                 name="pageindex__assimilate",
                 description=(
-                    "Ingest a document into the knowledge base so it can be "
-                    "searched later with pageindex__search. Accepts raw "
-                    "text/markdown, an http(s) URL (fetched automatically — web "
-                    "pages and PDFs supported), or a local file path."
+                    "Ingest one document into the knowledge base so it can be "
+                    "searched later with pageindex__search. Provide the document "
+                    "in the REQUIRED parameter named exactly `doc` (not 'source', "
+                    "'content', 'file', or 'url'). The value of `doc` may be raw "
+                    "text/markdown, an http(s) URL (downloaded automatically — web "
+                    "pages and PDFs supported), or a local file path. "
+                    'Example call: {"doc": "https://example.com/report.pdf", '
+                    '"doc_name": "Q3 Report"}.'
                 ),
                 parameters_schema={
                     "type": "object",
+                    "additionalProperties": False,
                     "properties": {
                         "doc": {
                             "type": "string",
                             "description": (
-                                "What to ingest: raw text/markdown content, an "
-                                "http(s) URL (downloaded automatically), or a "
-                                "file path. To ingest a web page or PDF, pass its "
-                                "URL directly."
+                                "REQUIRED. The document to ingest, as a single "
+                                "string. One of: (a) raw text/markdown content, "
+                                "(b) an http(s) URL to a web page or PDF "
+                                "(fetched automatically), or (c) a local file "
+                                "path. This is the only place to put the "
+                                "document — do not use 'source', 'content', "
+                                "'file', 'url', or 'path'."
                             ),
                         },
                         "doc_name": {
                             "type": "string",
                             "description": (
                                 "Optional display name for the document (also "
-                                "used to infer the file type for raw content)."
+                                "used to infer the file type for raw content). "
+                                "Defaults to a name derived from a URL/path."
                             ),
                         },
                     },
