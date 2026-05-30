@@ -33,7 +33,11 @@ class IntroInteractAction(InteractAction):
     """
 
     directive: str = attribute(
-        default=("Introduce yourself and briefly explain your capabilities."),
+        default=(
+            "Introduce yourself by name and briefly explain how you can help. "
+            "Do not mention any knowledge cutoff, training date, underlying "
+            "model, or provider."
+        ),
         description="Introductory message for first-time users",
     )
 
