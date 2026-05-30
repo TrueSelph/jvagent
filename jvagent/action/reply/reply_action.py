@@ -232,14 +232,14 @@ class ReplyAction(Action):
         )
 
         # Any queued shaping (directives, parameters, or channel format) forces a
-        # respond. The message is promoted to the lead directive so the whole set
-        # — directives and/or parameters — is composed together and the message
-        # can never be overridden (e.g. a first-contact intro directive).
+        # respond. Enqueue the message as a real directive so the whole queue —
+        # the message plus any pending directives/parameters — is composed
+        # together and the message can never be overridden (e.g. a first-contact
+        # intro directive). respond() then reads the queue.
         if directive_items or has_params or has_format:
-            combined = ([{"content": text}] if text else []) + directive_items
-            return bool(
-                await self.respond(interaction, visitor=visitor, directives=combined)
-            )
+            if text and interaction is not None:
+                interaction.add_directive(text, self.get_class_name())
+            return bool(await self.respond(interaction, visitor=visitor))
         if not text:
             return False
         return await self.publish(text, visitor)
@@ -258,33 +258,33 @@ class ReplyAction(Action):
     ) -> str:
         """Voice text in the agent's identity (one model call), then publish.
 
-        The base content (prompt) is the explicit ``text`` → directive text →
-        ``interaction.utterance``. **Directives** and **parameters** (from the
-        args or the interaction) shape the *system* prompt: parameters as
-        conditional rules, directives as mandatory instructions when they are
-        additional to base text. With neither present it's just identity + voice
-        rules. Falls back to a thin publish if no model action is available.
+        The prompt is the explicit ``text`` (else the user's utterance for
+        context). **Directives** and **parameters** (from the args or the
+        interaction) shape the *system* prompt: parameters as conditional rules,
+        directives as MANDATORY instructions — the whole directive queue, so a
+        multi-directive set is fully addressed and none is dropped. With neither
+        present it's just identity + voice rules. Applied directives/parameters
+        are marked executed. Falls back to a thin publish if no model action.
 
-        Note: when ``reply`` has queued directives it promotes the message to a
-        directive and calls this with ``directives=[message, …]`` and no
-        ``text`` — so the message is composed *with* the directives, never
-        overridden by them.
+        Note: ``reply`` enqueues its message as a directive when any shaping is
+        queued, so the message arrives here as part of the directive queue and
+        is composed *with* the others, never overridden by them.
         """
         interaction = interaction or getattr(visitor, "interaction", None)
         base = (text or "").strip()
         directive_text = self._collect_directive_text(directives, interaction)
         parameters_text = self._collect_parameters(parameters, interaction)
 
-        # Base content (the prompt): explicit text, else the directives, else the
-        # user's utterance. Directives go to the *system* (as instructions) only
-        # when they're additional to base text — when they ARE the content, they
-        # are already the prompt.
-        content = base or directive_text
+        # Directives are reply *instructions* and always go through the MANDATORY
+        # system framing, so a multi-directive queue (e.g. the answer + an intro)
+        # is fully addressed and never reduced to one. The prompt carries
+        # context: explicit base text, else the user's utterance.
+        content = base
         if not content and interaction is not None:
             content = (getattr(interaction, "utterance", "") or "").strip()
-        if not content and not parameters_text:
+        if not content and not directive_text and not parameters_text:
             return ""
-        directives_for_system = directive_text if base else ""
+        directives_for_system = directive_text
         channel = getattr(visitor, "channel", "default") or "default"
         format_text = (
             self.get_channel_format(channel) if self.apply_channel_format else ""
@@ -333,6 +333,12 @@ class ReplyAction(Action):
             if interaction is not None:
                 try:
                     interaction.record_action_execution(self.get_class_name())
+                    # Mark the applied directives/parameters executed so they
+                    # aren't re-voiced later this turn (e.g. directive finalize).
+                    interaction.set_to_executed(
+                        directives=interaction.get_unexecuted_directives(),
+                        parameters=interaction.get_unexecuted_parameters(),
+                    )
                 except Exception:
                     pass
         return response or ""

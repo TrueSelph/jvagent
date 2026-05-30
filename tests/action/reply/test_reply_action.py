@@ -40,9 +40,45 @@ def _patch_agent(monkeypatch, alias="Ada", role="a helpful guide"):
 
 
 def _visitor_with(directives=None, parameters=None):
+    """A visitor whose interaction has a realistic directive/parameter queue:
+    add_directive appends, get_unexecuted_* reflect it, set_to_executed marks."""
     v = _visitor_no_bus()
-    v.interaction.get_unexecuted_directives = MagicMock(return_value=directives or [])
-    v.interaction.parameters = parameters or []
+    inter = v.interaction
+    dirs = []
+    for d in directives or []:
+        e = dict(d)
+        e.setdefault("executed", False)
+        e.setdefault("action_name", "IntroInteractAction")
+        dirs.append(e)
+    params = []
+    for p in parameters or []:
+        e = dict(p)
+        e.setdefault("executed", False)
+        e.setdefault("action_name", "ParamAction")
+        params.append(e)
+    inter.directives = dirs
+    inter.parameters = params
+
+    def _add(content, action_name="ReplyAction"):
+        dirs.append({"action_name": action_name, "content": content, "executed": False})
+        return True
+
+    def _set_executed(directives=None, parameters=None):
+        for d in directives or []:
+            for dd in dirs:
+                if dd.get("content") == d.get("content"):
+                    dd["executed"] = True
+        for pp in params:
+            pp["executed"] = True
+
+    inter.add_directive = MagicMock(side_effect=_add)
+    inter.get_unexecuted_directives = MagicMock(
+        side_effect=lambda: [d for d in dirs if not d.get("executed")]
+    )
+    inter.get_unexecuted_parameters = MagicMock(
+        side_effect=lambda: [p for p in params if not p.get("executed")]
+    )
+    inter.set_to_executed = MagicMock(side_effect=_set_executed)
     return v
 
 
@@ -83,15 +119,16 @@ async def test_reply_applies_directives(monkeypatch):
     v = _visitor_with(directives=[{"content": "Mention the welcome offer."}])
     assert await ra.reply("Here's your answer.", v) is True
     assert v.interaction.response == "Composed with directive."
-    # The message is folded in as the lead directive and composed WITH the
-    # pending directive (so the directive can't override the reply's substance).
-    prompt = model.generate.call_args.kwargs["prompt"]
-    assert "Here's your answer." in prompt and "welcome offer" in prompt
+    # The message is enqueued as a directive and the whole queue is MANDATORY in
+    # the system prompt, so the directive can't override the reply's substance.
+    sysprompt = model.generate.call_args.kwargs["system"]
+    assert "MANDATORY" in sysprompt
+    assert "Here's your answer." in sysprompt and "welcome offer" in sysprompt
 
 
 async def test_reply_directive_does_not_override_message(monkeypatch):
     """A queued directive (e.g. a first-contact intro) must not replace the
-    model's substantive reply — both are composed together."""
+    model's substantive reply — both are composed together (MANDATORY)."""
     ra = ReplyAction()
     _patch_agent(monkeypatch)
     model = MagicMock()
@@ -103,15 +140,15 @@ async def test_reply_directive_does_not_override_message(monkeypatch):
     monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
     v = _visitor_with(directives=[{"content": "Introduce yourself by name."}])
     assert await ra.reply("Your report is saved at notes.md.", v) is True
-    prompt = model.generate.call_args.kwargs["prompt"]
-    # Both the task message and the intro directive reach the model together.
-    assert "report is saved at notes.md" in prompt
-    assert "Introduce yourself" in prompt
+    sysprompt = model.generate.call_args.kwargs["system"]
+    assert "MANDATORY" in sysprompt
+    assert "report is saved at notes.md" in sysprompt
+    assert "Introduce yourself" in sysprompt
 
 
-async def test_reply_promotes_message_to_directive(monkeypatch):
-    """With queued directives, reply forces a respond and promotes the message to
-    the lead directive (no base text) so the whole set composes together."""
+async def test_reply_enqueues_message_as_directive(monkeypatch):
+    """With queued directives, reply enqueues the message as a real directive on
+    the interaction and responds over the queue (no transient args)."""
     ra = ReplyAction()
     captured = {}
 
@@ -125,16 +162,15 @@ async def test_reply_promotes_message_to_directive(monkeypatch):
     monkeypatch.setattr(ReplyAction, "respond", _respond)
     v = _visitor_with(directives=[{"content": "Introduce yourself."}])
     assert await ra.reply("Report saved.", v) is True
-    assert captured["text"] is None  # no base text — message is now a directive
-    assert [d.get("content") for d in captured["directives"]] == [
-        "Report saved.",
-        "Introduce yourself.",
-    ]
+    assert captured["text"] is None and captured["directives"] is None
+    # The message is now a real queued directive alongside the intro.
+    contents = [d["content"] for d in v.interaction.directives]
+    assert "Report saved." in contents and "Introduce yourself." in contents
 
 
-async def test_reply_promotes_message_with_params_only(monkeypatch):
-    """Queued parameters (no directives) also force a respond with the message
-    promoted to a directive — parameters and/or directives handled uniformly."""
+async def test_reply_enqueues_message_with_params_only(monkeypatch):
+    """Queued parameters (no directives) also enqueue the message as a directive
+    and force a respond — parameters and/or directives handled uniformly."""
     ra = ReplyAction()
     captured = {}
 
@@ -142,14 +178,13 @@ async def test_reply_promotes_message_with_params_only(monkeypatch):
         self, interaction=None, visitor=None, *, text=None, directives=None, **k
     ):
         captured["text"] = text
-        captured["directives"] = directives
         return "ok"
 
     monkeypatch.setattr(ReplyAction, "respond", _respond)
     v = _visitor_with(parameters=[{"condition": "asked price", "response": "$9"}])
     assert await ra.reply("Sure.", v) is True
-    assert captured["text"] is None  # message promoted to a directive
-    assert [d.get("content") for d in captured["directives"]] == ["Sure."]
+    assert captured["text"] is None
+    assert [d["content"] for d in v.interaction.directives] == ["Sure."]
 
 
 async def test_reply_applies_parameters(monkeypatch):
