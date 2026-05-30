@@ -213,6 +213,93 @@ async def test_block_raw_tool_invocation_gates_hidden(
     assert v.interaction.response == "done"
 
 
+async def test_user_named_tools_detection():
+    f = SkillExecutiveInteractAction._user_named_tools
+    names = {"web_search__search", "mcp_filesystem__write_file", "reply", "do_thing"}
+    assert "do_thing" in f("please run do_thing", names)  # full name
+    assert "mcp_filesystem__write_file" in f("use write_file now", names)  # mcp suffix
+    assert "reply" not in f("reply to me", names)  # egress exempt
+    assert f("hello there", names) == frozenset()  # no mention
+
+
+def _fake_capability_action(name, calls):
+    from jvagent.tooling.tool import Tool
+    from jvagent.tooling.tool_result import ToolResult
+
+    async def _run(**k):
+        calls["n"] += 1
+        return ToolResult(content="ran")
+
+    class _FakeAction:
+        def get_class_name(self):
+            return "FakeAction"
+
+        async def get_tools(self):
+            return [
+                Tool(
+                    name=name,
+                    description="Does a thing.",
+                    parameters_schema={"type": "object", "properties": {}},
+                    execute=_run,
+                )
+            ]
+
+    return _FakeAction()
+
+
+async def test_steering_guard_deflects_named_tool_once(
+    make_skill_executive, make_visitor
+):
+    calls = {"n": 0}
+    ex = make_skill_executive(
+        actions=[_fake_capability_action("do_thing", calls)],
+        decisions=[
+            {"action": "tool", "tool": "do_thing", "args": {}},
+            {"action": "final", "answer": "handled"},
+        ],
+    )
+    ex.block_raw_tool_invocation = True
+    v = make_visitor(utterance="please run do_thing for me")
+    await ex.execute(v)
+    assert calls["n"] == 0  # the user-named tool was deflected, never dispatched
+    assert v.interaction.response == "handled"
+
+
+async def test_steering_guard_allows_after_one_deflection(
+    make_skill_executive, make_visitor
+):
+    calls = {"n": 0}
+    ex = make_skill_executive(
+        actions=[_fake_capability_action("do_thing", calls)],
+        decisions=[
+            {"action": "tool", "tool": "do_thing", "args": {}},  # deflected
+            {"action": "tool", "tool": "do_thing", "args": {}},  # now allowed
+            {"action": "final", "answer": "ok"},
+        ],
+    )
+    ex.block_raw_tool_invocation = True
+    v = make_visitor(utterance="run do_thing")
+    await ex.execute(v)
+    assert calls["n"] == 1  # re-plan re-issued it → genuine choice, allowed once
+
+
+async def test_steering_guard_off_when_flag_disabled(
+    make_skill_executive, make_visitor
+):
+    calls = {"n": 0}
+    ex = make_skill_executive(
+        actions=[_fake_capability_action("do_thing", calls)],
+        decisions=[
+            {"action": "tool", "tool": "do_thing", "args": {}},
+            {"action": "final", "answer": "ok"},
+        ],
+    )
+    # block_raw_tool_invocation defaults False → no guard, tool dispatches.
+    v = make_visitor(utterance="run do_thing")
+    await ex.execute(v)
+    assert calls["n"] == 1
+
+
 async def test_select_mcp_actions_empty_without_servers():
     assert SkillExecutiveInteractAction()._select_mcp_actions([]) == []
 

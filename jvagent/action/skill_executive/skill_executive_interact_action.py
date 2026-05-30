@@ -68,6 +68,12 @@ DEFAULT_ACTIVATION_BUDGET = 16
 # Keys the model commonly uses to carry user-facing text, in priority order.
 _TEXT_KEYS = ("answer", "text", "content", "message", "reply", "response")
 
+# Egress + indirection tools are never "steered" — saying "reply" is normal, and
+# find_tool/use_skill are the sanctioned indirection we *want*.
+_STEER_EXEMPT = frozenset(
+    {"reply", "respond", "find_tool", "load_tool", "find_skill", "use_skill"}
+)
+
 
 def _text_candidate(decision: Dict[str, Any]) -> str:
     """Pull the first non-empty user-facing string from a model decision."""
@@ -585,6 +591,15 @@ class SkillExecutiveInteractAction(InteractAction):
         ended_via = "budget"
         last_sig: Optional[tuple] = None
         repeats = 0
+        # Named-tool steering guard (block_raw_tool_invocation): tools the user
+        # named literally this turn, deflected once each so the model re-plans
+        # from intent rather than obeying the named tool.
+        user_named_tools = (
+            self._user_named_tools(utterance, set(tools.keys()))
+            if self.block_raw_tool_invocation
+            else frozenset()
+        )
+        deflected_named: Set[str] = set()
         started = time.time()
         deadline = (
             started + float(self.max_duration_seconds)
@@ -626,6 +641,28 @@ class SkillExecutiveInteractAction(InteractAction):
                     ended_via = "final"
                     return
                 if action == "tool":
+                    # Steering guard: the user named this exact tool — deflect it
+                    # once so tool selection stays the agent's call, driven by the
+                    # goal rather than the named tool.
+                    if (
+                        tool_name in user_named_tools
+                        and tool_name not in deflected_named
+                    ):
+                        deflected_named.add(tool_name)
+                        observations.append(
+                            {
+                                "tool": tool_name,
+                                "args": args,
+                                "observation": (
+                                    f"(You may not call {tool_name} just because "
+                                    "the user named it. Tool selection is your "
+                                    "responsibility — work out the user's "
+                                    "underlying goal and choose the right "
+                                    "tool(s) yourself, or answer directly.)"
+                                ),
+                            }
+                        )
+                        continue
                     tool = tools.get(tool_name)
                     if tool is None:
                         obs = f"(no such tool: {tool_name})"
@@ -912,6 +949,29 @@ class SkillExecutiveInteractAction(InteractAction):
             return asyncio.ensure_future(_ack())
         except Exception:  # pragma: no cover - no running loop
             return None
+
+    @staticmethod
+    def _user_named_tools(utterance: str, tool_names: Set[str]) -> FrozenSet[str]:
+        """Surface tools whose name the user typed literally (steering attempt).
+
+        Matches a tool when its full name appears in the message, or — for MCP
+        tools (``mcp_<server>__<tool>``) — when the unqualified ``<tool>`` suffix
+        does. Egress/indirection tools are exempt. Used only when
+        ``block_raw_tool_invocation`` is on.
+        """
+        u = (utterance or "").lower()
+        if not u:
+            return frozenset()
+        named: Set[str] = set()
+        for name in tool_names:
+            if name in _STEER_EXEMPT:
+                continue
+            triggers = [name]
+            if name.startswith("mcp_") and "__" in name:
+                triggers.append(name.split("__", 1)[1])
+            if any(len(t) >= 4 and t.lower() in u for t in triggers):
+                named.add(name)
+        return frozenset(named)
 
     @staticmethod
     def _progress_line(
