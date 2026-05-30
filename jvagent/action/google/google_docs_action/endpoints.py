@@ -27,6 +27,7 @@ async def _require_google_docs_action(action_id: str) -> GoogleDocsAction:
     "/actions/{action_id}/docs/create",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["Google Docs Action"],
     summary="Create a new Google Doc",
 )
@@ -43,6 +44,7 @@ async def docs_create(
     "/actions/{action_id}/docs/read",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["Google Docs Action"],
     summary="Read a Google Doc's content",
 )
@@ -59,6 +61,7 @@ async def docs_read(
     "/actions/{action_id}/docs/append",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["Google Docs Action"],
     summary="Append text to a Google Doc",
 )
@@ -76,6 +79,7 @@ async def docs_append(
     "/actions/{action_id}/docs/batch-update",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["Google Docs Action"],
     summary="Batch update a Google Doc",
 )
@@ -93,6 +97,7 @@ async def docs_batch_update(
     "/actions/{action_id}/docs/copy-template",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["Google Docs Action"],
     summary="Copy a Google Docs template",
 )
@@ -115,6 +120,7 @@ async def docs_copy_template(
     "/actions/{action_id}/docs/export-pdf",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     tags=["Google Docs Action"],
     summary="Export Google Doc as PDF bytes",
 )

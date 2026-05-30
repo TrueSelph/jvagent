@@ -12,7 +12,6 @@ tests/
 ├── action/                  # per-action unit tests
 │   ├── skill_executive/     # SkillExecutive orchestrator loop
 │   ├── interact/            # walker bootstrap + visit semantics
-│   ├── gating/              # access control + always_execute
 │   ├── interview/           # branching, convergence, pruning
 │   ├── long_memory/
 │   ├── mcp/
@@ -88,7 +87,7 @@ Add at least one test slice:
 | `core/` | `tests/core/` |
 | `memory/` | `tests/memory/` + regression in `tests/test_comprehensive_pruning.py` if it affects pruning |
 | `action/{name}/` | `tests/action/{name}/` |
-| `action/interact/` | `tests/action/interact/` + `tests/action/gating/` if access control changes |
+| `action/interact/` | `tests/action/interact/` + `tests/action/access_control/` if access control changes |
 | `action/skill_executive/` | `tests/action/skill_executive/` |
 | `cli/` | `tests/cli/` |
 | Tool schemas | check `tests/test_tool_schema_audit.py` still passes; add cases |

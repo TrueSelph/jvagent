@@ -25,6 +25,7 @@ async def _resolve_action(action_id: str) -> Optional[PostizAction]:
     "/actions/{action_id}/postiz/auth/{provider}",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     operation_id="get_postiz_auth_url",
     tags=["Postiz"],
 )
@@ -52,6 +53,7 @@ async def get_postiz_auth_url(action_id: str, provider: str) -> Dict[str, Any]:
     "/actions/{action_id}/postiz/providers",
     methods=["GET"],
     auth=True,
+    roles=["admin"],
     operation_id="get_postiz_providers",
     tags=["Postiz"],
 )

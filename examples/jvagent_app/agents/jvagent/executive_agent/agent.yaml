@@ -6,7 +6,9 @@
 # a think-act-observe loop over the agent's unified tool surface — the persona's
 # reply/respond tools, anchored interact-actions exposed as tools, plain action
 # tools (web search), core tools, and native SOP skills. Routing is tool
-# selection; turn-lock is an emergent property of a flow that isn't done.
+# selection. Turn-lock: with `lock_active_flow: true` (the default set below) an
+# active flow routes deterministically to its IA; set it false to make
+# continuation emergent/model-mediated (ADR-0013).
 #
 # The single pattern orchestrator at the -200 slot.
 

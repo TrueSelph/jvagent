@@ -86,7 +86,7 @@ First-entry and continuation are both model-judged.
 
 ## 3. Invariants
 
-1. **One model call per tick**, loop-enforced via `ModelBudget`; the loop is bounded by an activation budget.
+1. **One model call per tick**, loop-enforced via `ModelBudget`; the loop is bounded by an activation budget. *(Implementation note: shipped without a dedicated `ModelBudget` class — the loop makes exactly one `_run_model` call per tick and is bounded by the `activation_budget` counter.)*
 2. **Flow continuation is model-mediated.** Active-flow surfacing reads persisted state deterministically (no model) but never forces a flow to run — it makes the flow's tool visible and notes it; the model decides whether to continue it or route elsewhere. *(Superseded by [ADR-0013](0013-togglable-deterministic-turn-lock.md): continuation mode is now configurable via `lock_active_flow`; this model-mediated behavior applies when `lock_active_flow=False`.)*
 3. **Turn-lock is emergent.** A flow's control-task persists on the conversation `TaskStore`; the flow resumes when the model selects its tool. There is no orchestrator-side answer/cancel/detour branch — routing is the model's, and the flow's own session logic handles its steps. *(Superseded by [ADR-0013](0013-togglable-deterministic-turn-lock.md): when `lock_active_flow=True` (default), the orchestrator deterministically routes the turn to the active flow's IA.)*
 4. **Routing is tool selection.** There is no separate router or capability registry; IAs, persona, core services, and skills are all tools.

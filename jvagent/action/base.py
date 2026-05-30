@@ -546,8 +546,10 @@ class Action(Node):
                         # Found an endpoint we missed, try to unregister it
                         if registry.unregister_function(func):
                             unregistered_count += 1
-            except Exception:
-                pass  # Fallback failed, but we already got some endpoints
+            except Exception as exc:
+                # Fallback sweep failed, but we already unregistered the tracked
+                # endpoints above — log so a leaked route is diagnosable.
+                logger.debug("endpoint unregister fallback failed: %s", exc)
 
             if unregistered_count > 0:
                 import logging
@@ -1061,12 +1063,23 @@ class Action(Node):
         Returns:
             Full storage path for the file
         """
+        # Reject absolute paths and parent-directory traversal so a caller-
+        # supplied ``path`` cannot escape the action's storage prefix (parity
+        # with the MCP sandbox / PageIndex / fileinterface path validation).
+        rel = str(path or "").replace("\\", "/").strip()
+        segments = [seg for seg in rel.split("/") if seg not in ("", ".")]
+        if any(seg == ".." for seg in segments):
+            raise ValueError(
+                f"unsafe storage path (parent traversal not allowed): {path!r}"
+            )
+        rel = "/".join(segments)
+
         package_name = self.metadata.get("name") or self.label
         if not self.agent_id or not package_name:
-            return path
+            return rel
 
         # Construct storage path: actions/{agent_id}/{package_name}/{path}
-        return os.path.join("actions", self.agent_id, package_name, path).replace(
+        return os.path.join("actions", self.agent_id, package_name, rel).replace(
             "\\", "/"
         )
 

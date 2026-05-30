@@ -36,6 +36,8 @@ Add the following attributes to `SkillExecutiveInteractAction`, all **off/neutra
 
 `tool_tier` (minimal/standard/full) gates the core-tool surface via `build_core_tools(action, tier)`. `tool_call_timeout` wraps each tool dispatch in `asyncio.wait_for`. `block_raw_tool_invocation` restricts dispatch to surfaced (visible) tools — hidden tools must be reached via `find_tool` or a skill. `enable_transient_ack` + `first_emit_timeout_ms` + `safety_net_ack_text` schedule a "working on it" transient over the bus if a turn is slow, cancelled when the loop completes.
 
+> **Implementation note (errata):** the single `safety_net_ack_text` proposed here shipped as a configurable **list** — `ack_statements` — emitted in order, with `first_emit_timeout_ms` before the first and `ack_interval_ms` between subsequent ones. The ack is also gated to the **heavy** model gear (ADR-0016). See [`reference/configuration-keys.md`](../reference/configuration-keys.md) §6 for the shipped keys.
+
 ### 2.5 MCP tool servers
 
 `tool_servers` (`-all` or a list of action names) selects `MCPAction`(s); their `get_tools()` are pulled into the surface and bound via `wrap_action_tool` (AC-gated). Because the executive runs tools **directly** (not through `ToolExecutionEngine`), a new public `tool_executor.bind_dispatch_context(visitor)` binds the caller identity for the whole turn so per-user MCP sandboxing routes to the correct subprocess. `max_concurrent_tools` is reserved for bounding concurrent execution. The reference agent enables a sandboxed filesystem server (`jvagent/mcp`, stdio/npx) whose tools surface as `mcp_filesystem__<tool>`.

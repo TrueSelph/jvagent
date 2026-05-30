@@ -1,6 +1,7 @@
 """Facebook Graph API action (Pages and Messenger)."""
 
 import asyncio
+import hmac
 import logging
 import mimetypes
 import os
@@ -347,7 +348,11 @@ class FacebookAction(Action):
         mode = query.get("hub.mode")
         hub_verify = query.get("hub.verify_token")
         challenge = query.get("hub.challenge")
-        if hub_verify == expected and mode == "subscribe":
+        token_ok = hmac.compare_digest(
+            str(hub_verify or "").encode("utf-8"),
+            str(expected or "").encode("utf-8"),
+        )
+        if token_ok and mode == "subscribe":
             return str(challenge) if challenge is not None else ""
         return {"message": "Invalid token or mode", "code": 403}
 

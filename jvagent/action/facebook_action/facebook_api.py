@@ -1,5 +1,6 @@
 """This module provides the FacebookAPI class for interacting with the Facebook Graph API."""
 
+import hmac
 import logging
 import mimetypes
 import traceback
@@ -119,7 +120,11 @@ class FacebookAPI:
             hub_verify_token = request.get("hub.verify_token")
             hub_challenge = request.get("hub.challenge")
 
-            if hub_verify_token == self.verify_token and hub_mode == "subscribe":
+            token_ok = hmac.compare_digest(
+                str(hub_verify_token or "").encode("utf-8"),
+                str(self.verify_token or "").encode("utf-8"),
+            )
+            if token_ok and hub_mode == "subscribe":
                 return hub_challenge if hub_challenge is not None else ""
             return {"message": "Invalid token or mode", "code": 403}
         except Exception as e:

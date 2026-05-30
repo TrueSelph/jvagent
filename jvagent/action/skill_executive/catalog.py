@@ -2,9 +2,12 @@
 
 The full tool surface can be large, so the prompt only lists a *visible* subset.
 ``find_tool`` searches the whole surface and ``load_tool`` promotes a tool into
-the visible set (so it appears in subsequent steps). Dispatch always resolves
+the visible set (so it appears in subsequent steps). By default dispatch resolves
 against the full surface, so a tool the model names is callable even before it
-is loaded — the catalog is a discovery aid, not a gate.
+is loaded — the catalog is a discovery aid, not a gate. (The exception is
+``block_raw_tool_invocation``: when that executive flag is on, dispatch is
+restricted to the *visible* set, so hidden tools must first be loaded via
+``find_tool`` or surfaced by a skill.)
 
 ``find_skill`` / ``use_skill`` mirror this for native SOP skills: only names +
 descriptions are surfaced up front; ``use_skill`` returns the full procedure
