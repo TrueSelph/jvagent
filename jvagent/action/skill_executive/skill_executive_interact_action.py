@@ -178,14 +178,19 @@ class SkillExecutiveInteractAction(InteractAction):
     # -- Tooling / egress-UX controls (restored from Bridge/Helm) -----------
     enable_transient_ack: bool = attribute(
         default=False,
-        description="Emit a transient 'working on it' ack if the turn is slow "
-        "to produce output (needs a live bus).",
+        description="Master switch: emit transient 'working on it' ack(s) while "
+        "a slow turn runs (needs a live bus).",
     )
     first_emit_timeout_ms: int = attribute(
-        default=0,
-        description="Delay (ms) before the transient ack fires; 0 disables.",
+        default=1500,
+        description="Delay (ms) before the first ack, and the interval between "
+        "successive ack_statements. 0 = emit immediately.",
     )
-    safety_net_ack_text: str = attribute(default="Working on it…")
+    ack_statements: List[str] = attribute(
+        default_factory=lambda: ["Working on it…"],
+        description="Transient 'working on it' statement(s), emitted in order at "
+        "first_emit_timeout_ms intervals while the turn runs.",
+    )
     block_raw_tool_invocation: bool = attribute(
         default=False,
         description="When True: (1) the loop may only call tools currently "
@@ -956,37 +961,43 @@ class SkillExecutiveInteractAction(InteractAction):
     def _schedule_first_emit_ack(
         self, visitor: "InteractWalker"
     ) -> Optional["asyncio.Task"]:
-        """Schedule a transient 'working on it' ack if the turn is slow.
+        """Schedule transient 'working on it' ack(s) while a slow turn runs.
 
-        Fires once after ``first_emit_timeout_ms`` unless the loop finishes first
-        (the caller cancels it). Needs a live bus; returns None when disabled or
-        offline.
+        ``enable_transient_ack`` is the master switch. Emits each of
+        ``ack_statements`` in order, the first after ``first_emit_timeout_ms`` and
+        each subsequent at the same interval, until the list is exhausted or the
+        caller cancels (the turn produced output). Needs a live bus.
         """
-        if not self.enable_transient_ack or int(self.first_emit_timeout_ms or 0) <= 0:
+        if not self.enable_transient_ack:
+            return None
+        statements = [
+            s.strip()
+            for s in (self.ack_statements or [])
+            if isinstance(s, str) and s.strip()
+        ]
+        if not statements:
             return None
         bus = getattr(visitor, "response_bus", None)
         session_id = getattr(visitor, "session_id", None)
         if not bus or not session_id:
             return None
-        ack_text = (self.safety_net_ack_text or "").strip()
-        if not ack_text:
-            return None
-        delay = float(self.first_emit_timeout_ms) / 1000.0
         interaction = getattr(visitor, "interaction", None)
         channel = getattr(visitor, "channel", "default") or "default"
+        interval = max(0.0, float(self.first_emit_timeout_ms or 0) / 1000.0)
 
         async def _ack() -> None:
             try:
-                await asyncio.sleep(delay)
-                await bus.publish(
-                    session_id=session_id,
-                    content=ack_text,
-                    channel=channel,
-                    transient=True,
-                    interaction=interaction,
-                    interaction_id=getattr(interaction, "id", None),
-                    user_id=getattr(interaction, "user_id", None),
-                )
+                for stmt in statements:
+                    await asyncio.sleep(interval)
+                    await bus.publish(
+                        session_id=session_id,
+                        content=stmt,
+                        channel=channel,
+                        transient=True,
+                        interaction=interaction,
+                        interaction_id=getattr(interaction, "id", None),
+                        user_id=getattr(interaction, "user_id", None),
+                    )
             except asyncio.CancelledError:  # pragma: no cover - timing
                 raise
             except Exception as exc:  # pragma: no cover - defensive

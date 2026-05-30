@@ -236,6 +236,41 @@ async def test_duration_guard_ends_turn(make_skill_executive, make_visitor):
     assert ev and ev[-1]["data"]["ended_via"] == "duration"
 
 
+# --- Transient ack -------------------------------------------------------
+
+
+async def test_transient_ack_disabled_by_default():
+    # Off by default, and the master switch alone gates it.
+    ex = SkillExecutiveInteractAction()
+    assert ex.enable_transient_ack is False
+    assert ex._schedule_first_emit_ack(MagicMock()) is None
+    # Enabling without a bus still no-ops gracefully.
+    ex.enable_transient_ack = True
+    v = MagicMock()
+    v.response_bus = None
+    v.session_id = None
+    assert ex._schedule_first_emit_ack(v) is None
+
+
+async def test_transient_ack_emits_configured_statements():
+    ex = SkillExecutiveInteractAction()
+    ex.enable_transient_ack = True
+    ex.first_emit_timeout_ms = 1  # 1ms interval
+    ex.ack_statements = ["Working on it…", "Almost there…"]
+    bus = MagicMock()
+    bus.publish = AsyncMock()
+    v = MagicMock()
+    v.response_bus = bus
+    v.session_id = "sess"
+    v.channel = "web"
+    v.interaction = SimpleNamespace(id="i", user_id="u")
+    task = ex._schedule_first_emit_ack(v)
+    await task
+    emitted = [c.kwargs["content"] for c in bus.publish.await_args_list]
+    assert emitted == ["Working on it…", "Almost there…"]
+    assert all(c.kwargs["transient"] for c in bus.publish.await_args_list)
+
+
 # --- Phase 4: tooling / UX -------------------------------------------------
 
 
