@@ -362,6 +362,31 @@ async def test_gearing_escalates_across_loop(
     assert gears[:4] == ["light", "light", "heavy", "heavy"]
 
 
+async def test_no_light_model_runs_everything_heavy(
+    make_skill_executive, make_visitor, monkeypatch
+):
+    """With no light_model configured, the main (heavy) model handles every tick
+    — including the finalize call, which passes gear='light'."""
+    calls = {"n": 0}
+    fake = _fake_capability_action("work", calls)
+    ex = make_skill_executive(actions=[fake], decisions=[])
+    assert ex.light_model == ""  # gearing off
+    seq = [
+        {"action": "tool", "tool": "work", "args": {"i": 1}},
+        {"action": "tool", "tool": "work", "args": {"i": 2}},
+        {"action": "final", "answer": "done"},
+    ]
+    gears = []
+
+    async def _rm(self, *a, gear="heavy", **k):
+        gears.append(gear)
+        return seq.pop(0) if seq else {"action": "final", "answer": ""}
+
+    monkeypatch.setattr(SkillExecutiveInteractAction, "_run_model", _rm)
+    await ex.execute(make_visitor(utterance="multi-step"))
+    assert gears and all(g == "heavy" for g in gears)
+
+
 async def test_progress_stream_suppressed_on_light_gear(
     make_skill_executive, make_visitor, monkeypatch
 ):
