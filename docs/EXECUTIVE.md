@@ -100,7 +100,7 @@ actions:
   - action: jvagent/skill_executive
     context:
       enabled: true
-      activation_budget: 16
+      activation_budget: 24       # max tool-using ticks/turn; raise for research
       model: gpt-4o-mini
       model_action_type: OpenAILanguageModelAction
       lock_active_flow: true     # deterministic turn-lock; false = model-mediated
@@ -121,7 +121,7 @@ All off/neutral by default — the reference agent is unchanged. Full table in [
 
 - **Reasoning** (reasoning-capable models only): `reasoning_enabled`, `reasoning_effort` (low/medium/high), `reasoning_budget_tokens`, `reasoning_extra`. Threaded into the loop's model call; the executive profile owns its own reasoning level.
 - **Thinking stream** (needs a live bus): `stream_internal_progress` emits each tick as a transient `thought`; `stream_reasoning_trace` surfaces `result.thinking_content`.
-- **Budgets**: `max_duration_seconds` (wall-clock, alongside `activation_budget`), `max_statement_length` (soft prompt cap), `history_limit` (loop working context; the rolling memory window is the agent-level `interaction_limit`).
+- **Budgets**: `activation_budget` (max tool-using ticks/turn, default **24** — each tick is one tool call, so multistep research/agentic work wants 30–50; the repeat-guard bounds runaway loops). `model_max_tokens` defaults to **2048** (use 4096+ for thinking models, whose reasoning can count against the completion). `max_duration_seconds` (wall-clock, alongside the tick budget), `max_statement_length` (soft prompt cap), `history_limit` (loop working context; the rolling memory window is the agent-level `interaction_limit`). When a turn exhausts its budget or time mid-task, the loop **forces one partial-compose** — it replies with the agent's best answer from what it gathered rather than dropping to the generic clarify fallback.
 - **Tooling / UX**: `tool_tier` (minimal/standard/full), `tool_call_timeout`, `enable_transient_ack` + `first_emit_timeout_ms` + `safety_net_ack_text`. `block_raw_tool_invocation` does two things: (1) only surfaced (visible) tools are callable — hidden ones need `find_tool`/a skill; and (2) it adds a **tool-use policy** to the loop prompt so the user can't steer tool selection — naming a tool/function/argument is treated as intent, not a command; the user states a goal and the agent chooses the tools.
 - **MCP tool servers**: `tool_servers` (`-all` or action-name list) pulls tools from `jvagent/mcp` `MCPAction`(s); they surface as `mcp_<server>__<tool>` and route per-user (the loop binds the dispatch context for the turn). `max_concurrent_tools` bounds concurrency.
 

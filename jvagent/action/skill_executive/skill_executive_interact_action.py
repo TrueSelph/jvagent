@@ -63,7 +63,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_ACTIVATION_BUDGET = 16
+DEFAULT_ACTIVATION_BUDGET = 24
 
 # Keys the model commonly uses to carry user-facing text, in priority order.
 _TEXT_KEYS = ("answer", "text", "content", "message", "reply", "response")
@@ -103,7 +103,7 @@ class SkillExecutiveInteractAction(InteractAction):
     model: str = attribute(default="gpt-4o-mini")
     model_action_type: str = attribute(default="OpenAILanguageModelAction")
     model_temperature: float = attribute(default=0.2)
-    model_max_tokens: int = attribute(default=1024)
+    model_max_tokens: int = attribute(default=2048)
     enforce_json_mode: bool = attribute(default=True)
 
     # -- Reasoning passthrough (only bites with a reasoning-capable model; the
@@ -612,7 +612,7 @@ class SkillExecutiveInteractAction(InteractAction):
             while budget > 0:
                 if deadline and time.time() > deadline:
                     ended_via = "duration"
-                    return
+                    break
                 budget -= 1
                 ticks += 1
                 visible_tools = [tools[n] for n in visible if n in tools]
@@ -733,6 +733,27 @@ class SkillExecutiveInteractAction(InteractAction):
                 # Unknown action — stop rather than loop.
                 ended_via = "unknown"
                 return
+
+            # Budget/time ran out mid-task. Rather than dropping to the generic
+            # clarify fallback (which discards the work and misreports the
+            # cause), force ONE compose so the user gets the agent's best answer
+            # from what it gathered. Only when there's actual work to summarize.
+            interaction = getattr(visitor, "interaction", None)
+            voiced = bool(getattr(interaction, "response", "") if interaction else "")
+            if not voiced and ended_via in ("budget", "duration") and observations:
+                decision = await self._run_model(
+                    visitor,
+                    utterance,
+                    history,
+                    [],
+                    observations,
+                    skills_section=skills_section,
+                    finalize=True,
+                )
+                answer = _text_candidate(decision) if decision else ""
+                if answer:
+                    await self._maybe_voice_final(visitor, answer)
+                    ended_via = f"{ended_via}_finalized"
         finally:
             if ack_task is not None and not ack_task.done():
                 ack_task.cancel()
@@ -1162,8 +1183,14 @@ class SkillExecutiveInteractAction(InteractAction):
         observations: List[Dict[str, Any]],
         flow_note: str = "",
         skills_section: str = "",
+        finalize: bool = False,
     ) -> Optional[Dict[str, Any]]:
-        """One model call → parsed JSON decision. Overridden/mocked in tests."""
+        """One model call → parsed JSON decision. Overridden/mocked in tests.
+
+        ``finalize=True`` appends a hard stop instruction so the model wraps up
+        with its best answer from what it has gathered instead of calling more
+        tools — used when the loop runs out of budget/time (partial-compose).
+        """
         model_action = await self.get_model_action(required=False)
         if model_action is None:
             logger.warning(
@@ -1185,6 +1212,13 @@ class SkillExecutiveInteractAction(InteractAction):
             )
         if self.block_raw_tool_invocation:
             system_prompt = f"{system_prompt}\n\n{TOOL_USE_POLICY}"
+        if finalize:
+            system_prompt = (
+                f"{system_prompt}\n\nSTEP LIMIT REACHED: Do NOT call any tool. "
+                "Reply to the user now with your best, most complete answer using "
+                'what you have already gathered. Return action "final" with your '
+                "answer (and any link/path to work you produced this turn)."
+            )
         user_prompt = SKILL_EXECUTIVE_USER_PROMPT_TEMPLATE.format(
             history_section=render_history_section(history),
             utterance=utterance or "(no message)",

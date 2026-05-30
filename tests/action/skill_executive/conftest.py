@@ -47,6 +47,13 @@ def make_skill_executive(monkeypatch, publish_log):
         monkeypatch.setattr(SkillExecutiveInteractAction, "get_agent", _get_agent)
 
         reg = dict(action_registry or {})
+        for a in actions or []:
+            cls_name = (
+                a.get_class_name()
+                if callable(getattr(a, "get_class_name", None))
+                else type(a).__name__
+            )
+            reg[cls_name] = a
 
         async def _get_action(self, name):
             # Mirror real get_action: accept a class or a class-name string.
@@ -89,6 +96,7 @@ def make_skill_executive(monkeypatch, publish_log):
             observations,
             flow_note="",
             skills_section="",
+            finalize=False,
         ):
             return seq.pop(0) if seq else {"action": "final", "answer": ""}
 

@@ -142,6 +142,52 @@ async def test_reasoning_trace_emitted_when_enabled(monkeypatch):
 # --- Phase 3: budgets ------------------------------------------------------
 
 
+async def test_agentic_default_budget_and_tokens():
+    ex = SkillExecutiveInteractAction()
+    assert ex.activation_budget == 24  # room for multistep tool work
+    assert ex.model_max_tokens == 2048  # headroom for thinking models
+
+
+async def test_finalize_clause_added_to_prompt(monkeypatch):
+    captured = {}
+    model = MagicMock()
+
+    async def _qm(**kwargs):
+        captured["system"] = kwargs["system"]
+        return SimpleNamespace(response='{"action":"final","answer":"x"}')
+
+    model.query_messages = _qm
+
+    async def _gma(self, required=False):
+        return model
+
+    async def _agent(self):
+        return SimpleNamespace(alias="", role="")
+
+    monkeypatch.setattr(SkillExecutiveInteractAction, "get_model_action", _gma)
+    monkeypatch.setattr(SkillExecutiveInteractAction, "get_agent", _agent)
+    ex = SkillExecutiveInteractAction()
+    await ex._run_model(MagicMock(), "hi", [], [], [], finalize=True)
+    assert "STEP LIMIT REACHED" in captured["system"]
+
+
+async def test_partial_compose_on_budget_exhaustion(make_skill_executive, make_visitor):
+    """When the loop runs out of budget mid-task, force one compose so the user
+    gets a partial answer instead of the generic clarify fallback."""
+    ex = make_skill_executive(
+        activation_budget=2,
+        decisions=[
+            {"action": "tool", "tool": "noop", "args": {}},
+            {"action": "tool", "tool": "noop", "args": {}},
+            # consumed by the forced finalize call after the budget is spent
+            {"action": "final", "answer": "Here's what I gathered so far."},
+        ],
+    )
+    v = make_visitor(utterance="do a big multistep research task")
+    await ex.execute(v)
+    assert v.interaction.response == "Here's what I gathered so far."
+
+
 async def test_duration_guard_ends_turn(make_skill_executive, make_visitor):
     # A decision sequence that would loop forever; the wall-clock guard ends it.
     ex = make_skill_executive(
