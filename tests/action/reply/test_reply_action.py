@@ -296,6 +296,16 @@ async def test_reply_empty_is_noop():
     assert v.interaction.response == ""
 
 
+async def test_voice_rules_forbid_capability_disclaimers():
+    """The voice rules guard against the compose model hallucinating a false
+    'I can't research / create files' disclaimer that drops the real message."""
+    from jvagent.action.reply.reply_action import VOICE_RULES
+
+    low = VOICE_RULES.lower()
+    assert "do not say you cannot" in low
+    assert "faithfully" in low
+
+
 async def test_identity_and_system_prompt(monkeypatch):
     ra = ReplyAction()
     _patch_agent(monkeypatch)
