@@ -11,9 +11,11 @@ import os
 import tempfile
 import threading
 from collections import Counter
+from html.parser import HTMLParser
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+from urllib.parse import unquote, urlparse
 
 from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.core.context import (
@@ -234,6 +236,98 @@ def _discard_pageindex_future(fut: asyncio.Future) -> None:
         logger.debug("PDF page_index executor finished with error: %s", exc)
 
 
+class _HTMLTextExtractor(HTMLParser):
+    """Minimal stdlib HTML→text stripper (no extra deps). Drops script/style
+    and collapses visible text — good enough to ingest a web page as markdown."""
+
+    _DROP = {"script", "style", "noscript", "template"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._skip = 0
+        self._parts: List[str] = []
+
+    def handle_starttag(self, tag: str, attrs: Any) -> None:
+        if tag in self._DROP:
+            self._skip += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._DROP and self._skip:
+            self._skip -= 1
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip and data.strip():
+            self._parts.append(data.strip())
+
+    @property
+    def text(self) -> str:
+        return "\n".join(self._parts)
+
+
+def _html_to_text(html: str) -> str:
+    parser = _HTMLTextExtractor()
+    try:
+        parser.feed(html)
+    except Exception:  # pragma: no cover - defensive; fall back to raw
+        return html
+    return parser.text or html
+
+
+async def _download_url_to_workdir(
+    url: str, doc_name: Optional[str], work_dir: str
+) -> Tuple[str, str]:
+    """Download ``url`` into ``work_dir`` and return ``(local_path, source_url)``.
+
+    The in-process ingest path (the ``pageindex__assimilate`` tool and the
+    Python SDK) accepts a URL for ``doc``; this fetches it so the rest of the
+    pipeline ingests the real document. The extension is inferred from the
+    response content-type (or URL suffix) so PDFs take the PDF page-index path,
+    HTML is stripped to markdown text, and office/image files reach Docling.
+    The HTTP upload endpoint does its own (richer) download with Google
+    Drive/Workspace link rewriting; this is the lighter in-process counterpart.
+    """
+    if not url.startswith(("http://", "https://")):
+        raise ValueError(f"unsupported URL scheme for ingestion: {url!r}")
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+            resp = await client.get(
+                url, headers={"User-Agent": "jvagent-pageindex/1.0"}
+            )
+            resp.raise_for_status()
+            ctype = (
+                (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+            )
+            raw = resp.content
+            encoding = resp.encoding or "utf-8"
+    except Exception as exc:  # surface a clear, actionable message to the model
+        raise ValueError(f"could not download URL for ingestion: {exc}") from exc
+
+    url_ext = Path(unquote(urlparse(url).path)).suffix.lower()
+    if ctype == "application/pdf" or url_ext == ".pdf":
+        ext, data = ".pdf", raw
+    elif ctype in ("text/html", "application/xhtml+xml") or url_ext in (
+        ".html",
+        ".htm",
+    ):
+        ext = ".md"
+        data = _html_to_text(raw.decode(encoding, "replace")).encode("utf-8")
+    elif (
+        url_ext in PAGEINDEX_OFFICE_LIKE_EXTENSIONS
+        or url_ext in PAGEINDEX_DOCLING_IMAGE_EXTENSIONS
+    ):
+        ext, data = url_ext, raw
+    else:
+        # Unknown / generic text → ingest as text (markdown-enriched path).
+        ext = url_ext if url_ext in PAGEINDEX_TEXT_LIKE_EXTENSIONS else ".md"
+        data = raw
+    tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False, dir=work_dir)
+    tmp.write(data)
+    tmp.close()
+    return tmp.name, url
+
+
 async def assimilate_document(
     doc: Union[str, Path, bytes, BytesIO],
     *,
@@ -320,13 +414,24 @@ async def assimilate_document(
                 ext = ".pdf"
         elif isinstance(doc, (str, Path)):
             doc_str = str(doc)
-            looks_like_url = doc_str.startswith(("http://", "https://", "ftp://"))
-            # If it's not a URL and doesn't resolve to an existing file, treat
-            # it as raw content (markdown / plain text) and dump it to a temp
-            # file so the rest of the pipeline can read it as a path. This
-            # supports callers like the cockpit's ``pageindex__assimilate``
-            # tool, where the model passes content directly.
-            if not looks_like_url:
+            looks_like_url = doc_str.startswith(("http://", "https://"))
+            if looks_like_url:
+                # Fetch the URL so the pipeline ingests the real document
+                # (PDF/HTML/office), not the URL string. Carry the source URL
+                # onto the document for citations.
+                dl_path, dl_url = await _download_url_to_workdir(
+                    doc_str, doc_name, work_dir
+                )
+                tmp_paths.append(dl_path)
+                doc = dl_path
+                if doc_url is None:
+                    doc_url = dl_url
+            else:
+                # Not a URL and not an existing file → treat as raw content
+                # (markdown / plain text) and dump it to a temp file so the rest
+                # of the pipeline can read it as a path. This supports callers
+                # like the ``pageindex__assimilate`` tool, where the model
+                # passes document content directly.
                 try:
                     is_existing_file = Path(doc_str).is_file()
                 except (OSError, ValueError):

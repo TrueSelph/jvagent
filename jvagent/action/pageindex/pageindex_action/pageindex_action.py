@@ -573,17 +573,30 @@ class PageIndexAction(Action):
             ),
             Tool(
                 name="pageindex__assimilate",
-                description="Ingest a document into the knowledge base (text, URL, or file path).",
+                description=(
+                    "Ingest a document into the knowledge base so it can be "
+                    "searched later with pageindex__search. Accepts raw "
+                    "text/markdown, an http(s) URL (fetched automatically — web "
+                    "pages and PDFs supported), or a local file path."
+                ),
                 parameters_schema={
                     "type": "object",
                     "properties": {
                         "doc": {
                             "type": "string",
-                            "description": "Document content, URL, or file path to ingest.",
+                            "description": (
+                                "What to ingest: raw text/markdown content, an "
+                                "http(s) URL (downloaded automatically), or a "
+                                "file path. To ingest a web page or PDF, pass its "
+                                "URL directly."
+                            ),
                         },
                         "doc_name": {
                             "type": "string",
-                            "description": "Optional display name for the document.",
+                            "description": (
+                                "Optional display name for the document (also "
+                                "used to infer the file type for raw content)."
+                            ),
                         },
                     },
                     "required": ["doc"],
