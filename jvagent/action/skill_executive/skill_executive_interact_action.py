@@ -182,11 +182,11 @@ class SkillExecutiveInteractAction(InteractAction):
         "a slow turn runs (needs a live bus).",
     )
     first_emit_timeout_ms: int = attribute(
-        default=1500,
+        default=2000,
         description="Delay (ms) before the FIRST ack fires. 0 = emit immediately.",
     )
     ack_interval_ms: int = attribute(
-        default=8000,
+        default=12000,
         description="Delay (ms) between successive ack_statements after the "
         "first (kept generous so later lines don't appear too soon).",
     )
