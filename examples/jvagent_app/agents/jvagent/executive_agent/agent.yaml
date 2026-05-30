@@ -72,8 +72,8 @@ actions:
       first_emit_timeout_ms: 2000        # delay before the FIRST ack
       ack_interval_ms: 12000             # delay between subsequent acks
       ack_statements:                    # transient 'working on it' line(s), emitted in order
-        - "Working on it…"
-        - "Still on it — almost there…"
+        - "One moment…"
+        - "Still working on it…"
       max_concurrent_tools: 0             # 0 = unbounded
 
       # -- MCP tool servers: '-all' pulls tools from every enabled jvagent/mcp
