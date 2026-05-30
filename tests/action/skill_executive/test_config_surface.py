@@ -362,6 +362,39 @@ async def test_gearing_escalates_across_loop(
     assert gears[:4] == ["light", "light", "heavy", "heavy"]
 
 
+async def test_light_model_no_main_falls_back_to_light(monkeypatch):
+    """A light model with no main model → the light model becomes the sole model
+    (fallback): gearing off, and every gear resolves to the light profile."""
+    ex = SkillExecutiveInteractAction()
+    ex.model = ""  # no main model
+    ex.model_action_type = ""
+    ex.light_model = "lite"
+    ex.light_model_action_type = "OpenAILanguageModelAction"
+    ex.light_model_temperature = 0.5
+    ex.light_model_max_tokens = 777
+
+    lite = object()
+
+    async def _ra(self, action_type):
+        return lite
+
+    async def _gma(self, required=False):
+        return object()  # should NOT be used — main model is empty
+
+    monkeypatch.setattr(SkillExecutiveInteractAction, "_resolve_model_action", _ra)
+    monkeypatch.setattr(SkillExecutiveInteractAction, "get_model_action", _gma)
+
+    assert ex._gearing_on() is False  # only one effective tier
+    assert ex._select_gear(5, True) == "heavy"  # no escalation distinction
+
+    for gear in ("light", "heavy"):
+        action, model_id, temp, mt, reasoning = await ex._gear_model(gear)
+        assert action is lite
+        assert model_id == "lite"
+        assert temp == 0.5 and mt == 777
+        assert reasoning is False  # light model is a completion model
+
+
 async def test_no_light_model_runs_everything_heavy(
     make_skill_executive, make_visitor, monkeypatch
 ):

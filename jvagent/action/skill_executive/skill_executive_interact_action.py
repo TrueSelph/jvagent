@@ -114,7 +114,8 @@ class SkillExecutiveInteractAction(InteractAction):
     # `light_model` to engage gearing; empty = single-model (current behaviour).
     light_model: str = attribute(
         default="",
-        description="Light/completion model id. Empty disables gearing.",
+        description="Light/completion model id. Empty disables gearing. If set "
+        "with no main `model`, the light model becomes the sole model (fallback).",
     )
     light_model_action_type: str = attribute(
         default="",
@@ -1122,12 +1123,18 @@ class SkillExecutiveInteractAction(InteractAction):
             return "Wrapping up…"
         return ""
 
+    def _has_main_model(self) -> bool:
+        return bool((self.model or "").strip())
+
     def _gearing_on(self) -> bool:
-        return bool((self.light_model or "").strip())
+        # Gearing needs two distinct tiers: a light model AND a main model. A
+        # light model with no main model is the single-model fallback (the light
+        # model becomes the sole model) — so gearing is off.
+        return bool((self.light_model or "").strip()) and self._has_main_model()
 
     def _select_gear(self, substantive_tool_calls: int, skill_active: bool) -> str:
         """Light until the turn proves multi-step, then heavy (sticky). Single-
-        model agents (no light_model) always run heavy."""
+        model agents (no light_model, or no main_model) always run one tier."""
         if not self._gearing_on():
             return "heavy"
         if (self.escalate_on_skill and skill_active) or (
@@ -1148,21 +1155,29 @@ class SkillExecutiveInteractAction(InteractAction):
                 logger.debug("skill_executive: get_action(%r) failed: %s", at, exc)
         return await self.get_model_action(required=False)
 
+    async def _light_profile(self):
+        """The light/completion profile tuple (no reasoning)."""
+        action = await self._resolve_model_action(
+            self.light_model_action_type or self.model_action_type
+        )
+        return (
+            action,
+            (self.light_model or None),
+            self.light_model_temperature,
+            self.light_model_max_tokens,
+            False,
+        )
+
     async def _gear_model(self, gear: str):
         """Return (model_action, model_id, temperature, max_tokens, reasoning_on)
-        for the requested gear. Light gear only applies when ``light_model`` is
-        set; otherwise both gears use the heavy profile (single-model)."""
-        if gear == "light" and self._gearing_on():
-            action = await self._resolve_model_action(
-                self.light_model_action_type or self.model_action_type
-            )
-            return (
-                action,
-                (self.light_model or None),
-                self.light_model_temperature,
-                self.light_model_max_tokens,
-                False,
-            )
+        for the requested gear. The light profile is used for the light gear when
+        gearing is on; it is also used as the SOLE model (fallback) when a light
+        model is configured but no main model is. Otherwise the heavy profile."""
+        light_set = bool((self.light_model or "").strip())
+        if light_set and (
+            (gear == "light" and self._gearing_on()) or not self._has_main_model()
+        ):
+            return await self._light_profile()
         action = await self.get_model_action(required=False)
         return (
             action,
