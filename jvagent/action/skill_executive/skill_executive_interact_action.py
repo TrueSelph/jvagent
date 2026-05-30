@@ -650,7 +650,10 @@ class SkillExecutiveInteractAction(InteractAction):
             else 0.0
         )
 
-        ack_task = self._schedule_first_emit_ack(visitor)
+        # The transient ack only applies once the heavy model is engaged (it is
+        # the slow gear) — scheduled on the first heavy tick below, not up front.
+        ack_task: Optional["asyncio.Task"] = None
+        ack_started = False
         try:
             while budget > 0:
                 if deadline and time.time() > deadline:
@@ -666,6 +669,12 @@ class SkillExecutiveInteractAction(InteractAction):
                     ticks_light += 1
                 else:
                     ticks_heavy += 1
+                    # The heavy gear is the slow one — start the transient ack on
+                    # the first heavy tick (not before), so fast light-only turns
+                    # never surface a "working on it" line.
+                    if not ack_started:
+                        ack_started = True
+                        ack_task = self._schedule_first_emit_ack(visitor)
                 visible_tools = [tools[n] for n in visible if n in tools]
                 decision = await self._run_model(
                     visitor,

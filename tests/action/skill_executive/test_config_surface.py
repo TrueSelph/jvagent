@@ -362,6 +362,63 @@ async def test_gearing_escalates_across_loop(
     assert gears[:4] == ["light", "light", "heavy", "heavy"]
 
 
+async def test_transient_ack_only_on_heavy_engagement(
+    make_skill_executive, make_visitor, monkeypatch
+):
+    """The ack is scheduled on the first HEAVY tick only — a fast light-only turn
+    never surfaces a 'working on it' line; an escalating turn schedules once."""
+    sched = {"n": 0}
+
+    def _sched(self, visitor):
+        sched["n"] += 1
+        return None
+
+    monkeypatch.setattr(
+        SkillExecutiveInteractAction, "_schedule_first_emit_ack", _sched
+    )
+
+    # Light-only turn: one tool then final, no escalation → ack never scheduled.
+    calls = {"n": 0}
+    fake = _fake_capability_action("work", calls)
+    ex = make_skill_executive(actions=[fake], decisions=[])
+    ex.light_model = "lite"
+    ex.escalate_after_tool_calls = 2
+    ex.escalate_on_skill = False
+    seq = [
+        {"action": "tool", "tool": "work", "args": {"i": 1}},
+        {"action": "final", "answer": "done"},
+    ]
+
+    async def _rm(self, *a, gear="heavy", **k):
+        return seq.pop(0) if seq else {"action": "final", "answer": ""}
+
+    monkeypatch.setattr(SkillExecutiveInteractAction, "_run_model", _rm)
+    await ex.execute(make_visitor(utterance="quick"))
+    assert sched["n"] == 0  # stayed light → no ack
+
+    # Escalating turn: three tool calls cross the threshold → ack scheduled once.
+    sched["n"] = 0
+    calls2 = {"n": 0}
+    fake2 = _fake_capability_action("work", calls2)
+    ex2 = make_skill_executive(actions=[fake2], decisions=[])
+    ex2.light_model = "lite"
+    ex2.escalate_after_tool_calls = 2
+    ex2.escalate_on_skill = False
+    seq2 = [
+        {"action": "tool", "tool": "work", "args": {"i": 1}},
+        {"action": "tool", "tool": "work", "args": {"i": 2}},
+        {"action": "tool", "tool": "work", "args": {"i": 3}},
+        {"action": "final", "answer": "done"},
+    ]
+
+    async def _rm2(self, *a, gear="heavy", **k):
+        return seq2.pop(0) if seq2 else {"action": "final", "answer": ""}
+
+    monkeypatch.setattr(SkillExecutiveInteractAction, "_run_model", _rm2)
+    await ex2.execute(make_visitor(utterance="multi-step"))
+    assert sched["n"] == 1  # scheduled exactly once, on the first heavy tick
+
+
 # --- Transient ack -------------------------------------------------------
 
 
