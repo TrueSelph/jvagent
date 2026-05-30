@@ -525,17 +525,40 @@ class PageIndexAction(Action):
 
         action = self
 
-        async def _search(query: str, limit: int = 5) -> str:
+        async def _search(query: str = "", limit: int = 5, **kwargs) -> str:
             import json
 
+            query = query or kwargs.get("q") or kwargs.get("text") or ""
+            if not query:
+                return json.dumps(
+                    {"error": "no query provided: pass it in 'query'"}, indent=2
+                )
             results = await action.search(query, limit=limit)
             if not results:
                 return "No matching documents found."
             return json.dumps(results, indent=2)
 
-        async def _assimilate(doc: str, doc_name: str = "") -> str:
+        async def _assimilate(doc: str = "", doc_name: str = "", **kwargs) -> str:
             import json
 
+            # Models reach for plausible aliases (content / text / url / path);
+            # coalesce them so a near-miss arg name doesn't error the tool.
+            if not doc:
+                for alias in ("content", "text", "document", "url", "file", "path"):
+                    val = kwargs.get(alias)
+                    if val:
+                        doc = val
+                        break
+            if not doc_name:
+                doc_name = kwargs.get("name") or kwargs.get("title") or ""
+            if not doc:
+                return json.dumps(
+                    {
+                        "error": "no document provided: pass the text, URL, or "
+                        "file path in the 'doc' argument"
+                    },
+                    indent=2,
+                )
             result = await action.assimilate(doc, doc_name=doc_name or None)
             return json.dumps(result, indent=2)
 
@@ -547,7 +570,12 @@ class PageIndexAction(Action):
             )
             return json.dumps(result, indent=2)
 
-        async def _delete_doc(doc_name: str, collection_name: str = "") -> str:
+        async def _delete_doc(
+            doc_name: str = "", collection_name: str = "", **kwargs
+        ) -> str:
+            doc_name = doc_name or kwargs.get("name") or kwargs.get("document") or ""
+            if not doc_name:
+                return "No document name provided (pass it in 'doc_name')."
             ok = await action.delete_document(
                 doc_name, collection_name=collection_name or None
             )

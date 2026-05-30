@@ -85,6 +85,40 @@ async def test_download_html_becomes_stripped_markdown(monkeypatch, tmp_path):
     assert "x()" not in text  # script stripped
 
 
+async def test_assimilate_tool_coalesces_content_alias(monkeypatch):
+    """The model sometimes passes `content=`/`text=` instead of `doc=`; the tool
+    must coalesce rather than raise 'unexpected keyword argument'."""
+    from jvagent.action.pageindex.pageindex_action.pageindex_action import (
+        PageIndexAction,
+    )
+
+    seen = {}
+
+    async def _fake_assimilate(self, doc, *, doc_name=None, **kw):
+        seen["doc"] = doc
+        seen["doc_name"] = doc_name
+        return {"ok": True}
+
+    monkeypatch.setattr(PageIndexAction, "assimilate", _fake_assimilate)
+    inst = PageIndexAction()
+    tools = {t.name: t for t in await inst.get_tools()}
+    assim = tools["pageindex__assimilate"]
+
+    out = await assim.execute(content="hello world", name="Greeting")
+    assert seen["doc"] == "hello world"
+    assert seen["doc_name"] == "Greeting"
+    assert '"ok": true' in out
+
+    # And the canonical name still works.
+    seen.clear()
+    await assim.execute(doc="plain")
+    assert seen["doc"] == "plain"
+
+    # Missing entirely → actionable error, not a crash.
+    err = await assim.execute(foo="bar")
+    assert "no document provided" in err
+
+
 async def test_download_rejects_non_http_scheme(tmp_path):
     with pytest.raises(ValueError, match="unsupported URL scheme"):
         await _download_url_to_workdir("ftp://example.com/x", None, str(tmp_path))
