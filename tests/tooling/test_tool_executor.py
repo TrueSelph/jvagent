@@ -1,6 +1,7 @@
 """ToolExecutionEngine: dispatch success, unknown-tool, timeout, error
 sanitization, JSON-string args, and the dispatch-context binding that
 context-aware tools (e.g. per-user MCP) rely on."""
+
 from __future__ import annotations
 
 import asyncio
@@ -36,7 +37,9 @@ async def test_dispatch_success_returns_content():
     async def _echo(text: str = "") -> str:
         return f"echo:{text}"
 
-    eng = ToolExecutionEngine(_registry(Tool(name="echo", description="d", execute=_echo)))
+    eng = ToolExecutionEngine(
+        _registry(Tool(name="echo", description="d", execute=_echo))
+    )
     out = await eng.dispatch([_call("echo", {"text": "hi"})])
     assert len(out) == 1
     assert out[0].content == "echo:hi"
@@ -88,7 +91,9 @@ async def test_json_string_arguments_are_parsed():
         seen["a"], seen["b"] = a, b
         return "ok"
 
-    eng = ToolExecutionEngine(_registry(Tool(name="grab", description="d", execute=_grab)))
+    eng = ToolExecutionEngine(
+        _registry(Tool(name="grab", description="d", execute=_grab))
+    )
     await eng.dispatch([_call("grab", '{"a": 5, "b": "x"}')])
     assert seen == {"a": 5, "b": "x"}
 
@@ -125,8 +130,11 @@ async def test_dispatch_context_exposed_to_tool():
 
 async def test_bind_dispatch_context_sets_and_resets():
     visitor = SimpleNamespace(
-        _agent=SimpleNamespace(id="a1"), user_id="u1",
-        session_id=None, interaction=None, channel="web",
+        _agent=SimpleNamespace(id="a1"),
+        user_id="u1",
+        session_id=None,
+        interaction=None,
+        channel="web",
     )
     assert get_dispatch_context() is None
     with bind_dispatch_context(visitor):

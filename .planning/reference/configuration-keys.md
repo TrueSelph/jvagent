@@ -229,8 +229,8 @@ Only bites with a reasoning-capable model; the `gpt-4o-mini` default ignores rea
 | `tool_tier` | `standard` | core-tool tier: `minimal` \| `standard` \| `full` |
 | `tool_call_timeout` | `0` | per-tool-call timeout (s); `0` disables |
 | `block_raw_tool_invocation` | `false` | only surfaced (visible) tools are callable; hidden ones need `find_tool`/a skill |
-| `enable_transient_ack` | `false` | emit transient ack line(s) if the turn is slow. Scheduled only once the **heavy** gear engages (single-model agents are heavy from tick 1) |
-| `first_emit_timeout_ms` | `2000` | delay before the first transient ack fires (from heavy engagement) |
+| `enable_transient_ack` | `false` | emit transient ack line(s) if the turn is slow. Armed only once the turn is **complex** — a skill is active, or it has made ≥ `escalate_after_tool_calls` substantive tool calls — so simple/reply-only turns never surface it |
+| `first_emit_timeout_ms` | `1200` | delay before the first transient ack fires (from when the turn arms) |
 | `ack_interval_ms` | `12000` | delay between subsequent acks |
 | `ack_statements` | `["One moment…", "Still working on it…"]` | ordered ack bodies emitted while a slow turn runs |
 | `tool_servers` | `-all` | MCP gateways to pull tools from: `-all` for every enabled `jvagent/mcp` action, or a list of action names. Tools surface as `mcp_<server>__<tool>` |

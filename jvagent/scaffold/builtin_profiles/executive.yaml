@@ -36,8 +36,8 @@ actions:
       max_duration_seconds: 0        # wall-clock cap; 0 disables
       tool_tier: standard            # minimal | standard | full
       tool_call_timeout: 0           # per-tool-call timeout (s); 0 disables
-      enable_transient_ack: false    # emit ack(s) while a slow turn runs
-      # first_emit_timeout_ms: 1500  # delay before first ack + interval between acks
+      enable_transient_ack: false    # ack(s) only on complex turns (skill or multiple tools)
+      # first_emit_timeout_ms: 1200  # delay before first ack + interval between acks
       # ack_statements: ["Working on it…"]   # transient 'working on it' line(s)
       # -- MCP tool servers: '-all' or a list of jvagent/mcp action names.
       tool_servers: "-all"

@@ -538,11 +538,13 @@ async def test_progress_stream_suppressed_on_light_gear(
     assert len(thoughts) == 2
 
 
-async def test_transient_ack_only_on_heavy_engagement(
+async def test_transient_ack_only_on_complex_turns(
     make_skill_executive, make_visitor, monkeypatch
 ):
-    """The ack is scheduled on the first HEAVY tick only — a fast light-only turn
-    never surfaces a 'working on it' line; an escalating turn schedules once."""
+    """The ack arms only once a turn is COMPLEX (multiple substantive tool calls,
+    or a skill). Simple turns — including single-tool and reply-only on a
+    single-model agent — never surface a 'working on it' line, so it can't trail
+    after a fast reply."""
     sched = {"n": 0}
 
     def _sched(self, visitor):
@@ -553,46 +555,48 @@ async def test_transient_ack_only_on_heavy_engagement(
         SkillExecutiveInteractAction, "_schedule_first_emit_ack", _sched
     )
 
-    # Light-only turn: one tool then final, no escalation → ack never scheduled.
-    calls = {"n": 0}
-    fake = _fake_capability_action("work", calls)
-    ex = make_skill_executive(actions=[fake], decisions=[])
-    ex.light_model = "lite"
-    ex.escalate_after_tool_calls = 2
-    ex.escalate_on_skill = False
-    seq = [
-        {"action": "tool", "tool": "work", "args": {"i": 1}},
-        {"action": "final", "answer": "done"},
-    ]
+    async def _run(decisions, *, single_model: bool):
+        sched["n"] = 0
+        fake = _fake_capability_action("work", {"n": 0})
+        ex = make_skill_executive(actions=[fake], decisions=[])
+        if not single_model:
+            ex.light_model = "lite"  # gearing on
+        ex.escalate_after_tool_calls = 2
+        ex.escalate_on_skill = False
+        seq = list(decisions)
 
-    async def _rm(self, *a, gear="heavy", **k):
-        return seq.pop(0) if seq else {"action": "final", "answer": ""}
+        async def _rm(self, *a, gear="heavy", **k):
+            return seq.pop(0) if seq else {"action": "final", "answer": ""}
 
-    monkeypatch.setattr(SkillExecutiveInteractAction, "_run_model", _rm)
-    await ex.execute(make_visitor(utterance="quick"))
-    assert sched["n"] == 0  # stayed light → no ack
+        monkeypatch.setattr(SkillExecutiveInteractAction, "_run_model", _rm)
+        await ex.execute(make_visitor(utterance="x"))
+        return sched["n"]
 
-    # Escalating turn: three tool calls cross the threshold → ack scheduled once.
-    sched["n"] = 0
-    calls2 = {"n": 0}
-    fake2 = _fake_capability_action("work", calls2)
-    ex2 = make_skill_executive(actions=[fake2], decisions=[])
-    ex2.light_model = "lite"
-    ex2.escalate_after_tool_calls = 2
-    ex2.escalate_on_skill = False
-    seq2 = [
-        {"action": "tool", "tool": "work", "args": {"i": 1}},
-        {"action": "tool", "tool": "work", "args": {"i": 2}},
-        {"action": "tool", "tool": "work", "args": {"i": 3}},
-        {"action": "final", "answer": "done"},
-    ]
+    # Single-model agent, simple single-tool turn → NO ack (the reported bug:
+    # single-model used to arm on tick 1 and trail "One moment…" after the reply).
+    n = await _run(
+        [
+            {"action": "tool", "tool": "work", "args": {"i": 1}},
+            {"action": "final", "answer": "done"},
+        ],
+        single_model=True,
+    )
+    assert n == 0
 
-    async def _rm2(self, *a, gear="heavy", **k):
-        return seq2.pop(0) if seq2 else {"action": "final", "answer": ""}
+    # Reply-only turn (no tools) → no ack.
+    assert await _run([{"action": "final", "answer": "hi"}], single_model=True) == 0
 
-    monkeypatch.setattr(SkillExecutiveInteractAction, "_run_model", _rm2)
-    await ex2.execute(make_visitor(utterance="multi-step"))
-    assert sched["n"] == 1  # scheduled exactly once, on the first heavy tick
+    # Multi-tool turn crossing the threshold → armed exactly once.
+    n = await _run(
+        [
+            {"action": "tool", "tool": "work", "args": {"i": 1}},
+            {"action": "tool", "tool": "work", "args": {"i": 2}},
+            {"action": "tool", "tool": "work", "args": {"i": 3}},
+            {"action": "final", "answer": "done"},
+        ],
+        single_model=True,
+    )
+    assert n == 1
 
 
 # --- Transient ack -------------------------------------------------------

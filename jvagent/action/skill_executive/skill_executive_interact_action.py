@@ -261,8 +261,10 @@ class SkillExecutiveInteractAction(InteractAction):
         "a slow turn runs (needs a live bus).",
     )
     first_emit_timeout_ms: int = attribute(
-        default=2000,
-        description="Delay (ms) before the FIRST ack fires. 0 = emit immediately.",
+        default=1200,
+        description="Delay (ms) before the FIRST ack fires. 0 = emit immediately. "
+        "The ack only arms once a turn is complex (a skill, or multiple "
+        "substantive tool calls), so simple turns never surface it.",
     )
     ack_interval_ms: int = attribute(
         default=12000,
@@ -737,12 +739,16 @@ class SkillExecutiveInteractAction(InteractAction):
                     ticks_light += 1
                 else:
                     ticks_heavy += 1
-                    # The heavy gear is the slow one — start the transient ack on
-                    # the first heavy tick (not before), so fast light-only turns
-                    # never surface a "working on it" line.
-                    if not ack_started:
-                        ack_started = True
-                        ack_task = self._schedule_first_emit_ack(visitor)
+                # Arm the transient ack only once the turn proves COMPLEX — a
+                # skill is active, or it has made multiple substantive tool calls.
+                # Simple single-tool / reply-only turns never surface a "working
+                # on it" line (and so it can't trail after a fast reply).
+                if not ack_started and (
+                    bool(activated)
+                    or substantive_tool_calls >= int(self.escalate_after_tool_calls)
+                ):
+                    ack_started = True
+                    ack_task = self._schedule_first_emit_ack(visitor)
                 visible_tools = [tools[n] for n in visible if n in tools]
                 decision = await self._run_model(
                     visitor,
@@ -1002,10 +1008,30 @@ class SkillExecutiveInteractAction(InteractAction):
         await self.publish(visitor=visitor, content=text)
 
     async def _maybe_voice_final(self, visitor: "InteractWalker", answer: str) -> None:
-        """If the loop ends with text but nothing was voiced, voice it once."""
+        """Voice the loop's ``final`` answer unless that exact text was already
+        emitted this turn.
+
+        A terminal egress tool (``reply``/``respond`` or a terminal IA tool)
+        returns from the loop before a ``final`` action can be reached, so
+        reaching ``final`` means the answer has not been voiced as the turn's
+        reply. Non-terminal publish tools (e.g. catalog ``emit_catalog_message``)
+        DO append to ``interaction.response`` mid-turn — that must not suppress a
+        distinct final answer such as a product skill's closing line. So suppress
+        only when the exact answer text is already present in the response (the
+        model echoed an already-voiced line), not merely because the response is
+        non-empty.
+        """
+        answer = (answer or "").strip()
+        if not answer:
+            return
         interaction = getattr(visitor, "interaction", None)
-        if interaction is not None and interaction.response:
-            return  # already voiced via reply/respond/IA
+        current = (
+            (getattr(interaction, "response", "") or "")
+            if interaction is not None
+            else ""
+        )
+        if answer in current:
+            return  # this exact text was already voiced this turn
         await self._voice(visitor, answer)
 
     @staticmethod

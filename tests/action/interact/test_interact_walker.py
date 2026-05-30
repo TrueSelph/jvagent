@@ -1,6 +1,7 @@
 """InteractWalker.on_interact_action dispatch contract: disabled actions are
 skipped, run_in_background actions are deferred to the post-interaction queue,
 access-denied actions never execute, and a normal action executes inline."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock

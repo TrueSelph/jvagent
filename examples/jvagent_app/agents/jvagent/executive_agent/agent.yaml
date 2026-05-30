@@ -92,8 +92,8 @@ actions:
       tool_tier: standard                 # minimal | standard | full
       tool_call_timeout: 0                # per-tool-call timeout (s); 0 disables
       block_raw_tool_invocation: true    # force find_tool/skill for hidden tools
-      enable_transient_ack: true         # emit ack(s) while a slow turn runs
-      first_emit_timeout_ms: 2000        # delay before the FIRST ack
+      enable_transient_ack: true         # emit ack(s) only on COMPLEX turns (skill or multiple tools)
+      first_emit_timeout_ms: 1200        # delay before the FIRST ack
       ack_interval_ms: 12000             # delay between subsequent acks
       ack_statements:                    # transient 'working on it' line(s), emitted in order
         - "One moment…"
