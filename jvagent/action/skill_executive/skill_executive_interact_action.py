@@ -626,8 +626,11 @@ class SkillExecutiveInteractAction(InteractAction):
                     skills_section,
                 )
                 if decision is None:
+                    # A truncated/garbled decision (common when a verbose thinking
+                    # model overruns the token cap). Break to the partial-compose
+                    # path so gathered work still yields a reply.
                     ended_via = "no_decision"
-                    return
+                    break
                 action, tool_name, args = self._normalize(decision, tools, skill_names)
                 if self.stream_internal_progress:
                     await self._emit_thought(
@@ -740,7 +743,11 @@ class SkillExecutiveInteractAction(InteractAction):
             # from what it gathered. Only when there's actual work to summarize.
             interaction = getattr(visitor, "interaction", None)
             voiced = bool(getattr(interaction, "response", "") if interaction else "")
-            if not voiced and ended_via in ("budget", "duration") and observations:
+            if (
+                not voiced
+                and ended_via in ("budget", "duration", "no_decision")
+                and observations
+            ):
                 decision = await self._run_model(
                     visitor,
                     utterance,

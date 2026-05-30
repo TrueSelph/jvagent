@@ -188,6 +188,22 @@ async def test_partial_compose_on_budget_exhaustion(make_skill_executive, make_v
     assert v.interaction.response == "Here's what I gathered so far."
 
 
+async def test_partial_compose_on_no_decision(make_skill_executive, make_visitor):
+    """A truncated/garbled decision (e.g. a verbose thinking model overrunning
+    the token cap after doing the work) still yields a reply via partial-compose,
+    not the clarify fallback."""
+    ex = make_skill_executive(
+        decisions=[
+            {"action": "tool", "tool": "noop", "args": {}},
+            None,  # decision is None → no_decision mid-task
+            {"action": "final", "answer": "Done — report saved."},
+        ],
+    )
+    v = make_visitor(utterance="research X and save a report")
+    await ex.execute(v)
+    assert v.interaction.response == "Done — report saved."
+
+
 async def test_duration_guard_ends_turn(make_skill_executive, make_visitor):
     # A decision sequence that would loop forever; the wall-clock guard ends it.
     ex = make_skill_executive(
