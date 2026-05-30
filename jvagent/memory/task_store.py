@@ -595,13 +595,28 @@ class TaskStore:
         if not raw:
             return []
         tasks: List[Task] = []
+        dropped = 0
         for entry in raw:
             if not isinstance(entry, dict):
+                dropped += 1
                 continue
             try:
                 tasks.append(Task.from_dict(entry))
-            except Exception:
-                pass
+            except Exception as exc:
+                # A corrupt persisted task must not take down the whole turn,
+                # but silently dropping it hides data loss — log for visibility.
+                dropped += 1
+                logger.warning(
+                    "task_store: dropping unparseable task entry (id=%s): %s",
+                    entry.get("id", "?"),
+                    type(exc).__name__,
+                )
+        if dropped:
+            logger.warning(
+                "task_store: dropped %d corrupt task entr%s while loading",
+                dropped,
+                "y" if dropped == 1 else "ies",
+            )
         return tasks
 
     def _save_tasks(self, tasks: List[Task]) -> None:

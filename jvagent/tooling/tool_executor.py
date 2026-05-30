@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import contextvars
+import json
 import logging
 import time
 import uuid
@@ -166,8 +167,6 @@ class ToolExecutionEngine:
         tool_call_id = call.get("id", "")
         args_raw = fn.get("arguments") or {}
         if isinstance(args_raw, str):
-            import json
-
             try:
                 args = json.loads(args_raw)
             except json.JSONDecodeError:
@@ -203,8 +202,6 @@ class ToolExecutionEngine:
             elif isinstance(raw, str):
                 result = ToolResult(content=raw)
             else:
-                import json
-
                 result = ToolResult(content=json.dumps(raw))
         except asyncio.TimeoutError:
             msg = f"Tool call '{tool_name}' timed out after {self.call_timeout}s"

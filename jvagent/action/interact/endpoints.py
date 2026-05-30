@@ -1119,8 +1119,10 @@ async def _stream_interaction(
             walk_task.cancel()
             try:
                 await walk_task
-            except (asyncio.CancelledError, Exception):
-                pass
+            except asyncio.CancelledError:
+                pass  # expected — we just cancelled it
+            except Exception as exc:
+                logger.warning("interact: walker cleanup after cancel failed: %s", exc)
         # Clear profile context
         set_current_profile(None)
         # Request-scoped cache cleanup (probabilistic, serverless-friendly)

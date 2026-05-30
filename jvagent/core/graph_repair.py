@@ -64,8 +64,10 @@ async def _distributed_repair_lock(
                 await db.save(
                     _REPAIR_LOCK_COLLECTION, {"id": record_id, "_id": record_id}
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        # Seeding the lock row is best-effort — claim_record below still gates
+        # the repair — but a persistent failure here is worth surfacing.
+        logger.debug("graph_repair: lock-row seed failed: %s", exc)
 
     doc, token = await claim_record(
         db,
