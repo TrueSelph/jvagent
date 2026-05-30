@@ -296,69 +296,233 @@ class GoogleDriveAction(GoogleAction):
         return {"added": added, "removed": removed, "modified": modified}
 
     async def get_tools(self) -> List[Any]:
+        """Full Google Drive tool surface (ADR-0012: actions are first-class tools)."""
+        import base64
+        import json
+
         from jvagent.tooling.tool import Tool
 
         action = self
 
-        async def _list(folder_id: str = "") -> str:
-            import json
-
-            results = await action.list_files(folder_id=folder_id or None, depth=3)
+        async def _list_files(
+            folder_id: str = "",
+            with_link: bool = False,
+            depth: int = 5,
+        ) -> str:
+            results = await action.list_files(
+                folder_id=folder_id or None,
+                with_link=with_link,
+                depth=depth,
+            )
             return json.dumps(results, indent=2)
 
-        async def _upload(
+        async def _upload_file(
             name: str,
             content: str = "",
             source_url: str = "",
+            mime_type: str = "",
             parent_folder_id: str = "",
         ) -> str:
-            import json
-
             result = await action.upload_file(
                 name=name,
                 content=content or None,
                 source_url=source_url or None,
+                mime_type=mime_type or None,
                 parent_folder_id=parent_folder_id or None,
             )
             return json.dumps(result, indent=2)
 
+        async def _get_file_metadata(
+            file_id: str,
+            fields: str = "id, name, mimeType",
+        ) -> str:
+            result = await action.get_file_metadata(
+                file_id=file_id,
+                fields=fields,
+            )
+            return json.dumps(result, indent=2)
+
+        async def _get_media(file_id: str) -> str:
+            data = await action.get_media(file_id=file_id)
+            return json.dumps(
+                {"file_id": file_id, "content_base64": base64.b64encode(data).decode()},
+                indent=2,
+            )
+
+        async def _share_file(
+            file_id: str,
+            share_type: str = "link",
+            link_scope: str = "anyone",
+            email: str = "",
+            role: str = "reader",
+        ) -> str:
+            result = await action.share_file(
+                file_id=file_id,
+                share_type=share_type,
+                link_scope=link_scope,
+                email=email or None,
+                role=role,
+            )
+            return json.dumps(result, indent=2)
+
+        async def _delete_file(file_id: str) -> str:
+            deleted = await action.delete_file(file_id=file_id)
+            return json.dumps({"deleted": deleted}, indent=2)
+
         return [
             Tool(
-                name="google_drive__list",
-                description="List files and folders in Google Drive.",
+                name="google_drive__list_files",
+                description="List files and folders in a Google Drive folder.",
                 parameters_schema={
                     "type": "object",
                     "properties": {
                         "folder_id": {
                             "type": "string",
-                            "description": "Parent folder ID (empty for root).",
+                            "description": "ID of the folder to list (root if omitted).",
+                        },
+                        "with_link": {
+                            "type": "boolean",
+                            "description": "Include sharing links (default: false).",
+                        },
+                        "depth": {
+                            "type": "integer",
+                            "description": "Recursion depth for subfolders (default: 5).",
                         },
                     },
+                    "required": [],
                 },
-                execute=_list,
+                execute=_list_files,
             ),
             Tool(
-                name="google_drive__upload",
+                name="google_drive__upload_file",
                 description="Upload a file to Google Drive.",
                 parameters_schema={
                     "type": "object",
                     "properties": {
-                        "name": {"type": "string", "description": "File name."},
+                        "name": {
+                            "type": "string",
+                            "description": "Name for the uploaded file.",
+                        },
                         "content": {
                             "type": "string",
-                            "description": "Base64-encoded file content.",
+                            "description": "Base64-encoded file content (use this or source_url).",
                         },
                         "source_url": {
                             "type": "string",
-                            "description": "URL to download the file from.",
+                            "description": "URL to download file content from (use this or content).",
+                        },
+                        "mime_type": {
+                            "type": "string",
+                            "description": "MIME type of the file.",
                         },
                         "parent_folder_id": {
                             "type": "string",
-                            "description": "Destination folder ID.",
+                            "description": "ID of the parent folder.",
                         },
                     },
                     "required": ["name"],
                 },
-                execute=_upload,
+                execute=_upload_file,
+            ),
+            Tool(
+                name="google_drive__get_file_metadata",
+                description="Get metadata for a Google Drive file.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "file_id": {
+                            "type": "string",
+                            "description": "The ID of the file.",
+                        },
+                        "fields": {
+                            "type": "string",
+                            "description": (
+                                "Comma-separated list of fields to return "
+                                "(default: 'id, name, mimeType')."
+                            ),
+                        },
+                    },
+                    "required": ["file_id"],
+                },
+                execute=_get_file_metadata,
+            ),
+            Tool(
+                name="google_drive__get_media",
+                description=(
+                    "Download a file's media content from Google Drive. "
+                    "Returns base64-encoded content. "
+                    "Google Workspace files (Docs, Sheets, etc.) are exported as PDF."
+                ),
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "file_id": {
+                            "type": "string",
+                            "description": "The ID of the file to download.",
+                        },
+                    },
+                    "required": ["file_id"],
+                },
+                execute=_get_media,
+            ),
+            Tool(
+                name="google_drive__share_file",
+                description=(
+                    "Share a Google Drive file by creating a shareable link or "
+                    "granting access to a specific user. "
+                    "Use share_type='link' for public/domain links or "
+                    "share_type='user' to invite a specific email address."
+                ),
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "file_id": {
+                            "type": "string",
+                            "description": "The ID of the file to share.",
+                        },
+                        "share_type": {
+                            "type": "string",
+                            "description": "Type of sharing: 'link' or 'user' (default: 'link').",
+                        },
+                        "link_scope": {
+                            "type": "string",
+                            "description": (
+                                "Link scope: 'anyone' or 'domain' (default: 'anyone'). "
+                                "Only used when share_type='link'."
+                            ),
+                        },
+                        "email": {
+                            "type": "string",
+                            "description": (
+                                "Email address for user-level sharing. "
+                                "Required when share_type='user'."
+                            ),
+                        },
+                        "role": {
+                            "type": "string",
+                            "description": (
+                                "Permission role: 'reader', 'writer', or 'owner' "
+                                "(default: 'reader')."
+                            ),
+                        },
+                    },
+                    "required": ["file_id"],
+                },
+                execute=_share_file,
+            ),
+            Tool(
+                name="google_drive__delete_file",
+                description="Permanently delete a file from Google Drive.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "file_id": {
+                            "type": "string",
+                            "description": "The ID of the file to delete.",
+                        },
+                    },
+                    "required": ["file_id"],
+                },
+                execute=_delete_file,
             ),
         ]

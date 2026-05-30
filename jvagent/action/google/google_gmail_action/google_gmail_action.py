@@ -88,28 +88,38 @@ class GoogleGmailAction(GoogleAction):
         )
 
     async def get_tools(self) -> List[Any]:
+        """Full Gmail tool surface (ADR-0012: actions are first-class tools)."""
+        import json
+
         from jvagent.tooling.tool import Tool
 
         action = self
 
         async def _send(to: str, subject: str, body: str = "") -> str:
-            import json
-
             data: Dict[str, Any] = {"to": to, "subject": subject}
             if body:
                 data["html_content"] = body
-            result = await action.send_email(data)
-            return json.dumps(result, indent=2)
+            return json.dumps(await action.send_email(data), indent=2)
 
-        async def _list(query: str, limit: int = 10) -> str:
-            import json
+        async def _list(query: str = "", max_results: int = 10) -> str:
+            return json.dumps(
+                await action.list_messages(query, max_results=max_results), indent=2
+            )
 
-            results = await action.list_messages(query, max_results=limit)
-            return json.dumps(results, indent=2)
+        async def _get(message_id: str, fmt: str = "full") -> str:
+            return json.dumps(
+                await action.get_message(message_id, fmt=fmt), indent=2
+            )
+
+        async def _mark_read(message_id: str) -> str:
+            return json.dumps(await action.mark_read(message_id), indent=2)
+
+        async def _profile() -> str:
+            return json.dumps(await action.get_profile(), indent=2)
 
         return [
             Tool(
-                name="gmail__send",
+                name="gmail__send_email",
                 description="Send an email via Gmail.",
                 parameters_schema={
                     "type": "object",
@@ -129,23 +139,67 @@ class GoogleGmailAction(GoogleAction):
                 execute=_send,
             ),
             Tool(
-                name="gmail__search",
-                description="Search Gmail messages matching a query.",
+                name="gmail__list_messages",
+                description="List Gmail messages matching a query.",
                 parameters_schema={
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "Gmail search query.",
+                            "description": "Gmail search query (default: '').",
                         },
-                        "limit": {
+                        "max_results": {
                             "type": "integer",
                             "description": "Max results (default 10).",
                             "default": 10,
                         },
                     },
-                    "required": ["query"],
+                    "required": [],
                 },
                 execute=_list,
+            ),
+            Tool(
+                name="gmail__get_message",
+                description="Get a specific Gmail message by ID.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "message_id": {
+                            "type": "string",
+                            "description": "ID of the message to retrieve.",
+                        },
+                        "fmt": {
+                            "type": "string",
+                            "description": "Message format (default 'full').",
+                        },
+                    },
+                    "required": ["message_id"],
+                },
+                execute=_get,
+            ),
+            Tool(
+                name="gmail__mark_read",
+                description="Mark a Gmail message as read.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "message_id": {
+                            "type": "string",
+                            "description": "ID of the message to mark as read.",
+                        },
+                    },
+                    "required": ["message_id"],
+                },
+                execute=_mark_read,
+            ),
+            Tool(
+                name="gmail__get_profile",
+                description="Get the authenticated user's Gmail profile.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+                execute=_profile,
             ),
         ]

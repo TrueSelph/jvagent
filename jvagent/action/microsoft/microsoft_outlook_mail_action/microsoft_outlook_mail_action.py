@@ -156,29 +156,59 @@ class MicrosoftOutlookMailAction(MicrosoftAction):
         }
 
     async def get_tools(self) -> List[Any]:
+        """Full Outlook tool surface (ADR-0012: actions are first-class tools)."""
+        import json
+
         from jvagent.tooling.tool import Tool
 
         action = self
 
         async def _send(to: str, subject: str, body: str = "") -> str:
-            import json
-
             data: Dict[str, Any] = {"to": to, "subject": subject}
             if body:
                 data["html_content"] = body
-            result = await action.send_email(data)
-            return json.dumps(result, indent=2)
+            return json.dumps(await action.send_email(data), indent=2)
 
-        async def _list(query: str, limit: int = 10) -> str:
-            import json
+        async def _list_messages(
+            query: str = "", max_results: int = 10, user_id: str = "me"
+        ) -> str:
+            return json.dumps(
+                await action.list_messages(
+                    query, max_results=max_results, user_id=user_id
+                ),
+                indent=2,
+            )
 
-            results = await action.list_messages(query, max_results=limit)
-            return json.dumps(results, indent=2)
+        async def _list_inbox_messages(
+            odata_filter: str = "isRead eq false",
+            max_results: int = 25,
+            user_id: str = "me",
+        ) -> str:
+            return json.dumps(
+                await action.list_inbox_messages(
+                    odata_filter=odata_filter,
+                    max_results=max_results,
+                    user_id=user_id,
+                ),
+                indent=2,
+            )
+
+        async def _get_message(message_id: str, user_id: str = "me") -> str:
+            return json.dumps(
+                await action.get_message(message_id, user_id=user_id), indent=2
+            )
+
+        async def _mark_read(message_id: str, user_id: str = "me") -> str:
+            result = await action.mark_read(message_id, user_id=user_id)
+            return json.dumps(result if result is not None else {}, indent=2)
+
+        async def _get_profile(user_id: str = "me") -> str:
+            return json.dumps(await action.get_profile(user_id=user_id), indent=2)
 
         return [
             Tool(
-                name="outlook__send",
-                description="Send an email via Outlook / Microsoft Graph.",
+                name="outlook__send_email",
+                description="Send an email via Outlook.",
                 parameters_schema={
                     "type": "object",
                     "properties": {
@@ -186,7 +216,10 @@ class MicrosoftOutlookMailAction(MicrosoftAction):
                             "type": "string",
                             "description": "Recipient email address.",
                         },
-                        "subject": {"type": "string", "description": "Email subject."},
+                        "subject": {
+                            "type": "string",
+                            "description": "Email subject line.",
+                        },
                         "body": {
                             "type": "string",
                             "description": "HTML body of the email.",
@@ -197,20 +230,106 @@ class MicrosoftOutlookMailAction(MicrosoftAction):
                 execute=_send,
             ),
             Tool(
-                name="outlook__search",
-                description="Search Outlook messages matching a query.",
+                name="outlook__list_messages",
+                description="List Outlook mail messages matching a query.",
                 parameters_schema={
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Search query."},
-                        "limit": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query (default: '').",
+                        },
+                        "max_results": {
                             "type": "integer",
-                            "description": "Max results (default 10).",
+                            "description": "Maximum number of messages to return (default: 10).",
                             "default": 10,
                         },
+                        "user_id": {
+                            "type": "string",
+                            "description": "User identifier (default: 'me').",
+                        },
                     },
-                    "required": ["query"],
+                    "required": [],
                 },
-                execute=_list,
+                execute=_list_messages,
+            ),
+            Tool(
+                name="outlook__list_inbox_messages",
+                description="List Outlook inbox messages with OData filtering.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "odata_filter": {
+                            "type": "string",
+                            "description": (
+                                "OData filter expression (default: 'isRead eq false')."
+                            ),
+                        },
+                        "max_results": {
+                            "type": "integer",
+                            "description": "Maximum number of messages to return (default: 25).",
+                            "default": 25,
+                        },
+                        "user_id": {
+                            "type": "string",
+                            "description": "User identifier (default: 'me').",
+                        },
+                    },
+                    "required": [],
+                },
+                execute=_list_inbox_messages,
+            ),
+            Tool(
+                name="outlook__get_message",
+                description="Get a specific Outlook mail message by ID.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "message_id": {
+                            "type": "string",
+                            "description": "The ID of the message to retrieve.",
+                        },
+                        "user_id": {
+                            "type": "string",
+                            "description": "User identifier (default: 'me').",
+                        },
+                    },
+                    "required": ["message_id"],
+                },
+                execute=_get_message,
+            ),
+            Tool(
+                name="outlook__mark_read",
+                description="Mark an Outlook mail message as read.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "message_id": {
+                            "type": "string",
+                            "description": "The ID of the message to mark as read.",
+                        },
+                        "user_id": {
+                            "type": "string",
+                            "description": "User identifier (default: 'me').",
+                        },
+                    },
+                    "required": ["message_id"],
+                },
+                execute=_mark_read,
+            ),
+            Tool(
+                name="outlook__get_profile",
+                description="Get the authenticated user's Outlook mail profile.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "user_id": {
+                            "type": "string",
+                            "description": "User identifier (default: 'me').",
+                        },
+                    },
+                    "required": [],
+                },
+                execute=_get_profile,
             ),
         ]

@@ -756,106 +756,556 @@ class GoogleSheetsAction(GoogleAction):
         )
 
     async def get_tools(self) -> List[Any]:
+        """Full Google Sheets tool surface (ADR-0012: actions are first-class tools)."""
+        import json
+
         from jvagent.tooling.tool import Tool
 
         action = self
 
-        async def _read(spreadsheet_url_or_id: str, worksheet_title: str = "") -> str:
-            import json
-
-            result = await action.read_spreadsheet(
-                spreadsheet_url_or_id,
-                worksheet_title=worksheet_title or None,
-            )
-            return json.dumps(result, indent=2)
-
-        async def _update(
-            spreadsheet_url_or_id: str,
-            values: Any,
-            worksheet_title: str = "",
+        async def _read_spreadsheet(
+            spreadsheet_url_or_id: Optional[str] = None,
             range_name: str = "",
+            worksheet_title: Optional[str] = None,
         ) -> str:
-            import json
-
-            result = await action.update_spreadsheet(
-                spreadsheet_url_or_id,
-                range_name=range_name or None,
-                values=values,
-                worksheet_title=worksheet_title or None,
+            result = await action.read_spreadsheet(
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+                range_name=range_name,
+                worksheet_title=worksheet_title,
             )
             return json.dumps(result, indent=2)
 
-        async def _create(title: str) -> str:
-            import json
+        async def _update_spreadsheet(
+            spreadsheet_url_or_id: Optional[str] = None,
+            range_name: str = "",
+            values: Optional[List[List[Any]]] = None,
+            value_input_option: str = "RAW",
+            worksheet_title: Optional[str] = None,
+        ) -> str:
+            result = await action.update_spreadsheet(
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+                range_name=range_name,
+                values=values,
+                value_input_option=value_input_option,
+                worksheet_title=worksheet_title,
+            )
+            return json.dumps(result, indent=2)
 
-            result = await action.create_spreadsheet(title)
+        async def _append_spreadsheet(
+            spreadsheet_url_or_id: Optional[str] = None,
+            range_name: Optional[str] = None,
+            values: Optional[List[List[Any]]] = None,
+            value_input_option: str = "RAW",
+            worksheet_title: Optional[str] = None,
+        ) -> str:
+            result = await action.append_spreadsheet(
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+                range_name=range_name,
+                values=values,
+                value_input_option=value_input_option,
+                worksheet_title=worksheet_title,
+            )
+            return json.dumps(result, indent=2)
+
+        async def _create_spreadsheet(title: str) -> str:
+            result = await action.create_spreadsheet(title=title)
+            return json.dumps(result, indent=2)
+
+        async def _delete_spreadsheet(
+            spreadsheet_url_or_id: Optional[str] = None,
+        ) -> str:
+            result = await action.delete_spreadsheet(
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+            )
+            return json.dumps({"deleted": result}, indent=2)
+
+        async def _create_worksheet(
+            title: str,
+            spreadsheet_url_or_id: Optional[str] = None,
+            rows: int = 1000,
+            cols: int = 26,
+        ) -> str:
+            result = await action.create_worksheet(
+                title=title,
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+                rows=rows,
+                cols=cols,
+            )
+            return json.dumps(result, indent=2)
+
+        async def _update_worksheet(
+            worksheet_title: str,
+            spreadsheet_url_or_id: Optional[str] = None,
+            new_title: Optional[str] = None,
+            rows: Optional[int] = None,
+            cols: Optional[int] = None,
+            hidden: Optional[bool] = None,
+            tab_color: Optional[str] = None,
+        ) -> str:
+            result = await action.update_worksheet(
+                worksheet_title=worksheet_title,
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+                new_title=new_title,
+                rows=rows,
+                cols=cols,
+                hidden=hidden,
+                tab_color=tab_color,
+            )
+            return json.dumps(result, indent=2)
+
+        async def _delete_worksheet(
+            worksheet_title: str,
+            spreadsheet_url_or_id: Optional[str] = None,
+        ) -> str:
+            result = await action.delete_worksheet(
+                worksheet_title=worksheet_title,
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+            )
+            return json.dumps(result, indent=2)
+
+        async def _merge_cells(
+            spreadsheet_url_or_id: Optional[str] = None,
+            range_name: str = "",
+            worksheet_title: Optional[str] = None,
+            merge_type: str = "MERGE_ALL",
+        ) -> str:
+            result = await action.merge_cells(
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+                range_name=range_name,
+                worksheet_title=worksheet_title,
+                merge_type=merge_type,
+            )
+            return json.dumps(result, indent=2)
+
+        async def _unmerge_cells(
+            spreadsheet_url_or_id: Optional[str] = None,
+            range_name: str = "",
+            worksheet_title: Optional[str] = None,
+        ) -> str:
+            result = await action.unmerge_cells(
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+                range_name=range_name,
+                worksheet_title=worksheet_title,
+            )
+            return json.dumps(result, indent=2)
+
+        async def _format_cells(
+            spreadsheet_url_or_id: Optional[str] = None,
+            range_name: str = "",
+            worksheet_title: Optional[str] = None,
+            user_entered_format: Optional[Dict[str, Any]] = None,
+            fields: Optional[str] = None,
+        ) -> str:
+            result = await action.format_cells(
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+                range_name=range_name,
+                worksheet_title=worksheet_title,
+                user_entered_format=user_entered_format,
+                fields=fields,
+            )
+            return json.dumps(result, indent=2)
+
+        async def _last_filled_row(
+            spreadsheet_url_or_id: Optional[str] = None,
+            column: str = "A",
+            worksheet_title: Optional[str] = None,
+        ) -> str:
+            result = await action.last_filled_row_1based(
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+                column=column,
+                worksheet_title=worksheet_title,
+            )
+            return json.dumps(result, indent=2)
+
+        async def _batch_clear(
+            spreadsheet_url_or_id: Optional[str] = None,
+            ranges: Optional[List[str]] = None,
+            worksheet_title: Optional[str] = None,
+        ) -> str:
+            result = await action.batch_clear(
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+                ranges=ranges,
+                worksheet_title=worksheet_title,
+            )
+            return json.dumps(result, indent=2)
+
+        async def _share_spreadsheet(
+            spreadsheet_url_or_id: Optional[str] = None,
+            share_type: str = "link",
+            link_scope: str = "anyone",
+            email: Optional[str] = None,
+            role: str = "reader",
+        ) -> str:
+            result = await action.share_spreadsheet(
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+                share_type=share_type,
+                link_scope=link_scope,
+                email=email,
+                role=role,
+            )
             return json.dumps(result, indent=2)
 
         return [
             Tool(
-                name="google_sheets__read",
-                description="Read values from a Google Sheet.",
+                name="google_sheets__read_spreadsheet",
+                description="Read data from a Google Sheets spreadsheet.",
                 parameters_schema={
                     "type": "object",
                     "properties": {
                         "spreadsheet_url_or_id": {
                             "type": "string",
-                            "description": "Spreadsheet URL or ID.",
-                        },
-                        "worksheet_title": {
-                            "type": "string",
-                            "description": "Optional worksheet tab name.",
-                        },
-                    },
-                    "required": ["spreadsheet_url_or_id"],
-                },
-                execute=_read,
-            ),
-            Tool(
-                name="google_sheets__update",
-                description="Update cells in a Google Sheet.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "spreadsheet_url_or_id": {
-                            "type": "string",
-                            "description": "Spreadsheet URL or ID.",
-                        },
-                        "values": {
-                            "type": "array",
-                            "items": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                            },
-                            "description": "2D array of cell values (rows of strings).",
-                        },
-                        "worksheet_title": {
-                            "type": "string",
-                            "description": "Optional worksheet tab name.",
+                            "description": "Spreadsheet URL or ID (default: agent's configured spreadsheet)",
                         },
                         "range_name": {
                             "type": "string",
-                            "description": "Optional A1 range.",
+                            "description": "A1-style range to read (default: entire worksheet)",
+                        },
+                        "worksheet_title": {
+                            "type": "string",
+                            "description": "Worksheet title (default: first worksheet)",
                         },
                     },
-                    "required": ["spreadsheet_url_or_id", "values"],
+                    "required": [],
                 },
-                execute=_update,
+                execute=_read_spreadsheet,
             ),
             Tool(
-                name="google_sheets__create",
-                description="Create a new Google Sheet spreadsheet.",
+                name="google_sheets__update_spreadsheet",
+                description="Update (overwrite) cells in a Google Sheets spreadsheet.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID (default: agent's configured spreadsheet)",
+                        },
+                        "range_name": {
+                            "type": "string",
+                            "description": "A1-style range to update",
+                        },
+                        "values": {
+                            "type": "array",
+                            "items": {"type": "array", "items": {}},
+                            "description": "2D array of values to write",
+                        },
+                        "value_input_option": {
+                            "type": "string",
+                            "description": "How to interpret input data: 'RAW' or 'USER_ENTERED' (default: 'RAW')",
+                        },
+                        "worksheet_title": {
+                            "type": "string",
+                            "description": "Worksheet title (default: first worksheet)",
+                        },
+                    },
+                    "required": [],
+                },
+                execute=_update_spreadsheet,
+            ),
+            Tool(
+                name="google_sheets__append_spreadsheet",
+                description="Append rows of data after the last filled row in a Google Sheets spreadsheet.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID (default: agent's configured spreadsheet)",
+                        },
+                        "range_name": {
+                            "type": "string",
+                            "description": "A1-style range to append to (default: append after last row)",
+                        },
+                        "values": {
+                            "type": "array",
+                            "items": {"type": "array", "items": {}},
+                            "description": "2D array of values to append",
+                        },
+                        "value_input_option": {
+                            "type": "string",
+                            "description": "How to interpret input data: 'RAW' or 'USER_ENTERED' (default: 'RAW')",
+                        },
+                        "worksheet_title": {
+                            "type": "string",
+                            "description": "Worksheet title (default: first worksheet)",
+                        },
+                    },
+                    "required": [],
+                },
+                execute=_append_spreadsheet,
+            ),
+            Tool(
+                name="google_sheets__create_spreadsheet",
+                description="Create a new Google Sheets spreadsheet.",
                 parameters_schema={
                     "type": "object",
                     "properties": {
                         "title": {
                             "type": "string",
-                            "description": "Spreadsheet title.",
+                            "description": "Title for the new spreadsheet",
                         },
                     },
                     "required": ["title"],
                 },
-                execute=_create,
+                execute=_create_spreadsheet,
+            ),
+            Tool(
+                name="google_sheets__delete_spreadsheet",
+                description="Permanently delete a Google Sheets spreadsheet.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID",
+                        },
+                    },
+                    "required": [],
+                },
+                execute=_delete_spreadsheet,
+            ),
+            Tool(
+                name="google_sheets__create_worksheet",
+                description="Create a new worksheet in a Google Sheets spreadsheet.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "Title for the new worksheet",
+                        },
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID (default: agent's configured spreadsheet)",
+                        },
+                        "rows": {
+                            "type": "integer",
+                            "description": "Number of rows for the new worksheet (default: 1000)",
+                        },
+                        "cols": {
+                            "type": "integer",
+                            "description": "Number of columns for the new worksheet (default: 26)",
+                        },
+                    },
+                    "required": ["title"],
+                },
+                execute=_create_worksheet,
+            ),
+            Tool(
+                name="google_sheets__update_worksheet",
+                description="Update properties of a worksheet in a Google Sheets spreadsheet.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "worksheet_title": {
+                            "type": "string",
+                            "description": "Title of the worksheet to update",
+                        },
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID (default: agent's configured spreadsheet)",
+                        },
+                        "new_title": {
+                            "type": "string",
+                            "description": "New title for the worksheet",
+                        },
+                        "rows": {
+                            "type": "integer",
+                            "description": "New number of rows",
+                        },
+                        "cols": {
+                            "type": "integer",
+                            "description": "New number of columns",
+                        },
+                        "hidden": {
+                            "type": "boolean",
+                            "description": "Whether the worksheet is hidden",
+                        },
+                        "tab_color": {
+                            "type": "string",
+                            "description": "Tab color as a hex string (e.g. '#FF0000')",
+                        },
+                    },
+                    "required": ["worksheet_title"],
+                },
+                execute=_update_worksheet,
+            ),
+            Tool(
+                name="google_sheets__delete_worksheet",
+                description="Delete a worksheet from a Google Sheets spreadsheet.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "worksheet_title": {
+                            "type": "string",
+                            "description": "Title of the worksheet to delete",
+                        },
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID (default: agent's configured spreadsheet)",
+                        },
+                    },
+                    "required": ["worksheet_title"],
+                },
+                execute=_delete_worksheet,
+            ),
+            Tool(
+                name="google_sheets__merge_cells",
+                description="Merge a range of cells in a Google Sheets spreadsheet.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID (default: agent's configured spreadsheet)",
+                        },
+                        "range_name": {
+                            "type": "string",
+                            "description": "A1-style range to merge",
+                        },
+                        "worksheet_title": {
+                            "type": "string",
+                            "description": "Worksheet title (default: first worksheet)",
+                        },
+                        "merge_type": {
+                            "type": "string",
+                            "description": "Merge type: 'MERGE_ALL' or 'MERGE_ROWS' or 'MERGE_COLUMNS' (default: 'MERGE_ALL')",
+                        },
+                    },
+                    "required": [],
+                },
+                execute=_merge_cells,
+            ),
+            Tool(
+                name="google_sheets__unmerge_cells",
+                description="Unmerge previously merged cells in a range of a Google Sheets spreadsheet.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID (default: agent's configured spreadsheet)",
+                        },
+                        "range_name": {
+                            "type": "string",
+                            "description": "A1-style range to unmerge",
+                        },
+                        "worksheet_title": {
+                            "type": "string",
+                            "description": "Worksheet title (default: first worksheet)",
+                        },
+                    },
+                    "required": [],
+                },
+                execute=_unmerge_cells,
+            ),
+            Tool(
+                name="google_sheets__format_cells",
+                description="Apply formatting to a range of cells in a Google Sheets spreadsheet.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID (default: agent's configured spreadsheet)",
+                        },
+                        "range_name": {
+                            "type": "string",
+                            "description": "A1-style range to format",
+                        },
+                        "worksheet_title": {
+                            "type": "string",
+                            "description": "Worksheet title (default: first worksheet)",
+                        },
+                        "user_entered_format": {
+                            "type": "object",
+                            "description": "Formatting specification (e.g. background color, text format)",
+                        },
+                        "fields": {
+                            "type": "string",
+                            "description": "Field mask specifying which format fields to apply (e.g. 'userEnteredFormat')",
+                        },
+                    },
+                    "required": [],
+                },
+                execute=_format_cells,
+            ),
+            Tool(
+                name="google_sheets__last_filled_row",
+                description="Get the 1-based row number of the last filled cell in a column of a Google Sheets spreadsheet.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID (default: agent's configured spreadsheet)",
+                        },
+                        "column": {
+                            "type": "string",
+                            "description": "Column letter to check (default: 'A')",
+                        },
+                        "worksheet_title": {
+                            "type": "string",
+                            "description": "Worksheet title (default: first worksheet)",
+                        },
+                    },
+                    "required": [],
+                },
+                execute=_last_filled_row,
+            ),
+            Tool(
+                name="google_sheets__batch_clear",
+                description="Clear one or more ranges of cells in a Google Sheets spreadsheet.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID (default: agent's configured spreadsheet)",
+                        },
+                        "ranges": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of A1-style ranges to clear",
+                        },
+                        "worksheet_title": {
+                            "type": "string",
+                            "description": "Worksheet title (default: first worksheet)",
+                        },
+                    },
+                    "required": [],
+                },
+                execute=_batch_clear,
+            ),
+            Tool(
+                name="google_sheets__share_spreadsheet",
+                description="Share a Google Sheets spreadsheet via link or with a specific email.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID (default: agent's configured spreadsheet)",
+                        },
+                        "share_type": {
+                            "type": "string",
+                            "description": "Share type: 'link' or 'email' (default: 'link')",
+                        },
+                        "link_scope": {
+                            "type": "string",
+                            "description": "Link scope: 'anyone' or 'domain' (default: 'anyone')",
+                        },
+                        "email": {
+                            "type": "string",
+                            "description": "Email address to share with (required when share_type is 'email')",
+                        },
+                        "role": {
+                            "type": "string",
+                            "description": "Role to assign: 'reader', 'writer', or 'owner' (default: 'reader')",
+                        },
+                    },
+                    "required": [],
+                },
+                execute=_share_spreadsheet,
             ),
         ]
 

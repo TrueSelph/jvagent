@@ -368,102 +368,397 @@ class MicrosoftExcelAction(MicrosoftAction):
         return True
 
     async def get_tools(self) -> List[Any]:
+        """Full Excel tool surface (ADR-0012: actions are first-class tools)."""
+        import json
+
         from jvagent.tooling.tool import Tool
 
         action = self
 
-        async def _read(spreadsheet_url_or_id: str, worksheet_title: str = "") -> str:
-            import json
-
-            result = await action.read_spreadsheet(
-                spreadsheet_url_or_id,
-                worksheet_title=worksheet_title or None,
-            )
-            return json.dumps(result, indent=2)
-
-        async def _update(
-            spreadsheet_url_or_id: str,
-            values: Any,
-            worksheet_title: str = "",
+        async def _read_spreadsheet(
+            spreadsheet_url_or_id: Optional[str] = None,
             range_name: str = "",
+            worksheet_title: Optional[str] = None,
         ) -> str:
-            import json
-
-            result = await action.update_spreadsheet(
-                spreadsheet_url_or_id,
-                range_name=range_name or None,
-                values=values,
-                worksheet_title=worksheet_title or None,
+            result = await action.read_spreadsheet(
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+                range_name=range_name,
+                worksheet_title=worksheet_title,
             )
             return json.dumps(result, indent=2)
 
-        async def _create(title: str) -> str:
-            import json
+        async def _update_spreadsheet(
+            spreadsheet_url_or_id: Optional[str] = None,
+            range_name: str = "",
+            values: Optional[List[List[Any]]] = None,
+            value_input_option: str = "RAW",
+            worksheet_title: Optional[str] = None,
+        ) -> str:
+            result = await action.update_spreadsheet(
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+                range_name=range_name,
+                values=values,
+                value_input_option=value_input_option,
+                worksheet_title=worksheet_title,
+            )
+            return json.dumps(result, indent=2)
 
-            result = await action.create_spreadsheet(title)
+        async def _append_spreadsheet(
+            spreadsheet_url_or_id: Optional[str] = None,
+            range_name: Optional[str] = None,
+            values: Optional[List[List[Any]]] = None,
+            value_input_option: str = "RAW",
+            worksheet_title: Optional[str] = None,
+        ) -> str:
+            result = await action.append_spreadsheet(
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+                range_name=range_name,
+                values=values,
+                value_input_option=value_input_option,
+                worksheet_title=worksheet_title,
+            )
+            return json.dumps(result, indent=2)
+
+        async def _create_spreadsheet(title: str) -> str:
+            result = await action.create_spreadsheet(title=title)
+            return json.dumps(result, indent=2)
+
+        async def _delete_spreadsheet(
+            spreadsheet_url_or_id: Optional[str] = None,
+        ) -> str:
+            result = await action.delete_spreadsheet(
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+            )
+            return json.dumps({"deleted": result}, indent=2)
+
+        async def _create_worksheet(
+            title: str,
+            spreadsheet_url_or_id: Optional[str] = None,
+            rows: int = 1000,
+            cols: int = 26,
+        ) -> str:
+            result = await action.create_worksheet(
+                title=title,
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+                rows=rows,
+                cols=cols,
+            )
+            return json.dumps(result, indent=2)
+
+        async def _update_worksheet(
+            worksheet_title: str,
+            spreadsheet_url_or_id: Optional[str] = None,
+            new_title: Optional[str] = None,
+            rows: Optional[int] = None,
+            cols: Optional[int] = None,
+            hidden: Optional[bool] = None,
+            tab_color: Optional[str] = None,
+        ) -> str:
+            result = await action.update_worksheet(
+                worksheet_title=worksheet_title,
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+                new_title=new_title,
+                rows=rows,
+                cols=cols,
+                hidden=hidden,
+                tab_color=tab_color,
+            )
+            return json.dumps(result, indent=2)
+
+        async def _delete_worksheet(
+            worksheet_title: str,
+            spreadsheet_url_or_id: Optional[str] = None,
+        ) -> str:
+            result = await action.delete_worksheet(
+                worksheet_title=worksheet_title,
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+            )
+            return json.dumps(result, indent=2)
+
+        async def _batch_clear(
+            spreadsheet_url_or_id: Optional[str] = None,
+            ranges: Optional[List[str]] = None,
+            worksheet_title: Optional[str] = None,
+        ) -> str:
+            result = await action.batch_clear(
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+                ranges=ranges,
+                worksheet_title=worksheet_title,
+            )
+            return json.dumps(result, indent=2)
+
+        async def _share_spreadsheet(
+            spreadsheet_url_or_id: Optional[str] = None,
+            share_type: str = "link",
+            link_scope: str = "anyone",
+            email: Optional[str] = None,
+            role: str = "reader",
+        ) -> str:
+            result = await action.share_spreadsheet(
+                spreadsheet_url_or_id=spreadsheet_url_or_id,
+                share_type=share_type,
+                link_scope=link_scope,
+                email=email,
+                role=role,
+            )
             return json.dumps(result, indent=2)
 
         return [
             Tool(
-                name="excel__read",
-                description="Read values from an Excel spreadsheet in OneDrive.",
+                name="excel__read_spreadsheet",
+                description="Read data from an Excel spreadsheet.",
                 parameters_schema={
                     "type": "object",
                     "properties": {
                         "spreadsheet_url_or_id": {
                             "type": "string",
-                            "description": "Spreadsheet URL or ID.",
-                        },
-                        "worksheet_title": {
-                            "type": "string",
-                            "description": "Optional worksheet tab name.",
-                        },
-                    },
-                    "required": ["spreadsheet_url_or_id"],
-                },
-                execute=_read,
-            ),
-            Tool(
-                name="excel__update",
-                description="Update cells in an Excel spreadsheet.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "spreadsheet_url_or_id": {
-                            "type": "string",
-                            "description": "Spreadsheet URL or ID.",
-                        },
-                        "values": {
-                            "type": "array",
-                            "items": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                            },
-                            "description": "2D array of cell values (rows of strings).",
-                        },
-                        "worksheet_title": {
-                            "type": "string",
-                            "description": "Optional worksheet tab name.",
+                            "description": "Spreadsheet URL or ID",
                         },
                         "range_name": {
                             "type": "string",
-                            "description": "Optional A1 range.",
+                            "description": "A1 notation range (e.g. 'A1:D10'). Default: empty (reads entire worksheet)",
+                        },
+                        "worksheet_title": {
+                            "type": "string",
+                            "description": "Worksheet title to read from",
                         },
                     },
-                    "required": ["spreadsheet_url_or_id", "values"],
+                    "required": [],
                 },
-                execute=_update,
+                execute=_read_spreadsheet,
             ),
             Tool(
-                name="excel__create",
-                description="Create a new Excel (.xlsx) workbook in OneDrive.",
+                name="excel__update_spreadsheet",
+                description="Update (overwrite) values in an Excel spreadsheet range.",
                 parameters_schema={
                     "type": "object",
                     "properties": {
-                        "title": {"type": "string", "description": "Workbook title."},
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID",
+                        },
+                        "range_name": {
+                            "type": "string",
+                            "description": "A1 notation range (e.g. 'A1:D10'). Default: empty",
+                        },
+                        "values": {
+                            "type": "array",
+                            "items": {"type": "array", "items": {}},
+                            "description": "2D array of values to write",
+                        },
+                        "value_input_option": {
+                            "type": "string",
+                            "description": "How to interpret input values: 'RAW' or 'USER_ENTERED'. Default: 'RAW'",
+                        },
+                        "worksheet_title": {
+                            "type": "string",
+                            "description": "Worksheet title to update",
+                        },
+                    },
+                    "required": [],
+                },
+                execute=_update_spreadsheet,
+            ),
+            Tool(
+                name="excel__append_spreadsheet",
+                description="Append rows of data after the last row of data in an Excel spreadsheet.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID",
+                        },
+                        "range_name": {
+                            "type": "string",
+                            "description": "A1 notation range to append to (determines the table). Default: None",
+                        },
+                        "values": {
+                            "type": "array",
+                            "items": {"type": "array", "items": {}},
+                            "description": "2D array of values to append",
+                        },
+                        "value_input_option": {
+                            "type": "string",
+                            "description": "How to interpret input values: 'RAW' or 'USER_ENTERED'. Default: 'RAW'",
+                        },
+                        "worksheet_title": {
+                            "type": "string",
+                            "description": "Worksheet title to append to",
+                        },
+                    },
+                    "required": [],
+                },
+                execute=_append_spreadsheet,
+            ),
+            Tool(
+                name="excel__create_spreadsheet",
+                description="Create a new Excel spreadsheet (workbook).",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "Title for the new spreadsheet",
+                        },
                     },
                     "required": ["title"],
                 },
-                execute=_create,
+                execute=_create_spreadsheet,
+            ),
+            Tool(
+                name="excel__delete_spreadsheet",
+                description="Delete an entire Excel spreadsheet (workbook).",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID to delete",
+                        },
+                    },
+                    "required": [],
+                },
+                execute=_delete_spreadsheet,
+            ),
+            Tool(
+                name="excel__create_worksheet",
+                description="Create a new worksheet in an Excel spreadsheet.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "Title for the new worksheet",
+                        },
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID to add the worksheet to",
+                        },
+                        "rows": {
+                            "type": "integer",
+                            "description": "Number of rows for the new worksheet. Default: 1000",
+                        },
+                        "cols": {
+                            "type": "integer",
+                            "description": "Number of columns for the new worksheet. Default: 26",
+                        },
+                    },
+                    "required": ["title"],
+                },
+                execute=_create_worksheet,
+            ),
+            Tool(
+                name="excel__update_worksheet",
+                description="Update properties of a worksheet (rename, resize, hide, color).",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "worksheet_title": {
+                            "type": "string",
+                            "description": "Current title of the worksheet to update",
+                        },
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID",
+                        },
+                        "new_title": {
+                            "type": "string",
+                            "description": "New title for the worksheet",
+                        },
+                        "rows": {
+                            "type": "integer",
+                            "description": "New number of rows",
+                        },
+                        "cols": {
+                            "type": "integer",
+                            "description": "New number of columns",
+                        },
+                        "hidden": {
+                            "type": "boolean",
+                            "description": "Whether the worksheet should be hidden",
+                        },
+                        "tab_color": {
+                            "type": "string",
+                            "description": "Tab color as a hex string (e.g. '#FF0000')",
+                        },
+                    },
+                    "required": ["worksheet_title"],
+                },
+                execute=_update_worksheet,
+            ),
+            Tool(
+                name="excel__delete_worksheet",
+                description="Delete a worksheet from an Excel spreadsheet.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "worksheet_title": {
+                            "type": "string",
+                            "description": "Title of the worksheet to delete",
+                        },
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID",
+                        },
+                    },
+                    "required": ["worksheet_title"],
+                },
+                execute=_delete_worksheet,
+            ),
+            Tool(
+                name="excel__batch_clear",
+                description="Clear one or more ranges of values in an Excel spreadsheet.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID",
+                        },
+                        "ranges": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of A1 notation ranges to clear",
+                        },
+                        "worksheet_title": {
+                            "type": "string",
+                            "description": "Worksheet title to clear ranges from",
+                        },
+                    },
+                    "required": [],
+                },
+                execute=_batch_clear,
+            ),
+            Tool(
+                name="excel__share_spreadsheet",
+                description="Share an Excel spreadsheet via link or with a specific email.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_url_or_id": {
+                            "type": "string",
+                            "description": "Spreadsheet URL or ID",
+                        },
+                        "share_type": {
+                            "type": "string",
+                            "description": "Type of sharing: 'link' or 'email'. Default: 'link'",
+                        },
+                        "link_scope": {
+                            "type": "string",
+                            "description": "Link scope when share_type is 'link': 'anyone' or 'domain'. Default: 'anyone'",
+                        },
+                        "email": {
+                            "type": "string",
+                            "description": "Email address when share_type is 'email'",
+                        },
+                        "role": {
+                            "type": "string",
+                            "description": "Role to assign: 'reader', 'writer', or 'owner'. Default: 'reader'",
+                        },
+                    },
+                    "required": [],
+                },
+                execute=_share_spreadsheet,
             ),
         ]

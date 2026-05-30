@@ -93,3 +93,128 @@ class MicrosoftOutlookCalendarAction(MicrosoftAction):
             path = f"/me/calendars/{cal}/events/{eid}"
         await self.graph_json("DELETE", path, ok=(204,))
         return True
+
+    async def get_tools(self) -> List[Any]:
+        """Full Outlook Calendar tool surface (ADR-0012: actions are first-class tools)."""
+        import json
+
+        from jvagent.tooling.tool import Tool
+
+        action = self
+
+        async def _list_events(
+            calendar_id: str = "primary",
+            time_min: Optional[str] = None,
+            max_results: int = 10,
+        ) -> str:
+            results = await action.list_events(
+                calendar_id=calendar_id,
+                time_min=time_min,
+                max_results=max_results,
+            )
+            return json.dumps(results, indent=2)
+
+        async def _create_event(
+            summary: str,
+            start_time: str,
+            end_time: str,
+            calendar_id: str = "primary",
+            description: Optional[str] = None,
+            location: Optional[str] = None,
+        ) -> str:
+            result = await action.create_event(
+                summary=summary,
+                start_time=start_time,
+                end_time=end_time,
+                calendar_id=calendar_id,
+                description=description,
+                location=location,
+            )
+            return json.dumps(result, indent=2)
+
+        async def _delete_event(calendar_id: str, event_id: str) -> str:
+            result = await action.delete_event(
+                calendar_id=calendar_id,
+                event_id=event_id,
+            )
+            return json.dumps({"deleted": result}, indent=2)
+
+        return [
+            Tool(
+                name="outlook_calendar__list_events",
+                description="List upcoming events from Outlook Calendar.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "calendar_id": {
+                            "type": "string",
+                            "description": "Calendar identifier (default: 'primary')",
+                        },
+                        "time_min": {
+                            "type": "string",
+                            "description": "Lower bound for event start time (ISO 8601)",
+                        },
+                        "max_results": {
+                            "type": "integer",
+                            "description": "Maximum number of events to return (default: 10)",
+                        },
+                    },
+                    "required": [],
+                },
+                execute=_list_events,
+            ),
+            Tool(
+                name="outlook_calendar__create_event",
+                description="Create an event in Outlook Calendar.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "summary": {
+                            "type": "string",
+                            "description": "Event title/subject",
+                        },
+                        "start_time": {
+                            "type": "string",
+                            "description": "Event start time (ISO 8601)",
+                        },
+                        "end_time": {
+                            "type": "string",
+                            "description": "Event end time (ISO 8601)",
+                        },
+                        "calendar_id": {
+                            "type": "string",
+                            "description": "Calendar identifier (default: 'primary')",
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Event description/body",
+                        },
+                        "location": {
+                            "type": "string",
+                            "description": "Event location",
+                        },
+                    },
+                    "required": ["summary", "start_time", "end_time"],
+                },
+                execute=_create_event,
+            ),
+            Tool(
+                name="outlook_calendar__delete_event",
+                description="Delete an event from Outlook Calendar.",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "calendar_id": {
+                            "type": "string",
+                            "description": "Calendar identifier (default: 'primary')",
+                        },
+                        "event_id": {
+                            "type": "string",
+                            "description": "The ID of the event to delete",
+                        },
+                    },
+                    "required": ["calendar_id", "event_id"],
+                },
+                execute=_delete_event,
+            ),
+        ]
