@@ -231,17 +231,15 @@ class ReplyAction(Action):
             self.get_channel_format(channel)
         )
 
-        # Queued directives: promote the message to a directive and respond over
-        # the whole set, so every queued directive is considered together and the
-        # message can never be overridden by them (e.g. a first-contact intro).
-        if directive_items:
+        # Any queued shaping (directives, parameters, or channel format) forces a
+        # respond. The message is promoted to the lead directive so the whole set
+        # — directives and/or parameters — is composed together and the message
+        # can never be overridden (e.g. a first-contact intro directive).
+        if directive_items or has_params or has_format:
             combined = ([{"content": text}] if text else []) + directive_items
             return bool(
                 await self.respond(interaction, visitor=visitor, directives=combined)
             )
-        # No directives, but parameters/channel-format still shape the reply.
-        if has_params or has_format:
-            return bool(await self.respond(interaction, visitor=visitor, text=text))
         if not text:
             return False
         return await self.publish(text, visitor)

@@ -132,6 +132,26 @@ async def test_reply_promotes_message_to_directive(monkeypatch):
     ]
 
 
+async def test_reply_promotes_message_with_params_only(monkeypatch):
+    """Queued parameters (no directives) also force a respond with the message
+    promoted to a directive — parameters and/or directives handled uniformly."""
+    ra = ReplyAction()
+    captured = {}
+
+    async def _respond(
+        self, interaction=None, visitor=None, *, text=None, directives=None, **k
+    ):
+        captured["text"] = text
+        captured["directives"] = directives
+        return "ok"
+
+    monkeypatch.setattr(ReplyAction, "respond", _respond)
+    v = _visitor_with(parameters=[{"condition": "asked price", "response": "$9"}])
+    assert await ra.reply("Sure.", v) is True
+    assert captured["text"] is None  # message promoted to a directive
+    assert [d.get("content") for d in captured["directives"]] == ["Sure."]
+
+
 async def test_reply_applies_parameters(monkeypatch):
     ra = ReplyAction()
     _patch_agent(monkeypatch)
