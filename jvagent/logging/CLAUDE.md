@@ -1,6 +1,6 @@
 # jvagent/logging/ — Agent Guide
 
-> Local guide for the logging subsystem. Cross-link: [`/.planning/observability.md`](../../.planning/observability.md), [`/docs/logging.md`](../../docs/logging.md), [`/docs/error-logging.md`](../../docs/error-logging.md), [`/docs/interaction-logging.md`](../../docs/interaction-logging.md).
+> Local guide for the logging subsystem. Cross-link: [`/.planning/observability.md`](../../.planning/reference/observability.md), [`/docs/logging.md`](../../docs/logging.md), [`/docs/error-logging.md`](../../docs/error-logging.md), [`/docs/interaction-logging.md`](../../docs/interaction-logging.md).
 
 ---
 

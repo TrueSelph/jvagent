@@ -1,6 +1,6 @@
 # jvagent/memory/ — Agent Guide
 
-> Local guide for the memory subsystem. Cross-link: [`/CLAUDE.md`](../../CLAUDE.md), [`/.planning/memory-and-pruning.md`](../../.planning/memory-and-pruning.md), [`/.planning/adr/0003-interaction-limit-pruning.md`](../../.planning/adr/0003-interaction-limit-pruning.md).
+> Local guide for the memory subsystem. Cross-link: [`/CLAUDE.md`](../../CLAUDE.md), [`/.planning/memory-and-pruning.md`](../../.planning/reference/memory-and-pruning.md), [`/.planning/adr/0003-interaction-limit-pruning.md`](../../.planning/adr/0003-interaction-limit-pruning.md).
 
 ---
 

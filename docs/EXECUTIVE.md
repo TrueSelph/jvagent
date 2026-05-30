@@ -1,6 +1,6 @@
 # SkillExecutive Architecture
 
-The **SkillExecutive** pattern is a brain-shaped, additive deployment pattern: a single model-driven orchestrator runs the whole turn over one unified tool surface. When a turn-spanning flow is in progress it surfaces that flow as a tool and lets the model decide whether to continue it, then runs a think-act-observe loop. It ships as a peer to the Rails pattern — the harness is unchanged. See [`adr/0012-skill-executive-architecture.md`](../.planning/adr/0012-skill-executive-architecture.md) for the decision record (it supersedes ADR-0010) and [`EXECUTIVE-ROADMAP.md`](../.planning/EXECUTIVE-ROADMAP.md) for the build.
+The **SkillExecutive** pattern is a brain-shaped, additive deployment pattern: a single model-driven orchestrator runs the whole turn over one unified tool surface. When a turn-spanning flow is in progress it surfaces that flow as a tool and lets the model decide whether to continue it, then runs a think-act-observe loop. It ships as a peer to the Rails pattern — the harness is unchanged. See [`adr/0012-skill-executive-architecture.md`](../.planning/adr/0012-skill-executive-architecture.md) for the decision record (it supersedes ADR-0010) and [`EXECUTIVE-ROADMAP.md`](../.planning/archive/EXECUTIVE-ROADMAP.md) for the build.
 
 ## Overview
 
@@ -136,7 +136,7 @@ Optional: pair a **light** completion model with the **heavy** reasoning model s
 
 ### Extended config surface (ADR-0015)
 
-All off/neutral by default — the reference agent is unchanged. Full table in [configuration-keys.md §6](../.planning/configuration-keys.md).
+All off/neutral by default — the reference agent is unchanged. Full table in [configuration-keys.md §6](../.planning/reference/configuration-keys.md).
 
 - **Reasoning** (reasoning-capable models only): `reasoning_enabled`, `reasoning_effort` (low/medium/high), `reasoning_budget_tokens`, `reasoning_extra`. Threaded into the loop's model call; the executive profile owns its own reasoning level.
 - **Thinking stream** (needs a live bus): `stream_internal_progress` emits each tick as a transient `thought`; `stream_reasoning_trace` surfaces `result.thinking_content`.

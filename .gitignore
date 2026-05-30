@@ -102,8 +102,5 @@ Dockerfile
 ollama_app/
 cockpit_smoke_last_run.json
 
-# Planning artifacts (kept on disk locally, not tracked in git)
-.planning/
-
 # Throwaway outputs (handoffs, scratch)
 outputs/

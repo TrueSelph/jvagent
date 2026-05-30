@@ -1140,7 +1140,7 @@ OpenAI actions read credentials from environment (`OPENAI_API_KEY`).
 
 **Core Action Documentation:**
 - [InteractAction API Guide](jvagent/action/interact/README.md) - Complete guide to InteractAction API including `respond()` method
-- [SkillExecutive](docs/EXECUTIVE.md) - Single orchestrator (`SkillExecutiveInteractAction`) running a think-act-observe loop over the unified tool surface; skills, IA-as-tools, flow continuation via TaskStore, MCP `tool_servers`, model gearing (light/heavy). Config surface in [.planning/configuration-keys.md](.planning/configuration-keys.md) §6; design in ADR-0012/0013/0014/0015/0016
+- [SkillExecutive](docs/EXECUTIVE.md) - Single orchestrator (`SkillExecutiveInteractAction`) running a think-act-observe loop over the unified tool surface; skills, IA-as-tools, flow continuation via TaskStore, MCP `tool_servers`, model gearing (light/heavy). Config surface in [.planning/configuration-keys.md](.planning/reference/configuration-keys.md) §6; design in ADR-0012/0013/0014/0015/0016
 - [InteractRouter](jvagent/action/router/README.md) - Standalone intent-based routing (Rails pattern)
 - [RetrievalInteractAction](jvagent/action/retrieval/README.md) - Vector store retrieval with simplified API
 - [IntroInteractAction](jvagent/action/intro/README.md) - First-time user welcome messages
@@ -2089,12 +2089,12 @@ Agent-targeted reference docs live under [`.planning/`](.planning/). Start here 
 - [SPEC](.planning/SPEC.md) — normative semantics, invariants, lifecycle contracts
 - [Architecture diagrams](.planning/architecture.md) — boot, interact, executive, pruning
 - [Glossary](.planning/GLOSSARY.md)
-- [Action authoring contract](.planning/action-authoring.md)
-- [Actions catalog](.planning/actions-catalog.md) — inventory of every action
-- [Memory & pruning](.planning/memory-and-pruning.md)
-- [Observability index](.planning/observability.md)
-- [Configuration keys](.planning/configuration-keys.md)
-- [jvspatial integration](.planning/jvspatial-integration.md) — boundary + inline concept summary
+- [Action authoring contract](.planning/reference/action-authoring.md)
+- [Actions catalog](.planning/reference/actions-catalog.md) — inventory of every action
+- [Memory & pruning](.planning/reference/memory-and-pruning.md)
+- [Observability index](.planning/reference/observability.md)
+- [Configuration keys](.planning/reference/configuration-keys.md)
+- [jvspatial integration](.planning/reference/jvspatial-integration.md) — boundary + inline concept summary
 - [Decision records (ADRs)](.planning/adr/)
 - Runbooks: [local dev](.planning/runbooks/local-dev.md), [add an action](.planning/runbooks/add-action.md)
 - Per-subsystem `CLAUDE.md` files in `jvagent/core/`, `jvagent/memory/`, `jvagent/action/`, `jvagent/action/interact/`, `jvagent/cli/`, `jvagent/logging/`, `tests/`

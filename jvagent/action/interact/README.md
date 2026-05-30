@@ -429,8 +429,8 @@ await self.respond(visitor, parameters=[self.parameters])  # ❌ Creates nested 
 
 - `jvagent.action.interact.utils.vision_prompt` - `build_prompt_for_vision()` for multimodal prompts from `visitor.data["image_urls"]`
 - [WhatsApp Action](../whatsapp/README.md) - Image flow, quoted image reply support
-- [InteractAction Base Class](../interact/base.py)
-- [InteractWalker](../interact/interact_walker.py)
+- [InteractAction Base Class](base.py)
+- [InteractWalker](interact_walker.py)
 - [IntroInteractAction README](../intro/README.md)
 - [RetrievalInteractAction README](../retrieval/README.md)
 
