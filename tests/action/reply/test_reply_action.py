@@ -223,7 +223,7 @@ async def test_collect_directive_text():
 async def test_get_tools_reply_and_respond(monkeypatch):
     ra = ReplyAction()
     _patch_agent(monkeypatch, alias="", role="")
-    tools = ra.get_tools()
+    tools = await ra.get_tools()
     assert sorted(t.name for t in tools) == ["reply", "respond"]
 
     v = _visitor_no_bus()

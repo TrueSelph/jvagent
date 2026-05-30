@@ -330,13 +330,16 @@ class SkillExecutiveInteractAction(InteractAction):
         responder = reply_voice or persona_voice
         if responder is not None:
             get_responder_tools = getattr(responder, "get_tools", None)
-            try:
-                responder_tools = (
-                    get_responder_tools() or [] if callable(get_responder_tools) else []
-                )
-            except Exception as exc:
-                logger.debug("skill_executive: responder get_tools failed: %s", exc)
-                responder_tools = []
+            responder_tools: List[Any] = []
+            if callable(get_responder_tools):
+                try:
+                    result = get_responder_tools()
+                    if inspect.isawaitable(result):
+                        result = await result  # ReplyAction.get_tools is async
+                    responder_tools = result or []
+                except Exception as exc:
+                    logger.debug("skill_executive: responder get_tools failed: %s", exc)
+                    responder_tools = []
             for tool in responder_tools:
                 name = getattr(tool, "name", None)
                 if not name:
