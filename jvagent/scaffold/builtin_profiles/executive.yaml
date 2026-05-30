@@ -1,11 +1,11 @@
 # Executive profile (ADR-0012).
 #
 # A single model-driven orchestrator. SkillExecutiveInteractAction at weight
-# -200 resumes an active flow if one owns the turn (deterministic continuation),
+# -200 locks onto an active flow when one owns the turn (lock_active_flow),
 # otherwise runs a think-act-observe loop over the agent's unified tool surface:
-# the persona's reply/respond tools, anchored interact-actions exposed as tools,
-# plain action tools, core tools, and native SOP skills. Routing is tool
-# selection; turn-lock is an emergent property of a flow that isn't done.
+# the reply/respond egress (ReplyAction), anchored interact-actions exposed as
+# tools, plain action tools, core tools, and native SOP skills. Routing is tool
+# selection; identity comes from the Agent (alias + role).
 #
 # The single pattern orchestrator at the -200 slot.
 # Use --profile executive to scaffold a new agent on this composition.
@@ -37,19 +37,16 @@ actions:
       max_tokens: 4096
       timeout: 60
 
-  - action: jvagent/persona
+  # ReplyAction — SkillExecutive-native egress voice (ADR-0014). Identity comes
+  # from the Agent (alias + role); set `role` in the agent context to shape the
+  # voice. PersonaAction remains the fallback responder for Rails agents.
+  - action: jvagent/reply
     context:
       enabled: true
-      description: Agent persona — furnishes the reply/respond tools and voices replies
-      persona_name: __JVAGENT_SCAFFOLD_AGENT_TITLE__
-      persona_description: __JVAGENT_SCAFFOLD_AGENT_DESCRIPTION__
-      persona_capabilities:
-        - Answer user questions helpfully and concisely
-        - Reason with tools and run structured flows
+      description: Egress voice — furnishes the reply/respond tools and voices replies
       model_action_type: OpenAILanguageModelAction
       model: gpt-4o-mini
-      model_temperature: 0.1
-      model_max_tokens: 8192
+      model_temperature: 0.3
 
   - action: jvagent/intro_interact_action
     context:

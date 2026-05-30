@@ -138,18 +138,50 @@ async def test_render_skills_section():
     assert "- research: Investigate a topic." in out
 
 
+async def test_render_identity_reads_agent(monkeypatch):
+    from types import SimpleNamespace
+
+    from jvagent.action.skill_executive.skill_executive_interact_action import (
+        SkillExecutiveInteractAction,
+    )
+
+    ex = SkillExecutiveInteractAction()
+
+    async def _agent(self):
+        return SimpleNamespace(alias="Ada", role="a helpful guide")
+
+    monkeypatch.setattr(SkillExecutiveInteractAction, "get_agent", _agent)
+    assert await ex._render_identity() == "You are Ada, a helpful guide.\n\n"
+
+
+async def test_render_identity_section():
+    from jvagent.action.skill_executive.prompts import render_identity_section
+
+    assert render_identity_section("", "") == ""
+    assert render_identity_section("Ada", "a helpful guide").startswith(
+        "You are Ada, a helpful guide."
+    )
+    assert render_identity_section("Ada", "").startswith("You are Ada.")
+    assert render_identity_section("", "a concise assistant").startswith(
+        "a concise assistant."
+    )
+
+
 async def test_system_prompt_lists_skills_and_priority_rule():
     from jvagent.action.skill_executive.prompts import (
         SKILL_EXECUTIVE_SYSTEM_PROMPT,
+        render_identity_section,
         render_skills_section,
     )
 
     sp = SKILL_EXECUTIVE_SYSTEM_PROMPT.format(
+        identity_section=render_identity_section("Executive Agent", "a helpful guide"),
         tools_section="- reply: ...",
         skills_section=render_skills_section(
             [SkillDoc(name="research", description="Investigate.", body="b")]
         ),
     )
+    assert "You are Executive Agent, a helpful guide." in sp  # identity injected
     assert "AVAILABLE SKILLS" in sp  # skills listed inline, not just behind find_skill
     assert "Skills first" in sp  # priority rule present
     assert "research" in sp  # the concrete skill is named

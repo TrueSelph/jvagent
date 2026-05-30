@@ -52,7 +52,7 @@ Everything the agent can do is reachable as a tool, so there is no separate rout
 
 | Tool family | Source | Notes |
 |---|---|---|
-| **Persona reply / respond** | `PersonaAction.get_tools()` | `reply` is a thin publish; `respond` is persona-framed. Model-discretionary — mostly conversational banter, since actions publish their own output. |
+| **Egress reply / respond** | the responder's `get_tools()` — `ReplyAction` (ADR-0014), or `PersonaAction` fallback | `reply` is the send path — slim thin-publish, or applies pending directives/parameters when present; `respond` voices text in the agent's identity. Resolved via `Action.get_responder()`. |
 | **IA-as-tools** | an `InteractAction`'s own `get_tools()` | Forwards to `execute(visitor)` with the `visitor` passed through from the SkillExecutive. The tool *description* is built from the IA's manifest (`purpose` + `activates_on`, via `routing_triggers()`) so the model routes on intent. |
 | **Plain action tools** | each enabled `Action.get_tools()` | Ordinary capability tools. |
 | **Core tools** | [`core_tools.py`](../jvagent/action/skill_executive/core_tools.py) | Built-in orchestrator services. |
@@ -74,13 +74,23 @@ visibility gate. First-entry and continuation are both model-judged.
 
 A **tool catalog** (mirroring the skills catalog) exposes `find_tool` / `load_tool` so the prompt carries a slim index rather than every tool schema — bounding prompt size as the surface grows. The skills meta-tools (`find_skill` / `use_skill`) work the same way for native SOP skills.
 
+## Identity and egress (ADR-0014)
+
+Identity and voicing are split along two axes:
+
+- **Identity lives on the Agent node** — `alias` (display name) + `role` (purpose). The SkillExecutive injects *"You are {alias}, {role}."* at the head of its system prompt (`render_identity_section`), so the model reasons and writes **as the agent** from the first token. The same fields are read by the egress voice — one source, no duplication.
+- **Egress is a `ReplyAction`** (`jvagent/reply`) — the agent's *mouth* and the SkillExecutive's send path. `reply` delivers the user's message: **slim** (a thin literal publish, no model call) by default, but when there's shaping to apply it composes via `respond` — pending **directives** (mandatory instructions), **parameters** (conditional rules), and channel **formatting**. Channel formats live in `CHANNEL_FORMATS` (overridable per channel via the `channel_formats` attribute); the default/web channel carries none, so ordinary turns stay slim for token efficiency, while voice/SMS/social channels get plain-text or channel-specific markup. `publish` is the egress primitive.
+- **Resolution is `Action.get_responder()`** — prefers `ReplyAction`, falls back to `PersonaAction`. The SkillExecutive resolves the responder for its `reply`/`respond` tools and for `_finalize_directives` (which hands rails directive text to `respond`). `PersonaAction` is unchanged and remains the egress for Rails agents.
+
+The reference agent and the `executive` scaffold profile use `jvagent/reply`; `PersonaAction` stays installable for Rails.
+
 ## Invariants (SPEC §3.3)
 
 1. **One model call per tick**, loop-enforced via a per-tick `ModelBudget`; the loop is bounded by an activation budget.
 2. **Flow continuation mode is configurable** via `lock_active_flow` ([ADR-0013](../.planning/adr/0013-togglable-deterministic-turn-lock.md)). Active-flow detection (`active_flow_owner`) is always a deterministic read of persisted `TaskStore` state (no model).
 3. **Turn-lock is deterministic when `lock_active_flow=True`** (default — the loop restricts its callable surface to the active flow's IA tool and dispatches it with no model round-trip) and **emergent/model-mediated when `False`** (the flow's tool is surfaced and the model decides whether to continue or detour). In both modes the control-task persists across turns and is cleared only by the flow's own session logic.
 4. **Routing is tool selection.** There is no separate router or capability registry; IAs, persona, core services, and skills are all tools.
-5. **Actions own their output.** Actions publish their own results; the `reply`/`respond` persona tools are model-discretionary. A turn that ends with no emission and no active flow gets a single fallback reply.
+5. **Actions own their output.** Actions publish their own results; the `reply`/`respond` egress tools (from the responder — `ReplyAction` or `PersonaAction` fallback, ADR-0014) are model-discretionary. A turn that ends with no emission and no active flow gets a single fallback reply.
 6. **Access control gates tool dispatch** (`tool:*`), including IA-as-tool execution (`tool:delegate:{name}` preserved).
 
 ## Configuration
@@ -97,7 +107,7 @@ actions:
       skills_source: both        # both|local|app|registry|builtin
   - action: jvagent/openai_lm
     context: { enabled: true }
-  - action: jvagent/persona
+  - action: jvagent/reply            # egress voice (ADR-0014); identity from the Agent
     context: { enabled: true }
   - action: jvagent/intro
     context: { enabled: true }
@@ -105,7 +115,7 @@ actions:
     context: { enabled: true }
 ```
 
-The scaffold default profile is still `executive`, but it now contains a single `jvagent/skill_executive` action (plus `openai_lm`, `persona`, `intro`, `handoff`). Scaffold with `jvagent app create --profile executive`; see the reference agent at `examples/jvagent_app/agents/jvagent/executive_agent/`, which uses `jvagent/skill_executive`.
+Agent-level identity (ADR-0014) lives in the agent context: `alias` (display name) and `role` (purpose). The scaffold default profile is still `executive`, containing a single `jvagent/skill_executive` action (plus `openai_lm`, `reply`, `intro`, `handoff`). Scaffold with `jvagent app create --profile executive`; see the reference agent at `examples/jvagent_app/agents/jvagent/executive_agent/`.
 
 ## Module structure
 

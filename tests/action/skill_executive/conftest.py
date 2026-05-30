@@ -49,7 +49,11 @@ def make_skill_executive(monkeypatch, publish_log):
         reg = dict(action_registry or {})
 
         async def _get_action(self, name):
-            return reg.get(name)
+            # Mirror real get_action: accept a class or a class-name string.
+            key = (
+                name if isinstance(name, str) else getattr(name, "__name__", str(name))
+            )
+            return reg.get(key)
 
         monkeypatch.setattr(SkillExecutiveInteractAction, "get_action", _get_action)
 

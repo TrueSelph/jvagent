@@ -9,6 +9,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from jvagent.action.skill_executive.access import delegate_resource_label
+from jvagent.action.skill_executive.skill_executive_interact_action import (
+    SkillExecutiveInteractAction,
+)
 from jvagent.action.skill_executive.tools import wrap_action_tool
 from jvagent.tooling.tool import Tool
 from jvagent.tooling.tool_result import ToolResult
@@ -225,3 +228,94 @@ async def test_persona_tools_respond_frames_via_respond(monkeypatch):
     v.add_directives.assert_awaited_once()
     assert captured.get("called") is True
     assert "responded" in out
+
+
+# --- get_responder() resolution + SE egress wiring (ADR-0014) ---
+
+
+async def test_get_responder_prefers_reply_action(monkeypatch):
+    from jvagent.action.persona.persona_action import PersonaAction
+    from jvagent.action.reply.reply_action import ReplyAction
+
+    reply = ReplyAction()
+    persona = PersonaAction()
+    reg = {"ReplyAction": reply, "PersonaAction": persona}
+
+    async def _ga(self, name):
+        key = name if isinstance(name, str) else getattr(name, "__name__", str(name))
+        return reg.get(key)
+
+    monkeypatch.setattr(SkillExecutiveInteractAction, "get_action", _ga)
+    ex = SkillExecutiveInteractAction()
+
+    assert (await ex.get_responder()) is reply  # ReplyAction preferred
+    reg.pop("ReplyAction")
+    assert (await ex.get_responder()) is persona  # falls back to PersonaAction
+
+
+async def test_skill_executive_voices_through_reply_action(
+    make_skill_executive, make_visitor, monkeypatch
+):
+    """The SE picks up ReplyAction from enabled actions and routes reply through
+    it (egress congruence, ADR-0014)."""
+    from jvagent.action.reply.reply_action import ReplyAction
+
+    reply = ReplyAction()
+
+    async def _pipe(
+        self, content, interaction, visitor, streaming=False, transient=False
+    ):
+        visitor.interaction.response = (visitor.interaction.response or "") + content
+        return True
+
+    monkeypatch.setattr(ReplyAction, "_pipe_response", _pipe)
+
+    ex = make_skill_executive(
+        actions=[reply],
+        decisions=[{"action": "reply", "args": {"text": "Hi from ReplyAction"}}],
+    )
+    v = make_visitor(utterance="hello")
+    await ex.execute(v)
+    assert v.interaction.response == "Hi from ReplyAction"
+
+
+async def test_skill_executive_reply_applies_channel_format(
+    make_skill_executive, make_visitor, monkeypatch
+):
+    """Full SE path: reply on a non-default channel (sms) composes via respond
+    and injects the channel format into the model call (ADR-0014)."""
+    from types import SimpleNamespace
+
+    from jvagent.action.reply.reply_action import ReplyAction
+
+    reply = ReplyAction()
+    model = MagicMock()
+    model.generate = AsyncMock(return_value="short plain reply")
+
+    async def _ma(self, required=False):
+        return model
+
+    async def _agent(self):
+        return SimpleNamespace(alias="Ex", role="a guide")
+
+    async def _pipe(
+        self, content, interaction, visitor, streaming=False, transient=False
+    ):
+        visitor.interaction.response = content
+        return True
+
+    monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
+    monkeypatch.setattr(ReplyAction, "get_agent", _agent)
+    monkeypatch.setattr(ReplyAction, "_pipe_response", _pipe)
+
+    ex = make_skill_executive(
+        actions=[reply],
+        decisions=[{"action": "reply", "args": {"text": "Here is a **bold** answer."}}],
+    )
+    v = make_visitor(utterance="hi", channel="sms")
+    await ex.execute(v)
+
+    sysprompt = model.generate.call_args.kwargs["system"]
+    assert "CHANNEL FORMATTING" in sysprompt  # channel reached the responder
+    assert "Plain text only" in sysprompt  # the sms directive was applied
+    assert v.interaction.response == "short plain reply"

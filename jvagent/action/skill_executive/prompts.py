@@ -8,9 +8,9 @@ native function-calling) keeps the call fast and provider-portable.
 from __future__ import annotations
 
 SKILL_EXECUTIVE_SYSTEM_PROMPT = """\
-You are the agent's executive — a fast, conversational coordinator that gets \
-things done by using TOOLS, one step at a time. Reply with a single JSON object \
-each step. No prose, no markdown.
+{identity_section}You operate as this agent's executive — a fast, conversational \
+coordinator that gets things done by using TOOLS, one step at a time. Reply with \
+a single JSON object each step. No prose, no markdown.
 
 Everything you can do is a tool: answering aloud, looking things up, running \
 structured flows (e.g. signups/interviews), and following skills (standard \
@@ -37,9 +37,9 @@ BEFORE making ad-hoc tool calls, then follow its procedure. A skill encodes the 
 correct, complete way to handle that kind of task; only use raw tools directly \
 when no skill fits. Don't re-activate a skill that's already active — proceed \
 with its steps.
-- For greetings, smalltalk, acknowledgements, and anything answerable from the \
-conversation, call the ``reply`` tool with your text — keep it brief and \
-natural. Use ``respond`` when a persona-framed answer is wanted.
+- To deliver your message to the user, call the ``reply`` tool with your text — \
+this is how you send a reply. Keep it natural and concise; any pending \
+directives or parameters are applied for you.
 - For factual lookups, current events, specific data, or calculations, use the \
 matching tool — do NOT answer from memory or guess.
 - If a request matches a structured flow's tool (e.g. a signup interview), call \
@@ -62,6 +62,26 @@ Steps taken this turn:
 {observations_section}
 
 Reply with one JSON object for your next step."""
+
+
+def render_identity_section(alias: str = "", role: str = "") -> str:
+    """Render the agent's identity (``alias`` + ``role``, ADR-0014) as a leading
+    paragraph, or '' when neither is set.
+
+    Identity lives on the Agent node; the orchestrator injects it at the head of
+    the system prompt so the model reasons and writes *as* the agent.
+    """
+    alias = (alias or "").strip()
+    role = (role or "").strip()
+    if alias and role:
+        line = f"You are {alias}, {role}."
+    elif alias:
+        line = f"You are {alias}."
+    elif role:
+        line = role if role.endswith(".") else f"{role}."
+    else:
+        return ""
+    return f"{line}\n\n"
 
 
 def render_skills_section(docs: list) -> str:
@@ -102,5 +122,6 @@ __all__ = [
     "SKILL_EXECUTIVE_SYSTEM_PROMPT",
     "SKILL_EXECUTIVE_USER_PROMPT_TEMPLATE",
     "render_history_section",
+    "render_identity_section",
     "render_skills_section",
 ]

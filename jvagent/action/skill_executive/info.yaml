@@ -8,7 +8,7 @@ package:
     title: SkillExecutiveInteractAction
     description: >-
       The single pattern orchestrator. Runs a think-act-observe loop over the
-      agent's unified tool surface (persona reply/respond, anchored IAs-as-tools,
+      agent's unified tool surface (reply/respond egress, anchored IAs-as-tools,
       action tools, core tools, skills); an in-progress flow continues when the
       model selects its tool. Routing is tool selection; turn-lock is an emergent
       flow property. Weight -200, no walker-revisit.
@@ -24,7 +24,7 @@ package:
     purpose: >-
       Single orchestrator. Reasons and acts over the agent's tool surface,
       continuing an in-progress flow when the model selects its tool and replying
-      through the persona tools.
+      through the reply/respond egress.
     latency_class: deliberate
     turn_lock: false
     routable_by_anchor: false

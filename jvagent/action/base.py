@@ -191,6 +191,31 @@ class Action(Node):
         """
         return []
 
+    async def get_responder(self) -> Optional["Action"]:
+        """Resolve the agent's egress voice (ADR-0014).
+
+        Prefers ``ReplyAction`` (the SkillExecutive-native voice) when one is
+        enabled on the agent, else falls back to ``PersonaAction`` (Rails). Both
+        expose ``reply``/``respond``/``get_tools`` so callers can voice output
+        congruently regardless of which is installed. Returns ``None`` when
+        neither is present.
+        """
+        try:
+            from jvagent.action.reply.reply_action import ReplyAction
+
+            reply = await self.get_action(ReplyAction)
+            if reply is not None:
+                return reply
+        except Exception as exc:
+            logger.debug("get_responder: ReplyAction resolution failed: %s", exc)
+        try:
+            from jvagent.action.persona.persona_action import PersonaAction
+
+            return await self.get_action(PersonaAction)
+        except Exception as exc:
+            logger.debug("get_responder: PersonaAction resolution failed: %s", exc)
+            return None
+
     def get_manifest(self) -> "Manifest":
         """Return the pattern-agnostic :class:`Manifest` for this action.
 

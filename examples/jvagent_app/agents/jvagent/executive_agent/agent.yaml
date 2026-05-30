@@ -16,11 +16,16 @@ author: V75 Inc.
 jvagent: ~0.0.1
 
 context:
+  # Identity (ADR-0014): alias + role form the agent's identity, injected into
+  # the SkillExecutive's core prompt so the model reasons and writes as the agent.
   alias: Executive Agent
+  role: >-
+    a helpful assistant that reasons with tools and skills and answers in a
+    clear, concise voice
   description: >-
-    SkillExecutive-pattern agent. One orchestrator (-200) resumes active flows,
-    otherwise reasons and acts over the agent's tool surface, replying through
-    the persona's reply/respond tools.
+    SkillExecutive-pattern agent. One orchestrator (-200) locks onto an active
+    flow when present, otherwise reasons and acts over the agent's tool surface,
+    replying through the reply/respond egress (ReplyAction).
   enabled: true
   interaction_limit: 20
 
@@ -63,20 +68,15 @@ actions:
       max_tokens: 4096
       timeout: 60
 
-  - action: jvagent/persona
+  # ReplyAction — the SkillExecutive-native egress voice (ADR-0014). Identity
+  # comes from the Agent (alias + role above); ReplyAction just voices output.
+  # PersonaAction stays available as the fallback responder for Rails agents.
+  - action: jvagent/reply
     context:
       enabled: true
-      persona_name: Executive Agent
-      persona_description: >-
-        A helpful assistant that reasons with tools and speaks in a clear,
-        concise voice.
-      persona_capabilities:
-        - Answer questions helpfully and concisely
-        - Reason with tools and run structured flows
       model_action_type: OpenAILanguageModelAction
       model: gpt-4o-mini
-      model_temperature: 0.1
-      model_max_tokens: 8192
+      model_temperature: 0.3
 
   - action: jvagent/signup_interview_interact_action
     context:

@@ -43,6 +43,7 @@ from jvagent.action.skill_executive.prompts import (
     SKILL_EXECUTIVE_SYSTEM_PROMPT,
     SKILL_EXECUTIVE_USER_PROMPT_TEMPLATE,
     render_history_section,
+    render_identity_section,
     render_skills_section,
 )
 from jvagent.action.skill_executive.skills import discover_skill_docs
@@ -147,7 +148,7 @@ class SkillExecutiveInteractAction(InteractAction):
         await self._run_loop(visitor)
 
         # A rails IA invoked as a tool emits via interaction.directives rather
-        # than publishing — render any it left through the persona.
+        # than publishing — render any it left through the responder voice.
         await self._finalize_directives(visitor)
 
         # Light egress fallback: nothing voiced this turn → one default reply.
@@ -156,11 +157,12 @@ class SkillExecutiveInteractAction(InteractAction):
             await self.publish(visitor=visitor, content=self.clarify_text)
 
     async def _finalize_directives(self, visitor: "InteractWalker") -> None:
-        """Voice any unrendered ``interaction.directives`` through the persona.
+        """Voice any unrendered ``interaction.directives`` through the responder.
 
         Rails IAs deliver via the directive pattern (``visitor.add_directive``)
         rather than publishing. When an IA-tool runs and leaves directives
-        without setting a response, this renders them through the persona.
+        without setting a response, this renders them through the responder voice
+        (ReplyAction or PersonaAction fallback; ADR-0014).
         """
         interaction = getattr(visitor, "interaction", None)
         if interaction is None:
@@ -173,11 +175,11 @@ class SkillExecutiveInteractAction(InteractAction):
             unexecuted = None
         if not unexecuted:
             return
-        persona = await self._resolve_action(self.persona_action)
-        if persona is None:
+        responder = await self.get_responder()
+        if responder is None:
             return
         try:
-            await persona.respond(interaction, visitor=visitor)
+            await responder.respond(interaction, visitor=visitor)
         except Exception as exc:
             logger.warning("skill_executive: directive finalize failed: %s", exc)
 
@@ -255,15 +257,23 @@ class SkillExecutiveInteractAction(InteractAction):
             tools[t.name] = t
             visible.add(t.name)
 
-        persona = None
         actions = await self._enabled_actions(agent)
         from jvagent.action.persona.persona_action import PersonaAction
+        from jvagent.action.reply.reply_action import ReplyAction
 
+        reply_voice = None
+        persona_voice = None
         for action in actions:
             if action is self or isinstance(action, SkillExecutiveInteractAction):
                 continue
+            # Egress voices furnish reply/respond via the responder below — never
+            # as plain capability tools. ReplyAction (ADR-0014) is preferred, with
+            # PersonaAction as the fallback voice.
+            if isinstance(action, ReplyAction):
+                reply_voice = action
+                continue
             if isinstance(action, PersonaAction):
-                persona = action
+                persona_voice = action
                 continue
             # A turn-spanning flow (duck-typed: execute + routing triggers)
             # furnishes its own tool via get_tools(); the orchestrator binds the
@@ -314,18 +324,20 @@ class SkillExecutiveInteractAction(InteractAction):
                     tools[name] = wrap_action_tool(tool)
                     visible.add(name)
 
-        # Persona reply/respond (always visible). These publish through the
-        # walker, so the visitor is injected into their dispatch.
-        if persona is not None:
-            get_persona_tools = getattr(persona, "get_tools", None)
+        # Egress reply/respond from the responder — ReplyAction (ADR-0014) or
+        # PersonaAction fallback. Always visible; visitor-bound at dispatch so
+        # they publish through the walker.
+        responder = reply_voice or persona_voice
+        if responder is not None:
+            get_responder_tools = getattr(responder, "get_tools", None)
             try:
-                persona_tools = (
-                    get_persona_tools() or [] if callable(get_persona_tools) else []
+                responder_tools = (
+                    get_responder_tools() or [] if callable(get_responder_tools) else []
                 )
             except Exception as exc:
-                logger.debug("skill_executive: persona get_tools failed: %s", exc)
-                persona_tools = []
-            for tool in persona_tools:
+                logger.debug("skill_executive: responder get_tools failed: %s", exc)
+                responder_tools = []
+            for tool in responder_tools:
                 name = getattr(tool, "name", None)
                 if not name:
                     continue
@@ -686,6 +698,18 @@ class SkillExecutiveInteractAction(InteractAction):
         except Exception:
             return None
 
+    async def _render_identity(self) -> str:
+        """Identity prefix for the system prompt, from the Agent (ADR-0014).
+
+        Reads ``alias`` + ``role`` off the Agent node so the model reasons and
+        writes as the agent. Empty string when neither is set.
+        """
+        agent = await self._safe_agent()
+        return render_identity_section(
+            getattr(agent, "alias", "") or "",
+            getattr(agent, "role", "") or "",
+        )
+
     async def _enabled_actions(self, agent: Any) -> List[Any]:
         if agent is None:
             return []
@@ -746,6 +770,7 @@ class SkillExecutiveInteractAction(InteractAction):
             )
             return None
         system_prompt = SKILL_EXECUTIVE_SYSTEM_PROMPT.format(
+            identity_section=await self._render_identity(),
             tools_section=render_tools_section(tools),
             skills_section=skills_section
             or "(no skills available — use tools directly)",

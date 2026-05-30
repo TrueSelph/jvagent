@@ -34,6 +34,8 @@ class Agent(Node):
         namespace: Namespace for the agent (e.g., 'jvagent', 'contrib')
         name: Unique machine name for the agent within the namespace (required, static)
         alias: Human-readable display name for the agent (optional)
+        role: The agent's role/purpose for the model; with ``alias`` it forms the
+            agent's identity (ADR-0014)
         enabled: Whether the agent is enabled (default: True)
         description: Optional description of the agent
     """
@@ -57,6 +59,14 @@ class Agent(Node):
         description="Unique machine name for the agent",
     )
     alias: str = attribute(description="Human-readable display name")
+    role: str = attribute(
+        default="",
+        description=(
+            "The agent's role/purpose, expressed for the model. Combined with "
+            "``alias`` it forms the agent's identity, injected into the "
+            "orchestrator prompt and read by the egress voice (ADR-0014)."
+        ),
+    )
     enabled: bool = attribute(default=True, description="Whether the agent is enabled")
     description: str = attribute(description="Optional description of the agent")
     interaction_limit: int = attribute(
