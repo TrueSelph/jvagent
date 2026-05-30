@@ -183,13 +183,18 @@ class SkillExecutiveInteractAction(InteractAction):
     )
     first_emit_timeout_ms: int = attribute(
         default=1500,
-        description="Delay (ms) before the first ack, and the interval between "
-        "successive ack_statements. 0 = emit immediately.",
+        description="Delay (ms) before the FIRST ack fires. 0 = emit immediately.",
+    )
+    ack_interval_ms: int = attribute(
+        default=8000,
+        description="Delay (ms) between successive ack_statements after the "
+        "first (kept generous so later lines don't appear too soon).",
     )
     ack_statements: List[str] = attribute(
         default_factory=lambda: ["Working on it…"],
-        description="Transient 'working on it' statement(s), emitted in order at "
-        "first_emit_timeout_ms intervals while the turn runs.",
+        description="Transient 'working on it' statement(s), emitted in order: "
+        "the first after first_emit_timeout_ms, each subsequent after "
+        "ack_interval_ms, while the turn runs.",
     )
     block_raw_tool_invocation: bool = attribute(
         default=False,
@@ -964,9 +969,10 @@ class SkillExecutiveInteractAction(InteractAction):
         """Schedule transient 'working on it' ack(s) while a slow turn runs.
 
         ``enable_transient_ack`` is the master switch. Emits each of
-        ``ack_statements`` in order, the first after ``first_emit_timeout_ms`` and
-        each subsequent at the same interval, until the list is exhausted or the
-        caller cancels (the turn produced output). Needs a live bus.
+        ``ack_statements`` in order: the first after ``first_emit_timeout_ms``,
+        each subsequent after ``ack_interval_ms`` (kept generous so later lines
+        don't appear too soon), until the list is exhausted or the caller cancels
+        (the turn produced output). Needs a live bus.
         """
         if not self.enable_transient_ack:
             return None
@@ -983,12 +989,13 @@ class SkillExecutiveInteractAction(InteractAction):
             return None
         interaction = getattr(visitor, "interaction", None)
         channel = getattr(visitor, "channel", "default") or "default"
-        interval = max(0.0, float(self.first_emit_timeout_ms or 0) / 1000.0)
+        first_delay = max(0.0, float(self.first_emit_timeout_ms or 0) / 1000.0)
+        interval = max(0.0, float(self.ack_interval_ms or 0) / 1000.0)
 
         async def _ack() -> None:
             try:
-                for stmt in statements:
-                    await asyncio.sleep(interval)
+                for i, stmt in enumerate(statements):
+                    await asyncio.sleep(first_delay if i == 0 else interval)
                     await bus.publish(
                         session_id=session_id,
                         content=stmt,

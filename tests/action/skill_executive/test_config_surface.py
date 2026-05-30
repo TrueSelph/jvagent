@@ -255,7 +255,8 @@ async def test_transient_ack_disabled_by_default():
 async def test_transient_ack_emits_configured_statements():
     ex = SkillExecutiveInteractAction()
     ex.enable_transient_ack = True
-    ex.first_emit_timeout_ms = 1  # 1ms interval
+    ex.first_emit_timeout_ms = 1  # 1ms before first
+    ex.ack_interval_ms = 1  # 1ms between subsequent
     ex.ack_statements = ["Working on it…", "Almost there…"]
     bus = MagicMock()
     bus.publish = AsyncMock()
@@ -269,6 +270,35 @@ async def test_transient_ack_emits_configured_statements():
     emitted = [c.kwargs["content"] for c in bus.publish.await_args_list]
     assert emitted == ["Working on it…", "Almost there…"]
     assert all(c.kwargs["transient"] for c in bus.publish.await_args_list)
+
+
+async def test_transient_ack_first_delay_vs_interval(monkeypatch):
+    """The first ack uses first_emit_timeout_ms; subsequent ones use the longer
+    ack_interval_ms (so later lines don't show up too soon)."""
+    import asyncio as _asyncio
+
+    ex = SkillExecutiveInteractAction()
+    ex.enable_transient_ack = True
+    ex.first_emit_timeout_ms = 1500
+    ex.ack_interval_ms = 8000
+    ex.ack_statements = ["a", "b", "c"]
+    sleeps = []
+    real_sleep = _asyncio.sleep
+
+    async def _sleep(d):
+        sleeps.append(d)
+        await real_sleep(0)
+
+    monkeypatch.setattr(_asyncio, "sleep", _sleep)
+    bus = MagicMock()
+    bus.publish = AsyncMock()
+    v = MagicMock()
+    v.response_bus = bus
+    v.session_id = "s"
+    v.channel = "web"
+    v.interaction = SimpleNamespace(id="i", user_id="u")
+    await ex._schedule_first_emit_ack(v)
+    assert sleeps == [1.5, 8.0, 8.0]  # first short, then the generous interval
 
 
 # --- Phase 4: tooling / UX -------------------------------------------------

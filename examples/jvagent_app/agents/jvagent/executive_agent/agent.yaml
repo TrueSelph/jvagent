@@ -69,7 +69,8 @@ actions:
       tool_call_timeout: 0                # per-tool-call timeout (s); 0 disables
       block_raw_tool_invocation: true    # force find_tool/skill for hidden tools
       enable_transient_ack: true         # emit ack(s) while a slow turn runs
-      first_emit_timeout_ms: 1500        # delay before first ack + interval between acks
+      first_emit_timeout_ms: 1500        # delay before the FIRST ack
+      ack_interval_ms: 8000              # delay between subsequent acks
       ack_statements:                    # transient 'working on it' line(s), emitted in order
         - "Working on it…"
         - "Still on it — almost there…"
