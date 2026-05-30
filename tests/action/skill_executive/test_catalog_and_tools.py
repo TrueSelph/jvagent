@@ -185,6 +185,10 @@ async def test_system_prompt_lists_skills_and_priority_rule():
     assert "AVAILABLE SKILLS" in sp  # skills listed inline, not just behind find_skill
     assert "Skills first" in sp  # priority rule present
     assert "research" in sp  # the concrete skill is named
+    # Hardening guardrails (anti prompt-injection / no self-disclosure).
+    assert "Boundaries" in sp
+    assert "Never identify your underlying model" in sp
+    assert "ignore previous instructions" in sp  # injection patterns called out
 
 
 async def test_use_skill_is_idempotent():
