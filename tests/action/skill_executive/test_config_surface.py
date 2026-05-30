@@ -241,13 +241,17 @@ async def test_mcp_filesystem_read_write_roundtrip(
             return "FakeFsMcp"
 
         async def get_tools(self):
-            async def _write(visitor=None, path="", content="", **k):
+            # A real MCP tool forwards **kwargs to the server, so the executive
+            # must NOT inject a visitor kwarg (it would be serialized and fail).
+            async def _write(path="", content="", **k):
                 seen["write_ctx"] = get_dispatch_context()
+                seen["write_kwargs"] = dict(k)
                 store[path] = content
                 return ToolResult(content=f"wrote {path}")
 
-            async def _read(visitor=None, path="", **k):
+            async def _read(path="", **k):
                 seen["read"] = True
+                store["read_kwargs"] = dict(k)
                 return ToolResult(content=store.get(path, "(missing)"))
 
             schema = {"type": "object", "properties": {}}
@@ -288,6 +292,9 @@ async def test_mcp_filesystem_read_write_roundtrip(
 
     assert store["notes.txt"] == "hello sandbox"  # write routed through
     assert seen.get("read") is True  # read routed through
+    # The visitor (which holds the non-serializable ResponseBus) must NOT be
+    # forwarded to the MCP tool — only the model's own args.
+    assert "visitor" not in seen.get("write_kwargs", {})
     # Per-user routing context was bound for the dispatch (real MCP uses it to
     # pick the caller's sandbox subprocess).
     ctx = seen.get("write_ctx")

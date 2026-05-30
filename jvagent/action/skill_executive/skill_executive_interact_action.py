@@ -442,9 +442,12 @@ class SkillExecutiveInteractAction(InteractAction):
                 name = getattr(tool, "name", None)
                 if not name:
                     continue
+                # No visitor injection: an MCP tool forwards its kwargs verbatim
+                # to the server, so a ``visitor`` kwarg would be serialized (and
+                # fail). Per-user routing comes from the dispatch context bound
+                # for the turn, not a kwarg.
                 tools[name] = wrap_action_tool(
                     tool,
-                    visitor=visitor,
                     agent=agent,
                     user_id=getattr(visitor, "user_id", None),
                     channel=getattr(visitor, "channel", "default") or "default",
