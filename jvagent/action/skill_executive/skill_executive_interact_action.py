@@ -711,7 +711,9 @@ class SkillExecutiveInteractAction(InteractAction):
                     continue
                 nd_streak = 0
                 action, tool_name, args = self._normalize(decision, tools, skill_names)
-                if self.stream_internal_progress:
+                # Progress bubbles only while the heavy (slow) gear is engaged —
+                # fast light ticks finish before a bubble would be useful.
+                if self.stream_internal_progress and gear == "heavy":
                     await self._emit_thought(
                         visitor,
                         self._progress_line(action, tool_name, args, decision),
@@ -1412,7 +1414,9 @@ class SkillExecutiveInteractAction(InteractAction):
         except Exception as exc:
             logger.warning("skill_executive: model call raised: %s", exc)
             return None
-        if self.stream_reasoning_trace:
+        # Surface the thinking trace only on the heavy gear (the light gear is a
+        # completion model with no reasoning to show).
+        if self.stream_reasoning_trace and gear == "heavy":
             trace = getattr(result, "thinking_content", None)
             if trace:
                 await self._emit_thought(visitor, str(trace))

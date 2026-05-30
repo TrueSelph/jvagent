@@ -362,6 +362,41 @@ async def test_gearing_escalates_across_loop(
     assert gears[:4] == ["light", "light", "heavy", "heavy"]
 
 
+async def test_progress_stream_suppressed_on_light_gear(
+    make_skill_executive, make_visitor, monkeypatch
+):
+    """stream_internal_progress emits a thought bubble only on heavy ticks — the
+    light gear is fast enough that a per-tick bubble is noise."""
+    thoughts = []
+
+    async def _emit(self, visitor, text):
+        thoughts.append(text)
+
+    monkeypatch.setattr(SkillExecutiveInteractAction, "_emit_thought", _emit)
+
+    calls = {"n": 0}
+    fake = _fake_capability_action("work", calls)
+    ex = make_skill_executive(actions=[fake], decisions=[])
+    ex.stream_internal_progress = True
+    ex.light_model = "lite"
+    ex.escalate_after_tool_calls = 2
+    ex.escalate_on_skill = False
+    seq = [
+        {"action": "tool", "tool": "work", "args": {"i": 1}},  # light tick
+        {"action": "tool", "tool": "work", "args": {"i": 2}},  # light tick
+        {"action": "tool", "tool": "work", "args": {"i": 3}},  # heavy tick
+        {"action": "final", "answer": "done"},  # heavy tick
+    ]
+
+    async def _rm(self, *a, gear="heavy", **k):
+        return seq.pop(0) if seq else {"action": "final", "answer": ""}
+
+    monkeypatch.setattr(SkillExecutiveInteractAction, "_run_model", _rm)
+    await ex.execute(make_visitor(utterance="multi-step"))
+    # Two light ticks suppressed; only the two heavy ticks emit a bubble.
+    assert len(thoughts) == 2
+
+
 async def test_transient_ack_only_on_heavy_engagement(
     make_skill_executive, make_visitor, monkeypatch
 ):

@@ -68,9 +68,11 @@ actions:
       # reasoning_effort: medium          # low | medium | high
       # reasoning_budget_tokens: 0        # explicit thinking budget (Anthropic)
 
-      # -- Thinking / progress stream (needs a live response bus).
-      stream_internal_progress: true     # emit each tick as a 'thought' bubble
-      stream_reasoning_trace: true       # surface the model's thinking trace
+      # -- Thinking / progress stream (needs a live response bus). Both surface
+      # only while the HEAVY gear is engaged — light ticks finish too fast to
+      # bubble, and the light completion model has no reasoning trace to show.
+      stream_internal_progress: true     # emit each heavy tick as a 'thought' bubble
+      stream_reasoning_trace: true       # surface the heavy model's thinking trace
 
       # -- Budgets (activation_budget caps ticks; these add wall-clock + length).
       max_duration_seconds: 0             # 0 disables the wall-clock cap
