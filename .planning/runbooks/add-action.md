@@ -264,7 +264,7 @@ curl -s -X POST -H "Authorization: Bearer $JV" \
 
 ## 10. Update the catalog
 
-Edit [`.planning/actions-catalog.md`](../reference/actions-catalog.md) — add a row under §1.4 (Messaging / broadcast).
+Edit [`.planning/reference/actions-catalog.md`](../reference/actions-catalog.md) — add a row under §1.4 (Messaging / broadcast).
 
 ---
 

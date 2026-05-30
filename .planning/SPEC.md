@@ -120,7 +120,7 @@ In both modes a flow's only orchestrator-facing modification is being exposed vi
 
 The tool surface is assembled in [`skill_executive/skill_executive_interact_action.py`](../jvagent/action/skill_executive/skill_executive_interact_action.py); egress tools come from `Action.get_responder()` → `ReplyAction.get_tools()` (preferred) or `PersonaAction.get_tools()` (fallback), each IA furnishes its own tool via `InteractAction.get_tools()` (the orchestrator binds the visitor + AC), and progressive disclosure (`find_tool`/`load_tool`, `find_skill`/`use_skill`) comes from [`skill_executive/catalog.py`](../jvagent/action/skill_executive/catalog.py) and [`skill_executive/skills.py`](../jvagent/action/skill_executive/skills.py).
 
-Rationale and consequences: [`adr/0012-skill-executive-architecture.md`](adr/0012-skill-executive-architecture.md) (supersedes [`adr/0010-executive-centers-architecture.md`](adr/0010-executive-centers-architecture.md)). Milestones: [`.planning/EXECUTIVE-ROADMAP.md`](archive/EXECUTIVE-ROADMAP.md).
+Rationale and consequences: [`adr/0012-skill-executive-architecture.md`](adr/0012-skill-executive-architecture.md) (supersedes [`adr/0010-executive-centers-architecture.md`](adr/0010-executive-centers-architecture.md)). Milestones: [`.planning/archive/EXECUTIVE-ROADMAP.md`](archive/EXECUTIVE-ROADMAP.md).
 
 ---
 

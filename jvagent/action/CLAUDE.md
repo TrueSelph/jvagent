@@ -1,6 +1,6 @@
 # jvagent/action/ — Agent Guide
 
-> Local guide for the action plugin layer. Cross-link: root [`/CLAUDE.md`](../../CLAUDE.md), [`/.planning/action-authoring.md`](../../.planning/reference/action-authoring.md), [`/.planning/actions-catalog.md`](../../.planning/reference/actions-catalog.md).
+> Local guide for the action plugin layer. Cross-link: root [`/CLAUDE.md`](../../CLAUDE.md), [`/.planning/reference/action-authoring.md`](../../.planning/reference/action-authoring.md), [`/.planning/reference/actions-catalog.md`](../../.planning/reference/actions-catalog.md).
 
 ---
 
@@ -11,7 +11,7 @@ The plugin-loadable extension surface of jvagent:
 - **`Action` base** ([`base.py:48`](base.py)) — Node subclass with lifecycle hooks, attribute config, endpoint registration, child-cascade delete, tool exposure to the Executive's Skills center.
 - **`InteractAction`** ([`interact/base.py:32`](interact/base.py)) — see `interact/CLAUDE.md`.
 - **Specialized bases**: `BaseModelAction`, `LanguageModelAction`, `BaseWebSearchAction`, `BaseSTTAction`, `BaseTTSAction`, `VectorStore`.
-- **Concrete plugins** organized by topic: language models, response/bus, SkillExecutive orchestrator, memory-related, channel adapters, productivity integrations, tasks. Catalog in [`/.planning/actions-catalog.md`](../../.planning/reference/actions-catalog.md).
+- **Concrete plugins** organized by topic: language models, response/bus, SkillExecutive orchestrator, memory-related, channel adapters, productivity integrations, tasks. Catalog in [`/.planning/reference/actions-catalog.md`](../../.planning/reference/actions-catalog.md).
 - **Loader/registry** in `loader/`.
 - **Plugin contracts** in `plugin_contracts.py`.
 
@@ -64,7 +64,7 @@ Every action package MUST contain:
 └── info.yaml                # package metadata
 ```
 
-Skeleton and full templates: [`/.planning/action-authoring.md`](../../.planning/reference/action-authoring.md).
+Skeleton and full templates: [`/.planning/reference/action-authoring.md`](../../.planning/reference/action-authoring.md).
 
 ---
 
@@ -97,7 +97,7 @@ pytest tests/action/ -v
 
 ## 7. Adding a new Action
 
-The detailed walkthrough lives at [`/.planning/action-authoring.md`](../../.planning/reference/action-authoring.md) and the runbook at [`/.planning/runbooks/add-action.md`](../../.planning/runbooks/add-action.md). Short version:
+The detailed walkthrough lives at [`/.planning/reference/action-authoring.md`](../../.planning/reference/action-authoring.md) and the runbook at [`/.planning/runbooks/add-action.md`](../../.planning/runbooks/add-action.md). Short version:
 
 1. Pick base class (Action / InteractAction / specialized).
 2. Choose namespace (`jvagent/` for core, otherwise `contrib/` or `custom/`).
