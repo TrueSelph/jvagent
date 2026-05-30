@@ -6,6 +6,7 @@ from typing import Any, ClassVar, Dict, List, Optional
 from jvagent.action.base import Action
 from jvagent.action.interact.endpoints import interact_endpoint
 from jvagent.memory.conversation import Conversation
+from jvagent.memory.task_payload import task_extension_data, task_record_id
 from jvagent.memory.task_store import TaskStore
 
 try:
@@ -222,11 +223,21 @@ class TaskDispatcher(Action):
             async def dispatch_task(task_context, conv_id):
                 nonlocal dispatched_count
                 async with semaphore:
-                    task_id = task_context.get("task_id")
-                    description = task_context.get("description")
-                    metadata = task_context.get("metadata", {})
-                    context = metadata.get("context", "Time to follow up.")
-                    task_channel = metadata.get("channel")
+                    task_id = task_record_id(task_context)
+                    if not task_id:
+                        logger.warning(
+                            "TaskDispatcher: task missing id in conversation %s",
+                            conv_id,
+                        )
+                        return
+                    description = (
+                        task_context.get("description")
+                        or task_context.get("title")
+                        or ""
+                    )
+                    ext = task_extension_data(task_context)
+                    context = ext.get("context", "Time to follow up.")
+                    task_channel = ext.get("channel")
                     system_utterance = f"[SYSTEM_PROMPT: TASK_TRIGGER] Task: {description}. Context: {context}"
 
                     try:

@@ -433,11 +433,11 @@ class InteractAction(Action, ABC):
         max_statement_length: Optional[int] = None,
         transient: bool = False,
     ) -> Optional[str]:
-        """Generate a response via PersonaAction with configurable history.
+        """Generate a response via the agent's egress responder (ADR-0014).
 
-        This method retrieves PersonaAction and uses it to generate a response based on
-        the current interaction's directives, parameters, and conversation history.
-        The response is automatically set on the interaction and persisted.
+        Resolves ``ReplyAction`` (preferred) or ``PersonaAction`` (fallback) via
+        :meth:`get_responder`, then voices directives/parameters through that
+        responder. The response is set on the interaction and persisted.
 
         When the visitor has a response bus and session, the generated response is
         piped to the response bus; InteractActions can rely on calling respond() and
@@ -517,41 +517,56 @@ class InteractAction(Action, ABC):
                 if interaction.add_parameters(parameters, action_name):
                     await interaction.save()
 
-            from jvagent.action.persona.persona_action import PersonaAction
-
-            persona = await self.get_action(PersonaAction)
-            if not persona:
+            responder = await self.get_responder()
+            if not responder:
                 logger.debug(
-                    "InteractAction.respond: PersonaAction not found; skipping response generation"
+                    "InteractAction.respond: no responder (ReplyAction/PersonaAction); "
+                    "skipping response generation"
                 )
                 return None
 
-            # PersonaAction.respond uses visitor.stream to determine streaming behavior
-            # Do NOT override - respect the walker's original stream setting
-            # (e.g., WhatsApp walkers have stream=False for non-streaming responses)
+            # Responder uses visitor.stream to determine streaming behavior — do
+            # NOT override; respect the walker's original stream setting.
 
-            # Call PersonaAction with all history configuration parameters
-            # PersonaAction.respond() sets interaction.response immediately after getting the response
-            # (including waiting for streaming to complete) to ensure subsequent ad-hoc calls can see it in history
-            response = await persona.respond(
-                interaction,
-                visitor=visitor,
-                use_history=use_history,
-                history_limit=history_limit,
-                with_utterance=with_utterance,
-                with_interpretation=with_interpretation,
-                with_event=with_event,
-                with_response=with_response,
-                max_statement_length=max_statement_length,
-                transient=transient,
-            )
+            respond_fn = getattr(responder, "respond", None)
+            if not callable(respond_fn):
+                logger.debug(
+                    "InteractAction.respond: responder %s has no respond()",
+                    type(responder).__name__,
+                )
+                return None
+
+            from jvagent.action.persona.persona_action import PersonaAction
+            from jvagent.action.reply.reply_action import ReplyAction
+
+            if isinstance(responder, PersonaAction):
+                response = await respond_fn(
+                    interaction,
+                    visitor=visitor,
+                    use_history=use_history,
+                    history_limit=history_limit,
+                    with_utterance=with_utterance,
+                    with_interpretation=with_interpretation,
+                    with_event=with_event,
+                    with_response=with_response,
+                    max_statement_length=max_statement_length,
+                    transient=transient,
+                )
+            elif isinstance(responder, ReplyAction):
+                response = await respond_fn(
+                    interaction,
+                    visitor=visitor,
+                    transient=transient,
+                )
+            else:
+                response = await respond_fn(interaction, visitor=visitor)
 
             return response
         except ValidationError:
             raise
         except Exception as e:
             logger.error(
-                f"InteractAction.respond: Error calling PersonaAction: {e}",
+                f"InteractAction.respond: Error calling responder: {e}",
                 exc_info=True,
             )
             return None

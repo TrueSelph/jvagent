@@ -1089,6 +1089,7 @@ class PersonaAction(Action):
             List of task dicts requiring user intervention
         """
         from jvagent.memory.conversation import Conversation
+        from jvagent.memory.task_payload import task_extension_data
 
         conversation = await Conversation.get(interaction.conversation_id)
         if not conversation:
@@ -1097,7 +1098,7 @@ class PersonaAction(Action):
         return [
             t
             for t in tasks
-            if t.get("metadata", {}).get("requires_user_intervention", True)
+            if task_extension_data(t).get("requires_user_intervention", True)
         ]
 
     async def _get_conversation_history(
@@ -1386,7 +1387,7 @@ class PersonaAction(Action):
             )
             raise
 
-    def get_tools(self) -> List[Any]:
+    async def get_tools(self) -> List[Any]:
         """Furnish ``reply`` / ``respond`` tools for the SkillExecutive (ADR-0012).
 
         - ``reply`` — thin publish of literal text (no model re-framing), for

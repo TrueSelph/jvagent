@@ -1,4 +1,4 @@
-"""Tests for ``jvagent.action.manifest`` (BRIDGE-ROADMAP §D / ADR-0007 v0).
+"""Tests for ``jvagent.action.manifest``.
 
 Covers:
 - Default values when payload is None or empty
@@ -23,7 +23,6 @@ from jvagent.action.manifest import (
     DEFAULT_LATENCY_CLASS,
     DEFAULT_PATTERN_ORCHESTRATOR,
     DEFAULT_ROUTABLE_BY_ANCHOR,
-    DEFAULT_TURN_LOCK,
     VALID_LATENCY_CLASSES,
     Manifest,
     ManifestValidationError,
@@ -40,8 +39,6 @@ def test_defaults_when_payload_is_none():
     assert m.activates_on == []
     assert m.terminates_when == []
     assert m.latency_class == DEFAULT_LATENCY_CLASS
-    assert m.turn_lock is DEFAULT_TURN_LOCK
-    assert m.interrupt_phrases == []
     assert m.expected_duration_seconds is None
     assert m.routable_by_anchor is DEFAULT_ROUTABLE_BY_ANCHOR
     assert m.pattern_orchestrator is DEFAULT_PATTERN_ORCHESTRATOR
@@ -74,8 +71,6 @@ def test_pattern_orchestrator_roundtrips():
 
 def test_executive_info_yaml_marks_pattern_orchestrator():
     """The SkillExecutive's info.yaml must mark itself as the pattern orchestrator."""
-    from pathlib import Path
-
     import yaml
 
     info_path = (
@@ -100,17 +95,22 @@ def test_full_payload_parses_cleanly():
         "activates_on": ["user agrees", "scheduled by op"],
         "terminates_when": ["all questions answered", "user says STOP"],
         "latency_class": "deliberate",
-        "turn_lock": True,
-        "interrupt_phrases": ["stop", "cancel"],
         "expected_duration_seconds": 180.0,
     }
     m = Manifest.from_payload(payload)
     assert m.purpose == "Conduct a feedback interview."
     assert m.activates_on == ["user agrees", "scheduled by op"]
     assert m.latency_class == "deliberate"
-    assert m.turn_lock is True
-    assert m.interrupt_phrases == ["stop", "cancel"]
     assert m.expected_duration_seconds == 180.0
+
+
+def test_unknown_manifest_fields_ignored():
+    """Legacy keys (e.g. removed turn_lock) are dropped silently."""
+    m = Manifest.from_payload(
+        {"purpose": "x", "turn_lock": True, "can_interrupt": False}
+    )
+    assert m.purpose == "x"
+    assert not hasattr(m, "turn_lock")
 
 
 # ---------------------------------------------------------------------------
@@ -182,11 +182,6 @@ def test_string_list_must_be_list_lenient():
     assert m.activates_on == []
 
 
-def test_turn_lock_must_be_bool_lenient():
-    m = Manifest.from_payload({"turn_lock": "yes"})
-    assert m.turn_lock is DEFAULT_TURN_LOCK
-
-
 def test_expected_duration_accepts_int_and_float():
     assert (
         Manifest.from_payload(
@@ -243,13 +238,11 @@ def test_merged_with_overrides_only_present_fields():
         {
             "purpose": "base",
             "latency_class": "deliberate",
-            "turn_lock": True,
         }
     )
     merged = base.merged_with({"latency_class": "quick"})
     assert merged.purpose == "base"  # preserved
     assert merged.latency_class == "quick"  # overridden
-    assert merged.turn_lock is True  # preserved
 
 
 def test_merged_with_invalid_override_fails_consistently_with_load():
@@ -269,8 +262,6 @@ def test_to_dict_round_trip():
         "activates_on": ["a", "b"],
         "terminates_when": ["c"],
         "latency_class": "long",
-        "turn_lock": True,
-        "interrupt_phrases": ["stop"],
         "expected_duration_seconds": 60.0,
     }
     m = Manifest.from_payload(payload)
@@ -317,9 +308,6 @@ def test_action_metadata_non_dict_manifest_yields_none():
         }
     }
     md = ActionMetadata(info_data, Path("/tmp/test"), namespace="jvagent")
-    # Loader is lenient — Action.get_manifest's payload parser is the
-    # validation point. Raw non-dict is dropped so callers don't get
-    # surprising types.
     assert md.manifest is None
 
 
@@ -331,10 +319,8 @@ def test_action_metadata_non_dict_manifest_yields_none():
 def test_action_get_manifest_with_payload():
     from jvagent.action.base import Action
 
-    # Build a minimal Action instance without graph wiring.
     action = MagicMock(spec=Action)
     action.metadata = {"manifest": {"latency_class": "deliberate"}}
-    # Call the real method via class dict access (bypasses spec restriction).
     result = Action.get_manifest(action)
     assert isinstance(result, Manifest)
     assert result.latency_class == "deliberate"

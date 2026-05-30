@@ -26,9 +26,10 @@ def _visitor():
     return v
 
 
-def _persona_tools(persona, visitor):
-    """Mirror the orchestrator's inlined persona binding (visitor-bound)."""
-    return {t.name: wrap_action_tool(t, visitor=visitor) for t in persona.get_tools()}
+async def _persona_tools(persona, visitor):
+    """Mirror the orchestrator's responder binding (visitor-bound)."""
+    tools = await persona.get_tools()
+    return {t.name: wrap_action_tool(t, visitor=visitor) for t in tools}
 
 
 # --- InteractAction.get_tools() (the tool definition lives on the IA) ---
@@ -200,7 +201,7 @@ async def test_persona_tools_reply_publishes_thin():
     persona._pipe_response = _pipe  # type: ignore[assignment]
 
     v = _visitor()
-    tools = _persona_tools(persona, v)
+    tools = await _persona_tools(persona, v)
     assert set(tools) == {"reply", "respond"}
 
     out = await tools["reply"].run({"text": "hi there"})
@@ -222,7 +223,7 @@ async def test_persona_tools_respond_frames_via_respond(monkeypatch):
 
     v = _visitor()
     v.add_directives = AsyncMock()
-    tools = _persona_tools(persona, v)
+    tools = await _persona_tools(persona, v)
 
     out = await tools["respond"].run({"text": "the order shipped"})
     v.add_directives.assert_awaited_once()

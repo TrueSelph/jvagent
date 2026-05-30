@@ -1,4 +1,4 @@
-"""Tests for the ADR-0009 IA-category scaffolder templates."""
+"""Tests for the IA-category scaffolder templates."""
 
 from __future__ import annotations
 
@@ -9,10 +9,10 @@ from jvagent.scaffold.interact_action import (
     CATEGORY_ALWAYS_EXECUTE,
     CATEGORY_ANCHOR_ROUTABLE,
     CATEGORY_CHAIN_INTERNAL,
+    CATEGORY_MULTI_TURN_FLOW,
     CATEGORY_PATTERN_ORCHESTRATOR,
     CATEGORY_SPECS,
     CATEGORY_SYNCHRONOUS,
-    CATEGORY_TURN_LOCKED,
     VALID_CATEGORIES,
     build_manifest_payload,
 )
@@ -26,7 +26,7 @@ class TestCategoryRegistry:
             CATEGORY_ALWAYS_EXECUTE,
             CATEGORY_SYNCHRONOUS,
             CATEGORY_PATTERN_ORCHESTRATOR,
-            CATEGORY_TURN_LOCKED,
+            CATEGORY_MULTI_TURN_FLOW,
         }
 
     def test_anchor_routable_marks_anchors_required(self):
@@ -42,7 +42,7 @@ class TestCategoryRegistry:
             CATEGORY_ALWAYS_EXECUTE,
             CATEGORY_SYNCHRONOUS,
             CATEGORY_PATTERN_ORCHESTRATOR,
-            CATEGORY_TURN_LOCKED,
+            CATEGORY_MULTI_TURN_FLOW,
         ):
             assert CATEGORY_SPECS[cat].requires_anchors is False
 
@@ -86,7 +86,6 @@ class TestChainInternalTemplate:
         m = Manifest.from_payload(payload)
         assert m.routable_by_anchor is False
         assert m.pattern_orchestrator is False
-        assert m.turn_lock is False
 
 
 class TestAlwaysExecuteTemplate:
@@ -97,8 +96,6 @@ class TestAlwaysExecuteTemplate:
         )
         m = Manifest.from_payload(payload)
         assert m.routable_by_anchor is False
-        # always_execute itself is a class attribute, not a manifest field.
-        # Author must set it on the InteractAction subclass.
 
 
 class TestSynchronousTemplate:
@@ -125,17 +122,17 @@ class TestPatternOrchestratorTemplate:
     def test_sets_orchestrator_flag(self):
         payload = build_manifest_payload(
             CATEGORY_PATTERN_ORCHESTRATOR,
-            purpose="bridge orchestrator",
+            purpose="skill executive orchestrator",
         )
         m = Manifest.from_payload(payload)
         assert m.pattern_orchestrator is True
         assert m.routable_by_anchor is False
 
 
-class TestTurnLockedTemplate:
-    def test_sets_turn_lock(self):
+class TestMultiTurnFlowTemplate:
+    def test_sets_deliberate_latency_and_activates_on(self):
         payload = build_manifest_payload(
-            CATEGORY_TURN_LOCKED,
+            CATEGORY_MULTI_TURN_FLOW,
             purpose="multi-turn interview",
             anchors=[
                 "user agrees to interview",
@@ -144,8 +141,7 @@ class TestTurnLockedTemplate:
             ],
         )
         m = Manifest.from_payload(payload)
-        assert m.turn_lock is True
-        # Anchors are still optional entry path on first turn.
+        assert m.latency_class == "deliberate"
         assert m.activates_on == [
             "user agrees to interview",
             "user wants to be interviewed",

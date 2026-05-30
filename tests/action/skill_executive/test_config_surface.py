@@ -560,3 +560,89 @@ async def test_mcp_filesystem_read_write_roundtrip(
     # pick the caller's sandbox subprocess).
     ctx = seen.get("write_ctx")
     assert ctx is not None and ctx.user_id == "alice"
+
+
+# --- Runtime knobs in execute() --------------------------------------------
+
+
+async def test_tool_call_timeout_surfaces_observation(
+    make_skill_executive, make_visitor, monkeypatch
+):
+    """Slow tools return a timeout observation and the loop continues."""
+    import asyncio
+
+    from jvagent.action.skill_executive.tools import SkillTool
+
+    async def slow_run(_args):
+        await asyncio.sleep(0.05)
+        return "done"
+
+    slow_tool = SkillTool(
+        name="slow_tool",
+        description="slow",
+        run=slow_run,
+    )
+
+    ex = make_skill_executive(
+        actions=[],
+        decisions=[
+            {"action": "tool", "tool": "slow_tool", "args": {}},
+            {"action": "final", "answer": "ok"},
+        ],
+    )
+    ex.tool_call_timeout = 0.01
+
+    async def _assemble(
+        self, visitor, activated, visible, flow_owner, utterance, skill_docs
+    ):
+        return {"slow_tool": slow_tool}
+
+    monkeypatch.setattr(SkillExecutiveInteractAction, "_assemble_tools", _assemble)
+
+    v = make_visitor(utterance="run slow tool")
+    await ex.execute(v)
+    # Turn completes via final after timeout observation (no exception raised).
+
+
+async def test_stream_internal_progress_emits_during_execute(
+    make_skill_executive, make_visitor, monkeypatch
+):
+    """stream_internal_progress emits a thought bubble per tool tick."""
+    from jvagent.action.skill_executive.tools import SkillTool
+
+    async def noop_run(_args):
+        return "ok"
+
+    tool = SkillTool(
+        name="demo_tool",
+        description="demo",
+        run=noop_run,
+        terminal=True,
+    )
+    emitted = []
+
+    async def _emit(self, visitor, text):
+        emitted.append(text)
+
+    monkeypatch.setattr(SkillExecutiveInteractAction, "_emit_thought", _emit)
+
+    async def _assemble(
+        self, visitor, activated, visible, flow_owner, utterance, skill_docs
+    ):
+        return {"demo_tool": tool}
+
+    monkeypatch.setattr(SkillExecutiveInteractAction, "_assemble_tools", _assemble)
+
+    ex = make_skill_executive(
+        actions=[],
+        decisions=[{"action": "tool", "tool": "demo_tool", "args": {}}],
+    )
+    ex.stream_internal_progress = True
+    v = make_visitor(utterance="go")
+    await ex.execute(v)
+    assert emitted  # at least one progress line for the tool tick
+
+
+async def test_max_concurrent_tools_default_is_unbounded():
+    ex = SkillExecutiveInteractAction()
+    assert ex.max_concurrent_tools == 0

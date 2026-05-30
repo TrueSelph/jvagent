@@ -30,8 +30,6 @@ package:
       - "escalation message dispatched"
       - "callback scheduled"
     latency_class: quick
-    turn_lock: false
-    can_interrupt: false
     expected_duration_seconds: 3.0
   dependencies:
     jvagent: ~0.0.1

@@ -191,7 +191,7 @@ class SkillExecutiveInteractAction(InteractAction):
         "first (kept generous so later lines don't appear too soon).",
     )
     ack_statements: List[str] = attribute(
-        default_factory=lambda: ["Working on it…"],
+        default_factory=lambda: ["One moment…", "Still working on it…"],
         description="Transient 'working on it' statement(s), emitted in order: "
         "the first after first_emit_timeout_ms, each subsequent after "
         "ack_interval_ms, while the turn runs.",

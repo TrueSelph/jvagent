@@ -1,4 +1,4 @@
-"""Tests for the anchorless-routable-IA bootstrap warning (ADR-0009 §6)."""
+"""Tests for the anchorless-routable-IA bootstrap warning."""
 
 from __future__ import annotations
 
@@ -17,7 +17,6 @@ def _build_ia_action(
     anchors=None,
     always_execute: bool = False,
     routable_by_anchor: bool = True,
-    turn_lock: bool = False,
     pattern_orchestrator: bool = False,
 ):
     from jvagent.action.interact.base import InteractAction
@@ -27,7 +26,6 @@ def _build_ia_action(
         {
             "purpose": purpose,
             "routable_by_anchor": routable_by_anchor,
-            "turn_lock": turn_lock,
             "pattern_orchestrator": pattern_orchestrator,
         }
     )
@@ -93,12 +91,9 @@ def test_no_warning_for_chain_internal(caplog):
     assert not any("no anchors declared" in m for m in msgs)
 
 
-def test_warning_fires_for_anchorless_turn_locked(caplog):
-    # Turn-locked IAs need anchor entry for the first turn; auto-DELEGATE
-    # via find_turn_lock_owner only handles mid-flight turns once the
-    # lock is acquired. Anchorless turn_lock IAs are therefore
-    # un-discoverable for first-entry routing and SHOULD fire the warning.
-    action = _build_ia_action(anchors=[], turn_lock=True)
+def test_warning_fires_for_anchorless_multi_turn_flow(caplog):
+    # Multi-turn flows still need entry anchors for first-turn discovery.
+    action = _build_ia_action(anchors=[])
     with caplog.at_level(logging.WARNING, logger="jvagent.action.loader.action_loader"):
         _warn_if_anchorless_routable_ia(action, _metadata("ns", "interview"), "agent")
     msgs = [r.getMessage() for r in caplog.records]
@@ -106,7 +101,6 @@ def test_warning_fires_for_anchorless_turn_locked(caplog):
 
 
 def test_no_warning_for_non_interact_action(caplog):
-    # A plain MagicMock — not an InteractAction — should be ignored.
     action = MagicMock()
     action.get_manifest = MagicMock(
         return_value=Manifest.from_payload({"routable_by_anchor": True})

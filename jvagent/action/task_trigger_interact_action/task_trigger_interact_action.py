@@ -7,6 +7,12 @@ from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.core.app import App, app_now_aware_utc
+from jvagent.memory.task_payload import (
+    task_extension_data,
+    task_record_id,
+    task_trigger_at,
+    task_trigger_condition,
+)
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -19,14 +25,17 @@ logger = logging.getLogger(__name__)
 class TaskTriggerInteractAction(InteractAction):
     """Proactive task trigger.
 
-    Runs at the start of the interaction (weight -180) to check if any
-    pending proactive tasks match the current user utterance or context (mood).
-    This action does NOT use an LLM and is designed for maximum speed.
+    Runs before SkillExecutive (weight -250) to inject directives for proactive
+    tasks whose time/keyword/mood conditions are met on this turn. Does not use
+    an LLM — designed for maximum speed.
     """
 
     weight: int = attribute(
-        default=-180,
-        description="Runs after InteractRouter (-200) to inject directives for the response.",
+        default=-250,
+        description=(
+            "Runs before SkillExecutive (-200) so proactive directives are "
+            "available to the orchestrator on the same turn."
+        ),
     )
     always_execute: bool = attribute(
         default=True,
@@ -76,10 +85,11 @@ class TaskTriggerInteractAction(InteractAction):
             if task.get("task_type") != "PROACTIVE":
                 continue
 
-            metadata = task.get("metadata", {})
-            trigger_time_str = metadata.get("trigger_time")
-            trigger_condition = metadata.get("trigger_condition", "none").lower()
+            ext = task_extension_data(task)
+            trigger_time_str = task_trigger_at(task)
+            trigger_condition = task_trigger_condition(task)
             should_trigger = False
+            task_id = task_record_id(task)
 
             # A) Time-based trigger (The HARD GATE)
             # AUDIT-actions XC-18: parse both ends into timezone-aware
@@ -97,7 +107,7 @@ class TaskTriggerInteractAction(InteractAction):
                         "TaskTrigger: malformed trigger_time %r on task %s; "
                         "skipping",
                         trigger_time_str,
-                        task.get("task_id"),
+                        task_id,
                     )
                     continue
                 if parsed.tzinfo is None:
@@ -140,13 +150,12 @@ class TaskTriggerInteractAction(InteractAction):
             if should_trigger:
                 directive = (
                     f"TASK FOLLOW-UP: {task.get('description', '')}\n"
-                    f"CONTEXT: {metadata.get('context', '')}"
+                    f"CONTEXT: {ext.get('context', '')}"
                 )
                 await visitor.add_directive(directive)
 
                 # Mark as completed
-                task_id = task.get("id")
-                handle = visitor.tasks.get(task_id)
+                handle = visitor.tasks.get(task_id) if task_id else None
                 if handle:
                     await handle.complete()
                     logger.info(f"TaskTrigger: Marked task {task_id} as completed.")

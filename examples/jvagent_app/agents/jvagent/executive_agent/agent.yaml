@@ -163,13 +163,10 @@ actions:
     context:
       enabled: true
       description: "Training signup interview — anchored, turn-locking flow"
-      anchors:
-        - "sign up for jvagent training"
-        - "register for jvagent training"
-        - "enroll in training"
-    config:
-      model_action_type: "OpenAILanguageModelAction"
-      model: "gpt-4o-mini"
+      # Routing triggers come from the action manifest (info.yaml activates_on),
+      # not from context.anchors — edit the manifest to change entry phrases.
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
       model_temperature: 0.1
       model_max_tokens: 8192
       use_history: true

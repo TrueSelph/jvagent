@@ -44,10 +44,66 @@ async def test_no_active_flow_returns_none():
 async def test_active_flow_owner_resolved_from_task():
     v = _visitor()
     await _seed_active(v.conversation, "SignupIA")
-    assert active_flow_owner(v) == "SignupIA"
+    assert active_flow_owner(v, flow_tool_names={"SignupIA"}) == "SignupIA"
+
+
+async def test_proactive_task_not_treated_as_flow():
+    v = _visitor()
+    h = await TaskStore(v.conversation).create(
+        title="outreach",
+        description="proactive",
+        task_type="PROACTIVE",
+        owner_action="SomeAction",
+    )
+    await h.start()
+    assert active_flow_owner(v) is None
+
+
+async def test_flow_owner_requires_routable_tool_name_when_filtered():
+    v = _visitor()
+    await _seed_active(v.conversation, "SignupIA")
+    assert active_flow_owner(v, flow_tool_names={"OtherIA"}) is None
+    assert active_flow_owner(v, flow_tool_names={"SignupIA"}) == "SignupIA"
 
 
 async def test_active_flow_note_names_the_tool():
     note = active_flow_note("SignupIA")
     assert "SignupIA" in note
     assert "unrelated" in note or "changed topic" in note  # off-topic guidance
+
+
+async def test_agentic_loop_task_not_treated_as_flow():
+    v = _visitor()
+    h = await TaskStore(v.conversation).create(
+        title="loop",
+        description="agentic",
+        task_type="AGENTIC_LOOP",
+        owner_action="SkillExecutiveInteractAction",
+    )
+    await h.start()
+    assert active_flow_owner(v) is None
+
+
+async def test_multiple_active_flows_prefers_most_recent():
+    v = _visitor()
+    older = await TaskStore(v.conversation).create(
+        title="old",
+        description="OldFlow",
+        task_type="INTERVIEW",
+        owner_action="OldFlowIA",
+    )
+    await older.start()
+    newer = await TaskStore(v.conversation).create(
+        title="new",
+        description="NewFlow",
+        task_type="INTERVIEW",
+        owner_action="NewFlowIA",
+    )
+    await newer.start()
+    # Force updated_at ordering when timestamps collide in fast tests.
+    newer._task.updated_at = "2099-01-01T00:00:00+00:00"
+    older._task.updated_at = "2000-01-01T00:00:00+00:00"
+    await TaskStore(v.conversation)._persist()
+    assert (
+        active_flow_owner(v, flow_tool_names={"OldFlowIA", "NewFlowIA"}) == "NewFlowIA"
+    )

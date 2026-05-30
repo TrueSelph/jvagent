@@ -23,6 +23,4 @@ package:
     terminates_when:
       - "intro directive published"
     latency_class: quick
-    turn_lock: false
-    can_interrupt: false
     expected_duration_seconds: 1.5

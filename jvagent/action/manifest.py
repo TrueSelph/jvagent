@@ -1,4 +1,4 @@
-"""Pattern-agnostic ``Manifest`` schema (ADR-0010).
+"""Pattern-agnostic ``Manifest`` schema.
 
 A manifest is an OPTIONAL block in an action's ``info.yaml`` that surfaces
 runtime routing hints to any pattern orchestrator or scheduler that wants to
@@ -10,13 +10,6 @@ consume them:
 - ``latency_class`` — one of ``instant | quick | deliberate | long``.
   Orchestrators use this to decide whether to publish an ack-on-shift before
   delegating to the action.
-- ``turn_lock`` — when True, other orchestrated units must DELEGATE or
-  interrupt rather than running in parallel during this action's lifetime
-  (think multi-turn forms).
-- ``interrupt_phrases`` — phrases that may break ``turn_lock``. Read by
-  the lock-owning rails IA's own intent classifier (e.g. an interview's
-  CANCELLATION state). NOT an orchestrator-level mechanic — the orchestrator
-  always auto-DELEGATEs to the lock owner regardless of unit or utterance.
 - ``expected_duration_seconds`` — operator hint; not enforced.
 
 The manifest is read at loader-level (``loader/info_yaml.py``) into
@@ -46,8 +39,6 @@ VALID_LATENCY_CLASSES = ("instant", "quick", "deliberate", "long")
 ACK_ELIGIBLE_LATENCY_CLASSES = frozenset({"deliberate", "long"})
 
 DEFAULT_LATENCY_CLASS = "quick"
-DEFAULT_TURN_LOCK = False
-DEFAULT_CAN_INTERRUPT = True
 DEFAULT_ROUTABLE_BY_ANCHOR = True
 DEFAULT_PATTERN_ORCHESTRATOR = False
 
@@ -77,14 +68,6 @@ class Manifest:
     activates_on: List[str] = field(default_factory=list)
     terminates_when: List[str] = field(default_factory=list)
     latency_class: str = DEFAULT_LATENCY_CLASS
-    turn_lock: bool = DEFAULT_TURN_LOCK
-    interrupt_phrases: List[str] = field(default_factory=list)
-    # When False, a scheduler holding this action's turn-lock MUST forward
-    # every utterance to the action (the action owns its own cancellation via
-    # its intent classifier) rather than stealing "interrupt" turns away from
-    # it. When True (default), higher-level interrupt handling may break the
-    # lock. See ADR-0010 §2.5 (Executive reflex interrupt bypass).
-    can_interrupt: bool = DEFAULT_CAN_INTERRUPT
     expected_duration_seconds: Optional[float] = None
     routable_by_anchor: bool = DEFAULT_ROUTABLE_BY_ANCHOR
     pattern_orchestrator: bool = DEFAULT_PATTERN_ORCHESTRATOR
@@ -126,15 +109,6 @@ class Manifest:
                 payload, "terminates_when", strict=strict
             ),
             latency_class=_validate_latency_class(payload, strict=strict),
-            turn_lock=_validate_bool(
-                payload, "turn_lock", DEFAULT_TURN_LOCK, strict=strict
-            ),
-            interrupt_phrases=_validate_string_list(
-                payload, "interrupt_phrases", strict=strict
-            ),
-            can_interrupt=_validate_bool(
-                payload, "can_interrupt", DEFAULT_CAN_INTERRUPT, strict=strict
-            ),
             expected_duration_seconds=_validate_optional_float(
                 payload, "expected_duration_seconds", strict=strict
             ),
@@ -168,9 +142,6 @@ class Manifest:
             "activates_on": list(self.activates_on),
             "terminates_when": list(self.terminates_when),
             "latency_class": self.latency_class,
-            "turn_lock": self.turn_lock,
-            "interrupt_phrases": list(self.interrupt_phrases),
-            "can_interrupt": self.can_interrupt,
             "expected_duration_seconds": self.expected_duration_seconds,
             "routable_by_anchor": self.routable_by_anchor,
             "pattern_orchestrator": self.pattern_orchestrator,
@@ -192,9 +163,6 @@ class Manifest:
             "activates_on": list(self.activates_on),
             "terminates_when": list(self.terminates_when),
             "latency_class": self.latency_class,
-            "turn_lock": self.turn_lock,
-            "interrupt_phrases": list(self.interrupt_phrases),
-            "can_interrupt": self.can_interrupt,
             "expected_duration_seconds": self.expected_duration_seconds,
             "routable_by_anchor": self.routable_by_anchor,
             "pattern_orchestrator": self.pattern_orchestrator,
@@ -324,7 +292,6 @@ __all__ = [
     "DEFAULT_LATENCY_CLASS",
     "DEFAULT_PATTERN_ORCHESTRATOR",
     "DEFAULT_ROUTABLE_BY_ANCHOR",
-    "DEFAULT_TURN_LOCK",
     "Manifest",
     "ManifestValidationError",
     "VALID_LATENCY_CLASSES",

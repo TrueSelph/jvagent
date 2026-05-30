@@ -74,5 +74,5 @@ config:
 # Agents
 # Agents are discovered from agents/{namespace}/{agent_name}/ and installed from this list.
 agents:
-  # Executive + Centers demo (ADR-0010). See agents/jvagent/executive_agent/README.md.
+  # SkillExecutive reference agent (ADR-0012). See agents/jvagent/executive_agent/README.md.
   - jvagent/executive_agent

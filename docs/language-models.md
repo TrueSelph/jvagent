@@ -1,6 +1,6 @@
 # Language model actions (HTTP retries)
 
-`BaseModelAction` (including all `LanguageModelAction` providers: OpenAI, Ollama, Anthropic, OpenRouter) supports automatic retries for **transient** HTTP failures so a single timeout or connection blip does not abort long-running flows (e.g. the `SkillsCenter` think-act-observe loop).
+`BaseModelAction` (including all `LanguageModelAction` providers: OpenAI, Ollama, Anthropic, OpenRouter) supports automatic retries for **transient** HTTP failures so a single timeout or connection blip does not abort long-running flows (e.g. the SkillExecutive think-act-observe loop).
 
 ## Defaults
 
@@ -70,18 +70,17 @@ Example (`agent.yaml`):
     model: o3-mini
     timeout: 180
     reasoning_effort: medium
-- action: jvagent/skills_center
+- action: jvagent/skill_executive
   context:
     model_action_type: OpenAILanguageModelAction
     model: gpt-5.1-2025-11-13
     reasoning_effort: low
 ```
 
-## Loop integration (SkillsCenter)
+## Loop integration (SkillExecutive)
 
-The `SkillsCenter` think-act-observe loop passes a provider-agnostic
-`ReasoningModelConfig` to the active `LanguageModelAction` and providers
-translate it to native API kwargs.
+The SkillExecutive think-act-observe loop passes model kwargs to the active
+`LanguageModelAction` via `_run_model`.
 
 Generic fields exposed on the loop config:
 

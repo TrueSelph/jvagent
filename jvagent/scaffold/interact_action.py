@@ -1,4 +1,4 @@
-"""Per-category ``info.yaml`` scaffolding for new InteractActions (ADR-0009).
+"""Per-category ``info.yaml`` scaffolding for new InteractActions.
 
 This module turns "which category am I?" into a concrete ``info.yaml``
 manifest payload. A future ``jvagent action create --type interact_action``
@@ -6,15 +6,16 @@ subcommand can drive an interactive prompt over this surface; for Wave 9
 we ship the category templates and the dict-shape helper so the
 authoring workflow is testable today.
 
-Six categories per ADR-0009:
+Six categories:
 
-1. **anchor_routable** (default) — invoked by Reflex peer-awareness DELEGATE.
+1. **anchor_routable** (default) — exposed as an IA-as-tool when intent matches.
    Requires 3-5 anchor phrases.
 2. **chain_internal** — invoked only via DELEGATE from a parent IA.
 3. **always_execute** — runs on every turn (intro, audit, telemetry).
 4. **synchronous** — engine tool returning a value to the model loop.
-5. **pattern_orchestrator** — weight-routed orchestrator (like the Executive).
-6. **turn_locked** — multi-turn flow with `manifest.turn_lock: true`.
+5. **pattern_orchestrator** — weight-routed orchestrator (SkillExecutive).
+6. **multi_turn_flow** — turn-spanning flow (interview, signup); records a
+   control-task on the conversation TaskStore while active.
 
 Each template produces a manifest dict that can be merged into a fresh
 ``info.yaml``. Categories that exclude themselves from routing set the
@@ -36,7 +37,7 @@ CATEGORY_CHAIN_INTERNAL = "chain_internal"
 CATEGORY_ALWAYS_EXECUTE = "always_execute"
 CATEGORY_SYNCHRONOUS = "synchronous"
 CATEGORY_PATTERN_ORCHESTRATOR = "pattern_orchestrator"
-CATEGORY_TURN_LOCKED = "turn_locked"
+CATEGORY_MULTI_TURN_FLOW = "multi_turn_flow"
 
 VALID_CATEGORIES = (
     CATEGORY_ANCHOR_ROUTABLE,
@@ -44,7 +45,7 @@ VALID_CATEGORIES = (
     CATEGORY_ALWAYS_EXECUTE,
     CATEGORY_SYNCHRONOUS,
     CATEGORY_PATTERN_ORCHESTRATOR,
-    CATEGORY_TURN_LOCKED,
+    CATEGORY_MULTI_TURN_FLOW,
 )
 
 
@@ -64,7 +65,7 @@ CATEGORY_SPECS: Dict[str, CategorySpec] = {
         key=CATEGORY_ANCHOR_ROUTABLE,
         label="Anchor-routable (default)",
         description=(
-            "Invoked by Reflex when user intent matches anchors. "
+            "Exposed as an IA-as-tool when user intent matches anchors. "
             "Requires 3-5 anchor phrases."
         ),
         requires_anchors=True,
@@ -95,19 +96,18 @@ CATEGORY_SPECS: Dict[str, CategorySpec] = {
         key=CATEGORY_PATTERN_ORCHESTRATOR,
         label="Pattern orchestrator",
         description=(
-            "Runs by walker weight (like the Executive). Only one orchestrator "
+            "Runs by walker weight (SkillExecutive). Only one orchestrator "
             "per agent. Requires explicit confirmation — this is rare."
         ),
         requires_anchors=False,
         requires_pattern_orchestrator_confirmation=True,
     ),
-    CATEGORY_TURN_LOCKED: CategorySpec(
-        key=CATEGORY_TURN_LOCKED,
-        label="Turn-locked (multi-turn flow)",
+    CATEGORY_MULTI_TURN_FLOW: CategorySpec(
+        key=CATEGORY_MULTI_TURN_FLOW,
+        label="Multi-turn flow",
         description=(
-            "Owns the turn end-to-end across multiple visits. Reached via "
-            "the orchestrator's auto-DELEGATE; can also be anchor-routable on "
-            "first entry."
+            "Turn-spanning flow (interview, signup). Records a control-task "
+            "while active; continued when the orchestrator selects its tool."
         ),
         requires_anchors=False,
         requires_pattern_orchestrator_confirmation=False,
@@ -144,15 +144,14 @@ def build_manifest_payload(
     - ``always_execute`` — the class-level ``always_execute=True`` flag
       handles dispatch; the manifest only contributes ``purpose`` and
       ``latency_class``. ``routable_by_anchor`` is set to ``false`` for
-      defensive clarity (Reflex skips always-execute IAs regardless).
+      defensive clarity.
     - ``synchronous`` — ``routable_by_anchor: false``. The description
       embeds the return-value contract since that is what the engine
       shows the model in the tool description.
     - ``pattern_orchestrator`` — ``pattern_orchestrator: true`` and
       ``routable_by_anchor: false``.
-    - ``turn_locked`` — ``turn_lock: true`` plus default
-      ``routable_by_anchor: true`` (first entry can still be
-      anchor-matched).
+    - ``multi_turn_flow`` — ``latency_class: deliberate`` plus optional
+      ``activates_on`` for first-entry routing.
     """
     if category not in VALID_CATEGORIES:
         raise ValueError(
@@ -179,9 +178,6 @@ def build_manifest_payload(
         payload["routable_by_anchor"] = False
 
     elif category == CATEGORY_ALWAYS_EXECUTE:
-        # always_execute lives on the class, not the manifest. Mark
-        # routable_by_anchor=false defensively so Reflex's filter is
-        # consistent.
         payload["routable_by_anchor"] = False
 
     elif category == CATEGORY_SYNCHRONOUS:
@@ -191,8 +187,6 @@ def build_manifest_payload(
                 "engine's tool surface can describe what the model gets back"
             )
         payload["routable_by_anchor"] = False
-        # Append the return contract to purpose so the engine tool
-        # description carries it.
         payload["purpose"] = (
             f"{purpose.rstrip()}\n\nReturns: {return_value_description.strip()}"
         )
@@ -201,8 +195,8 @@ def build_manifest_payload(
         payload["pattern_orchestrator"] = True
         payload["routable_by_anchor"] = False
 
-    elif category == CATEGORY_TURN_LOCKED:
-        payload["turn_lock"] = True
+    elif category == CATEGORY_MULTI_TURN_FLOW:
+        payload["latency_class"] = "deliberate"
         anchor_list = [a for a in (anchors or []) if isinstance(a, str) and a.strip()]
         if anchor_list:
             payload["activates_on"] = anchor_list
@@ -216,7 +210,7 @@ __all__ = [
     "CATEGORY_ALWAYS_EXECUTE",
     "CATEGORY_SYNCHRONOUS",
     "CATEGORY_PATTERN_ORCHESTRATOR",
-    "CATEGORY_TURN_LOCKED",
+    "CATEGORY_MULTI_TURN_FLOW",
     "CATEGORY_SPECS",
     "CategorySpec",
     "VALID_CATEGORIES",

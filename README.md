@@ -462,7 +462,7 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
 - **Simplified API**: Pass directives and parameters directly to `respond()` method
 - **Bulk Operations**: Use `add_directives()` and `add_parameters()` for efficient batch operations
 - **Automatic Persistence**: Interactions are automatically saved after adding directives/parameters
-- **Routing Support**: Can be routed via InteractRouter based on anchor statements, or use **`jvagent/executive`** ([Executive + Centers](docs/EXECUTIVE.md)) for unified LLM routing plus skills via the centers pattern
+- **Routing Support**: Can be routed via InteractRouter based on anchor statements, or use **`jvagent/skill_executive`** ([SkillExecutive](docs/EXECUTIVE.md)) for a single orchestrator with unified tool-surface routing and native SOP skills
 
 See the [InteractAction API Guide](jvagent/action/interact/README.md) for complete documentation.
 
@@ -1059,7 +1059,7 @@ InteractActions are actions that participate in the interact subsystem. They ser
 **Architecture:**
 - InteractActions are modular execution points in a chain
 - The InteractWalker traverses and executes the modular pipeline
-- Core actions like InteractRouter or **ExecutiveInteractAction** ([guide](docs/EXECUTIVE.md)) alter/curate the walker's path based on input
+- Core actions like InteractRouter or **SkillExecutiveInteractAction** ([guide](docs/EXECUTIVE.md)) alter/curate the walker's path based on input
 - InteractActions may have branches of other InteractActions
 - **Top-level InteractActions** (directly connected to the Actions branch node) **must explicitly route the walker to their children** conditionally - the walker does not automatically traverse child actions from top-level actions
 
@@ -1138,7 +1138,7 @@ OpenAI actions read credentials from environment (`OPENAI_API_KEY`).
 
 **Core Action Documentation:**
 - [InteractAction API Guide](jvagent/action/interact/README.md) - Complete guide to InteractAction API including `respond()` method
-- [Executive + Centers](docs/EXECUTIVE.md) - Central executive (`ExecutiveInteractAction`) recruiting Skills / IA / Persona centers; routing, skills, anchored interact-action targets, think-act-observe loop
+- [SkillExecutive](docs/EXECUTIVE.md) - Single orchestrator (`SkillExecutiveInteractAction`) running a think-act-observe loop over the unified tool surface; skills, IA-as-tools, flow continuation via TaskStore
 - [InteractRouter](jvagent/action/router/README.md) - Standalone intent-based routing
 - [RetrievalInteractAction](jvagent/action/retrieval/README.md) - Vector store retrieval with simplified API
 - [IntroInteractAction](jvagent/action/intro/README.md) - First-time user welcome messages
@@ -2115,7 +2115,7 @@ Agent-targeted reference docs live under [`.planning/`](.planning/). Start here 
 ### Action Modules
 
 - [InteractAction API](jvagent/action/interact/README.md)
-- [Executive package](docs/EXECUTIVE.md) — `ExecutiveInteractAction` + centers source layout
+- [SkillExecutive](docs/EXECUTIVE.md) — `jvagent/action/skill_executive/` source layout
 - [InteractRouter](jvagent/action/router/README.md)
 - [RetrievalInteractAction](jvagent/action/retrieval/README.md)
 - [IntroInteractAction](jvagent/action/intro/README.md)

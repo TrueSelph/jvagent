@@ -61,7 +61,7 @@ Source anchors:
 - Action base: [`jvagent/action/base.py:48`](jvagent/action/base.py)
 - InteractAction: [`jvagent/action/interact/base.py:32`](jvagent/action/interact/base.py)
 - InteractWalker: `jvagent/action/interact/interact_walker.py:50+`
-- SkillExecutive: [`jvagent/action/skill_executive/skill_executive_interact_action.py`](jvagent/action/skill_executive/skill_executive_interact_action.py) + supporting modules ([`continuation.py`](jvagent/action/skill_executive/continuation.py), [`tools.py`](jvagent/action/skill_executive/tools.py), [`ia_tool.py`](jvagent/action/skill_executive/ia_tool.py), [`persona_tools.py`](jvagent/action/skill_executive/persona_tools.py), [`core_tools.py`](jvagent/action/skill_executive/core_tools.py), [`catalog.py`](jvagent/action/skill_executive/catalog.py), [`skills.py`](jvagent/action/skill_executive/skills.py))
+- SkillExecutive: [`jvagent/action/skill_executive/skill_executive_interact_action.py`](jvagent/action/skill_executive/skill_executive_interact_action.py) + supporting modules ([`continuation.py`](jvagent/action/skill_executive/continuation.py), [`tools.py`](jvagent/action/skill_executive/tools.py), [`core_tools.py`](jvagent/action/skill_executive/core_tools.py), [`catalog.py`](jvagent/action/skill_executive/catalog.py), [`skills.py`](jvagent/action/skill_executive/skills.py))
 - Conversation + pruning: `jvagent/memory/conversation.py:250-367`
 
 ---

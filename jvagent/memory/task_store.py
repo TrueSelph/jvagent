@@ -367,6 +367,10 @@ class TaskHandle:
     def owner_action(self) -> Optional[str]:
         return self._task.owner_action
 
+    @property
+    def updated_at(self) -> str:
+        return self._task.updated_at
+
     # --- Task lifecycle ---
 
     async def start(self) -> None:

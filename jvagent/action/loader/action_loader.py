@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 def _warn_if_anchorless_routable_ia(
     action: Action, metadata: ActionMetadata, agent_name: str
 ) -> None:
-    """Emit a bootstrap WARNING for anchorless routable-candidate IAs (ADR-0009 §6).
+    """Emit a bootstrap WARNING for anchorless routable-candidate IAs.
 
     An "anchorless routable-candidate" IA is an :class:`InteractAction` that:
 
@@ -34,15 +34,9 @@ def _warn_if_anchorless_routable_ia(
     - is anchor-routable (``manifest.routable_by_anchor`` default ``True``)
     - declares zero anchors via :attr:`anchors` or :meth:`get_anchors`
 
-    Such an IA is invisible to Reflex's peer-awareness DELEGATE path —
-    the engine can still reach it via the ``delegate_to_ia`` recovery
-    hatch, but discoverability is materially worse than declaring
-    anchors. The warning surfaces the misconfiguration to operators at
-    install time so they can fix the authoring rather than hit the
-    degraded routing path silently.
-
-    Turn-locked IAs are NOT exempt: they need anchor entry on first turn
-    even though ``find_turn_lock_owner`` handles subsequent turns.
+    Such an IA is invisible to first-entry routing — the SkillExecutive only
+    surfaces its tool when the utterance is anchor-relevant or the flow is
+    already active. The warning surfaces the misconfiguration at install time.
     """
     try:
         from jvagent.action.interact.base import InteractAction
@@ -69,9 +63,10 @@ def _warn_if_anchorless_routable_ia(
         return
     logger.warning(
         "agent.yaml: IA '%s/%s' on agent '%s' has no anchors declared and "
-        "routable_by_anchor is not false; it will be invisible to Reflex "
-        "peer-awareness. Add anchors to make it anchor-routable, or set "
-        "manifest.routable_by_anchor: false to mark it chain-internal.",
+        "routable_by_anchor is not false; it will be hard to discover on "
+        "first entry. Add anchors (or manifest activates_on) to make it "
+        "routable, or set manifest.routable_by_anchor: false to mark it "
+        "chain-internal.",
         metadata.namespace,
         metadata.name,
         agent_name,

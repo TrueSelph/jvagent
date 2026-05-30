@@ -15,10 +15,10 @@ Each entry in `tasks` uses this normalized shape:
 
 ```json
 {
-  "id": "SkillsCenter:907b4a8af2e5",
-  "type": "AGENTIC_LOOP",
-  "description": "Agentic task: ...",
-  "owner_action": "SkillsCenter",
+  "id": "SignupInterviewInteractAction:907b4a8af2e5",
+  "type": "INTERVIEW",
+  "description": "Signup interview in progress",
+  "owner_action": "SignupInterviewInteractAction",
   "status": "active",
   "data": {
     "trigger_at": null,
@@ -103,8 +103,7 @@ Webhook URLs can be configured with:
 
 ## Integration notes
 
-- **SkillsCenter** uses `visitor.tasks.track(...)` and records structured steps via its think-act-observe loop.
-- **DirectiveBuilder** starts and completes/cancels interview tasks through `visitor.tasks`.
+- **SkillExecutive** and **DirectiveBuilder** start and complete/cancel flow tasks through `visitor.tasks`.
 - **TaskCreationInteractAction** creates proactive tasks via `visitor.tasks.create(...)`.
 - **TaskDispatcher** starts tasks before dispatch and completes/fails through store APIs. It generates the dispatched message via `PersonaAction.respond(...)` (LLM-generated). For **canned** (pre-formed) proactive messages from any task or scheduler, use `Agent.send_proactive_message(...)` directly instead — see [proactive-messages.md](proactive-messages.md).
 - **TaskTriggerInteractAction** marks matched proactive tasks complete through the store.
@@ -115,4 +114,4 @@ Webhook URLs can be configured with:
 - [Conversation](jvagent/memory/conversation.py)
 - [TaskStore](jvagent/memory/task_store.py)
 - [InteractWalker](jvagent/action/interact/interact_walker.py)
-- [SkillsCenter](jvagent/action/executive/centers/skills_center.py)
+- [SkillExecutive](jvagent/action/skill_executive/skill_executive_interact_action.py)

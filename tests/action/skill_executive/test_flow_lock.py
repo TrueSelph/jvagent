@@ -79,7 +79,7 @@ async def test_lock_on_restricts_surface_to_owning_ia(
     ex = make_skill_executive(actions=[ia], action_registry={"SignupIA": ia})
     assert ex.lock_active_flow is True  # default
 
-    monkeypatch.setattr(sei, "active_flow_owner", lambda v: "SignupIA")
+    monkeypatch.setattr(sei, "active_flow_owner", lambda v, **kw: "SignupIA")
     calls = _spy_model(monkeypatch)
 
     # Off-topic utterance mid-flow: the surface is restricted to the IA's tool,
@@ -98,7 +98,7 @@ async def test_lock_off_is_model_mediated(
     ex = make_skill_executive(actions=[ia], action_registry={"SignupIA": ia})
     ex.lock_active_flow = False
 
-    monkeypatch.setattr(sei, "active_flow_owner", lambda v: "SignupIA")
+    monkeypatch.setattr(sei, "active_flow_owner", lambda v, **kw: "SignupIA")
     calls = _spy_model(monkeypatch)
 
     await ex.execute(make_visitor(utterance="Who is Eldon Marks?"))
@@ -114,7 +114,7 @@ async def test_lock_on_no_active_task_runs_loop(
     ia = _signup(flow_stub_cls, on_exec=lambda v: ran.__setitem__("n", ran["n"] + 1))
     ex = make_skill_executive(actions=[ia], action_registry={"SignupIA": ia})
 
-    monkeypatch.setattr(sei, "active_flow_owner", lambda v: None)
+    monkeypatch.setattr(sei, "active_flow_owner", lambda v, **kw: None)
     calls = _spy_model(monkeypatch)
 
     await ex.execute(make_visitor(utterance="Hello there"))
@@ -130,7 +130,7 @@ async def test_executive_activation_event_recorded_per_mode(
 
     # locked: surface restricted to the IA tool
     ex = make_skill_executive(actions=[ia], action_registry={"SignupIA": ia})
-    monkeypatch.setattr(sei, "active_flow_owner", lambda v: "SignupIA")
+    monkeypatch.setattr(sei, "active_flow_owner", lambda v, **kw: "SignupIA")
     _spy_model(monkeypatch)
     v = _capture_visitor(make_visitor, utterance="x")
     await ex.execute(v)
@@ -152,7 +152,7 @@ async def test_executive_activation_event_recorded_per_mode(
 
     # none: no active flow
     ex3 = make_skill_executive(actions=[ia], action_registry={"SignupIA": ia})
-    monkeypatch.setattr(sei, "active_flow_owner", lambda v: None)
+    monkeypatch.setattr(sei, "active_flow_owner", lambda v, **kw: None)
     _spy_model(monkeypatch)
     v3 = _capture_visitor(make_visitor, utterance="x")
     await ex3.execute(v3)

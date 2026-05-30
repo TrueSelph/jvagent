@@ -520,9 +520,10 @@ class InterviewInteractAction(InteractAction, ABC):
         ADR-0009 / Wave 9e: the user-configured (entry-only) anchor list
         is preserved on ``self._entry_anchors`` so :meth:`get_anchors`
         can return only entry anchors when no active session exists.
-        Reflex's small classifier was confused by the 7 mid-flight
-        state-derived anchors on first-entry routing — narrowing the
-        catalog to entry anchors restores clean intent matching.
+        Mid-flight state-derived anchors confused first-entry routing when
+        included in the entry catalog — narrowing to entry anchors restores
+        clean intent matching for InteractRouter and the SkillExecutive
+        relevance gate.
         """
         # Get current anchors value (may be from agent.yaml override)
         current_anchors = getattr(self, "anchors", [])
@@ -555,15 +556,11 @@ class InterviewInteractAction(InteractAction, ABC):
         Returns:
         - When an ACTIVE / REVIEW session exists on ``conversation``:
           the full merged list (entry + state-derived anchors) so
-          Reflex / the router can recognise mid-flight utterances like
+          InteractRouter can recognise mid-flight utterances like
           ``"User answers SignupInterviewInteractAction question"``.
         - Otherwise (no active session yet, or terminated): only the
-          user-configured entry anchors. The 7 state-derived anchors
-          are filtered out so Reflex's small classifier sees a clean
-          entry-intent surface — fixes the live-smoke observation that
-          gpt-4o-mini ignored DELEGATE on a clear "register for
-          training" anchor match because the 9-anchor catalog included
-          state noise.
+          user-configured entry anchors. State-derived anchors are
+          filtered out so first-entry routing sees a clean intent surface.
 
         Falls back to ``None`` (meaning "use static ``self.anchors``")
         on any error so a broken session lookup never silently strips
@@ -902,66 +899,6 @@ class InterviewInteractAction(InteractAction, ABC):
                 await node.delete()
             # Rebuild using QuestionGraphBuilder
             await self.question_builder.build_question_graph()
-
-    async def is_actively_locking_turn(self, visitor: "InteractWalker") -> bool:
-        """Tell the orchestrator whether the interview still owns a turn lock.
-
-        The Executive's IA center consults this to decide whether the
-        turn-lock is still held, in two places:
-
-        1. ``find_turn_lock_owner`` — on the NEW turn, before any IA
-           has run, to decide whether to auto-DELEGATE. At this point
-           ``visitor.interview_session`` is NOT set (execute hasn't run
-           yet), so we look up the session via the conversation graph,
-           same query as ``_get_or_create_session`` uses.
-        2. ``_handle_delegate`` / ``_delegate_to_lock_owner`` — right
-           after the IA ran on the current turn, to decide whether to
-           record itself on ``interaction.actions``. At this point
-           ``visitor.interview_session`` IS set; prefer that for speed.
-
-        Returns True when an ACTIVE/REVIEW session exists, False when
-        the session is terminated (CANCELLED / COMPLETED) or no session
-        exists. Falls back to True on any error so a broken check never
-        silently drops the lock for an otherwise-healthy interview.
-        """
-        terminal_values = {
-            InterviewState.COMPLETED.value,
-            InterviewState.CANCELLED.value,
-        }
-
-        # Fast path: session already loaded on the visitor.
-        session = getattr(visitor, "interview_session", None)
-        if session is not None:
-            try:
-                state = getattr(session, "state", None)
-                return state not in terminal_values
-            except Exception:
-                return True
-
-        # Slow path: look the session up via the conversation graph.
-        # ``_get_or_create_session`` query, minus the create step —
-        # excludes terminal states so a hit means there's an active or
-        # review session; a miss means no lock.
-        try:
-            interaction = getattr(visitor, "interaction", None)
-            if interaction is None:
-                return False
-            conversation = await interaction.get_conversation()
-            if conversation is None:
-                return False
-            active_session = await conversation.node(
-                node=[{"InterviewSession": {"state": {"$nin": list(terminal_values)}}}],
-                interview_type=self.get_class_name(),
-            )
-            return active_session is not None
-        except Exception as exc:
-            logger.debug(
-                "%s.is_actively_locking_turn: session lookup failed: %s — "
-                "assuming locked",
-                self.get_class_name(),
-                exc,
-            )
-            return True
 
     async def execute(self, visitor: "InteractWalker") -> None:
         """Execute interview action using target-node architecture.

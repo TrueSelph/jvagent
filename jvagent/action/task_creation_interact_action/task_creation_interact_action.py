@@ -232,6 +232,7 @@ class TaskCreationInteractAction(InteractAction):
                         title=task["description"],
                         description=task["description"],
                         owner_action=self.get_class_name(),
+                        task_type="PROACTIVE",
                         data={
                             "context": task["context"],
                             "channel": interaction.channel or "default",

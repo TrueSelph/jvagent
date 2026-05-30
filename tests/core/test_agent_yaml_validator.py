@@ -103,6 +103,20 @@ def test_exclusion_check_ignores_non_orchestrator_actions():
     assert not any("mutually exclusive" in w.message for w in warnings)
 
 
+def test_validate_agent_yaml_warns_dual_orchestrators():
+    from jvagent.core.agent_yaml_validator import validate_agent_yaml
+
+    payload = {
+        "agent": "jvagent/conflict_agent",
+        "actions": [
+            {"action": "jvagent/skill_executive"},
+            {"action": "jvagent/interact_router"},
+        ],
+    }
+    warnings = validate_agent_yaml(payload)
+    assert any("Mutually exclusive orchestrators" in w.message for w in warnings)
+
+
 def test_action_loader_scan_emits_validation_warning(tmp_path, caplog):
     from jvagent.action.loader import ActionLoader
     from jvagent.core.agent_yaml_validator import _reset_warning_cache_for_tests

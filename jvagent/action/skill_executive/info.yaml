@@ -26,7 +26,6 @@ package:
       continuing an in-progress flow when the model selects its tool and replying
       through the reply/respond egress.
     latency_class: deliberate
-    turn_lock: false
     routable_by_anchor: false
     pattern_orchestrator: true
   dependencies:

@@ -227,9 +227,8 @@ class Action(Node):
            (per-action overrides — handled when the agent loader writes
            into ``self.metadata['manifest']`` after merging contexts;
            reads happen here from a single source).
-        3. Defaults from :class:`Manifest` (``latency_class="quick"``,
-           ``turn_lock=False``, ``can_interrupt=True``) when no manifest
-           block was declared.
+        3. Defaults from :class:`Manifest` (``latency_class="quick"``) when no
+           manifest block was declared.
 
         The result is cached per-call; callers should treat it as
         immutable (it is a frozen dataclass). Override in subclasses only
