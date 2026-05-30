@@ -115,6 +115,29 @@ actions:
     context: { enabled: true }
 ```
 
+### Extended config surface (ADR-0015)
+
+All off/neutral by default — the reference agent is unchanged. Full table in [configuration-keys.md §6](../.planning/configuration-keys.md).
+
+- **Reasoning** (reasoning-capable models only): `reasoning_enabled`, `reasoning_effort` (low/medium/high), `reasoning_budget_tokens`, `reasoning_extra`. Threaded into the loop's model call; the executive profile owns its own reasoning level.
+- **Thinking stream** (needs a live bus): `stream_internal_progress` emits each tick as a transient `thought`; `stream_reasoning_trace` surfaces `result.thinking_content`.
+- **Budgets**: `max_duration_seconds` (wall-clock, alongside `activation_budget`), `max_statement_length` (soft prompt cap), `history_limit` (loop working context; the rolling memory window is the agent-level `interaction_limit`).
+- **Tooling / UX**: `tool_tier` (minimal/standard/full), `tool_call_timeout`, `block_raw_tool_invocation`, `enable_transient_ack` + `first_emit_timeout_ms` + `safety_net_ack_text`.
+- **MCP tool servers**: `tool_servers` (`-all` or action-name list) pulls tools from `jvagent/mcp` `MCPAction`(s); they surface as `mcp_<server>__<tool>` and route per-user (the loop binds the dispatch context for the turn). `max_concurrent_tools` bounds concurrency.
+
+```yaml
+  - action: jvagent/mcp           # sandboxed MCP gateway (declares the `mcp` pip extra)
+    context:
+      enabled: true
+      sandbox_mode: true
+      sandbox_user_scoped: true
+      servers:
+        - name: filesystem
+          transport: stdio
+          command: npx
+          args: [-y, "@modelcontextprotocol/server-filesystem"]
+```
+
 Agent-level identity (ADR-0014) lives in the agent context: `alias` (display name) and `role` (purpose). The scaffold default profile is still `executive`, containing a single `jvagent/skill_executive` action (plus `openai_lm`, `reply`, `intro`, `handoff`). Scaffold with `jvagent app create --profile executive`; see the reference agent at `examples/jvagent_app/agents/jvagent/executive_agent/`.
 
 ## Module structure

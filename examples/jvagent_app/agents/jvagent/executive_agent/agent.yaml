@@ -38,9 +38,39 @@ actions:
       model_action_type: OpenAILanguageModelAction
       model_temperature: 0.2
       activation_budget: 16
+      # Prior turns fed into the loop prompt (working context). The rolling
+      # memory window is the agent's `interaction_limit` above.
+      history_limit: 4
       # Deterministic turn-lock: an active flow's IA owns each turn until it
       # clears its task. Set false for model-mediated (interruptible) continuation.
       lock_active_flow: true
+
+      # -- Reasoning (only bites with a reasoning-capable model; gpt-4o-mini
+      # ignores it). Set effort for o-series / Claude thinking / OpenRouter.
+      # reasoning_enabled: true
+      # reasoning_effort: medium          # low | medium | high
+      # reasoning_budget_tokens: 0        # explicit thinking budget (Anthropic)
+
+      # -- Thinking / progress stream (needs a live response bus).
+      stream_internal_progress: false     # emit each tick as a 'thought' bubble
+      stream_reasoning_trace: false       # surface the model's thinking trace
+
+      # -- Budgets (activation_budget caps ticks; these add wall-clock + length).
+      max_duration_seconds: 0             # 0 disables the wall-clock cap
+      max_statement_length:               # soft reply-length cap (chars); blank = off
+
+      # -- Tooling / egress-UX.
+      tool_tier: standard                 # minimal | standard | full
+      tool_call_timeout: 0                # per-tool-call timeout (s); 0 disables
+      block_raw_tool_invocation: false    # force find_tool/skill for hidden tools
+      enable_transient_ack: false         # 'working on it' if the turn is slow
+      first_emit_timeout_ms: 0            # delay before the ack fires
+      max_concurrent_tools: 0             # 0 = unbounded
+
+      # -- MCP tool servers: '-all' pulls tools from every enabled jvagent/mcp
+      # action; or list action names. Tools surface as mcp_<server>__<tool>.
+      tool_servers: "-all"
+
       # Native SOP skills. Source: app (adjacent skills/) | library
       # (jvagent/skills) | both. `skills` is a finite list of names to load
       # (fnmatch patterns ok); use "-all" for every discovered skill.
@@ -48,6 +78,29 @@ actions:
       skills:
         - web_lookup      # app-local (agents/jvagent/executive_agent/skills/)
         - research        # library (jvagent/skills/)
+
+  # MCP gateway: a sandboxed filesystem server (npx). Its tools surface to the
+  # executive (tool_servers above) as mcp_filesystem__<tool>, sandboxed per
+  # agent + per user.
+  - action: jvagent/mcp
+    context:
+      enabled: true
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      sandbox_mode: true
+      sandbox_user_scoped: true
+      servers:
+        - name: filesystem
+          enabled: true
+          transport: stdio
+          command: npx
+          args:
+            - -y
+            - "@modelcontextprotocol/server-filesystem"
+          mcp_connect_timeout: 15
+          mcp_call_timeout: 60
+          tools: "-all"
+          denied_tools: []
 
   - action: jvagent/serper_web_search
     context:
