@@ -97,6 +97,7 @@ def make_skill_executive(monkeypatch, publish_log):
             flow_note="",
             skills_section="",
             finalize=False,
+            gear="heavy",
         ):
             return seq.pop(0) if seq else {"action": "final", "answer": ""}
 

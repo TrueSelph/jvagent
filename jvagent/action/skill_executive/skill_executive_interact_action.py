@@ -69,10 +69,12 @@ DEFAULT_ACTIVATION_BUDGET = 24
 _TEXT_KEYS = ("answer", "text", "content", "message", "reply", "response")
 
 # Egress + indirection tools are never "steered" — saying "reply" is normal, and
-# find_tool/use_skill are the sanctioned indirection we *want*.
+# find_tool/use_skill are the sanctioned indirection we *want*. The same set is
+# "non-substantive" for gearing: these don't count toward heavy-model escalation.
 _STEER_EXEMPT = frozenset(
     {"reply", "respond", "find_tool", "load_tool", "find_skill", "use_skill"}
 )
+_NON_SUBSTANTIVE_TOOLS = _STEER_EXEMPT
 
 
 def _text_candidate(decision: Dict[str, Any]) -> str:
@@ -100,11 +102,37 @@ class SkillExecutiveInteractAction(InteractAction):
         )
     )
 
+    # The HEAVY profile — the reasoning/primary model (with reasoning_* below).
     model: str = attribute(default="gpt-4o-mini")
     model_action_type: str = attribute(default="OpenAILanguageModelAction")
     model_temperature: float = attribute(default=0.2)
     model_max_tokens: int = attribute(default=2048)
     enforce_json_mode: bool = attribute(default=True)
+
+    # -- Model gearing (ADR-0016): a LIGHT completion model for single-dimensional
+    # turns (reply / one tool), the HEAVY model above for multi-step work. Set
+    # `light_model` to engage gearing; empty = single-model (current behaviour).
+    light_model: str = attribute(
+        default="",
+        description="Light/completion model id. Empty disables gearing.",
+    )
+    light_model_action_type: str = attribute(
+        default="",
+        description="LM action for the light model; empty = same as the heavy "
+        "model_action_type.",
+    )
+    light_model_temperature: float = attribute(default=0.2)
+    light_model_max_tokens: int = attribute(default=1024)
+    escalate_after_tool_calls: int = attribute(
+        default=2,
+        description="Switch to the heavy model once the turn has made this many "
+        "substantive tool calls (reply/respond/catalog/skill meta-tools excluded).",
+    )
+    escalate_on_skill: bool = attribute(
+        default=True,
+        description="Activating a skill (a multi-step SOP) escalates to heavy "
+        "immediately.",
+    )
 
     # -- Reasoning passthrough (only bites with a reasoning-capable model; the
     # default gpt-4o-mini ignores it). Threaded into the loop's model call so
@@ -611,6 +639,10 @@ class SkillExecutiveInteractAction(InteractAction):
         )
         deflected_named: Set[str] = set()
         nd_streak = 0  # consecutive unparseable model decisions
+        # Model gearing (ADR-0016): light until the turn proves multi-step.
+        substantive_tool_calls = 0
+        ticks_light = 0
+        ticks_heavy = 0
         started = time.time()
         deadline = (
             started + float(self.max_duration_seconds)
@@ -626,6 +658,14 @@ class SkillExecutiveInteractAction(InteractAction):
                     break
                 budget -= 1
                 ticks += 1
+                # Gear selection (sticky): heavy once the turn is multi-step —
+                # enough substantive tool calls, or a skill (multi-step SOP) is
+                # active. Single-model agents always run heavy.
+                gear = self._select_gear(substantive_tool_calls, bool(activated))
+                if gear == "light":
+                    ticks_light += 1
+                else:
+                    ticks_heavy += 1
                 visible_tools = [tools[n] for n in visible if n in tools]
                 decision = await self._run_model(
                     visitor,
@@ -635,6 +675,7 @@ class SkillExecutiveInteractAction(InteractAction):
                     observations,
                     flow_note,
                     skills_section,
+                    gear=gear,
                 )
                 if decision is None:
                     # A truncated/garbled decision (common when a verbose thinking
@@ -726,6 +767,10 @@ class SkillExecutiveInteractAction(InteractAction):
                     observations.append(
                         {"tool": tool_name, "args": args, "observation": obs}
                     )
+                    # Gearing: count substantive (non-meta, non-egress) tool calls
+                    # toward escalation to the heavy model.
+                    if tool is not None and tool_name not in _NON_SUBSTANTIVE_TOOLS:
+                        substantive_tool_calls += 1
                     # Repeat guard: a model that keeps choosing the same tool with
                     # the same args makes no progress (e.g. re-activating a skill).
                     # Nudge once, then break before the budget is wasted.
@@ -785,6 +830,7 @@ class SkillExecutiveInteractAction(InteractAction):
                     observations,
                     skills_section=skills_section,
                     finalize=True,
+                    gear="light",  # wrap-up is single-dimensional
                 )
                 answer = _text_candidate(decision) if decision else ""
                 if answer:
@@ -801,6 +847,8 @@ class SkillExecutiveInteractAction(InteractAction):
                 tick_count=ticks,
                 ended_via=ended_via,
                 activated=activated,
+                ticks_light=ticks_light,
+                ticks_heavy=ticks_heavy,
             )
 
     async def _record_executive_activation(
@@ -813,6 +861,8 @@ class SkillExecutiveInteractAction(InteractAction):
         tick_count: int,
         ended_via: str,
         activated: List[str],
+        ticks_light: int = 0,
+        ticks_heavy: int = 0,
     ) -> None:
         """Append a per-turn ``executive_activation`` event to
         ``interaction.observability_metrics``.
@@ -838,6 +888,10 @@ class SkillExecutiveInteractAction(InteractAction):
                 "budget": int(self.activation_budget),
                 "ended_via": ended_via,
                 "skills_used": list(activated or []),
+                "gearing": self._gearing_on(),
+                "ticks_light": int(ticks_light),
+                "ticks_heavy": int(ticks_heavy),
+                "escalated": bool(ticks_heavy) and self._gearing_on(),
             },
             "timestamp": time.time(),
         }
@@ -1057,6 +1111,56 @@ class SkillExecutiveInteractAction(InteractAction):
             return "Wrapping up…"
         return ""
 
+    def _gearing_on(self) -> bool:
+        return bool((self.light_model or "").strip())
+
+    def _select_gear(self, substantive_tool_calls: int, skill_active: bool) -> str:
+        """Light until the turn proves multi-step, then heavy (sticky). Single-
+        model agents (no light_model) always run heavy."""
+        if not self._gearing_on():
+            return "heavy"
+        if (self.escalate_on_skill and skill_active) or (
+            substantive_tool_calls >= int(self.escalate_after_tool_calls)
+        ):
+            return "heavy"
+        return "light"
+
+    async def _resolve_model_action(self, action_type: str) -> Any:
+        """Resolve a model action by class name, falling back to the heavy one."""
+        at = (action_type or "").strip()
+        if at:
+            try:
+                action = await self.get_action(at)
+                if action is not None:
+                    return action
+            except Exception as exc:
+                logger.debug("skill_executive: get_action(%r) failed: %s", at, exc)
+        return await self.get_model_action(required=False)
+
+    async def _gear_model(self, gear: str):
+        """Return (model_action, model_id, temperature, max_tokens, reasoning_on)
+        for the requested gear. Light gear only applies when ``light_model`` is
+        set; otherwise both gears use the heavy profile (single-model)."""
+        if gear == "light" and self._gearing_on():
+            action = await self._resolve_model_action(
+                self.light_model_action_type or self.model_action_type
+            )
+            return (
+                action,
+                (self.light_model or None),
+                self.light_model_temperature,
+                self.light_model_max_tokens,
+                False,
+            )
+        action = await self.get_model_action(required=False)
+        return (
+            action,
+            (self.model or None),
+            self.model_temperature,
+            self.model_max_tokens,
+            True,
+        )
+
     def _reasoning_kwargs(self) -> Dict[str, Any]:
         """Reasoning passthrough for the loop's model call.
 
@@ -1228,14 +1332,22 @@ class SkillExecutiveInteractAction(InteractAction):
         flow_note: str = "",
         skills_section: str = "",
         finalize: bool = False,
+        gear: str = "heavy",
     ) -> Optional[Dict[str, Any]]:
         """One model call → parsed JSON decision. Overridden/mocked in tests.
 
         ``finalize=True`` appends a hard stop instruction so the model wraps up
         with its best answer from what it has gathered instead of calling more
         tools — used when the loop runs out of budget/time (partial-compose).
+
+        ``gear`` ("light"|"heavy") selects the model profile (ADR-0016): the
+        light/completion model for single-dimensional steps, the heavy/reasoning
+        model for multi-step work. When no ``light_model`` is configured both
+        gears resolve to the heavy profile (single-model, unchanged).
         """
-        model_action = await self.get_model_action(required=False)
+        model_action, model_id, temperature, max_tokens, reasoning_on = (
+            await self._gear_model(gear)
+        )
         if model_action is None:
             logger.warning(
                 "skill_executive: no model action (%s)", self.model_action_type
@@ -1277,14 +1389,15 @@ class SkillExecutiveInteractAction(InteractAction):
             "system": system_prompt,
             "prompt_for_observability": user_prompt,
             "tools": None,
-            "model": self.model or None,
-            "temperature": self.model_temperature,
-            "max_tokens": self.model_max_tokens,
+            "model": model_id,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
             "calling_action_name": self.get_class_name(),
         }
         if self.enforce_json_mode:
             kwargs["response_format"] = {"type": "json_object"}
-        kwargs.update(self._reasoning_kwargs())
+        if reasoning_on:  # reasoning only on the heavy gear
+            kwargs.update(self._reasoning_kwargs())
         try:
             result = await model_action.query_messages(**kwargs)
         except Exception as exc:

@@ -18,6 +18,12 @@ actions:
       model_temperature: 0.2
       activation_budget: 24          # max tool-using ticks/turn; raise (30-50) for research
       history_limit: 4               # prior turns fed into the loop prompt
+      # -- Model gearing (ADR-0016): set light_model to add a fast completion
+      # model for single-step turns; the model above is the heavy/reasoning gear.
+      # light_model: gpt-4o-mini
+      # light_model_action_type: OpenAILanguageModelAction
+      # escalate_after_tool_calls: 2 # heavy after N substantive tool calls
+      # escalate_on_skill: true      # activating a skill escalates immediately
       # Deterministic turn-lock: an active flow's IA owns each turn until it
       # clears its task. Set false for model-mediated (interruptible) continuation.
       lock_active_flow: true

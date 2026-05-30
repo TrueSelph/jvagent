@@ -34,6 +34,7 @@ actions:
   - action: jvagent/skill_executive
     context:
       enabled: true
+      # HEAVY profile — the reasoning model, used once a turn proves multi-step.
       model: kimi-k2.6:cloud
       model_action_type: OllamaLanguageModelAction
       model_temperature: 0.2
@@ -43,6 +44,16 @@ actions:
       # completion tokens (reasoning can count against the budget).
       activation_budget: 40
       model_max_tokens: 4096
+
+      # -- Model gearing (ADR-0016): a LIGHT completion model handles single-
+      # dimensional turns (reply / one tool); the HEAVY model above takes over
+      # once the turn is multi-step. Empty light_model = single-model.
+      light_model: gpt-4o-mini
+      light_model_action_type: OpenAILanguageModelAction
+      light_model_temperature: 0.2
+      light_model_max_tokens: 1024
+      escalate_after_tool_calls: 2       # heavy after this many substantive tool calls
+      escalate_on_skill: true            # activating a skill escalates immediately
       # Prior turns fed into the loop prompt (working context). The rolling
       # memory window is the agent's `interaction_limit` above.
       history_limit: 10

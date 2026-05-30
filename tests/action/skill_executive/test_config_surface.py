@@ -236,6 +236,132 @@ async def test_duration_guard_ends_turn(make_skill_executive, make_visitor):
     assert ev and ev[-1]["data"]["ended_via"] == "duration"
 
 
+# --- Model gearing (ADR-0016) --------------------------------------------
+
+
+async def test_select_gear_logic():
+    ex = SkillExecutiveInteractAction()
+    # gearing off (no light_model) → always heavy
+    assert ex._select_gear(5, True) == "heavy"
+    ex.light_model = "lite"
+    ex.escalate_after_tool_calls = 2
+    ex.escalate_on_skill = True
+    assert ex._select_gear(0, False) == "light"
+    assert ex._select_gear(1, False) == "light"
+    assert ex._select_gear(2, False) == "heavy"  # tool-count threshold
+    assert ex._select_gear(0, True) == "heavy"  # skill active
+    ex.escalate_on_skill = False
+    assert ex._select_gear(0, True) == "light"  # skill ignored when off
+
+
+async def test_gear_model_off_uses_heavy(monkeypatch):
+    ex = SkillExecutiveInteractAction()  # light_model="" → gearing off
+    heavy = object()
+
+    async def _gma(self, required=False):
+        return heavy
+
+    monkeypatch.setattr(SkillExecutiveInteractAction, "get_model_action", _gma)
+    action, model_id, temp, mt, reasoning = await ex._gear_model("light")
+    assert action is heavy and reasoning is True  # off → heavy even for "light"
+
+
+async def test_gear_model_light_profile(monkeypatch):
+    ex = SkillExecutiveInteractAction()
+    ex.light_model = "lite"
+    ex.light_model_action_type = "LiteAction"
+    ex.light_model_temperature = 0.1
+    ex.light_model_max_tokens = 512
+    lite, heavy = object(), object()
+
+    async def _ga(self, name):
+        return lite if name == "LiteAction" else None
+
+    async def _gma(self, required=False):
+        return heavy
+
+    monkeypatch.setattr(SkillExecutiveInteractAction, "get_action", _ga)
+    monkeypatch.setattr(SkillExecutiveInteractAction, "get_model_action", _gma)
+    a, m, t, mt, r = await ex._gear_model("light")
+    assert a is lite and m == "lite" and t == 0.1 and mt == 512 and r is False
+    a2, m2, _, _, r2 = await ex._gear_model("heavy")
+    assert a2 is heavy and r2 is True
+
+
+async def test_run_model_threads_gear(monkeypatch):
+    ex = SkillExecutiveInteractAction()
+    ex.light_model = "lite"
+    ex.reasoning_effort = "high"
+    captured = {}
+    model = MagicMock()
+
+    async def _qm(**k):
+        captured.clear()
+        captured.update(k)
+        return SimpleNamespace(response='{"action":"final"}')
+
+    model.query_messages = _qm
+
+    async def _ga(self, name):
+        return model
+
+    async def _gma(self, required=False):
+        return model
+
+    async def _agent(self):
+        return SimpleNamespace(alias="", role="")
+
+    monkeypatch.setattr(SkillExecutiveInteractAction, "get_action", _ga)
+    monkeypatch.setattr(SkillExecutiveInteractAction, "get_model_action", _gma)
+    monkeypatch.setattr(SkillExecutiveInteractAction, "get_agent", _agent)
+
+    await ex._run_model(MagicMock(), "hi", [], [], [], gear="light")
+    assert captured["model"] == "lite"
+    assert "reasoning_effort" not in captured  # light gear → no reasoning
+
+    await ex._run_model(MagicMock(), "hi", [], [], [], gear="heavy")
+    assert captured["model"] == "gpt-4o-mini"
+    assert captured.get("reasoning_effort") == "high"  # heavy gear → reasoning
+
+
+async def test_gearing_escalates_across_loop(
+    make_skill_executive, make_visitor, monkeypatch
+):
+    calls = {"n": 0}
+    fake = _fake_capability_action("work", calls)
+    ex = make_skill_executive(actions=[fake], decisions=[])
+    ex.light_model = "lite"
+    ex.escalate_after_tool_calls = 2
+    ex.escalate_on_skill = False
+    seq = [
+        {"action": "tool", "tool": "work", "args": {"i": 1}},
+        {"action": "tool", "tool": "work", "args": {"i": 2}},
+        {"action": "tool", "tool": "work", "args": {"i": 3}},
+        {"action": "final", "answer": "done"},
+    ]
+    gears = []
+
+    async def _rm(
+        self,
+        visitor,
+        utterance,
+        history,
+        tools,
+        observations,
+        flow_note="",
+        skills_section="",
+        finalize=False,
+        gear="heavy",
+    ):
+        gears.append(gear)
+        return seq.pop(0) if seq else {"action": "final", "answer": ""}
+
+    monkeypatch.setattr(SkillExecutiveInteractAction, "_run_model", _rm)
+    await ex.execute(make_visitor(utterance="multi-step"))
+    # light, light (count 0,1), then heavy once 2 substantive calls reached.
+    assert gears[:4] == ["light", "light", "heavy", "heavy"]
+
+
 # --- Transient ack -------------------------------------------------------
 
 

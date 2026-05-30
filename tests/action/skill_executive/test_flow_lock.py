@@ -63,6 +63,8 @@ def _spy_model(monkeypatch):
         observations,
         flow_note="",
         skills_section="",
+        finalize=False,
+        gear="heavy",
     ):
         calls["n"] += 1
         return {"action": "final", "answer": ""}

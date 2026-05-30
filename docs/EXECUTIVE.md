@@ -121,6 +121,19 @@ actions:
 
 Pair `web_search` with `web_fetch`: search surfaces URLs, then `web_fetch__fetch` reads the top sources as clean markdown — far more efficient (and better grounded) than re-searching snippets. `web_fetch` is SSRF-guarded by default (blocks loopback/private/link-local hosts) and frames fetched text as untrusted so it composes with the loop's anti-injection boundaries.
 
+### Model gearing (ADR-0016)
+
+Optional: pair a **light** completion model with the **heavy** reasoning model so single-dimensional turns don't pay the reasoning tax. The existing `model*`/`reasoning_*` are the heavy profile; set `light_model` (+ `light_model_action_type`, `light_model_temperature`, `light_model_max_tokens`) to engage gearing — empty leaves the agent single-model. The loop starts on the light model and **escalates to heavy** once the turn is multi-step: `escalate_after_tool_calls` substantive tool calls (default 2; egress/meta tools excluded) or `escalate_on_skill` (a skill activated). Escalation is sticky; the partial-compose finalize runs light. Reasoning kwargs apply only on the heavy gear. The `executive_activation` event reports `ticks_light`/`ticks_heavy`/`escalated`.
+
+```yaml
+      model: kimi-k2.6:cloud            # heavy / reasoning
+      model_action_type: OllamaLanguageModelAction
+      light_model: gpt-4o-mini          # light / completion (engages gearing)
+      light_model_action_type: OpenAILanguageModelAction
+      escalate_after_tool_calls: 2
+      escalate_on_skill: true
+```
+
 ### Extended config surface (ADR-0015)
 
 All off/neutral by default — the reference agent is unchanged. Full table in [configuration-keys.md §6](../.planning/configuration-keys.md).
