@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import contextvars
 import logging
 import time
@@ -53,6 +54,24 @@ def get_dispatch_context() -> Optional[ToolDispatchContext]:
 def get_dispatch_visitor() -> Optional[Any]:
     """Return the live visitor (deprecated; prefer :func:`get_dispatch_context`)."""
     return _dispatch_visitor_var.get()
+
+
+@contextlib.contextmanager
+def bind_dispatch_context(visitor: Optional[Any]):
+    """Bind the visitor-derived dispatch context for direct tool execution.
+
+    ``ToolExecutionEngine.dispatch`` sets this automatically, but callers that
+    run ``Tool``s directly (e.g. the SkillExecutive loop) must bind it so
+    context-aware tools — notably per-user MCP servers — route correctly.
+    """
+    ctx = _build_context_from_visitor(visitor)
+    ctx_token = _dispatch_context_var.set(ctx)
+    visitor_token = _dispatch_visitor_var.set(visitor)
+    try:
+        yield
+    finally:
+        _dispatch_visitor_var.reset(visitor_token)
+        _dispatch_context_var.reset(ctx_token)
 
 
 def _build_context_from_visitor(

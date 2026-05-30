@@ -3,7 +3,7 @@
 Always-available tools that wrap harness services, independent of which actions
 are installed. Kept deliberately small and dependency-light; extend by adding
 builders to :func:`build_core_tools`. Persona ``reply``/``respond`` are NOT here
-— they come from ``PersonaAction.get_tools()`` so the persona owns its own voice.
+— they come from the agent's responder via ``get_responder().get_tools()``.
 """
 
 from __future__ import annotations
@@ -47,9 +47,25 @@ def _datetime_tool(action: Any) -> SkillTool:
     )
 
 
-def build_core_tools(action: Any) -> List[SkillTool]:
-    """Return the always-available core tools, bound to the orchestrator action."""
-    return [_datetime_tool(action)]
+# Each core tool's minimum tier. minimal < standard < full; a tool is included
+# when the configured tier is at least its minimum.
+_TIER_RANK = {"minimal": 0, "standard": 1, "full": 2}
+_CORE_TOOL_TIERS = {"get_current_datetime": "standard"}
+
+
+def build_core_tools(action: Any, tier: str = "standard") -> List[SkillTool]:
+    """Return the always-available core tools, bound to the orchestrator action.
+
+    ``tier`` (minimal | standard | full) gates which core tools are surfaced;
+    unknown values fall back to ``standard``.
+    """
+    rank = _TIER_RANK.get((tier or "standard").strip().lower(), 1)
+    candidates = [_datetime_tool(action)]
+    return [
+        t
+        for t in candidates
+        if _TIER_RANK.get(_CORE_TOOL_TIERS.get(t.name, "minimal"), 0) <= rank
+    ]
 
 
 __all__ = ["build_core_tools"]

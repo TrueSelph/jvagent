@@ -20,6 +20,7 @@ an emergent flow property.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 import re
@@ -54,6 +55,7 @@ from jvagent.action.skill_executive.tools import (
     render_tools_section,
     wrap_action_tool,
 )
+from jvagent.tooling.tool_executor import bind_dispatch_context
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -96,15 +98,58 @@ class SkillExecutiveInteractAction(InteractAction):
     model_temperature: float = attribute(default=0.2)
     model_max_tokens: int = attribute(default=1024)
     enforce_json_mode: bool = attribute(default=True)
+
+    # -- Reasoning passthrough (only bites with a reasoning-capable model; the
+    # default gpt-4o-mini ignores it). Threaded into the loop's model call so
+    # the executive profile owns its own reasoning level. -------------------
+    reasoning_enabled: Optional[bool] = attribute(
+        default=None,
+        description="Tri-state reasoning toggle. None = leave to the model "
+        "action; True/False explicitly enable/disable for the loop call.",
+    )
+    reasoning_effort: Optional[str] = attribute(
+        default=None,
+        description="Reasoning effort hint (low | medium | high) for "
+        "reasoning-capable models.",
+    )
+    reasoning_budget_tokens: int = attribute(
+        default=0,
+        description="Explicit thinking-token budget (e.g. Anthropic); 0 = let "
+        "the provider map it from effort.",
+    )
+    reasoning_extra: Optional[Dict[str, Any]] = attribute(
+        default=None,
+        description="Provider-specific reasoning params passed through verbatim.",
+    )
+
+    # -- Thinking / progress stream (only emits over a live response bus) ---
+    stream_internal_progress: bool = attribute(
+        default=False,
+        description="When True, emit each loop tick's step as a transient "
+        "'thought' bubble to the UI.",
+    )
+    stream_reasoning_trace: bool = attribute(
+        default=False,
+        description="When True, surface a reasoning model's thinking trace "
+        "(result.thinking_content) as a transient thought, when the provider "
+        "returns one.",
+    )
+
     activation_budget: int = attribute(
         default=DEFAULT_ACTIVATION_BUDGET,
         description="Hard cap on think-act-observe iterations per turn.",
     )
-    history_limit: int = attribute(default=4)
-    persona_action: str = attribute(
-        default="PersonaAction",
-        description="Class name of the persona action furnishing reply/respond.",
+    max_duration_seconds: float = attribute(
+        default=0.0,
+        description="Wall-clock cap on the whole turn (alongside the tick "
+        "budget); 0 disables.",
     )
+    max_statement_length: Optional[int] = attribute(
+        default=None,
+        description="Soft cap (characters) on the reply, applied as a prompt "
+        "instruction; None disables.",
+    )
+    history_limit: int = attribute(default=4)
     clarify_text: str = attribute(
         default="Sorry, I didn't quite catch that — could you rephrase?",
     )
@@ -122,6 +167,42 @@ class SkillExecutiveInteractAction(InteractAction):
     skills_source: str = attribute(default="both")
     skills: Any = attribute(default="-all")
     denied_skills: List[str] = attribute(default_factory=list)
+
+    # -- Tooling / egress-UX controls (restored from Bridge/Helm) -----------
+    enable_transient_ack: bool = attribute(
+        default=False,
+        description="Emit a transient 'working on it' ack if the turn is slow "
+        "to produce output (needs a live bus).",
+    )
+    first_emit_timeout_ms: int = attribute(
+        default=0,
+        description="Delay (ms) before the transient ack fires; 0 disables.",
+    )
+    safety_net_ack_text: str = attribute(default="Working on it…")
+    block_raw_tool_invocation: bool = attribute(
+        default=False,
+        description="When True, the loop may only call tools currently surfaced "
+        "(visible); hidden tools must be reached via find_tool / a skill.",
+    )
+    tool_tier: str = attribute(
+        default="standard",
+        description="Core-tool tier: minimal | standard | full.",
+    )
+    tool_call_timeout: float = attribute(
+        default=0.0,
+        description="Per-tool-call timeout (seconds); 0 disables.",
+    )
+
+    # -- MCP tool servers (via jvagent/mcp MCPAction; ADR-0015) -------------
+    tool_servers: Any = attribute(
+        default="-all",
+        description="MCP gateway actions to pull tools from: '-all' for every "
+        "enabled MCPAction, or a finite list of action names.",
+    )
+    max_concurrent_tools: int = attribute(
+        default=0,
+        description="Bound on concurrent tool execution; 0 = unbounded.",
+    )
 
     # ------------------------------------------------------------------
     # Entry point
@@ -144,8 +225,10 @@ class SkillExecutiveInteractAction(InteractAction):
         # callable surface is restricted to that IA's tool (mechanistic
         # turn-lock — see _run_loop); otherwise the active flow is surfaced as
         # routable context the model may continue or leave for an off-topic
-        # request.
-        await self._run_loop(visitor)
+        # request. The dispatch context is bound for the whole turn so
+        # context-aware tools (per-user MCP servers) route correctly.
+        with bind_dispatch_context(visitor):
+            await self._run_loop(visitor)
 
         # A rails IA invoked as a tool emits via interaction.directives rather
         # than publishing — render any it left through the responder voice.
@@ -252,8 +335,8 @@ class SkillExecutiveInteractAction(InteractAction):
         agent = await self._safe_agent()
         tools: Dict[str, SkillTool] = {}
 
-        # Core tools (always visible).
-        for t in build_core_tools(self):
+        # Core tools (always visible), gated by tool_tier.
+        for t in build_core_tools(self, self.tool_tier):
             tools[t.name] = t
             visible.add(t.name)
 
@@ -261,19 +344,10 @@ class SkillExecutiveInteractAction(InteractAction):
         from jvagent.action.persona.persona_action import PersonaAction
         from jvagent.action.reply.reply_action import ReplyAction
 
-        reply_voice = None
-        persona_voice = None
         for action in actions:
             if action is self or isinstance(action, SkillExecutiveInteractAction):
                 continue
-            # Egress voices furnish reply/respond via the responder below — never
-            # as plain capability tools. ReplyAction (ADR-0014) is preferred, with
-            # PersonaAction as the fallback voice.
-            if isinstance(action, ReplyAction):
-                reply_voice = action
-                continue
-            if isinstance(action, PersonaAction):
-                persona_voice = action
+            if isinstance(action, (ReplyAction, PersonaAction)):
                 continue
             # A turn-spanning flow (duck-typed: execute + routing triggers)
             # furnishes its own tool via get_tools(); the orchestrator binds the
@@ -324,10 +398,9 @@ class SkillExecutiveInteractAction(InteractAction):
                     tools[name] = wrap_action_tool(tool)
                     visible.add(name)
 
-        # Egress reply/respond from the responder — ReplyAction (ADR-0014) or
-        # PersonaAction fallback. Always visible; visitor-bound at dispatch so
-        # they publish through the walker.
-        responder = reply_voice or persona_voice
+        # Egress reply/respond from the responder (ReplyAction preferred, PersonaAction
+        # fallback; ADR-0014). Always visible; visitor-bound at dispatch.
+        responder = await self.get_responder()
         if responder is not None:
             get_responder_tools = getattr(responder, "get_tools", None)
             responder_tools: List[Any] = []
@@ -345,6 +418,32 @@ class SkillExecutiveInteractAction(InteractAction):
                 if not name:
                     continue
                 tools[name] = wrap_action_tool(tool, visitor=visitor)
+                visible.add(name)
+
+        # MCP tool servers (via jvagent/mcp MCPAction; ADR-0015). Tools surface
+        # as ``mcp_{server}__{tool}`` and self-route per user via the dispatch
+        # context bound around the loop.
+        for mcp_action in self._select_mcp_actions(actions):
+            get_mcp_tools = getattr(mcp_action, "get_tools", None)
+            if not callable(get_mcp_tools):
+                continue
+            try:
+                mcp_tools = await get_mcp_tools() or []
+            except Exception as exc:
+                logger.debug("skill_executive: MCP get_tools failed: %s", exc)
+                continue
+            for tool in mcp_tools:
+                name = getattr(tool, "name", None)
+                if not name:
+                    continue
+                tools[name] = wrap_action_tool(
+                    tool,
+                    visitor=visitor,
+                    agent=agent,
+                    user_id=getattr(visitor, "user_id", None),
+                    channel=getattr(visitor, "channel", "default") or "default",
+                    access_label=delegate_resource_label(name),
+                )
                 visible.add(name)
 
         # Native SOP skills (progressive disclosure; meta-tools visible).
@@ -438,7 +537,8 @@ class SkillExecutiveInteractAction(InteractAction):
 
         # Resolve the active flow first so the surface gates its tool into the
         # prompt only when relevant (active flow, or anchor-relevant utterance).
-        flow_owner = active_flow_owner(visitor)
+        flow_tool_names = await self._routable_flow_tool_names()
+        flow_owner = active_flow_owner(visitor, flow_tool_names=flow_tool_names)
         tools = await self._assemble_tools(
             visitor, activated, visible, flow_owner, utterance, skill_docs
         )
@@ -473,9 +573,19 @@ class SkillExecutiveInteractAction(InteractAction):
         ended_via = "budget"
         last_sig: Optional[tuple] = None
         repeats = 0
+        started = time.time()
+        deadline = (
+            started + float(self.max_duration_seconds)
+            if self.max_duration_seconds and self.max_duration_seconds > 0
+            else 0.0
+        )
 
+        ack_task = self._schedule_first_emit_ack(visitor)
         try:
             while budget > 0:
+                if deadline and time.time() > deadline:
+                    ended_via = "duration"
+                    return
                 budget -= 1
                 ticks += 1
                 visible_tools = [tools[n] for n in visible if n in tools]
@@ -492,6 +602,11 @@ class SkillExecutiveInteractAction(InteractAction):
                     ended_via = "no_decision"
                     return
                 action, tool_name, args = self._normalize(decision, tools, skill_names)
+                if self.stream_internal_progress:
+                    await self._emit_thought(
+                        visitor,
+                        self._progress_line(action, tool_name, args, decision),
+                    )
                 if action == "final":
                     answer = _text_candidate(decision)
                     if answer:
@@ -502,9 +617,26 @@ class SkillExecutiveInteractAction(InteractAction):
                     tool = tools.get(tool_name)
                     if tool is None:
                         obs = f"(no such tool: {tool_name})"
+                    elif self.block_raw_tool_invocation and tool_name not in visible:
+                        # Surface discipline: a hidden tool must be reached via
+                        # find_tool or a skill, not named raw.
+                        obs = (
+                            f"(tool {tool_name} is not directly available — use "
+                            "find_tool or the relevant skill to reach it)"
+                        )
                     else:
                         try:
-                            obs = await tool.run(args)
+                            if self.tool_call_timeout and self.tool_call_timeout > 0:
+                                obs = await asyncio.wait_for(
+                                    tool.run(args), timeout=self.tool_call_timeout
+                                )
+                            else:
+                                obs = await tool.run(args)
+                        except asyncio.TimeoutError:
+                            obs = (
+                                f"(tool {tool_name} timed out after "
+                                f"{self.tool_call_timeout}s)"
+                            )
                         except Exception as exc:
                             logger.warning(
                                 "skill_executive: tool %r raised: %s", tool_name, exc
@@ -553,6 +685,8 @@ class SkillExecutiveInteractAction(InteractAction):
                 ended_via = "unknown"
                 return
         finally:
+            if ack_task is not None and not ack_task.done():
+                ack_task.cancel()
             await self._record_executive_activation(
                 visitor,
                 continuation_mode="model_mediated" if flow_owner else "none",
@@ -695,6 +829,131 @@ class SkillExecutiveInteractAction(InteractAction):
     # Helpers (overridable in tests)
     # ------------------------------------------------------------------
 
+    async def _emit_thought(self, visitor: "InteractWalker", text: str) -> None:
+        """Emit a transient 'thought' bubble over the response bus, if live.
+
+        No bus / no session → no-op (thoughts only stream in real time; they are
+        never persisted to the interaction response). Best-effort.
+        """
+        body = (text or "").strip()
+        if not body:
+            return
+        bus = getattr(visitor, "response_bus", None)
+        session_id = getattr(visitor, "session_id", None)
+        if not bus or not session_id:
+            return
+        interaction = getattr(visitor, "interaction", None)
+        try:
+            await bus.publish(
+                session_id=session_id,
+                content=body,
+                channel=getattr(visitor, "channel", "default") or "default",
+                category="thought",
+                transient=True,
+                interaction=interaction,
+                interaction_id=getattr(interaction, "id", None),
+                user_id=getattr(interaction, "user_id", None),
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("skill_executive: thought emit failed: %s", exc)
+
+    def _schedule_first_emit_ack(
+        self, visitor: "InteractWalker"
+    ) -> Optional["asyncio.Task"]:
+        """Schedule a transient 'working on it' ack if the turn is slow.
+
+        Fires once after ``first_emit_timeout_ms`` unless the loop finishes first
+        (the caller cancels it). Needs a live bus; returns None when disabled or
+        offline.
+        """
+        if not self.enable_transient_ack or int(self.first_emit_timeout_ms or 0) <= 0:
+            return None
+        bus = getattr(visitor, "response_bus", None)
+        session_id = getattr(visitor, "session_id", None)
+        if not bus or not session_id:
+            return None
+        ack_text = (self.safety_net_ack_text or "").strip()
+        if not ack_text:
+            return None
+        delay = float(self.first_emit_timeout_ms) / 1000.0
+        interaction = getattr(visitor, "interaction", None)
+        channel = getattr(visitor, "channel", "default") or "default"
+
+        async def _ack() -> None:
+            try:
+                await asyncio.sleep(delay)
+                await bus.publish(
+                    session_id=session_id,
+                    content=ack_text,
+                    channel=channel,
+                    transient=True,
+                    interaction=interaction,
+                    interaction_id=getattr(interaction, "id", None),
+                    user_id=getattr(interaction, "user_id", None),
+                )
+            except asyncio.CancelledError:  # pragma: no cover - timing
+                raise
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("skill_executive: transient ack failed: %s", exc)
+
+        try:
+            return asyncio.ensure_future(_ack())
+        except Exception:  # pragma: no cover - no running loop
+            return None
+
+    @staticmethod
+    def _progress_line(
+        action: str, tool_name: str, args: Dict[str, Any], decision: Dict[str, Any]
+    ) -> str:
+        """A short human progress line for a loop tick (stream_internal_progress)."""
+        thought = decision.get("thought") or decision.get("reasoning")
+        if isinstance(thought, str) and thought.strip():
+            return thought.strip()
+        if action == "tool" and tool_name:
+            if tool_name == "use_skill":
+                skill = (args or {}).get("name") or ""
+                return f"Following the {skill} skill…" if skill else "Using a skill…"
+            if tool_name in ("reply", "respond"):
+                return "Composing a reply…"
+            return f"Using {tool_name}…"
+        if action == "final":
+            return "Wrapping up…"
+        return ""
+
+    def _reasoning_kwargs(self) -> Dict[str, Any]:
+        """Reasoning passthrough for the loop's model call.
+
+        Only emits keys when reasoning is configured, so non-reasoning models
+        (the gpt-4o-mini default) see no change. The model action honors per-call
+        ``reasoning_effort`` / ``reasoning`` over its own attribute, so the
+        executive profile can run at its own reasoning level.
+        """
+        if self.reasoning_enabled is False:
+            return {"reasoning_effort": None, "reasoning": {"enabled": False}}
+        configured = (
+            self.reasoning_effort
+            or self.reasoning_enabled is True
+            or self.reasoning_budget_tokens
+            or self.reasoning_extra
+        )
+        if not configured:
+            return {}
+        out: Dict[str, Any] = {}
+        if self.reasoning_effort:
+            out["reasoning_effort"] = str(self.reasoning_effort)
+        reasoning: Dict[str, Any] = {}
+        if self.reasoning_enabled is not None:
+            reasoning["enabled"] = bool(self.reasoning_enabled)
+        if self.reasoning_effort:
+            reasoning["effort"] = str(self.reasoning_effort)
+        if self.reasoning_budget_tokens:
+            reasoning["budget_tokens"] = int(self.reasoning_budget_tokens)
+        if self.reasoning_extra:
+            reasoning.update(self.reasoning_extra)
+        if reasoning:
+            out["reasoning"] = reasoning
+        return out
+
     async def _safe_agent(self) -> Any:
         try:
             return await self.get_agent()
@@ -713,6 +972,27 @@ class SkillExecutiveInteractAction(InteractAction):
             getattr(agent, "role", "") or "",
         )
 
+    async def _routable_flow_tool_names(self) -> Set[str]:
+        """Class names of routable IAs exposed as tools (flow continuation keys)."""
+        agent = await self._safe_agent()
+        names: Set[str] = set()
+        for action in await self._enabled_actions(agent):
+            if action is self or isinstance(action, SkillExecutiveInteractAction):
+                continue
+            if getattr(action, "always_execute", False):
+                continue
+            triggers_fn = getattr(action, "routing_triggers", None)
+            triggers = (
+                list(triggers_fn() or [])
+                if callable(triggers_fn)
+                else list(getattr(action, "anchors", None) or [])
+            )
+            if callable(getattr(action, "execute", None)) and triggers:
+                get_name = getattr(action, "get_class_name", None)
+                if callable(get_name):
+                    names.add(get_name())
+        return names
+
     async def _enabled_actions(self, agent: Any) -> List[Any]:
         if agent is None:
             return []
@@ -722,6 +1002,43 @@ class SkillExecutiveInteractAction(InteractAction):
         except Exception as exc:
             logger.debug("skill_executive: action enumeration failed: %s", exc)
             return []
+
+    def _select_mcp_actions(self, actions: List[Any]) -> List[Any]:
+        """MCPAction instances to pull tools from, per ``tool_servers``.
+
+        ``-all`` (default) selects every enabled MCPAction; a finite list selects
+        by class name or package name. Returns [] when MCP isn't installed.
+        """
+        try:
+            from jvagent.action.mcp.mcp_action import MCPAction
+        except Exception:
+            return []
+        selector = self.tool_servers
+        mcp_actions = [a for a in actions if isinstance(a, MCPAction)]
+        if not mcp_actions:
+            return []
+        if isinstance(selector, str) and selector.strip() == "-all":
+            return mcp_actions
+        wanted = (
+            {str(s).strip() for s in selector}
+            if isinstance(selector, (list, tuple, set))
+            else {str(selector).strip()}
+        )
+        if not wanted:
+            return []
+
+        def _names(a: Any) -> Set[str]:
+            out: Set[str] = set()
+            get_name = getattr(a, "get_class_name", None)
+            if callable(get_name):
+                out.add(get_name())
+            for attr in ("name", "package_name"):
+                val = getattr(a, attr, None)
+                if isinstance(val, str) and val:
+                    out.add(val)
+            return out
+
+        return [a for a in mcp_actions if _names(a) & wanted]
 
     def _discover_skills(self, agent: Any) -> List[Any]:
         try:
@@ -780,6 +1097,11 @@ class SkillExecutiveInteractAction(InteractAction):
         )
         if flow_note:
             system_prompt = f"{system_prompt}\n\nFLOW IN PROGRESS:\n{flow_note}"
+        if self.max_statement_length and self.max_statement_length > 0:
+            system_prompt = (
+                f"{system_prompt}\n\nLENGTH LIMIT: Keep your reply to the user "
+                f"under {int(self.max_statement_length)} characters."
+            )
         user_prompt = SKILL_EXECUTIVE_USER_PROMPT_TEMPLATE.format(
             history_section=render_history_section(history),
             utterance=utterance or "(no message)",
@@ -801,11 +1123,16 @@ class SkillExecutiveInteractAction(InteractAction):
         }
         if self.enforce_json_mode:
             kwargs["response_format"] = {"type": "json_object"}
+        kwargs.update(self._reasoning_kwargs())
         try:
             result = await model_action.query_messages(**kwargs)
         except Exception as exc:
             logger.warning("skill_executive: model call raised: %s", exc)
             return None
+        if self.stream_reasoning_trace:
+            trace = getattr(result, "thinking_content", None)
+            if trace:
+                await self._emit_thought(visitor, str(trace))
         raw = (getattr(result, "response", None) or "").strip()
         return parse_json_object(raw) if raw else None
 
