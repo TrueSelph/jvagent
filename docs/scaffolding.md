@@ -174,7 +174,7 @@ jvagent --update
 
 ## Skill catalogs and custom skills
 
-Executive agents (via the Skills center) support two skill sources:
+Executive agents (via the SkillExecutive's native SOP skills) support two skill sources:
 
 1. Built-in reusable skill catalog shipped with jvagent (`jvagent/skills/*`)
 2. App-local custom skills in `agents/<ns>/<id>/skills/<skill_name>/SKILL.md`

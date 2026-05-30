@@ -11,7 +11,7 @@ jvagent_app/
 ├── app.yaml              # Application descriptor (metadata & agent list)
 ├── agents/               # Custom agent packages
 │   ├── jvagent/
-│   │   ├── executive_agent/  # Executive + Centers agent
+│   │   ├── executive_agent/  # SkillExecutive orchestrator agent
 │   │   │   ├── agent.yaml
 │   │   │   └── README.md
 │   │   ├── example_agent/   # Main demo agent (core + PageIndex, signup interview)

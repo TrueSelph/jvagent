@@ -34,7 +34,7 @@ Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email /
 | **Understand memory pruning** | [`.planning/memory-and-pruning.md`](.planning/memory-and-pruning.md) |
 | **Tune / query logging** | [`.planning/observability.md`](.planning/observability.md) + [`docs/logging.md`](docs/logging.md) |
 | **Find a config key** | [`.planning/configuration-keys.md`](.planning/configuration-keys.md) + [`docs/environment-keys-reference.md`](docs/environment-keys-reference.md) |
-| **Understand the SkillExecutive pattern** | [`docs/EXECUTIVE.md`](docs/EXECUTIVE.md) + [`.planning/adr/0012-skill-executive-architecture.md`](.planning/adr/0012-skill-executive-architecture.md) |
+| **Understand the SkillExecutive pattern** | [`docs/EXECUTIVE.md`](docs/EXECUTIVE.md) + ADRs [0012](.planning/adr/0012-skill-executive-architecture.md) (architecture), [0013](.planning/adr/0013-togglable-deterministic-turn-lock.md) (turn-lock), [0014](.planning/adr/0014-identity-on-agent-replyaction-egress.md) (identity/egress), [0015](.planning/adr/0015-skill-executive-configuration-surface.md) (config surface), [0016](.planning/adr/0016-model-gearing-light-heavy.md) (model gearing) |
 | **Run jvagent locally** | [`.planning/runbooks/local-dev.md`](.planning/runbooks/local-dev.md) |
 | **Add a new action end-to-end** | [`.planning/runbooks/add-action.md`](.planning/runbooks/add-action.md) |
 | **Send a proactive (agent-initiated) message** | [`docs/proactive-messages.md`](docs/proactive-messages.md) |

@@ -7,7 +7,7 @@ Task lifecycle management is now handled by `TaskStore`, scoped per conversation
 - **Storage**: `Conversation.tasks` is the canonical store (list of task dicts, persisted on the conversation node).
 - **Writer**: `TaskStore` is the single write path for create/update/complete/fail/cancel.
 - **Scope**: One store instance per conversation (`TaskStore(conversation)`), lazily available as `InteractWalker.tasks`.
-- **Consumers**: Thinking loop, interview flows, proactive task creation/dispatch/trigger, router/persona context, and response payloads.
+- **Consumers**: SkillExecutive think-act-observe loop (flow continuation), interview flows, proactive task creation/dispatch/trigger, ReplyAction/PersonaAction egress context, and response payloads.
 
 ## Task Model
 
