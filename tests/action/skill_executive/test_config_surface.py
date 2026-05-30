@@ -211,3 +211,84 @@ async def test_select_mcp_actions_all_and_finite(monkeypatch):
     assert ex._select_mcp_actions([fake]) == [fake]
     ex.tool_servers = ["other"]
     assert ex._select_mcp_actions([fake]) == []
+
+
+async def test_mcp_filesystem_read_write_roundtrip(
+    make_skill_executive, make_visitor, monkeypatch
+):
+    """End-to-end: an MCP filesystem gateway's write/read tools are surfaced to
+    the executive, dispatched, and run with the per-user dispatch context bound
+    (so real MCP servers route to the caller's sandbox)."""
+    import sys
+    import types
+
+    from jvagent.tooling.tool import Tool
+    from jvagent.tooling.tool_executor import get_dispatch_context
+    from jvagent.tooling.tool_result import ToolResult
+
+    class _MCPBase:
+        pass
+
+    fake_mod = types.ModuleType("jvagent.action.mcp.mcp_action")
+    fake_mod.MCPAction = _MCPBase
+    monkeypatch.setitem(sys.modules, "jvagent.action.mcp.mcp_action", fake_mod)
+
+    store: dict = {}
+    seen = {}
+
+    class FakeFsMcp(_MCPBase):
+        def get_class_name(self):
+            return "FakeFsMcp"
+
+        async def get_tools(self):
+            async def _write(visitor=None, path="", content="", **k):
+                seen["write_ctx"] = get_dispatch_context()
+                store[path] = content
+                return ToolResult(content=f"wrote {path}")
+
+            async def _read(visitor=None, path="", **k):
+                seen["read"] = True
+                return ToolResult(content=store.get(path, "(missing)"))
+
+            schema = {"type": "object", "properties": {}}
+            return [
+                Tool(
+                    name="mcp_filesystem__write_file",
+                    description="Write a file in the sandbox.",
+                    parameters_schema=schema,
+                    execute=_write,
+                ),
+                Tool(
+                    name="mcp_filesystem__read_file",
+                    description="Read a file from the sandbox.",
+                    parameters_schema=schema,
+                    execute=_read,
+                ),
+            ]
+
+    fake = FakeFsMcp()
+    ex = make_skill_executive(
+        actions=[fake],
+        decisions=[
+            {
+                "action": "tool",
+                "tool": "mcp_filesystem__write_file",
+                "args": {"path": "notes.txt", "content": "hello sandbox"},
+            },
+            {
+                "action": "tool",
+                "tool": "mcp_filesystem__read_file",
+                "args": {"path": "notes.txt"},
+            },
+            {"action": "final", "answer": "done"},
+        ],
+    )
+    v = make_visitor(user_id="alice")
+    await ex.execute(v)
+
+    assert store["notes.txt"] == "hello sandbox"  # write routed through
+    assert seen.get("read") is True  # read routed through
+    # Per-user routing context was bound for the dispatch (real MCP uses it to
+    # pick the caller's sandbox subprocess).
+    ctx = seen.get("write_ctx")
+    assert ctx is not None and ctx.user_id == "alice"

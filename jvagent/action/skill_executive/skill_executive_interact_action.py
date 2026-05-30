@@ -344,10 +344,16 @@ class SkillExecutiveInteractAction(InteractAction):
         from jvagent.action.persona.persona_action import PersonaAction
         from jvagent.action.reply.reply_action import ReplyAction
 
+        mcp_cls = self._mcp_action_class()
+
         for action in actions:
             if action is self or isinstance(action, SkillExecutiveInteractAction):
                 continue
             if isinstance(action, (ReplyAction, PersonaAction)):
+                continue
+            # MCP gateways are surfaced by the dedicated, tool_servers-gated
+            # block below — skip here so the gate is authoritative.
+            if mcp_cls is not None and isinstance(action, mcp_cls):
                 continue
             # A turn-spanning flow (duck-typed: execute + routing triggers)
             # furnishes its own tool via get_tools(); the orchestrator binds the
@@ -1003,18 +1009,27 @@ class SkillExecutiveInteractAction(InteractAction):
             logger.debug("skill_executive: action enumeration failed: %s", exc)
             return []
 
+    @staticmethod
+    def _mcp_action_class() -> Optional[type]:
+        """The MCPAction class, or None when the ``mcp`` extra isn't installed."""
+        try:
+            from jvagent.action.mcp.mcp_action import MCPAction
+
+            return MCPAction
+        except Exception:
+            return None
+
     def _select_mcp_actions(self, actions: List[Any]) -> List[Any]:
         """MCPAction instances to pull tools from, per ``tool_servers``.
 
         ``-all`` (default) selects every enabled MCPAction; a finite list selects
         by class name or package name. Returns [] when MCP isn't installed.
         """
-        try:
-            from jvagent.action.mcp.mcp_action import MCPAction
-        except Exception:
+        mcp_cls = self._mcp_action_class()
+        if mcp_cls is None:
             return []
         selector = self.tool_servers
-        mcp_actions = [a for a in actions if isinstance(a, MCPAction)]
+        mcp_actions = [a for a in actions if isinstance(a, mcp_cls)]
         if not mcp_actions:
             return []
         if isinstance(selector, str) and selector.strip() == "-all":
