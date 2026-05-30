@@ -199,6 +199,25 @@ async def test_respond_enqueues_message_with_params_only(monkeypatch):
     assert "Sure." in [d["content"] for d in v.interaction.directives]
 
 
+async def test_tool_reply_accepts_text_aliases(monkeypatch):
+    """The reply/respond tools accept message/content/answer aliases for text
+    (models routinely name the arg differently) — no TypeError."""
+    ra = ReplyAction()
+    captured = {}
+
+    async def _reply(self, text, visitor=None):
+        captured["text"] = text
+        return True
+
+    monkeypatch.setattr(ReplyAction, "reply", _reply)
+    out = await ra._tool_reply(visitor=MagicMock(), message="Hello via message")
+    assert captured["text"] == "Hello via message"
+    assert "replied" in str(out.content)
+
+    out2 = await ra._tool_reply(visitor=MagicMock(), content="via content")
+    assert captured["text"] == "via content"
+
+
 async def test_reply_applies_parameters(monkeypatch):
     ra = ReplyAction()
     _patch_agent(monkeypatch)

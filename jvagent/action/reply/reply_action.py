@@ -453,15 +453,37 @@ class ReplyAction(Action):
             ),
         ]
 
-    async def _tool_reply(self, visitor: Any = None, text: str = "") -> Any:
+    @staticmethod
+    def _coalesce_text(text: str, kwargs: Dict[str, Any]) -> str:
+        """Resolve the reply text from ``text`` or a model-named alias.
+
+        Models routinely name the argument ``message``/``content``/``answer``/
+        ``reply``/``response`` instead of ``text``; accept any of them so the
+        egress tool doesn't error on a near-miss arg shape.
+        """
+        if (text or "").strip():
+            return text
+        for key in ("message", "content", "answer", "reply", "response", "body"):
+            val = kwargs.get(key)
+            if isinstance(val, str) and val.strip():
+                return val
+        return text or ""
+
+    async def _tool_reply(
+        self, visitor: Any = None, text: str = "", **kwargs: Any
+    ) -> Any:
         from jvagent.tooling.tool_result import ToolResult
 
-        ok = await self.reply(text, visitor)
+        ok = await self.reply(self._coalesce_text(text, kwargs), visitor)
         return ToolResult(content="(replied to user)" if ok else "(nothing to reply)")
 
-    async def _tool_respond(self, visitor: Any = None, text: str = "") -> Any:
+    async def _tool_respond(
+        self, visitor: Any = None, text: str = "", **kwargs: Any
+    ) -> Any:
         from jvagent.tooling.tool_result import ToolResult
 
         interaction = getattr(visitor, "interaction", None)
-        out = await self.respond(interaction, visitor=visitor, text=text)
+        out = await self.respond(
+            interaction, visitor=visitor, text=self._coalesce_text(text, kwargs)
+        )
         return ToolResult(content="(responded to user)" if out else "(no output)")
