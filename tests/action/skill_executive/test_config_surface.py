@@ -188,14 +188,31 @@ async def test_partial_compose_on_budget_exhaustion(make_skill_executive, make_v
     assert v.interaction.response == "Here's what I gathered so far."
 
 
-async def test_partial_compose_on_no_decision(make_skill_executive, make_visitor):
-    """A truncated/garbled decision (e.g. a verbose thinking model overrunning
-    the token cap after doing the work) still yields a reply via partial-compose,
-    not the clarify fallback."""
+async def test_single_no_decision_recovers_with_tools(
+    make_skill_executive, make_visitor
+):
+    """A single transient unparseable decision is nudged and retried (tools kept
+    visible) — it does NOT abort the turn into a tools=[] finalize."""
     ex = make_skill_executive(
         decisions=[
-            {"action": "tool", "tool": "noop", "args": {}},
-            None,  # decision is None → no_decision mid-task
+            None,  # transient no_decision (e.g. truncated thinking output)
+            {"action": "final", "answer": "Recovered answer."},
+        ],
+    )
+    v = make_visitor(utterance="research X")
+    await ex.execute(v)
+    assert v.interaction.response == "Recovered answer."
+
+
+async def test_no_decision_streak_finalizes(make_skill_executive, make_visitor):
+    """A persistent streak of unparseable decisions (work gathered but can't emit
+    JSON) falls through to the partial-compose finalize."""
+    ex = make_skill_executive(
+        decisions=[
+            {"action": "tool", "tool": "noop", "args": {}},  # gather an observation
+            None,
+            None,
+            None,  # 3 consecutive → break to finalize
             {"action": "final", "answer": "Done — report saved."},
         ],
     )

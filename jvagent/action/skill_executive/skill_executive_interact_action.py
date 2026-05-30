@@ -600,6 +600,7 @@ class SkillExecutiveInteractAction(InteractAction):
             else frozenset()
         )
         deflected_named: Set[str] = set()
+        nd_streak = 0  # consecutive unparseable model decisions
         started = time.time()
         deadline = (
             started + float(self.max_duration_seconds)
@@ -627,10 +628,28 @@ class SkillExecutiveInteractAction(InteractAction):
                 )
                 if decision is None:
                     # A truncated/garbled decision (common when a verbose thinking
-                    # model overruns the token cap). Break to the partial-compose
-                    # path so gathered work still yields a reply.
-                    ended_via = "no_decision"
-                    break
+                    # model overruns the token cap). One transient miss → nudge
+                    # and retry with the tool surface intact, so a productive turn
+                    # isn't aborted mid-task. Only a persistent streak falls
+                    # through to the partial-compose (work-done-but-can't-emit).
+                    nd_streak += 1
+                    if nd_streak >= 3:
+                        ended_via = "no_decision"
+                        break
+                    observations.append(
+                        {
+                            "tool": "(parse)",
+                            "args": {},
+                            "observation": (
+                                "(Your previous response was not a single valid "
+                                "JSON object. Reply with exactly ONE JSON object "
+                                "for your next step — a tool call or a final "
+                                "answer. Keep it short.)"
+                            ),
+                        }
+                    )
+                    continue
+                nd_streak = 0
                 action, tool_name, args = self._normalize(decision, tools, skill_names)
                 if self.stream_internal_progress:
                     await self._emit_thought(
