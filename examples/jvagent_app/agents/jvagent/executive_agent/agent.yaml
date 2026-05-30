@@ -101,6 +101,7 @@ actions:
       skills:
         - web_lookup      # app-local (agents/jvagent/executive_agent/skills/)
         - research        # library (jvagent/skills/)
+        - answer          # library — internal-first RAG cascade (PageIndex + web)
 
   # MCP gateway: a sandboxed filesystem server (npx). Its tools surface to the
   # executive (tool_servers above) as mcp_filesystem__<tool>, sandboxed per
@@ -128,6 +129,18 @@ actions:
   - action: jvagent/serper_web_search
     context:
       enabled: true
+
+  # Internal knowledge base (PageIndex): ingest, search, and manage documents.
+  # Surfaces pageindex__search / assimilate / list / delete to the executive;
+  # pairs with the `answer` skill's internal-first retrieval cascade. Uses the
+  # OpenAI LM below for tree-search; litellm + pdf deps auto-install at load.
+  - action: jvagent/pageindex_action
+    context:
+      enabled: true
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      strategy: tree_search
+      limit: 10
 
   # Read full pages after a search surfaces URLs (web_fetch__fetch). SSRF-guarded
   # by default; raises research quality and cuts redundant snippet searches.
