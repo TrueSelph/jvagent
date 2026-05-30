@@ -83,10 +83,30 @@ async def test_reply_applies_directives(monkeypatch):
     v = _visitor_with(directives=[{"content": "Mention the welcome offer."}])
     assert await ra.reply("Here's your answer.", v) is True
     assert v.interaction.response == "Composed with directive."
-    sysprompt = model.generate.call_args.kwargs["system"]
-    assert "MANDATORY" in sysprompt and "welcome offer" in sysprompt
-    # base text is the prompt; the directive shapes the system
-    assert model.generate.call_args.kwargs["prompt"] == "Here's your answer."
+    # The message is folded in as the lead directive and composed WITH the
+    # pending directive (so the directive can't override the reply's substance).
+    prompt = model.generate.call_args.kwargs["prompt"]
+    assert "Here's your answer." in prompt and "welcome offer" in prompt
+
+
+async def test_reply_directive_does_not_override_message(monkeypatch):
+    """A queued directive (e.g. a first-contact intro) must not replace the
+    model's substantive reply — both are composed together."""
+    ra = ReplyAction()
+    _patch_agent(monkeypatch)
+    model = MagicMock()
+    model.generate = AsyncMock(return_value="Report saved at notes.md. I'm Ada.")
+
+    async def _ma(self, required=False):
+        return model
+
+    monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
+    v = _visitor_with(directives=[{"content": "Introduce yourself by name."}])
+    assert await ra.reply("Your report is saved at notes.md.", v) is True
+    prompt = model.generate.call_args.kwargs["prompt"]
+    # Both the task message and the intro directive reach the model together.
+    assert "report is saved at notes.md" in prompt
+    assert "Introduce yourself" in prompt
 
 
 async def test_reply_applies_parameters(monkeypatch):

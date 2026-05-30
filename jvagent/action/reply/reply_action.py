@@ -254,13 +254,25 @@ class ReplyAction(Action):
         ``interaction.utterance``. **Directives** and **parameters** (from the
         args or the interaction) shape the *system* prompt: parameters as
         conditional rules, directives as mandatory instructions when they are
-        additional to base text. With neither present it's just identity + voice
-        rules. Falls back to a thin publish if no model action is available.
+        additional to base text. When an explicit message arrives *with* queued
+        directives, the message is folded in as the lead directive so the two
+        compose together (a directive can never override the reply's substance).
+        With neither present it's just identity + voice rules. Falls back to a
+        thin publish if no model action is available.
         """
         interaction = interaction or getattr(visitor, "interaction", None)
         base = (text or "").strip()
         directive_text = self._collect_directive_text(directives, interaction)
         parameters_text = self._collect_parameters(parameters, interaction)
+
+        # Queued directives + an explicit message: fold the message in as the
+        # lead directive so it is composed WITH the directives, never overridden
+        # by the MANDATORY directive block (e.g. a first-contact intro directive
+        # must not replace a task-completion reply). The message and the pending
+        # directives then voice together.
+        if base and directive_text:
+            directive_text = f"Tell the user: {base}\n{directive_text}"
+            base = ""
 
         # Base content (the prompt): explicit text, else the directives, else the
         # user's utterance. Directives go to the *system* (as instructions) only
