@@ -332,10 +332,11 @@ class SkillExecutiveInteractAction(InteractAction):
         # than publishing — render any it left through the responder voice.
         await self._finalize_directives(visitor)
 
-        # Light egress fallback: nothing voiced this turn → one default reply.
+        # Light egress fallback: nothing voiced this turn → one default reply,
+        # routed through the responder (channel formatting + no-bus safe).
         after = getattr(interaction, "response", "") or ""
         if after == before:
-            await self.publish(visitor=visitor, content=self.clarify_text)
+            await self._voice(visitor, self.clarify_text)
 
     async def _finalize_directives(self, visitor: "InteractWalker") -> None:
         """Voice any unrendered ``interaction.directives`` through the responder.
@@ -659,14 +660,30 @@ class SkillExecutiveInteractAction(InteractAction):
         # (so it owns the turn's output). The IA receives all input including
         # off-topic; interruption/cancel is the IA's own concern.
         if self.lock_active_flow and flow_owner and flow_owner in tools:
-            await tools[flow_owner].run({})
+            locked_result = (await tools[flow_owner].run({})) or ""
+            interaction = getattr(visitor, "interaction", None)
+            voiced = bool(getattr(interaction, "response", "") or "")
+            ended = "locked"
+            if not voiced:
+                # The locked IA neither published nor set a response. Surface an
+                # explicit message instead of degrading to the generic clarify
+                # text downstream (SE3: AC-deny / silent-IA failure modes).
+                if "access denied" in locked_result.lower():
+                    ended = "locked_denied"
+                    await self._voice(
+                        visitor,
+                        "You don't currently have access to continue this. Let "
+                        "me know if there's something else I can help with.",
+                    )
+                elif locked_result.strip():
+                    await self._voice(visitor, locked_result.strip())
             await self._record_executive_activation(
                 visitor,
                 continuation_mode="locked",
                 flow_owner=flow_owner,
                 tools_invoked=[flow_owner],
                 tick_count=0,
-                ended_via="locked",
+                ended_via=ended,
                 activated=activated,
             )
             return
@@ -967,12 +984,29 @@ class SkillExecutiveInteractAction(InteractAction):
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("skill_executive: activation record failed: %s", exc)
 
+    async def _voice(self, visitor: "InteractWalker", text: str) -> None:
+        """Emit user-facing ``text`` through the responder (ReplyAction → channel
+        formatting, voice rules, directive composition, and graceful no-bus
+        handling; ADR-0014), falling back to a raw publish only if no responder
+        is available or its reply fails."""
+        if not (text or "").strip():
+            return
+        responder = await self.get_responder()
+        reply = getattr(responder, "reply", None) if responder is not None else None
+        if callable(reply):
+            try:
+                await reply(text, visitor)
+                return
+            except Exception as exc:
+                logger.warning("skill_executive: responder.reply failed: %s", exc)
+        await self.publish(visitor=visitor, content=text)
+
     async def _maybe_voice_final(self, visitor: "InteractWalker", answer: str) -> None:
-        """If the loop ends with text but nothing was voiced, publish it once."""
+        """If the loop ends with text but nothing was voiced, voice it once."""
         interaction = getattr(visitor, "interaction", None)
         if interaction is not None and interaction.response:
             return  # already voiced via reply/respond/IA
-        await self.publish(visitor=visitor, content=answer)
+        await self._voice(visitor, answer)
 
     @staticmethod
     def _normalize(

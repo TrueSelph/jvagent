@@ -355,7 +355,18 @@ class ReplyAction(Action):
             )
         except Exception as exc:
             logger.warning("ReplyAction.respond: generate failed: %s", exc)
-            return ""
+            # Slim fallback: the identity-voiced compose failed, but the user
+            # still needs a reply — deliver the best plain text we have rather
+            # than going silent. Prefer explicit content, else the directive text.
+            fallback = (content or "").strip() or self._collect_directive_text(
+                directives, interaction
+            )
+            fallback = fallback or "Sorry — I hit a problem composing that reply."
+            try:
+                await self.publish(fallback, visitor, transient=transient)
+            except Exception:
+                pass
+            return fallback
 
         if response and response.strip():
             await self._pipe_response(
