@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+// NOTE: jvchat is on Tailwind v4 (@tailwindcss/postcss). After pulling these
+// changes, restart `npm run dev` — Vite does not hot-reload PostCSS config.
 
 /** Keep route chunks and heavy deps under the default 500k warning threshold. */
 function manualChunks(id: string): string | undefined {
