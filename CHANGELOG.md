@@ -26,7 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
-- **Interview off-topic handling is now configurable** via a new `active_task_description` attribute on the interview action (placeholders `{action_title}`/`{action_description}`). The package default still answers divergences without redirecting; the example signup agent overrides it to briefly answer an aside then steer back and re-ask the pending question, so the flow sticks to its script.
+- **Interview stays on-script for off-topic asides (example).** Off-topic input that extracts no field re-emits the question node's `question_directive`, which the responder composes its reply from — so the example signup agent now overrides `question_directive` to answer an off-topic aside in one short sentence and then re-ask the pending field (ending the message with it), instead of answering unrelated questions at length. Also adds a configurable `active_task_description` attribute on the interview action (placeholders `{action_title}`/`{action_description}`) that overrides the control-task description used for divergence tracking; default unchanged.
 
 ### Removed
 
