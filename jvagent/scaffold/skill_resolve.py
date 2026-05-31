@@ -177,28 +177,6 @@ def _normalize_dispatch(raw_value: Any, skill_path: Path) -> Optional[Dict[str, 
     return {"tool": tool, "arg": arg, "source": source, "extra": extra}
 
 
-def _normalize_plan_steps(raw_value: Any, skill_path: Path) -> List[str]:
-    """Normalize plan-steps into a list of non-empty step descriptions."""
-    if raw_value is None:
-        return []
-    if isinstance(raw_value, str):
-        value = raw_value.strip()
-        return [value] if value else []
-    if isinstance(raw_value, list):
-        normalized = []
-        for item in raw_value:
-            value = str(item).strip()
-            if value:
-                normalized.append(value)
-        return normalized
-    logger.warning(
-        "Skill bundle %s has invalid plan-steps type: %s",
-        skill_path,
-        type(raw_value).__name__,
-    )
-    return []
-
-
 def parse_skill_bundle(
     skill_dir: Path,
     *,
@@ -252,7 +230,6 @@ def parse_skill_bundle(
     )
     verbatim_final = bool(frontmatter.get("verbatim-final"))
     always_active = bool(frontmatter.get("always-active"))
-    plan_steps = _normalize_plan_steps(frontmatter.get("plan-steps"), skill_file)
     dispatch = _normalize_dispatch(frontmatter.get("dispatch"), skill_file)
     tags = frontmatter.get("tags") or []
     if isinstance(tags, str):
@@ -295,7 +272,6 @@ def parse_skill_bundle(
         "requires_action_versions": requires_action_versions,
         "verbatim_final": verbatim_final,
         "always_active": always_active,
-        "plan_steps": plan_steps,
         "dispatch": dispatch,
         "exports": exports,
         "imports": imports,

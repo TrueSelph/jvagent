@@ -15,8 +15,6 @@ tags:
   - retrieval
   - knowledge
   - informational
-plan-steps:
-  - Search internal sources, then web, then synthesize a cited answer
 ---
 
 This skill coordinates existing tools — it does not provide its own. It

@@ -1041,7 +1041,6 @@ def _handle_skill_validate_command(args: List[str], app_root: str = None) -> Non
     print(f"  requires_actions: {bundle.get('requires_actions', [])}")
     print(f"  exports:         {bundle.get('exports', [])}")
     print(f"  imports:         {bundle.get('imports', [])}")
-    print(f"  plan_steps:      {len(bundle.get('plan_steps', []))}")
     print(f"  allowed_tools:   {bundle.get('allowed_tools', [])}")
 
 

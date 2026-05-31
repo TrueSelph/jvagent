@@ -71,7 +71,6 @@ tags:
 | `description` | recommended | `str` | Used in the skill index shown before activation. |
 | `version` | optional | `int`/`str` | Version tracking metadata. |
 | `tags` | optional | `list[str]` | Discovery cues / `scope_hint` generation. |
-| `plan-steps` | optional | `list[str]` | Suggested task-tracker steps surfaced after `use_skill`. |
 | `requires-actions` | optional | `list[str]` | Action types that must resolve before activation (e.g. a guidance skill that needs `PageIndexAction`'s tools present). |
 | `requires-jvagent` | optional | `str` | Framework version constraint, checked at preflight. |
 | `allowed-tools` | optional | `list[str]` | Tools this skill uses — **reference real tool names** (action tools like `gmail__send_email`, core tools, or this skill's own `scripts/` tools). Surfaced into the visible set on activation. |
