@@ -235,7 +235,8 @@ def run_validate(app_root: str) -> int:
 
 def print_usage() -> None:
     """Print CLI usage information."""
-    print("""
+    print(
+        """
 jvagent - Agentive Platform
 
     Usage:
@@ -316,7 +317,8 @@ Examples:
     jvagent app create --yes --dir ./my_app --app-id my_app --title T --description D --author A --agent jvagent/bot@minimal
     jvagent agent create acme/bot@conversational
     jvagent app profile new my_profile --extends minimal
-    """)
+    """
+    )
 
 
 class StartupLogCounter(logging.Handler):
