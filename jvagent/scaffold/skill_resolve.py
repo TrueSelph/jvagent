@@ -230,6 +230,12 @@ def parse_skill_bundle(
     )
     verbatim_final = bool(frontmatter.get("verbatim-final"))
     always_active = bool(frontmatter.get("always-active"))
+    # Skill spec: ``jv`` (default — an SOP that references action/IA tools) or
+    # ``claude`` (a standard Anthropic Agent Skills folder whose bundled scripts
+    # the model runs via the code-execution substrate). Unknown values fall back
+    # to ``jv`` so a typo never silently changes execution semantics.
+    spec_raw = str(frontmatter.get("spec") or "jv").strip().lower()
+    spec = spec_raw if spec_raw in ("jv", "claude") else "jv"
     dispatch = _normalize_dispatch(frontmatter.get("dispatch"), skill_file)
     tags = frontmatter.get("tags") or []
     if isinstance(tags, str):
@@ -272,6 +278,7 @@ def parse_skill_bundle(
         "requires_action_versions": requires_action_versions,
         "verbatim_final": verbatim_final,
         "always_active": always_active,
+        "spec": spec,
         "dispatch": dispatch,
         "exports": exports,
         "imports": imports,

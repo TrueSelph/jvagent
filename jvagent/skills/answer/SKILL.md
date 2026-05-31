@@ -9,6 +9,9 @@ allowed-tools:
   - pageindex__search
   - web_search__search
   - web_fetch__fetch
+requires-actions:
+  - PageIndexAction
+  - SerperWebSearchAction
 version: 2
 tags:
   - rag

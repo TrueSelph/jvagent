@@ -249,30 +249,30 @@ class TestSanitizeAndUserSegment:
     """Regression: leading underscore preserved; session_id is fallback for anonymous."""
 
     def test_sanitize_segment_preserves_default_sentinel(self):
-        from jvagent.action.mcp.sandbox import sanitize_segment
+        from jvagent.core.sandbox import sanitize_segment
 
         # Previously stripped leading underscore -> "default"; must preserve.
         assert sanitize_segment("_default") == "_default"
 
     def test_sanitize_segment_strips_only_dots(self):
-        from jvagent.action.mcp.sandbox import sanitize_segment
+        from jvagent.core.sandbox import sanitize_segment
 
         assert sanitize_segment(".hidden.") == "hidden"
         assert sanitize_segment("..__system__..") == "__system__"
 
     def test_effective_user_segment_prefers_user_id(self):
-        from jvagent.action.mcp.sandbox import effective_user_segment
+        from jvagent.core.sandbox import effective_user_segment
 
         assert effective_user_segment(user_id="alice", session_id="sess_x") == "alice"
 
     def test_effective_user_segment_falls_back_to_session_id(self):
-        from jvagent.action.mcp.sandbox import effective_user_segment
+        from jvagent.core.sandbox import effective_user_segment
 
         assert effective_user_segment(user_id=None, session_id="sess_x") == "sess_x"
         assert effective_user_segment(user_id="", session_id="sess_x") == "sess_x"
 
     def test_effective_user_segment_falls_back_to_default(self):
-        from jvagent.action.mcp.sandbox import effective_user_segment
+        from jvagent.core.sandbox import effective_user_segment
 
         assert effective_user_segment(user_id=None, session_id=None) == "_default"
         assert (
@@ -281,10 +281,10 @@ class TestSanitizeAndUserSegment:
         )
 
     def test_resolve_sandbox_relpath_keeps_underscored_default(self):
-        from jvagent.action.mcp.sandbox import resolve_mcp_sandbox_relpath
+        from jvagent.core.sandbox import resolve_user_sandbox_relpath
 
         # Image bug repro: sentinel must render as ``_default`` not ``default``.
-        rel = resolve_mcp_sandbox_relpath("agent_x", "_default")
+        rel = resolve_user_sandbox_relpath("agent_x", "_default")
         assert rel == "agent_x/_default"
 
 

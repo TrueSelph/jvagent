@@ -1,60 +1,38 @@
-# Skill Bundles Standard
+# Skills Standard — two specs
 
-`jvagent` skills are Claude-compatible modular augmentations consumed by the
-**Orchestrator** ([`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md)). A skill pairs
-instruction content (`SKILL.md`) with an optional set of executable tool modules
-and support assets.
+A `jvagent` skill is a folder with a `SKILL.md` (YAML frontmatter + a Markdown
+SOP body) that the **Orchestrator** ([`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md))
+discovers and activates through progressive disclosure. The orchestrator
+manages exactly **two skill specs** — no third variation:
 
-## Skills vs. actions — read this first
+| Spec | What it is | How it executes |
+|------|------------|-----------------|
+| **JV skill** (`spec: jv`, default) | An SOP that **references tools already on the orchestrator surface** — tools furnished by Actions and InteractActions. May declare jvagent dependencies (`requires-actions`, `allowed-tools`). | On activation, `use_skill` returns the SOP body and surfaces the skill's `allowed-tools` into the callable set. The skill "executes" by coordinating those action/IA tools. |
+| **Claude skill** (`spec: claude`) | A standard [Anthropic Agent Skill](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview) folder — instructions plus bundled scripts/resources. Drop-in compatible with the agentskills.io standard. | On activation the folder is **staged into the caller's per-user sandbox**; the model reads bundled files and runs bundled scripts via the **`code_execution__bash`** tool (the [`jvagent/code_execution`](../action/code_execution) substrate). |
 
-Under the Orchestrator pattern (ADR-0012), **actions are first-class tools**:
-an `Action` only needs to implement `get_tools()` and its capabilities are
-directly callable by the orchestrator. A **skill is an augmentation**, not a
-capability host. Use a skill to:
+> Actions remain first-class tools (ADR-0012): a capability that any user calls
+> directly belongs in an **Action**'s `get_tools()`, not a skill. A skill adds
+> *judgment* (a JV SOP over existing tools) or *portable bundled capability*
+> (a Claude skill whose scripts run in the sandbox). If you find yourself
+> wrapping an action's operation in a skill, expose it on the action instead.
 
-1. **Guide and coordinate** — an SOP that references one or more existing tools
-   (action tools, core tools) and steers their use toward an outcome
-   (`research`, `answer`, `code_review`, `triage`). These carry little or no
-   code; they reference tools by name in `allowed-tools` and the SOP body.
-2. **Provide genuinely new capability** — bundle tool modules in `scripts/` only
-   when the capability is **not** offered by any action (`pdf_generation`'s LaTeX
-   rendering, `fileinterface`'s sandboxed I/O, `skill_hub`'s registry ops).
+## SKILL.md anatomy
 
-**Do not** write a skill whose `scripts/` re-wrap an action's operations. That
-duplication is exactly what this library was cleaned of: if an action already
-exposes the operation via `get_tools()`, reference that tool from a skill SOP —
-or just let the executive call the action tool directly. Need a new operation on
-an existing integration? Add it to that action's `get_tools()`, not a skill stub.
-
-## Canonical Structure
-
-```text
-<skill_name>/
-  SKILL.md              # Required entry point (frontmatter + SOP)
-  scripts/              # Optional — ONLY for new-capability tool modules
-  resources/            # Optional references, schemas, policy docs, requirements
-  templates/            # Optional output templates (md/json/j2/etc)
-  examples/             # Optional input/output examples
-```
-
-`SKILL.md` is required. All other directories are optional and created only when
-needed. A guidance-only skill is just a `SKILL.md`.
-
-## SKILL.md Anatomy
-
-`SKILL.md` has two parts: YAML frontmatter metadata (between `---` delimiters)
-and a Markdown SOP body (`Workflow`, `Scope`, `Grounding`, constraints, etc.).
+Two parts: YAML frontmatter (between `---`) and a Markdown SOP body.
 
 ```markdown
 ---
-name: research
-description: Investigate a topic with evidence-first synthesis and citations.
+name: research                 # lowercase, numbers, hyphens (Claude rule)
+description: >-
+  Investigate a topic with evidence-first synthesis and citations. Include
+  what it does AND when to use it (third person — it's injected into the prompt).
+spec: jv                       # jv (default) | claude
 allowed-tools:
   - web_search__search
   - web_fetch__fetch
-version: 2
-tags:
-  - research
+metadata:
+  version: 2
+  tags: [research]
 ---
 
 ## Workflow
@@ -63,152 +41,135 @@ tags:
 3. Reconcile conflicts and synthesize a cited answer.
 ```
 
-## Frontmatter Keys
+## Frontmatter keys
 
-| Key | Required | Type | Notes |
-|-----|----------|------|-------|
-| `name` | recommended | `str` | Defaults to folder name when omitted (warning emitted). |
-| `description` | recommended | `str` | Used in the skill index shown before activation. |
-| `version` | optional | `int`/`str` | Version tracking metadata. |
-| `tags` | optional | `list[str]` | Discovery cues / `scope_hint` generation. |
-| `requires-actions` | optional | `list[str]` | Action types that must resolve before activation (e.g. a guidance skill that needs `PageIndexAction`'s tools present). |
-| `requires-jvagent` | optional | `str` | Framework version constraint, checked at preflight. |
-| `allowed-tools` | optional | `list[str]` | Tools this skill uses — **reference real tool names** (action tools like `gmail__send_email`, core tools, or this skill's own `scripts/` tools). Surfaced into the visible set on activation. |
+| Key | Specs | Notes |
+|-----|-------|-------|
+| `name` | both | Lowercase letters, numbers, hyphens (Claude rule); defaults to folder name. |
+| `description` | both | Drives discovery; third person; what it does + when to use it. |
+| `spec` | both | `jv` (default) or `claude`. Unknown values fall back to `jv`. |
+| `allowed-tools` | mostly JV | Runtime tool names the SOP uses (e.g. `gmail__send_email`, `web_fetch__fetch`, `code_execution__bash`). Surfaced into the visible set on activation. |
+| `requires-actions` | JV | Action types that must resolve before activation (hard gate). |
+| `requires-jvagent` | JV | Framework version constraint, checked at preflight. |
+| `requires-action-versions` | JV | `namespace/label` → version constraint. |
+| `license`, `metadata` | both | Claude-standard fields. `metadata.version` / `metadata.tags` for tracking + discovery cues. |
 
-## Tool Module Contract (`scripts/`)
+(jvagent also parses chaining/dispatch extensions — `exports`, `imports`,
+`coactivate-with`, `dispatch`, `verbatim-final`, `always-active` — for the JV
+orchestration features the Claude standard doesn't cover.)
 
-Only for **new-capability** skills. Each non-private `.py` in `scripts/` (except
-`__init__.py` and `_`-prefixed helpers) is a candidate tool exporting:
+## JV skills — coordinate existing tools
 
-1. `get_tool_definition() -> dict` (bare `name`; runtime name is `<skill>__<name>`)
-2. `async def execute(...)`
+A JV skill is pure judgment: a `SKILL.md` whose body steers tools that Actions
+and InteractActions already expose. It carries **no executable code**. Examples:
+`research`, `answer`, `code_review`. Reference the tools you use in
+`allowed-tools` (and `requires-actions` if a tool *must* be present), then
+describe the procedure in the body. Activation surfaces those tools so the model
+can call them on the next loop tick.
 
-```python
-from typing import Any, Dict, List
+## Claude skills — bundled scripts in a sandbox
 
-def get_tool_definition() -> Dict[str, Any]:
-    return {
-        "name": "prioritize_findings",
-        "description": "Sort findings by severity (descending).",
-        "parameters": {
-            "type": "object",
-            "properties": {"findings": {"type": "array", "items": {}}},
-            "required": ["findings"],
-        },
-    }
+A Claude skill is a standard Anthropic folder. Set `spec: claude` and bundle
+whatever the procedure needs:
 
-async def execute(arguments: Dict[str, Any]) -> List[Dict[str, Any]]:
-    findings = list(arguments.get("findings") or [])
-    findings.sort(key=lambda i: int(i.get("severity", 0)), reverse=True)
-    return findings
+```text
+<skill_name>/
+  SKILL.md            # frontmatter + instructions (how to run the scripts)
+  scripts/            # plain CLI scripts the model runs via code_execution__bash
+  resources/          # reference docs/data read on demand (level-3 disclosure)
 ```
 
-Rules:
+Scripts are **ordinary executables** (not a tool protocol) — they read args/stdin,
+do work, and write output/stdout, e.g.:
 
-- Keep helper-only modules private by prefixing filenames with `_`.
-- A `scripts/` tool should deliver capability the skill owns — not delegate to an
-  action method. If you find yourself resolving an action inside a skill tool to
-  call one of its methods, expose that operation on the action's `get_tools()`
-  instead and reference it from the SOP.
-
-## Optional Subdirectories
-
-- `resources/`: long-form docs, policies, schemas, dependency files, reference data.
-- `templates/`: renderable templates used by tools (e.g. Jinja2 or markdown skeletons).
-- `examples/`: canonical examples and expected outputs for few-shot shaping.
-
-## User-Scoped File I/O
-
-For user artifacts, do not rely on host-relative paths. Use `fileinterface`
-tools and/or private helpers in `jvagent.skills.fileinterface.scripts._core`.
-
-- Relative paths resolve under `<sanitized_agent_id>/<sanitized_user_id>/` in jvspatial storage.
-- Call `fileinterface__describe_write_workspace` before other fileinterface operations for a new write task.
-- Process-local temp files (for compilers/subprocesses) are allowed when ephemeral.
-
-## Cross-Skill Imports
-
-Use explicit package paths; avoid relative imports that depend on cwd:
-
-```python
-from jvagent.skills.fileinterface.scripts._core import copy_host_file_into_sandbox
-from jvagent.skills.pdf_generation.scripts._document_args import parse_document_pdf_arguments
+```bash
+python staged_skills/<skill>/scripts/render_pdf.py --input doc.md --output output/report.pdf
 ```
 
-## Discovery and Activation Lifecycle
+On activation the orchestrator stages the folder at `staged_skills/<name>/` inside the
+caller's per-user sandbox and tells the model where to run it. Anything a script
+writes lands in that user's slice and is visible to the file tools. See
+[`pdf_generation`](pdf_generation) and [`triage`](triage) for working examples.
 
-Skills are lazily activated through progressive disclosure by the Orchestrator:
+**Requires the code-execution substrate.** Claude skills only execute when
+[`jvagent/code_execution`](../action/code_execution) is installed and **enabled**
+on the agent (it is **off by default**). Without it, a Claude skill still
+activates (its SOP loads) but its scripts cannot run.
 
-1. The executive resolves skill bundles from the configured sources.
-2. Metadata is registered, but a skill's tools stay hidden initially.
-3. The model sees `find_skill` / `use_skill` plus the skill index.
-4. The model calls `use_skill(name=...)`.
-5. The executive returns the SOP body as an observation and surfaces the skill's
-   `allowed-tools` into the visible tool set.
-6. Those tools are callable on the next loop tick.
+### The multitenant sandbox
 
-This mirrors the Claude skill model: discover first, activate only when needed.
+`code_execution` runs `bash` with its working directory set to the caller's own
+`<agent_id>/<user_id>/` slice — the same per-user filesystem convention the
+file-IO MCPs and the `file_interface` action use, centralized in
+[`jvagent.core.sandbox`](../core/sandbox.py). Each user's code is walled off from
+every other user's. Per-execution OS limits (no network, CPU/memory/time/output
+caps, scrubbed env) come from a **pluggable executor** — a subprocess default,
+swappable for a container/jail backend. The subprocess default is **not a hard
+security boundary**: run only trusted skills under it, or supply an isolating
+backend for untrusted/third-party skills. See the action and executor module
+docstrings for the full posture.
 
-## Skill Sources and Precedence
+## Discovery and activation lifecycle
 
-1. Built-in: `jvagent/skills/*`
-2. App-local: `agents/<namespace>/<agent_id>/skills/*`
+1. The orchestrator resolves skill bundles from the configured sources; each
+   skill's `name` + `description` are listed in the prompt (Claude level 1).
+2. `find_skill` searches the index; `use_skill(name=...)` activates one.
+3. Activation returns the SOP body as an observation (level 2) and:
+   - **JV skill** → surfaces the skill's `allowed-tools` into the visible set.
+   - **Claude skill** → stages the folder into the per-user sandbox and notes
+     where to run it; the model then reads files / runs scripts via
+     `code_execution__bash` (level 3) as needed.
+4. `use_skill` is idempotent per turn.
 
-App-local overrides a built-in skill of the same `name`.
+## Sources, precedence, configuration
 
-## Per-Agent Configuration
-
-Configure on the Orchestrator action in `agent.yaml`:
+1. Built-in: `jvagent/skills/*`  2. App-local: `agents/<ns>/<agent_id>/skills/*`
+(app-local overrides a built-in of the same `name`).
 
 ```yaml
 - action: jvagent/orchestrator
   context:
     skills_source: both        # app | library | both
-    skills: "-all"             # or a finite list: [research, answer]
-    denied_skills:
-      - triage
+    skills: "-all"             # or a finite list: [research, pdf-generation]
+    denied_skills: [triage]
+# Enable Claude-skill execution (off by default):
+- action: jvagent/code_execution
+  context:
+    enabled: true
+    timeout: 60
+    memory_mb: 2048
 ```
 
-| Selector | Behavior |
+| `skills` selector | Behavior |
 |----------|----------|
-| `skills: -all` | Expose all resolved bundles |
-| `skills: ["name", "glob*"]` | Expose only matching bundles |
-| `skills: null` / omitted | Expose no bundles |
+| `-all` | expose all resolved bundles |
+| `["name", "glob*"]` | expose only matching |
+| `null` / omitted | expose none |
 
-| `skills_source` | Resolution scope |
-|-----------------|------------------|
-| `both` (default) | Library + app-local |
-| `library` (alias `builtin`) | Library only |
-| `app` (alias `local`) | App-local only |
+## Building a new skill
 
-## Building New Skills
+**JV skill:** create `jvagent/skills/<name>/SKILL.md` with `spec: jv` (or omit),
+reference the action/IA tools in `allowed-tools`, write the SOP. No code.
 
-Built-in:
-
-1. Create `jvagent/skills/<skill_name>/` with `SKILL.md` (frontmatter + SOP).
-2. Reference the tools the SOP uses in `allowed-tools`.
-3. Add `scripts/` **only** for genuinely new capability tools (not action stubs).
-4. Add `resources/`, `templates/`, `examples/` as needed.
-
-App-local: create `agents/<ns>/<agent_id>/skills/<skill_name>/` and enable via
-the `skills` selector. Use the same `name` to override a built-in.
+**Claude skill:** create `jvagent/skills/<name>/` with `spec: claude`, add
+`scripts/` (plain CLI scripts) and any `resources/`, and write a SKILL.md that
+tells the model how to run them via `code_execution__bash`. Declare runtime
+dependencies in `resources/requirements.txt` — the sandbox has no network, so
+they must be present in the host image.
 
 ## Resolver API
 
 ```python
 from jvagent.scaffold.skill_resolve import (
-    parse_skill_bundle,
-    resolve_builtin_skills,
-    resolve_agent_skills,
-    resolve_merged_skill_bundles,
-    apply_skill_selector,
-    list_builtin_skill_names,
-    list_agent_skill_names,
+    parse_skill_bundle, resolve_builtin_skills, resolve_agent_skills,
+    resolve_merged_skill_bundles, apply_skill_selector,
+    list_builtin_skill_names, list_agent_skill_names,
 )
 ```
 
-## See Also
+## See also
 
-- [Orchestrator](../../docs/ORCHESTRATOR.md) — the orchestrator and its skill lifecycle
+- [Orchestrator](../../docs/ORCHESTRATOR.md) — the loop and skill lifecycle
+- [`jvagent/code_execution`](../action/code_execution) — the sandbox substrate
+- [`jvagent/core/sandbox.py`](../core/sandbox.py) — the per-user FS convention
 - [`MCPAction` README](../action/mcp/README.md) — external tool servers
-- `fileinterface`, `pdf_generation`, `skill_hub` bundles for new-capability examples

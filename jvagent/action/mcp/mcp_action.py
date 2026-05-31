@@ -23,14 +23,14 @@ from jvagent.action.mcp.prompts import (
     build_tool_selection_prompt,
 )
 from jvagent.action.mcp.result import MCPFulfillResult
-from jvagent.action.mcp.sandbox import (
+from jvagent.core.config import parse_env_bool
+from jvagent.core.sandbox import (
     absolute_under_files_root,
     is_local_file_interface,
     provision_sandbox_dir,
-    resolve_mcp_sandbox_relpath,
     resolve_sandbox_root,
+    resolve_user_sandbox_relpath,
 )
-from jvagent.core.config import parse_env_bool
 
 logger = logging.getLogger(__name__)
 
@@ -374,11 +374,11 @@ class MCPAction(Action):
 
             client: MCPClientWrapper
             if sb_mode and is_fs and use_jvfs:
-                rel = resolve_mcp_sandbox_relpath(raw_agent_id, def_user)
+                rel = resolve_user_sandbox_relpath(raw_agent_id, def_user)
                 cmd, a, client = build_jvfs_client(rel, connect_timeout, call_timeout)
                 command, args = cmd, a
             elif sb_mode and is_fs and not use_jvfs:
-                rel = resolve_mcp_sandbox_relpath(raw_agent_id, def_user)
+                rel = resolve_user_sandbox_relpath(raw_agent_id, def_user)
                 abs_r = absolute_under_files_root(files_root, rel)
                 # Eagerly create the directory so the MCP filesystem server can
                 # validate it on startup (it fails with ENOENT otherwise).
@@ -446,7 +446,7 @@ class MCPAction(Action):
         for ent in self._servers_by_name.values():
             if not ent.sandbox_mode:
                 continue
-            rel = resolve_mcp_sandbox_relpath(
+            rel = resolve_user_sandbox_relpath(
                 ent.sandbox_agent_id, ent.default_sandbox_user
             )
             if is_local_file_interface(fi):
@@ -588,7 +588,7 @@ class MCPAction(Action):
                 in their own per-session sandbox folder rather than the
                 shared system-default folder.
         """
-        from jvagent.action.mcp.sandbox import effective_user_segment
+        from jvagent.core.sandbox import effective_user_segment
 
         # Resolve the segment used for sandbox routing. ``default=""`` so we
         # surface "no caller identity" to ``get_client_for_user`` as None,
@@ -732,7 +732,7 @@ class MCPAction(Action):
 
         When ``sandbox_user_scoped`` is True for a filesystem stdio server, creates
         (and caches) a separate subprocess per sanitized ``user_id`` under
-        ``<files_root>/<agentId>/<userId>`` (see ``resolve_mcp_sandbox_relpath``).
+        ``<files_root>/<agentId>/<userId>`` (see ``resolve_user_sandbox_relpath``).
         The default client (``entry.client``) uses the ``MCP_FILESYSTEM_SANDBOX_DEFAULT_USER``
         path (default ``_default``) and is returned when no real user ID is available or
         when sandbox scoping is not enabled.
@@ -752,7 +752,7 @@ class MCPAction(Action):
         async with entry.user_lock:
             if uid in entry.user_clients:
                 return entry.user_clients[uid]
-            urel = resolve_mcp_sandbox_relpath(entry.sandbox_agent_id, uid)
+            urel = resolve_user_sandbox_relpath(entry.sandbox_agent_id, uid)
             from jvagent.core.app import App
 
             app = await App.get()
@@ -829,7 +829,7 @@ class MCPAction(Action):
                     tool execution, tests).
                     """
                     from jvagent.action.mcp.mcp_action import _normalize_call_result
-                    from jvagent.action.mcp.sandbox import effective_user_segment
+                    from jvagent.core.sandbox import effective_user_segment
                     from jvagent.tooling.tool_executor import get_dispatch_context
 
                     ctx = get_dispatch_context()

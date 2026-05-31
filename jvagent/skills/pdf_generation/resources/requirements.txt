@@ -1,22 +1,19 @@
-# Optional dependency for pdf_generation__pandoc_fallback (Markdown → HTML → PDF).
+# PDF engine — at least one of these must be present in the execution sandbox.
+# The bundled render script (scripts/render_pdf.py) auto-selects the first
+# available, in this order:
 #
-# LaTeX / pdf_generation__latex_compile — not pip-installable as xelatex.
-# The tool looks for, in order: xelatex, pdflatex, lualatex, then `tectonic`.
+#   1. pandoc + a LaTeX engine (xelatex / pdflatex / lualatex / tectonic)  [best]
+#   2. pandoc + wkhtmltopdf
+#   3. weasyprint + markdown   (pure-Python HTML route)
 #
-# Lightweight option (single binary, often enough for our bundled template):
-#   macOS:    brew install tectonic
-#   Debian/Ubuntu:  sudo apt install tectonic
-#   conda:    conda install -c conda-forge tectonic
+# The code-execution sandbox has NO network, so these must be installed into the
+# host/image ahead of time (not pip-installed at runtime).
 #
-# Full distributions (traditional engines): TeX Live, MacTeX, MiKTeX — add xelatex to PATH.
+# System packages:
+#   pandoc
+#   texlive-xetex       (or another LaTeX distribution, or `tectonic`)
+#   wkhtmltopdf         (optional — enables the pandoc HTML route)
 #
-# Tectonic caches downloads under TECTONIC_CACHE_DIR (or the OS user cache). jvagent sets
-# TECTONIC_CACHE_DIR to a per-build temp folder so compilation works when the default cache is not writable.
-#
-# Install via either:
-#   Declare weasyprint under package.dependencies.pip on your SkillInteractAction info.yaml
-#   pip install -r jvagent/skills/pdf_generation/resources/requirements.txt
-#
-# Proposal example: proposal_skill_interact_action/info.yaml lists weasyprint so it installs
-# when that action loads (unless JVAGENT_DISABLE_RUNTIME_PIP_INSTALL is set).
-weasyprint>=52.5
+# Python packages (only for the WeasyPrint route):
+weasyprint>=60
+markdown>=3.4

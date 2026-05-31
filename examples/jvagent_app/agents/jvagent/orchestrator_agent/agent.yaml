@@ -109,9 +109,11 @@ actions:
       # (fnmatch patterns ok); use "-all" for every discovered skill.
       skills_source: both
       skills:
-        - web_lookup      # app-local (agents/jvagent/orchestrator_agent/skills/)
-        - research        # library (jvagent/skills/)
-        - answer          # library — internal-first RAG cascade (PageIndex + web)
+        - web_lookup      # app-local JV skill (agents/.../skills/)
+        - research        # library JV skill (jvagent/skills/)
+        - answer          # library JV skill — internal-first RAG cascade
+        - pdf-generation  # library CLAUDE skill — renders a PDF via code_execution
+        - triage          # library CLAUDE skill — sorts findings via code_execution
 
   # MCP gateway: a sandboxed filesystem server (npx). Its tools surface to the
   # executive (tool_servers above) as mcp_filesystem__<tool>, sandboxed per
@@ -158,6 +160,38 @@ actions:
     context:
       enabled: true
       max_chars: 8000
+
+  # ── Code execution substrate (ADR-0017) — the runtime CLAUDE skills assume ──
+  # Exposes code_execution__bash, whose cwd is the caller's OWN per-user slice
+  # (multitenant: walled off from other users). Activating a `spec: claude` skill
+  # (pdf-generation, triage above) stages its folder at .skills/<name>/ here and
+  # the model runs its scripts with bash. OFF by default — enabled here to test.
+  # The subprocess backend bounds CPU/memory/time/output and scrubs the env, but
+  # is NOT a hard jail: run only trusted skills under it. Requires LOCAL file
+  # storage (the default ./.files backend).
+  - action: jvagent/code_execution
+    context:
+      enabled: true
+      timeout: 90              # wall-clock seconds per command (LaTeX can be slow)
+      memory_mb: 0             # 0 = no RLIMIT_AS (some toolchains, e.g. xelatex, mmap large)
+      cpu_seconds: 60
+      max_output_bytes: 64000
+      network: false
+
+  # ── File interface (ADR-0017) — per-user sandboxed file I/O as first-class
+  # tools (file_interface__read_file/write_file/list_directory/…). Same per-user
+  # slice as code_execution and the filesystem MCP, so a PDF a Claude skill writes
+  # under output/ is retrievable here. Useful for agents without code execution.
+  - action: jvagent/file_interface
+    context:
+      enabled: true
+
+  # ── Skill hub — search/install/remove skill bundles for this agent. Management
+  # capability (mutates agent.yaml + the skills dir); remove_skill needs explicit
+  # confirmation. Enable to test the registry tools.
+  - action: jvagent/skill_hub
+    context:
+      enabled: true
 
   # Always-execute IA runs BEFORE the executive in the weight chain.
   - action: jvagent/intro_interact_action

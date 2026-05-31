@@ -4,6 +4,9 @@ description: Investigate a topic with evidence-first synthesis and citations.
 allowed-tools:
   - web_search__search
   - web_fetch__fetch
+requires-actions:
+  - SerperWebSearchAction
+  - WebFetchAction
 version: 2
 tags:
   - research

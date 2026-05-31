@@ -44,6 +44,33 @@ intro_interact_action runs BEFORE the executive (always_execute sidecar)
 | `sign up for jvagent training` | Model selects signup interview IA-as-tool → flow starts, TaskStore control-task recorded |
 | your answers on following turns | With `lock_active_flow: true` (default), orchestrator dispatches the interview IA directly; with `false`, model may continue or detour |
 | `stop` / `cancel` mid-interview | Interview IA handles cancellation via its own session logic |
+| `make a PDF of a short status report` | **Claude skill** `pdf-generation` → `use_skill` stages it into your per-user slice → model writes markdown + runs `code_execution__bash` (`render_pdf.py`) → PDF lands under `output/` in your slice |
+| `rank these issues by severity: …` | **Claude skill** `triage` → `code_execution__bash` runs `prioritize.py` to sort deterministically |
+| `list the files in my workspace` | `file_interface__list_directory` (same per-user slice the PDF was written to) |
+
+## Testing the two skill specs + code execution (ADR-0017)
+
+This agent enables the new substrate so you can exercise both specs:
+
+- **JV skills** (`web_lookup`, `research`, `answer`) — SOPs that reference action
+  tools already on the surface; `use_skill` surfaces those tools.
+- **Claude skills** (`pdf-generation`, `triage`, `spec: claude`) — standard
+  folders whose bundled scripts run in **`jvagent/code_execution`**. Activation
+  stages the skill at `staged_skills/<name>/` in the caller's **own** per-user slice
+  (`<agent_id>/<user_id>/`), and the model runs the scripts with
+  `code_execution__bash`. Artifacts persist in that slice and are visible via
+  `file_interface__*` and the filesystem MCP — three views on one slice.
+
+`jvagent/code_execution` is **off by default**; it is enabled here. The
+subprocess backend bounds CPU/memory/time/output and scrubs the env but is not a
+hard jail — fine for these trusted library skills. It needs **local** file
+storage (the default `./.files`). For `pdf-generation` to produce a real PDF, the
+host needs a PDF engine (`pandoc` + a LaTeX engine, or `weasyprint`); otherwise
+the script reports the missing dependency.
+
+> After editing `agent.yaml`, re-run `jvagent examples/jvagent_app --update` to
+> sync the new actions (`code_execution`, `file_interface`, `skill_hub`) into the
+> graph before serving.
 
 ## Notes
 

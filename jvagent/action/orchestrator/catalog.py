@@ -16,7 +16,7 @@ body as an observation so it persists for the rest of the loop.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 
 from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.action.orchestrator.tools import SkillTool
@@ -66,13 +66,18 @@ def build_skill_meta_tools(
     available_tool_names: Set[str],
     activated: List[str],
     visible: Optional[Set[str]] = None,
+    activate_hook: Optional[Callable[[SkillDoc], Awaitable[Optional[str]]]] = None,
 ) -> Dict[str, SkillTool]:
-    """``find_skill`` / ``use_skill`` over native SOP skills (progressive).
+    """``find_skill`` / ``use_skill`` over skills (progressive disclosure).
 
-    When ``visible`` is provided, activating a skill via ``use_skill`` surfaces
-    the skill's declared ``allowed-tools`` (those present on the surface) into
-    that set, so the model can call them immediately — a jvSkill *executes* by
-    coordinating the tools it names.
+    When ``visible`` is provided, activating a JV skill via ``use_skill``
+    surfaces the skill's declared ``allowed-tools`` (those present on the
+    surface) into that set, so the model can call them immediately — a JV skill
+    *executes* by coordinating the tools it names.
+
+    ``activate_hook`` runs once on a skill's first activation (e.g. to stage a
+    Claude skill's folder into the code-execution sandbox); a non-empty string
+    it returns is appended to the activation observation.
     """
     if not docs:
         return {}
@@ -115,8 +120,17 @@ def build_skill_meta_tools(
                 + ", ".join(missing)
                 + ". Adapt accordingly or report the gap.)"
             )
+        staged = ""
+        if activate_hook is not None:
+            try:
+                note = await activate_hook(doc)
+            except Exception as exc:  # never break activation on a hook failure
+                note = f"(activation hook error: {exc})"
+            if note:
+                staged = f"\n\n{note}"
         return (
-            f"Activated skill '{doc.name}'.{surfaced}\n\nPROCEDURE:\n{doc.body}{warn}"
+            f"Activated skill '{doc.name}'.{surfaced}{staged}"
+            f"\n\nPROCEDURE:\n{doc.body}{warn}"
         )
 
     return {

@@ -24,6 +24,8 @@ class SkillDoc:
     body: str
     requires_tools: Tuple[str, ...] = ()
     source: str = "app"
+    directory: str = ""
+    spec: str = "jv"
     metadata: dict = field(default_factory=dict)
 
 
@@ -109,6 +111,8 @@ def discover_skill_docs(
                 body=(bundle.get("content") or "").strip(),
                 requires_tools=tuple(bundle.get("allowed_tools") or ()),
                 source=bundle.get("source", "app"),
+                directory=str(bundle.get("dir") or ""),
+                spec=str(bundle.get("spec") or "jv"),
                 metadata=bundle.get("metadata") or {},
             )
         )

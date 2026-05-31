@@ -69,6 +69,7 @@ those records covered patterns (bridge/helm/cockpit) that were removed.
 | [0014](adr/0014-identity-on-agent-replyaction-egress.md) | Identity on the Agent + ReplyAction egress | Accepted |
 | [0015](adr/0015-skill-executive-configuration-surface.md) | Orchestrator configuration surface | Accepted |
 | [0016](adr/0016-model-gearing-light-heavy.md) | Model gearing: light completion + heavy reasoning | Accepted |
+| [0017](adr/0017-two-skill-specs-code-execution-substrate.md) | Two skill specs (JV + Claude) + multitenant code-execution substrate | Accepted |
 
 ## archive/ — historical
 

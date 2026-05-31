@@ -556,12 +556,17 @@ class OrchestratorInteractAction(InteractAction):
                 )
                 visible.add(name)
 
-        # Native SOP skills (progressive disclosure; meta-tools visible).
+        # Skills (progressive disclosure; meta-tools visible). Two specs: ``jv``
+        # (SOP referencing action/IA tools) and ``claude`` (standard folders run
+        # via the code-execution substrate). Activating a Claude skill stages its
+        # folder into the caller's per-user sandbox so its scripts are runnable.
         docs = self._discover_skills(agent)
         if skill_docs is not None:
             skill_docs.extend(docs)
+        code_exec = self._select_code_execution_action(actions)
+        activate_hook = self._build_skill_activate_hook(code_exec, visitor)
         for name, t in build_skill_meta_tools(
-            docs, set(tools.keys()), activated, visible
+            docs, set(tools.keys()), activated, visible, activate_hook=activate_hook
         ).items():
             tools[name] = t
             visible.add(name)
@@ -1432,6 +1437,53 @@ class OrchestratorInteractAction(InteractAction):
             return MCPAction
         except Exception:
             return None
+
+    @staticmethod
+    def _select_code_execution_action(actions: List[Any]) -> Optional[Any]:
+        """The enabled CodeExecutionAction, if one is installed and on."""
+        try:
+            from jvagent.action.code_execution import CodeExecutionAction
+        except Exception:
+            return None
+        for action in actions:
+            if isinstance(action, CodeExecutionAction) and getattr(
+                action, "enabled", False
+            ):
+                return action
+        return None
+
+    @staticmethod
+    def _build_skill_activate_hook(
+        code_exec: Optional[Any], visitor: Any
+    ) -> Optional[Any]:
+        """Hook that stages a Claude skill's folder into the per-user sandbox.
+
+        Returns ``None`` when code execution is unavailable; otherwise an async
+        ``(SkillDoc) -> Optional[str]`` that stages ``spec: claude`` skills and
+        returns a note telling the model where to run them. JV skills are
+        ignored (they execute by referencing already-surfaced tools).
+        """
+        if code_exec is None:
+            return None
+
+        async def _activate(doc: Any) -> Optional[str]:
+            if getattr(doc, "spec", "jv") != "claude":
+                return None
+            directory = getattr(doc, "directory", "") or ""
+            if not directory:
+                return None
+            try:
+                rel = await code_exec.stage_skill(visitor, directory, doc.name)
+            except Exception as exc:
+                return f"(could not stage skill files: {exc})"
+            return (
+                f"This skill's files are staged at '{rel}/' in your sandbox. Run "
+                f"its scripts with the code_execution__bash tool — e.g. "
+                f"`python {rel}/scripts/<script>.py`. Read bundled files there "
+                f"(e.g. `cat {rel}/reference.md`) only as needed."
+            )
+
+        return _activate
 
     def _select_mcp_actions(self, actions: List[Any]) -> List[Any]:
         """MCPAction instances to pull tools from, per ``tool_servers``.
