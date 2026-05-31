@@ -21,6 +21,7 @@ import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button
 import {
   MessageDebugAction,
   ComposerMenuSlot,
+  BranchContext,
 } from "@/components/assistant-ui/debug-action";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -28,7 +29,6 @@ import {
   ActionBarMorePrimitive,
   ActionBarPrimitive,
   AuiIf,
-  BranchPickerPrimitive,
   ComposerPrimitive,
   ErrorPrimitive,
   groupPartByType,
@@ -50,7 +50,14 @@ import {
   RefreshCwIcon,
   SquareIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState, type FC, type ReactNode } from "react";
+import {
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type FC,
+  type ReactNode,
+} from "react";
 
 /**
  * jvchat: one Reasoning section per exchange whose trigger label tracks the
@@ -464,32 +471,54 @@ const EditComposer: FC = () => {
   );
 };
 
-const BranchPicker: FC<BranchPickerPrimitive.Root.Props> = ({
+// jvchat owns edit-branch state (keyed by branchRootId), not assistant-ui's
+// message repository — so the version pager is driven from BranchContext rather
+// than BranchPickerPrimitive. Both the user message and its assistant answer
+// carry the same branchRootId, so each turn's pager shows the same count/index.
+const BranchPicker: FC<React.HTMLAttributes<HTMLDivElement>> = ({
   className,
   ...rest
 }) => {
+  const branch = useContext(BranchContext);
+  const rootId = useAuiState(
+    (s) =>
+      (s.message.metadata?.custom as { branchRootId?: string } | undefined)
+        ?.branchRootId,
+  );
+  const snaps = branch && rootId ? branch.branchSnapshots[rootId] : undefined;
+  const count = snaps?.length ?? 0;
+  if (!branch || !rootId || count < 2) return null;
+
+  const index = branch.branchVersionIndex[rootId] ?? count - 1;
+  const go = (i: number) => {
+    if (i >= 0 && i < count) branch.onBranchVersionChange(rootId, i);
+  };
+
   return (
-    <BranchPickerPrimitive.Root
-      hideWhenSingleBranch
+    <div
       className={cn(
         "aui-branch-picker-root text-muted-foreground -ms-2 me-2 inline-flex items-center text-xs",
         className,
       )}
       {...rest}
     >
-      <BranchPickerPrimitive.Previous asChild>
-        <TooltipIconButton tooltip="Previous">
-          <ChevronLeftIcon />
-        </TooltipIconButton>
-      </BranchPickerPrimitive.Previous>
+      <TooltipIconButton
+        tooltip="Previous"
+        disabled={index <= 0}
+        onClick={() => go(index - 1)}
+      >
+        <ChevronLeftIcon />
+      </TooltipIconButton>
       <span className="aui-branch-picker-state font-medium">
-        <BranchPickerPrimitive.Number /> / <BranchPickerPrimitive.Count />
+        {index + 1} / {count}
       </span>
-      <BranchPickerPrimitive.Next asChild>
-        <TooltipIconButton tooltip="Next">
-          <ChevronRightIcon />
-        </TooltipIconButton>
-      </BranchPickerPrimitive.Next>
-    </BranchPickerPrimitive.Root>
+      <TooltipIconButton
+        tooltip="Next"
+        disabled={index >= count - 1}
+        onClick={() => go(index + 1)}
+      >
+        <ChevronRightIcon />
+      </TooltipIconButton>
+    </div>
   );
 };

@@ -25,6 +25,20 @@ export const ComposerMenuSlot: FC = () => {
 };
 
 /**
+ * jvchat bridge: per-turn edit branches live in jvchat's own state (keyed by
+ * branchRootId), not assistant-ui's message repository. The BranchPicker reads
+ * this to show the version count and page between versions via
+ * onBranchVersionChange (jvchat's selectBranchVersion).
+ */
+export interface BranchState {
+  branchSnapshots: Record<string, Message[][]>;
+  branchVersionIndex: Record<string, number>;
+  onBranchVersionChange: (rootId: string, index: number) => void;
+}
+
+export const BranchContext = createContext<BranchState | null>(null);
+
+/**
  * jvchat-specific addition to assistant-ui's action bar: a "Debug" button that
  * opens the legacy debug dialog from the final-chunk debugData carried on the
  * message metadata. Hidden when the message has no debug payload yet.

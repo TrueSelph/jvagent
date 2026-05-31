@@ -27,6 +27,7 @@ import { Thread } from "../assistant-ui/thread";
 import {
   DebugContext,
   ComposerMenuContext,
+  BranchContext,
 } from "../assistant-ui/debug-action";
 import { MessageDebugDialog } from "./MessageDebugDialog";
 
@@ -121,12 +122,26 @@ export function AssistantThread({
   messages,
   isStreaming = false,
   onEditMessage,
+  branchSnapshots = {},
+  branchVersionIndex = {},
+  onBranchVersionChange,
   onSend,
   onStop,
   composerDisabled = false,
   composerMenu,
 }: AssistantThreadProps) {
   const [debugMessage, setDebugMessage] = useState<Message | null>(null);
+
+  // jvchat owns edit-branch state; expose it to the vendored BranchPicker so the
+  // version pager reads counts and switches versions through selectBranchVersion.
+  const branchState = useMemo(
+    () => ({
+      branchSnapshots,
+      branchVersionIndex,
+      onBranchVersionChange: onBranchVersionChange ?? (() => {}),
+    }),
+    [branchSnapshots, branchVersionIndex, onBranchVersionChange],
+  );
 
   const threadMessages = useMemo(
     () => buildThreadMessages(messages, isStreaming),
@@ -160,13 +175,15 @@ export function AssistantThread({
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <DebugContext.Provider value={{ openDebug: setDebugMessage }}>
-        <ComposerMenuContext.Provider value={composerMenu}>
-          <Thread />
-          <MessageDebugDialog
-            message={debugMessage}
-            onClose={() => setDebugMessage(null)}
-          />
-        </ComposerMenuContext.Provider>
+        <BranchContext.Provider value={branchState}>
+          <ComposerMenuContext.Provider value={composerMenu}>
+            <Thread />
+            <MessageDebugDialog
+              message={debugMessage}
+              onClose={() => setDebugMessage(null)}
+            />
+          </ComposerMenuContext.Provider>
+        </BranchContext.Provider>
       </DebugContext.Provider>
     </AssistantRuntimeProvider>
   );
