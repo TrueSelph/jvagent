@@ -314,9 +314,7 @@ class ReplyAction(Action):
                 # Persist it onto interaction.directives so it composes with any
                 # queued directives/parameters and is marked executed afterwards.
                 try:
-                    interaction.add_directive(
-                        relayed_directive, self.get_class_name()
-                    )
+                    interaction.add_directive(relayed_directive, self.get_class_name())
                 except Exception:
                     pass
             base = ""

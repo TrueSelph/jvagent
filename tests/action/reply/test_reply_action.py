@@ -229,7 +229,9 @@ async def test_respond_does_not_double_prefix(monkeypatch):
     await ra.respond(v.interaction, visitor=v, text="Tell the user the order shipped.")
     contents = [d["content"] for d in v.interaction.directives]
     assert "Tell the user the order shipped." in contents
-    assert "Tell the user: Tell the user" not in model.generate.call_args.kwargs["system"]
+    assert (
+        "Tell the user: Tell the user" not in model.generate.call_args.kwargs["system"]
+    )
 
 
 async def test_respond_enqueues_message_with_params_only(monkeypatch):
