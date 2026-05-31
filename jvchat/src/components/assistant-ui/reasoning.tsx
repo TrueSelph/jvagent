@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { BrainIcon, ChevronDownIcon } from "lucide-react";
 import {
@@ -199,9 +199,41 @@ function ReasoningContent({
   );
 }
 
-function ReasoningText({ className, ...props }: React.ComponentProps<"div">) {
+function ReasoningText({ className, onScroll, ...props }: React.ComponentProps<"div">) {
+  const ref = useRef<HTMLDivElement>(null);
+  // Tail the streaming reasoning: stick to the bottom as new text arrives, but
+  // yield if the user scrolls up (resume once they return near the bottom).
+  const stickRef = useRef(true);
+
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const el = ref.current;
+      if (el) {
+        const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+        stickRef.current = dist < 24;
+      }
+      onScroll?.(e);
+    },
+    [onScroll],
+  );
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const toBottom = () => {
+      if (stickRef.current) el.scrollTop = el.scrollHeight;
+    };
+    toBottom();
+    // Text streams in as DOM/text mutations; follow each one while pinned.
+    const mo = new MutationObserver(toBottom);
+    mo.observe(el, { childList: true, subtree: true, characterData: true });
+    return () => mo.disconnect();
+  }, []);
+
   return (
     <div
+      ref={ref}
+      onScroll={handleScroll}
       data-slot="reasoning-text"
       className={cn(
         "aui-reasoning-text relative z-0 max-h-64 space-y-4 overflow-y-auto ps-6 pt-2 pb-2 leading-relaxed",
