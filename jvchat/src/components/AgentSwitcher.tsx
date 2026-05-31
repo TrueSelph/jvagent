@@ -81,12 +81,17 @@ function AgentRow({
 type AgentSwitcherProps = {
   /** Compact trigger width (header bar style); wide trigger fills horizontal space */
   variant?: "inline" | "full";
+  /** When true (agent is thinking/streaming), animate the logo as an activity cue. */
+  busy?: boolean;
 };
 
 /**
  * Tschat-style agent switcher: wide trigger plus rich selectable list (Radix-free).
  */
-export function AgentSwitcher({ variant = "inline" }: AgentSwitcherProps) {
+export function AgentSwitcher({
+  variant = "inline",
+  busy = false,
+}: AgentSwitcherProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const match = /^\/chat\/([^/]+)\/?$/.exec(location.pathname);
@@ -179,17 +184,34 @@ export function AgentSwitcher({ variant = "inline" }: AgentSwitcherProps) {
           onClick={copyCurrentAgentId}
           className="flex shrink-0 items-center justify-center pl-3 pr-1 py-2 outline-none hover:bg-zinc-100/80 dark:hover:bg-zinc-800 disabled:opacity-50 sm:pl-4"
         >
-          {current?.avatar_url ? (
-            <img
-              src={current.avatar_url}
-              alt=""
-              className="h-8 w-8 rounded-full border border-white/10 object-cover"
-            />
-          ) : (
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-200 text-[10px] font-bold uppercase text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
-              {(current ? displayName(current) : "?").slice(0, 2)}
-            </div>
-          )}
+          <span className="relative inline-flex shrink-0">
+            {current?.avatar_url ? (
+              <img
+                src={current.avatar_url}
+                alt=""
+                className={cn(
+                  "h-8 w-8 rounded-full border border-white/10 object-cover transition-transform",
+                  busy && "motion-safe:animate-pulse",
+                )}
+              />
+            ) : (
+              <div
+                className={cn(
+                  "flex h-8 w-8 items-center justify-center rounded-full bg-zinc-200 text-[10px] font-bold uppercase text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300",
+                  busy && "motion-safe:animate-pulse",
+                )}
+              >
+                {(current ? displayName(current) : "?").slice(0, 2)}
+              </div>
+            )}
+            {/* Thinking cue: a spinning ring around the logo while the agent works. */}
+            {busy && (
+              <span
+                aria-hidden
+                className="pointer-events-none absolute -inset-1 rounded-full border-2 border-transparent border-t-zinc-500 border-r-zinc-500/40 motion-safe:animate-spin dark:border-t-zinc-200 dark:border-r-zinc-200/40"
+              />
+            )}
+          </span>
         </button>
         <button
           type="button"

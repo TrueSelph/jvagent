@@ -523,7 +523,7 @@ export function ChatInterface() {
                 </button>
                 <div className="flex w-[17rem] shrink-0 flex-col justify-center sm:w-[17.5rem]">
                   <div className="my-2.5 min-w-0 w-full">
-                    <AgentSwitcher variant="full" />
+                    <AgentSwitcher variant="full" busy={isStreaming} />
                   </div>
                 </div>
                 <div className="ml-1 flex min-w-[5.75rem] shrink-0 flex-col items-start justify-center gap-0.5 border-l border-zinc-200 pl-2 dark:border-white/10 sm:ml-2 sm:min-w-[6rem] sm:pl-3">
