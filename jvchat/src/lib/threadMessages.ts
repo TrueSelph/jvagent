@@ -230,18 +230,14 @@ export function buildThreadMessages(
     }
   }
 
-  // Pre-first-chunk: streaming has begun (the user just sent) but no assistant
-  // message exists yet — jvchat creates no placeholder bubble. Append a running
-  // assistant turn with empty content so assistant-ui shows its indeterminate
-  // working indicator immediately, until the first stream chunk lands.
-  const last = out[out.length - 1];
-  if (isStreaming && (!last || last.role === "user")) {
-    out.push({
-      role: "assistant",
-      id: `turn-pending-${lastRootId ?? "0"}`,
-      status: { type: "running" } as never,
-      content: [] as never,
-    });
-  }
+  // NOTE: we deliberately do NOT append our own pre-first-chunk placeholder.
+  // assistant-ui's ExternalStore runtime already appends an optimistic running
+  // assistant message when `isRunning` and the trailing message isn't an
+  // assistant (see external-store-thread-runtime-core `hasUpcomingMessage`),
+  // managed through its repository so it's evicted cleanly on the first real
+  // chunk. That native placeholder (empty content) drives the working indicator
+  // via `indicator="empty"`. A manual placeholder here would be imported as a
+  // real message whose id then swaps to the turn id — which the repository
+  // records as a phantom branch (the spurious "N/N" version counter).
   return out;
 }

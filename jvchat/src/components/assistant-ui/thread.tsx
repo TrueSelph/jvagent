@@ -400,7 +400,7 @@ const UserMessage: FC = () => {
       // pt here (not on a wrapper) survives assistant-ui's manual-scrollTop
       // turn anchoring, giving the top-anchored turn AND the first message the
       // same gap below the top bar.
-      className="fade-in slide-in-from-bottom-1 animate-in grid auto-rows-auto grid-cols-[minmax(72px,1fr)_auto] content-start gap-y-2 px-2 pt-12 duration-150 [contain-intrinsic-size:auto_60px] [content-visibility:auto] [&:where(>*)]:col-start-2"
+      className="fade-in slide-in-from-bottom-1 animate-in grid auto-rows-auto grid-cols-[minmax(72px,1fr)_auto] content-start gap-y-2 px-2 pt-12 duration-150 [contain-intrinsic-size:auto_60px] [content-visibility:auto] *:col-start-2"
       data-role="user"
     >
       <UserMessageAttachments />
