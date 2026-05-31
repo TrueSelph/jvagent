@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 
 const ANIMATION_DURATION = 200;
 
-const toolGroupVariants = cva("aui-tool-group-root group/tool-group w-full", {
+const toolGroupVariants = cva("aui-tool-group-root group/tool-group mb-4 w-full", {
   variants: {
     variant: {
       outline: "rounded-lg border pt-3 pb-4",
