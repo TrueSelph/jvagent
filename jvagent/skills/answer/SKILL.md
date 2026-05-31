@@ -9,7 +9,6 @@ allowed-tools:
   - pageindex__search
   - web_search__search
   - web_fetch__fetch
-response-mode: respond
 version: 2
 tags:
   - rag

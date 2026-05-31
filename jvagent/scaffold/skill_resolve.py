@@ -121,23 +121,6 @@ def _normalize_string_list(
     return []
 
 
-def _normalize_response_mode(raw_value: Any, skill_path: Path) -> Optional[str]:
-    """Normalize response-mode into 'publish', 'respond', or None (inherit)."""
-    if raw_value is None:
-        return None
-    value = str(raw_value).strip().lower()
-    if value in ("publish", "respond"):
-        return value
-    if value:
-        logger.warning(
-            "Skill bundle %s has invalid response-mode '%s'; expected 'publish' or 'respond'. "
-            "Defaulting to inherit (None).",
-            skill_path,
-            raw_value,
-        )
-    return None
-
-
 def _normalize_dispatch(raw_value: Any, skill_path: Path) -> Optional[Dict[str, Any]]:
     """Normalize the optional ``dispatch`` frontmatter block.
 
@@ -267,9 +250,6 @@ def parse_skill_bundle(
     requires_action_versions = _normalize_requires_action_versions(
         frontmatter.get("requires-action-versions"), skill_file
     )
-    response_mode = _normalize_response_mode(
-        frontmatter.get("response-mode"), skill_file
-    )
     verbatim_final = bool(frontmatter.get("verbatim-final"))
     always_active = bool(frontmatter.get("always-active"))
     plan_steps = _normalize_plan_steps(frontmatter.get("plan-steps"), skill_file)
@@ -313,7 +293,6 @@ def parse_skill_bundle(
         "requires_actions": requires_actions,
         "requires_jvagent": requires_jvagent,
         "requires_action_versions": requires_action_versions,
-        "response_mode": response_mode,
         "verbatim_final": verbatim_final,
         "always_active": always_active,
         "plan_steps": plan_steps,

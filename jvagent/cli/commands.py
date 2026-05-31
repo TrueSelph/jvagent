@@ -235,8 +235,7 @@ def run_validate(app_root: str) -> int:
 
 def print_usage() -> None:
     """Print CLI usage information."""
-    print(
-        """
+    print("""
 jvagent - Agentive Platform
 
     Usage:
@@ -317,8 +316,7 @@ Examples:
     jvagent app create --yes --dir ./my_app --app-id my_app --title T --description D --author A --agent jvagent/bot@minimal
     jvagent agent create acme/bot@conversational
     jvagent app profile new my_profile --extends minimal
-    """
-    )
+    """)
 
 
 class StartupLogCounter(logging.Handler):
@@ -1045,7 +1043,6 @@ def _handle_skill_validate_command(args: List[str], app_root: str = None) -> Non
     print(f"  imports:         {bundle.get('imports', [])}")
     print(f"  plan_steps:      {len(bundle.get('plan_steps', []))}")
     print(f"  allowed_tools:   {bundle.get('allowed_tools', [])}")
-    print(f"  response_mode:   {bundle.get('response_mode', 'inherit')}")
 
 
 def handle_skill_command(args: List[str], app_root: str = None) -> None:

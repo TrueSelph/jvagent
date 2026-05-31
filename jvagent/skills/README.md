@@ -75,7 +75,6 @@ tags:
 | `requires-actions` | optional | `list[str]` | Action types that must resolve before activation (e.g. a guidance skill that needs `PageIndexAction`'s tools present). |
 | `requires-jvagent` | optional | `str` | Framework version constraint, checked at preflight. |
 | `allowed-tools` | optional | `list[str]` | Tools this skill uses — **reference real tool names** (action tools like `gmail__send_email`, core tools, or this skill's own `scripts/` tools). Surfaced into the visible set on activation. |
-| `response-mode` | optional | `str` | `respond` or `publish`; inherits the action default if omitted. |
 
 ## Tool Module Contract (`scripts/`)
 
