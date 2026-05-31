@@ -430,6 +430,7 @@ async def test_gearing_escalates_across_loop(
         finalize=False,
         gear="heavy",
         lean=False,
+        plan_note="",
     ):
         gears.append(gear)
         return seq.pop(0) if seq else {"action": "final", "answer": ""}

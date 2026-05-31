@@ -64,6 +64,13 @@ actions:
       # clears its task. Set false for model-mediated (interruptible) continuation.
       lock_active_flow: true
 
+      # Resumable planning (ADR-0019): surface `update_plan` so the model records
+      # a multi-step plan on the conversation TaskStore (task_type AGENTIC_LOOP).
+      # An unfinished plan is re-surfaced next turn, so an interrupted multi-step
+      # turn resumes instead of re-planning. Off by default (zero cost); on here
+      # to exercise the feature.
+      planning: true
+
       # -- Reasoning (only bites with a reasoning-capable model; gpt-4o-mini
       # ignores it). Set effort for o-series / Claude thinking / OpenRouter.
       # reasoning_enabled: true

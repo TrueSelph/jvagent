@@ -20,8 +20,14 @@ from typing import Any, FrozenSet, Optional, Set
 
 logger = logging.getLogger(__name__)
 
-# Task types that are not turn-spanning flows (proactive outreach, etc.).
+# Task types that are not turn-spanning IA flows. ``PROACTIVE`` is outreach;
+# ``AGENTIC_LOOP`` is the orchestrator's own resumable multi-step plan (ADR-0019)
+# — it has no IA tool to route to, so it is excluded from IA-flow routing here
+# and resumed instead via ``active_plan`` / ``plan_resume_note`` below.
 _NON_FLOW_TASK_TYPES = frozenset({"PROACTIVE", "AGENTIC_LOOP"})
+
+# Task type the orchestrator uses for its own resumable multi-step plan.
+PLAN_TASK_TYPE = "AGENTIC_LOOP"
 
 
 def _store(conversation: Any) -> Optional[Any]:
@@ -80,6 +86,68 @@ def active_flow_owner(
     return candidates[0][1]
 
 
+def active_plan(visitor: Any, *, owner: Optional[str] = None) -> Optional[Any]:
+    """Return the active orchestrator-owned plan ``TaskHandle``, or ``None``.
+
+    A plan is an active ``AGENTIC_LOOP`` control-task (ADR-0019). When ``owner``
+    is given, only a task whose ``owner_action`` matches it is returned. When
+    several are active (shouldn't happen — ``update_plan`` overwrites the single
+    plan), the most recently updated wins.
+    """
+    conversation = getattr(visitor, "conversation", None)
+    store = _store(conversation)
+    if store is None:
+        return None
+    try:
+        active = store.list(status="active")
+    except Exception as exc:
+        logger.debug("continuation: list(active) failed: %s", exc)
+        return None
+    candidates: list[tuple[str, Any]] = []
+    for th in active or []:
+        task_type = (getattr(th, "task_type", None) or "").strip().upper()
+        if task_type != PLAN_TASK_TYPE:
+            continue
+        if owner and str(getattr(th, "owner_action", "") or "") != owner:
+            continue
+        updated_at = str(getattr(th, "updated_at", "") or "")
+        candidates.append((updated_at, th))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return candidates[0][1]
+
+
+def plan_resume_note(plan: Any) -> str:
+    """A system note re-grounding the model on an in-progress multi-step plan.
+
+    Soft, like :func:`active_flow_note`: it surfaces the persisted checklist as
+    context and tells the model to continue from the first unfinished step, not
+    to redo completed ones, and that the plan stays parked if the user changes
+    topic. Returns ``""`` when there is nothing actionable to resume.
+    """
+    if plan is None:
+        return ""
+    try:
+        if not plan.has_pending_steps():
+            return ""
+        checklist = plan.format_plan()
+    except Exception:
+        return ""
+    if not checklist or checklist == "(no steps)":
+        return ""
+    return (
+        "A multi-step plan you recorded on an earlier turn is still in "
+        "progress:\n"
+        f"{checklist}\n\n"
+        "Continue from the first unfinished step — do NOT redo completed steps. "
+        "Keep it updated with update_plan as you finish steps, and when the last "
+        "step is done the plan closes automatically. If the user has changed "
+        "topic, handle that instead; the plan stays parked and resumes when they "
+        "return to it."
+    )
+
+
 def active_flow_note(tool_name: str) -> str:
     """A system note telling the model how to treat an in-progress flow."""
     return (
@@ -92,4 +160,10 @@ def active_flow_note(tool_name: str) -> str:
     )
 
 
-__all__ = ["active_flow_owner", "active_flow_note"]
+__all__ = [
+    "active_flow_owner",
+    "active_flow_note",
+    "active_plan",
+    "plan_resume_note",
+    "PLAN_TASK_TYPE",
+]

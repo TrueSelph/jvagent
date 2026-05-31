@@ -46,6 +46,12 @@ Each turn the orchestrator detects the active flow with `continuation.active_flo
 
 In both modes the flow's control-task persists across turns and is cleared only by the flow's own session logic. For the interview, continuation is just its existing `execute(visitor)` reached through its tool; it records and clears its own control-task as its session progresses. The interview is unchanged in behavior — its only orchestrator-facing surface is `get_tools()`.
 
+## Resumable planning (`planning`, ADR-0019)
+
+Where a *flow* is an IA that owns turns, a **plan** is the orchestrator's own multi-step work made resumable. It is **opt-in** (`planning: true`, default off) so a lean agent pays nothing. When on, the orchestrator surfaces an `update_plan` tool: the model records a checklist that persists across turns as an `AGENTIC_LOOP` control-task on the same `TaskStore` (owned by the orchestrator, distinct from IA flows). The model re-sends the full checklist each call (TodoWrite-style overwrite), so there is ever only one active plan.
+
+Resume is **soft**, mirroring `lock_active_flow=False`: at turn start, an unfinished plan is re-surfaced via `continuation.plan_resume_note(...)` — *"continue from the first unfinished step, don't redo completed ones; if the user changed topic, the plan stays parked."* The loop's `finally` runs `_finalize_plan`: a fully-done plan is completed and cleared; a plan with pending steps is left **active**, so a turn cut short by budget/duration (or a crash — each `update_plan` call persists) resumes next turn instead of re-planning. `AGENTIC_LOOP` stays excluded from IA-flow routing (there is no IA tool to call). Side-effect idempotency on resume is out of scope — resume avoids redoing *steps*, not already-executed tool side effects. See [ADR-0019](../.planning/adr/0019-orchestrator-resumable-plan.md).
+
 ## The unified tool surface
 
 Everything the agent can do is reachable as a tool, so there is no separate router or capability registry:
@@ -111,6 +117,7 @@ actions:
       model: gpt-4o-mini
       model_action_type: OpenAILanguageModelAction
       lock_active_flow: true     # deterministic turn-lock; false = model-mediated
+      planning: false            # true → surface update_plan; persist+resume plans (ADR-0019)
       skills_source: both        # both | app | library
   - action: jvagent/openai_lm
     context: { enabled: true }

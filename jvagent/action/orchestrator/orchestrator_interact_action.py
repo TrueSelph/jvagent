@@ -38,8 +38,10 @@ from jvagent.action.orchestrator.catalog import (
 from jvagent.action.orchestrator.continuation import (
     active_flow_note,
     active_flow_owner,
+    active_plan,
+    plan_resume_note,
 )
-from jvagent.action.orchestrator.core_tools import build_core_tools
+from jvagent.action.orchestrator.core_tools import build_core_tools, build_plan_tool
 from jvagent.action.orchestrator.prompts import (
     FINALIZE_PROMPT,
     FLOW_IN_PROGRESS_PROMPT,
@@ -47,6 +49,7 @@ from jvagent.action.orchestrator.prompts import (
     NO_SKILLS_AVAILABLE,
     ORCHESTRATOR_SYSTEM_PROMPT,
     ORCHESTRATOR_USER_PROMPT_TEMPLATE,
+    PLANNING_PROMPT,
     TOOL_USE_POLICY,
     render_history_section,
     render_identity_section,
@@ -290,6 +293,11 @@ class OrchestratorInteractAction(InteractAction):
         default=NO_SKILLS_AVAILABLE,
         description="Shown in the AVAILABLE SKILLS slot when no skills load.",
     )
+    planning_prompt: str = attribute(
+        default=PLANNING_PROMPT,
+        description="Appended when planning is on (no placeholders). Nudges "
+        "update_plan use for multi-step work.",
+    )
     lock_active_flow: bool = attribute(
         default=True,
         description=(
@@ -297,6 +305,17 @@ class OrchestratorInteractAction(InteractAction):
             "deterministically to its IA (mechanistic turn-lock, bypassing the "
             "model loop). When False, the flow's tool is surfaced and "
             "continuation is model-mediated."
+        ),
+    )
+    planning: bool = attribute(
+        default=False,
+        description=(
+            "When True, surface the `update_plan` tool so the model can record a "
+            "multi-step plan that PERSISTS on the conversation TaskStore "
+            "(task_type AGENTIC_LOOP). An unfinished plan is re-surfaced next "
+            "turn so an interrupted multi-step turn resumes instead of "
+            "re-planning (ADR-0019). Off by default — zero cost when unused; "
+            "when on, cost is incurred only when the model calls update_plan."
         ),
     )
 
@@ -516,6 +535,13 @@ class OrchestratorInteractAction(InteractAction):
         for t in build_core_tools(self, self.tool_tier):
             tools[t.name] = t
             visible.add(t.name)
+
+        # Resumable-plan tool (ADR-0019). Surfaced only when planning is on, so
+        # a lean agent pays nothing; visitor-bound for TaskStore access.
+        if self.planning:
+            plan_tool = build_plan_tool(self, visitor)
+            tools[plan_tool.name] = plan_tool
+            visible.add(plan_tool.name)
 
         actions = await self._enabled_actions(agent)
         from jvagent.action.persona.persona_action import PersonaAction
@@ -781,6 +807,17 @@ class OrchestratorInteractAction(InteractAction):
 
         flow_note = active_flow_note(flow_owner) if flow_owner else ""
 
+        # Resumable-plan note (ADR-0019): a multi-step plan recorded on a prior
+        # turn that still has pending steps is re-surfaced so the model resumes
+        # it instead of re-planning. Resolved once at turn start (a plan the
+        # model creates *this* turn doesn't need a resume note). Soft, like the
+        # flow note — never a hard lock.
+        plan_note = (
+            plan_resume_note(active_plan(visitor, owner=self.get_class_name()))
+            if self.planning
+            else ""
+        )
+
         observations: List[Dict[str, Any]] = []
         budget = max(1, int(self.activation_budget))
         history = await self._history(visitor)
@@ -849,6 +886,7 @@ class OrchestratorInteractAction(InteractAction):
                     skills_section,
                     gear=gear,
                     lean=lean_surface,
+                    plan_note=plan_note,
                 )
                 if decision is None:
                     # A truncated/garbled decision (common when a verbose thinking
@@ -1014,6 +1052,10 @@ class OrchestratorInteractAction(InteractAction):
         finally:
             if ack_task is not None and not ack_task.done():
                 ack_task.cancel()
+            # Plan lifecycle (ADR-0019): close a fully-done plan, leave a plan
+            # with pending steps ACTIVE so the next turn resumes it. Runs on
+            # every loop exit; no-op when planning is off.
+            await self._finalize_plan(visitor)
             await self._record_orchestrator_activation(
                 visitor,
                 continuation_mode="model_mediated" if flow_owner else "none",
@@ -1025,6 +1067,31 @@ class OrchestratorInteractAction(InteractAction):
                 ticks_light=ticks_light,
                 ticks_heavy=ticks_heavy,
             )
+
+    async def _finalize_plan(self, visitor: "InteractWalker") -> None:
+        """Close a completed plan; leave an unfinished one active for resume.
+
+        ADR-0019 lifecycle, called from the loop's ``finally`` on every exit:
+        if an orchestrator-owned ``AGENTIC_LOOP`` plan exists and all its steps
+        are terminal, complete and delete it; if steps remain pending (natural
+        end with parked work, or a budget/duration/crash cutoff), leave it
+        active so the next turn re-surfaces it. No-op when planning is off.
+        """
+        if not self.planning:
+            return
+        try:
+            handle = active_plan(visitor, owner=self.get_class_name())
+            if handle is None or handle.has_pending_steps():
+                return
+            conversation = getattr(visitor, "conversation", None)
+            if conversation is None:
+                return
+            from jvagent.memory.task_store import TaskStore
+
+            await handle.complete(result="plan complete")
+            await TaskStore(conversation).delete(handle.id)
+        except Exception as exc:  # pragma: no cover - defensive cleanup
+            logger.debug("orchestrator: _finalize_plan failed: %s", exc)
 
     async def _record_orchestrator_activation(
         self,
@@ -1650,6 +1717,7 @@ class OrchestratorInteractAction(InteractAction):
         finalize: bool = False,
         gear: str = "heavy",
         lean: bool = False,
+        plan_note: str = "",
     ) -> Optional[Dict[str, Any]]:
         """One model call → parsed JSON decision. Overridden/mocked in tests.
 
@@ -1680,6 +1748,13 @@ class OrchestratorInteractAction(InteractAction):
                 flow_note=flow_note,
             )
             system_prompt = f"{system_prompt}\n\n{note}"
+        # Planning (ADR-0019): when on, nudge the model to use update_plan for
+        # multi-step work; when a prior plan is unfinished, re-surface it so the
+        # turn resumes. Both gated to keep simple/lean turns untouched.
+        if self.planning and not finalize:
+            system_prompt = f"{system_prompt}\n\n{self.planning_prompt}"
+            if plan_note:
+                system_prompt = f"{system_prompt}\n\n{plan_note}"
         if self.max_statement_length and self.max_statement_length > 0:
             limit = self._fmt(
                 self.length_limit_prompt,

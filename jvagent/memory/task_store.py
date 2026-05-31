@@ -65,6 +65,36 @@ def _new_id(prefix: str = "") -> str:
     return f"{prefix}{short}" if prefix else f"id_{short}"
 
 
+# Map loose, model-supplied step statuses onto the canonical STEP_STATUSES.
+_STEP_STATUS_ALIASES = {
+    "todo": "pending",
+    "pending": "pending",
+    "not_started": "pending",
+    "in_progress": "in_progress",
+    "in-progress": "in_progress",
+    "active": "in_progress",
+    "doing": "in_progress",
+    "wip": "in_progress",
+    "done": "done",
+    "complete": "done",
+    "completed": "done",
+    "finished": "done",
+    "skipped": "skipped",
+    "skip": "skipped",
+    "failed": "failed",
+    "blocked": "failed",
+    "error": "failed",
+}
+
+
+def normalize_step_status(raw: Any, default: str = "pending") -> str:
+    """Coerce a loose status string to a canonical STEP_STATUSES value."""
+    key = str(raw or "").strip().lower().replace(" ", "_")
+    return _STEP_STATUS_ALIASES.get(
+        key, default if default in STEP_STATUSES else "pending"
+    )
+
+
 # ------------------------------------------------------------------
 # Step
 # ------------------------------------------------------------------
@@ -432,6 +462,36 @@ class TaskHandle:
         self._task._touch()
         await self._store._persist()
         return [StepHandle(self._store, self._task.id, s) for s in self._task.steps]
+
+    async def sync_plan(self, items: List[Dict[str, Any]]) -> List[StepHandle]:
+        """Replace steps with an ordered plan carrying explicit statuses.
+
+        Full-state overwrite in a **single persist** — the ergonomic shape for a
+        model that re-sends its whole checklist each call (TodoWrite-style). Each
+        item is a mapping with a ``description`` (or ``step``) and an optional
+        ``status`` (loose values are normalized via ``normalize_step_status``);
+        items without a description are skipped. Steps with a terminal status get
+        a ``completed_at`` stamp. Empty/blank input clears the plan.
+        """
+        steps: List[Step] = []
+        for it in items or []:
+            if not isinstance(it, dict):
+                continue
+            desc = str(it.get("description") or it.get("step") or it.get("title") or "")
+            desc = desc.strip()
+            if not desc:
+                continue
+            status = normalize_step_status(it.get("status"))
+            step = Step(id=_new_id("step_"), description=desc, status=status)
+            if status in _STEP_TERMINAL:
+                step.completed_at = step.updated_at
+            steps.append(step)
+        self._task.steps = steps
+        self._task._touch()
+        # Write the mutated task back into ``conversation.tasks`` by id (not a
+        # bare save) so the new steps actually persist.
+        await self._store._persist_task(self._task)
+        return [StepHandle(self._store, self._task.id, s) for s in steps]
 
     def get_step(self, step_id: str) -> Optional[StepHandle]:
         step = self._task.get_step(step_id)

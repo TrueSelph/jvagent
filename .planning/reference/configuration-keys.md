@@ -169,6 +169,8 @@ See [`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) for the full pattern. H
 | `activation_budget` | 24 | max think-act-observe iterations per turn |
 | `history_limit` | 4 | prior turns fed into the loop prompt (working context). The rolling memory window is the agent-level `interaction_limit` |
 | `lock_active_flow` | `true` | deterministic turn-lock to an active flow's IA; `false` = model-mediated continuation (ADR-0013) |
+| `planning` | `false` | surface the `update_plan` tool so the model records a multi-step plan that persists across turns (`AGENTIC_LOOP` task on the `TaskStore`) and resumes an interrupted turn; off = zero cost (ADR-0019) |
+| `planning_prompt` | (built-in) | override the gated nudge appended when `planning` is on |
 | `clarify_text` | (fallback prompt) | reply when a turn ends with nothing emitted |
 | `skills_source` | `both` | skill discovery source (both specs): `app` (adjacent `skills/`), `library` (`jvagent/skills`), or `both`. Aliases: `local`→`app`, `builtin`→`library`; `registry` retired→`library` |
 | `skills` | `-all` | which skills to load: `-all`, or a finite list of names/fnmatch patterns (e.g. `[research, web_lookup]`) |

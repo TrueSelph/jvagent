@@ -96,6 +96,18 @@ FINALIZE_PROMPT = (
     "this turn)."
 )
 
+# Appended to the loop system prompt only when ``planning`` is on (ADR-0019).
+# Nudges the model to externalize a multi-step plan that persists across turns
+# so an interrupted turn can resume. Kept short; off by default.
+PLANNING_PROMPT = (
+    "PLANNING: For genuinely multi-step work, call update_plan(steps=[...]) to "
+    "record your plan as a checklist, then keep it current — re-send the whole "
+    "list with each step's status (pending|in_progress|done|skipped) as you go. "
+    "The plan persists across turns, so if this turn is cut short the next one "
+    "resumes from the first unfinished step instead of starting over. Don't use "
+    "it for single-step requests."
+)
+
 # Appended to the loop system prompt only when ``block_raw_tool_invocation`` is
 # on: tool selection is the agent's job, not the user's to dictate. The user
 # states a goal; the agent decides which tools (if any) achieve it.
@@ -169,6 +181,7 @@ __all__ = [
     "ORCHESTRATOR_SYSTEM_PROMPT",
     "ORCHESTRATOR_USER_PROMPT_TEMPLATE",
     "TOOL_USE_POLICY",
+    "PLANNING_PROMPT",
     "NO_SKILLS_AVAILABLE",
     "FLOW_IN_PROGRESS_PROMPT",
     "LENGTH_LIMIT_PROMPT",

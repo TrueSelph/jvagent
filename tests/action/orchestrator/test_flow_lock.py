@@ -66,6 +66,7 @@ def _spy_model(monkeypatch):
         finalize=False,
         gear="heavy",
         lean=False,
+        plan_note="",
     ):
         calls["n"] += 1
         return {"action": "final", "answer": ""}
