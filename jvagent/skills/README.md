@@ -58,6 +58,14 @@ metadata:
 `coactivate-with`, `dispatch`, `verbatim-final`, `always-active` — for the JV
 orchestration features the Claude standard doesn't cover.)
 
+**`always-active: true`** keeps a skill's `allowed-tools` **pinned into the
+visible tool set every turn** under the orchestrator — even when lean surfacing
+(ADR-0018) would otherwise hide them behind `find_tool`. Use it for a capability
+that must be callable turn-1 regardless of how the user phrases things, without
+disabling lean for the rest of the surface. (The raw-tool equivalent is the
+orchestrator's `pinned_tools` glob list.) It also lets the skill bypass the
+`skills:` allow-list selector.
+
 ## JV skills — coordinate existing tools
 
 A JV skill is pure judgment: a `SKILL.md` whose body steers tools that Actions

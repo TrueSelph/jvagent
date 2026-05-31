@@ -179,3 +179,60 @@ async def test_threshold_zero_disables_lean(make_orchestrator, make_visitor):
     await ex._assemble_tools(v, [], visible, None, "hello", None, meta)
     assert meta["lean"] is False
     assert "misc__tool00" in visible
+
+
+# --- pinned tools + always-active skills (always-visible levers) ------------
+
+
+def test_match_tool_globs_unit():
+    names = {"filing__create", "filing__list", "email__send", "case__open"}
+    m = OrchestratorInteractAction._match_tool_globs(["filing__*", "case__open"], names)
+    assert m == {"filing__create", "filing__list", "case__open"}
+    assert OrchestratorInteractAction._match_tool_globs([], names) == set()
+    assert OrchestratorInteractAction._match_tool_globs([""], names) == set()
+
+
+async def test_pinned_tools_survive_lean(make_orchestrator, make_visitor):
+    # A pinned tool stays visible under lean even with zero relevance overlap.
+    action = _ToolsAction(_many(20))
+    ex = make_orchestrator(actions=[action])
+    ex.lean_tool_threshold = 15
+    ex.lean_presurface_k = 2
+    ex.pinned_tools = ["weather__*"]
+    v = make_visitor(utterance="hello")  # no overlap with weather
+    visible: set = set()
+    meta: dict = {}
+    await ex._assemble_tools(v, [], visible, None, "hello", None, meta)
+    assert meta["lean"] is True
+    assert "weather__current" in visible  # pinned despite no relevance/lean
+    # ...and the rest of the long tail is still hidden (lean preserved).
+    assert "misc__tool00" not in visible
+
+
+async def test_always_active_skill_pins_its_tools(
+    make_orchestrator, make_visitor, monkeypatch
+):
+    from jvagent.action.orchestrator.skills import SkillDoc
+
+    action = _ToolsAction(_many(20))
+    ex = make_orchestrator(actions=[action])
+    ex.lean_tool_threshold = 15
+    ex.lean_presurface_k = 2
+
+    doc = SkillDoc(
+        name="filing",
+        description="Always-on filing SOP.",
+        body="File it.",
+        requires_tools=("weather__current",),  # a tool present on the surface
+        always_active=True,
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction, "_discover_skills", lambda self, agent: [doc]
+    )
+
+    v = make_visitor(utterance="hello")  # no overlap with weather
+    visible: set = set()
+    meta: dict = {}
+    await ex._assemble_tools(v, [], visible, None, "hello", None, meta)
+    assert meta["lean"] is True
+    assert "weather__current" in visible  # pinned by the always-active skill

@@ -21,6 +21,7 @@ an emergent flow property.
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import inspect
 import logging
 import re
@@ -376,6 +377,15 @@ class OrchestratorInteractAction(InteractAction):
         "turn by relevance to the user's message (token overlap, no model call), "
         "so common single-intent turns need no find_tool round-trip.",
     )
+    pinned_tools: List[str] = attribute(
+        default_factory=list,
+        description="Tool-name globs (e.g. 'filing__*', 'case__create') that stay "
+        "VISIBLE every turn even under lean surfacing — for capabilities that must "
+        "be callable turn-1 regardless of how the user phrases things, without "
+        "disabling lean for the rest. Empty by default. The skill-native "
+        "equivalent is a SKILL.md with 'always-active: true' (pins its "
+        "allowed-tools).",
+    )
 
     # -- MCP tool servers (via jvagent/mcp MCPAction; ADR-0015) -------------
     tool_servers: Any = attribute(
@@ -696,7 +706,31 @@ class OrchestratorInteractAction(InteractAction):
         for name, t in build_catalog_tools(tools, visible).items():
             tools[name] = t
             visible.add(name)
+
+        # Always-visible pins, applied AFTER the lean policy so they survive it
+        # — for capabilities that must be callable turn-1 regardless of phrasing
+        # (the lean relevance pre-surface can miss them). Two equivalent levers:
+        #   1. ``pinned_tools`` globs (raw tool names).
+        #   2. ``always-active: true`` skills, whose ``allowed-tools`` are pinned
+        #      every turn (skill-native; mirrors use_skill surfacing without an
+        #      activation round-trip).
+        if self.pinned_tools:
+            visible |= self._match_tool_globs(self.pinned_tools, set(tools.keys()))
+        for d in docs:
+            if getattr(d, "always_active", False):
+                visible |= {t for t in getattr(d, "requires_tools", ()) if t in tools}
         return tools
+
+    @staticmethod
+    def _match_tool_globs(patterns: List[str], names: Set[str]) -> Set[str]:
+        """Tool names in ``names`` matching any fnmatch glob in ``patterns``."""
+        out: Set[str] = set()
+        for raw in patterns or []:
+            pat = str(raw).strip()
+            if not pat:
+                continue
+            out |= {n for n in names if fnmatch.fnmatchcase(n, pat)}
+        return out
 
     @staticmethod
     def _anchor_relevant(utterance: str, anchors: List[str]) -> bool:

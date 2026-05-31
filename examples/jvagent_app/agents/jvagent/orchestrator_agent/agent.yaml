@@ -99,6 +99,16 @@ actions:
       tool_tier: standard                 # minimal | standard | full
       tool_call_timeout: 0                # per-tool-call timeout (s); 0 disables
       block_raw_tool_invocation: true    # force find_tool/skill for hidden tools
+
+      # -- Lean tool surfacing (ADR-0018). Above the threshold the action+MCP
+      # long tail is kept off the prompt (reached via find_tool), with a
+      # relevance pre-surface so common turns need no discovery round-trip.
+      lean_tool_threshold: 15            # 0 disables (always list every tool)
+      lean_presurface_k: 6               # # of relevance-ranked tools shown/turn under lean
+      # Always-visible pins: tool-name globs that survive lean, for capabilities
+      # that must be callable turn-1 regardless of phrasing. Skill-native
+      # equivalent: a SKILL.md with `always-active: true` pins its allowed-tools.
+      pinned_tools: []                   # e.g. ["filing__*", "web_fetch__fetch"]
       enable_transient_ack: true         # emit ack(s) only on COMPLEX turns (skill or multiple tools)
       first_emit_timeout_ms: 1200        # delay before the FIRST ack
       ack_interval_ms: 12000             # delay between subsequent acks

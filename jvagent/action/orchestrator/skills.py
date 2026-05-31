@@ -26,6 +26,7 @@ class SkillDoc:
     source: str = "app"
     directory: str = ""
     spec: str = "jv"
+    always_active: bool = False
     metadata: dict = field(default_factory=dict)
 
 
@@ -113,6 +114,7 @@ def discover_skill_docs(
                 source=bundle.get("source", "app"),
                 directory=str(bundle.get("dir") or ""),
                 spec=str(bundle.get("spec") or "jv"),
+                always_active=bool(bundle.get("always_active", False)),
                 metadata=bundle.get("metadata") or {},
             )
         )

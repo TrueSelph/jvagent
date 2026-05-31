@@ -88,3 +88,27 @@ it adds no per-tick cost.
 - **Collapse integrations into namespace summaries in the prompt** — kept as the
   `find_tool` grouping, not as the primary prompt mechanism (the relevance
   pre-surface is the better latency/size trade).
+
+## 5. Addendum — always-visible pins (the missing middle)
+
+Field experience (an app with ~34 tools) surfaced a gap: above the threshold,
+the long tail is gated **purely** by lexical relevance, so a capability that must
+be callable on turn 1 *regardless of how the user phrases things* (e.g. a filing
+tool) isn't guaranteed into the pre-surface set and falls behind a `find_tool`
+round-trip. The only lever was `lean_tool_threshold: 0`, which un-leans the
+**entire** surface — too blunt when only a few tools need immediacy. Two
+equivalent always-visible pins now fill that middle, both applied *after* the
+lean policy so they survive it:
+
+- **`pinned_tools`** — a list of tool-name globs (`["filing__*"]`) merged into the
+  visible set every turn. Raw, explicit, no skill required.
+- **`always-active: true` on a skill** — the orchestrator now pins that skill's
+  `allowed-tools` into the visible set each turn (skill-native; mirrors the
+  `use_skill` allowed-tools surfacing without an activation round-trip). Before
+  this, `always-active` was parsed but **never read by the orchestrator** — it
+  only let a skill bypass the `skills:` selector (a no-op under `skills: "-all"`),
+  so reaching for it to fix immediacy silently did nothing.
+
+Both default to off/empty (no behaviour change). They preserve lean for the rest
+of the surface — the point is "keep lean, but guarantee *these* few," not "turn
+lean off." Covered by `tests/action/orchestrator/test_lean_surfacing.py`.
