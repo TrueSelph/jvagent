@@ -170,7 +170,7 @@ See [`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) for the full pattern. H
 | `history_limit` | 4 | prior turns fed into the loop prompt (working context). The rolling memory window is the agent-level `interaction_limit` |
 | `lock_active_flow` | `true` | deterministic turn-lock to an active flow's IA; `false` = model-mediated continuation (ADR-0013) |
 | `clarify_text` | (fallback prompt) | reply when a turn ends with nothing emitted |
-| `skills_source` | `both` | jvSkill discovery source: `app` (adjacent `skills/`), `library` (`jvagent/skills`), or `both`. Aliases: `local`→`app`, `builtin`→`library`; `registry` retired→`library` |
+| `skills_source` | `both` | skill discovery source (both specs): `app` (adjacent `skills/`), `library` (`jvagent/skills`), or `both`. Aliases: `local`→`app`, `builtin`→`library`; `registry` retired→`library` |
 | `skills` | `-all` | which skills to load: `-all`, or a finite list of names/fnmatch patterns (e.g. `[research, web_lookup]`) |
 | `denied_skills` | `[]` | skill names/patterns to exclude (subtracts from `skills`) |
 
@@ -281,6 +281,26 @@ Surfaces MCP server tools as `mcp_<server>__<tool>`; consumed by the Orchestrato
 | `sandbox_mode` | `false` | run servers in a sandbox |
 | `sandbox_user_scoped` | `false` | scope the sandbox per agent + per user |
 | `servers` | `[]` | list of server defs: `name`, `enabled`, `transport` (e.g. `stdio`), `command`, `args`, `mcp_connect_timeout`, `mcp_call_timeout`, `tools` (`-all` or list), `denied_tools` |
+
+### `jvagent/code_execution` (CodeExecutionAction — Claude-skill substrate, ADR-0017)
+
+The multitenant sandbox `spec: claude` skills run their bundled scripts in. Surfaces `code_execution__bash`, whose cwd is the caller's own `<agent>/<user>` slice. **Off by default.** The subprocess executor is a pragmatic default, **not a hard jail** — supply an isolating backend for untrusted skills. Requires local file storage in this version.
+
+| Key | Default | Effect |
+|---|---|---|
+| `enabled` | `false` | master switch; no `bash` tool surfaced when off |
+| `timeout` | `60` | wall-clock seconds per command |
+| `memory_mb` | `2048` | `RLIMIT_AS` cap (MB); `0` = no limit (some toolchains, e.g. xelatex, mmap large) |
+| `cpu_seconds` | `30` | `RLIMIT_CPU` cap |
+| `max_procs` | `0` | `RLIMIT_NPROC`; **per-UID**, off by default (a small cap breaks on busy shared-UID servers) |
+| `max_file_mb` | `256` | max single file size written (`RLIMIT_FSIZE`) |
+| `max_output_bytes` | `64000` | cap on captured stdout+stderr |
+| `network` | `false` | advisory; only an isolating executor backend actually enforces it |
+| `sandbox_root` | `""` | override the filesystem root (else env/jvspatial default) |
+
+### `jvagent/file_interface` (FileInterfaceAction) & `jvagent/skill_hub` (SkillHubAction)
+
+`file_interface` exposes per-user sandboxed file-I/O tools (`file_interface__read_file`/`write_file`/`list_directory`/…) on the same per-user slice as `code_execution` and the filesystem MCP; `skill_hub` exposes skill-registry management tools (`skill_hub__search_registry`/`install_skill`/`list_installed`/`remove_skill`). Both just need `enabled: true`; no further config.
 
 ---
 

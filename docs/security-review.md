@@ -16,7 +16,7 @@ audit missed. All are now closed.
 
 | Item | Issue | Resolution |
 |------|-------|-----------|
-| C1 — Sandbox escape via fallback | `*_with_local_fallback` helpers in `skills/fileinterface/scripts/_core.py` silently wrote sandbox-scoped content to the process cwd when storage failed, bypassing per-user isolation. | Helpers removed (no external callers). Strict variants only. |
+| C1 — Sandbox escape via fallback | `*_with_local_fallback` helpers in `action/file_interface/_core.py` silently wrote sandbox-scoped content to the process cwd when storage failed, bypassing per-user isolation. | Helpers removed (no external callers). Strict variants only. |
 | C2 — `api_key` exported in graph dumps | `BaseModelAction.api_key` was a plain attribute that round-tripped through `Action.export()`, REST responses, and repair scratch documents. | Attribute removed from `BaseModelAction` and `OllamaLanguageModelAction`. Credentials now resolved from environment variables only via `api_key_from_context()`. |
 | C3 — Weak `..` traversal fallback | `_join_key_parts` fell back to `rel.replace("..", "")` when `PathSanitizer` raised; reads bypassed validation entirely. | `validate_relative_path` applied to every read and write; the fallback now raises. |
 | C4 — Tool error logs leaked provider response bodies | `tooling/tool_executor.py` always logged `exc_info=True`, so OpenAI 401 bodies, MCP stderr, and `httpx` URLs with auth surfaced even with `sanitize_errors=True`. | Sanitized branch now logs only the exception class name; the raw exception remains on the `ToolExecutionEnvelope` for opt-in observability. |
@@ -309,8 +309,8 @@ Added imports: `ipaddress`, `socket`.
 The codebase has consistent path traversal defenses:
 
 - **`PathSanitizer.sanitize_path()`** from jvspatial: used in PageIndex endpoints, MCP filesystem server, WhatsApp media manager, and skill file interface
-- **`validate_relative_write_path()`** in `skills/fileinterface/scripts/_core.py`: rejects absolute paths, `..` segments, and `.`
-- **`_validate_path_safety()`** in `skills/skill_hub/scripts/_installer.py`: uses `Path.resolve().relative_to()` check
+- **`validate_relative_write_path()`** in `action/file_interface/_core.py`: rejects absolute paths, `..` segments, and `.`
+- **`_validate_path_safety()`** in `action/skill_hub/_installer.py`: uses `Path.resolve().relative_to()` check
 - **`sanitize_segment()`** in `action/mcp/sandbox.py`: restricts path characters to `[a-zA-Z0-9_.\-@]`
 - **`_safe_pageindex_relative_path()`** in `action/pageindex/endpoints.py`: wraps `PathSanitizer`
 
@@ -545,7 +545,7 @@ Key files examined during this review. Files marked `[*]` were modified during r
 - `jvagent/core/public_url.py` — Public URL resolution
 - `jvagent/action/mcp/sandbox.py` — MCP filesystem sandbox
 - `jvagent/skills/pdf_generation/scripts/latex_compiler.py` [*] — LaTeX compilation; hex color validation + -no-shell-escape added
-- `jvagent/skills/skill_hub/scripts/_installer.py` — Skill installation
+- `jvagent/action/skill_hub/_installer.py` — Skill installation
 - `jvagent/scaffold/operations.py` — App scaffolding
 - `jvagent/action/pageindex/endpoints.py` — File upload/download
 - `jvchat/src/utils/storage.ts` — Client-side credential/token storage

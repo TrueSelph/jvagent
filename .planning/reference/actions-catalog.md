@@ -155,6 +155,9 @@ See [`../docs/task-tracking.md`](../../docs/task-tracking.md).
 | jvagent/access_control | `AccessControlAction` | `Action` | Multi-channel RBAC (per-user, per-action) |
 | jvagent/mcp | `MCPAction` | `Action` | Model Context Protocol server integration + sandbox. `get_tools()` surfaces each server's tools as `mcp_<server>__<tool>` with per-user dispatch; the Orchestrator consumes them via its `tool_servers` config |
 | jvagent/agent_utils | `AgentUtils` | `Action` | Agent utilities (schema/metadata/discovery) |
+| jvagent/file_interface | `FileInterfaceAction` | `Action` | Per-user sandboxed file I/O as first-class tools (`file_interface__read_file`/`write_file`/`list_directory`/…), same `<agent>/<user>` slice as the MCP filesystem + code_execution (ADR-0017) |
+| jvagent/code_execution | `CodeExecutionAction` | `Action` | Multitenant sandboxed `bash` (`code_execution__bash`); the substrate Claude-spec skills run their bundled scripts in. cwd = caller's own per-user slice; pluggable executor (subprocess default). **Off by default** (ADR-0017) |
+| jvagent/skill_hub | `SkillHubAction` | `Action` | Search / install / remove skill bundles from the skills.sh ecosystem (`skill_hub__search_registry`/`install_skill`/`list_installed`/`remove_skill`) |
 
 ### 1.11 Speech (STT / TTS)
 
@@ -181,7 +184,7 @@ These ship inside `jvagent/action/` but are not pluggable on their own — they 
 | `response/` | `ResponseBus`, channel adapters, channel filters |
 | `loader/` | Action loader, registry, plugin discovery |
 | `utils/` | Shared utilities (webhook auth, system user mgmt) |
-| `orchestrator/` | Orchestrator + supporting modules: `continuation.py` (active-flow resume), `tools.py` / `core_tools.py` (tool surface), `catalog.py`, `skills.py` (native SOP skills), `prompts.py` |
+| `orchestrator/` | Orchestrator + supporting modules: `continuation.py` (active-flow resume), `tools.py` / `core_tools.py` (tool surface), `catalog.py` (find_tool/load_tool + lean surfacing, ADR-0018), `skills.py` (skill discovery — JV + Claude specs, ADR-0017), `prompts.py` |
 
 ---
 
@@ -189,8 +192,8 @@ These ship inside `jvagent/action/` but are not pluggable on their own — they 
 
 | Metric | Value |
 |---|---|
-| Top-level action directories | 38 |
-| Action packages with `info.yaml` | 26 |
+| Top-level action directories | 43 |
+| Action packages with `info.yaml` | 30 |
 | Main Action implementations (.py with class) | 23 |
 | Total `@endpoint`-decorated routes across the library | ~183 |
 | LanguageModelAction providers | 4 |
@@ -222,7 +225,7 @@ Both paths are currently functional. AUDIT-actions XC-6 verified.
 
 | Action | Depends on |
 |---|---|
-| `OrchestratorInteractAction` | `ReplyAction` (egress), a `LanguageModelAction` (heavy + optional light gear), all enabled actions' `get_tools()`, `MCPAction` (via `tool_servers`), native SOP skills |
+| `OrchestratorInteractAction` | `ReplyAction` (egress), a `LanguageModelAction` (heavy + optional light gear), all enabled actions' `get_tools()`, `MCPAction` (via `tool_servers`), `CodeExecutionAction` (stages/runs Claude skills), skills (JV + Claude specs) |
 | `ReplyAction` | the Agent's identity (`alias` + `role`), a `LanguageModelAction` (voicing) |
 | `WebFetchAction` | none (httpx + bs4 + markdownify; SSRF guard) |
 | `HandoffInteractAction` | `PersonaAction` (polish), `WhatsAppAction` (contact routing) |

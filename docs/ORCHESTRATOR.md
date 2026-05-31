@@ -1,6 +1,6 @@
 # Orchestrator Architecture
 
-The **Orchestrator** pattern is a brain-shaped, additive deployment pattern: a single model-driven orchestrator runs the whole turn over one unified tool surface. When a turn-spanning flow is in progress it surfaces that flow as a tool and lets the model decide whether to continue it, then runs a think-act-observe loop. It ships as a peer to the Rails pattern — the harness is unchanged. See [`adr/0012-skill-executive-architecture.md`](../.planning/adr/0012-skill-executive-architecture.md) for the decision record (it supersedes ADR-0010) and [`EXECUTIVE-ROADMAP.md`](../.planning/archive/EXECUTIVE-ROADMAP.md) for the build.
+The **Orchestrator** pattern is a brain-shaped, additive deployment pattern: a single model-driven orchestrator runs the whole turn over one unified tool surface. When a turn-spanning flow is in progress it surfaces that flow as a tool and lets the model decide whether to continue it, then runs a think-act-observe loop. It ships as a peer to the Rails pattern — the harness is unchanged. See [`adr/0012-skill-executive-architecture.md`](../.planning/adr/0012-skill-executive-architecture.md) for the decision record (it supersedes ADR-0010) and [`EXECUTIVE-ROADMAP.md`](../.planning/archive/EXECUTIVE-ROADMAP.md) for the build. Two later ADRs refine the surface: [ADR-0017](../.planning/adr/0017-two-skill-specs-code-execution-substrate.md) (two skill specs + a multitenant code-execution substrate) and [ADR-0018](../.planning/adr/0018-lean-tool-surfacing.md) (lean tool surfacing).
 
 ## Overview
 
@@ -56,7 +56,7 @@ Everything the agent can do is reachable as a tool, so there is no separate rout
 | **IA-as-tools** | an `InteractAction`'s own `get_tools()` | Forwards to `execute(visitor)` with the `visitor` passed through from the Orchestrator. The tool *description* is built from the IA's manifest (`purpose` + `activates_on`, via `routing_triggers()`) so the model routes on intent. |
 | **Plain action tools** | each enabled `Action.get_tools()` | Ordinary capability tools. |
 | **Core tools** | [`core_tools.py`](../jvagent/action/orchestrator/core_tools.py) | Built-in orchestrator services. |
-| **Skills + meta-tools** | native SOP skills + catalog | `find_skill` / `use_skill` and `find_tool` / `load_tool` for progressive disclosure. |
+| **Skills + meta-tools** | skills (two specs: JV + Claude) + catalog | `find_skill` / `use_skill` and `find_tool` / `load_tool` for progressive disclosure (ADR-0017). |
 
 ### Manifest as the routing signal
 
@@ -72,7 +72,7 @@ visibility gate. First-entry and continuation are both model-judged.
 
 ### Progressive disclosure (the tool catalog)
 
-A **tool catalog** (mirroring the skills catalog) exposes `find_tool` / `load_tool` so the prompt carries a slim index rather than every tool schema — bounding prompt size as the surface grows. The skills meta-tools (`find_skill` / `use_skill`) work the same way for native SOP skills.
+A **tool catalog** (mirroring the skills catalog) exposes `find_tool` / `load_tool` so the prompt carries a slim index rather than every tool schema — bounding prompt size as the surface grows. The skills meta-tools (`find_skill` / `use_skill`) work the same way for both skill specs (JV + Claude).
 
 **Lean tool surfacing (ADR-0018).** The catalog only helps if tools are actually hidden. When the count of hideable capability tools (action + MCP) exceeds `lean_tool_threshold` (default 15), the prompt lists only the always-on core (egress, meta-tools, core tools, an active-flow tool) plus a per-turn **relevance pre-surface** — the `lean_presurface_k` (default 6) tools whose name+description best overlap the user's message (cheap token match, no model call). The long tail stays on the full surface, reachable via `find_tool` (output grouped by namespace), and a one-line hint tells the model the list is partial. Below the threshold every tool is listed (unchanged); `lean_tool_threshold: 0` disables it. Dispatch already resolves against the full surface, so hiding a tool from the prompt never makes it uncallable — only the listing shrinks, keeping each tick small on large-surface agents.
 
@@ -89,7 +89,7 @@ Identity and voicing are split along two axes:
 - **Egress is a `ReplyAction`** (`jvagent/reply`) — the agent's *mouth* and the Orchestrator's send path. `reply` delivers the user's message: **slim** (a thin literal publish, no model call) by default, but when there's shaping to apply it composes via `respond` — pending **directives** (mandatory instructions), **parameters** (conditional rules), and channel **formatting**. Channel formats live in `CHANNEL_FORMATS` (overridable per channel via the `channel_formats` attribute); the default/web channel carries none, so ordinary turns stay slim for token efficiency, while voice/SMS/social channels get plain-text or channel-specific markup. `publish` is the egress primitive.
 - **Resolution is `Action.get_responder()`** — prefers `ReplyAction`, falls back to `PersonaAction`. The Orchestrator resolves the responder for its `reply`/`respond` tools and for `_finalize_directives` (which hands rails directive text to `respond`). `PersonaAction` is unchanged and remains the egress for Rails agents.
 
-The reference agent and the `executive` scaffold profile use `jvagent/reply`; `PersonaAction` stays installable for Rails.
+The reference agent use `jvagent/reply`; `PersonaAction` stays installable for Rails.
 
 ## Invariants (SPEC §3.3)
 
@@ -111,7 +111,7 @@ actions:
       model: gpt-4o-mini
       model_action_type: OpenAILanguageModelAction
       lock_active_flow: true     # deterministic turn-lock; false = model-mediated
-      skills_source: both        # both|local|app|registry|builtin
+      skills_source: both        # both | app | library
   - action: jvagent/openai_lm
     context: { enabled: true }
   - action: jvagent/reply            # egress voice (ADR-0014); identity from the Agent
@@ -164,7 +164,7 @@ All off/neutral by default — the reference agent is unchanged. Full table in [
           args: [-y, "@modelcontextprotocol/server-filesystem"]
 ```
 
-Agent-level identity (ADR-0014) lives in the agent context: `alias` (display name) and `role` (purpose). The scaffold default profile is still `executive`, containing a single `jvagent/orchestrator` action (plus `openai_lm`, `reply`, `intro`, `handoff`). Scaffold with `jvagent app create --profile executive`; see the reference agent at `examples/jvagent_app/agents/jvagent/orchestrator_agent/`.
+Agent-level identity (ADR-0014) lives in the agent context: `alias` (display name) and `role` (purpose). The scaffold default profile is `orchestrator`, containing a single `jvagent/orchestrator` action (plus `openai_lm`, `reply`, `intro`, `handoff`). Scaffold with `jvagent app create --profile orchestrator` (the default); see the reference agent at `examples/jvagent_app/agents/jvagent/orchestrator_agent/`.
 
 ## Module structure
 
@@ -174,16 +174,19 @@ jvagent/action/orchestrator/
   ├─ continuation.py                     # active-flow surfacing (active_flow_owner + active_flow_note)
   ├─ tools.py                            # SkillTool primitives + wrap/parse/render helpers
   ├─ core_tools.py                       # built-in orchestrator core tools
-  ├─ catalog.py                          # tool catalog (find_tool/load_tool)
-  ├─ skills.py                           # native SOP skill discovery + find_skill/use_skill
+  ├─ catalog.py                          # tool catalog (find_tool/load_tool) + lean surfacing
+  ├─ skills.py                           # skill discovery (JV + Claude specs) + find_skill/use_skill
   ├─ prompts.py                          # orchestrator + loop prompts
   ├─ access.py                           # tool:* / tool:delegate AC
   └─ info.yaml                           # package metadata
 ```
 
-## Skills (native SOP overlay)
+## Skills (two specs: JV + Claude)
 
-A skill is **judgment over capability, not capability** (ADR-0011). Tools answer "can I do X"; a skill is a standard operating procedure that *coordinates* the tools the agent already has. So a jvagent-native **jvSkill** is a `SKILL.md` body that references action tools by their `namespace__tool` name (via `allowed-tools`) and carries **no executable code or bundle** — the convention is to coordinate existing actions-as-tools. (Self-contained Claude skill bundles are a later substrate; see below.)
+A skill is **judgment over capability, not capability** (ADR-0011). Tools answer "can I do X"; a skill is a standard operating procedure that *coordinates* the tools the agent already has. The orchestrator manages **exactly two skill specs**, distinguished by a `spec` frontmatter key (ADR-0017) — full authoring reference in [`jvagent/skills/README.md`](../jvagent/skills/README.md):
+
+- **JV skill** (`spec: jv`, default) — a `SKILL.md` body that references action/IA tools by their `namespace__tool` name (via `allowed-tools`/`requires-actions`) and carries **no executable code**. It coordinates existing actions-as-tools. Examples: `research`, `answer`, `code_review`.
+- **Claude skill** (`spec: claude`) — a standard [Anthropic Agent Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview) folder (drop-in with agentskills.io): `SKILL.md` + bundled `scripts/`/`resources/`. On activation the orchestrator **stages the folder into the caller's per-user sandbox** (`staged_skills/<name>/`) and the model runs its scripts via `code_execution__bash` — the multitenant [`jvagent/code_execution`](../jvagent/action/code_execution) substrate (off by default). Examples: `pdf-generation`, `triage`. The earlier "skill `scripts/` as typed tools" idea was reverted — there is no third spec.
 
 **Sources** — discovery ([`orchestrator/skills.py`](../jvagent/action/orchestrator/skills.py)) reuses the neutral `jvagent.scaffold.skill_resolve` over two locations, selected by `skills_source`:
 
@@ -197,7 +200,12 @@ Aliases `local`→`app` and `builtin`→`library` are accepted; `registry` is re
 
 **Selecting which skills** — `skills` is either `-all` (every discovered skill) or a **finite list of names** (fnmatch patterns) in the descriptor, e.g. `skills: [research, web_lookup]`. `denied_skills` subtracts; a skill with `always-active: true` in its frontmatter loads regardless of the selector.
 
-**Exposure + execution** — the loaded skills (name + description) are listed inline in the system prompt under **AVAILABLE SKILLS**, and the prompt's first rule is **skills-first**: *if a listed skill matches the user's task, activate it with `use_skill` before any ad-hoc tool call.* This makes skills preferred over tool-only handling rather than only discoverable on demand. The orchestrator also adds `find_skill` / `use_skill` meta-tools: `find_skill` searches names+descriptions (for larger catalogs); `use_skill` activates one by name — it returns the SOP body as an observation (persisting for the rest of the loop) **and surfaces the skill's `allowed-tools` into the loop's callable set**, so the model can immediately invoke the tools the procedure names. `use_skill` is **idempotent** (re-activating an already-active skill returns a short "proceed" directive instead of re-dumping the SOP), and a loop **repeat-guard** breaks any tool that's called repeatedly with identical args. `allowed-tools` is a **soft dependency** — a skill still activates if a referenced tool is absent, but the activation observation warns so the model won't follow an unexecutable step.
+**Exposure + execution** — the loaded skills (name + description) are listed inline in the system prompt under **AVAILABLE SKILLS** (the skill index is *not* gated by lean tool surfacing — it stays fully shown), and the prompt's first rule is **skills-first**: *if a listed skill matches the user's task, activate it with `use_skill` before any ad-hoc tool call.* This makes skills preferred over tool-only handling rather than only discoverable on demand. The orchestrator also adds `find_skill` / `use_skill` meta-tools: `find_skill` searches names+descriptions (for larger catalogs); `use_skill` activates one by name. What activation does depends on the spec:
+
+- **JV skill** — returns the SOP body as an observation (persisting for the rest of the loop) **and surfaces the skill's `allowed-tools` into the loop's callable set**, so the model can immediately invoke the tools the procedure names.
+- **Claude skill** — additionally **stages the skill folder** into the caller's per-user sandbox (`staged_skills/<name>/`) and appends a note telling the model to run its scripts via `code_execution__bash`; the model then reads bundled files / runs scripts (Anthropic level-3 disclosure) as needed.
+
+`use_skill` is **idempotent** (re-activating an already-active skill returns a short "proceed" directive instead of re-dumping the SOP), and a loop **repeat-guard** breaks any tool that's called repeatedly with identical args. `allowed-tools` is a **soft dependency** — a skill still activates if a referenced tool is absent, but the activation observation warns so the model won't follow an unexecutable step. `requires-actions` is a **hard gate** — a skill whose required action types are absent won't activate.
 
 ```yaml
 actions:
@@ -210,6 +218,6 @@ actions:
 
 ## Known follow-ups
 
-- jvSkills (SOP coordinating actions-as-tools) are wired. **Self-contained Claude skill bundles** (`SKILL.md` + scripts in a sandbox) are a separate substrate — deferred to a future wave (ADR-0011).
-- First-entry routing accuracy now depends on model tool-selection (anchors-in-description + a routing nudge + tests mitigate this); trivial-turn latency, since every non-flow turn enters the loop (mitigated by the slim tool catalog and a `converse` fast-reply skill). Both measured at rollout.
+- Both skill specs are wired: JV skills (SOP coordinating actions-as-tools) and **Claude skills** (`SKILL.md` + bundled scripts run in the multitenant `code_execution` sandbox, ADR-0017). The subprocess executor backend is a pragmatic default, not a hard jail — untrusted/third-party skills want an isolating backend (container/bubblewrap/nsjail); object-storage sandboxes need a materialize/sync layer (local file storage only for now).
+- First-entry routing accuracy now depends on model tool-selection (anchors-in-description + a routing nudge + tests mitigate this); trivial-turn latency, since every non-flow turn enters the loop (mitigated by lean tool surfacing — ADR-0018 — and a `converse` fast-reply skill). Both measured at rollout.
 - Live-provider smoke + a performance ledger entry (the in-tree smoke mocks leaf model calls).

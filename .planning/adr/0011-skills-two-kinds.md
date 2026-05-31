@@ -1,6 +1,8 @@
 # ADR 0011 — Two skill kinds: native SOP overlays vs. Claude bundles
 
-**Status**: Accepted (native SOP overlay shipped for the Executive pattern; Claude-bundle runtime deferred to a future wave)
+> **Errata (ADR-0017):** the "Claude-bundle runtime deferred to a future wave" is no longer true — it shipped. Skills now have two specs set by a `spec` frontmatter key: **JV** (`spec: jv`, the native SOP overlay described here) and **Claude** (`spec: claude`, a standard Anthropic Agent Skills folder whose bundled scripts run in the multitenant `jvagent/code_execution` sandbox). The earlier "skill `scripts/` as typed tools" idea was reverted — there is no third kind. See [ADR-0017](0017-two-skill-specs-code-execution-substrate.md) and [`jvagent/skills/README.md`](../../jvagent/skills/README.md). This ADR retains its original framing as the historical record.
+
+**Status**: Accepted (extended by ADR-0017 — both skill specs now shipped)
 **Date**: 2026-05-29
 **Context**: ADR-0010 (Executive + Centers). Arose from a live-smoke investigation into how skills load into the Skills center.
 

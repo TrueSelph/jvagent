@@ -63,7 +63,7 @@ those records covered patterns (bridge/helm/cockpit) that were removed.
 | [0005](adr/0005-app-yaml-agent-yaml-split.md) | `app.yaml` / `agent.yaml` split + update modes | Accepted |
 | [0006](adr/0006-jvspatial-dependency.md) | Build jvagent on a separate jvspatial framework | Accepted |
 | [0010](adr/0010-executive-centers-architecture.md) | Executive + Centers architecture | **Superseded by 0012** |
-| [0011](adr/0011-skills-two-kinds.md) | Two skill kinds: native SOP overlays vs. Claude bundles | Accepted |
+| [0011](adr/0011-skills-two-kinds.md) | Two skill kinds: native SOP overlays vs. Claude bundles | Accepted (extended by 0017) |
 | [0012](adr/0012-skill-executive-architecture.md) | **Orchestrator architecture** (the v1 orchestrator) | Accepted |
 | [0013](adr/0013-togglable-deterministic-turn-lock.md) | Togglable deterministic turn-lock (`lock_active_flow`) | Accepted |
 | [0014](adr/0014-identity-on-agent-replyaction-egress.md) | Identity on the Agent + ReplyAction egress | Accepted |
