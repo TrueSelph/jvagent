@@ -98,6 +98,22 @@ Identity and voicing are split along two axes:
 
 The reference agent use `jvagent/reply`; `PersonaAction` stays installable for Rails.
 
+## Streaming emission (chat-UI contract)
+
+The orchestrator publishes a typed stream over the response bus so a chat UI (jvchat, or any assistant-ui / Vercel-AI-SDK client via a thin translator) can render reasoning, tool activity, and acks distinctly from the answer. Every bus message carries `category` ∈ {`user`, `thought`} and, for thoughts, a `thought_type`:
+
+| Emission | `category` | `thought_type` | Notes |
+|---|---|---|---|
+| Answer text | `user` | — | the persisted reply (`reply`/`respond`) |
+| Reasoning / progress line | `thought` | `reasoning` | per-tick when `stream_internal_progress`; both gears (so light single-step turns still show reasoning) |
+| Tool call (before dispatch) | `thought` | `tool_call` | `metadata.tool_name`, `.tool_args`; carries a `segment_id` |
+| Tool result (after dispatch) | `thought` | `tool_result` | `metadata.tool_name`, `.tool_result`, `.is_error`; **same `segment_id`** so the pair folds into one UI element. Substantive tools only (egress/meta excluded) |
+| "Working on it" ack | see note | `status` / — | **channel-conditional** |
+
+**Channel-conditional acks.** On a **streamed** UI (`visitor.stream`) the ack is `category="thought", thought_type="status"` — an ephemeral activity-strip line, kept out of the answer transcript. On a **non-streamed** channel (WhatsApp, etc.) there is no activity strip, so the ack is published as a whole `category="user"` message (delivered by the channel adapter; `transient` ⇒ not persisted to `interaction.response`). Thoughts are not relayed to channel adapters unless `relay_to_adapters` + the adapter opts in, so reasoning/tool traces never leak to WhatsApp.
+
+All thought emissions are `transient` (they land in `interaction.agent_trace`, never `interaction.response`). See the [orchestrator stream-emission spec](../.planning/) and `tests/action/orchestrator/test_stream_emission.py`.
+
 ## Invariants (SPEC §3.3)
 
 1. **One model call per tick**; the loop is bounded by ``activation_budget`` (each tick is at most one model round-trip).

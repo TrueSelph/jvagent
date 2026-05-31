@@ -26,6 +26,7 @@ import inspect
 import logging
 import re
 import time
+import uuid
 from typing import TYPE_CHECKING, Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
 from jvspatial.core.annotations import attribute
@@ -979,9 +980,10 @@ class OrchestratorInteractAction(InteractAction):
                     continue
                 nd_streak = 0
                 action, tool_name, args = self._normalize(decision, tools, skill_names)
-                # Progress bubbles only while the heavy (slow) gear is engaged —
-                # fast light ticks finish before a bubble would be useful.
-                if self.stream_internal_progress and gear == "heavy":
+                # Progress/reasoning line for the UI's REASONING disclosure. Fires
+                # on both gears so single-step (light) turns still show their
+                # reasoning, not just multi-step heavy ones.
+                if self.stream_internal_progress:
                     await self._emit_thought(
                         visitor,
                         self._progress_line(action, tool_name, args, decision),
@@ -1026,6 +1028,18 @@ class OrchestratorInteractAction(InteractAction):
                             "find_tool or the relevant skill to reach it)"
                         )
                     else:
+                        # Structured tool thought for the UI's TOOL CALLS panel:
+                        # tool_call before, tool_result after (shared segment_id
+                        # so they fold into one element). Substantive tools only.
+                        tool_seg = (
+                            f"toolcall-{uuid.uuid4().hex[:10]}"
+                            if tool_name not in _NON_SUBSTANTIVE_TOOLS
+                            else None
+                        )
+                        if tool_seg:
+                            await self._emit_tool_thought(
+                                visitor, "tool_call", tool_name, tool_seg, args=args
+                            )
                         try:
                             if self.tool_call_timeout and self.tool_call_timeout > 0:
                                 obs = await asyncio.wait_for(
@@ -1043,6 +1057,12 @@ class OrchestratorInteractAction(InteractAction):
                                 "orchestrator: tool %r raised: %s", tool_name, exc
                             )
                             obs = f"(tool error: {exc})"
+                        # After (fires on success, timeout, or error — obs is
+                        # always a string by here).
+                        if tool_seg:
+                            await self._emit_tool_thought(
+                                visitor, "tool_result", tool_name, tool_seg, obs=obs
+                            )
                     observations.append(
                         {"tool": tool_name, "args": args, "observation": obs}
                     )
@@ -1354,6 +1374,7 @@ class OrchestratorInteractAction(InteractAction):
                 content=body,
                 channel=getattr(visitor, "channel", "default") or "default",
                 category="thought",
+                thought_type="reasoning",  # feeds the UI's REASONING disclosure
                 transient=True,
                 interaction=interaction,
                 interaction_id=getattr(interaction, "id", None),
@@ -1361,6 +1382,59 @@ class OrchestratorInteractAction(InteractAction):
             )
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("orchestrator: thought emit failed: %s", exc)
+
+    async def _emit_tool_thought(
+        self,
+        visitor: "InteractWalker",
+        phase: str,
+        tool_name: str,
+        segment_id: str,
+        *,
+        args: Optional[Dict[str, Any]] = None,
+        obs: Any = None,
+    ) -> None:
+        """Emit a structured tool_call/tool_result thought over the bus.
+
+        ``phase`` is ``"tool_call"`` (before dispatch — carries ``tool_args``) or
+        ``"tool_result"`` (after — carries ``tool_result`` + ``is_error``). The
+        shared ``segment_id`` folds the pair into one TOOL CALLS element in the
+        UI. Transient (never persisted to ``interaction.response``); best-effort.
+        """
+        bus = getattr(visitor, "response_bus", None)
+        session_id = getattr(visitor, "session_id", None)
+        if not bus or not session_id:
+            return
+        interaction = getattr(visitor, "interaction", None)
+        if phase == "tool_call":
+            content = tool_name
+            metadata: Dict[str, Any] = {
+                "tool_name": tool_name,
+                "tool_args": args or {},
+            }
+        else:
+            text = obs if isinstance(obs, str) else str(obs)
+            content = text[:2000]
+            metadata = {
+                "tool_name": tool_name,
+                "tool_result": text[:2000],
+                "is_error": isinstance(obs, str) and obs.startswith("(tool error"),
+            }
+        try:
+            await bus.publish(
+                session_id=session_id,
+                content=content,
+                channel=getattr(visitor, "channel", "default") or "default",
+                category="thought",
+                thought_type=phase,
+                segment_id=segment_id,
+                transient=True,
+                interaction=interaction,
+                interaction_id=getattr(interaction, "id", None),
+                user_id=getattr(interaction, "user_id", None),
+                metadata=metadata,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("orchestrator: tool thought emit failed: %s", exc)
 
     def _schedule_first_emit_ack(
         self, visitor: "InteractWalker"
@@ -1390,6 +1464,18 @@ class OrchestratorInteractAction(InteractAction):
         channel = getattr(visitor, "channel", "default") or "default"
         first_delay = max(0.0, float(self.first_emit_timeout_ms or 0) / 1000.0)
         interval = max(0.0, float(self.ack_interval_ms or 0) / 1000.0)
+        # Channel-conditional shape: a streamed UI shows the ack as an ephemeral
+        # status line in its activity strip (category=thought/status, kept out of
+        # the answer transcript); a non-streamed channel (WhatsApp, etc.) has no
+        # activity strip, so the ack must be a whole, delivered message
+        # (category=user → relayed by the channel adapter; transient ⇒ not
+        # persisted to interaction.response). Both stay transient.
+        streamed_ui = bool(getattr(visitor, "stream", False))
+        ack_kwargs: Dict[str, Any] = (
+            {"category": "thought", "thought_type": "status"}
+            if streamed_ui
+            else {"category": "user"}
+        )
 
         async def _ack() -> None:
             try:
@@ -1403,6 +1489,7 @@ class OrchestratorInteractAction(InteractAction):
                         interaction=interaction,
                         interaction_id=getattr(interaction, "id", None),
                         user_id=getattr(interaction, "user_id", None),
+                        **ack_kwargs,
                     )
             except asyncio.CancelledError:  # pragma: no cover - timing
                 raise

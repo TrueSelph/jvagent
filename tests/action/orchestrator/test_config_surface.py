@@ -499,11 +499,12 @@ async def test_no_light_model_runs_everything_heavy(
     assert gears and all(g == "heavy" for g in gears)
 
 
-async def test_progress_stream_suppressed_on_light_gear(
+async def test_progress_stream_fires_on_both_gears(
     make_orchestrator, make_visitor, monkeypatch
 ):
-    """stream_internal_progress emits a thought bubble only on heavy ticks — the
-    light gear is fast enough that a per-tick bubble is noise."""
+    """stream_internal_progress emits a reasoning thought on EVERY tick (both
+    gears) so single-step light turns still populate the UI's REASONING
+    disclosure (orchestrator-stream-emission-spec §B)."""
     thoughts = []
 
     async def _emit(self, visitor, text):
@@ -530,8 +531,8 @@ async def test_progress_stream_suppressed_on_light_gear(
 
     monkeypatch.setattr(OrchestratorInteractAction, "_run_model", _rm)
     await ex.execute(make_visitor(utterance="multi-step"))
-    # Two light ticks suppressed; only the two heavy ticks emit a bubble.
-    assert len(thoughts) == 2
+    # Every tick emits a progress/reasoning line now (no gear gate).
+    assert len(thoughts) == 4
 
 
 async def test_transient_ack_only_on_complex_turns(
