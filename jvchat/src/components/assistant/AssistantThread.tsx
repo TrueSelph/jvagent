@@ -23,8 +23,9 @@ import {
   useRef,
   useState,
 } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import {
   ActionBarPrimitive,
   AssistantRuntimeProvider,
@@ -50,7 +51,9 @@ import {
   ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  CheckIcon,
   Copy,
+  Loader2Icon,
   Paperclip,
   Pencil,
   SparklesIcon,
@@ -218,10 +221,18 @@ const MD_COMPONENTS: Components = {
   pre: (p) => <pre className="aui-md-pre" {...omitNode(p)} />,
 };
 
-const TextPart: TextMessagePartComponent = ({ text }) => (
-  <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
-    {text}
-  </ReactMarkdown>
+/** Assistant body — canonical assistant-ui smooth-streaming markdown. */
+const AssistantMarkdown: TextMessagePartComponent = () => (
+  <MarkdownTextPrimitive
+    smooth
+    remarkPlugins={[remarkGfm]}
+    components={MD_COMPONENTS}
+  />
+);
+
+/** User body — plain text (no markdown), matching assistant-ui user bubbles. */
+const UserText: TextMessagePartComponent = ({ text }) => (
+  <span className="whitespace-pre-wrap break-words">{text}</span>
 );
 
 // --- reasoning (collapsible, aui-reasoning-*) -------------------------------
@@ -230,6 +241,15 @@ const ReasoningText: ReasoningMessagePartComponent = ({ text }) => {
   if (!text?.trim()) return null;
   return <div className="whitespace-pre-wrap break-words">{text}</div>;
 };
+
+/** Three pulsing dots — assistant-ui style "thinking" indicator. */
+const ThinkingDots = () => (
+  <div className="flex items-center gap-1 py-1 text-[color:var(--color-muted-foreground)]">
+    <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
+    <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
+    <span className="size-1.5 animate-bounce rounded-full bg-current" />
+  </div>
+);
 
 const ReasoningGroup = ({ children }: { children?: React.ReactNode }) => {
   const running = useMessage((m) => m.status?.type === "running");
@@ -247,10 +267,20 @@ const ReasoningGroup = ({ children }: { children?: React.ReactNode }) => {
         className="aui-reasoning-trigger hover:text-[color:var(--color-foreground)]"
         data-state={open ? "open" : "closed"}
       >
-        <SparklesIcon className="aui-reasoning-trigger-icon size-4" aria-hidden />
+        {running ? (
+          <Loader2Icon
+            className="aui-reasoning-trigger-icon size-4 animate-spin"
+            aria-hidden
+          />
+        ) : (
+          <SparklesIcon
+            className="aui-reasoning-trigger-icon size-4"
+            aria-hidden
+          />
+        )}
         <span className="aui-reasoning-trigger-label-wrapper">
           <span className={running ? "aui-reasoning-trigger-shimmer" : undefined}>
-            Reasoning
+            {running ? "Thinking" : "Reasoning"}
           </span>
         </span>
         <ChevronDownIcon
@@ -287,11 +317,14 @@ const ToolPart: ToolCallMessagePartComponent = ({
   args,
   result,
   isError,
+  status,
 }) => {
   const [open, setOpen] = useState(false);
   const argStr =
     args && Object.keys(args).length ? JSON.stringify(args, null, 2) : "";
   const resStr = formatToolResult(result);
+  const running = status?.type === "running";
+  const done = result !== undefined || status?.type === "complete";
   return (
     <div className="aui-tool-fallback-root my-2 border-[color:var(--color-border)]">
       <button
@@ -299,14 +332,29 @@ const ToolPart: ToolCallMessagePartComponent = ({
         onClick={() => setOpen((o) => !o)}
         className="aui-tool-fallback-trigger hover:text-[color:var(--color-foreground)]"
       >
-        <WrenchIcon
-          className={cn(
-            "aui-tool-fallback-trigger-icon size-4",
-            isError && "text-[color:var(--color-destructive,#ef4444)]",
-          )}
-          aria-hidden
-        />
+        {running ? (
+          <Loader2Icon
+            className="aui-tool-fallback-trigger-icon size-4 animate-spin"
+            aria-hidden
+          />
+        ) : isError ? (
+          <WrenchIcon
+            className="aui-tool-fallback-trigger-icon size-4 text-[color:var(--color-destructive)]"
+            aria-hidden
+          />
+        ) : done ? (
+          <CheckIcon
+            className="aui-tool-fallback-trigger-icon size-4"
+            aria-hidden
+          />
+        ) : (
+          <WrenchIcon
+            className="aui-tool-fallback-trigger-icon size-4"
+            aria-hidden
+          />
+        )}
         <span className="aui-tool-fallback-trigger-label-wrapper">
+          {running ? "Running" : "Used"} tool:{" "}
           <b className="font-mono">{toolName}</b>
         </span>
         <ChevronDownIcon
@@ -318,14 +366,14 @@ const ToolPart: ToolCallMessagePartComponent = ({
         />
       </button>
       {open && (argStr || resStr) ? (
-        <div className="aui-tool-fallback-content px-4 pt-2">
+        <div className="aui-tool-fallback-content space-y-1 px-4 pt-2">
           {argStr ? (
             <pre className="aui-tool-fallback-args max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-[color:var(--color-muted)] p-2 text-xs">
               {argStr}
             </pre>
           ) : null}
           {resStr ? (
-            <pre className="aui-tool-fallback-result mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-[color:var(--color-muted)] p-2 text-xs">
+            <pre className="aui-tool-fallback-result max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-[color:var(--color-muted)] p-2 text-xs">
               {resStr}
             </pre>
           ) : null}
@@ -396,17 +444,25 @@ const AssistantMessage = () => {
   const meta = useMessage(
     (m) => m.metadata?.custom as unknown as JvAssistantMeta | undefined,
   );
+  const thinking = useMessage(
+    (m) =>
+      m.status?.type === "running" &&
+      !m.content.some(
+        (p) => p.type === "text" && (p as { text?: string }).text?.trim(),
+      ),
+  );
   return (
     <MessagePrimitive.Root className="aui-assistant-message-root">
       <div className="aui-assistant-message-content">
         <MessagePrimitive.Parts
           components={{
-            Text: TextPart,
+            Text: AssistantMarkdown,
             Reasoning: ReasoningText,
             ReasoningGroup,
             tools: { Fallback: ToolPart },
           }}
         />
+        {thinking ? <ThinkingDots /> : null}
       </div>
       <div className="aui-assistant-message-footer">
         <BranchPicker rootId={meta?.branchRootId} />
@@ -470,7 +526,7 @@ const UserMessage = () => {
       </div>
       <div className="aui-user-message-content-wrapper">
         <div className="aui-user-message-content">
-          <MessagePrimitive.Parts components={{ Text: TextPart }} />
+          <MessagePrimitive.Parts components={{ Text: UserText }} />
         </div>
       </div>
       <div className="aui-user-action-bar-root col-start-1 row-start-2 mr-3 mt-2 flex justify-end">
