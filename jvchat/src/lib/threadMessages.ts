@@ -147,9 +147,17 @@ function assistantGroupToThread(
 
   if (parts.length === 0) parts.push({ type: "text", text: "" });
 
+  // Stable turn id: anchor to the interaction (or the first item), NOT the last
+  // item — the last item changes as reasoning/tool/text parts stream in, which
+  // would make assistant-ui treat each streaming update as a new branch (the
+  // "version numbers increment" bug).
+  const stableId = meta.interactionId
+    ? `turn-${meta.interactionId}`
+    : (group[0]?.id ?? meta.jvMessageId);
+
   return {
     role: "assistant",
-    id: meta.jvMessageId || group[0]?.id,
+    id: stableId,
     ...(createdAt ? { createdAt: new Date(createdAt) } : {}),
     status: { type: streaming ? "running" : "complete" } as never,
     content: parts as never,

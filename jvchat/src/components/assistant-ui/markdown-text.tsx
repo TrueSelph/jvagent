@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 const MarkdownTextImpl = () => {
   return (
     <MarkdownTextPrimitive
+      smooth
       remarkPlugins={[remarkGfm]}
       className="aui-md"
       components={defaultComponents}
