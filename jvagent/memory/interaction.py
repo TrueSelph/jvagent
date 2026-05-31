@@ -283,7 +283,7 @@ class Interaction(DeferredSaveMixin, Node):
             for i in range(len(self.actions) - 1, -1, -1):
                 if self.actions[i] == action_name:
                     self.actions.pop(i)
-                    logger.warning(
+                    logger.debug(
                         f"Interaction.unrecord_action_execution: Unrecorded action {action_name}"
                     )
                     break
