@@ -119,13 +119,17 @@ function ReasoningFade({ className, ...props }: React.ComponentProps<"div">) {
 function ReasoningTrigger({
   active,
   duration,
+  label,
   className,
   ...props
 }: React.ComponentProps<typeof CollapsibleTrigger> & {
   active?: boolean;
   duration?: number;
+  /** Overrides the "Reasoning" text (e.g. the live thinking status). */
+  label?: React.ReactNode;
 }) {
   const durationText = duration ? ` (${duration}s)` : "";
+  const content = label ?? `Reasoning${durationText}`;
 
   return (
     <CollapsibleTrigger
@@ -142,16 +146,16 @@ function ReasoningTrigger({
       />
       <span
         data-slot="reasoning-trigger-label"
-        className="aui-reasoning-trigger-label-wrapper relative inline-block leading-none"
+        className="aui-reasoning-trigger-label-wrapper relative inline-block truncate leading-none"
       >
-        <span>Reasoning{durationText}</span>
+        <span>{content}</span>
         {active ? (
           <span
             aria-hidden
             data-slot="reasoning-trigger-shimmer"
-            className="aui-reasoning-trigger-shimmer shimmer pointer-events-none absolute inset-0 motion-reduce:animate-none"
+            className="aui-reasoning-trigger-shimmer shimmer pointer-events-none absolute inset-0 truncate motion-reduce:animate-none"
           >
-            Reasoning{durationText}
+            {content}
           </span>
         ) : null}
       </span>

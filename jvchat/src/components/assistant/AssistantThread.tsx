@@ -24,7 +24,10 @@ import type { SendMessageOptions } from "../../hooks/useStreaming";
 import { buildThreadMessages } from "../../lib/threadMessages";
 import type { Message } from "../../types/message";
 import { Thread } from "../assistant-ui/thread";
-import { DebugContext } from "../assistant-ui/debug-action";
+import {
+  DebugContext,
+  ComposerMenuContext,
+} from "../assistant-ui/debug-action";
 import { MessageDebugDialog } from "./MessageDebugDialog";
 
 export interface AssistantThreadProps {
@@ -121,12 +124,13 @@ export function AssistantThread({
   onSend,
   onStop,
   composerDisabled = false,
+  composerMenu,
 }: AssistantThreadProps) {
   const [debugMessage, setDebugMessage] = useState<Message | null>(null);
 
   const threadMessages = useMemo(
-    () => buildThreadMessages(messages),
-    [messages],
+    () => buildThreadMessages(messages, isStreaming),
+    [messages, isStreaming],
   );
 
   const runtime = useExternalStoreRuntime({
@@ -156,11 +160,13 @@ export function AssistantThread({
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <DebugContext.Provider value={{ openDebug: setDebugMessage }}>
-        <Thread />
-        <MessageDebugDialog
-          message={debugMessage}
-          onClose={() => setDebugMessage(null)}
-        />
+        <ComposerMenuContext.Provider value={composerMenu}>
+          <Thread />
+          <MessageDebugDialog
+            message={debugMessage}
+            onClose={() => setDebugMessage(null)}
+          />
+        </ComposerMenuContext.Provider>
       </DebugContext.Provider>
     </AssistantRuntimeProvider>
   );

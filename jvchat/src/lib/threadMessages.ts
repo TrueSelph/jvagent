@@ -20,6 +20,8 @@ export interface JvAssistantMeta {
   interactionId?: string;
   /** Branch root id of the turn this assistant answer belongs to. */
   branchRootId?: string;
+  /** Live "thinking status" line shown on the Reasoning trigger while running. */
+  statusLabel?: string;
 }
 
 /** Custom metadata we stash on user messages for jvchat-specific UI. */
@@ -75,18 +77,27 @@ function userToThread(m: Message): ThreadMessageLike {
  * Collapse a run of consecutive assistant-side jvchat messages (reasoning/tool
  * thoughts + the final answer text) into one assistant ThreadMessageLike.
  */
+function firstLine(s: string): string {
+  const line = s.split("\n").find((l) => l.trim()) ?? s;
+  const t = line.trim();
+  return t.length > 64 ? t.slice(0, 63) + "…" : t;
+}
+
 function assistantGroupToThread(
   group: Message[],
   branchRootId?: string,
+  isRunning?: boolean,
 ): ThreadMessageLike {
-  const parts: Array<
-    | { type: "text"; text: string }
-    | { type: "reasoning"; text: string }
-    | ToolPart
-  > = [];
+  // Collect by kind so the whole exchange renders as ONE reasoning section and
+  // ONE tool-call section (assistant-ui groups consecutive same-type parts).
+  // Interleaving in arrival order would otherwise produce a separate collapsible
+  // per reasoning/tool tick.
+  const reasoningParts: Array<{ type: "reasoning"; text: string }> = [];
+  const toolParts: ToolPart[] = [];
+  const textParts: Array<{ type: "text"; text: string }> = [];
 
   // Pair tool_call + tool_result by segmentId so they fold into one part.
-  const toolBySegment = new Map<string, ToolPart>();
+  const toolBySegment = new Map<string, number>();
   const meta: JvAssistantMeta = {
     jvRole: "assistant",
     debugMessage: null,
@@ -95,6 +106,7 @@ function assistantGroupToThread(
   };
   let streaming = false;
   let createdAt: string | undefined;
+  let statusLabel: string | undefined;
 
   for (const m of group) {
     if (m.streaming) streaming = true;
@@ -104,29 +116,30 @@ function assistantGroupToThread(
     if (m.category === "thought") {
       const md = (m.metadata ?? {}) as Record<string, unknown>;
       if (m.thoughtType === "reasoning") {
-        if (m.content.trim()) parts.push({ type: "reasoning", text: m.content });
+        if (m.content.trim()) {
+          reasoningParts.push({ type: "reasoning", text: m.content });
+          statusLabel = firstLine(m.content);
+        }
       } else if (m.thoughtType === "tool_call") {
         const seg = m.segmentId || m.id;
-        const part: ToolPart = {
+        const toolName = String(md.tool_name ?? m.content ?? "tool");
+        toolBySegment.set(seg, toolParts.length);
+        toolParts.push({
           type: "tool-call",
           toolCallId: seg,
-          toolName: String(md.tool_name ?? m.content ?? "tool"),
+          toolName,
           args: (md.tool_args as Record<string, unknown>) ?? {},
-        };
-        toolBySegment.set(seg, part);
-        parts.push(part);
+        });
+        statusLabel = `Using ${toolName}…`;
       } else if (m.thoughtType === "tool_result") {
         const seg = m.segmentId || m.id;
-        const existing = toolBySegment.get(seg);
         const result = md.tool_result ?? m.content;
         const isError = Boolean(md.is_error);
-        if (existing) {
-          // Mutate the already-pushed part in place (same array reference).
-          const idx = parts.indexOf(existing);
-          if (idx >= 0)
-            parts[idx] = { ...existing, result, isError } as ToolPart;
+        const idx = toolBySegment.get(seg);
+        if (idx !== undefined && toolParts[idx]) {
+          toolParts[idx] = { ...toolParts[idx], result, isError };
         } else {
-          parts.push({
+          toolParts.push({
             type: "tool-call",
             toolCallId: seg,
             toolName: String(md.tool_name ?? "tool"),
@@ -140,12 +153,23 @@ function assistantGroupToThread(
       // Final answer text (category "user"/undefined on an assistant message).
       meta.jvMessageId = m.id;
       if (!meta.debugMessage && m.debugData) meta.debugMessage = m;
-      if (m.content) parts.push({ type: "text", text: m.content });
+      if (m.content) textParts.push({ type: "text", text: m.content });
       createdAt = m.timestamp;
     }
   }
 
+  // One reasoning section, then one tool section, then the answer text.
+  const parts: Array<
+    { type: "text"; text: string } | { type: "reasoning"; text: string } | ToolPart
+  > = [...reasoningParts, ...toolParts, ...textParts];
+
   if (parts.length === 0) parts.push({ type: "text", text: "" });
+
+  // "running" is driven by the global stream flag for the last turn (per-item
+  // `m.streaming` isn't set during the reasoning/tool phase). Live status label
+  // drives the Reasoning trigger while running; cleared on completion.
+  const running = streaming || !!isRunning;
+  if (running && statusLabel) meta.statusLabel = statusLabel;
 
   // Stable turn id: anchor to the interaction (or the first item), NOT the last
   // item — the last item changes as reasoning/tool/text parts stream in, which
@@ -159,14 +183,25 @@ function assistantGroupToThread(
     role: "assistant",
     id: stableId,
     ...(createdAt ? { createdAt: new Date(createdAt) } : {}),
-    status: { type: streaming ? "running" : "complete" } as never,
+    status: { type: running ? "running" : "complete" } as never,
     content: parts as never,
     metadata: { custom: meta as unknown as Record<string, unknown> },
   };
 }
 
 /** Group jvchat's flat message stream into assistant-ui thread messages. */
-export function buildThreadMessages(messages: Message[]): ThreadMessageLike[] {
+export function buildThreadMessages(
+  messages: Message[],
+  isStreaming = false,
+): ThreadMessageLike[] {
+  // Index of the first message in the last assistant run (so we can mark that
+  // turn as "running" when the thread is streaming).
+  let lastAssistantStart = -1;
+  for (let k = messages.length - 1; k >= 0; k--) {
+    if (messages[k].role === "assistant") lastAssistantStart = k;
+    else break;
+  }
+
   const out: ThreadMessageLike[] = [];
   let i = 0;
   let lastRootId: string | undefined;
@@ -178,12 +213,18 @@ export function buildThreadMessages(messages: Message[]): ThreadMessageLike[] {
       i++;
       continue;
     }
+    const groupStart = i;
     const group: Message[] = [];
     while (i < messages.length && messages[i].role === "assistant") {
       group.push(messages[i]);
       i++;
     }
-    if (group.length) out.push(assistantGroupToThread(group, lastRootId));
+    if (group.length) {
+      const isLastTurn = groupStart === lastAssistantStart;
+      out.push(
+        assistantGroupToThread(group, lastRootId, isStreaming && isLastTurn),
+      );
+    }
   }
   return out;
 }

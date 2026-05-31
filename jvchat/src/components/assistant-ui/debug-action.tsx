@@ -14,6 +14,17 @@ export const DebugContext = createContext<{
 } | null>(null);
 
 /**
+ * jvchat bridge: the composer "tools" menu (documents / views / debug) that the
+ * app passes in. Rendered inside assistant-ui's composer action row.
+ */
+export const ComposerMenuContext = createContext<React.ReactNode>(null);
+
+export const ComposerMenuSlot: FC = () => {
+  const menu = useContext(ComposerMenuContext);
+  return menu ? <>{menu}</> : null;
+};
+
+/**
  * jvchat-specific addition to assistant-ui's action bar: a "Debug" button that
  * opens the legacy debug dialog from the final-chunk debugData carried on the
  * message metadata. Hidden when the message has no debug payload yet.

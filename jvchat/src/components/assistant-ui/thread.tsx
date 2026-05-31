@@ -18,7 +18,10 @@ import {
 } from "@/components/assistant-ui/tool-group";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
-import { MessageDebugAction } from "@/components/assistant-ui/debug-action";
+import {
+  MessageDebugAction,
+  ComposerMenuSlot,
+} from "@/components/assistant-ui/debug-action";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -47,7 +50,40 @@ import {
   RefreshCwIcon,
   SquareIcon,
 } from "lucide-react";
-import type { FC } from "react";
+import { useEffect, useRef, useState, type FC, type ReactNode } from "react";
+
+/**
+ * jvchat: one Reasoning section per exchange whose trigger label tracks the
+ * live "thinking status" (the latest reasoning line / current tool) while
+ * running, reverting to "Reasoning" when the turn completes. Open while
+ * running, auto-collapsed once the turn finishes.
+ */
+const ReasoningChain: FC<{ children: ReactNode }> = ({ children }) => {
+  const running = useAuiState((s) => s.message.status?.type === "running");
+  const statusLabel = useAuiState(
+    (s) =>
+      (s.message.metadata?.custom as { statusLabel?: string } | undefined)
+        ?.statusLabel,
+  );
+  const [open, setOpen] = useState(running);
+  const wasRunning = useRef(running);
+  useEffect(() => {
+    if (running) setOpen(true);
+    else if (wasRunning.current) setOpen(false);
+    wasRunning.current = running;
+  }, [running]);
+  return (
+    <ReasoningRoot open={open} onOpenChange={setOpen}>
+      <ReasoningTrigger
+        active={running}
+        label={running ? statusLabel : undefined}
+      />
+      <ReasoningContent aria-busy={running}>
+        <ReasoningText>{children}</ReasoningText>
+      </ReasoningContent>
+    </ReasoningRoot>
+  );
+};
 
 export const Thread: FC = () => {
   return (
@@ -60,11 +96,10 @@ export const Thread: FC = () => {
       }}
     >
       <ThreadPrimitive.Viewport
-        turnAnchor="top"
         data-slot="aui_thread-viewport"
         className="relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth"
       >
-        <div className="mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 pt-10">
+        <div className="mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 pt-[130px]">
           <AuiIf condition={(s) => s.thread.isEmpty}>
             <ThreadWelcome />
           </AuiIf>
@@ -181,7 +216,10 @@ const Composer: FC = () => {
 const ComposerAction: FC = () => {
   return (
     <div className="aui-composer-action-wrapper relative flex items-center justify-between">
-      <ComposerAddAttachment />
+      <div className="flex items-center gap-1">
+        <ComposerAddAttachment />
+        <ComposerMenuSlot />
+      </div>
       <AuiIf condition={(s) => !s.thread.isRunning}>
         <ComposerPrimitive.Send asChild>
           <TooltipIconButton
@@ -253,17 +291,8 @@ const AssistantMessage: FC = () => {
             switch (part.type) {
               case "group-chainOfThought":
                 return <div data-slot="aui_chain-of-thought">{children}</div>;
-              case "group-reasoning": {
-                const running = part.status.type === "running";
-                return (
-                  <ReasoningRoot defaultOpen={running}>
-                    <ReasoningTrigger active={running} />
-                    <ReasoningContent aria-busy={running}>
-                      <ReasoningText>{children}</ReasoningText>
-                    </ReasoningContent>
-                  </ReasoningRoot>
-                );
-              }
+              case "group-reasoning":
+                return <ReasoningChain>{children}</ReasoningChain>;
               case "group-tool":
                 return (
                   <ToolGroupRoot>

@@ -23,9 +23,9 @@ const ANIMATION_DURATION = 200;
 const toolGroupVariants = cva("aui-tool-group-root group/tool-group w-full", {
   variants: {
     variant: {
-      outline: "rounded-lg border py-3",
+      outline: "rounded-lg border pt-3 pb-4",
       ghost: "",
-      muted: "border-muted-foreground/30 bg-muted/30 rounded-lg border py-3",
+      muted: "border-muted-foreground/30 bg-muted/30 rounded-lg border pt-3 pb-4",
     },
   },
   defaultVariants: { variant: "outline" },
