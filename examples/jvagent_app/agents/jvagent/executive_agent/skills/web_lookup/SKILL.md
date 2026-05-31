@@ -1,6 +1,9 @@
 ---
 name: web_lookup
 description: Look up a person, company, or current fact on the public web and summarize what's found.
+required-actons:
+  - SerperWebSearchAction
+  - WebFetchAction
 allowed-tools:
   - web_search__search
   - web_fetch__fetch
