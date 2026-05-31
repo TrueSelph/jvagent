@@ -254,7 +254,7 @@ async def test_get_responder_prefers_reply_action(monkeypatch):
     assert (await ex.get_responder()) is persona  # falls back to PersonaAction
 
 
-async def test_orchestrator_voices_through_reply_action(
+async def test_orchestrator_emits_through_reply_action(
     make_orchestrator, make_visitor, monkeypatch
 ):
     """The SE picks up ReplyAction from enabled actions and routes reply through

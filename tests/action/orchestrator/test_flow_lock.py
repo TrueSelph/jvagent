@@ -127,6 +127,97 @@ async def test_lock_on_no_active_task_runs_loop(
     assert calls["n"] >= 1  # normal loop runs the model
 
 
+async def test_ia_emitted_detects_response_or_queued_directive():
+    """The locked path treats a directive-publishing IA as having emitted, so it
+    won't echo the IA-as-tool status sentinel."""
+    from types import SimpleNamespace
+
+    A = OrchestratorInteractAction
+    assert A._ia_emitted(None) is False
+    assert (
+        A._ia_emitted(
+            SimpleNamespace(response="hi there", get_unexecuted_directives=lambda: [])
+        )
+        is True
+    )
+    # Published via a queued directive (the interview pattern), response still "".
+    assert (
+        A._ia_emitted(
+            SimpleNamespace(
+                response="", get_unexecuted_directives=lambda: [{"directive": "Name?"}]
+            )
+        )
+        is True
+    )
+    # Truly silent: no response, no directives.
+    assert (
+        A._ia_emitted(
+            SimpleNamespace(response="", get_unexecuted_directives=lambda: [])
+        )
+        is False
+    )
+
+
+async def test_locked_directive_publish_never_echoes_sentinel(
+    make_orchestrator, make_visitor, flow_stub_cls, monkeypatch
+):
+    """Regression: a locked IA that publishes via add_directive must NOT make the
+    orchestrator echo the IA-as-tool status sentinel '(ran <Class>)' as a reply
+    (the old voiced-check looked only at interaction.response and missed the
+    directive publish path)."""
+    ia = _signup(flow_stub_cls)
+    ex = make_orchestrator(actions=[ia], action_registry={"SignupIA": ia})
+    monkeypatch.setattr(sei, "active_flow_owner", lambda v, **kw: "SignupIA")
+    _spy_model(monkeypatch)
+
+    emitted: list = []
+
+    async def _cap(_self, _v, text):
+        emitted.append(text)
+
+    monkeypatch.setattr(OrchestratorInteractAction, "_emit_reply", _cap)
+
+    v = make_visitor(utterance="x")
+    v.interaction.response = ""
+    v.interaction.get_unexecuted_directives = lambda: [
+        {"directive": "What's your name?"}
+    ]
+
+    await ex.execute(v)
+
+    # The internal status sentinel must never reach the user.
+    assert all("(ran" not in t for t in emitted), emitted
+    assert all("SignupIA" not in t for t in emitted), emitted
+
+
+async def test_locked_silent_ia_emits_clarify_not_sentinel(
+    make_orchestrator, make_visitor, flow_stub_cls, monkeypatch
+):
+    """When a locked IA produces nothing (no response, no directive), the
+    orchestrator surfaces the clean clarify fallback — never the '(ran X)'
+    sentinel."""
+    ia = _signup(flow_stub_cls)
+    ex = make_orchestrator(actions=[ia], action_registry={"SignupIA": ia})
+    monkeypatch.setattr(sei, "active_flow_owner", lambda v, **kw: "SignupIA")
+    _spy_model(monkeypatch)
+
+    emitted: list = []
+
+    async def _cap(_self, _v, text):
+        emitted.append(text)
+
+    monkeypatch.setattr(OrchestratorInteractAction, "_emit_reply", _cap)
+
+    v = make_visitor(utterance="x")
+    v.interaction.response = ""
+    v.interaction.get_unexecuted_directives = lambda: []
+
+    await ex.execute(v)
+
+    assert all("(ran" not in t for t in emitted), emitted
+    assert ex.clarify_text in emitted
+
+
 async def test_orchestrator_activation_event_recorded_per_mode(
     make_orchestrator, make_visitor, flow_stub_cls, monkeypatch
 ):

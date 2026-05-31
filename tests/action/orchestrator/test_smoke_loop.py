@@ -66,7 +66,7 @@ async def test_reply_with_answer_key_is_salvaged(
     )
     v = make_visitor(utterance="Hello there")
     await ex.execute(v)
-    assert v.interaction.response == "Hello! How can I help?"  # voiced once
+    assert v.interaction.response == "Hello! How can I help?"  # emitted once
     assert _contents(publish_log) == []  # no clarify fallback
 
 

@@ -31,6 +31,7 @@ from .core.classification.classification_handler import (
 from .core.foundation.enums import Intent, InterviewState
 from .core.foundation.exceptions import QuestionNotFoundError
 from .core.foundation.prompts import (
+    ACTIVE_TASK_DESCRIPTION_TEMPLATE,
     CANCELLATION_MESSAGE,
     COMPLETION_MESSAGE,
     INTERVIEW_PROMPT,
@@ -263,6 +264,14 @@ class InterviewInteractAction(InteractAction, ABC):
     )
     interview_prompt: str = attribute(
         default=INTERVIEW_PROMPT, description="Base prompt for interview orchestration"
+    )
+    active_task_description: str = attribute(
+        default=ACTIVE_TASK_DESCRIPTION_TEMPLATE,
+        description="Guidance recorded on the active control-task that steers how "
+        "the agent handles off-topic input mid-interview. Placeholders: "
+        "{action_title}, {action_description}. Default answers divergences "
+        "without redirecting; override (e.g. in the agent YAML) to keep the user "
+        "on the pending step.",
     )
 
     # =========================================================================

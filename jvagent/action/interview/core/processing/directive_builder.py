@@ -39,6 +39,20 @@ class DirectiveBuilder:
         self._task_added = False
         self._task_id = None
 
+    def _active_task_template(self) -> str:
+        """Off-topic / divergence guidance for the active control-task.
+
+        Sourced from the action's ``active_task_description`` attribute so an
+        agent can override how off-topic input is handled mid-interview; falls
+        back to the package default.
+        """
+        tmpl = getattr(self.action, "active_task_description", None)
+        return (
+            tmpl
+            if isinstance(tmpl, str) and tmpl.strip()
+            else (ACTIVE_TASK_DESCRIPTION_TEMPLATE)
+        )
+
     def _build_review_data(self, session: InterviewSession) -> Dict[str, Any]:
         """Build key-value dict of collected interview data from session (display only)."""
         data: Dict[str, Any] = {}
@@ -324,7 +338,7 @@ class DirectiveBuilder:
                         action_description = self.action.description
                         # description = f"The user was in the {action_title}. A guide asked if they wanted to continue the {action_title}. (Action Description: {action_description}). If the user message diverges from the active task, respond to it, but close by reminding them to return and complete the {action_title}."
 
-                        description = ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(
+                        description = self._active_task_template().format(
                             action_title=action_title,
                             action_description=action_description,
                         )

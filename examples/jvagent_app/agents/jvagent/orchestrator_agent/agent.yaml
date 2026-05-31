@@ -262,3 +262,14 @@ actions:
       max_statement_length: 100
       history_limit: 3
       auto_confirm: false
+      # Keep the user on the script: briefly answer an off-topic aside, then
+      # immediately steer back and re-ask the pending question (the package
+      # default answers divergences without redirecting). Keep {action_title} /
+      # {action_description} placeholders.
+      active_task_description: >-
+        The user is partway through the {action_title} (Action Description:
+        {action_description}). If they say something off-topic, answer it in one
+        brief sentence, then immediately steer back to the signup and re-ask the
+        current pending question. ALWAYS end your reply with that pending
+        question. Do not abandon the {action_title} until it is complete or the
+        user explicitly cancels.

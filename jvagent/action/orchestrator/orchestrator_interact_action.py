@@ -12,7 +12,7 @@ Runs the whole turn inside one ``execute()`` call:
    callable surface is restricted to that IA's tool and it is dispatched
    immediately (mechanistic turn-lock); otherwise the active flow is surfaced as
    routable context the model may continue or leave for an off-topic request.
-3. **Directive finalize** — voice any directives a rails IA-tool left unrendered.
+3. **Directive finalize** — emit any directives a rails IA-tool left unrendered.
 
 Routing is tool selection; turn-lock is deterministic (``lock_active_flow``) or
 an emergent flow property.
@@ -425,28 +425,47 @@ class OrchestratorInteractAction(InteractAction):
             await self._run_loop(visitor)
 
         # A rails IA invoked as a tool emits via interaction.directives rather
-        # than publishing — render any it left through the responder voice.
+        # than publishing — render any it left through the responder.
         await self._finalize_directives(visitor)
 
-        # Light egress fallback: nothing voiced this turn → one default reply,
+        # Light egress fallback: nothing emitted this turn → one default reply,
         # routed through the responder (channel formatting + no-bus safe).
         after = getattr(interaction, "response", "") or ""
         if after == before:
-            await self._voice(visitor, self.clarify_text)
+            await self._emit_reply(visitor, self.clarify_text)
+
+    @staticmethod
+    def _ia_emitted(interaction: Any) -> bool:
+        """True if a dispatched IA produced user-facing output this turn.
+
+        An IA emits either by setting ``interaction.response`` OR by queuing a
+        directive (the rails/interview pattern, rendered by
+        ``_finalize_directives`` after the loop). The locked path uses this so it
+        doesn't mistake directive-based publishing for silence and echo the
+        IA-as-tool status sentinel.
+        """
+        if interaction is None:
+            return False
+        if (getattr(interaction, "response", "") or "").strip():
+            return True
+        try:
+            return bool(interaction.get_unexecuted_directives())
+        except Exception:
+            return False
 
     async def _finalize_directives(self, visitor: "InteractWalker") -> None:
-        """Voice any unrendered ``interaction.directives`` through the responder.
+        """Render any unrendered ``interaction.directives`` through the responder.
 
         Rails IAs deliver via the directive pattern (``visitor.add_directive``)
         rather than publishing. When an IA-tool runs and leaves directives
-        without setting a response, this renders them through the responder voice
+        without setting a response, this renders them through the responder
         (ReplyAction or PersonaAction fallback; ADR-0014).
         """
         interaction = getattr(visitor, "interaction", None)
         if interaction is None:
             return
         if getattr(interaction, "response", "") or "":
-            return  # already voiced
+            return  # already emitted
         try:
             unexecuted = interaction.get_unexecuted_directives()
         except Exception:
@@ -813,21 +832,34 @@ class OrchestratorInteractAction(InteractAction):
         if self.lock_active_flow and flow_owner and flow_owner in tools:
             locked_result = (await tools[flow_owner].run({})) or ""
             interaction = getattr(visitor, "interaction", None)
-            voiced = bool(getattr(interaction, "response", "") or "")
+            # The locked IA "emits" either by setting a response OR by queuing a
+            # directive (the rails/interview pattern — `_finalize_directives`
+            # renders it after the loop). Checking only `interaction.response`
+            # missed the directive path, so the orchestrator mistook a publishing
+            # IA for a silent one and echoed the IA-as-tool status sentinel
+            # ("(ran X)") as a spurious reply/directive (ADR-0013 follow-up).
+            emitted = self._ia_emitted(interaction)
             ended = "locked"
-            if not voiced:
-                # The locked IA neither published nor set a response. Surface an
-                # explicit message instead of degrading to the generic clarify
-                # text downstream (SE3: AC-deny / silent-IA failure modes).
-                if "access denied" in locked_result.lower():
+            if not emitted:
+                # The IA ran but produced nothing user-facing. NEVER echo its
+                # internal status sentinel ("(ran X)" / "(no visitor available)"
+                # / "(flow error: …)") — those are loop-internal. Surface a clean
+                # message instead.
+                res = locked_result.strip()
+                if "access denied" in res.lower():
                     ended = "locked_denied"
-                    await self._voice(
+                    await self._emit_reply(
                         visitor,
                         "You don't currently have access to continue this. Let "
                         "me know if there's something else I can help with.",
                     )
-                elif locked_result.strip():
-                    await self._voice(visitor, locked_result.strip())
+                else:
+                    ended = (
+                        "locked_error"
+                        if res.startswith("(flow error")
+                        else ("locked_silent")
+                    )
+                    await self._emit_reply(visitor, self.clarify_text)
             await self._record_orchestrator_activation(
                 visitor,
                 continuation_mode="locked",
@@ -957,7 +989,7 @@ class OrchestratorInteractAction(InteractAction):
                 if action == "final":
                     answer = _text_candidate(decision)
                     if answer:
-                        await self._maybe_voice_final(visitor, answer)
+                        await self._maybe_emit_final(visitor, answer)
                     ended_via = "final"
                     return
                 if action == "tool":
@@ -1063,9 +1095,9 @@ class OrchestratorInteractAction(InteractAction):
             # cause), force ONE compose so the user gets the agent's best answer
             # from what it gathered. Only when there's actual work to summarize.
             interaction = getattr(visitor, "interaction", None)
-            voiced = bool(getattr(interaction, "response", "") if interaction else "")
+            emitted = bool(getattr(interaction, "response", "") if interaction else "")
             if (
-                not voiced
+                not emitted
                 and ended_via in ("budget", "duration", "no_decision")
                 and observations
             ):
@@ -1081,7 +1113,7 @@ class OrchestratorInteractAction(InteractAction):
                 )
                 answer = _text_candidate(decision) if decision else ""
                 if answer:
-                    await self._maybe_voice_final(visitor, answer)
+                    await self._maybe_emit_final(visitor, answer)
                     ended_via = f"{ended_via}_finalized"
         finally:
             if ack_task is not None and not ack_task.done():
@@ -1181,9 +1213,9 @@ class OrchestratorInteractAction(InteractAction):
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("orchestrator: activation record failed: %s", exc)
 
-    async def _voice(self, visitor: "InteractWalker", text: str) -> None:
+    async def _emit_reply(self, visitor: "InteractWalker", text: str) -> None:
         """Emit user-facing ``text`` through the responder (ReplyAction → channel
-        formatting, voice rules, directive composition, and graceful no-bus
+        formatting, identity rules, directive composition, and graceful no-bus
         handling; ADR-0014), falling back to a raw publish only if no responder
         is available or its reply fails."""
         if not (text or "").strip():
@@ -1198,18 +1230,18 @@ class OrchestratorInteractAction(InteractAction):
                 logger.warning("orchestrator: responder.reply failed: %s", exc)
         await self.publish(visitor=visitor, content=text)
 
-    async def _maybe_voice_final(self, visitor: "InteractWalker", answer: str) -> None:
-        """Voice the loop's ``final`` answer unless that exact text was already
+    async def _maybe_emit_final(self, visitor: "InteractWalker", answer: str) -> None:
+        """Emit the loop's ``final`` answer unless that exact text was already
         emitted this turn.
 
         A terminal egress tool (``reply``/``respond`` or a terminal IA tool)
         returns from the loop before a ``final`` action can be reached, so
-        reaching ``final`` means the answer has not been voiced as the turn's
+        reaching ``final`` means the answer has not been emitted as the turn's
         reply. Non-terminal publish tools (e.g. catalog ``emit_catalog_message``)
         DO append to ``interaction.response`` mid-turn — that must not suppress a
         distinct final answer such as a product skill's closing line. So suppress
         only when the exact answer text is already present in the response (the
-        model echoed an already-voiced line), not merely because the response is
+        model echoed an already-emitted line), not merely because the response is
         non-empty.
         """
         answer = (answer or "").strip()
@@ -1222,8 +1254,8 @@ class OrchestratorInteractAction(InteractAction):
             else ""
         )
         if answer in current:
-            return  # this exact text was already voiced this turn
-        await self._voice(visitor, answer)
+            return  # this exact text was already emitted this turn
+        await self._emit_reply(visitor, answer)
 
     @staticmethod
     def _normalize(

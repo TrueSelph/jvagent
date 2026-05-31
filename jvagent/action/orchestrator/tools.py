@@ -24,7 +24,7 @@ class SkillTool:
     """A tool the Orchestrator loop can call: name, description, async runner.
 
     ``terminal`` marks IA-as-tools that own the turn's user-facing output; the
-    loop ends after a terminal tool runs so the orchestrator won't double-voice.
+    loop ends after a terminal tool runs so the orchestrator won't double-reply.
     Plain tools leave it ``False``.
     """
 
