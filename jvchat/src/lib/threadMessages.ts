@@ -163,13 +163,16 @@ function assistantGroupToThread(
     { type: "text"; text: string } | { type: "reasoning"; text: string } | ToolPart
   > = [...reasoningParts, ...toolParts, ...textParts];
 
-  if (parts.length === 0) parts.push({ type: "text", text: "" });
-
   // "running" is driven by the global stream flag for the last turn (per-item
   // `m.streaming` isn't set during the reasoning/tool phase). Live status label
   // drives the Reasoning trigger while running; cleared on completion.
   const running = streaming || !!isRunning;
   if (running && statusLabel) meta.statusLabel = statusLabel;
+
+  // Empty content WHILE running → assistant-ui renders its working indicator
+  // (the pulsing dot). Only backfill an empty text part when NOT running, to
+  // avoid suppressing that indicator (and to avoid an empty completed bubble).
+  if (parts.length === 0 && !running) parts.push({ type: "text", text: "" });
 
   // Stable turn id: anchor to the interaction (or the first item), NOT the last
   // item — the last item changes as reasoning/tool/text parts stream in, which
@@ -225,6 +228,20 @@ export function buildThreadMessages(
         assistantGroupToThread(group, lastRootId, isStreaming && isLastTurn),
       );
     }
+  }
+
+  // Pre-first-chunk: streaming has begun (the user just sent) but no assistant
+  // message exists yet — jvchat creates no placeholder bubble. Append a running
+  // assistant turn with empty content so assistant-ui shows its indeterminate
+  // working indicator immediately, until the first stream chunk lands.
+  const last = out[out.length - 1];
+  if (isStreaming && (!last || last.role === "user")) {
+    out.push({
+      role: "assistant",
+      id: `turn-pending-${lastRootId ?? "0"}`,
+      status: { type: "running" } as never,
+      content: [] as never,
+    });
   }
   return out;
 }

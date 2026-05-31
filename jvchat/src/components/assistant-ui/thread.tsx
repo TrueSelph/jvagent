@@ -282,6 +282,11 @@ const AssistantMessage: FC = () => {
         className="text-foreground px-2 leading-relaxed wrap-break-word [contain-intrinsic-size:auto_24px] [content-visibility:auto]"
       >
         <MessagePrimitive.GroupedParts
+          // Show assistant-ui's indeterminate working indicator (the pulsing
+          // dot, handled by `case "indicator"`) ONLY before the first stream
+          // part lands — i.e. while the running message has no parts yet. Once
+          // reasoning/tool/text streams in, the respective widget takes over.
+          indicator="empty"
           groupBy={groupPartByType({
             reasoning: ["group-chainOfThought", "group-reasoning"],
             "tool-call": ["group-chainOfThought", "group-tool"],
