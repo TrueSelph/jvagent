@@ -17,6 +17,7 @@ pytestmark = pytest.mark.asyncio
 def _visitor_no_bus():
     inter = MagicMock()
     inter.response = ""
+    inter.utterance = ""
 
     def _set(x):
         inter.response = x
@@ -176,11 +177,59 @@ async def test_respond_enqueues_message_as_directive(monkeypatch):
     monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
     v = _visitor_with(directives=[{"content": "Introduce yourself."}])
     await ra.respond(v.interaction, visitor=v, text="Everest is tallest; 169.")
-    # The message is now a real queued directive alongside the intro.
+    # The message is now a real queued directive (framed "Tell the user: ...")
+    # alongside the intro.
     contents = [d["content"] for d in v.interaction.directives]
-    assert "Everest is tallest; 169." in contents and "Introduce yourself." in contents
+    assert "Tell the user: Everest is tallest; 169." in contents
+    assert "Introduce yourself." in contents
     sysprompt = model.generate.call_args.kwargs["system"]
     assert "MANDATORY" in sysprompt and "Everest" in sysprompt
+
+
+async def test_respond_relays_message_with_no_shaping(monkeypatch):
+    """The core fix: respond() with an explicit message and NO queued
+    directives/parameters must still frame the message as a "Tell the user: ..."
+    directive — not pass it as the prompt — so the compose model delivers it
+    instead of reacting to it (the bug: respond("Five plus five equals ten.")
+    came back "That's correct. Five plus five equals ten.")."""
+    ra = ReplyAction()
+    _patch_agent(monkeypatch)
+    model = MagicMock()
+    model.generate = AsyncMock(return_value="Five plus five equals ten.")
+
+    async def _ma(self, required=False):
+        return model
+
+    monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
+    v = _visitor_with()  # no directives, no parameters
+    out = await ra.respond(v.interaction, visitor=v, text="Five plus five equals ten.")
+    assert out == "Five plus five equals ten."
+    sysprompt = model.generate.call_args.kwargs["system"]
+    assert "MANDATORY" in sysprompt
+    assert "Tell the user: Five plus five equals ten." in sysprompt
+    # The bare answer is NOT handed to the model as a user prompt to react to.
+    assert model.generate.call_args.kwargs["prompt"] != "Five plus five equals ten."
+    assert "Tell the user: Five plus five equals ten." in [
+        d["content"] for d in v.interaction.directives
+    ]
+
+
+async def test_respond_does_not_double_prefix(monkeypatch):
+    """An already-framed message isn't double-prefixed."""
+    ra = ReplyAction()
+    _patch_agent(monkeypatch)
+    model = MagicMock()
+    model.generate = AsyncMock(return_value="ok")
+
+    async def _ma(self, required=False):
+        return model
+
+    monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
+    v = _visitor_with()
+    await ra.respond(v.interaction, visitor=v, text="Tell the user the order shipped.")
+    contents = [d["content"] for d in v.interaction.directives]
+    assert "Tell the user the order shipped." in contents
+    assert "Tell the user: Tell the user" not in model.generate.call_args.kwargs["system"]
 
 
 async def test_respond_enqueues_message_with_params_only(monkeypatch):
@@ -196,7 +245,7 @@ async def test_respond_enqueues_message_with_params_only(monkeypatch):
     monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
     v = _visitor_with(parameters=[{"condition": "asked price", "response": "$9"}])
     await ra.respond(v.interaction, visitor=v, text="Sure.")
-    assert "Sure." in [d["content"] for d in v.interaction.directives]
+    assert "Tell the user: Sure." in [d["content"] for d in v.interaction.directives]
 
 
 async def test_tool_reply_accepts_text_aliases(monkeypatch):
@@ -331,14 +380,18 @@ async def test_respond_generates_in_identity_and_publishes(monkeypatch):
 
     monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
 
-    v = _visitor_no_bus()
+    v = _visitor_with()
     out = await ra.respond(v.interaction, visitor=v, text="raw answer")
 
     assert out == "Voiced answer."
     assert v.interaction.response == "Voiced answer."
     kwargs = model.generate.call_args.kwargs
     assert "You are Ada, a guide." in kwargs["system"]  # identity drives the voice
-    assert kwargs["prompt"] == "raw answer"
+    # The message is RELAYED (framed as a "Tell the user: ..." directive) rather
+    # than passed as the prompt — otherwise the model reacts to it ("That's
+    # correct. ...") instead of delivering it.
+    assert "Tell the user: raw answer" in kwargs["system"]
+    assert "MANDATORY" in kwargs["system"]
 
 
 async def test_respond_without_model_thin_publishes(monkeypatch):

@@ -57,6 +57,14 @@ PARAMETERS_SECTION = (
     "(parameters shape HOW; directives define WHAT):\n{parameter_list}"
 )
 
+# Prefix that frames the Orchestrator's message as something to RELAY, not react
+# to. ``respond`` voices via a model call; passing the bare answer as the prompt
+# makes the model treat it as a user utterance to answer (so
+# ``respond("Five plus five equals ten.")`` came back as "That's correct. Five
+# plus five equals ten."). Enqueuing it as a "Tell the user: ..." directive makes
+# the compose model deliver it faithfully in the agent's voice.
+RELAY_PREFIX = "Tell the user: "
+
 # Channel formatting (the "format" axis), keyed by normalized channel name. The
 # default channel (web) is deliberately absent → no directive → slim prompt;
 # only channels that genuinely need different markup carry one. Operators extend
@@ -284,27 +292,39 @@ class ReplyAction(Action):
         others — never overridden. Both egress tools (reply/respond) funnel here.
         """
         interaction = interaction or getattr(visitor, "interaction", None)
-        base = (text or "").strip()
-        # If the interaction already carries queued directives/parameters, enqueue
-        # the explicit message as a real directive (so it lands in
-        # interaction.directives) and let the whole queue compose together — the
-        # message is never overridden. Covers both the reply and respond egress
-        # tools (both funnel here).
-        if (
-            base
-            and interaction is not None
-            and directives is None
-            and (
-                self._directive_items(interaction)
-                or self._collect_parameters(None, interaction)
+        original_text = (text or "").strip()
+        base = original_text
+        # The explicit message text is what to RELAY to the user, not a prompt to
+        # react to. Frame it as a "Tell the user: ..." directive so the compose
+        # model voices it faithfully in the agent's identity instead of treating
+        # it as a user utterance to answer (the bug: respond("Five plus five
+        # equals ten.") came back "That's correct. Five plus five equals ten.").
+        # Enqueue it onto interaction.directives so it composes together with any
+        # queued directives/parameters and is never overridden. Both egress tools
+        # (reply/respond) funnel here. Skipped when the caller passes an explicit
+        # ``directives`` list (then it owns the directive queue).
+        relayed_directive: Optional[str] = None
+        if base and directives is None:
+            relayed_directive = (
+                base
+                if base.lower().startswith("tell the user")
+                else f"{RELAY_PREFIX}{base}"
             )
-        ):
-            try:
-                interaction.add_directive(base, self.get_class_name())
-                base = ""
-            except Exception:
-                pass
+            if interaction is not None:
+                # Persist it onto interaction.directives so it composes with any
+                # queued directives/parameters and is marked executed afterwards.
+                try:
+                    interaction.add_directive(
+                        relayed_directive, self.get_class_name()
+                    )
+                except Exception:
+                    pass
+            base = ""
         directive_contents = self._directive_contents(directives, interaction)
+        # Guarantee the relayed message is represented exactly once, whether or
+        # not the interaction's unexecuted-directives view reflects the enqueue.
+        if relayed_directive and relayed_directive not in directive_contents:
+            directive_contents.append(relayed_directive)
         parameters_text = self._collect_parameters(parameters, interaction)
 
         # Directives are reply *instructions* and always go through the numbered
@@ -323,8 +343,12 @@ class ReplyAction(Action):
 
         model_action = await self.get_model_action(required=False)
         if model_action is None:
-            await self.publish(content or " ", visitor, transient=transient)
-            return content
+            # No compose model — thin-publish the literal message. `content` is
+            # now the user's utterance (the message was framed as a directive),
+            # so prefer the original message text.
+            literal = original_text or content or " "
+            await self.publish(literal, visitor, transient=transient)
+            return original_text or content
 
         system = await self._system_prompt(
             extra_system=extra_system,
@@ -357,9 +381,13 @@ class ReplyAction(Action):
             logger.warning("ReplyAction.respond: generate failed: %s", exc)
             # Slim fallback: the identity-voiced compose failed, but the user
             # still needs a reply — deliver the best plain text we have rather
-            # than going silent. Prefer explicit content, else the directive text.
-            fallback = (content or "").strip() or self._collect_directive_text(
-                directives, interaction
+            # than going silent. Prefer the original message (now framed as a
+            # relay directive, so `content` may be the user's utterance), then
+            # any queued directive text.
+            fallback = (
+                original_text
+                or (content or "").strip()
+                or self._collect_directive_text(directives, interaction)
             )
             fallback = fallback or "Sorry — I hit a problem composing that reply."
             try:
