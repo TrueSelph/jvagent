@@ -14,7 +14,7 @@ import {
   ATTACHMENT_ONLY_USER_PROMPT,
 } from "../hooks/useStreaming";
 import { useConversations } from "../hooks/useConversations";
-import { Thread } from "./Thread";
+import { AssistantThread } from "./assistant/AssistantThread";
 import { ConversationList } from "./ConversationList";
 import { DebugInteractions } from "./DebugInteractions";
 import { PageIndexDocumentsModal } from "./PageIndexDocumentsModal";
@@ -570,18 +570,9 @@ export function ChatInterface() {
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
-            <Thread
+            <AssistantThread
               messages={messages}
               isStreaming={isStreaming}
-              showThinking={
-                isStreaming &&
-                !messages.some(
-                  (m) =>
-                    m.role === "assistant" &&
-                    m.category !== "thought" &&
-                    m.streaming,
-                )
-              }
               onEditMessage={(id, text) => editAndResend(id, text)}
               branchSnapshots={branchSnapshots}
               branchVersionIndex={branchVersionIndex}
