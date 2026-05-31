@@ -1,26 +1,34 @@
 /**
- * assistant-ui powered chat thread for jvchat.
+ * assistant-ui powered chat thread for jvchat — using assistant-ui's official
+ * styled component system (`@assistant-ui/styles`, the `aui-*` class layer) so
+ * the surface looks and feels like a native assistant-ui Thread.
  *
- * Renders the conversation with @assistant-ui/react primitives while keeping
- * jvchat's own plumbing as the source of truth:
- *   - `useStreaming` still owns SSE, sessions, branch snapshots and debugData;
- *     we feed it in through an ExternalStore adapter (no LocalRuntime).
- *   - the bottom composer stays jvchat's `MessageInput` (attachments + tools
- *     menu), wired to `onSend` — so all existing chrome is preserved.
+ * jvchat still owns the data plane through an ExternalStore adapter over
+ * `useStreaming` (SSE, sessions, branch snapshots, debugData):
+ *   - composer is assistant-ui's own (`aui-composer-*`); attachments are wired
+ *     through a custom AttachmentAdapter that hands the original File objects
+ *     back to jvchat's send pipeline. jvchat's tools menu is kept inline.
+ *   - native ActionBar.Edit + edit composer route to `editAndResend`.
+ *   - branch navigation is rendered with assistant-ui's branch-picker styling
+ *     but drives jvchat's `selectBranchVersion` (the external store exposes no
+ *     branch-switch callback).
  *   - per-message **Debug** link after every completed answer opens the legacy
- *     `MessageDebugDialog` (reads the final-chunk debugData off message metadata).
- *   - **edit** uses assistant-ui's native ActionBar.Edit + edit composer, routed
- *     back to jvchat via `editAndResend`.
- *   - **branch** navigation is rendered in the assistant-ui message footer but
- *     drives jvchat's `selectBranchVersion`, because the external store keeps
- *     branch state on jvchat's side (snapshots), not in the runtime repository.
+ *     debug dialog from the final-chunk debugData on message metadata.
  */
-import { createContext, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   ActionBarPrimitive,
   AssistantRuntimeProvider,
+  AttachmentPrimitive,
   ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
@@ -28,17 +36,26 @@ import {
   useMessage,
   useMessageAttachment,
   type AppendMessage,
+  type AttachmentAdapter,
+  type CompleteAttachment,
+  type PendingAttachment,
   type ReasoningMessagePartComponent,
   type TextMessagePartComponent,
   type ToolCallMessagePartComponent,
 } from "@assistant-ui/react";
 import {
+  ArrowDownIcon,
+  ArrowUpIcon,
   Check,
-  ChevronLeft,
-  ChevronRight,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
   Copy,
+  Paperclip,
   Pencil,
-  Wrench,
+  SparklesIcon,
+  SquareIcon,
+  WrenchIcon,
   X,
 } from "lucide-react";
 
@@ -50,8 +67,6 @@ import {
   type JvUserMeta,
 } from "../../lib/threadMessages";
 import type { Message } from "../../types/message";
-import { MessageInput } from "../MessageInput";
-import { WelcomeScreen } from "../WelcomeScreen";
 import { MessageDebugDialog } from "./MessageDebugDialog";
 
 export interface AssistantThreadProps {
@@ -74,6 +89,19 @@ export interface AssistantThreadProps {
   welcomeDescription?: string;
 }
 
+// --- shared button classes (assistant-ui ghost / primary icon buttons) ------
+
+const ICON_BTN =
+  "inline-flex size-8 shrink-0 items-center justify-center rounded-md " +
+  "text-[color:var(--color-muted-foreground)] transition-colors " +
+  "hover:bg-[color:var(--color-accent)] hover:text-[color:var(--color-accent-foreground)] " +
+  "disabled:pointer-events-none disabled:opacity-40";
+
+const PRIMARY_BTN =
+  "inline-flex items-center justify-center " +
+  "bg-[color:var(--color-foreground)] text-[color:var(--color-background)] " +
+  "transition-opacity hover:opacity-90 disabled:opacity-40";
+
 // --- jvchat bridge context (branch state + debug opener) --------------------
 
 interface JvThreadCtx {
@@ -90,9 +118,73 @@ const useJvThread = (): JvThreadCtx => {
   return ctx;
 };
 
-// --- markdown ---------------------------------------------------------------
+// --- attachment adapter (assistant-ui composer -> jvchat File[] send) --------
 
-/** Drop react-markdown's `node` prop so it isn't spread onto DOM elements. */
+const FILE_STORE = new Map<string, File>();
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+}
+
+const jvAttachmentAdapter: AttachmentAdapter = {
+  accept: "image/*,application/pdf,text/*",
+  async add({ file }): Promise<PendingAttachment> {
+    const id =
+      globalThis.crypto?.randomUUID?.() ??
+      `att-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    FILE_STORE.set(id, file);
+    return {
+      id,
+      type: file.type.startsWith("image/") ? "image" : "document",
+      name: file.name,
+      contentType: file.type,
+      file,
+      status: { type: "requires-action", reason: "composer-send" },
+    };
+  },
+  async send(attachment): Promise<CompleteAttachment> {
+    const file = FILE_STORE.get(attachment.id);
+    const isImage = (file?.type ?? attachment.contentType ?? "").startsWith(
+      "image/",
+    );
+    const dataUrl = file && isImage ? await fileToDataUrl(file) : "";
+    return {
+      ...attachment,
+      status: { type: "complete" },
+      content: dataUrl
+        ? [{ type: "image", image: dataUrl }]
+        : [{ type: "text", text: attachment.name }],
+    };
+  },
+  async remove(attachment) {
+    FILE_STORE.delete(attachment.id);
+  },
+};
+
+function appendMessageText(message: AppendMessage): string {
+  return message.content
+    .map((p) => (p.type === "text" ? p.text : ""))
+    .join("")
+    .trim();
+}
+
+function appendMessageFiles(message: AppendMessage): File[] {
+  const files: File[] = [];
+  for (const a of message.attachments ?? []) {
+    const f = FILE_STORE.get(a.id);
+    if (f) files.push(f);
+    FILE_STORE.delete(a.id);
+  }
+  return files;
+}
+
+// --- markdown (aui-md-* classes) --------------------------------------------
+
 function omitNode<T extends { node?: unknown }>(props: T): Omit<T, "node"> {
   const clone = { ...props };
   delete (clone as { node?: unknown }).node;
@@ -100,72 +192,85 @@ function omitNode<T extends { node?: unknown }>(props: T): Omit<T, "node"> {
 }
 
 const MD_COMPONENTS: Components = {
-  blockquote: (props) => (
-    <blockquote
-      className="border-l-2 border-zinc-300 dark:border-zinc-600 pl-3 my-2 text-zinc-600 dark:text-zinc-400"
-      {...omitNode(props)}
-    />
-  ),
-  a: (props) => (
+  p: (p) => <p className="aui-md-p" {...omitNode(p)} />,
+  a: (p) => (
     <a
-      className="underline text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100"
+      className="aui-md-a"
       target="_blank"
       rel="noreferrer noopener"
-      {...omitNode(props)}
+      {...omitNode(p)}
     />
   ),
-  ul: (props) => (
-    <ul className="list-disc pl-4 sm:pl-6 my-2" {...omitNode(props)} />
-  ),
-  ol: (props) => (
-    <ol className="list-decimal pl-4 sm:pl-6 my-2" {...omitNode(props)} />
-  ),
-  h1: (props) => (
-    <h1 className="text-lg sm:text-xl font-bold my-2" {...omitNode(props)} />
-  ),
-  h2: (props) => (
-    <h2 className="text-base sm:text-lg font-bold my-2" {...omitNode(props)} />
-  ),
-  h3: (props) => (
-    <h3
-      className="text-sm sm:text-base font-semibold my-2"
-      {...omitNode(props)}
-    />
-  ),
-  code: (props) => (
-    <code
-      className="rounded bg-zinc-200 dark:bg-zinc-800 px-1 py-0.5 text-[0.85em] font-mono"
-      {...omitNode(props)}
-    />
-  ),
-  pre: (props) => (
-    <pre
-      className="my-2 block overflow-x-auto rounded-lg border border-zinc-200 bg-zinc-100 p-3 text-xs sm:text-sm font-mono dark:border-white/10 dark:bg-zinc-900"
-      {...omitNode(props)}
-    />
-  ),
+  ul: (p) => <ul className="aui-md-ul" {...omitNode(p)} />,
+  ol: (p) => <ol className="aui-md-ol" {...omitNode(p)} />,
+  li: (p) => <li className="aui-md-li" {...omitNode(p)} />,
+  blockquote: (p) => <blockquote className="aui-md-blockquote" {...omitNode(p)} />,
+  h1: (p) => <h1 className="aui-md-h1" {...omitNode(p)} />,
+  h2: (p) => <h2 className="aui-md-h2" {...omitNode(p)} />,
+  h3: (p) => <h3 className="aui-md-h3" {...omitNode(p)} />,
+  h4: (p) => <h4 className="aui-md-h4" {...omitNode(p)} />,
+  hr: (p) => <hr className="aui-md-hr" {...omitNode(p)} />,
+  table: (p) => <table className="aui-md-table" {...omitNode(p)} />,
+  th: (p) => <th className="aui-md-th" {...omitNode(p)} />,
+  td: (p) => <td className="aui-md-td" {...omitNode(p)} />,
+  tr: (p) => <tr className="aui-md-tr" {...omitNode(p)} />,
+  code: (p) => <code className="aui-md-inline-code" {...omitNode(p)} />,
+  pre: (p) => <pre className="aui-md-pre" {...omitNode(p)} />,
 };
 
 const TextPart: TextMessagePartComponent = ({ text }) => (
-  <div className="prose prose-sm dark:prose-invert max-w-none break-words text-sm leading-relaxed text-zinc-900 dark:text-zinc-50">
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
-      {text}
-    </ReactMarkdown>
-  </div>
+  <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+    {text}
+  </ReactMarkdown>
 );
 
-// --- reasoning + tool parts -------------------------------------------------
+// --- reasoning (collapsible, aui-reasoning-*) -------------------------------
 
-const ReasoningPart: ReasoningMessagePartComponent = ({ text }) => {
+const ReasoningText: ReasoningMessagePartComponent = ({ text }) => {
   if (!text?.trim()) return null;
+  return <div className="whitespace-pre-wrap break-words">{text}</div>;
+};
+
+const ReasoningGroup = ({ children }: { children?: React.ReactNode }) => {
+  const running = useMessage((m) => m.status?.type === "running");
+  const [open, setOpen] = useState<boolean>(running);
+  const wasRunning = useRef(running);
+  useEffect(() => {
+    if (wasRunning.current && !running) setOpen(false);
+    wasRunning.current = running;
+  }, [running]);
   return (
-    <div className="my-1 border-l-2 border-zinc-200 dark:border-white/10 pl-3">
-      <div className="whitespace-pre-wrap break-words text-xs font-mono leading-[1.65] text-zinc-500 dark:text-zinc-400">
-        {text}
-      </div>
+    <div className="mb-2">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="aui-reasoning-trigger hover:text-[color:var(--color-foreground)]"
+        data-state={open ? "open" : "closed"}
+      >
+        <SparklesIcon className="aui-reasoning-trigger-icon size-4" aria-hidden />
+        <span className="aui-reasoning-trigger-label-wrapper">
+          <span className={running ? "aui-reasoning-trigger-shimmer" : undefined}>
+            Reasoning
+          </span>
+        </span>
+        <ChevronDownIcon
+          className={cn(
+            "aui-reasoning-trigger-chevron size-4 transition-transform",
+            open ? "" : "-rotate-90",
+          )}
+          aria-hidden
+        />
+      </button>
+      {open ? (
+        <div className="aui-reasoning-content">
+          <div className="aui-reasoning-text">{children}</div>
+        </div>
+      ) : null}
     </div>
   );
 };
+
+// --- tool call (aui-tool-fallback-*) ----------------------------------------
 
 function formatToolResult(result: unknown): string {
   if (result == null) return "";
@@ -184,30 +289,47 @@ const ToolPart: ToolCallMessagePartComponent = ({
   isError,
 }) => {
   const [open, setOpen] = useState(false);
-  const argStr = args && Object.keys(args).length ? JSON.stringify(args) : "";
+  const argStr =
+    args && Object.keys(args).length ? JSON.stringify(args, null, 2) : "";
   const resStr = formatToolResult(result);
   return (
-    <div className="my-1.5">
+    <div className="aui-tool-fallback-root my-2 border-[color:var(--color-border)]">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className={cn(
-          "inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors",
-          isError
-            ? "border-red-300 text-red-600 dark:border-red-800 dark:text-red-400"
-            : "border-zinc-200 text-zinc-500 hover:text-zinc-700 dark:border-white/10 dark:text-zinc-400 dark:hover:text-zinc-200",
-        )}
+        className="aui-tool-fallback-trigger hover:text-[color:var(--color-foreground)]"
       >
-        <Wrench className="size-3 shrink-0 opacity-70" aria-hidden />
-        <span className="font-mono">{toolName}</span>
-        {argStr ? (
-          <span className="truncate max-w-[16rem] opacity-60">{argStr}</span>
-        ) : null}
+        <WrenchIcon
+          className={cn(
+            "aui-tool-fallback-trigger-icon size-4",
+            isError && "text-[color:var(--color-destructive,#ef4444)]",
+          )}
+          aria-hidden
+        />
+        <span className="aui-tool-fallback-trigger-label-wrapper">
+          <b className="font-mono">{toolName}</b>
+        </span>
+        <ChevronDownIcon
+          className={cn(
+            "aui-tool-fallback-trigger-chevron ml-auto size-4 transition-transform",
+            open ? "" : "-rotate-90",
+          )}
+          aria-hidden
+        />
       </button>
-      {open && resStr ? (
-        <pre className="mt-1 max-h-48 overflow-auto rounded-md border border-zinc-200 bg-zinc-50 p-2 text-[11px] font-mono whitespace-pre-wrap break-words text-zinc-600 dark:border-white/10 dark:bg-black/30 dark:text-zinc-300">
-          {resStr}
-        </pre>
+      {open && (argStr || resStr) ? (
+        <div className="aui-tool-fallback-content px-4 pt-2">
+          {argStr ? (
+            <pre className="aui-tool-fallback-args max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-[color:var(--color-muted)] p-2 text-xs">
+              {argStr}
+            </pre>
+          ) : null}
+          {resStr ? (
+            <pre className="aui-tool-fallback-result mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-[color:var(--color-muted)] p-2 text-xs">
+              {resStr}
+            </pre>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
@@ -215,7 +337,6 @@ const ToolPart: ToolCallMessagePartComponent = ({
 
 // --- footer controls --------------------------------------------------------
 
-/** Branch prev/next picker that drives jvchat's selectBranchVersion. */
 function BranchPicker({ rootId }: { rootId?: string }) {
   const { branchSnapshots, branchVersionIndex, onBranchVersionChange } =
     useJvThread();
@@ -225,27 +346,27 @@ function BranchPicker({ rootId }: { rootId?: string }) {
   if (count < 2) return null;
   const index = branchVersionIndex[rootId] ?? count - 1;
   return (
-    <div className="inline-flex items-center gap-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+    <div className="aui-branch-picker-root">
       <button
         type="button"
-        aria-label="Previous version"
+        aria-label="Previous"
         disabled={index <= 0}
         onClick={() => onBranchVersionChange?.(rootId, index - 1)}
-        className="rounded p-0.5 transition-colors hover:text-zinc-700 disabled:opacity-30 dark:hover:text-zinc-200"
+        className={ICON_BTN + " size-6"}
       >
-        <ChevronLeft className="size-4" aria-hidden />
+        <ChevronLeftIcon className="size-4" aria-hidden />
       </button>
-      <span className="tabular-nums">
-        {index + 1}/{count}
+      <span className="aui-branch-picker-state">
+        {index + 1} / {count}
       </span>
       <button
         type="button"
-        aria-label="Next version"
+        aria-label="Next"
         disabled={index >= count - 1}
         onClick={() => onBranchVersionChange?.(rootId, index + 1)}
-        className="rounded p-0.5 transition-colors hover:text-zinc-700 disabled:opacity-30 dark:hover:text-zinc-200"
+        className={ICON_BTN + " size-6"}
       >
-        <ChevronRight className="size-4" aria-hidden />
+        <ChevronRightIcon className="size-4" aria-hidden />
       </button>
     </div>
   );
@@ -262,26 +383,10 @@ function DebugButton() {
     <button
       type="button"
       onClick={() => openDebug(debugMessage)}
-      className="text-xs text-zinc-400 underline-offset-2 transition-colors hover:text-zinc-600 hover:underline dark:text-zinc-500 dark:hover:text-zinc-300"
+      className="text-xs text-[color:var(--color-muted-foreground)] underline-offset-2 transition-colors hover:text-[color:var(--color-foreground)] hover:underline"
     >
       Debug
     </button>
-  );
-}
-
-function CopyAction() {
-  return (
-    <ActionBarPrimitive.Copy
-      className="inline-flex size-7 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-      aria-label="Copy"
-    >
-      <MessagePrimitive.If copied>
-        <Check className="size-4" aria-hidden />
-      </MessagePrimitive.If>
-      <MessagePrimitive.If copied={false}>
-        <Copy className="size-4 stroke-[1.5px]" aria-hidden />
-      </MessagePrimitive.If>
-    </ActionBarPrimitive.Copy>
   );
 }
 
@@ -292,20 +397,35 @@ const AssistantMessage = () => {
     (m) => m.metadata?.custom as unknown as JvAssistantMeta | undefined,
   );
   return (
-    <MessagePrimitive.Root className="group/message mx-auto w-full max-w-3xl px-2 py-3">
-      <div className="flex flex-col gap-1">
+    <MessagePrimitive.Root className="aui-assistant-message-root">
+      <div className="aui-assistant-message-content">
         <MessagePrimitive.Parts
           components={{
             Text: TextPart,
-            Reasoning: ReasoningPart,
+            Reasoning: ReasoningText,
+            ReasoningGroup,
             tools: { Fallback: ToolPart },
           }}
         />
-        <div className="mt-1 flex items-center gap-2 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100">
-          <CopyAction />
-          <BranchPicker rootId={meta?.branchRootId} />
+      </div>
+      <div className="aui-assistant-message-footer">
+        <BranchPicker rootId={meta?.branchRootId} />
+        <ActionBarPrimitive.Root
+          hideWhenRunning
+          autohide="not-last"
+          autohideFloat="single-branch"
+          className="aui-assistant-action-bar-root"
+        >
+          <ActionBarPrimitive.Copy className={ICON_BTN}>
+            <MessagePrimitive.If copied>
+              <Check className="size-4" aria-hidden />
+            </MessagePrimitive.If>
+            <MessagePrimitive.If copied={false}>
+              <Copy className="size-4" aria-hidden />
+            </MessagePrimitive.If>
+          </ActionBarPrimitive.Copy>
           <DebugButton />
-        </div>
+        </ActionBarPrimitive.Root>
       </div>
     </MessagePrimitive.Root>
   );
@@ -324,12 +444,12 @@ const UserAttachment = () => {
       <img
         src={image}
         alt={attachment?.name ?? ""}
-        className="mb-2 max-h-64 w-auto max-w-[min(100%,20rem)] rounded-2xl border border-white/10 bg-black/20 object-contain"
+        className="aui-attachment-tile-image max-h-48 w-auto max-w-[12rem] rounded-xl border border-[color:var(--color-border)] object-contain"
       />
     );
   }
   return (
-    <span className="mb-2 inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-100 px-2 py-1.5 text-xs text-zinc-700 dark:border-white/10 dark:bg-zinc-800 dark:text-zinc-300">
+    <span className="aui-attachment-tile inline-flex items-center gap-2 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-muted)] px-2 py-1.5 text-xs">
       <span className="truncate max-w-[12rem]" title={attachment?.name}>
         {attachment?.name ?? "attachment"}
       </span>
@@ -342,43 +462,47 @@ const UserMessage = () => {
     (m) => m.metadata?.custom as unknown as JvUserMeta | undefined,
   );
   return (
-    <MessagePrimitive.Root className="group/message mx-auto flex w-full max-w-3xl flex-col items-end px-2 py-3">
-      <MessagePrimitive.Attachments
-        components={{ Image: UserAttachment, File: UserAttachment }}
-      />
-      <div className="max-w-[85%] rounded-2xl bg-zinc-100 px-4 py-2.5 text-sm leading-relaxed text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50">
-        <MessagePrimitive.Parts components={{ Text: TextPart }} />
+    <MessagePrimitive.Root className="aui-user-message-root">
+      <div className="aui-user-message-attachments-end col-start-2 flex flex-col items-end gap-2">
+        <MessagePrimitive.Attachments
+          components={{ Image: UserAttachment, File: UserAttachment }}
+        />
       </div>
-      <div className="mt-1 flex items-center gap-2 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100">
+      <div className="aui-user-message-content-wrapper">
+        <div className="aui-user-message-content">
+          <MessagePrimitive.Parts components={{ Text: TextPart }} />
+        </div>
+      </div>
+      <div className="aui-user-action-bar-root col-start-1 row-start-2 mr-3 mt-2 flex justify-end">
         <BranchPicker rootId={meta?.branchRootId} />
-        <ActionBarPrimitive.Edit
-          className="inline-flex size-7 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-          aria-label="Edit"
-        >
-          <Pencil className="size-4 stroke-[1.5px]" aria-hidden />
-        </ActionBarPrimitive.Edit>
+        <ActionBarPrimitive.Root hideWhenRunning autohide="not-last">
+          <ActionBarPrimitive.Edit
+            className={ICON_BTN}
+            aria-label="Edit"
+          >
+            <Pencil className="size-4" aria-hidden />
+          </ActionBarPrimitive.Edit>
+        </ActionBarPrimitive.Root>
       </div>
     </MessagePrimitive.Root>
   );
 };
 
 const UserEditComposer = () => (
-  <MessagePrimitive.Root className="mx-auto flex w-full max-w-3xl flex-col items-end px-2 py-3">
-    <ComposerPrimitive.Root className="w-full max-w-[85%] rounded-2xl border border-zinc-200 bg-white p-2 dark:border-white/10 dark:bg-zinc-900">
+  <MessagePrimitive.Root className="aui-edit-composer-wrapper mx-auto w-full max-w-[var(--thread-max-width)] px-2 py-3">
+    <ComposerPrimitive.Root className="aui-edit-composer-root">
       <ComposerPrimitive.Input
         autoFocus
-        className="w-full resize-none bg-transparent px-2 py-1 text-sm text-zinc-900 outline-none dark:text-zinc-50"
+        className="aui-edit-composer-input"
       />
-      <div className="mt-1 flex justify-end gap-1.5">
-        <ComposerPrimitive.Cancel
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-zinc-500 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
-          aria-label="Cancel edit"
-        >
+      <div className="aui-edit-composer-footer flex justify-end gap-2 p-2">
+        <ComposerPrimitive.Cancel className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs text-[color:var(--color-muted-foreground)] hover:bg-[color:var(--color-accent)]">
           <X className="size-3.5" aria-hidden /> Cancel
         </ComposerPrimitive.Cancel>
         <ComposerPrimitive.Send
-          className="inline-flex items-center gap-1 rounded-md bg-zinc-900 px-2.5 py-1 text-xs text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-          aria-label="Save edit"
+          className={
+            PRIMARY_BTN + " gap-1 rounded-md px-3 py-1.5 text-xs"
+          }
         >
           <Check className="size-3.5" aria-hidden /> Save
         </ComposerPrimitive.Send>
@@ -387,13 +511,64 @@ const UserEditComposer = () => (
   </MessagePrimitive.Root>
 );
 
-// --- text extraction for adapter callbacks ----------------------------------
+// --- composer ---------------------------------------------------------------
 
-function appendMessageText(message: AppendMessage): string {
-  return message.content
-    .map((p) => (p.type === "text" ? p.text : ""))
-    .join("")
-    .trim();
+const ComposerAttachment = () => (
+  <AttachmentPrimitive.Root className="aui-attachment-root-composer relative flex items-center gap-1.5 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-muted)] px-2 py-1.5 text-xs">
+    <AttachmentPrimitive.Name />
+    <AttachmentPrimitive.Remove className="aui-attachment-remove-icon ml-1 text-[color:var(--color-muted-foreground)] hover:text-[color:var(--color-foreground)]">
+      <X className="size-3.5" aria-hidden />
+    </AttachmentPrimitive.Remove>
+  </AttachmentPrimitive.Root>
+);
+
+function Composer({
+  placeholder,
+  composerMenu,
+}: {
+  placeholder: string;
+  composerMenu?: React.ReactNode;
+}) {
+  return (
+    <ComposerPrimitive.Root className="aui-composer-root rounded-3xl border border-[color:var(--color-border)] bg-[color:var(--color-background)] shadow-sm transition-colors focus-within:border-[color:var(--color-ring,var(--color-border))]">
+      <ComposerPrimitive.Attachments
+        components={{ Attachment: ComposerAttachment }}
+      />
+      <ComposerPrimitive.Input
+        autoFocus
+        rows={1}
+        placeholder={placeholder}
+        className="aui-composer-input"
+      />
+      <div className="aui-composer-action-wrapper">
+        <div className="flex items-center gap-1">
+          <ComposerPrimitive.AddAttachment
+            className={ICON_BTN}
+            aria-label="Attach"
+          >
+            <Paperclip className="size-5" aria-hidden />
+          </ComposerPrimitive.AddAttachment>
+          {composerMenu}
+        </div>
+        <ThreadPrimitive.If running={false}>
+          <ComposerPrimitive.Send
+            className={PRIMARY_BTN + " aui-composer-send"}
+            aria-label="Send"
+          >
+            <ArrowUpIcon className="size-5" aria-hidden />
+          </ComposerPrimitive.Send>
+        </ThreadPrimitive.If>
+        <ThreadPrimitive.If running>
+          <ComposerPrimitive.Cancel
+            className={PRIMARY_BTN + " aui-composer-cancel"}
+            aria-label="Stop"
+          >
+            <SquareIcon className="size-4 fill-current" aria-hidden />
+          </ComposerPrimitive.Cancel>
+        </ThreadPrimitive.If>
+      </div>
+    </ComposerPrimitive.Root>
+  );
 }
 
 // --- main component ---------------------------------------------------------
@@ -425,9 +600,13 @@ export function AssistantThread({
     messages: threadMessages,
     convertMessage: (m) => m,
     isRunning: isStreaming,
+    isDisabled: composerDisabled,
     onNew: async (message: AppendMessage) => {
       const text = appendMessageText(message);
-      if (text) onSend(text);
+      const files = appendMessageFiles(message);
+      if (text || files.length) {
+        onSend(text, files.length ? { files } : undefined);
+      }
     },
     onEdit: async (message: AppendMessage) => {
       const text = appendMessageText(message);
@@ -437,6 +616,7 @@ export function AssistantThread({
     onCancel: async () => {
       onStop?.();
     },
+    adapters: { attachments: jvAttachmentAdapter },
     unstable_capabilities: { copy: true },
   });
 
@@ -453,36 +633,57 @@ export function AssistantThread({
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <JvThreadContext.Provider value={jvCtx}>
-        <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col bg-background">
-          <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
+        <ThreadPrimitive.Root
+          className="aui-thread-root flex h-full min-h-0 flex-col bg-[color:var(--color-background)]"
+          style={
+            { ["--thread-max-width" as string]: "44rem" } as React.CSSProperties
+          }
+        >
+          <ThreadPrimitive.Viewport className="aui-thread-viewport">
             <ThreadPrimitive.Empty>
-              <WelcomeScreen
-                agentName={welcomeAgentName}
-                agentAvatar={welcomeAgentAvatar}
-                description={welcomeDescription}
-              />
+              <div className="aui-thread-welcome-root">
+                <div className="aui-thread-welcome-center">
+                  <div className="aui-thread-welcome-message items-center text-center">
+                    {welcomeAgentAvatar ? (
+                      <img
+                        src={welcomeAgentAvatar}
+                        alt={welcomeAgentName}
+                        className="mb-4 size-14 rounded-full object-cover"
+                      />
+                    ) : null}
+                    <p className="aui-thread-welcome-message-inner">
+                      Hello! I&apos;m {welcomeAgentName}
+                    </p>
+                    {welcomeDescription ? (
+                      <p className="mt-2 max-w-xl text-sm text-[color:var(--color-muted-foreground)]">
+                        {welcomeDescription}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
             </ThreadPrimitive.Empty>
-            <ThreadPrimitive.Messages
-              components={{
-                UserMessage,
-                AssistantMessage,
-                UserEditComposer,
-              }}
-            />
-            <div className="h-4" />
-          </ThreadPrimitive.Viewport>
 
-          <div className="flex-shrink-0 px-2 pb-3 sm:px-4">
-            <div className="mx-auto w-full max-w-3xl">
-              <MessageInput
-                onSend={onSend}
-                disabled={composerDisabled}
-                placeholder={placeholder}
-                composerMenu={composerMenu}
-                onStop={onStop}
-              />
+            <ThreadPrimitive.Messages
+              components={{ UserMessage, AssistantMessage, UserEditComposer }}
+            />
+
+            <ThreadPrimitive.If empty={false}>
+              <div className="min-h-6 flex-grow" />
+            </ThreadPrimitive.If>
+
+            <div className="aui-thread-viewport-footer">
+              <ThreadPrimitive.ScrollToBottom
+                className={
+                  ICON_BTN +
+                  " aui-thread-scroll-to-bottom bg-[color:var(--color-background)]"
+                }
+              >
+                <ArrowDownIcon className="size-4" aria-hidden />
+              </ThreadPrimitive.ScrollToBottom>
+              <Composer placeholder={placeholder} composerMenu={composerMenu} />
             </div>
-          </div>
+          </ThreadPrimitive.Viewport>
         </ThreadPrimitive.Root>
 
         <MessageDebugDialog
