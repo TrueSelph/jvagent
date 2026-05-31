@@ -14,7 +14,7 @@ from jvagent.scaffold.skill_resolve import (
 
 def test_resolve_builtin_skills_contains_catalog_entries() -> None:
     skills = resolve_builtin_skills()
-    assert "code_review" in skills
+    assert "answer" in skills
     assert "research" in skills
     assert "triage" in skills
 
@@ -39,11 +39,12 @@ Local SOP.
 
 
 def test_resolve_merged_prefers_agent_skill_over_builtin(tmp_path: Path) -> None:
-    skill_dir = tmp_path / "agents" / "acme" / "bot" / "skills" / "code_review"
+    # ``research`` is a built-in skill; an app-local one of the same name must win.
+    skill_dir = tmp_path / "agents" / "acme" / "bot" / "skills" / "research"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(
         """---
-name: code_review
+name: research
 description: App override for built-in
 ---
 
@@ -54,9 +55,9 @@ App override content.
     merged = resolve_merged_skill_bundles(
         app_root=str(tmp_path), namespace="acme", agent_name="bot"
     )
-    assert "code_review" in merged
-    assert merged["code_review"]["source"] == "app"
-    assert merged["code_review"]["description"] == "App override for built-in"
+    assert "research" in merged
+    assert merged["research"]["source"] == "app"
+    assert merged["research"]["description"] == "App override for built-in"
 
 
 def test_resolve_agent_skills_skips_malformed_frontmatter(tmp_path: Path) -> None:
@@ -78,26 +79,26 @@ Broken content.
 
 def test_apply_skill_selector_all_returns_all() -> None:
     bundles = {
-        "code_review": {"name": "code_review"},
+        "answer": {"name": "answer"},
         "research": {"name": "research"},
     }
     selected = apply_skill_selector(bundles, selector="-all")
-    assert set(selected.keys()) == {"code_review", "research"}
+    assert set(selected.keys()) == {"answer", "research"}
 
 
 def test_apply_skill_selector_list_and_glob() -> None:
     bundles = {
-        "code_review": {"name": "code_review"},
+        "answer": {"name": "answer"},
         "research": {"name": "research"},
         "triage": {"name": "triage"},
     }
-    selected = apply_skill_selector(bundles, selector=["code_*", "research"])
-    assert set(selected.keys()) == {"code_review", "research"}
+    selected = apply_skill_selector(bundles, selector=["ans*", "research"])
+    assert set(selected.keys()) == {"answer", "research"}
 
 
 def test_apply_skill_selector_empty_selector_returns_none_exposed() -> None:
     bundles = {
-        "code_review": {"name": "code_review"},
+        "answer": {"name": "answer"},
     }
     assert apply_skill_selector(bundles, selector=None) == {}
     assert apply_skill_selector(bundles, selector=[]) == {}
@@ -106,7 +107,7 @@ def test_apply_skill_selector_empty_selector_returns_none_exposed() -> None:
 
 def test_apply_skill_selector_denied_filter_removes_matches() -> None:
     bundles = {
-        "code_review": {"name": "code_review"},
+        "answer": {"name": "answer"},
         "research": {"name": "research"},
         "triage": {"name": "triage"},
     }
@@ -115,7 +116,7 @@ def test_apply_skill_selector_denied_filter_removes_matches() -> None:
         selector="-all",
         denied=["tri*", "research"],
     )
-    assert set(selected.keys()) == {"code_review"}
+    assert set(selected.keys()) == {"answer"}
 
 
 # ── requires-actions parsing ──────────────────────────────────────────

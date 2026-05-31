@@ -62,7 +62,7 @@ orchestration features the Claude standard doesn't cover.)
 
 A JV skill is pure judgment: a `SKILL.md` whose body steers tools that Actions
 and InteractActions already expose. It carries **no executable code**. Examples:
-`research`, `answer`, `code_review`. Reference the tools you use in
+`research`, `answer`. Reference the tools you use in
 `allowed-tools` (and `requires-actions` if a tool *must* be present), then
 describe the procedure in the body. Activation surfaces those tools so the model
 can call them on the next loop tick.

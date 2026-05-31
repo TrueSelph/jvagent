@@ -201,7 +201,7 @@ jvagent /path/to/app skill list
 jvagent /path/to/app skill list --agent acme/bot --builtin
 
 # inspect one skill
-jvagent /path/to/app skill show code_review --agent acme/bot --builtin
+jvagent /path/to/app skill show research --agent acme/bot --builtin
 ```
 
 ---
