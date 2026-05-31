@@ -92,7 +92,11 @@ function assistantGroupToThread(
   // ONE tool-call section (assistant-ui groups consecutive same-type parts).
   // Interleaving in arrival order would otherwise produce a separate collapsible
   // per reasoning/tool tick.
-  const reasoningParts: Array<{ type: "reasoning"; text: string }> = [];
+  // All reasoning across the turn is merged into ONE growing reasoning part (not
+  // one part per thought message). A single growing text lets assistant-ui's
+  // `smooth` markdown interpolate it character-by-character; separate parts make
+  // each reasoning segment land as a discrete block (the "chunky" reasoning).
+  let reasoningText = "";
   const toolParts: ToolPart[] = [];
   const textParts: Array<{ type: "text"; text: string }> = [];
 
@@ -117,7 +121,7 @@ function assistantGroupToThread(
       const md = (m.metadata ?? {}) as Record<string, unknown>;
       if (m.thoughtType === "reasoning") {
         if (m.content.trim()) {
-          reasoningParts.push({ type: "reasoning", text: m.content });
+          reasoningText += (reasoningText ? "\n\n" : "") + m.content;
           statusLabel = firstLine(m.content);
         }
       } else if (m.thoughtType === "tool_call") {
@@ -159,6 +163,8 @@ function assistantGroupToThread(
   }
 
   // One reasoning section, then one tool section, then the answer text.
+  const reasoningParts: Array<{ type: "reasoning"; text: string }> =
+    reasoningText ? [{ type: "reasoning", text: reasoningText }] : [];
   const parts: Array<
     { type: "text"; text: string } | { type: "reasoning"; text: string } | ToolPart
   > = [...reasoningParts, ...toolParts, ...textParts];
