@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class TaskTriggerInteractAction(InteractAction):
     """Proactive task trigger.
 
-    Runs before SkillExecutive (weight -250) to inject directives for proactive
+    Runs before Orchestrator (weight -250) to inject directives for proactive
     tasks whose time/keyword/mood conditions are met on this turn. Does not use
     an LLM — designed for maximum speed.
     """
@@ -33,7 +33,7 @@ class TaskTriggerInteractAction(InteractAction):
     weight: int = attribute(
         default=-250,
         description=(
-            "Runs before SkillExecutive (-200) so proactive directives are "
+            "Runs before Orchestrator (-200) so proactive directives are "
             "available to the orchestrator on the same turn."
         ),
     )

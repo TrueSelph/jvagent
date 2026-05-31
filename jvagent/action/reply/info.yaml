@@ -7,7 +7,7 @@ package:
   meta:
     title: Reply Action
     description: >-
-      SkillExecutive-native egress voice: reply (thin publish), respond (voice
+      Orchestrator-native egress voice: reply (thin publish), respond (voice
       text in the agent's identity), and publish. Identity lives on the Agent
       node (alias + role). Optional shaping applied only when a caller passes it.
     group: jvagent

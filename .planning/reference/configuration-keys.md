@@ -119,7 +119,7 @@ actions:                               # ordered list
       # override any `attribute(...)` on PersonaAction
       system_prompt: "You are a support agent."
       max_iterations: 25
-  - action: jvagent/skill_executive
+  - action: jvagent/orchestrator
     context:
       model: gpt-4o-mini
       activation_budget: 16
@@ -158,9 +158,9 @@ Detail: [`docs/language-models.md`](../../docs/language-models.md).
 
 ---
 
-## 6. SkillExecutiveInteractAction config (most-tuned action)
+## 6. OrchestratorInteractAction config (most-tuned action)
 
-See [`docs/EXECUTIVE.md`](../../docs/EXECUTIVE.md) for the full pattern. Highlights:
+See [`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) for the full pattern. Highlights:
 
 | Key | Default | Effect |
 |---|---|---|
@@ -177,7 +177,7 @@ See [`docs/EXECUTIVE.md`](../../docs/EXECUTIVE.md) for the full pattern. Highlig
 ### Prompt surface (overridable)
 
 Every sub-prompt is a config key defaulting to the matching constant in
-[`prompts.py`](../../jvagent/action/skill_executive/prompts.py); override any
+[`prompts.py`](../../jvagent/action/orchestrator/prompts.py); override any
 from `agent.yaml`. These are `str.format` templates — preserve the placeholders
 listed and double any literal `{`/`}` (write `{{` / `}}`). A malformed override
 (unknown placeholder, unbalanced brace) falls back to the built-in for that
@@ -236,7 +236,7 @@ Only bites with a reasoning-capable model; the `gpt-4o-mini` default ignores rea
 | `tool_servers` | `-all` | MCP gateways to pull tools from: `-all` for every enabled `jvagent/mcp` action, or a list of action names. Tools surface as `mcp_<server>__<tool>` |
 | `max_concurrent_tools` | `0` | reserved for future parallel tool batches; loop executes one tool per tick today |
 
-### `jvagent/reply` (ReplyAction — SkillExecutive egress, ADR-0014)
+### `jvagent/reply` (ReplyAction — Orchestrator egress, ADR-0014)
 
 Voices the agent's output; identity comes from the Agent (`alias` + `role`), not from this action.
 
@@ -258,7 +258,7 @@ SSRF-guarded page fetch → markdown; surfaces the `web_fetch__fetch` tool.
 
 ### `jvagent/mcp` (MCPAction — tool servers)
 
-Surfaces MCP server tools as `mcp_<server>__<tool>`; consumed by the SkillExecutive via its `tool_servers` key (above).
+Surfaces MCP server tools as `mcp_<server>__<tool>`; consumed by the Orchestrator via its `tool_servers` key (above).
 
 | Key | Default | Effect |
 |---|---|---|

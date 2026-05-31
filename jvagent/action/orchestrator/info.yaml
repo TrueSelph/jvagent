@@ -1,0 +1,33 @@
+# Orchestrator Action Package Descriptor (ADR-0012)
+package:
+  name: jvagent/orchestrator
+  author: jvagent
+  archetype: OrchestratorInteractAction
+  version: 0.1.0
+  meta:
+    title: OrchestratorInteractAction
+    description: >-
+      The single pattern orchestrator. Runs a think-act-observe loop over the
+      agent's unified tool surface (reply/respond egress, anchored IAs-as-tools,
+      action tools, core tools, skills); an in-progress flow continues when the
+      model selects its tool. Routing is tool selection; turn-lock is an emergent
+      flow property. Weight -200, no walker-revisit.
+    group: jvagent
+    type: interact_action
+  config:
+    order:
+      weight: -200
+    singleton: true
+  # Pattern-agnostic manifest (ADR-0012). The Orchestrator is a pattern
+  # orchestrator: walker-weight-routed, excluded from anchor-routing surfaces.
+  manifest:
+    purpose: >-
+      Single orchestrator. Reasons and acts over the agent's tool surface,
+      continuing an in-progress flow when the model selects its tool and replying
+      through the reply/respond egress.
+    latency_class: deliberate
+    routable_by_anchor: false
+    pattern_orchestrator: true
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []

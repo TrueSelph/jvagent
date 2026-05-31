@@ -1,13 +1,13 @@
 # Skill Bundles Standard
 
 `jvagent` skills are Claude-compatible modular augmentations consumed by the
-**SkillExecutive** ([`docs/EXECUTIVE.md`](../../docs/EXECUTIVE.md)). A skill pairs
+**Orchestrator** ([`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md)). A skill pairs
 instruction content (`SKILL.md`) with an optional set of executable tool modules
 and support assets.
 
 ## Skills vs. actions — read this first
 
-Under the SkillExecutive pattern (ADR-0012), **actions are first-class tools**:
+Under the Orchestrator pattern (ADR-0012), **actions are first-class tools**:
 an `Action` only needs to implement `get_tools()` and its capabilities are
 directly callable by the orchestrator. A **skill is an augmentation**, not a
 capability host. Use a skill to:
@@ -139,7 +139,7 @@ from jvagent.skills.pdf_generation.scripts._document_args import parse_document_
 
 ## Discovery and Activation Lifecycle
 
-Skills are lazily activated through progressive disclosure by the SkillExecutive:
+Skills are lazily activated through progressive disclosure by the Orchestrator:
 
 1. The executive resolves skill bundles from the configured sources.
 2. Metadata is registered, but a skill's tools stay hidden initially.
@@ -160,10 +160,10 @@ App-local overrides a built-in skill of the same `name`.
 
 ## Per-Agent Configuration
 
-Configure on the SkillExecutive action in `agent.yaml`:
+Configure on the Orchestrator action in `agent.yaml`:
 
 ```yaml
-- action: jvagent/skill_executive
+- action: jvagent/orchestrator
   context:
     skills_source: both        # app | library | both
     skills: "-all"             # or a finite list: [research, answer]
@@ -211,6 +211,6 @@ from jvagent.scaffold.skill_resolve import (
 
 ## See Also
 
-- [SkillExecutive](../../docs/EXECUTIVE.md) — the orchestrator and its skill lifecycle
+- [Orchestrator](../../docs/ORCHESTRATOR.md) — the orchestrator and its skill lifecycle
 - [`MCPAction` README](../action/mcp/README.md) — external tool servers
 - `fileinterface`, `pdf_generation`, `skill_hub` bundles for new-capability examples

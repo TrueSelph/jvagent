@@ -7,7 +7,7 @@ Task lifecycle management is now handled by `TaskStore`, scoped per conversation
 - **Storage**: `Conversation.tasks` is the canonical store (list of task dicts, persisted on the conversation node).
 - **Writer**: `TaskStore` is the single write path for create/update/complete/fail/cancel.
 - **Scope**: One store instance per conversation (`TaskStore(conversation)`), lazily available as `InteractWalker.tasks`.
-- **Consumers**: SkillExecutive think-act-observe loop (flow continuation), interview flows, proactive task creation/dispatch/trigger, ReplyAction/PersonaAction egress context, and response payloads.
+- **Consumers**: Orchestrator think-act-observe loop (flow continuation), interview flows, proactive task creation/dispatch/trigger, ReplyAction/PersonaAction egress context, and response payloads.
 
 ## Task Model
 
@@ -103,7 +103,7 @@ Webhook URLs can be configured with:
 
 ## Integration notes
 
-- **SkillExecutive** and **DirectiveBuilder** start and complete/cancel flow tasks through `visitor.tasks`.
+- **Orchestrator** and **DirectiveBuilder** start and complete/cancel flow tasks through `visitor.tasks`.
 - **TaskCreationInteractAction** creates proactive tasks via `visitor.tasks.create(...)`.
 - **TaskDispatcher** starts tasks before dispatch and completes/fails through store APIs. It generates the dispatched message via `PersonaAction.respond(...)` (LLM-generated). For **canned** (pre-formed) proactive messages from any task or scheduler, use `Agent.send_proactive_message(...)` directly instead — see [proactive-messages.md](proactive-messages.md).
 - **TaskTriggerInteractAction** marks matched proactive tasks complete through the store.
@@ -114,4 +114,4 @@ Webhook URLs can be configured with:
 - [Conversation](jvagent/memory/conversation.py)
 - [TaskStore](jvagent/memory/task_store.py)
 - [InteractWalker](jvagent/action/interact/interact_walker.py)
-- [SkillExecutive](jvagent/action/skill_executive/skill_executive_interact_action.py)
+- [Orchestrator](jvagent/action/orchestrator/orchestrator_interact_action.py)

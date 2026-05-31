@@ -173,7 +173,7 @@ class InteractAction(Action, ABC):
         **forwards to ``execute(visitor)``** — the orchestrator passes the
         per-turn ``visitor`` through at dispatch time. IAs without routing
         triggers (or ``always_execute``) expose no tool. This is how IAs
-        participate in the SkillExecutive's unified tool surface (ADR-0012).
+        participate in the Orchestrator's unified tool surface (ADR-0012).
         """
         if getattr(self, "always_execute", False):
             return []
@@ -193,11 +193,13 @@ class InteractAction(Action, ABC):
                 name=self.get_class_name(),
                 description=desc,
                 parameters_schema={"type": "object", "properties": {}},
-                execute=self._run_as_executive_tool,
+                execute=self._run_as_orchestrator_tool,
             )
         ]
 
-    async def _run_as_executive_tool(self, visitor: Any = None, **kwargs: Any) -> Any:
+    async def _run_as_orchestrator_tool(
+        self, visitor: Any = None, **kwargs: Any
+    ) -> Any:
         """Tool entrypoint: run this IA's ``execute`` with the supplied visitor.
 
         The orchestrator injects ``visitor`` when it dispatches the tool. The IA

@@ -462,7 +462,7 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
 - **Simplified API**: Pass directives and parameters directly to `respond()` method
 - **Bulk Operations**: Use `add_directives()` and `add_parameters()` for efficient batch operations
 - **Automatic Persistence**: Interactions are automatically saved after adding directives/parameters
-- **Routing Support**: Can be routed via InteractRouter based on anchor statements, or use **`jvagent/skill_executive`** ([SkillExecutive](docs/EXECUTIVE.md)) for a single orchestrator with unified tool-surface routing and native SOP skills
+- **Routing Support**: Can be routed via InteractRouter based on anchor statements, or use **`jvagent/orchestrator`** ([Orchestrator](docs/ORCHESTRATOR.md)) for a single orchestrator with unified tool-surface routing and native SOP skills
 
 See the [InteractAction API Guide](jvagent/action/interact/README.md) for complete documentation.
 
@@ -1059,7 +1059,7 @@ InteractActions are actions that participate in the interact subsystem. They ser
 **Architecture:**
 - InteractActions are modular execution points in a chain
 - The InteractWalker traverses and executes the modular pipeline
-- Core actions like InteractRouter or **SkillExecutiveInteractAction** ([guide](docs/EXECUTIVE.md)) alter/curate the walker's path based on input
+- Core actions like InteractRouter or **OrchestratorInteractAction** ([guide](docs/ORCHESTRATOR.md)) alter/curate the walker's path based on input
 - InteractActions may have branches of other InteractActions
 - **Top-level InteractActions** (directly connected to the Actions branch node) **must explicitly route the walker to their children** conditionally - the walker does not automatically traverse child actions from top-level actions
 
@@ -1126,13 +1126,13 @@ actions:
 OpenAI actions read credentials from environment (`OPENAI_API_KEY`).
 
 **Available Core Actions:**
-- **Orchestrator (SkillExecutive pattern)**: `jvagent/skill_executive` (single `-200` orchestrator) + `jvagent/reply` (ReplyAction egress: `reply`/`respond`/`publish`)
+- **Orchestrator (Orchestrator pattern)**: `jvagent/orchestrator` (single `-200` orchestrator) + `jvagent/reply` (ReplyAction egress: `reply`/`respond`/`publish`)
 - **Interact Actions**: `jvagent/interact_router`, `jvagent/retrieval_interact_action`, `jvagent/intro_interact_action`, `jvagent/interview_interact_action`, `jvagent/converse_interact_action`, `jvagent/pageindex_retrieval_interact_action` (requires `jvagent/pageindex_action` on the same agent; pip deps in `jvagent/action/pageindex/pageindex_action/info.yaml` and `pageindex_retrieval_interact_action/info.yaml`, auto-installed at action load by default)
 - **Language Models**: `jvagent/openai_lm`, `jvagent/openrouter_lm`
 - **Embedding Models**: `jvagent/openai_embedding`, `jvagent/openrouter_embedding`, `jvagent/huggingface_embedding`, `jvagent/generic_embedding`
 - **Vector Stores**: `jvagent/typesense_vectorstore`
 - **Web**: `jvagent/web_fetch` (SSRF-guarded page fetch → markdown; tool `web_fetch__fetch`), web search providers (`jvagent/serper_web_search`, etc.)
-- **Other**: `jvagent/persona` (legacy/Rails responder; can be overridden locally), `jvagent/mcp` (MCP gateway: tools surface as `mcp_<server>__<tool>`, consumed by the SkillExecutive via `tool_servers`; see [jvagent/action/mcp/README.md](jvagent/action/mcp/README.md))
+- **Other**: `jvagent/persona` (legacy/Rails responder; can be overridden locally), `jvagent/mcp` (MCP gateway: tools surface as `mcp_<server>__<tool>`, consumed by the Orchestrator via `tool_servers`; see [jvagent/action/mcp/README.md](jvagent/action/mcp/README.md))
 
 **Conditional Loading**: Core actions are only loaded if they are explicitly listed in `agent.yaml` or are required as dependencies of a loaded action. This ensures that unused actions remain unloaded and their endpoints are not accessible.
 
@@ -1140,7 +1140,7 @@ OpenAI actions read credentials from environment (`OPENAI_API_KEY`).
 
 **Core Action Documentation:**
 - [InteractAction API Guide](jvagent/action/interact/README.md) - Complete guide to InteractAction API including `respond()` method
-- [SkillExecutive](docs/EXECUTIVE.md) - Single orchestrator (`SkillExecutiveInteractAction`) running a think-act-observe loop over the unified tool surface; skills, IA-as-tools, flow continuation via TaskStore, MCP `tool_servers`, model gearing (light/heavy). Config surface in [.planning/configuration-keys.md](.planning/reference/configuration-keys.md) §6; design in ADR-0012/0013/0014/0015/0016
+- [Orchestrator](docs/ORCHESTRATOR.md) - Single orchestrator (`OrchestratorInteractAction`) running a think-act-observe loop over the unified tool surface; skills, IA-as-tools, flow continuation via TaskStore, MCP `tool_servers`, model gearing (light/heavy). Config surface in [.planning/configuration-keys.md](.planning/reference/configuration-keys.md) §6; design in ADR-0012/0013/0014/0015/0016
 - [InteractRouter](jvagent/action/router/README.md) - Standalone intent-based routing (Rails pattern)
 - [RetrievalInteractAction](jvagent/action/retrieval/README.md) - Vector store retrieval with simplified API
 - [IntroInteractAction](jvagent/action/intro/README.md) - First-time user welcome messages
@@ -2117,7 +2117,7 @@ Agent-targeted reference docs live under [`.planning/`](.planning/). Start here 
 ### Action Modules
 
 - [InteractAction API](jvagent/action/interact/README.md)
-- [SkillExecutive](docs/EXECUTIVE.md) — `jvagent/action/skill_executive/` source layout
+- [Orchestrator](docs/ORCHESTRATOR.md) — `jvagent/action/orchestrator/` source layout
 - [InteractRouter](jvagent/action/router/README.md)
 - [RetrievalInteractAction](jvagent/action/retrieval/README.md)
 - [IntroInteractAction](jvagent/action/intro/README.md)

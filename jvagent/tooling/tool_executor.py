@@ -62,7 +62,7 @@ def bind_dispatch_context(visitor: Optional[Any]):
     """Bind the visitor-derived dispatch context for direct tool execution.
 
     ``ToolExecutionEngine.dispatch`` sets this automatically, but callers that
-    run ``Tool``s directly (e.g. the SkillExecutive loop) must bind it so
+    run ``Tool``s directly (e.g. the Orchestrator loop) must bind it so
     context-aware tools — notably per-user MCP servers — route correctly.
     """
     ctx = _build_context_from_visitor(visitor)

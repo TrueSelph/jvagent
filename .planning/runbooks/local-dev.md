@@ -207,5 +207,5 @@ jvagent .
 
 - [`/CLAUDE.md`](../../CLAUDE.md) — agent guide
 - [`.planning/architecture.md`](../architecture.md) — diagrams
-- [`/docs/EXECUTIVE.md`](../../docs/EXECUTIVE.md) — Executive pattern deep dive
+- [`/docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) — Executive pattern deep dive
 - [`/docs/scaffolding.md`](../../docs/scaffolding.md) — `jvagent app create` reference

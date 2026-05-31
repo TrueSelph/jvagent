@@ -1,0 +1,48 @@
+package:
+  # Action name in namespace/action_name format
+  name: jvagent/signup_interview_interact_action
+
+  # Package author
+  author: V75 Inc.
+
+  # Archetype: The main Action class name (same as the Action Node class)
+  archetype: SignupInterviewInteractAction
+
+  # Package version
+  version: 1.0.0
+
+  # Package metadata
+  meta:
+    title: Signup Interview Interact Action
+    description: User signup interview for registration and training scheduling
+    group: jvagent
+    type: action
+
+  # Pattern-agnostic manifest. Multi-turn signup flow; continued via TaskStore
+  # control-task and Orchestrator tool selection when active.
+  manifest:
+    purpose: >-
+      Run the signup interview for jvagent training: collect full name,
+      training availability slot, email, and optional phone number, then
+      confirm registration.
+    activates_on:
+      - "user wants to sign up or register for jvagent training"
+      - "user wants to enroll or join jvagent training"
+    terminates_when:
+      - "all signup fields answered and confirmed"
+      - "user explicitly cancels (stop / cancel / quit)"
+    latency_class: deliberate
+    expected_duration_seconds: 180.0
+
+  # Package configuration
+  config:
+    order:
+      weight: 0
+
+  # Package dependencies
+  dependencies:
+    # jvagent version requirement
+    jvagent: ~0.0.1
+    # Other action dependencies (by namespace/action_name)
+    actions: []
+

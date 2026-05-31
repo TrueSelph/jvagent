@@ -12,7 +12,7 @@ records it links into. User-facing onboarding lives in the root
 .planning/
   PROJECT.md        big-picture overview
   SPEC.md           normative semantics (invariants, contracts)
-  PATTERNS.md       deployment patterns (Rails vs. SkillExecutive)
+  PATTERNS.md       deployment patterns (Rails vs. Orchestrator)
   architecture.md   diagrams (boot, interact, executive, pruning)
   GLOSSARY.md       canonical terminology
   reference/        look-it-up guides (authoring, catalog, config, internals)
@@ -64,15 +64,15 @@ those records covered patterns (bridge/helm/cockpit) that were removed.
 | [0006](adr/0006-jvspatial-dependency.md) | Build jvagent on a separate jvspatial framework | Accepted |
 | [0010](adr/0010-executive-centers-architecture.md) | Executive + Centers architecture | **Superseded by 0012** |
 | [0011](adr/0011-skills-two-kinds.md) | Two skill kinds: native SOP overlays vs. Claude bundles | Accepted |
-| [0012](adr/0012-skill-executive-architecture.md) | **SkillExecutive architecture** (the v1 orchestrator) | Accepted |
+| [0012](adr/0012-skill-executive-architecture.md) | **Orchestrator architecture** (the v1 orchestrator) | Accepted |
 | [0013](adr/0013-togglable-deterministic-turn-lock.md) | Togglable deterministic turn-lock (`lock_active_flow`) | Accepted |
 | [0014](adr/0014-identity-on-agent-replyaction-egress.md) | Identity on the Agent + ReplyAction egress | Accepted |
-| [0015](adr/0015-skill-executive-configuration-surface.md) | SkillExecutive configuration surface | Accepted |
+| [0015](adr/0015-skill-executive-configuration-surface.md) | Orchestrator configuration surface | Accepted |
 | [0016](adr/0016-model-gearing-light-heavy.md) | Model gearing: light completion + heavy reasoning | Accepted |
 
 ## archive/ — historical
 
 Retained for context, not current guidance.
 
-- [`archive/EXECUTIVE-ROADMAP.md`](archive/EXECUTIVE-ROADMAP.md) — the SkillExecutive roadmap; its "Done" list shipped as v1.
-- [`archive/executive-build-prompt.md`](archive/executive-build-prompt.md) — the ADR-0010 "Executive + Centers" build prompt, superseded by ADR-0012 / [`docs/EXECUTIVE.md`](../docs/EXECUTIVE.md).
+- [`archive/EXECUTIVE-ROADMAP.md`](archive/EXECUTIVE-ROADMAP.md) — the Orchestrator roadmap; its "Done" list shipped as v1.
+- [`archive/executive-build-prompt.md`](archive/executive-build-prompt.md) — the ADR-0010 "Executive + Centers" build prompt, superseded by ADR-0012 / [`docs/ORCHESTRATOR.md`](../docs/ORCHESTRATOR.md).

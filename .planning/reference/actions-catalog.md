@@ -64,8 +64,8 @@ Bases:
 
 | Action | Class | Base | Weight | Purpose |
 |---|---|---|---:|---|
-| jvagent/skill_executive | `SkillExecutiveInteractAction` | `InteractAction` | -200 | Single orchestrator (SkillExecutive pattern). One `execute()` per turn: deterministic continuation check, then a bounded think-act-observe loop over a unified tool surface (routing = tool selection). ADR-0012/0013/0014/0015/0016. See [`../docs/EXECUTIVE.md`](../../docs/EXECUTIVE.md) |
-| jvagent/interact_router | `InteractRouter` | `InteractAction` | -200 | Intent classifier → routes to InteractActions (Rails pattern; alternative to the SkillExecutive) |
+| jvagent/orchestrator | `OrchestratorInteractAction` | `InteractAction` | -200 | Single orchestrator (Orchestrator pattern). One `execute()` per turn: deterministic continuation check, then a bounded think-act-observe loop over a unified tool surface (routing = tool selection). ADR-0012/0013/0014/0015/0016. See [`../docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) |
+| jvagent/interact_router | `InteractRouter` | `InteractAction` | -200 | Intent classifier → routes to InteractActions (Rails pattern; alternative to the Orchestrator) |
 | jvagent/converse | `ConverseInteractAction` | `InteractAction` | (late) | Smalltalk fallback |
 | jvagent/intro | `IntroInteractAction` | `InteractAction` | early | Initial greeting / first-interaction flow |
 | jvagent/interview | `InterviewInteractAction` | `InteractAction` | mid | Structured Q&A with branching, convergence, pruning |
@@ -127,7 +127,7 @@ Base: `BaseWebSearchAction` — `web_search/base.py`. Plus an InteractAction wra
 | jvagent/web_search/brave | `BraveSearchAction` | Brave Search API |
 | jvagent/web_search/serpapi | `SerpAPISearchAction` | SerpAPI (multi-engine) |
 | jvagent/web_search_retrieval | `WebSearchRetrievalInteractAction` | Wraps search → context block |
-| jvagent/web_fetch | `WebFetchAction` | SSRF-guarded page fetch → markdown (tool `web_fetch__fetch`); lets the SkillExecutive read full pages after a search surfaces URLs |
+| jvagent/web_fetch | `WebFetchAction` | SSRF-guarded page fetch → markdown (tool `web_fetch__fetch`); lets the Orchestrator read full pages after a search surfaces URLs |
 
 ### 1.8 Task automation
 
@@ -143,8 +143,8 @@ See [`../docs/task-tracking.md`](../../docs/task-tracking.md).
 
 | Action | Class | Base | Purpose |
 |---|---|---|---|
-| jvagent/reply | `ReplyAction` | `Action` | SkillExecutive-native egress (ADR-0014). Tools `reply` (slim publish), `respond` (identity-voiced single model call), `publish`. Identity comes from the Agent (`alias` + `role`) |
-| jvagent/persona | `PersonaAction` | `Action` | Apply agent personality; aggregate capabilities; respond() entry-point. Legacy/Rails responder (SkillExecutive uses `jvagent/reply`) |
+| jvagent/reply | `ReplyAction` | `Action` | Orchestrator-native egress (ADR-0014). Tools `reply` (slim publish), `respond` (identity-voiced single model call), `publish`. Identity comes from the Agent (`alias` + `role`) |
+| jvagent/persona | `PersonaAction` | `Action` | Apply agent personality; aggregate capabilities; respond() entry-point. Legacy/Rails responder (Orchestrator uses `jvagent/reply`) |
 | jvagent/avatar_action | `AvatarAction` | `Action` | Store/retrieve base64 profile images |
 | jvagent/video_generation | `HeygenVideoAction` | `Action` | Heygen AI video |
 
@@ -153,7 +153,7 @@ See [`../docs/task-tracking.md`](../../docs/task-tracking.md).
 | Action | Class | Base | Purpose |
 |---|---|---|---|
 | jvagent/access_control | `AccessControlAction` | `Action` | Multi-channel RBAC (per-user, per-action) |
-| jvagent/mcp | `MCPAction` | `Action` | Model Context Protocol server integration + sandbox. `get_tools()` surfaces each server's tools as `mcp_<server>__<tool>` with per-user dispatch; the SkillExecutive consumes them via its `tool_servers` config |
+| jvagent/mcp | `MCPAction` | `Action` | Model Context Protocol server integration + sandbox. `get_tools()` surfaces each server's tools as `mcp_<server>__<tool>` with per-user dispatch; the Orchestrator consumes them via its `tool_servers` config |
 | jvagent/agent_utils | `AgentUtils` | `Action` | Agent utilities (schema/metadata/discovery) |
 
 ### 1.11 Speech (STT / TTS)
@@ -181,7 +181,7 @@ These ship inside `jvagent/action/` but are not pluggable on their own — they 
 | `response/` | `ResponseBus`, channel adapters, channel filters |
 | `loader/` | Action loader, registry, plugin discovery |
 | `utils/` | Shared utilities (webhook auth, system user mgmt) |
-| `skill_executive/` | SkillExecutive orchestrator + supporting modules: `continuation.py` (active-flow resume), `tools.py` / `core_tools.py` (tool surface), `catalog.py`, `skills.py` (native SOP skills), `prompts.py` |
+| `orchestrator/` | Orchestrator + supporting modules: `continuation.py` (active-flow resume), `tools.py` / `core_tools.py` (tool surface), `catalog.py`, `skills.py` (native SOP skills), `prompts.py` |
 
 ---
 
@@ -222,7 +222,7 @@ Both paths are currently functional. AUDIT-actions XC-6 verified.
 
 | Action | Depends on |
 |---|---|
-| `SkillExecutiveInteractAction` | `ReplyAction` (egress), a `LanguageModelAction` (heavy + optional light gear), all enabled actions' `get_tools()`, `MCPAction` (via `tool_servers`), native SOP skills |
+| `OrchestratorInteractAction` | `ReplyAction` (egress), a `LanguageModelAction` (heavy + optional light gear), all enabled actions' `get_tools()`, `MCPAction` (via `tool_servers`), native SOP skills |
 | `ReplyAction` | the Agent's identity (`alias` + `role`), a `LanguageModelAction` (voicing) |
 | `WebFetchAction` | none (httpx + bs4 + markdownify; SSRF guard) |
 | `HandoffInteractAction` | `PersonaAction` (polish), `WhatsAppAction` (contact routing) |

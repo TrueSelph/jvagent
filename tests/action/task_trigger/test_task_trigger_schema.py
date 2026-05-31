@@ -81,5 +81,5 @@ async def test_triggers_proactive_task_from_data_schema(monkeypatch):
     assert refreshed is not None and refreshed.status == "completed"
 
 
-async def test_runs_before_skill_executive_weight():
+async def test_runs_before_orchestrator_weight():
     assert TaskTriggerInteractAction().weight < -200

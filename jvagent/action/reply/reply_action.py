@@ -1,8 +1,8 @@
 """ReplyAction — the agent's egress voice (ADR-0014).
 
-A lean, SkillExecutive-native replacement for ``PersonaAction``'s egress role:
+A lean, Orchestrator-native replacement for ``PersonaAction``'s egress role:
 
-- ``reply(text)`` — the SkillExecutive's egress. Slim by default (a thin literal
+- ``reply(text)`` — the Orchestrator's egress. Slim by default (a thin literal
   publish, no model call); when there is shaping to apply — pending
   **directives**, **parameters**, or a channel that needs **formatting** — it
   composes via ``respond`` instead.
@@ -16,7 +16,7 @@ Channel formats live in ``CHANNEL_FORMATS`` (overridable per channel via the
 ordinary web turns stay slim for token efficiency.
 
 Identity (``alias`` + ``role``) is read from the **Agent node** (ADR-0014), not
-held here, so the brain (SkillExecutive) and the mouth (ReplyAction) share one
+held here, so the brain (Orchestrator) and the mouth (ReplyAction) share one
 source. Shaping stays optional: with no directives/parameters present the reply
 is slim — ReplyAction never *collects* them to drive a reply on its own.
 """
@@ -231,7 +231,7 @@ class ReplyAction(Action):
     # ------------------------------------------------------------------
 
     async def reply(self, text: str, visitor: Optional[Any] = None) -> bool:
-        """Send the user's reply — the SkillExecutive's egress.
+        """Send the user's reply — the Orchestrator's egress.
 
         Slim by default: a thin literal publish, no model call. But when the
         interaction carries pending **directives** or **parameters**, those are
@@ -453,12 +453,12 @@ class ReplyAction(Action):
         return "\n".join(lines).strip()
 
     # ------------------------------------------------------------------
-    # Tools (the SkillExecutive surface)
+    # Tools (the Orchestrator surface)
     # ------------------------------------------------------------------
 
     async def get_tools(self) -> List[Any]:
         """Furnish ``reply`` / ``respond`` tools (the same contract PersonaAction
-        exposes, so ReplyAction drops into the SkillExecutive tool surface)."""
+        exposes, so ReplyAction drops into the Orchestrator tool surface)."""
         from jvagent.tooling.tool import Tool
 
         text_schema = {

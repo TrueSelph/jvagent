@@ -12,11 +12,11 @@ Cross-link: [`action-authoring.md`](../reference/action-authoring.md) for the fu
 |---|---|
 | Will it participate in `/interact`? | Subclass `InteractAction` |
 | Will it call an LLM provider? | Subclass `LanguageModelAction` |
-| Will it expose a tool to the SkillExecutive tool surface (model-callable)? | Override `get_tools()` |
+| Will it expose a tool to the Orchestrator tool surface (model-callable)? | Override `get_tools()` |
 | Is it a one-per-agent capability? | Set `singleton: true` in `info.yaml` |
 | Should it run AFTER response is sent? | Set `run_in_background: true` |
 
-For Slack: it's a channel adapter — subclass `Action`, register with the `ResponseBus`, define `get_tools()` for model-driven sending via the SkillExecutive tool surface.
+For Slack: it's a channel adapter — subclass `Action`, register with the `ResponseBus`, define `get_tools()` for model-driven sending via the Orchestrator tool surface.
 
 ---
 
@@ -288,7 +288,7 @@ Edit [`.planning/reference/actions-catalog.md`](../reference/actions-catalog.md)
 - [ ] Lifecycle hooks (`on_register`, `on_enable`, `on_disable`) implemented
 - [ ] `healthcheck()` returns useful status
 - [ ] `get_capabilities()` returns 1-line summaries
-- [ ] `get_tools()` exposes model-callable tools to the SkillExecutive tool surface (if applicable)
+- [ ] `get_tools()` exposes model-callable tools to the Orchestrator tool surface (if applicable)
 - [ ] `endpoints.py` under `/actions/{action_id}/...`
 - [ ] `__init__.py` re-exports class + imports endpoints
 - [ ] `tests/action/<name>/` with at least 1 unit + 1 integration test

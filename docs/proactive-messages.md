@@ -248,4 +248,4 @@ for user_id in target_users:
 - [GLOSSARY: Proactive message / Proactive interaction](../.planning/GLOSSARY.md).
 - [Architecture §6.1 — Proactive (out-of-walker) sends](../.planning/architecture.md).
 - [`docs/task-tracking.md`](task-tracking.md) — relationship to `TaskDispatcher`.
-- [`docs/EXECUTIVE.md`](EXECUTIVE.md) — in-walker response emission (the inbound counterpart).
+- [`docs/ORCHESTRATOR.md`](ORCHESTRATOR.md) — in-walker response emission (the inbound counterpart).

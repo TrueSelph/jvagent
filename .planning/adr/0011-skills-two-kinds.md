@@ -46,4 +46,4 @@ This is explicitly **out of scope** for the Executive pattern's first cut and ge
 - [`adr/0010-executive-centers-architecture.md`](0010-executive-centers-architecture.md)
 - [`jvagent/scaffold/skill_resolve.py`](../../jvagent/scaffold/skill_resolve.py) — neutral discovery
 - [`jvagent/action/executive/skills_catalog.py`](../../jvagent/action/executive/skills_catalog.py) — executive-local catalog
-- [`docs/EXECUTIVE.md`](../../docs/EXECUTIVE.md)
+- [`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md)

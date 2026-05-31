@@ -2,7 +2,7 @@
 
 Fetches a public URL and returns its main content as clean markdown (or text)
 so an agent can *read* sources, not just search snippets. Pairs with
-``web_search`` in the executive tool surface.
+``web_search`` in the orchestrator tool surface.
 
 Safety: SSRF-guarded (non-http(s) schemes and private/loopback/link-local hosts
 are rejected, re-validated across redirects), size/type/timeout bounded, and the

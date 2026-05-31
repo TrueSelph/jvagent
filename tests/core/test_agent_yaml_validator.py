@@ -87,13 +87,13 @@ def test_agent_loader_emits_validation_warning(tmp_path, caplog):
 
 
 def test_exclusion_check_ignores_non_orchestrator_actions():
-    """A SkillExecutive composition validates clean."""
+    """A Orchestrator composition validates clean."""
     from jvagent.core.agent_yaml_validator import validate_agent_yaml
 
     payload = {
-        "agent": "jvagent/executive_agent",
+        "agent": "jvagent/orchestrator_agent",
         "actions": [
-            {"action": "jvagent/skill_executive"},
+            {"action": "jvagent/orchestrator"},
             {"action": "jvagent/openai_lm"},
             {"action": "jvagent/persona"},
             {"action": "jvagent/intro_interact_action"},
@@ -109,7 +109,7 @@ def test_validate_agent_yaml_warns_dual_orchestrators():
     payload = {
         "agent": "jvagent/conflict_agent",
         "actions": [
-            {"action": "jvagent/skill_executive"},
+            {"action": "jvagent/orchestrator"},
             {"action": "jvagent/interact_router"},
         ],
     }

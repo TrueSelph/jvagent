@@ -1,5 +1,7 @@
 # ADR 0012 — SkillExecutive architecture
 
+> **Errata (rename):** the pattern, action, and class described here were later renamed **SkillExecutive → Orchestrator** (`jvagent/orchestrator`, `OrchestratorInteractAction`, "Orchestrator pattern"). The architecture is unchanged; this ADR retains the original names as the historical record. Current docs: [`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md).
+
 **Status**: Accepted
 **Date**: 2026-05-30
 **Supersedes**: [`0010-executive-centers-architecture.md`](0010-executive-centers-architecture.md). The Executive + Centers split (a light Executive tick + recruited centers + a deterministic reflex + an IA center) is replaced by a single model-driven orchestrator with one tool surface. ADR-0011 (skills as judgment over capability) still holds.

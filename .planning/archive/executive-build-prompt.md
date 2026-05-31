@@ -6,7 +6,7 @@
 > ([ADR-0012](../adr/0012-skill-executive-architecture.md), refined by ADR-0013/0014/0015/0016).
 > Do **not** build from this. The shipped v1 architecture — one orchestrator at
 > weight `-200`, a unified tool surface, no recruited "centers" — is documented in
-> [`../docs/EXECUTIVE.md`](../../docs/EXECUTIVE.md). This file is retained only to
+> [`../docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md). This file is retained only to
 > preserve the original design intent, mirroring how ADR-0010 itself is kept.
 >
 > Paste this to Claude Code (or any coding agent) at the repo root of `jvagent`. It is self-contained but assumes the repo's `CLAUDE.md`, `.planning/SPEC.md`, and `.planning/adr/0010-executive-centers-architecture.md` are present.
@@ -63,7 +63,7 @@ A brain. One **Executive** (prefrontal cortex, light model) engages trivial conv
 
 **M8 — Scaffolder profile + example.** `executive` profile in `jvagent/scaffold/builtin_profiles/`; `examples/jvagent_app/agents/jvagent/executive_agent/`. *Tests:* scaffold smoke; `jvagent ... validate` passes; a second orchestrator at `-200` rejected. *Exit:* `jvagent app create --profile executive` yields a working agent.
 
-**M9 — Observability + docs + parity.** Activation-trace events on `Interaction`; `docs/EXECUTIVE.md`; `PATTERNS.md` + `GLOSSARY.md` + top-level `CLAUDE.md` updated; a smoke harness (`tests/action/executive/smoke_executive.py`) running the 6-utterance suite, archived under `baselines/`. *Exit:* a turn is fully traceable from one log query; smoke runs clean; pattern documented as a peer.
+**M9 — Observability + docs + parity.** Activation-trace events on `Interaction`; `docs/ORCHESTRATOR.md`; `PATTERNS.md` + `GLOSSARY.md` + top-level `CLAUDE.md` updated; a smoke harness (`tests/action/executive/smoke_executive.py`) running the 6-utterance suite, archived under `baselines/`. *Exit:* a turn is fully traceable from one log query; smoke runs clean; pattern documented as a peer.
 
 ## Testing & verification
 

@@ -522,7 +522,7 @@ class InterviewInteractAction(InteractAction, ABC):
         can return only entry anchors when no active session exists.
         Mid-flight state-derived anchors confused first-entry routing when
         included in the entry catalog — narrowing to entry anchors restores
-        clean intent matching for InteractRouter and the SkillExecutive
+        clean intent matching for InteractRouter and the Orchestrator
         relevance gate.
         """
         # Get current anchors value (may be from agent.yaml override)

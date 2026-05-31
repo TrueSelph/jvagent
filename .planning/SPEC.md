@@ -18,7 +18,7 @@ jvagent specifies:
 6. The **bootstrap modes** — `run`, `merge`, `source`.
 7. The **invariants** an implementer must not break.
 
-It does **not** specify: choice of model provider, transport protocol details (HTTP semantics are jvspatial's), storage backend selection, deployment topology, or the SkillExecutive's prompt design (see [`../docs/EXECUTIVE.md`](../docs/EXECUTIVE.md)).
+It does **not** specify: choice of model provider, transport protocol details (HTTP semantics are jvspatial's), storage backend selection, deployment topology, or the Orchestrator's prompt design (see [`../docs/ORCHESTRATOR.md`](../docs/ORCHESTRATOR.md)).
 
 ---
 
@@ -94,14 +94,14 @@ The `InteractAction.execute()` contract:
 - MAY emit responses via `await self.publish(...)`, `self.publish_thought(...)`, or `self.respond(...)`.
 - MUST NOT block the loop; long operations belong in `run_in_background` actions or in tasks.
 
-### 3.3 SkillExecutive pattern
+### 3.3 Orchestrator pattern
 
-`SkillExecutiveInteractAction` ([`skill_executive/skill_executive_interact_action.py`](../jvagent/action/skill_executive/skill_executive_interact_action.py)) is the sole pattern orchestrator at `weight=-200`. It does **not** use walker-revisit: it runs the whole turn inside one `execute()` call and returns once. There are no recruited centers, no deterministic reflex, and no separate router or capability registry. A turn proceeds in two stages:
+`OrchestratorInteractAction` ([`orchestrator/orchestrator_interact_action.py`](../jvagent/action/orchestrator/orchestrator_interact_action.py)) is the sole pattern orchestrator at `weight=-200`. It does **not** use walker-revisit: it runs the whole turn inside one `execute()` call and returns once. There are no recruited centers, no deterministic reflex, and no separate router or capability registry. A turn proceeds in two stages:
 
 1. **Think-act-observe loop** (one model call per tick, bounded) — over a unified tool surface, the model selects tools until the turn is answered. **Routing is tool selection** (ADR-0012).
 2. **Turn-lock (a restriction on that surface)** — the orchestrator detects an active flow via `continuation.active_flow_owner(visitor)` (a deterministic read of the active control-task's `owner_action`, equal to the IA's tool name). When `lock_active_flow` is on (default) and a flow is active, the loop restricts its callable surface to that IA's tool and dispatches it with no model round-trip. When off, it instead makes the flow's tool visible and injects `continuation.active_flow_note(tool_name)`, leaving continuation to the model.
 
-**Flow continuation mode is configurable** via `lock_active_flow` ([ADR-0013](adr/0013-togglable-deterministic-turn-lock.md); [`skill_executive/continuation.py`](../jvagent/action/skill_executive/continuation.py) exposes `active_flow_owner(visitor)` and `active_flow_note(tool_name)`):
+**Flow continuation mode is configurable** via `lock_active_flow` ([ADR-0013](adr/0013-togglable-deterministic-turn-lock.md); [`orchestrator/continuation.py`](../jvagent/action/orchestrator/continuation.py) exposes `active_flow_owner(visitor)` and `active_flow_note(tool_name)`):
 
 - **`lock_active_flow=True` (default) — deterministic turn-lock.** `_run_loop` restricts the callable surface to the owning IA's tool and dispatches it (the same visitor-bound, AC-gated, terminal `wrap_action_tool` binding used for routing) with no model round-trip. The flow owns every turn until it clears its own task; off-topic input goes into the IA, which owns interruption/cancel.
 - **`lock_active_flow=False` — model-mediated.** The note reads roughly *"a multi-step flow is in progress; call `<tool>` to continue it if the user is engaging, otherwise handle their request normally — the flow stays active and resumes when the user returns."* The model then either **continues** (selects the flow's tool → `get_tools` → `execute` advances the session) or **routes elsewhere** for an off-topic utterance (the flow is not forced to run; this prevents the "Who is Eldon Marks?" misroute, and interruptibility is automatic — no `can_interrupt` branch).
@@ -116,9 +116,9 @@ In both modes a flow's only orchestrator-facing modification is being exposed vi
 4. **Routing is tool selection.** There is no separate router or capability registry; IAs (as tools forwarding to `execute(visitor)`), persona `reply`/`respond`, core services, and skills are all tools. An IA's tool *description* is built from its manifest (`purpose` + `activates_on`, via `routing_triggers()`) so the model routes on intent.
 5. **Actions own their output.** Actions publish their own results; the `reply`/`respond` persona tools are model-discretionary. A turn that ends with no emission and no active flow gets a single fallback reply.
 6. **Access control gates tool dispatch** (`tool:*`), including IA-as-tool execution (`tool:delegate:{name}` preserved).
-7. **Walk-path curation.** Because the SkillExecutive coexists with the interact pipeline, a routable IA is still a top-level `InteractAction` the walker would execute every turn. Each turn the orchestrator curates the remaining walk path (`visitor.curate_walk_path`) to drop tool-exposed (routable) IAs — reached only by tool selection — keeping itself, `always_execute` IAs, and non-routable IAs.
+7. **Walk-path curation.** Because the Orchestrator coexists with the interact pipeline, a routable IA is still a top-level `InteractAction` the walker would execute every turn. Each turn the orchestrator curates the remaining walk path (`visitor.curate_walk_path`) to drop tool-exposed (routable) IAs — reached only by tool selection — keeping itself, `always_execute` IAs, and non-routable IAs.
 
-The tool surface is assembled in [`skill_executive/skill_executive_interact_action.py`](../jvagent/action/skill_executive/skill_executive_interact_action.py); egress tools come from `Action.get_responder()` → `ReplyAction.get_tools()` (preferred) or `PersonaAction.get_tools()` (fallback), each IA furnishes its own tool via `InteractAction.get_tools()` (the orchestrator binds the visitor + AC), and progressive disclosure (`find_tool`/`load_tool`, `find_skill`/`use_skill`) comes from [`skill_executive/catalog.py`](../jvagent/action/skill_executive/catalog.py) and [`skill_executive/skills.py`](../jvagent/action/skill_executive/skills.py).
+The tool surface is assembled in [`orchestrator/orchestrator_interact_action.py`](../jvagent/action/orchestrator/orchestrator_interact_action.py); egress tools come from `Action.get_responder()` → `ReplyAction.get_tools()` (preferred) or `PersonaAction.get_tools()` (fallback), each IA furnishes its own tool via `InteractAction.get_tools()` (the orchestrator binds the visitor + AC), and progressive disclosure (`find_tool`/`load_tool`, `find_skill`/`use_skill`) comes from [`orchestrator/catalog.py`](../jvagent/action/orchestrator/catalog.py) and [`orchestrator/skills.py`](../jvagent/action/orchestrator/skills.py).
 
 Rationale and consequences: [`adr/0012-skill-executive-architecture.md`](adr/0012-skill-executive-architecture.md) (supersedes [`adr/0010-executive-centers-architecture.md`](adr/0010-executive-centers-architecture.md)). Milestones: [`.planning/archive/EXECUTIVE-ROADMAP.md`](archive/EXECUTIVE-ROADMAP.md).
 
@@ -140,7 +140,7 @@ Node (jvspatial)
     ├── BaseWebSearchAction
     ├── BaseSTTAction, BaseTTSAction, VectorStore (per provider)
     └── InteractAction          jvagent/action/interact/base.py:32
-        ├── SkillExecutiveInteractAction
+        ├── OrchestratorInteractAction
         ├── InteractRouter
         ├── ConverseInteractAction
         ├── InterviewInteractAction
@@ -186,7 +186,7 @@ Errors raised by these hooks are logged automatically by the action's `enable()`
 
 ### 4.4 Tools and capabilities
 
-- `get_tools() -> List[Tool]` ([`base.py:192`](../jvagent/action/base.py)) — every `Action` MAY expose tools to the agentic loop (e.g. the SkillExecutive's think-act-observe loop). Each tool wraps a callable with a JSON Schema for arguments; they are registered with an `action__` prefix in the tool registry. `InteractAction.get_tools()` forwards to `execute(visitor)` and builds the tool description from the manifest (`purpose` + `activates_on`, via `routing_triggers()`).
+- `get_tools() -> List[Tool]` ([`base.py:192`](../jvagent/action/base.py)) — every `Action` MAY expose tools to the agentic loop (e.g. the Orchestrator's think-act-observe loop). Each tool wraps a callable with a JSON Schema for arguments; they are registered with an `action__` prefix in the tool registry. `InteractAction.get_tools()` forwards to `execute(visitor)` and builds the tool description from the manifest (`purpose` + `activates_on`, via `routing_triggers()`).
 - `get_capabilities() -> List[str]` ([`base.py:180`](../jvagent/action/base.py)) — short capability strings aggregated by `PersonaAction` for system-prompt injection.
 
 ### 4.5 Action discovery
@@ -353,12 +353,12 @@ There is **no persistent task queue** (no Celery / RQ). Long-lived autonomous wo
 1. `App` is a singleton per process. Multiple `App` nodes connected to `Root` is an error state.
 2. A `User` is unique per `(memory_id, user_id)`. Bypassing the lock manager can produce duplicates that the compound index will reject.
 3. `Conversation._prune_old_interactions()` never deletes the last `Interaction`. Doing so would leave `last_interaction_id` dangling.
-4. `InteractAction.execute()` is called by the walker; it MUST NOT recursively invoke the walker on the same action without explicit `visitor.prepend([self])` semantics, or stack overflow / infinite-walk protection (`max_visits_per_node=100` in jvspatial walker) will trip. (The SkillExecutive avoids this entirely — it runs its whole turn inside one `execute()` call with no walker-revisit.)
+4. `InteractAction.execute()` is called by the walker; it MUST NOT recursively invoke the walker on the same action without explicit `visitor.prepend([self])` semantics, or stack overflow / infinite-walk protection (`max_visits_per_node=100` in jvspatial walker) will trip. (The Orchestrator avoids this entirely — it runs its whole turn inside one `execute()` call with no walker-revisit.)
 5. `Action.metadata` is the authoritative source for `info.yaml` data. Implementations MUST NOT shadow it.
 6. `Agent.interaction_limit = 0` means **disabled**. Implementations MUST NOT prune when limit is `0` or unset.
 7. `App.update_mode` MUST reset to `run` after a successful sync; otherwise cold restarts will repeat the merge/source pass.
 8. Action endpoints registered via `@endpoint` MUST be discoverable by `_discover_action_endpoints()` ([`base.py:354`](../jvagent/action/base.py)) so deregister can clean them up. Use `/actions/{action_id}/...` path prefixes.
-9. The SkillExecutive is the single pattern orchestrator at `weight=-200`. It runs at most one model call per tick, bounded by an activation budget. See §3.3.
+9. The Orchestrator is the single pattern orchestrator at `weight=-200`. It runs at most one model call per tick, bounded by an activation budget. See §3.3.
 10. Flow continuation is configurable via `lock_active_flow` ([ADR-0013](adr/0013-togglable-deterministic-turn-lock.md)). When on (default), the active flow's IA tool is dispatched with no model round-trip; when off, the flow is surfaced as routable context and the model decides. See §3.3 invariants 2–3.
 11. Routing is tool selection. There is no separate router or capability registry; IAs (as tools), persona, core services, and skills are all tools. A flow's control-task (turn-lock) is persisted on the conversation `TaskStore`; the active flow is surfaced as a routable tool and continued by model tool selection next turn. See §3.3 invariant 4.
 12. Access control gates tool dispatch (`tool:*`), including IA-as-tool execution (`tool:delegate:{name}`); a denial routes to the orchestrator's safe-fallback. See §3.3 invariant 6.
@@ -392,4 +392,4 @@ Load-bearing design choices are captured as ADRs:
 - HTTP / streaming / auth wire format → jvspatial.
 - Storage backend internals → jvspatial.
 - Provider-specific model APIs (Anthropic, OpenAI, etc.) → individual `LanguageModelAction` subclasses.
-- The SkillExecutive's prompt strategy → [`../docs/EXECUTIVE.md`](../docs/EXECUTIVE.md) and `jvagent/action/skill_executive/prompts.py`.
+- The Orchestrator's prompt strategy → [`../docs/ORCHESTRATOR.md`](../docs/ORCHESTRATOR.md) and `jvagent/action/orchestrator/prompts.py`.

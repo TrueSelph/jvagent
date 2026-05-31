@@ -17,7 +17,7 @@ The core orchestrator (`jvagent/action/skill_executive/`) is implemented and cov
 
 ## Follow-ups
 
-See [`docs/EXECUTIVE.md`](../../docs/EXECUTIVE.md) § Known follow-ups:
+See [`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) § Known follow-ups:
 
 - Self-contained Claude skill bundles (separate substrate; ADR-0011)
 - First-entry routing accuracy and trivial-turn latency measurement at rollout

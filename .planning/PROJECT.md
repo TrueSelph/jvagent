@@ -5,7 +5,7 @@
 
 ## TL;DR
 
-**jvagent** is a modular AI-agent platform built on [jvspatial](reference/jvspatial-integration.md)'s object-spatial graph primitives. An *app* declares one or more *agents* in YAML; each agent owns a graph of typed *actions* (plugins) and a per-user memory subgraph (`User → Conversation → Interaction`). Incoming traffic becomes an `Interaction`, an `InteractWalker` traverses the agent's `InteractAction` chain, and the **SkillExecutive** action — the single orchestrator at weight `-200` — runs the whole turn inside one `execute()`: a deterministic continuation check (resume an active flow), then a bounded think-act-observe loop over a **unified tool surface** where routing is tool selection (no recruited "centers"). Egress is voiced by `ReplyAction` from the agent's identity.
+**jvagent** is a modular AI-agent platform built on [jvspatial](reference/jvspatial-integration.md)'s object-spatial graph primitives. An *app* declares one or more *agents* in YAML; each agent owns a graph of typed *actions* (plugins) and a per-user memory subgraph (`User → Conversation → Interaction`). Incoming traffic becomes an `Interaction`, an `InteractWalker` traverses the agent's `InteractAction` chain, and the **Orchestrator** action — the single orchestrator at weight `-200` — runs the whole turn inside one `execute()`: a deterministic continuation check (resume an active flow), then a bounded think-act-observe loop over a **unified tool surface** where routing is tool selection (no recruited "centers"). Egress is voiced by `ReplyAction` from the agent's identity.
 
 jvagent targets **both** short turn-based conversations (chatbots, channel adapters) **and** long-running autonomous agents (multi-step task plans, scheduled background work). The runtime favors real deployments over toy demos: namespaced plugins, deep action lifecycle hooks, distributed locking, bounded pruning latency, and probabilistic cache cleanup tuned for serverless workers.
 
@@ -20,7 +20,7 @@ Build, deploy, and maintain production AI agents without re-implementing the bor
 - A walker pipeline that lets the **model** decide which tools to call rather than the developer hardcoding a control flow.
 - HTTP endpoints, auth, file storage, observability, structured logging, and graph repair — out of the box.
 
-The model is the pilot. Tools are the controls. Skills are the flight plan. ([source](../docs/EXECUTIVE.md))
+The model is the pilot. Tools are the controls. Skills are the flight plan. ([source](../docs/ORCHESTRATOR.md))
 
 ---
 

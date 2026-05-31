@@ -1,0 +1,81 @@
+# Executive profile (ADR-0012).
+#
+# A single model-driven orchestrator. OrchestratorInteractAction at weight
+# -200 locks onto an active flow when one owns the turn (lock_active_flow),
+# otherwise runs a think-act-observe loop over the agent's unified tool surface:
+# the reply/respond egress (ReplyAction), anchored interact-actions exposed as
+# tools, plain action tools, core tools, and native SOP skills. Routing is tool
+# selection; identity comes from the Agent (alias + role).
+#
+# The single pattern orchestrator at the -200 slot.
+# Use --profile executive to scaffold a new agent on this composition.
+actions:
+  - action: jvagent/orchestrator
+    context:
+      enabled: true
+      model: gpt-4o-mini
+      model_action_type: OpenAILanguageModelAction
+      model_temperature: 0.2
+      activation_budget: 24          # max tool-using ticks/turn; raise (30-50) for research
+      history_limit: 4               # prior turns fed into the loop prompt
+      # -- Model gearing (ADR-0016): set light_model to add a fast completion
+      # model for single-step turns; the model above is the heavy/reasoning gear.
+      # light_model: gpt-4o-mini
+      # light_model_action_type: OpenAILanguageModelAction
+      # escalate_after_tool_calls: 2 # heavy after N substantive tool calls
+      # escalate_on_skill: true      # activating a skill escalates immediately
+      # Deterministic turn-lock: an active flow's IA owns each turn until it
+      # clears its task. Set false for model-mediated (interruptible) continuation.
+      lock_active_flow: true
+      # -- Reasoning (only with a reasoning-capable model; see docs/EXECUTIVE.md).
+      # reasoning_effort: medium     # low | medium | high
+      # -- Thinking stream (needs a live bus).
+      stream_internal_progress: false
+      stream_reasoning_trace: false
+      # -- Budgets / tooling (see ADR-0015).
+      max_duration_seconds: 0        # wall-clock cap; 0 disables
+      tool_tier: standard            # minimal | standard | full
+      tool_call_timeout: 0           # per-tool-call timeout (s); 0 disables
+      enable_transient_ack: false    # ack(s) only on complex turns (skill or multiple tools)
+      # first_emit_timeout_ms: 1200  # delay before first ack + interval between acks
+      # ack_statements: ["Working on it…"]   # transient 'working on it' line(s)
+      # -- MCP tool servers: '-all' or a list of jvagent/mcp action names.
+      tool_servers: "-all"
+      # Native SOP skills. skills_source: app (adjacent skills/) | library
+      # (jvagent/skills) | both. `skills` is "-all" or a finite list of names,
+      # e.g. [research, answer].
+      skills_source: both
+      skills: "-all"
+      clarify_text: "Sorry, I didn't quite catch that — could you rephrase?"
+
+  - action: jvagent/openai_lm
+    context:
+      enabled: true
+      description: OpenAI language model (OPENAI_API_KEY in .env)
+      api_endpoint: https://api.openai.com/v1
+      model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 4096
+      timeout: 60
+
+  # ReplyAction — Orchestrator-native egress voice (ADR-0014). Identity comes
+  # from the Agent (alias + role); set `role` in the agent context to shape the
+  # voice. PersonaAction remains the fallback responder for Rails agents.
+  - action: jvagent/reply
+    context:
+      enabled: true
+      description: Egress voice — furnishes the reply/respond tools and voices replies
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      model_temperature: 0.3
+
+  - action: jvagent/intro_interact_action
+    context:
+      enabled: true
+      description: First-time-user intro (always_execute) — runs before the executive in the weight chain
+
+  - action: jvagent/handoff_interact_action
+    context:
+      enabled: true
+      description: Hands off to a human — exposed to the executive as a routable tool
+      mode: direct_contact

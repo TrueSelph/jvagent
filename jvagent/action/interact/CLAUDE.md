@@ -53,7 +53,7 @@ The HTTP-facing interaction pipeline:
 5. **`execute()` is called inside a walker `visiting()` context** — `visitor.here` is set to the action node. Don't break that contract by mutating the walker queue from inside without using `visitor.visit()` / `visitor.prepend()`.
 6. **`publish()` requires `visitor.response_bus` + `visitor.session_id`** ([`base.py:237-246`](base.py)). Early-return with a warning if either is missing.
 7. **`publish()` with `stream=None` defaults to `visitor.stream`** ([`base.py:255`](base.py)). For non-streaming channels (WhatsApp), this is set False on the walker.
-8. **Walker-revisit capability**: `visitor.prepend([self])` exists as a walker primitive — an action MAY enqueue itself (or another node) to be visited again. No shipped pattern currently relies on multi-visit turns; the SkillExecutive runs its whole turn in a single `execute()` call (no revisit), carrying loop state locally inside `_run_loop`.
+8. **Walker-revisit capability**: `visitor.prepend([self])` exists as a walker primitive — an action MAY enqueue itself (or another node) to be visited again. No shipped pattern currently relies on multi-visit turns; the Orchestrator runs its whole turn in a single `execute()` call (no revisit), carrying loop state locally inside `_run_loop`.
 
 ---
 

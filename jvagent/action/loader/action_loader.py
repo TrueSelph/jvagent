@@ -34,7 +34,7 @@ def _warn_if_anchorless_routable_ia(
     - is anchor-routable (``manifest.routable_by_anchor`` default ``True``)
     - declares zero anchors via :attr:`anchors` or :meth:`get_anchors`
 
-    Such an IA is invisible to first-entry routing — the SkillExecutive only
+    Such an IA is invisible to first-entry routing — the Orchestrator only
     surfaces its tool when the utterance is anchor-relevant or the flow is
     already active. The warning surfaces the misconfiguration at install time.
     """

@@ -10,7 +10,7 @@
 tests/
 ├── conftest.py              # session-level fixtures
 ├── action/                  # per-action unit tests
-│   ├── skill_executive/     # SkillExecutive orchestrator loop
+│   ├── orchestrator/     # Orchestrator loop
 │   ├── interact/            # walker bootstrap + visit semantics
 │   ├── interview/           # branching, convergence, pruning
 │   ├── long_memory/
@@ -58,7 +58,7 @@ tests/
 
 ```bash
 pytest tests/                      # everything (slow)
-pytest tests/action/skill_executive/ -v  # SkillExecutive orchestrator
+pytest tests/action/orchestrator/ -v  # Orchestrator
 pytest -k pruning                  # by keyword
 pytest --lf                        # last-failed only
 pytest -x                          # stop on first failure
@@ -88,7 +88,7 @@ Add at least one test slice:
 | `memory/` | `tests/memory/` + regression in `tests/test_comprehensive_pruning.py` if it affects pruning |
 | `action/{name}/` | `tests/action/{name}/` |
 | `action/interact/` | `tests/action/interact/` + `tests/action/access_control/` if access control changes |
-| `action/skill_executive/` | `tests/action/skill_executive/` |
+| `action/orchestrator/` | `tests/action/orchestrator/` |
 | `cli/` | `tests/cli/` |
 | Tool schemas | check `tests/test_tool_schema_audit.py` still passes; add cases |
 

@@ -174,7 +174,7 @@ jvagent --update
 
 ## Skill catalogs and custom skills
 
-Executive agents (via the SkillExecutive's native SOP skills) support two skill sources:
+Executive agents (via the Orchestrator's native SOP skills) support two skill sources:
 
 1. Built-in reusable skill catalog shipped with jvagent (`jvagent/skills/*`)
 2. App-local custom skills in `agents/<ns>/<id>/skills/<skill_name>/SKILL.md`
@@ -182,7 +182,7 @@ Executive agents (via the SkillExecutive's native SOP skills) support two skill 
 When a skill name exists in both, app-local overrides built-in.
 
 Runtime exposure is controlled per agent in `agents/<ns>/<id>/agent.yaml` on
-the `jvagent/skill_executive` action via:
+the `jvagent/orchestrator` action via:
 
 - `skills`: `-all` or a list of names/globs (default unset = expose none)
 - `denied_skills`: optional subtractive names/globs

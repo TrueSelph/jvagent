@@ -46,16 +46,16 @@ def test_resolve_conversational_extends(tmp_path: Path) -> None:
     assert "jvagent/intro_interact_action" in ids
 
 
-def test_resolve_executive_profile_includes_skill_executive() -> None:
-    """The executive profile produces a complete SkillExecutive starter agent.
+def test_resolve_orchestrator_profile_includes_orchestrator() -> None:
+    """The orchestrator profile produces a complete Orchestrator starter agent.
 
-    The profile ships the single orchestrator (SkillExecutiveInteractAction at
+    The profile ships the single orchestrator (OrchestratorInteractAction at
     -200), an OpenAI language model, the ReplyAction egress voice (which
     furnishes reply/respond tools and voicing; ADR-0014), and intro / handoff IAs.
     """
-    actions = resolve_profile_actions(None, "executive")
+    actions = resolve_profile_actions(None, "orchestrator")
     ids = {x["action"] for x in actions}
-    assert "jvagent/skill_executive" in ids
+    assert "jvagent/orchestrator" in ids
     assert "jvagent/reply" in ids  # egress voice (ADR-0014); persona retired here
     assert "jvagent/openai_lm" in ids
     assert "jvagent/intro_interact_action" in ids
@@ -66,8 +66,8 @@ def test_resolve_executive_profile_includes_skill_executive() -> None:
     assert "jvagent/persona_center" not in ids
 
 
-def test_create_app_default_profile_is_executive(tmp_path: Path) -> None:
-    """Calling create_app with no explicit default_profile picks executive.
+def test_create_app_default_profile_is_orchestrator(tmp_path: Path) -> None:
+    """Calling create_app with no explicit default_profile picks orchestrator.
 
     Existing apps (those that already have agent.yaml files) are NOT
     affected — the default_profile only governs newly-scaffolded agents.
@@ -90,7 +90,7 @@ def test_create_app_default_profile_is_executive(tmp_path: Path) -> None:
     with open(agent_yaml_path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     action_ids = {a.get("action") for a in (data.get("actions") or [])}
-    assert "jvagent/skill_executive" in action_ids
+    assert "jvagent/orchestrator" in action_ids
     assert "jvagent/reply" in action_ids
 
 

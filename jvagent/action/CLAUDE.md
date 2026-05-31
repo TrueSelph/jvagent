@@ -11,7 +11,7 @@ The plugin-loadable extension surface of jvagent:
 - **`Action` base** ([`base.py:48`](base.py)) — Node subclass with lifecycle hooks, attribute config, endpoint registration, child-cascade delete, tool exposure to the Executive's Skills center.
 - **`InteractAction`** ([`interact/base.py:32`](interact/base.py)) — see `interact/CLAUDE.md`.
 - **Specialized bases**: `BaseModelAction`, `LanguageModelAction`, `BaseWebSearchAction`, `BaseSTTAction`, `BaseTTSAction`, `VectorStore`.
-- **Concrete plugins** organized by topic: language models, response/bus, SkillExecutive orchestrator, memory-related, channel adapters, productivity integrations, tasks. Catalog in [`/.planning/reference/actions-catalog.md`](../../.planning/reference/actions-catalog.md).
+- **Concrete plugins** organized by topic: language models, response/bus, Orchestrator, memory-related, channel adapters, productivity integrations, tasks. Catalog in [`/.planning/reference/actions-catalog.md`](../../.planning/reference/actions-catalog.md).
 - **Loader/registry** in `loader/`.
 - **Plugin contracts** in `plugin_contracts.py`.
 
@@ -128,7 +128,7 @@ The detailed walkthrough lives at [`/.planning/reference/action-authoring.md`](.
 | Subdir | Local guide |
 |---|---|
 | `interact/` | [`interact/CLAUDE.md`](interact/CLAUDE.md) |
-| `skill_executive/` | (see [`/.planning/adr/0012-skill-executive-architecture.md`](../../.planning/adr/0012-skill-executive-architecture.md)) |
+| `orchestrator/` | (see [`/.planning/adr/0012-skill-executive-architecture.md`](../../.planning/adr/0012-skill-executive-architecture.md)) |
 | All other action dirs | Per-package `info.yaml` + class docstring |
 
 ---
@@ -136,5 +136,5 @@ The detailed walkthrough lives at [`/.planning/reference/action-authoring.md`](.
 ## 10. Out of scope here
 
 - Walker mechanics: see `interact/CLAUDE.md`.
-- Executive prompt/loop specifics: see [`/docs/EXECUTIVE.md`](../../docs/EXECUTIVE.md).
+- Executive prompt/loop specifics: see [`/docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md).
 - Memory graph: see `jvagent/memory/CLAUDE.md`.

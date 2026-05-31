@@ -1,4 +1,4 @@
-"""ReplyAction — the SkillExecutive-native egress voice (ADR-0014).
+"""ReplyAction — the Orchestrator-native egress voice (ADR-0014).
 
 The agent's *mouth*: ``reply`` (thin literal publish), ``respond`` (voice text in
 the agent's identity), and ``publish`` (the egress primitive). Identity lives on

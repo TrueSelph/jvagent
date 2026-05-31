@@ -1388,14 +1388,14 @@ class PersonaAction(Action):
             raise
 
     async def get_tools(self) -> List[Any]:
-        """Furnish ``reply`` / ``respond`` tools for the SkillExecutive (ADR-0012).
+        """Furnish ``reply`` / ``respond`` tools for the Orchestrator (ADR-0012).
 
         - ``reply`` — thin publish of literal text (no model re-framing), for
           fast conversational banter / acknowledgements.
         - ``respond`` — persona-framed reply: injects the given text and
           composes it through ``respond`` so the agent's identity/voice applies.
 
-        Both require the per-turn ``visitor``; the SkillExecutive binds it when
+        Both require the per-turn ``visitor``; the Orchestrator binds it when
         it assembles the tool surface (the model supplies only ``text``).
         """
         from jvagent.tooling.tool import Tool

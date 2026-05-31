@@ -134,13 +134,13 @@ References:
 
 ---
 
-## 4. SkillExecutive turn (continuation check + think-act-observe loop)
+## 4. Orchestrator turn (continuation check + think-act-observe loop)
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant W as InteractWalker
-    participant SE as SkillExecutiveInteractAction
+    participant SE as OrchestratorInteractAction
     participant CC as Continuation check (deterministic)
     participant FL as Active flow (e.g. interview)
     participant M as LanguageModel
@@ -167,16 +167,16 @@ sequenceDiagram
     PER-->>W: published; execute() returns once
 ```
 
-**Why one `execute()` call instead of walker-revisit?** The SkillExecutive re-derives the per-step concerns — one model call per tick, access control, observability, runaway bound — at loop level inside a single `execute()`, so the turn completes without graph-traversal overhead per iteration. The continuation check reads persisted state only (no model); resume is never re-decided by the model. See [`adr/0012-skill-executive-architecture.md`](adr/0012-skill-executive-architecture.md) (supersedes ADR-0010).
+**Why one `execute()` call instead of walker-revisit?** The Orchestrator re-derives the per-step concerns — one model call per tick, access control, observability, runaway bound — at loop level inside a single `execute()`, so the turn completes without graph-traversal overhead per iteration. The continuation check reads persisted state only (no model); resume is never re-decided by the model. See [`adr/0012-skill-executive-architecture.md`](adr/0012-skill-executive-architecture.md) (supersedes ADR-0010).
 
 References:
-- `action/skill_executive/skill_executive_interact_action.py` — orchestrator: walk-path curation + tool-surface assembly + loop
-- `action/skill_executive/continuation.py` — active-flow surfacing (`active_flow_owner` + `active_flow_note`)
-- `action/skill_executive/tools.py` — SkillTool primitives + helpers
+- `action/orchestrator/orchestrator_interact_action.py` — orchestrator: walk-path curation + tool-surface assembly + loop
+- `action/orchestrator/continuation.py` — active-flow surfacing (`active_flow_owner` + `active_flow_note`)
+- `action/orchestrator/tools.py` — SkillTool primitives + helpers
 - `action/interact/base.py` — `InteractAction.get_tools()` (an IA furnishes its own tool, forwarding to `execute`)
 - `action/persona/persona_action.py` — `PersonaAction.get_tools()` (reply/respond, visitor-bound inline via `wrap_action_tool`)
-- `action/skill_executive/core_tools.py` — built-in core tools
-- `action/skill_executive/catalog.py` / `skills.py` — find_tool/load_tool and find_skill/use_skill
+- `action/orchestrator/core_tools.py` — built-in core tools
+- `action/orchestrator/catalog.py` / `skills.py` — find_tool/load_tool and find_skill/use_skill
 
 ---
 
@@ -254,7 +254,7 @@ Agent.send_proactive_message(user_id, content, channel, ...)
 ├─────────────────────────────────────────────────────────────────┤
 │  Action library (jvagent/action/) — plugins                     │
 │    ├─ interact/  — base + walker + endpoints                    │
-│    ├─ skill_executive/ — SkillExecutive orchestrator + tools    │
+│    ├─ orchestrator/ — Orchestrator + tools    │
 │    ├─ model/     — LLM + embedding actions                      │
 │    ├─ response/  — bus + channel adapters                       │
 │    └─ <vertical actions>: google, microsoft, whatsapp, email... │
@@ -286,7 +286,7 @@ Agent.send_proactive_message(user_id, content, channel, ...)
 | If you want to... | Read |
 |---|---|
 | Build an action | [`action-authoring.md`](reference/action-authoring.md) |
-| Understand the SkillExecutive deeply | [`../docs/EXECUTIVE.md`](../docs/EXECUTIVE.md) + [`adr/0012-skill-executive-architecture.md`](adr/0012-skill-executive-architecture.md) |
+| Understand the Orchestrator deeply | [`../docs/ORCHESTRATOR.md`](../docs/ORCHESTRATOR.md) + [`adr/0012-skill-executive-architecture.md`](adr/0012-skill-executive-architecture.md) |
 | Tune logging | [`observability.md`](reference/observability.md) |
 | Run locally | [`runbooks/local-dev.md`](runbooks/local-dev.md) |
 | See every action | [`actions-catalog.md`](reference/actions-catalog.md) |

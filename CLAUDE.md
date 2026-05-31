@@ -12,7 +12,7 @@ A modular AI-agent platform built on [jvspatial](.planning/reference/jvspatial-i
 
 - An *app* declares one or more *agents* in YAML.
 - Each agent owns a graph of *actions* (plugins) plus a per-user memory subgraph (`User → Conversation → Interaction`).
-- Incoming traffic at `POST /agents/{id}/interact` becomes an `Interaction`; an `InteractWalker` visits the agent's `InteractAction`s in weight order; the **SkillExecutive** action (weight `-200`) runs the whole turn in one `execute()`: a deterministic **continuation check** (resume an active flow from the conversation `TaskStore`), then a bounded **think-act-observe loop** over a unified tool surface. Routing = tool selection; turn-lock = an active flow that hasn't returned `COMPLETE`/`YIELD`.
+- Incoming traffic at `POST /agents/{id}/interact` becomes an `Interaction`; an `InteractWalker` visits the agent's `InteractAction`s in weight order; the **Orchestrator** action (weight `-200`) runs the whole turn in one `execute()`: a deterministic **continuation check** (resume an active flow from the conversation `TaskStore`), then a bounded **think-act-observe loop** over a unified tool surface. Routing = tool selection; turn-lock = an active flow that hasn't returned `COMPLETE`/`YIELD`.
 - Production-shaped: namespaced plugins, lifecycle hooks, response bus with channel adapters, rolling-window memory pruning, separate logs DB.
 
 Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email / web), long-running autonomous agents.
@@ -26,7 +26,7 @@ Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email /
 | **Navigate the design docs** | [`.planning/README.md`](.planning/README.md) (folder index) |
 | **Get the big picture** | [`.planning/PROJECT.md`](.planning/PROJECT.md) |
 | **Look up normative semantics** (invariants, contracts) | [`.planning/SPEC.md`](.planning/SPEC.md) |
-| **Choose a deployment pattern** (Rails / SkillExecutive) | [`.planning/PATTERNS.md`](.planning/PATTERNS.md) |
+| **Choose a deployment pattern** (Rails / Orchestrator) | [`.planning/PATTERNS.md`](.planning/PATTERNS.md) |
 | **See diagrams** (boot, interact, executive, pruning) | [`.planning/architecture.md`](.planning/architecture.md) |
 | **Define a term** | [`.planning/GLOSSARY.md`](.planning/GLOSSARY.md) |
 | **Build a new action** | [`.planning/reference/action-authoring.md`](.planning/reference/action-authoring.md) |
@@ -35,7 +35,7 @@ Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email /
 | **Understand memory pruning** | [`.planning/reference/memory-and-pruning.md`](.planning/reference/memory-and-pruning.md) |
 | **Tune / query logging** | [`.planning/reference/observability.md`](.planning/reference/observability.md) + [`docs/logging.md`](docs/logging.md) |
 | **Find a config key** | [`.planning/reference/configuration-keys.md`](.planning/reference/configuration-keys.md) + [`docs/environment-keys-reference.md`](docs/environment-keys-reference.md) |
-| **Understand the SkillExecutive pattern** | [`docs/EXECUTIVE.md`](docs/EXECUTIVE.md) + ADRs [0012](.planning/adr/0012-skill-executive-architecture.md) (architecture), [0013](.planning/adr/0013-togglable-deterministic-turn-lock.md) (turn-lock), [0014](.planning/adr/0014-identity-on-agent-replyaction-egress.md) (identity/egress), [0015](.planning/adr/0015-skill-executive-configuration-surface.md) (config surface), [0016](.planning/adr/0016-model-gearing-light-heavy.md) (model gearing) |
+| **Understand the Orchestrator pattern** | [`docs/ORCHESTRATOR.md`](docs/ORCHESTRATOR.md) + ADRs [0012](.planning/adr/0012-skill-executive-architecture.md) (architecture), [0013](.planning/adr/0013-togglable-deterministic-turn-lock.md) (turn-lock), [0014](.planning/adr/0014-identity-on-agent-replyaction-egress.md) (identity/egress), [0015](.planning/adr/0015-skill-executive-configuration-surface.md) (config surface), [0016](.planning/adr/0016-model-gearing-light-heavy.md) (model gearing) |
 | **Run jvagent locally** | [`.planning/runbooks/local-dev.md`](.planning/runbooks/local-dev.md) |
 | **Add a new action end-to-end** | [`.planning/runbooks/add-action.md`](.planning/runbooks/add-action.md) |
 | **Send a proactive (agent-initiated) message** | [`docs/proactive-messages.md`](docs/proactive-messages.md) |
@@ -62,7 +62,7 @@ Source anchors:
 - Action base: [`jvagent/action/base.py:48`](jvagent/action/base.py)
 - InteractAction: [`jvagent/action/interact/base.py:32`](jvagent/action/interact/base.py)
 - InteractWalker: `jvagent/action/interact/interact_walker.py:50+`
-- SkillExecutive: [`jvagent/action/skill_executive/skill_executive_interact_action.py`](jvagent/action/skill_executive/skill_executive_interact_action.py) + supporting modules ([`continuation.py`](jvagent/action/skill_executive/continuation.py), [`tools.py`](jvagent/action/skill_executive/tools.py), [`core_tools.py`](jvagent/action/skill_executive/core_tools.py), [`catalog.py`](jvagent/action/skill_executive/catalog.py), [`skills.py`](jvagent/action/skill_executive/skills.py))
+- Orchestrator: [`jvagent/action/orchestrator/orchestrator_interact_action.py`](jvagent/action/orchestrator/orchestrator_interact_action.py) + supporting modules ([`continuation.py`](jvagent/action/orchestrator/continuation.py), [`tools.py`](jvagent/action/orchestrator/tools.py), [`core_tools.py`](jvagent/action/orchestrator/core_tools.py), [`catalog.py`](jvagent/action/orchestrator/catalog.py), [`skills.py`](jvagent/action/orchestrator/skills.py))
 - Conversation + pruning: `jvagent/memory/conversation.py:250-367`
 
 ---
@@ -111,7 +111,7 @@ jvagent app create --yes --dir ./my_app --app-id my_app --title "My App" \
 
 # Tests
 pytest tests/                        # all
-pytest tests/action/skill_executive/ -v  # one slice
+pytest tests/action/orchestrator/ -v  # one slice
 pre-commit run --all-files           # full lint pass
 
 # Lint / type
@@ -177,7 +177,7 @@ Full CLI reference in [`jvagent/cli/CLAUDE.md`](jvagent/cli/CLAUDE.md) and [`doc
 
 ## 9. Roadmap and in-flight work
 
-- SkillExecutive design + roadmap: [`.planning/adr/0012-skill-executive-architecture.md`](.planning/adr/0012-skill-executive-architecture.md), [`.planning/archive/EXECUTIVE-ROADMAP.md`](.planning/archive/EXECUTIVE-ROADMAP.md).
+- Orchestrator design + roadmap: [`.planning/adr/0012-skill-executive-architecture.md`](.planning/adr/0012-skill-executive-architecture.md), [`.planning/archive/EXECUTIVE-ROADMAP.md`](.planning/archive/EXECUTIVE-ROADMAP.md).
 - ADRs: [`.planning/adr/`](.planning/adr/).
 
 ---

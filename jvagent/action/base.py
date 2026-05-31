@@ -194,7 +194,7 @@ class Action(Node):
     async def get_responder(self) -> Optional["Action"]:
         """Resolve the agent's egress voice (ADR-0014).
 
-        Prefers ``ReplyAction`` (the SkillExecutive-native voice) when one is
+        Prefers ``ReplyAction`` (the Orchestrator-native voice) when one is
         enabled on the agent, else falls back to ``PersonaAction`` (Rails). Both
         expose ``reply``/``respond``/``get_tools`` so callers can voice output
         congruently regardless of which is installed. Returns ``None`` when

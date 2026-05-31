@@ -736,13 +736,13 @@ result = await archive_service.archive_error_logs(
 
 ## Executive Observability
 
-When an agent uses the **SkillExecutive** pattern (`jvagent/skill_executive` —
-see [`EXECUTIVE.md`](EXECUTIVE.md)), each turn appends an `executive_activation`
+When an agent uses the **Orchestrator** pattern (`jvagent/orchestrator` —
+see [`ORCHESTRATOR.md`](ORCHESTRATOR.md)), each turn appends an `orchestrator_activation`
 event to `Interaction.observability_metrics` alongside the per-`model_call`
 events. It is queryable through the standard `GET /logs/agents/{agent_id}`
 endpoint plus direct reads of the interaction node.
 
-### `executive_activation` event (observability_metrics)
+### `orchestrator_activation` event (observability_metrics)
 
 The orchestrator records one event per turn summarizing how it ran: the
 continuation mode, the tools it invoked (in order), ticks consumed, and how
@@ -755,7 +755,7 @@ Event shape:
 
 ```json
 {
-  "event_type": "executive_activation",
+  "event_type": "orchestrator_activation",
   "data": {
     "continuation_mode": "model_mediated",
     "flow_owner": null,

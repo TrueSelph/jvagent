@@ -29,7 +29,7 @@ _SEEN_WARNING_KEYS: Set[str] = set()
 _ALLOWED_TOP_LEVEL = {"agent", "version", "author", "jvagent", "context", "actions"}
 _ALLOWED_ACTION_ENTRY_KEYS = {"action", "context", "config"}
 _ORCHESTRATOR_ACTIONS = frozenset(
-    {"jvagent/skill_executive", "jvagent/interact_router"}
+    {"jvagent/orchestrator", "jvagent/interact_router"}
 )
 
 
@@ -131,7 +131,7 @@ def validate_agent_yaml(data: Dict[str, Any]) -> List[AgentYamlWarning]:
                 "actions",
                 f"Mutually exclusive orchestrators installed: {orchestrators}",
                 hint=(
-                    "Use either jvagent/skill_executive or jvagent/interact_router, "
+                    "Use either jvagent/orchestrator or jvagent/interact_router, "
                     "not both on the same agent."
                 ),
             )

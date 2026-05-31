@@ -29,7 +29,7 @@ Need to participate in the interact pipeline (run during a /interact call)?
 Need to integrate with an external service the LLM should call?
 └─ Subclass Action
    (jvagent/action/base.py:48)
-   - Implement get_tools() so the SkillExecutive tool surface picks it up
+   - Implement get_tools() so the Orchestrator tool surface picks it up
    - Optionally add channel-adapter behaviour via on_startup() + ResponseBus
 
 Need a vector store / web-search / STT / TTS?
@@ -108,20 +108,20 @@ package:
     terminates_when:                       # conditions that end the flow
       - "all questions answered"
     latency_class: quick                   # fast | quick | deliberate | long
-    routable_by_anchor: true               # may the SkillExecutive route to it by intent?
+    routable_by_anchor: true               # may the Orchestrator route to it by intent?
     pattern_orchestrator: false            # true ONLY for the -200 orchestrator
 ```
 
 ### Pattern compatibility
 
-The `manifest:` block surfaces metadata that is consumed by deployment patterns at runtime. It is informational for **Rails** and orchestration-relevant for the **SkillExecutive**:
+The `manifest:` block surfaces metadata that is consumed by deployment patterns at runtime. It is informational for **Rails** and orchestration-relevant for the **Orchestrator**:
 
 - `purpose` — the tool-surface summary the model sees when the IA is exposed as a routable tool.
-- `activates_on` — intent-explicit entry triggers; the SkillExecutive routes to this IA's tool when the turn matches one (first entry). Falls back to the static class `anchors` when no manifest is declared.
+- `activates_on` — intent-explicit entry triggers; the Orchestrator routes to this IA's tool when the turn matches one (first entry). Falls back to the static class `anchors` when no manifest is declared.
 - `terminates_when` — conditions that end the IA's flow (documentation/ops signal).
 - `latency_class` — `deliberate` / `long` warrant a transient acknowledgement on a slow tool call (`manifest.is_ack_eligible()`).
-- `routable_by_anchor` — whether the SkillExecutive may route to this IA by intent (`false` = chain-internal / engine tool).
-- `pattern_orchestrator` — `true` only for the single `-200` orchestrator (the SkillExecutive); excludes the IA from the routable tool surface.
+- `routable_by_anchor` — whether the Orchestrator may route to this IA by intent (`false` = chain-internal / engine tool).
+- `pattern_orchestrator` — `true` only for the single `-200` orchestrator (the Orchestrator); excludes the IA from the routable tool surface.
 
 If your action is meant for any pattern, list all that apply. The harness does not enforce this — it is consumed by tooling only.
 
@@ -132,7 +132,7 @@ Real examples to copy from:
 | Action | File | Notes |
 |---|---|---|
 | Persona | [`jvagent/action/persona/info.yaml`](../../jvagent/action/persona/info.yaml) | `singleton: true`, no deps |
-| SkillExecutive | [`jvagent/action/skill_executive/info.yaml`](../../jvagent/action/skill_executive/info.yaml) | `weight: -200`, `pattern_orchestrator: true`, unified tool surface |
+| Orchestrator | [`jvagent/action/orchestrator/info.yaml`](../../jvagent/action/orchestrator/info.yaml) | `weight: -200`, `pattern_orchestrator: true`, unified tool surface |
 | Router | [`jvagent/action/router/info.yaml`](../../jvagent/action/router/info.yaml) | `weight: -200`, no deps (Rails) |
 | Email | [`jvagent/action/email_action/info.yaml`](../../jvagent/action/email_action/info.yaml) | pip deps |
 
@@ -198,11 +198,11 @@ class MyActionClassName(Action):
         return {"healthy": self.enabled}
 
     def get_capabilities(self) -> List[str]:
-        # Strings shown on the SkillExecutive tool surface so the model knows you exist.
+        # Strings shown on the Orchestrator tool surface so the model knows you exist.
         return ["Send X via Y", "Query Z"]
 
     async def get_tools(self) -> List[Any]:
-        # Tools the SkillExecutive can call. Wrap callables in jvagent.tooling.tool.Tool.
+        # Tools the Orchestrator can call. Wrap callables in jvagent.tooling.tool.Tool.
         return []
 ```
 
@@ -210,7 +210,7 @@ class MyActionClassName(Action):
 
 IA dispatch falls into a handful of categories. Pick which one applies
 BEFORE writing the class — the choice drives which fields you set on the
-action and on its `manifest`. Under the SkillExecutive, a routable IA is
+action and on its `manifest`. Under the Orchestrator, a routable IA is
 **exposed to the loop as a tool** (its description = manifest `purpose` +
 entry triggers); routing is the model selecting that tool. There are no
 "centers" — every dispatch path is the one orchestrator over a unified tool
@@ -218,19 +218,19 @@ surface.
 
 | Category | Trigger | Authoring | Dispatched by |
 |---|---|---|---|
-| **Pattern orchestrator** | `manifest.pattern_orchestrator: true` | Set the flag; supply `purpose`. The SkillExecutive (`weight -200`) is the orchestrator today. Runs at its walker weight; excluded from the tool surface. | Walker weight. |
-| **Always-execute (sidecar)** | `always_execute=True` on the class | Set the attribute; supply `purpose`. The SkillExecutive runs it every turn via its curated walker queue. Use for telemetry, persona-directive deposits, audit logs. | SkillExecutive curated walker queue, in weight order. |
-| **Routable conversational** | `always_execute=False`; `manifest.routable_by_anchor` defaults to `True` | Supply `purpose` and 3–5 **intent-explicit** entry triggers via the manifest `activates_on` (`"User wants to enroll in training"`), not topic-explicit (`"something about training"`). The static class `anchors`/`get_anchors()` are the fallback when no manifest is declared. | SkillExecutive selects the IA's tool by intent. |
+| **Pattern orchestrator** | `manifest.pattern_orchestrator: true` | Set the flag; supply `purpose`. The Orchestrator (`weight -200`) is the orchestrator today. Runs at its walker weight; excluded from the tool surface. | Walker weight. |
+| **Always-execute (sidecar)** | `always_execute=True` on the class | Set the attribute; supply `purpose`. The Orchestrator runs it every turn via its curated walker queue. Use for telemetry, persona-directive deposits, audit logs. | Orchestrator curated walker queue, in weight order. |
+| **Routable conversational** | `always_execute=False`; `manifest.routable_by_anchor` defaults to `True` | Supply `purpose` and 3–5 **intent-explicit** entry triggers via the manifest `activates_on` (`"User wants to enroll in training"`), not topic-explicit (`"something about training"`). The static class `anchors`/`get_anchors()` are the fallback when no manifest is declared. | Orchestrator selects the IA's tool by intent. |
 | **Chain-internal** | `manifest.routable_by_anchor: false` | Set the flag in `info.yaml`. Skip triggers. Reachable only via explicit delegation from a parent IA (e.g. `confirm_payment` invoked by `checkout_interview`). | Parent IA delegate chain. |
-| **Synchronous (engine tool)** | `manifest.routable_by_anchor: false`; declare return-value description in `purpose` | Treat `purpose` as the tool surface the model sees. Keep the action small and idempotent — it returns to the loop rather than emitting a user response. | SkillExecutive engine tool call. |
-| **Turn-locking (flow)** | a routable IA that opens a flow task and doesn't finish it in one turn | Supply `activates_on` for first-entry routing and create/track a flow task (TaskStore) the IA owns until it completes. The flow owns subsequent turns via the SkillExecutive's deterministic continuation (`lock_active_flow: true`) or model-mediated continuation (`false`) — ADR-0013. No `turn_lock` manifest field. | First entry: SkillExecutive tool selection. Subsequent turns: flow continuation. |
+| **Synchronous (engine tool)** | `manifest.routable_by_anchor: false`; declare return-value description in `purpose` | Treat `purpose` as the tool surface the model sees. Keep the action small and idempotent — it returns to the loop rather than emitting a user response. | Orchestrator engine tool call. |
+| **Turn-locking (flow)** | a routable IA that opens a flow task and doesn't finish it in one turn | Supply `activates_on` for first-entry routing and create/track a flow task (TaskStore) the IA owns until it completes. The flow owns subsequent turns via the Orchestrator's deterministic continuation (`lock_active_flow: true`) or model-mediated continuation (`false`) — ADR-0013. No `turn_lock` manifest field. | First entry: Orchestrator tool selection. Subsequent turns: flow continuation. |
 
 Authoring requirements per category:
 
 - **Routable conversational AND Turn-locking (flow)** — entry triggers
   REQUIRED (`activates_on`, or the static `anchors` fallback). Without them
   the bootstrap WARNING fires at install time and the IA is invisible to the
-  SkillExecutive's intent routing for first entry. The `delegate_to_ia`
+  Orchestrator's intent routing for first entry. The `delegate_to_ia`
   recovery hatch can still reach them, but discoverability is materially worse.
 - **Pattern orchestrator / always-execute / chain-internal / synchronous**
   — triggers NOT required. These categories reach IAs through paths
@@ -241,7 +241,7 @@ Mixing categories (e.g. `always_execute=True` AND
 the first matching filter and the rest become inert.
 
 If you can't answer "which category am I?" up front, you're not ready
-to write the IA yet — read [`adr/0012-skill-executive-architecture.md`](../adr/0012-skill-executive-architecture.md) and [`../docs/EXECUTIVE.md`](../../docs/EXECUTIVE.md).
+to write the IA yet — read [`adr/0012-skill-executive-architecture.md`](../adr/0012-skill-executive-architecture.md) and [`../docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md).
 
 ### 5.2.1 `InteractAction` skeleton
 
@@ -396,7 +396,7 @@ Source: [`action/base.py:710-852`](../../jvagent/action/base.py).
 
 ---
 
-## 10. Tool exposure (SkillExecutive tool surface)
+## 10. Tool exposure (Orchestrator tool surface)
 
 If your action's capabilities should be callable by the LLM, override `get_tools()`:
 
@@ -424,7 +424,7 @@ async def _tool_do_thing(self, target: str) -> dict:
     return {"ok": True, "target": target}
 ```
 
-The SkillExecutive collects `get_tools()` results from every enabled action and registers them with an `action__` prefix on the unified tool surface. See [`../docs/EXECUTIVE.md`](../../docs/EXECUTIVE.md) for the pattern overview.
+The Orchestrator collects `get_tools()` results from every enabled action and registers them with an `action__` prefix on the unified tool surface. See [`../docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) for the pattern overview.
 
 ---
 

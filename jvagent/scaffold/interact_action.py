@@ -13,7 +13,7 @@ Six categories:
 2. **chain_internal** — invoked only via DELEGATE from a parent IA.
 3. **always_execute** — runs on every turn (intro, audit, telemetry).
 4. **synchronous** — engine tool returning a value to the model loop.
-5. **pattern_orchestrator** — weight-routed orchestrator (SkillExecutive).
+5. **pattern_orchestrator** — weight-routed orchestrator (Orchestrator).
 6. **multi_turn_flow** — turn-spanning flow (interview, signup); records a
    control-task on the conversation TaskStore while active.
 
@@ -96,7 +96,7 @@ CATEGORY_SPECS: Dict[str, CategorySpec] = {
         key=CATEGORY_PATTERN_ORCHESTRATOR,
         label="Pattern orchestrator",
         description=(
-            "Runs by walker weight (SkillExecutive). Only one orchestrator "
+            "Runs by walker weight (Orchestrator). Only one orchestrator "
             "per agent. Requires explicit confirmation — this is rare."
         ),
         requires_anchors=False,
