@@ -36,7 +36,18 @@ def build_catalog_tools(
         ]
         if not hits:
             return "(no tools matched)"
-        lines = [f"- {t.name}: {t.description}" for t in hits[:15]]
+        # Group by namespace prefix (``<ns>__tool``) so one find_tool call reveals
+        # a whole integration compactly instead of scattered lines.
+        groups: Dict[str, List[Any]] = {}
+        for t in hits[:30]:
+            ns = t.name.split("__", 1)[0] if "__" in t.name else ""
+            groups.setdefault(ns, []).append(t)
+        lines: List[str] = []
+        for ns in sorted(groups):
+            if ns:
+                lines.append(f"[{ns}]")
+            for t in groups[ns][:15]:
+                lines.append(f"- {t.name}: {t.description}")
         return "Matching tools (call load_tool to surface one):\n" + "\n".join(lines)
 
     async def _load(args: Dict[str, Any]) -> str:

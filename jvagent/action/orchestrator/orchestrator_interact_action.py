@@ -25,7 +25,7 @@ import inspect
 import logging
 import re
 import time
-from typing import TYPE_CHECKING, Any, Dict, FrozenSet, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
 from jvspatial.core.annotations import attribute
 
@@ -79,6 +79,57 @@ _STEER_EXEMPT = frozenset(
     {"reply", "respond", "find_tool", "load_tool", "find_skill", "use_skill"}
 )
 _NON_SUBSTANTIVE_TOOLS = _STEER_EXEMPT
+
+# Significant-token stopwords for the lightweight relevance gates (flow
+# anchoring + lean tool pre-surfacing). No model call — cheap token overlap.
+_STOPWORDS = frozenset(
+    {
+        "the",
+        "and",
+        "for",
+        "with",
+        "you",
+        "your",
+        "are",
+        "can",
+        "could",
+        "would",
+        "want",
+        "like",
+        "need",
+        "please",
+        "this",
+        "that",
+        "have",
+        "how",
+        "what",
+        "who",
+        "when",
+        "where",
+        "why",
+        "about",
+        "into",
+        "from",
+        "get",
+        "got",
+        "tell",
+        "let",
+        "all",
+        "any",
+        "out",
+        "use",
+        "now",
+    }
+)
+
+
+def _significant_tokens(s: str) -> set:
+    """Lowercase alnum tokens, len>2, minus stopwords — for relevance overlap."""
+    return {
+        w
+        for w in re.findall(r"[a-z0-9]+", (s or "").lower())
+        if len(w) > 2 and w not in _STOPWORDS
+    }
 
 
 def _text_candidate(decision: Dict[str, Any]) -> str:
@@ -292,6 +343,20 @@ class OrchestratorInteractAction(InteractAction):
         default=0.0,
         description="Per-tool-call timeout (seconds); 0 disables.",
     )
+    lean_tool_threshold: int = attribute(
+        default=15,
+        description="Lean tool surfacing engages when the count of hideable "
+        "capability tools (action + MCP tools) exceeds this — the long tail is "
+        "kept off the prompt and reached via find_tool, keeping each loop tick "
+        "small. 0 disables (always list every tool). Egress, meta-tools, core "
+        "tools and active-flow tools are always visible regardless.",
+    )
+    lean_presurface_k: int = attribute(
+        default=6,
+        description="In lean mode, how many capability tools to pre-surface each "
+        "turn by relevance to the user's message (token overlap, no model call), "
+        "so common single-intent turns need no find_tool round-trip.",
+    )
 
     # -- MCP tool servers (via jvagent/mcp MCPAction; ADR-0015) -------------
     tool_servers: Any = attribute(
@@ -423,6 +488,7 @@ class OrchestratorInteractAction(InteractAction):
         flow_owner: Optional[str],
         utterance: str,
         skill_docs: Optional[List[Any]] = None,
+        surface_meta: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, SkillTool]:
         """Build the full tool surface and populate ``visible`` (the prompt set).
 
@@ -432,9 +498,19 @@ class OrchestratorInteractAction(InteractAction):
         the active flow or the utterance is anchor-relevant. This keeps idle
         flow tools out of the prompt so a weak model can't spuriously trigger an
         interview on a greeting (the "always triggered" misroute).
+
+        **Lean surfacing** (ADR-0018): plain action tools and MCP tools — the
+        hideable *long tail* — are collected separately. When their count exceeds
+        ``lean_tool_threshold`` the prompt keeps only the relevance pre-surfaced
+        few (plus always-on egress/meta/core); the rest stay on the full surface,
+        reachable via ``find_tool``. Below the threshold every tool is listed
+        (unchanged). ``surface_meta["lean"]`` reports which path was taken.
         """
         agent = await self._safe_agent()
         tools: Dict[str, SkillTool] = {}
+        # Hideable capability tools (action + MCP). Surfaced per the lean policy
+        # applied after assembly; everything else is always visible.
+        longtail: Set[str] = set()
 
         # Core tools (always visible), gated by tool_tier.
         for t in build_core_tools(self, self.tool_tier):
@@ -501,9 +577,10 @@ class OrchestratorInteractAction(InteractAction):
                     if name == flow_owner or self._anchor_relevant(utterance, triggers):
                         visible.add(name)
                 else:
-                    # Plain capability tool (always visible).
+                    # Plain capability tool — hideable long tail (lean policy
+                    # decides visibility after assembly).
                     tools[name] = wrap_action_tool(tool)
-                    visible.add(name)
+                    longtail.add(name)
 
         # Egress reply/respond from the responder (ReplyAction preferred, PersonaAction
         # fallback; ADR-0014). Always visible; visitor-bound at dispatch.
@@ -554,7 +631,25 @@ class OrchestratorInteractAction(InteractAction):
                     channel=getattr(visitor, "channel", "default") or "default",
                     access_label=delegate_resource_label(name),
                 )
-                visible.add(name)
+                longtail.add(name)
+
+        # Lean surfacing policy (ADR-0018): below the threshold list every
+        # capability tool (unchanged); above it, keep only the relevance
+        # pre-surfaced few + any the user named — the rest stay reachable via
+        # find_tool. Always-on tools (core/egress/meta/flow) are untouched.
+        lean = bool(self.lean_tool_threshold) and len(longtail) > int(
+            self.lean_tool_threshold
+        )
+        if lean:
+            keep = self._presurface_tools(
+                utterance, longtail, tools, int(self.lean_presurface_k)
+            )
+            keep |= set(self._user_named_tools(utterance, longtail))
+            visible |= keep
+        else:
+            visible |= longtail
+        if surface_meta is not None:
+            surface_meta["lean"] = lean
 
         # Skills (progressive disclosure; meta-tools visible). Two specs: ``jv``
         # (SOP referencing action/IA tools) and ``claude`` (standard folders run
@@ -587,58 +682,45 @@ class OrchestratorInteractAction(InteractAction):
         """
         if not anchors:
             return False
-        stop = {
-            "the",
-            "and",
-            "for",
-            "with",
-            "you",
-            "your",
-            "are",
-            "can",
-            "could",
-            "would",
-            "want",
-            "like",
-            "need",
-            "please",
-            "this",
-            "that",
-            "have",
-            "how",
-            "what",
-            "who",
-            "when",
-            "where",
-            "why",
-            "about",
-            "into",
-            "from",
-            "get",
-            "got",
-            "tell",
-            "let",
-            "all",
-            "any",
-            "out",
-            "use",
-            "now",
-        }
-
-        def toks(s: str) -> set:
-            return {
-                w
-                for w in re.findall(r"[a-z0-9]+", (s or "").lower())
-                if len(w) > 2 and w not in stop
-            }
-
-        u = toks(utterance)
+        u = _significant_tokens(utterance)
         if not u:
             return False
         a: set = set()
         for anc in anchors:
-            a |= toks(anc)
+            a |= _significant_tokens(anc)
         return bool(u & a)
+
+    @staticmethod
+    def _presurface_tools(
+        utterance: str,
+        candidates: Set[str],
+        tools: Dict[str, "SkillTool"],
+        k: int,
+    ) -> Set[str]:
+        """Top-``k`` candidate tools by relevance to ``utterance`` (no model call).
+
+        Cheap token overlap between the user's significant words and each tool's
+        name + description (name split on ``__``/``_``). Returns at most ``k``
+        names with non-zero overlap; empty when nothing matches (the model then
+        discovers via find_tool). Runs once per turn, so it adds no loop cost.
+        """
+        if k <= 0 or not candidates:
+            return set()
+        u = _significant_tokens(utterance)
+        if not u:
+            return set()
+        scored: List[Tuple[int, str]] = []
+        for name in candidates:
+            tool = tools.get(name)
+            desc = getattr(tool, "description", "") if tool else ""
+            doc = _significant_tokens(
+                name.replace("__", " ").replace("_", " ") + " " + desc
+            )
+            score = len(u & doc)
+            if score > 0:
+                scored.append((score, name))
+        scored.sort(key=lambda x: (-x[0], x[1]))
+        return {name for _, name in scored[:k]}
 
     # ------------------------------------------------------------------
     # Loop
@@ -654,9 +736,11 @@ class OrchestratorInteractAction(InteractAction):
         # prompt only when relevant (active flow, or anchor-relevant utterance).
         flow_tool_names = await self._routable_flow_tool_names()
         flow_owner = active_flow_owner(visitor, flow_tool_names=flow_tool_names)
+        surface_meta: Dict[str, Any] = {}
         tools = await self._assemble_tools(
-            visitor, activated, visible, flow_owner, utterance, skill_docs
+            visitor, activated, visible, flow_owner, utterance, skill_docs, surface_meta
         )
+        lean_surface = bool(surface_meta.get("lean"))
         skill_names = {getattr(d, "name", "") for d in skill_docs}
         skills_section = render_skills_section(skill_docs)
 
@@ -764,6 +848,7 @@ class OrchestratorInteractAction(InteractAction):
                     flow_note,
                     skills_section,
                     gear=gear,
+                    lean=lean_surface,
                 )
                 if decision is None:
                     # A truncated/garbled decision (common when a verbose thinking
@@ -1564,6 +1649,7 @@ class OrchestratorInteractAction(InteractAction):
         skills_section: str = "",
         finalize: bool = False,
         gear: str = "heavy",
+        lean: bool = False,
     ) -> Optional[Dict[str, Any]]:
         """One model call → parsed JSON decision. Overridden/mocked in tests.
 
@@ -1584,7 +1670,7 @@ class OrchestratorInteractAction(InteractAction):
             return None
         system_prompt = self._compose_system_prompt(
             identity_section=await self._render_identity(),
-            tools_section=render_tools_section(tools),
+            tools_section=render_tools_section(tools, lean=lean),
             skills_section=skills_section or self.no_skills_text,
         )
         if flow_note:

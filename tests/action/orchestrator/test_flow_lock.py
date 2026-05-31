@@ -65,6 +65,7 @@ def _spy_model(monkeypatch):
         skills_section="",
         finalize=False,
         gear="heavy",
+        lean=False,
     ):
         calls["n"] += 1
         return {"action": "final", "answer": ""}

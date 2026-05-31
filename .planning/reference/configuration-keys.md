@@ -229,6 +229,22 @@ Only bites with a reasoning-capable model; the `gpt-4o-mini` default ignores rea
 | `tool_tier` | `standard` | core-tool tier: `minimal` \| `standard` \| `full` |
 | `tool_call_timeout` | `0` | per-tool-call timeout (s); `0` disables |
 | `block_raw_tool_invocation` | `false` | only surfaced (visible) tools are callable; hidden ones need `find_tool`/a skill |
+| `lean_tool_threshold` | `15` | lean tool surfacing (ADR-0018): when the count of hideable capability tools (action + MCP) exceeds this, the long tail is kept off the prompt and reached via `find_tool`. `0` disables (always list every tool). Egress/meta/core/active-flow tools are always visible |
+| `lean_presurface_k` | `6` | in lean mode, how many capability tools to pre-surface each turn by relevance to the user's message (token overlap, no model call), so common single-intent turns need no `find_tool` round-trip. **`0` = essentials-only** (see recipe below) |
+
+**Lean tool surfacing — recipes.** Capability tools = action `get_tools()` tools
++ MCP tools. The hideable long tail is what's gated; egress (`reply`/`respond`),
+the meta-tools (`find_tool`/`load_tool`/`find_skill`/`use_skill`), core tools, and
+an active-flow tool are **always** visible, and **skills stay fully listed**
+regardless (few in number; the "prefer a whole SOP" signal). Skills are not
+gated by these knobs.
+
+| Goal | Config |
+|------|--------|
+| **Default (recommended)** — small agents list everything; large agents auto-slim and pre-surface the relevant few | `lean_tool_threshold: 15`, `lean_presurface_k: 6` (defaults) |
+| **Always list every tool** (back-compat / tiny surfaces) | `lean_tool_threshold: 0` |
+| **Essentials-only on large surfaces** — show just egress/meta/core + skills; the model reaches every capability via `find_tool`. Smaller prompt, but costs a discovery round-trip on most turns and leans harder on weaker models — best for very large surfaces or strong models where prompt cost dominates | `lean_presurface_k: 0` (optionally `lean_tool_threshold: 1` to force it on for any surface) |
+| **More/less aggressive pre-surface** | raise/lower `lean_presurface_k` (e.g. `10` surfaces more, fewer discovery ticks, bigger prompt) |
 | `enable_transient_ack` | `false` | emit transient ack line(s) if the turn is slow. Armed only once the turn is **complex** — a skill is active, or it has made ≥ `escalate_after_tool_calls` substantive tool calls — so simple/reply-only turns never surface it |
 | `first_emit_timeout_ms` | `1200` | delay before the first transient ack fires (from when the turn arms) |
 | `ack_interval_ms` | `12000` | delay between subsequent acks |

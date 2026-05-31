@@ -70,6 +70,7 @@ those records covered patterns (bridge/helm/cockpit) that were removed.
 | [0015](adr/0015-skill-executive-configuration-surface.md) | Orchestrator configuration surface | Accepted |
 | [0016](adr/0016-model-gearing-light-heavy.md) | Model gearing: light completion + heavy reasoning | Accepted |
 | [0017](adr/0017-two-skill-specs-code-execution-substrate.md) | Two skill specs (JV + Claude) + multitenant code-execution substrate | Accepted |
+| [0018](adr/0018-lean-tool-surfacing.md) | Lean tool surfacing (threshold-auto progressive tool disclosure) | Accepted |
 
 ## archive/ — historical
 

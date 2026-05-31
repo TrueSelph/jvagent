@@ -96,6 +96,7 @@ def make_orchestrator(monkeypatch, publish_log):
             skills_section="",
             finalize=False,
             gear="heavy",
+            lean=False,
         ):
             return seq.pop(0) if seq else {"action": "final", "answer": ""}
 

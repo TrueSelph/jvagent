@@ -429,6 +429,7 @@ async def test_gearing_escalates_across_loop(
         skills_section="",
         finalize=False,
         gear="heavy",
+        lean=False,
     ):
         gears.append(gear)
         return seq.pop(0) if seq else {"action": "final", "answer": ""}
@@ -942,7 +943,14 @@ async def test_tool_call_timeout_surfaces_observation(
     ex.tool_call_timeout = 0.01
 
     async def _assemble(
-        self, visitor, activated, visible, flow_owner, utterance, skill_docs
+        self,
+        visitor,
+        activated,
+        visible,
+        flow_owner,
+        utterance,
+        skill_docs,
+        surface_meta=None,
     ):
         return {"slow_tool": slow_tool}
 
@@ -976,7 +984,14 @@ async def test_stream_internal_progress_emits_during_execute(
     monkeypatch.setattr(OrchestratorInteractAction, "_emit_thought", _emit)
 
     async def _assemble(
-        self, visitor, activated, visible, flow_owner, utterance, skill_docs
+        self,
+        visitor,
+        activated,
+        visible,
+        flow_owner,
+        utterance,
+        skill_docs,
+        surface_meta=None,
     ):
         return {"demo_tool": tool}
 

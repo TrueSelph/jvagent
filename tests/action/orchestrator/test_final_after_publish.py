@@ -73,7 +73,9 @@ async def test_final_closer_voiced_after_publishing_tool(
     monkeypatch.setattr(action, "_run_model", fake_model)
     monkeypatch.setattr(action, "_voice", _fake_voice)
 
-    async def _fake_assemble(v, activated, visible, flow_owner, utterance, skill_docs):
+    async def _fake_assemble(
+        v, activated, visible, flow_owner, utterance, skill_docs, surface_meta=None
+    ):
         visible.add("emit_catalog_message")
         return {"emit_catalog_message": emit}
 
@@ -108,7 +110,9 @@ async def test_final_answer_not_double_voiced_when_already_emitted(
     monkeypatch.setattr(action, "_run_model", fake_model)
     monkeypatch.setattr(action, "_voice", _fake_voice)
 
-    async def _fake_assemble(v, activated, visible, flow_owner, utterance, skill_docs):
+    async def _fake_assemble(
+        v, activated, visible, flow_owner, utterance, skill_docs, surface_meta=None
+    ):
         return {}
 
     monkeypatch.setattr(action, "_assemble_tools", _fake_assemble)

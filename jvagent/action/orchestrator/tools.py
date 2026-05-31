@@ -90,8 +90,13 @@ def wrap_action_tool(
     )
 
 
-def render_tools_section(tools: List[Any]) -> str:
-    """Render ``[{name, description}]`` (or objects) as a bulleted list."""
+def render_tools_section(tools: List[Any], *, lean: bool = False) -> str:
+    """Render ``[{name, description}]`` (or objects) as a bulleted list.
+
+    ``lean=True`` appends a one-line hint that this is a *partial* surface and
+    more tools are reachable via ``find_tool`` — used when lean surfacing keeps
+    the long tail off the prompt (ADR-0018).
+    """
     if not tools:
         return '(no tools available — answer directly with action "final")'
     lines: List[str] = []
@@ -103,7 +108,15 @@ def render_tools_section(tools: List[Any]) -> str:
             else getattr(t, "description", "")
         )
         lines.append(f"- {name}: {desc}" if desc else f"- {name}")
-    return "\n".join(lines)
+    body = "\n".join(lines)
+    if lean:
+        body += (
+            "\n\n(This is a partial list of your most relevant tools. More are "
+            "available — call find_tool(query) to discover them by capability, "
+            "e.g. find_tool('file'), find_tool('email'), find_tool('calendar'), "
+            "then call the tool it returns.)"
+        )
+    return body
 
 
 def render_observations_section(observations: List[Dict[str, Any]]) -> str:

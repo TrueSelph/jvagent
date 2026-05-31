@@ -74,6 +74,13 @@ visibility gate. First-entry and continuation are both model-judged.
 
 A **tool catalog** (mirroring the skills catalog) exposes `find_tool` / `load_tool` so the prompt carries a slim index rather than every tool schema — bounding prompt size as the surface grows. The skills meta-tools (`find_skill` / `use_skill`) work the same way for native SOP skills.
 
+**Lean tool surfacing (ADR-0018).** The catalog only helps if tools are actually hidden. When the count of hideable capability tools (action + MCP) exceeds `lean_tool_threshold` (default 15), the prompt lists only the always-on core (egress, meta-tools, core tools, an active-flow tool) plus a per-turn **relevance pre-surface** — the `lean_presurface_k` (default 6) tools whose name+description best overlap the user's message (cheap token match, no model call). The long tail stays on the full surface, reachable via `find_tool` (output grouped by namespace), and a one-line hint tells the model the list is partial. Below the threshold every tool is listed (unchanged); `lean_tool_threshold: 0` disables it. Dispatch already resolves against the full surface, so hiding a tool from the prompt never makes it uncallable — only the listing shrinks, keeping each tick small on large-surface agents.
+
+Two further knobs/notes:
+
+- **Skills are not gated** by lean surfacing — they're few and the listing is the proactive "prefer a whole SOP" nudge, so the skill index stays fully shown. `find_skill` remains for larger catalogs.
+- **Essentials-only** is reachable with `lean_presurface_k: 0` (optionally `lean_tool_threshold: 1` to force it on for any surface): the prompt then carries only egress, the meta-tools (`find_*`/`load_tool`/`use_skill`), core tools, an active-flow tool, and the skill index — every capability is reached via `find_tool`. It's the smallest prompt but pays a discovery round-trip on most turns and leans harder on weaker models, so it's an **option for very large surfaces / strong models**, not the default. The default relevance pre-surface removes that round-trip for the common single-intent turn, which is where a lean harness should be fast.
+
 ## Identity and egress (ADR-0014)
 
 Identity and voicing are split along two axes:
