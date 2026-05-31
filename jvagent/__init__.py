@@ -21,6 +21,14 @@ from jvagent._logging_compat import install as _install_logging_compat
 
 _install_logging_compat()
 
+# Register markdown extensions in ``mimetypes`` so jvspatial's storage MIME
+# allow-list accepts ``.md`` saves on hosts without libmagic or an OS mime
+# entry for markdown. Must run before any file-save path. See
+# ``jvagent/_mimetypes_compat.py``.
+from jvagent._mimetypes_compat import install as _install_mimetypes_compat  # noqa: E402
+
+_install_mimetypes_compat()
+
 from jvagent import embed  # noqa: E402  -- must follow logging shim install
 from jvagent.version import __version__  # noqa: E402
 
