@@ -130,8 +130,9 @@ export function useAuth() {
         }
 
         const response = await apiClient.login(credentials)
-        console.log('Login response received:', response)
-        console.log('Access token to store:', response.access_token)
+        if (import.meta.env.DEV) {
+          console.log('Login response received:', response)
+        }
 
         if (!response.access_token) {
           throw new Error('No access token received from server')
@@ -142,20 +143,17 @@ export function useAuth() {
         // Store refresh token if provided
         if (response.refresh_token) {
           setRefreshToken(response.refresh_token)
-          console.log('Refresh token stored')
-        } else {
+        } else if (import.meta.env.DEV) {
           console.warn('Login response did not include refresh_token')
         }
-
-        const storedToken = getToken()
-        console.log('Token stored, verification:', storedToken ? 'Success' : 'Failed')
-        console.log('Stored token preview:', storedToken ? storedToken.substring(0, 20) + '...' : 'None')
 
         // Store the logged-in user's account ID as user_id for chat system
         if (response.user?.id) {
           setUserId(response.user.id)
-          console.log('Stored user_id from login:', response.user.id)
-        } else {
+          if (import.meta.env.DEV) {
+            console.log('Stored user_id from login:', response.user.id)
+          }
+        } else if (import.meta.env.DEV) {
           console.warn('Login response did not include user.id')
         }
 

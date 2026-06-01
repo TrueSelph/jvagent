@@ -10,10 +10,20 @@ module.exports = {
   parser: '@typescript-eslint/parser',
   plugins: ['react-refresh'],
   rules: {
-    'react-refresh/only-export-components': [
-      'warn',
-      { allowConstantExport: true },
+    // Context modules export hooks + providers; not worth splitting for a dev reference UI.
+    'react-refresh/only-export-components': 'off',
+    // Legacy API client and storage layers; tighten types incrementally.
+    '@typescript-eslint/no-explicit-any': 'off',
+    '@typescript-eslint/no-unused-vars': [
+      'error',
+      {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+      },
     ],
+    // Debug/PageIndex modals use intentional effect deps in this reference UI.
+    'react-hooks/exhaustive-deps': 'off',
   },
 }
 

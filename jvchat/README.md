@@ -118,7 +118,10 @@ jvchat communicates with jvagent via REST API:
 - **GET /agents**: List available agents
 - **POST /agents/{agent_id}/interact**: Send messages (with SSE streaming)
 
-All requests require JWT authentication (token stored in localStorage).
+**Authentication:**
+
+- **Admin REST APIs** (agents, graph, PageIndex, memory admin, logs, etc.) send `Authorization: Bearer <access_token>`. Tokens are stored in `localStorage` after login.
+- **Interact (chat)** uses jvagent’s **anonymous** interact endpoint: no Bearer header. The client sends `user_id` (from login or JWT `sub`) and optional `session_id` in the JSON body. See the parent [jvagent README](../README.md) for server-side interact rate limits and access policy.
 
 ### App Graph (memory / structure viewer)
 
@@ -134,10 +137,19 @@ Graph **repair** still uses **POST /api/graph/repair** and then refreshes the vi
 ## Development Workflow
 
 1. Make sure your jvagent server is running
-2. Configure the server URL in `~/.jvchat/config.yaml`
+2. Set the server URL on the login screen (saved to `localStorage`) or via `VITE_JVAGENT_URL` for the default
 3. Run `npm run dev` to start the development server
 4. Open `http://localhost:5173` in your browser
 5. Login and start chatting!
+
+### Quality checks
+
+```bash
+cd jvagent/jvchat
+npm run lint
+npm test
+npm run build
+```
 
 ## Troubleshooting
 

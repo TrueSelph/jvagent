@@ -672,6 +672,18 @@ export function getUserSessionIds(userId?: string | null): string[] {
   }
 }
 
+/** Strip SSE debug payloads before localStorage (kept in React state for debug UI). */
+export function messagesForPersistence<T extends Record<string, unknown>>(
+  messages: T[],
+): T[] {
+  return messages.map((msg) => {
+    if (!msg || typeof msg !== 'object' || !('debugData' in msg)) return msg
+    const copy = { ...msg }
+    delete copy.debugData
+    return copy as T
+  })
+}
+
 export function getMessages(sessionId: string): any[] {
   if (typeof window === 'undefined') return []
   if (!sessionId) {
@@ -715,7 +727,7 @@ export function saveMessages(sessionId: string, messages: any[]): void {
   try {
     const data = localStorage.getItem(MESSAGES_KEY)
     const parsed = data ? JSON.parse(data) : {}
-    parsed[sessionId] = JSON.parse(JSON.stringify(messages))
+    parsed[sessionId] = JSON.parse(JSON.stringify(messagesForPersistence(messages)))
     safeSetItem(MESSAGES_KEY, JSON.stringify(parsed))
   } catch (error) {
     console.error('Failed to save messages:', error)

@@ -628,7 +628,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                       const indices = interactionGroups.get(m.interactionId) || []
                       const lastIndexForInteraction = indices.length > 0 ? indices[indices.length - 1] : -1
                       if (idx !== lastIndexForInteraction) {
-                        const { debugData, ...rest } = m
+                        const { debugData: _dbg, ...rest } = m
                         return rest
                       }
                     }
@@ -685,7 +685,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                       const indices = interactionGroups.get(m.interactionId) || []
                       const lastIndexForInteraction = indices.length > 0 ? indices[indices.length - 1] : -1
                       if (idx !== lastIndexForInteraction) {
-                        const { debugData, ...rest } = m
+                        const { debugData: _dbg, ...rest } = m
                         return rest
                       }
                     }
@@ -793,7 +793,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                       )
                       const lastMessageForInteraction = messagesForInteraction[messagesForInteraction.length - 1]
                       if (m.id !== lastMessageForInteraction?.id) {
-                        const { debugData, ...rest } = m
+                        const { debugData: _dbg, ...rest } = m
                         return rest
                       }
                     }
@@ -806,7 +806,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                   // Just ensure debugData is preserved if we have any assistant messages
                   updated = filtered.map((m) => {
                     if (m.role === 'assistant' && m.debugData) {
-                      const { debugData, ...rest } = m
+                      const { debugData: _dbg, ...rest } = m
                       return rest
                     }
                     return m
@@ -918,6 +918,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
         abortControllerRef.current = null
         stoppedByUserRef.current = false
         acceptStreamChunksRef.current = true
+        setIsStreaming(false)
       }
 
       return receivedSessionId

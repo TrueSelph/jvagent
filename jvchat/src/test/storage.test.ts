@@ -20,6 +20,7 @@ import {
   getMessages,
   saveMessages,
   deleteMessages,
+  messagesForPersistence,
   getSavedCredentials,
   addSavedCredential,
   removeSavedCredential,
@@ -211,6 +212,26 @@ describe("message storage", () => {
     const result = getMessages(sessionId);
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("msg-2");
+  });
+
+  it("does not persist debugData on saveMessages", () => {
+    saveMessages(sessionId, [
+      {
+        ...msg,
+        debugData: { type: "final", interaction: { id: "int-1" } },
+      },
+    ]);
+    const stored = getMessages(sessionId);
+    expect(stored[0].debugData).toBeUndefined();
+  });
+});
+
+describe("messagesForPersistence", () => {
+  it("strips debugData from message objects", () => {
+    const stripped = messagesForPersistence([
+      { id: "1", content: "hi", debugData: { secret: true } },
+    ]);
+    expect(stripped[0]).toEqual({ id: "1", content: "hi" });
   });
 });
 

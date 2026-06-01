@@ -364,4 +364,20 @@ describe("useStreaming thought handling", () => {
     const user = result.current.messages.find((m) => m.role === "user");
     expect(user?.attachments).toHaveLength(2);
   });
+
+  it("clears isStreaming when streamInteract rejects with Unauthorized", async () => {
+    mockStreamInteract.mockRejectedValue(new Error("Unauthorized"));
+
+    const { result } = renderHook(() => useStreaming("agent-1", "sess-auth"));
+
+    await act(async () => {
+      await result.current.sendMessage("hello");
+    });
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(false);
+    });
+
+    expect(result.current.error).toMatch(/unauthorized|failed/i);
+  });
 });

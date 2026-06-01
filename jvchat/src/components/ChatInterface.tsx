@@ -333,7 +333,6 @@ export function ChatInterface() {
         console.log("Starting new conversation");
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
   const handleSendMessage = async (

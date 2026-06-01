@@ -117,7 +117,7 @@ export async function prepareOutgoingAttachments(files: File[]): Promise<{
     const buf = await readBlobAsArrayBuffer(file)
     const base64 = arrayBufferToBase64(buf)
 
-    let mimeRaw = file.type?.trim() || ''
+    const mimeRaw = file.type?.trim() || ''
     const isImg = isImageMime(mimeRaw, file.name)
     const mimeForPayload = isImg
       ? normalizeMimeForImageEntry(mimeRaw, file.name)

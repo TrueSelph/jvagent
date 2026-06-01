@@ -678,7 +678,6 @@ class ApiClient {
     // Interact endpoint is anonymous - create a request without auth headers
     // Try /api/agents/{id}/interact first, fallback to /agents/{id}/interact, with baseURL fallbacks
     const response = await this._withFallback(async (baseURL) => {
-      try {
         // Use fetch directly to avoid axios interceptor adding auth headers
         const url = `${baseURL}/api/agents/${agentId}/interact`
         const fetchResponse = await fetch(url, {
@@ -736,9 +735,6 @@ class ApiClient {
         }
 
         return { data: await fetchResponse.json() }
-      } catch (err: any) {
-        throw err
-      }
     })
     // Handle both wrapped (success_response) and unwrapped responses
     if (response.data.success && response.data.data) {
@@ -766,7 +762,7 @@ class ApiClient {
         }
         const url = `${base}${prefix}/agents/${agentId}/interact`
         try {
-          let response = await fetch(url, {
+          const response = await fetch(url, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -804,6 +800,7 @@ class ApiClient {
           const decoder = new TextDecoder()
           let buffer = ''
 
+          // eslint-disable-next-line no-constant-condition -- SSE read until stream end
           while (true) {
             const { done, value } = await reader.read()
             if (done) break
@@ -846,7 +843,8 @@ class ApiClient {
             error instanceof Error &&
             (error.message === 'Unauthorized' || this.authFailureRedirectScheduled)
           ) {
-            return
+            // Propagate so callers clear streaming state; redirect already scheduled.
+            throw error
           }
           lastError = error
           const errorMessage =

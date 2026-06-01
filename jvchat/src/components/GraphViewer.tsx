@@ -499,10 +499,12 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
       let d3Mod: typeof import('d3')
       let graphviz: typeof import('d3-graphviz')['graphviz']
       try {
-        ;[d3Mod, { graphviz }] = await Promise.all([
+        const [d3Import, graphvizImport] = await Promise.all([
           import('d3'),
           import('d3-graphviz'),
         ])
+        d3Mod = d3Import
+        graphviz = graphvizImport.graphviz
       } catch (e) {
         if (!cancelled) {
           console.error('Failed to load graph diagram libraries:', e)

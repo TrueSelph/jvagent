@@ -159,12 +159,12 @@ export function MemoryViewer({ agentId, onClose }: MemoryViewerProps) {
               <div className={`prose ${dark ? "prose-invert" : ""} max-w-none`}>
                 <ReactMarkdown
                   components={{
-                    h1: ({node, ...props}) => <h1 className="text-xl font-bold mb-4 mt-6" {...props} />,
-                    h2: ({node, ...props}) => <h2 className="text-lg font-bold mb-3 mt-5" {...props} />,
-                    p: ({node, ...props}) => <p className="mb-4 leading-relaxed opacity-90" {...props} />,
-                    ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-4 space-y-1" {...props} />,
-                    li: ({node, ...props}) => <li className="opacity-90" {...props} />,
-                    code: ({node, ...props}) => (
+                    h1: ({ node: _node, ...props }) => <h1 className="text-xl font-bold mb-4 mt-6" {...props} />,
+                    h2: ({ node: _node, ...props }) => <h2 className="text-lg font-bold mb-3 mt-5" {...props} />,
+                    p: ({ node: _node, ...props }) => <p className="mb-4 leading-relaxed opacity-90" {...props} />,
+                    ul: ({ node: _node, ...props }) => <ul className="list-disc pl-5 mb-4 space-y-1" {...props} />,
+                    li: ({ node: _node, ...props }) => <li className="opacity-90" {...props} />,
+                    code: ({ node: _node, ...props }) => (
                       <code className={`px-1.5 py-0.5 rounded text-sm ${dark ? "bg-zinc-800 text-zinc-300" : "bg-zinc-100 text-zinc-600"}`} {...props} />
                     ),
                   }}
