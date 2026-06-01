@@ -85,6 +85,67 @@ _STEER_EXEMPT = frozenset(
 )
 _NON_SUBSTANTIVE_TOOLS = _STEER_EXEMPT
 
+# A ``requires-actions`` spec is an Action class name with an optional inline
+# version constraint, PEP 508-style: the comparison operator is the delimiter
+# (``PageIndexAction>=2.0``, ``WebFetchAction==1.4.0``, ``X>=1.0,<2.0``).
+_REQ_VERSION_OP = re.compile(r"[<>=!~]")
+
+
+def _parse_action_requirement(spec: str) -> Tuple[str, str]:
+    """Split a requires-actions spec into ``(action_type_name, constraint)``.
+
+    The constraint is "" when the spec is a bare class name. The first
+    comparison operator marks the boundary, so no separate delimiter is needed.
+    """
+    s = (spec or "").strip()
+    m = _REQ_VERSION_OP.search(s)
+    if not m:
+        return s, ""
+    return s[: m.start()].strip(), s[m.start() :].strip()
+
+
+def _version_satisfies(version: str, constraint: str) -> bool:
+    """Whether ``version`` (an Action's ``get_version()``) meets ``constraint``.
+
+    Uses PEP 440 specifier semantics. Fails closed when a constraint is given
+    but the action reports no/uncomparable version (can't prove the requirement
+    is met); an *unparseable constraint* (skill-author typo) degrades to
+    presence-only so one bad string doesn't silently nuke the skill.
+    """
+    if not constraint:
+        return True
+    try:
+        from packaging.specifiers import SpecifierSet
+        from packaging.version import Version
+    except Exception:  # pragma: no cover - packaging is a standard dependency
+        logger.warning(
+            "requires-actions: 'packaging' unavailable; cannot enforce version "
+            "constraint %r (treating as presence-only)",
+            constraint,
+        )
+        return True
+    try:
+        spec = SpecifierSet(constraint)
+    except Exception:
+        logger.warning(
+            "requires-actions: invalid version constraint %r; ignoring it",
+            constraint,
+        )
+        return True
+    if not version:
+        return False
+    try:
+        return spec.contains(Version(version), prereleases=True)
+    except Exception:
+        logger.warning(
+            "requires-actions: action version %r is not comparable to %r; "
+            "failing the gate",
+            version,
+            constraint,
+        )
+        return False
+
+
 # Significant-token stopwords for the lightweight relevance gates (flow
 # anchoring + lean tool pre-surfacing). No model call — cheap token overlap.
 _STOPWORDS = frozenset(
@@ -509,36 +570,60 @@ class OrchestratorInteractAction(InteractAction):
             return None
 
     async def _enforce_required_actions(self, docs: List[Any]) -> List[Any]:
-        """Drop skills whose ``requires-actions`` don't all resolve (hard gate).
+        """Drop skills whose ``requires-actions`` aren't satisfied (hard gate).
 
-        Each distinct required Action *type* is resolved once (enabled-only,
-        O(1) cached). A skill is kept only when every type it declares is
-        present; otherwise it's hidden from the whole surface (list, find_skill,
-        use_skill, always-active pinning) so the model never sees a skill whose
-        dependencies are missing. Skills with no ``requires-actions`` pass
-        through unchanged.
+        Each spec is an Action class name with an optional inline PEP 508-style
+        version constraint (the comparison operator is the delimiter), e.g.
+        ``CodeExecutionAction``, ``PageIndexAction>=2.0``, ``WebFetchAction==1.4.0``.
+        A skill is kept only when every spec it declares is met — the Action
+        type resolves (enabled-only, O(1) cached) AND, when a constraint is
+        given, the resolved Action's ``get_version()`` satisfies it. Otherwise
+        the skill is hidden from the whole surface (list, find_skill, use_skill,
+        always-active pinning) so the model never sees a skill it can't run.
+        Skills with no ``requires-actions`` pass through unchanged.
         """
-        required: Set[str] = set()
+        specs_by_doc: List[Tuple[Any, List[Tuple[str, str]]]] = []
+        type_names: Set[str] = set()
         for d in docs:
-            required.update(getattr(d, "requires_actions", ()) or ())
-        if not required:
+            reqs = [
+                _parse_action_requirement(s)
+                for s in (getattr(d, "requires_actions", ()) or ())
+            ]
+            specs_by_doc.append((d, reqs))
+            type_names.update(name for name, _ in reqs if name)
+        if not type_names:
             return docs
 
-        present: Set[str] = set()
-        for type_name in required:
-            if await self._resolve_action(type_name) is not None:
-                present.add(type_name)
+        # Resolve each distinct type once; cache versions for constrained ones.
+        actions: Dict[str, Any] = {}
+        versions: Dict[str, str] = {}
+        for name in type_names:
+            action = await self._resolve_action(name)
+            actions[name] = action
+            if action is not None:
+                try:
+                    versions[name] = (await action.get_version()) or ""
+                except Exception:
+                    versions[name] = ""
 
         kept: List[Any] = []
-        for d in docs:
-            needed = set(getattr(d, "requires_actions", ()) or ())
-            missing = needed - present
-            if missing:
+        for d, reqs in specs_by_doc:
+            unmet: List[str] = []
+            for name, constraint in reqs:
+                if not name:
+                    continue
+                if actions.get(name) is None:
+                    unmet.append(f"{name}{constraint} (not available)")
+                elif constraint and not _version_satisfies(
+                    versions.get(name, ""), constraint
+                ):
+                    have = versions.get(name) or "unknown"
+                    unmet.append(f"{name}{constraint} (have {have})")
+            if unmet:
                 logger.info(
-                    "orchestrator: skill %r hidden — required actions not "
-                    "available: %s",
+                    "orchestrator: skill %r hidden — unmet requires-actions: %s",
                     getattr(d, "name", "?"),
-                    ", ".join(sorted(missing)),
+                    ", ".join(unmet),
                 )
                 continue
             kept.append(d)

@@ -49,9 +49,8 @@ metadata:
 | `description` | both | Drives discovery; third person; what it does + when to use it. |
 | `spec` | both | `jv` (default) or `claude`. Unknown values fall back to `jv`. |
 | `allowed-tools` | mostly JV | Runtime tool names the SOP uses (e.g. `gmail__send_email`, `web_fetch__fetch`, `code_execution__bash`). Surfaced into the visible set on activation. |
-| `requires-actions` | JV | Action types that must resolve (enabled) on the agent. **Hard gate, enforced:** if any declared type is absent, the orchestrator hides the skill entirely for that turn — it is not listed, found, activated, or always-active-pinned. |
+| `requires-actions` | JV | Action class names that must resolve (enabled) on the agent, each with an **optional inline version constraint** (PEP 508-style — the comparison operator is the delimiter): `CodeExecutionAction`, `PageIndexAction>=2.0`, `WebFetchAction==1.4.0`, `GmailAction>=1.0,<2.0`. **Hard gate, enforced:** if any declared type is absent — or its `get_version()` doesn't satisfy the constraint — the orchestrator hides the skill entirely for that turn (not listed, found, activated, or always-active-pinned). Replaces the old `requires-action-versions` map. |
 | `requires-jvagent` | JV | Framework version constraint, checked at preflight. |
-| `requires-action-versions` | JV | `namespace/label` → version constraint. |
 | `license`, `metadata` | both | Claude-standard fields. `metadata.version` / `metadata.tags` for tracking + discovery cues. |
 
 (jvagent also parses chaining/dispatch extensions — `exports`, `imports`,

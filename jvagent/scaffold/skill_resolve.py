@@ -58,7 +58,14 @@ def _normalize_allowed_tools(raw_value: Any, skill_path: Path) -> List[str]:
 
 
 def _normalize_requires_actions(raw_value: Any, skill_path: Path) -> List[str]:
-    """Normalize requires-actions into a list of non-empty action type names."""
+    """Normalize requires-actions into a list of non-empty requirement specs.
+
+    Each spec is an Action class name with an optional inline PEP 508-style
+    version constraint (the comparison operator is the delimiter), e.g.
+    ``CodeExecutionAction``, ``PageIndexAction>=2.0``, ``WebFetchAction==1.4.0``,
+    ``GmailAction>=1.0,<2.0``. Specs are kept verbatim here; the orchestrator
+    parses name/constraint and enforces both presence and version at assembly.
+    """
     if raw_value is None:
         return []
     if isinstance(raw_value, str):
@@ -77,28 +84,6 @@ def _normalize_requires_actions(raw_value: Any, skill_path: Path) -> List[str]:
         type(raw_value).__name__,
     )
     return []
-
-
-def _normalize_requires_action_versions(
-    raw_value: Any, skill_path: Path
-) -> Dict[str, str]:
-    """Normalize requires-action-versions to ``namespace/label`` -> constraint string."""
-    if raw_value is None:
-        return {}
-    if isinstance(raw_value, dict):
-        out: Dict[str, str] = {}
-        for k, v in raw_value.items():
-            ks = str(k).strip()
-            vs = str(v).strip()
-            if ks and vs:
-                out[ks] = vs
-        return out
-    logger.warning(
-        "Skill bundle %s has invalid requires-action-versions type: %s",
-        skill_path,
-        type(raw_value).__name__,
-    )
-    return {}
 
 
 def _normalize_string_list(
@@ -225,9 +210,6 @@ def parse_skill_bundle(
         frontmatter.get("requires-actions"), skill_file
     )
     requires_jvagent = str(frontmatter.get("requires-jvagent") or "").strip()
-    requires_action_versions = _normalize_requires_action_versions(
-        frontmatter.get("requires-action-versions"), skill_file
-    )
     verbatim_final = bool(frontmatter.get("verbatim-final"))
     always_active = bool(frontmatter.get("always-active"))
     # Skill spec: ``jv`` (default — an SOP that references action/IA tools) or
@@ -275,7 +257,6 @@ def parse_skill_bundle(
         "allowed_tools": allowed_tools,
         "requires_actions": requires_actions,
         "requires_jvagent": requires_jvagent,
-        "requires_action_versions": requires_action_versions,
         "verbatim_final": verbatim_final,
         "always_active": always_active,
         "spec": spec,
