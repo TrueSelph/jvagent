@@ -262,9 +262,16 @@ async def _graph_to_tree(
     )
 
     async def _node_to_dict(node: DocumentNode) -> Optional[Dict[str, Any]]:
-        if only_enabled and not node_enabled(node):
-            return None
         children = await node.outgoing(node=DocumentNode, edge=DocumentContentEdge)
+        child_parts = []
+        if children:
+            child_parts = await asyncio.gather(*(_node_to_dict(c) for c in children))
+            child_parts = [c for c in child_parts if c is not None]
+
+        is_enabled = node_enabled(node)
+        if only_enabled and not is_enabled and not child_parts:
+            return None
+
         text_body = node.text or ""
         text_stripped = text_body.strip()
         summary_fields = node.summary or node.prefix_summary or ""
@@ -293,9 +300,8 @@ async def _graph_to_tree(
                 if len(prefix_val) > max_chars
                 else prefix_val
             )
-        if children:
-            child_parts = await asyncio.gather(*(_node_to_dict(c) for c in children))
-            d["nodes"] = [c for c in child_parts if c is not None]
+        if child_parts:
+            d["nodes"] = child_parts
         return d
 
     children = await root.outgoing(node=DocumentNode, edge=DocumentContentEdge)
