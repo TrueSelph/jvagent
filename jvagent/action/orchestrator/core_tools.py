@@ -134,6 +134,72 @@ def build_plan_tool(action: Any, visitor: Any) -> SkillTool:
     return _plan_tool(action, visitor)
 
 
+def build_artifact_tools(action: Any, visitor: Any) -> List[SkillTool]:
+    """``list_artifacts`` / ``get_artifact`` over the conversation's artifact
+    registry (ADR-0021). Visitor-bound for conversation access; the model uses
+    them to back-reference prior artifacts (e.g. a past image interpretation)
+    without re-upload. Returns [] when the conversation has no artifact support.
+    """
+    conversation = getattr(visitor, "conversation", None)
+    if conversation is None or not hasattr(conversation, "get_artifacts"):
+        return []
+
+    async def _list(args: Dict[str, Any]) -> str:
+        source = (args or {}).get("source") or None
+        tag = (args or {}).get("tag") or None
+        try:
+            items = await conversation.get_artifacts(
+                source=source, tags=[tag] if tag else None
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            return f"(list_artifacts error: {exc})"
+        if not items:
+            return "(no artifacts)"
+        lines = []
+        for a in items:
+            row = a.index_row()
+            lines.append(
+                f"- {row['name']} [{row['source']}] "
+                f"tags={row['tags']}: {row['summary']}"
+            )
+        return "Conversation artifacts (call get_artifact to read one):\n" + "\n".join(
+            lines
+        )
+
+    async def _get(args: Dict[str, Any]) -> str:
+        name = ((args or {}).get("name") or "").strip()
+        if not name:
+            return "(get_artifact requires a 'name')"
+        try:
+            items = await conversation.get_artifacts(name=name)
+        except Exception as exc:  # pragma: no cover - defensive
+            return f"(get_artifact error: {exc})"
+        if not items:
+            return f"(no such artifact: {name})"
+        a = items[0]
+        return f"{a.name} [{a.source}]:\n{a.data}"
+
+    return [
+        SkillTool(
+            name="list_artifacts",
+            description=(
+                "List this conversation's artifacts (names + summaries only). "
+                "Optional args: source (e.g. 'vision'), tag. Then call "
+                "get_artifact to read the full content of one."
+            ),
+            run=_list,
+        ),
+        SkillTool(
+            name="get_artifact",
+            description=(
+                "Read the full content of a conversation artifact by its name "
+                '(from list_artifacts). Args: {"name": "<artifact name>"}.'
+            ),
+            run=_get,
+        ),
+    ]
+
+
 # Each core tool's minimum tier. minimal < standard < full; a tool is included
 # when the configured tier is at least its minimum.
 _TIER_RANK = {"minimal": 0, "standard": 1, "full": 2}
@@ -155,4 +221,4 @@ def build_core_tools(action: Any, tier: str = "standard") -> List[SkillTool]:
     ]
 
 
-__all__ = ["build_core_tools", "build_plan_tool"]
+__all__ = ["build_core_tools", "build_plan_tool", "build_artifact_tools"]

@@ -1,13 +1,19 @@
 """build_core_tools tier gating (minimal | standard | full) and the
-get_current_datetime tool's runtime output."""
+get_current_datetime tool's runtime output; build_artifact_tools surface."""
 
 from __future__ import annotations
 
+import uuid
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
-from jvagent.action.orchestrator.core_tools import build_core_tools
+from jvagent.action.orchestrator.core_tools import (
+    build_artifact_tools,
+    build_core_tools,
+)
+from jvagent.memory.conversation import Conversation
 
 pytestmark = pytest.mark.asyncio
 
@@ -36,3 +42,43 @@ async def test_datetime_tool_runs():
     out = await tools["get_current_datetime"].run({})
     # Returns a non-empty string mentioning the year (ISO-ish datetime).
     assert isinstance(out, str) and out.strip()
+
+
+async def test_artifact_tools_absent_without_conversation():
+    # No conversation on the visitor -> no artifact tools surfaced.
+    assert build_artifact_tools(MagicMock(), SimpleNamespace(conversation=None)) == []
+
+
+async def test_artifact_tools_list_and_get(test_db):
+    conv = await Conversation.create(
+        session_id=f"art-{uuid.uuid4().hex[:12]}", user_id="u", channel="default"
+    )
+    try:
+        i1 = await conv.add_interaction(utterance="hi")
+        await conv.add_artifact(
+            i1,
+            name="vis1",
+            data="a red car on a hill",
+            summary="red car",
+            source="vision",
+            tags=["image"],
+        )
+        tools = {
+            t.name: t
+            for t in build_artifact_tools(
+                MagicMock(), SimpleNamespace(conversation=conv)
+            )
+        }
+        assert set(tools) == {"list_artifacts", "get_artifact"}
+
+        listing = await tools["list_artifacts"].run({})
+        assert "vis1" in listing and "red car" in listing
+        # summary-only listing must not leak the full payload
+        assert "on a hill" not in listing
+
+        full = await tools["get_artifact"].run({"name": "vis1"})
+        assert "a red car on a hill" in full
+        assert "(no such artifact" in await tools["get_artifact"].run({"name": "nope"})
+        assert "requires a 'name'" in await tools["get_artifact"].run({})
+    finally:
+        await conv.delete(cascade=True)

@@ -43,7 +43,11 @@ from jvagent.action.orchestrator.continuation import (
     active_plan,
     plan_resume_note,
 )
-from jvagent.action.orchestrator.core_tools import build_core_tools, build_plan_tool
+from jvagent.action.orchestrator.core_tools import (
+    build_artifact_tools,
+    build_core_tools,
+    build_plan_tool,
+)
 from jvagent.action.orchestrator.prompts import (
     FINALIZE_PROMPT,
     FLOW_IN_PROGRESS_PROMPT,
@@ -771,6 +775,15 @@ class OrchestratorInteractAction(InteractAction):
             plan_tool = build_plan_tool(self, visitor)
             tools[plan_tool.name] = plan_tool
             visible.add(plan_tool.name)
+
+        # Artifact back-reference tools (ADR-0021). Surfaced with vision (its
+        # only producer today) so the model can list/read prior artifacts (e.g.
+        # a past image interpretation) without re-upload; visitor-bound for
+        # conversation access.
+        if self.vision:
+            for t in build_artifact_tools(self, visitor):
+                tools[t.name] = t
+                visible.add(t.name)
 
         actions = await self._enabled_actions(agent)
         from jvagent.action.persona.persona_action import PersonaAction
