@@ -25,8 +25,28 @@ Use `/api/agents/{agent_id}/memory/repair` only when you need to target a single
 Memory (Node)
     └── [edge] ──► User (Node)
                       └── [edge] ──► Conversation (Node)
-                                          └── [edge] ──► Interaction (Node)
+                                          ├── [edge] ──► Interaction (Node)
+                                          │                   └── [edge] ──► Artifact (Node)*
+                                          └── [edge] ──► Artifacts (Node, branch)
+                                                              └── [edge] ──► Artifact (Node)
 ```
+
+\* An `Interaction ──► Artifact` edge marks that interaction as a *producer* of the
+artifact (used for refcounted pruning). The same `Artifact` is also a child of the
+conversation's single `Artifacts` branch node, which is what `get_artifacts()` queries.
+
+### Artifacts (ADR-0021)
+
+A **conversation-scoped artifact registry** stores durable, queryable side-products of
+a turn — today, vision interpretations of uploaded images, so a later turn can
+back-reference an image without re-upload. Artifacts hang off a single `Artifacts`
+branch node under the `Conversation`; each `Artifact` is also connected from the
+`Interaction`(s) that produced it.
+
+- **Write**: `conversation.add_artifact(interaction, *, name, data, summary=None, tags=None, source="", kind="text", pinned=False)` — creates the artifact, wires it under the `Artifacts` branch and from the producing `interaction`.
+- **Query**: `conversation.get_artifacts(*, name=None, source=None, tags=None)` — returns full `Artifact` nodes; `artifact.index_row()` is a payload-free summary row (name/source/tags/summary) for cheap listing.
+- **Refcounted pruning**: when an interaction is pruned, `_reap_artifacts_for` deletes each artifact it produced **only if no other (surviving) interaction still produces it** and it is not `pinned`. Toggle with `conversation.prune_artifacts_with_interaction` (default `True`).
+- **Tool surface**: the orchestrator exposes `list_artifacts` / `get_artifact` (gated by its `vision` attribute) so the model can read prior artifacts back. See [actions-catalog](../../.planning/reference/actions-catalog.md) (VisionAction) and ADR-0021.
 
 ## Key APIs
 
@@ -43,7 +63,7 @@ Memory (Node)
 - **Parameters**: Access via `interaction.parameters`. Use `get_unexecuted_parameters()` / `get_executed_parameters()` for filtered views.
 - **Events**: `interaction.events`, `get_events_by_action()`
 - **Response**: `set_response()`, `has_response()`, `close_interaction()`
-- **Image interpretation**: `image_interpretation` — Extensive AI description of attached images (generated behind the scenes when vision is enabled). Used for follow-up questions without re-sending images.
+- **Vision**: image interpretations are no longer stored on the interaction. When vision is enabled the orchestrator runs a pre-loop reflex (VisionAction) and stores the description as a conversation **artifact** (see Artifacts above), reachable for follow-ups without re-sending images. (ADR-0021.)
 - **Routing (from InteractRouter)**: `interpretation`, `anchors`, `intent_type`, `response_posture` (RESPOND | SUPPRESS | DEFER)
 
 ### User

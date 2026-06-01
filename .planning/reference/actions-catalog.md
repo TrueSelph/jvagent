@@ -145,6 +145,7 @@ See [`../docs/task-tracking.md`](../../docs/task-tracking.md).
 |---|---|---|---|
 | jvagent/reply | `ReplyAction` | `Action` | Orchestrator-native egress (ADR-0014). Tools `reply` (slim publish), `respond` (identity-voiced single model call), `publish`. Identity comes from the Agent (`alias` + `role`) |
 | jvagent/persona | `PersonaAction` | `Action` | Apply agent personality; aggregate capabilities; respond() entry-point. Legacy/Rails responder (Orchestrator uses `jvagent/reply`) |
+| jvagent/vision | `VisionAction` | `Action` | Multimodal image interpretation with its **own** model (`model_action_type`/`model`). Reads `visitor.data["image_urls"]`, produces a text description. The Orchestrator runs it as a deterministic pre-loop reflex (gated by `vision: true`) and stores the result as a conversation **artifact** (queryable later via `list_artifacts`/`get_artifact`) — no re-upload needed for follow-ups. Also exposes a `interpret_images` tool. Suppress per-turn with `visitor.data["image_interpretation"] = False`. ADR-0021 |
 | jvagent/avatar_action | `AvatarAction` | `Action` | Store/retrieve base64 profile images |
 | jvagent/video_generation | `HeygenVideoAction` | `Action` | Heygen AI video |
 
