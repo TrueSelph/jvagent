@@ -2,6 +2,7 @@
 
 import logging
 import os
+import secrets
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
@@ -114,6 +115,35 @@ class Conversation(DeferredSaveMixin, Node):
             "solely produced — refcounted; pinned artifacts are exempt (ADR-0021)."
         ),
     )
+    token_secret: str = attribute(
+        default="",
+        description=(
+            "Per-conversation secret bound into anonymous session capability "
+            "tokens (ADR-0020). Rotating it revokes any outstanding token for "
+            "this conversation. Empty until the first token is minted; backfilled "
+            "lazily on resume for pre-existing conversations."
+        ),
+    )
+
+    def ensure_token_secret(self) -> str:
+        """Return this conversation's token secret, minting one if absent.
+
+        Used by the session-token guard (ADR-0020) to bind a capability token to
+        this specific conversation. Caller is responsible for ``save()`` — this
+        only mutates the in-memory attribute so the mint + persist happen in the
+        same unit of work as conversation creation/resume.
+        """
+        if not self.token_secret:
+            self.token_secret = secrets.token_urlsafe(32)
+        return self.token_secret
+
+    def rotate_token_secret(self) -> str:
+        """Rotate the token secret, invalidating outstanding tokens (ADR-0020).
+
+        Caller is responsible for ``save()``.
+        """
+        self.token_secret = secrets.token_urlsafe(32)
+        return self.token_secret
 
     async def get_agent(self) -> Optional[Any]:
         """Get the Agent node this Conversation belongs to.

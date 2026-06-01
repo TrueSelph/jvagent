@@ -14,6 +14,7 @@ from jvspatial import create_task, flush_deferred_entities
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import (
+    AuthenticationError,
     JVSpatialAPIException,
     RateLimitError,
     ResourceNotFoundError,
@@ -27,6 +28,14 @@ from jvagent.action.interact.rate_limiter import (
     initialize_rate_limiter,
 )
 from jvagent.action.interact.response_builder import build_interact_response
+from jvagent.action.interact.session_token import (
+    MODE_LOG,
+    MODE_OFF,
+    auth_mode,
+    is_web_channel,
+    mint_session_token,
+    resolve_interact_identity,
+)
 from jvagent.action.response.streaming import create_sse_response, format_sse_chunk
 from jvagent.core.agent import Agent
 from jvagent.core.channel import normalize_channel
@@ -405,6 +414,37 @@ def _initialize_rate_limiter_from_config() -> None:
 _initialize_rate_limiter_from_config()
 
 
+async def _issue_session_token(
+    walker: "InteractWalker", agent_id: str
+) -> Optional[str]:
+    """Mint/refresh a Mode B session token for a resolved web conversation.
+
+    ADR-0020: ensures the conversation has a ``token_secret`` (lazy backfill for
+    pre-existing conversations) and returns a fresh capability token bound to it.
+    The secret mutation rides the request's deferred-entity flush. Returns
+    ``None`` in ``off`` mode, for non-web channels, or when no signing secret is
+    configured.
+    """
+    if auth_mode() == MODE_OFF:
+        return None
+    conversation = getattr(walker, "conversation", None)
+    if conversation is None or not is_web_channel(
+        getattr(conversation, "channel", None)
+    ):
+        return None
+    try:
+        secret = conversation.ensure_token_secret()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("session token secret provisioning failed: %s", exc)
+        return None
+    return mint_session_token(
+        agent_id=agent_id,
+        session_id=walker.session_id or "",
+        user_id=walker.user_id or "",
+        token_secret=secret,
+    )
+
+
 @endpoint(
     "/agents/{agent_id}/interact",
     methods=["POST"],
@@ -601,6 +641,38 @@ async def interact_endpoint(
                     details={"utterance": utterance},
                 )
 
+            # Identity guard (ADR-0020): resolve Mode A bearer / Mode B session
+            # token BEFORE spawning the walker (and before any LLM cost). In
+            # `off` mode this is a no-op; in `log` mode denials are observed but
+            # never enforced; in `required` mode a denial is a 401.
+            async with profile.measure("identity_guard"):
+                identity = await resolve_interact_identity(
+                    request=request,
+                    agent=agent,
+                    agent_id=agent_id,
+                    session_id=session_id,
+                    user_id=user_id,
+                )
+            if identity.reject:
+                raise AuthenticationError(
+                    message="Session authentication is required or the "
+                    "supplied credentials are invalid.",
+                    details={"reason": identity.reason},
+                )
+            if identity.denial and identity.mode == MODE_LOG:
+                logger.warning(
+                    "interact_auth_would_reject",
+                    extra={
+                        "agent_id": agent_id,
+                        "reason": identity.reason,
+                        "mode": identity.mode,
+                        "via": identity.via,
+                    },
+                )
+            # A proven identity (Mode A bearer / Mode B token) overrides any
+            # client-asserted user_id; otherwise fall back to the client value.
+            effective_user_id = identity.verified_user_id or user_id
+
             # Create walker
             walker = InteractWalker(
                 agent_id=agent_id,
@@ -608,7 +680,7 @@ async def interact_endpoint(
                 channel=channel,
                 data=data or {},
                 session_id=session_id,
-                user_id=user_id,
+                user_id=effective_user_id,
                 stream=stream,
             )
 
@@ -720,6 +792,13 @@ async def interact_endpoint(
                         interaction=interaction,
                         report=report,
                     )
+
+                # Mint/refresh the Mode B session capability token (ADR-0020) so
+                # the client can resume this conversation on the next call. No-op
+                # in `off` mode / non-web channels.
+                session_token = await _issue_session_token(walker, agent_id)
+                if session_token and isinstance(result, dict):
+                    result["session_token"] = session_token
 
                 # Fire background actions (await in Lambda to ensure it finishes before the execution freezes)
                 if walker.background_actions:
@@ -871,15 +950,21 @@ async def _stream_interaction(
         interaction.streamed = True
         # Deferred save mode is already enabled, no need to save here
 
+        # Mint/refresh the Mode B session capability token (ADR-0020) and deliver
+        # it in-stream — new streaming sessions have no resolved session_id at
+        # response-header time, so the client reads both from the start chunk.
+        session_token = await _issue_session_token(walker, walker.agent_id or "")
+
         # Send initial message
-        yield format_sse_chunk(
-            {
-                "type": "start",
-                "interaction_id": interaction.id,
-                "session_id": walker.session_id or "",
-                "user_id": walker.user_id or "",
-            }
-        )
+        start_event: Dict[str, Any] = {
+            "type": "start",
+            "interaction_id": interaction.id,
+            "session_id": walker.session_id or "",
+            "user_id": walker.user_id or "",
+        }
+        if session_token:
+            start_event["session_token"] = session_token
+        yield format_sse_chunk(start_event)
 
         # Subscribe to response bus messages
         if walker.response_bus and walker.session_id:
