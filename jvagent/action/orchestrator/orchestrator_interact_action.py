@@ -392,6 +392,18 @@ class OrchestratorInteractAction(InteractAction):
             "when on, cost is incurred only when the model calls update_plan."
         ),
     )
+    vision: bool = attribute(
+        default=False,
+        description=(
+            "When True, a deterministic pre-loop reflex interprets images in "
+            "visitor.data['image_urls'] via VisionAction (its own multimodal "
+            "model), stores the description as a conversation artifact "
+            "(source='vision'), and seeds it into the turn so the reply uses it "
+            "(ADR-0021). Off by default — no VisionAction call when unused. "
+            "Requires a VisionAction on the agent and is skipped when "
+            "visitor.data['image_interpretation'] is False."
+        ),
+    )
 
     # -- Skill overlay (native SOP skills; ADR-0011) ------------------------
     skills_source: str = attribute(default="both")
@@ -568,6 +580,52 @@ class OrchestratorInteractAction(InteractAction):
         except Exception as exc:
             logger.debug("orchestrator: get_action(%r) raised: %s", name, exc)
             return None
+
+    async def _vision_reflex(self, visitor: Any) -> str:
+        """Pre-loop image interpretation (ADR-0021).
+
+        When ``vision`` is on, the current turn carries images, and vision isn't
+        suppressed: run ``VisionAction`` (its own multimodal model), persist the
+        interpretation as a ``source:"vision"`` conversation artifact, and return
+        the text to seed the loop so this turn's reply uses it. Best-effort —
+        any failure returns "" and the turn proceeds without vision.
+        """
+        if not self.vision:
+            return ""
+        data = getattr(visitor, "data", None) or {}
+        if data.get("image_interpretation") is False:
+            return ""
+        if not (data.get("image_urls") or []):
+            return ""
+        vision = await self._resolve_action("VisionAction")
+        if vision is None or not hasattr(vision, "describe"):
+            return ""
+        try:
+            text = await vision.describe(visitor=visitor)
+        except Exception as exc:
+            logger.warning("orchestrator: vision reflex failed: %s", exc)
+            return ""
+        if not text:
+            return ""
+        conversation = getattr(visitor, "conversation", None)
+        interaction = getattr(visitor, "interaction", None)
+        if conversation is not None and hasattr(conversation, "add_artifact"):
+            try:
+                iid = getattr(interaction, "id", "") or ""
+                summary = (text.strip().split("\n", 1)[0] or "")[:160]
+                await conversation.add_artifact(
+                    interaction,
+                    name=(
+                        f"image_interpretation:{iid}" if iid else "image_interpretation"
+                    ),
+                    data=text,
+                    summary=summary,
+                    source="vision",
+                    tags=["image", "vision"],
+                )
+            except Exception as exc:
+                logger.warning("orchestrator: vision artifact write failed: %s", exc)
+        return text
 
     async def _enforce_required_actions(self, docs: List[Any]) -> List[Any]:
         """Drop skills whose ``requires-actions`` aren't satisfied (hard gate).
@@ -1032,6 +1090,18 @@ class OrchestratorInteractAction(InteractAction):
         )
 
         observations: List[Dict[str, Any]] = []
+        # Pre-loop vision reflex (ADR-0021): interpret attached images once,
+        # persist the description as a conversation artifact, and seed it so the
+        # reply composes with the image context from tick 1.
+        vision_seed = await self._vision_reflex(visitor)
+        if vision_seed:
+            observations.append(
+                {
+                    "tool": "interpret_images",
+                    "args": {},
+                    "observation": f"Interpretation of attached image(s): {vision_seed}",
+                }
+            )
         budget = max(1, int(self.activation_budget))
         history = await self._history(visitor)
         ticks = 0
