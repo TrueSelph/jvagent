@@ -419,12 +419,11 @@ class PageIndexAction(Action):
         prev_model_action = None
         try:
             if model_action:
-                # Snapshot the live contextvar (not the static config dict —
+                # Snapshot the live context var (not the static config dict —
                 # which never carried this value) so concurrent / nested
                 # search calls don't clobber an already-set parent action.
                 prev_model_action = get_pageindex_model_action()
                 set_pageindex_model_action(model_action)
-
             if visitor is not None:
                 metadata_filter = await self.resolved_metadata_filter(
                     visitor, metadata_filter
@@ -525,15 +524,29 @@ class PageIndexAction(Action):
 
         action = self
 
-        async def _search(query: str = "", limit: int = 5, **kwargs) -> str:
+        async def _search(
+            query: str = "",
+            limit: int = 5,
+            doc_name: Optional[str] = None,
+            **kwargs: Any,
+        ) -> str:
             import json
+
+            from jvagent.tooling.tool_executor import get_dispatch_visitor
 
             query = query or kwargs.get("q") or kwargs.get("text") or ""
             if not query:
                 return json.dumps(
                     {"error": "no query provided: pass it in 'query'"}, indent=2
                 )
-            results = await action.search(query, limit=limit)
+            visitor = get_dispatch_visitor()
+            results = await action.search(
+                query,
+                limit=limit,
+                doc_name=doc_name,
+                visitor=visitor,
+                metadata_filter=self.metadata_filter
+            )
             if not results:
                 return "No matching documents found."
             return json.dumps(results, indent=2)
@@ -616,6 +629,10 @@ class PageIndexAction(Action):
                     "type": "object",
                     "properties": {
                         "query": {"type": "string", "description": "Search query."},
+                        "doc_name": {
+                            "type": "string",
+                            "description": "Restrict search to a specific document name.",
+                        },
                         "limit": {
                             "type": "integer",
                             "description": "Max results to return (default 5).",
@@ -744,7 +761,6 @@ class PageIndexAction(Action):
             if visitor.user_id in users or visitor.session_id in users
         ]
         if not matched_groups:
-            mf["access"] = []
             return mf
 
         existing = mf.get("access")
