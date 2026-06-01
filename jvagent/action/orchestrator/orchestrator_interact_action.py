@@ -49,6 +49,7 @@ from jvagent.action.orchestrator.core_tools import (
     build_plan_tool,
 )
 from jvagent.action.orchestrator.prompts import (
+    ARTIFACT_RECALL_PROMPT,
     FINALIZE_PROMPT,
     FLOW_IN_PROGRESS_PROMPT,
     LENGTH_LIMIT_PROMPT,
@@ -80,6 +81,23 @@ DEFAULT_ACTIVATION_BUDGET = 24
 
 # Keys the model commonly uses to carry user-facing text, in priority order.
 _TEXT_KEYS = ("answer", "text", "content", "message", "reply", "response")
+
+# Back-reference cues for the deterministic artifact recall seed (ADR-0021 S3):
+# the utterance reads like it refers to something shown/told earlier. Only ever
+# consulted when the conversation already holds image artifacts, so domain words
+# (house, car) and comparatives won't false-trigger absent a prior upload.
+_BACKREF_CUE = re.compile(
+    r"\b(image|images|photo|photos|picture|pictures|pic|pics|screenshot|"
+    r"file|files|document|documents|doc|docs|attachment|attachments|"
+    r"upload|uploaded|sent|showed|shown|shared|earlier|before|previous|"
+    r"them|those|these|it|that|compare|comparison|which|more|most|describe|"
+    r"luxur)\w*",
+    re.IGNORECASE,
+)
+# Bound the recall seed so it can't bloat the prompt: most-recent N artifacts,
+# each payload truncated.
+_RECALL_MAX_ARTIFACTS = 2
+_RECALL_MAX_CHARS = 1200
 
 # Egress + indirection tools are never "steered" — saying "reply" is normal, and
 # find_tool/use_skill are the sanctioned indirection we *want*. The same set is
@@ -376,6 +394,12 @@ class OrchestratorInteractAction(InteractAction):
         description="Appended when planning is on (no placeholders). Nudges "
         "update_plan use for multi-step work.",
     )
+    artifact_recall_prompt: str = attribute(
+        default=ARTIFACT_RECALL_PROMPT,
+        description="Appended when vision is on (ADR-0021 S3). Tells the model "
+        "earlier uploads persist as artifacts and to consult "
+        "list_artifacts/get_artifact before claiming it can't recall.",
+    )
     lock_active_flow: bool = attribute(
         default=True,
         description=(
@@ -630,6 +654,45 @@ class OrchestratorInteractAction(InteractAction):
             except Exception as exc:
                 logger.warning("orchestrator: vision artifact write failed: %s", exc)
         return text
+
+    async def _artifact_recall_seed(self, visitor: Any) -> str:
+        """Deterministically recall earlier image artifacts on a back-reference.
+
+        ADR-0021 S3. The vision reflex covers turns that carry a *new* image; a
+        weak model still fails to recall a *prior* image when the user refers
+        back to it ("which house is nicer", "compare them"). When vision is on,
+        this turn has no new image, the conversation holds image artifacts, and
+        the utterance reads like a back-reference, seed the most recent image
+        interpretation(s) into the loop so recall doesn't depend on the model
+        choosing list_artifacts/get_artifact. Best-effort: returns "" on any miss.
+        """
+        if not self.vision:
+            return ""
+        data = getattr(visitor, "data", None) or {}
+        if data.get("image_urls"):  # a new image → the vision reflex handles it
+            return ""
+        utterance = (getattr(visitor, "utterance", "") or "").lower()
+        if not utterance or not _BACKREF_CUE.search(utterance):
+            return ""
+        conversation = getattr(visitor, "conversation", None)
+        if conversation is None or not hasattr(conversation, "get_artifacts"):
+            return ""
+        try:
+            items = await conversation.get_artifacts(source="vision")
+            if not items:
+                items = await conversation.get_artifacts(tags=["image"])
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("artifact recall seed: query failed: %s", exc)
+            return ""
+        if not items:
+            return ""
+        # Most recent first, capped, each payload bounded to keep the prompt lean.
+        chunks: List[str] = []
+        for art in list(items)[-_RECALL_MAX_ARTIFACTS:]:
+            text = (getattr(art, "data", "") or "").strip()
+            if text:
+                chunks.append(text[:_RECALL_MAX_CHARS])
+        return "\n\n---\n\n".join(chunks)
 
     async def _enforce_required_actions(self, docs: List[Any]) -> List[Any]:
         """Drop skills whose ``requires-actions`` aren't satisfied (hard gate).
@@ -1115,6 +1178,22 @@ class OrchestratorInteractAction(InteractAction):
                     "observation": f"Interpretation of attached image(s): {vision_seed}",
                 }
             )
+        else:
+            # No new image, but the user may be referring back to one shown
+            # earlier — deterministically recall its stored interpretation so a
+            # weak model doesn't claim it can't remember (ADR-0021 S3).
+            recall_seed = await self._artifact_recall_seed(visitor)
+            if recall_seed:
+                observations.append(
+                    {
+                        "tool": "get_artifact",
+                        "args": {},
+                        "observation": (
+                            "Recalled interpretation of image(s) the user shared "
+                            f"earlier in this conversation:\n{recall_seed}"
+                        ),
+                    }
+                )
         budget = max(1, int(self.activation_budget))
         history = await self._history(visitor)
         ticks = 0
@@ -2139,6 +2218,12 @@ class OrchestratorInteractAction(InteractAction):
             system_prompt = f"{system_prompt}\n\n{self.planning_prompt}"
             if plan_note:
                 system_prompt = f"{system_prompt}\n\n{plan_note}"
+        # Artifact recall affordance (ADR-0021 S3): when vision is on the
+        # list_artifacts/get_artifact tools are surfaced, but a weak model won't
+        # reach for them unprompted — this line tells it earlier uploads persist
+        # as artifacts to consult before claiming it can't recall.
+        if self.vision and self.artifact_recall_prompt:
+            system_prompt = f"{system_prompt}\n\n{self.artifact_recall_prompt}"
         if self.max_statement_length and self.max_statement_length > 0:
             limit = self._fmt(
                 self.length_limit_prompt,

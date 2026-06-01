@@ -46,7 +46,8 @@ branch node under the `Conversation`; each `Artifact` is also connected from the
 - **Write**: `conversation.add_artifact(interaction, *, name, data, summary=None, tags=None, source="", kind="text", pinned=False)` — creates the artifact, wires it under the `Artifacts` branch and from the producing `interaction`.
 - **Query**: `conversation.get_artifacts(*, name=None, source=None, tags=None)` — returns full `Artifact` nodes; `artifact.index_row()` is a payload-free summary row (name/source/tags/summary) for cheap listing.
 - **Refcounted pruning**: when an interaction is pruned, `_reap_artifacts_for` deletes each artifact it produced **only if no other (surviving) interaction still produces it** and it is not `pinned`. Toggle with `conversation.prune_artifacts_with_interaction` (default `True`).
-- **Tool surface**: the orchestrator exposes `list_artifacts` / `get_artifact` (gated by its `vision` attribute) so the model can read prior artifacts back. See [actions-catalog](../../.planning/reference/actions-catalog.md) (VisionAction) and ADR-0021.
+- **Tool surface**: the orchestrator exposes `list_artifacts` / `get_artifact` (gated by its `vision` attribute, pinned visible) so the model can read prior artifacts back. See [actions-catalog](../../.planning/reference/actions-catalog.md) (VisionAction) and ADR-0021.
+- **Recall on back-reference (ADR-0021 S3)**: surfacing the tools isn't enough for a weak model. The orchestrator adds a vision-gated `artifact_recall_prompt` affordance and a deterministic seed — when a turn carries no new image but the utterance refers back to an earlier upload, the most-recent image interpretation(s) are read from the registry and seeded into the loop so recall doesn't depend on the model choosing a tool.
 
 ## Key APIs
 

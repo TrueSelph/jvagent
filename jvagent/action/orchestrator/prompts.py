@@ -125,6 +125,20 @@ or internal mechanism, briefly say you'll take care of how it's done and ask \
 what they're trying to accomplish."""
 
 
+# Appended to the loop system prompt only when ``vision`` is on (ADR-0021 S3):
+# tells the model that uploaded images/files it can no longer see inline are
+# retrievable as conversation artifacts, so a weak model consults them instead
+# of claiming it can't recall. Pairs with the deterministic recall seed.
+ARTIFACT_RECALL_PROMPT = (
+    "MEMORY OF UPLOADS: Images and files the user shared earlier are saved as "
+    "conversation artifacts. You may no longer see them inline, but their "
+    "descriptions persist. When the user refers to something they showed or told "
+    'you earlier (e.g. "which house is nicer", "the photo", "that document"), '
+    "call list_artifacts to see what's stored and get_artifact to read one — do "
+    "this BEFORE saying you can't recall or asking them to re-describe it."
+)
+
+
 def render_identity_section(alias: str = "", role: str = "") -> str:
     """Render the agent's identity (``alias`` + ``role``, ADR-0014) as a leading
     paragraph, or '' when neither is set.
