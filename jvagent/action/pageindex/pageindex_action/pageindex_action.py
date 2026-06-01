@@ -545,7 +545,7 @@ class PageIndexAction(Action):
                 limit=limit,
                 doc_name=doc_name,
                 visitor=visitor,
-                metadata_filter=self.metadata_filter
+                metadata_filter=self.metadata_filter,
             )
             if not results:
                 return "No matching documents found."
