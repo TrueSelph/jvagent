@@ -671,6 +671,25 @@ class ApiClient {
     }
   }
 
+  /**
+   * Mode A auth headers for the otherwise-anonymous interact endpoint
+   * (ADR-0020). When a jvchat user is logged in we attach their login JWT so the
+   * server can recognize them as themselves (and skip the anonymous session
+   * token). Harmless when the server runs public-auth `off`; the endpoint stays
+   * usable with no token at all.
+   */
+  private _interactAuthHeaders(): Record<string, string> {
+    try {
+      const token = getToken()
+      if (token && !isTokenExpired(token)) {
+        return { Authorization: `Bearer ${token}` }
+      }
+    } catch {
+      // best-effort; the endpoint remains anonymous-capable
+    }
+    return {}
+  }
+
   async interact(
     agentId: string,
     request: InteractionRequest
@@ -684,6 +703,7 @@ class ApiClient {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...this._interactAuthHeaders(),
           },
           body: JSON.stringify(request),
         })
@@ -700,6 +720,7 @@ class ApiClient {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
+                ...this._interactAuthHeaders(),
               },
               body: JSON.stringify(request),
             })
@@ -766,7 +787,9 @@ class ApiClient {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              // No Authorization header - endpoint is anonymous
+              // Mode A (ADR-0020): attach the login JWT when present; the
+              // endpoint stays anonymous-capable when there is none.
+              ...this._interactAuthHeaders(),
             },
             body: JSON.stringify({ ...request, stream: true }),
             signal,
