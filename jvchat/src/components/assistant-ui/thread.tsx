@@ -17,7 +17,13 @@ import {
   ToolGroupTrigger,
 } from "@/components/assistant-ui/tool-group";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
+import { MessageStats } from "@/components/assistant-ui/message-stats";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   MessageDebugAction,
   ComposerMenuSlot,
@@ -338,6 +344,10 @@ const AssistantMessage: FC = () => {
           }}
         </MessagePrimitive.GroupedParts>
         <MessageError />
+        {/* Stats footer (model · tokens · time · tok/s, expandable) sits INSIDE
+            the content column, above the action bar — mirrors integral's
+            MessageObservability placement. Hidden while running / no payload. */}
+        <MessageStats />
       </div>
 
       <div
@@ -375,14 +385,25 @@ const AssistantActionBar: FC = () => {
       </ActionBarPrimitive.Reload>
       <MessageDebugAction />
       <ActionBarMorePrimitive.Root>
-        <ActionBarMorePrimitive.Trigger asChild>
-          <TooltipIconButton
-            tooltip="More"
-            className="data-[state=open]:bg-accent"
-          >
-            <MoreHorizontalIcon />
-          </TooltipIconButton>
-        </ActionBarMorePrimitive.Trigger>
+        {/* The dropdown trigger must wrap a real DOM element so radix's
+            Popper.Anchor can measure it. Wrapping a TooltipIconButton (whose
+            root is a Tooltip context, not a DOM node) left the menu unanchored
+            and positioned off-screen at the top-left. Tooltip wraps the trigger
+            instead, and the trigger wraps a native <button>. */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <ActionBarMorePrimitive.Trigger asChild>
+              <button
+                type="button"
+                aria-label="More"
+                className="aui-button-icon hover:bg-accent hover:text-accent-foreground data-[state=open]:bg-accent inline-flex size-6 items-center justify-center rounded-md p-1 outline-none transition-colors [&_svg]:size-4"
+              >
+                <MoreHorizontalIcon />
+              </button>
+            </ActionBarMorePrimitive.Trigger>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">More</TooltipContent>
+        </Tooltip>
         <ActionBarMorePrimitive.Content
           side="bottom"
           align="start"
