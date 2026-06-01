@@ -2,8 +2,13 @@
  * Convert jvchat's flat `Message[]` stream (user / assistant-text / separate
  * `category:"thought"` items) into assistant-ui `ThreadMessageLike[]`, where an
  * assistant turn is ONE message whose content parts are the reasoning, tool
- * calls, and final text. Each assistant turn carries its final-chunk `debugData`
- * on `metadata.custom` so the per-message Debug dialog can read it.
+ * calls, and final text. Multi-adhoc catalog turns (several text-only assistant
+ * rows in one interaction) become separate thread messages after the first text
+ * block so gap-y-8 spacing applies between cards and the closer. Reasoning and
+ * tool-call parts from the whole interaction stay on that first row even when
+ * tool ticks arrive between catalog emits. Each assistant turn carries its
+ * final-chunk `debugData` on `metadata.custom` so the per-message Debug dialog
+ * can read it.
  */
 import type { ThreadMessageLike } from "@assistant-ui/react";
 
@@ -83,10 +88,69 @@ function firstLine(s: string): string {
   return t.length > 64 ? t.slice(0, 63) + "…" : t;
 }
 
+function isThoughtMessage(m: Message): boolean {
+  return m.category === "thought";
+}
+
+function isTextAssistantMessage(m: Message | undefined): boolean {
+  return !!m && m.role === "assistant" && m.category !== "thought";
+}
+
+/**
+ * Stable assistant-ui thread id. Multi-adhoc turns use each jvchat row id so
+ * assistant-ui never sees duplicate `turn-${interactionId}` siblings (which
+ * triggers MessageRepository link errors). Single in-flight turns keep
+ * `turn-${interactionId}` while streaming so reasoning updates do not swap ids.
+ */
+function resolveAssistantThreadId(
+  group: Message[],
+  interactionId: string | undefined,
+  splitTurn: boolean,
+): string {
+  const textMsg = group.find((m) => isTextAssistantMessage(m));
+  const isStreaming = group.some((m) => m.streaming);
+
+  if (splitTurn && textMsg?.id) {
+    return textMsg.id;
+  }
+
+  if (!isStreaming && textMsg?.id) {
+    return textMsg.id;
+  }
+
+  if (interactionId) {
+    return `turn-${interactionId}`;
+  }
+
+  return textMsg?.id ?? group[0]?.id ?? "assistant-unknown";
+}
+
+/** Partition one consecutive assistant run into thoughts vs user-visible text rows. */
+function parseAssistantRun(
+  messages: Message[],
+  start: number,
+): { thoughts: Message[]; textBlocks: Message[]; endIndex: number } {
+  const thoughts: Message[] = [];
+  const textBlocks: Message[] = [];
+  let i = start;
+  while (i < messages.length && messages[i].role === "assistant") {
+    const row = messages[i];
+    if (isThoughtMessage(row)) {
+      thoughts.push(row);
+    } else if (isTextAssistantMessage(row)) {
+      textBlocks.push(row);
+    }
+    i++;
+  }
+  return { thoughts, textBlocks, endIndex: i };
+}
+
 function assistantGroupToThread(
   group: Message[],
   branchRootId?: string,
   isRunning?: boolean,
+  splitTurn = false,
+  textOnly = false,
 ): ThreadMessageLike {
   // Collect by kind so the whole exchange renders as ONE reasoning section and
   // ONE tool-call section (assistant-ui groups consecutive same-type parts).
@@ -118,6 +182,7 @@ function assistantGroupToThread(
     if (m.interactionId) meta.interactionId = m.interactionId;
 
     if (m.category === "thought") {
+      if (textOnly) continue;
       const md = (m.metadata ?? {}) as Record<string, unknown>;
       if (m.thoughtType === "reasoning") {
         if (m.content.trim()) {
@@ -184,9 +249,11 @@ function assistantGroupToThread(
   // item — the last item changes as reasoning/tool/text parts stream in, which
   // would make assistant-ui treat each streaming update as a new branch (the
   // "version numbers increment" bug).
-  const stableId = meta.interactionId
-    ? `turn-${meta.interactionId}`
-    : (group[0]?.id ?? meta.jvMessageId);
+  const stableId = resolveAssistantThreadId(
+    group,
+    meta.interactionId,
+    splitTurn,
+  );
 
   return {
     role: "assistant",
@@ -222,16 +289,48 @@ export function buildThreadMessages(
       i++;
       continue;
     }
-    const groupStart = i;
-    const group: Message[] = [];
-    while (i < messages.length && messages[i].role === "assistant") {
-      group.push(messages[i]);
-      i++;
+    const runStart = i;
+    const isLastTurn = runStart === lastAssistantStart;
+    const { thoughts, textBlocks, endIndex } = parseAssistantRun(messages, runStart);
+    i = endIndex;
+
+    const splitTurn = textBlocks.length > 1;
+
+    if (textBlocks.length === 0) {
+      if (thoughts.length) {
+        out.push(
+          assistantGroupToThread(
+            thoughts,
+            lastRootId,
+            isStreaming && isLastTurn,
+            false,
+            false,
+          ),
+        );
+      }
+      continue;
     }
-    if (group.length) {
-      const isLastTurn = groupStart === lastAssistantStart;
+
+    out.push(
+      assistantGroupToThread(
+        [...thoughts, textBlocks[0]],
+        lastRootId,
+        isStreaming && isLastTurn && textBlocks.length === 1,
+        splitTurn,
+        false,
+      ),
+    );
+
+    for (let t = 1; t < textBlocks.length; t++) {
+      const isLastText = t === textBlocks.length - 1;
       out.push(
-        assistantGroupToThread(group, lastRootId, isStreaming && isLastTurn),
+        assistantGroupToThread(
+          [textBlocks[t]],
+          lastRootId,
+          isStreaming && isLastTurn && isLastText,
+          true,
+          true,
+        ),
       );
     }
   }
