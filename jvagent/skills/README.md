@@ -49,7 +49,7 @@ metadata:
 | `description` | both | Drives discovery; third person; what it does + when to use it. |
 | `spec` | both | `jv` (default) or `claude`. Unknown values fall back to `jv`. |
 | `allowed-tools` | mostly JV | Runtime tool names the SOP uses (e.g. `gmail__send_email`, `web_fetch__fetch`, `code_execution__bash`). Surfaced into the visible set on activation. |
-| `requires-actions` | JV | Action types that must resolve before activation (hard gate). |
+| `requires-actions` | JV | Action types that must resolve (enabled) on the agent. **Hard gate, enforced:** if any declared type is absent, the orchestrator hides the skill entirely for that turn — it is not listed, found, activated, or always-active-pinned. |
 | `requires-jvagent` | JV | Framework version constraint, checked at preflight. |
 | `requires-action-versions` | JV | `namespace/label` → version constraint. |
 | `license`, `metadata` | both | Claude-standard fields. `metadata.version` / `metadata.tags` for tracking + discovery cues. |

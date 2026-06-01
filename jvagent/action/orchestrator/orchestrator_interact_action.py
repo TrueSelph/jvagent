@@ -508,6 +508,42 @@ class OrchestratorInteractAction(InteractAction):
             logger.debug("orchestrator: get_action(%r) raised: %s", name, exc)
             return None
 
+    async def _enforce_required_actions(self, docs: List[Any]) -> List[Any]:
+        """Drop skills whose ``requires-actions`` don't all resolve (hard gate).
+
+        Each distinct required Action *type* is resolved once (enabled-only,
+        O(1) cached). A skill is kept only when every type it declares is
+        present; otherwise it's hidden from the whole surface (list, find_skill,
+        use_skill, always-active pinning) so the model never sees a skill whose
+        dependencies are missing. Skills with no ``requires-actions`` pass
+        through unchanged.
+        """
+        required: Set[str] = set()
+        for d in docs:
+            required.update(getattr(d, "requires_actions", ()) or ())
+        if not required:
+            return docs
+
+        present: Set[str] = set()
+        for type_name in required:
+            if await self._resolve_action(type_name) is not None:
+                present.add(type_name)
+
+        kept: List[Any] = []
+        for d in docs:
+            needed = set(getattr(d, "requires_actions", ()) or ())
+            missing = needed - present
+            if missing:
+                logger.info(
+                    "orchestrator: skill %r hidden — required actions not "
+                    "available: %s",
+                    getattr(d, "name", "?"),
+                    ", ".join(sorted(missing)),
+                )
+                continue
+            kept.append(d)
+        return kept
+
     async def _curate_walk_path(self, visitor: "InteractWalker") -> None:
         """Drop tool-exposed (routable) IAs from the remaining walk path.
 
@@ -732,6 +768,11 @@ class OrchestratorInteractAction(InteractAction):
         # via the code-execution substrate). Activating a Claude skill stages its
         # folder into the caller's per-user sandbox so its scripts are runnable.
         docs = self._discover_skills(agent)
+        # Enforce ``requires-actions`` (hard gate): a skill whose declared
+        # Action types don't all resolve (enabled) on this agent is hidden
+        # entirely — dropped from the surfaced list, find_skill, use_skill, and
+        # always-active pinning — so the model never sees a skill it can't run.
+        docs = await self._enforce_required_actions(docs)
         if skill_docs is not None:
             skill_docs.extend(docs)
         code_exec = self._select_code_execution_action(actions)

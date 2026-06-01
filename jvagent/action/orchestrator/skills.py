@@ -23,6 +23,7 @@ class SkillDoc:
     description: str
     body: str
     requires_tools: Tuple[str, ...] = ()
+    requires_actions: Tuple[str, ...] = ()
     source: str = "app"
     directory: str = ""
     spec: str = "jv"
@@ -111,6 +112,7 @@ def discover_skill_docs(
                 description=(bundle.get("description") or "").strip(),
                 body=(bundle.get("content") or "").strip(),
                 requires_tools=tuple(bundle.get("allowed_tools") or ()),
+                requires_actions=tuple(bundle.get("requires_actions") or ()),
                 source=bundle.get("source", "app"),
                 directory=str(bundle.get("dir") or ""),
                 spec=str(bundle.get("spec") or "jv"),
