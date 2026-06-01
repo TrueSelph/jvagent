@@ -224,7 +224,7 @@ async def test_reasoning_trace_emitted_when_enabled(monkeypatch):
 async def test_agentic_default_budget_and_tokens():
     ex = OrchestratorInteractAction()
     assert ex.activation_budget == 24  # room for multistep tool work
-    assert ex.model_max_tokens == 2048  # headroom for thinking models
+    assert ex.model_max_tokens == 4096  # headroom for agentic reasoning + compose
 
 
 async def test_finalize_clause_added_to_prompt(monkeypatch):

@@ -166,7 +166,18 @@ class OrchestratorInteractAction(InteractAction):
     model: str = attribute(default="gpt-4o-mini")
     model_action_type: str = attribute(default="OpenAILanguageModelAction")
     model_temperature: float = attribute(default=0.2)
-    model_max_tokens: int = attribute(default=2048)
+    model_max_tokens: int = attribute(
+        default=4096,
+        description=(
+            "Completion ceiling for the HEAVY reasoning model. The orchestrator "
+            "is agentic by nature — each tick emits reasoning plus an action "
+            "(often the substantive final answer), and thinking models spend "
+            "tokens on reasoning that count against this budget — so it needs "
+            "more headroom than a single-shot responder (a 2048 ceiling "
+            "truncated long answers). The repeat-guard and activation_budget "
+            "still bound runaway loops."
+        ),
+    )
     enforce_json_mode: bool = attribute(default=True)
 
     # -- Model gearing (ADR-0016): a LIGHT completion model for single-dimensional
@@ -363,6 +374,14 @@ class OrchestratorInteractAction(InteractAction):
     tool_call_timeout: float = attribute(
         default=0.0,
         description="Per-tool-call timeout (seconds); 0 disables.",
+    )
+    tool_thought_max_chars: int = attribute(
+        default=12000,
+        description="Max characters of a tool result surfaced in the transient "
+        "tool_call/tool_result thought (the TOOL CALLS UI detail). Results "
+        "longer than this are truncated for the bus envelope only (the model "
+        "still sees the full observation). Set high enough that structured "
+        "results (e.g. JSON) stay parseable in the UI; 0 = no cap.",
     )
     lean_tool_threshold: int = attribute(
         default=15,
@@ -1413,10 +1432,12 @@ class OrchestratorInteractAction(InteractAction):
             }
         else:
             text = obs if isinstance(obs, str) else str(obs)
-            content = text[:2000]
+            cap = self.tool_thought_max_chars
+            capped = text[:cap] if cap and cap > 0 else text
+            content = capped
             metadata = {
                 "tool_name": tool_name,
-                "tool_result": text[:2000],
+                "tool_result": capped,
                 "is_error": isinstance(obs, str) and obs.startswith("(tool error"),
             }
         try:
