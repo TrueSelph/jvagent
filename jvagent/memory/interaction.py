@@ -71,7 +71,6 @@ class Interaction(DeferredSaveMixin, Node):
         channel: Communication channel
         session_id: Session identifier for this interaction
         response: Agent response text
-        image_interpretation: Extensive AI description of attached images (for follow-up questions)
         canned_response: Immediate response before full processing
         actions: Actions involved in processing (in order of execution)
         directives: Directives issued by non-persona actions
@@ -104,10 +103,6 @@ class Interaction(DeferredSaveMixin, Node):
     response: Optional[str] = attribute(
         default=None,
         description="Agent response text (accumulated from stream chunks and ad hoc messages)",
-    )
-    image_interpretation: Optional[str] = attribute(
-        default=None,
-        description="Extensive AI description of attached images (generated behind the scenes when vision is enabled)",
     )
 
     # Routing (from InteractRouter)
@@ -160,16 +155,6 @@ class Interaction(DeferredSaveMixin, Node):
     usage: Dict[str, Any] = attribute(
         default_factory=dict,
         description="Aggregated usage (tokens, model calls) for this interaction",
-    )
-
-    # Orchestrator artifacts (session-scoped structured data)
-    artifacts: Dict[str, Dict[str, Any]] = attribute(
-        default_factory=dict,
-        description=(
-            "Session-scoped artifacts keyed by user-supplied name. "
-            "Each entry: {'data': str, 'tags': List[str], 'created_at': iso, 'updated_at': iso, 'source': str}. "
-            "Lifecycle is bound to the interaction; pruned by Conversation.interaction_limit."
-        ),
     )
 
     # Timestamps

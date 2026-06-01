@@ -10,8 +10,9 @@ dicts (inline images; preferred when remote URLs are not fetchable by the model 
 
 - build_prompt_for_vision(): Builds multimodal content for the main response.
 - generate_image_interpretation(): Produces an extensive image description behind
-  the scenes for storage on Interaction.image_interpretation (enables follow-up
-  questions). Call only when visitor.data.get("image_interpretation") is not False.
+  the scenes. The orchestrator's VisionAction stores the result as a conversation
+  artifact (ADR-0021) for follow-up reference. Call only when
+  visitor.data.get("image_interpretation") is not False.
 
 Suppression: Set visitor.data["image_interpretation"] = False to skip vision
 (e.g. when images are document uploads for an interview, not for interpretation).
