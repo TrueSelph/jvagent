@@ -361,8 +361,16 @@ class Conversation(DeferredSaveMixin, Node):
         source: str = "",
         kind: str = "text",
         pinned: bool = False,
+        filename: str = "",
+        mime: str = "",
+        size: int = 0,
+        path: str = "",
     ) -> Any:
         """Create an ``Artifact`` in the registry and associate it to ``interaction``.
+
+        ``filename``/``mime``/``size``/``path`` describe a file-backed artifact
+        (ADR-0021 S4) whose bytes live in storage at ``path`` (not inline). The
+        bytes are reaped with the artifact via ``_reap_artifacts_for``.
 
         Re-referencing an existing artifact from another interaction should add a
         ``PRODUCED`` edge (call again with the same ``name`` resolved externally,
@@ -379,6 +387,10 @@ class Conversation(DeferredSaveMixin, Node):
             source=source,
             kind=kind,
             pinned=pinned,
+            filename=filename,
+            mime=mime,
+            size=int(size or 0),
+            path=path,
         )
         await branch.connect(artifact, direction="out")  # registry membership
         if interaction is not None:
@@ -441,11 +453,31 @@ class Conversation(DeferredSaveMixin, Node):
             try:
                 if branch is not None:
                     await branch.disconnect(artifact)
+                await self._delete_artifact_file(artifact)
                 await artifact.delete()
                 reaped += 1
             except Exception:
                 pass
         return reaped
+
+    async def _delete_artifact_file(self, artifact: Any) -> None:
+        """Best-effort delete of a file-backed artifact's stored bytes (S4).
+
+        File-backed artifacts keep their bytes in storage (not on the node), so
+        the storage object must be removed alongside the node or it orphans.
+        Silent on any failure — pruning must never raise.
+        """
+        path = (getattr(artifact, "path", "") or "").strip()
+        if not path:
+            return
+        try:
+            from jvagent.core.app import App
+
+            app = await App.get()
+            if app is not None:
+                await app.delete_file(path)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("artifact file cleanup failed for %s: %s", path, exc)
 
     async def _prune_old_interactions(self) -> int:
         """Prune interactions outside the rolling window limit.

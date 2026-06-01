@@ -66,6 +66,54 @@ async def test_refcounted_artifact_pruning(test_db):
 
 
 @pytest.mark.asyncio
+async def test_file_backed_artifact_indexrow_and_reap_deletes_file(
+    test_db, monkeypatch
+):
+    deleted = []
+
+    class _App:
+        async def delete_file(self, path):
+            deleted.append(path)
+            return True
+
+        async def now(self):
+            import datetime as _dt
+
+            return _dt.datetime.now(_dt.timezone.utc)
+
+    async def _get():
+        return _App()
+
+    monkeypatch.setattr("jvagent.core.app.App.get", staticmethod(_get))
+
+    conv = await Conversation.create(session_id=_sid(), user_id="u", channel="default")
+    conv.interaction_limit = 1
+    try:
+        i1 = await conv.add_interaction(utterance="m1")
+        art = await conv.add_artifact(
+            i1,
+            name="r.pdf",
+            data="Uploaded file: r.pdf",
+            source="upload",
+            kind="file",
+            filename="r.pdf",
+            mime="application/pdf",
+            size=2048,
+            path="ag/us/uploads/int1/0_r.pdf",
+        )
+        row = art.index_row()
+        assert row["filename"] == "r.pdf" and row["kind"] == "file"
+        assert row["mime"] == "application/pdf" and "data" not in row
+
+        await conv.add_interaction(utterance="m2")  # prunes i1
+        names = {a.name for a in await conv.get_artifacts()}
+        assert "r.pdf" not in names
+        assert deleted == ["ag/us/uploads/int1/0_r.pdf"]
+    finally:
+        await conv.delete(cascade=True)
+
+
+@pytest.mark.asyncio
 async def test_prune_flag_off_keeps_artifacts(test_db):
     conv = await Conversation.create(session_id=_sid(), user_id="u", channel="default")
     conv.interaction_limit = 1

@@ -54,25 +54,45 @@ class Artifact(Node):
     )
     tags: List[str] = attribute(default_factory=list)
     source: str = attribute(
-        default="", description='Producer, e.g. "vision", "web_fetch".'
+        default="", description='Producer, e.g. "vision", "upload", "web_fetch".'
     )
-    kind: str = attribute(default="text", description="Payload kind (text, json, ...).")
+    kind: str = attribute(
+        default="text", description="Payload kind (text, json, image, file, ...)."
+    )
     pinned: bool = attribute(
         default=False,
         description="When True, exempt from refcounted prune (durability opt-out).",
+    )
+    # File-backed artifacts (ADR-0021 S4): an uploaded file's bytes live in the
+    # configured file storage (per-user sandbox), NOT inline on the node — keeping
+    # the graph lean. ``path`` is the storage-relative key; ``data`` holds a
+    # readable descriptor (and the decoded text for text files). The bytes are
+    # reaped with the artifact (see ``Conversation._reap_artifacts_for``).
+    filename: str = attribute(default="", description="Original upload filename.")
+    mime: str = attribute(default="", description="MIME type of the stored file.")
+    size: int = attribute(default=0, description="Stored file size in bytes.")
+    path: str = attribute(
+        default="",
+        description="Storage-relative key where the bytes live (empty = no file).",
     )
     created_at: datetime = attribute(default_factory=_utcnow)
     updated_at: Optional[datetime] = attribute(default=None)
 
     def index_row(self) -> Dict[str, Any]:
         """Compact, payload-free entry for the prompt-side artifact index."""
-        return {
+        row: Dict[str, Any] = {
             "name": self.name,
             "source": self.source,
+            "kind": self.kind,
             "tags": list(self.tags or []),
             "summary": self.summary,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+        if self.filename:
+            row["filename"] = self.filename
+        if self.mime:
+            row["mime"] = self.mime
+        return row
 
 
 __all__ = ["Artifact", "Artifacts"]

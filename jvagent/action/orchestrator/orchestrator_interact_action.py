@@ -32,6 +32,12 @@ from typing import TYPE_CHECKING, Any, Dict, FrozenSet, List, Optional, Set, Tup
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
+from jvagent.action.interact.utils.uploads import (
+    DEFAULT_UPLOAD_KEYS,
+    collect_uploads,
+    decode_text,
+    human_size,
+)
 from jvagent.action.orchestrator.access import delegate_resource_label
 from jvagent.action.orchestrator.catalog import (
     build_catalog_tools,
@@ -98,6 +104,10 @@ _BACKREF_CUE = re.compile(
 # each payload truncated.
 _RECALL_MAX_ARTIFACTS = 2
 _RECALL_MAX_CHARS = 1200
+
+# Cap files ingested as artifacts per turn (defensive against pathological
+# multi-file payloads); extra files are ignored with a debug log.
+_MAX_UPLOADS_PER_TURN = 20
 
 # Egress + indirection tools are never "steered" — saying "reply" is normal, and
 # find_tool/use_skill are the sanctioned indirection we *want*. The same set is
@@ -432,6 +442,20 @@ class OrchestratorInteractAction(InteractAction):
             "visitor.data['image_interpretation'] is False."
         ),
     )
+    ingest_uploads: bool = attribute(
+        default=True,
+        description=(
+            "When True (default), every uploaded file in visitor.data (keys in "
+            "`upload_data_keys`) is persisted to the per-user file storage and "
+            "recorded as a source='upload' conversation artifact (ADR-0021 S4) — "
+            "text files decoded into the artifact payload, binaries referenced by "
+            "stored path. The vision interpretation remains a separate artifact."
+        ),
+    )
+    upload_data_keys: List[str] = attribute(
+        default_factory=lambda: list(DEFAULT_UPLOAD_KEYS),
+        description="visitor.data keys scanned for uploaded files to ingest.",
+    )
 
     # -- Skill overlay (native SOP skills; ADR-0011) ------------------------
     skills_source: str = attribute(default="both")
@@ -608,6 +632,103 @@ class OrchestratorInteractAction(InteractAction):
         except Exception as exc:
             logger.debug("orchestrator: get_action(%r) raised: %s", name, exc)
             return None
+
+    async def _ingest_uploads(self, visitor: Any) -> int:
+        """Persist every uploaded file in ``visitor.data`` as an artifact (S4).
+
+        ADR-0021 S4. For each file across ``upload_data_keys`` (images, docs,
+        generic attachments): write the bytes to the caller's per-user file
+        storage and record a ``source="upload"`` conversation artifact — text
+        files decoded into the queryable payload, binaries referenced by their
+        stored ``path`` (bytes are reaped with the artifact). Independent of the
+        vision reflex, which still adds the image *interpretation* artifact.
+        Best-effort and bounded; returns the number of artifacts written.
+        """
+        if not self.ingest_uploads:
+            return 0
+        data = getattr(visitor, "data", None) or {}
+        keys = list(self.upload_data_keys or DEFAULT_UPLOAD_KEYS)
+        items = collect_uploads(data, keys)
+        if not items:
+            return 0
+        conversation = getattr(visitor, "conversation", None)
+        if conversation is None or not hasattr(conversation, "add_artifact"):
+            return 0
+        interaction = getattr(visitor, "interaction", None)
+
+        from jvagent.core.sandbox import (
+            resolve_agent_user,
+            resolve_user_sandbox_relpath,
+            sanitize_segment,
+        )
+
+        try:
+            agent_id, user_id = await resolve_agent_user(visitor)
+        except Exception:
+            agent_id, user_id = (self.agent_id or ""), ""
+        base_rel = resolve_user_sandbox_relpath(agent_id, user_id)
+        iid = getattr(interaction, "id", "") or "turn"
+
+        app = None
+        try:
+            from jvagent.core.app import App
+
+            app = await App.get()
+        except Exception:
+            app = None
+
+        seen: Set[Tuple[str, int]] = set()
+        written = 0
+        for idx, item in enumerate(items):
+            if written >= _MAX_UPLOADS_PER_TURN:
+                logger.debug(
+                    "ingest_uploads: capped at %d files", _MAX_UPLOADS_PER_TURN
+                )
+                break
+            dedup = (item.filename, item.size)
+            if dedup in seen:
+                continue
+            seen.add(dedup)
+
+            # Persist bytes to the per-user slice (lean graph: path, not blob).
+            path = ""
+            if item.raw is not None and app is not None:
+                safe = sanitize_segment(item.filename, default=f"file_{idx}")
+                candidate = f"{base_rel}/uploads/{iid}/{idx}_{safe}"
+                try:
+                    if await app.save_file(
+                        candidate, item.raw, metadata={"mime": item.mime}
+                    ):
+                        path = candidate
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.debug("ingest_uploads: save failed for %s: %s", safe, exc)
+
+            if item.kind == "text" and item.raw is not None:
+                payload = decode_text(item.raw)
+            else:
+                loc = path or item.url or "(bytes not stored)"
+                payload = (
+                    f"Uploaded {item.kind}: {item.filename} "
+                    f"({item.mime}, {human_size(item.size)}). Stored at: {loc}"
+                )
+            try:
+                await conversation.add_artifact(
+                    interaction,
+                    name=item.filename or f"upload:{iid}:{idx}",
+                    data=payload,
+                    summary=f"{item.filename} ({item.mime}, {human_size(item.size)})",
+                    source="upload",
+                    kind=item.kind,
+                    tags=["upload", item.kind, item.filename],
+                    filename=item.filename,
+                    mime=item.mime,
+                    size=item.size,
+                    path=path,
+                )
+                written += 1
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("ingest_uploads: artifact write failed: %s", exc)
+        return written
 
     async def _vision_reflex(self, visitor: Any) -> str:
         """Pre-loop image interpretation (ADR-0021).
@@ -1166,6 +1287,15 @@ class OrchestratorInteractAction(InteractAction):
         )
 
         observations: List[Dict[str, Any]] = []
+        # Pre-loop upload ingestion (ADR-0021 S4): persist EVERY uploaded file in
+        # visitor.data to per-user storage and record it as a source="upload"
+        # artifact (images, docs, text — all of them). Runs before the vision
+        # reflex so an uploaded image yields both its file artifact and its
+        # interpretation artifact. Best-effort; never blocks the turn.
+        try:
+            await self._ingest_uploads(visitor)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("orchestrator: upload ingestion failed: %s", exc)
         # Pre-loop vision reflex (ADR-0021): interpret attached images once,
         # persist the description as a conversation artifact, and seed it so the
         # reply composes with the image context from tick 1.
