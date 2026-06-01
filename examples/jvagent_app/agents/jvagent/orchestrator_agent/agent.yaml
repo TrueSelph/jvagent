@@ -71,6 +71,12 @@ actions:
       # to exercise the feature.
       planning: true
 
+      # Vision (ADR-0021): a pre-loop reflex interprets attached images via the
+      # jvagent/vision action (own multimodal model, configured below), stores
+      # the description as a conversation artifact, and seeds it into the reply.
+      # Off by default; on here to exercise the feature. Requires jvagent/vision.
+      vision: true
+
       # -- Reasoning (only bites with a reasoning-capable model; gpt-4o-mini
       # ignores it). Set effort for o-series / Claude thinking / OpenRouter.
       # reasoning_enabled: true
@@ -178,6 +184,17 @@ actions:
     context:
       enabled: true
       max_chars: 8000
+
+  # ── Vision (ADR-0021) — image interpretation with its OWN multimodal model ──
+  # When the orchestrator's `vision: true` gate is set (above), a pre-loop reflex
+  # runs this over images in data["image_urls"], stores the description as a
+  # conversation artifact (source:"vision"), and seeds it into the reply. Also
+  # exposes the on-demand interpret_images tool. Point model_action_type/model at
+  # a vision-capable provider.
+  - action: jvagent/vision
+    context:
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o
 
   # ── Code execution substrate (ADR-0017) — the runtime CLAUDE skills assume ──
   # Exposes code_execution__bash, whose cwd is the caller's OWN per-user slice
