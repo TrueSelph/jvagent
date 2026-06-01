@@ -18,9 +18,10 @@ Cascade Delete Behavior:
     - Delete Memory → Cascades to all Users → All Conversations → All Interactions
 """
 
+from jvagent.memory.artifact import Artifact, Artifacts
 from jvagent.memory.conversation import Conversation
 from jvagent.memory.interaction import Interaction
 from jvagent.memory.manager import Memory
 from jvagent.memory.user import User
 
-__all__ = ["Memory", "User", "Conversation", "Interaction"]
+__all__ = ["Memory", "User", "Conversation", "Interaction", "Artifact", "Artifacts"]

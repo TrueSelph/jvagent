@@ -107,6 +107,13 @@ class Conversation(DeferredSaveMixin, Node):
         default_factory=list,
         description="Tasks for this conversation (task tracker)",
     )
+    prune_artifacts_with_interaction: bool = attribute(
+        default=True,
+        description=(
+            "When True (default), pruning an interaction reaps the artifacts it "
+            "solely produced — refcounted; pinned artifacts are exempt (ADR-0021)."
+        ),
+    )
 
     async def get_agent(self) -> Optional[Any]:
         """Get the Agent node this Conversation belongs to.
@@ -296,6 +303,120 @@ class Conversation(DeferredSaveMixin, Node):
 
         return interaction
 
+    # ------------------------------------------------------------------
+    # Artifact memory (ADR-0021): a Conversation-scoped registry branch node
+    # holding Artifact nodes, associated to producing Interactions via a generic
+    # edge. Lifecycle is refcounted to those interactions (see _reap_artifacts_for).
+    # ------------------------------------------------------------------
+
+    async def _get_or_create_artifacts(self) -> Any:
+        """The conversation's single ``Artifacts`` registry node (lazy)."""
+        from jvagent.memory.artifact import Artifacts
+
+        existing = await self.nodes(node=Artifacts, direction="out")
+        if existing:
+            return existing[0]
+        branch = await Artifacts.create()
+        await self.connect(branch, direction="out")
+        return branch
+
+    async def add_artifact(
+        self,
+        interaction: Optional[Any] = None,
+        *,
+        name: str,
+        data: str = "",
+        summary: str = "",
+        tags: Optional[List[str]] = None,
+        source: str = "",
+        kind: str = "text",
+        pinned: bool = False,
+    ) -> Any:
+        """Create an ``Artifact`` in the registry and associate it to ``interaction``.
+
+        Re-referencing an existing artifact from another interaction should add a
+        ``PRODUCED`` edge (call again with the same ``name`` resolved externally,
+        or use ``associate_artifact``) rather than duplicating.
+        """
+        from jvagent.memory.artifact import Artifact
+
+        branch = await self._get_or_create_artifacts()
+        artifact = await Artifact.create(
+            name=name,
+            data=data,
+            summary=summary,
+            tags=list(tags or []),
+            source=source,
+            kind=kind,
+            pinned=pinned,
+        )
+        await branch.connect(artifact, direction="out")  # registry membership
+        if interaction is not None:
+            await interaction.connect(artifact, direction="out")  # PRODUCED
+        return artifact
+
+    async def get_artifacts(
+        self,
+        *,
+        name: Optional[str] = None,
+        source: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+    ) -> List[Any]:
+        """All registry artifacts, optionally filtered by name / source / any tag."""
+        from jvagent.memory.artifact import Artifact, Artifacts
+
+        branches = await self.nodes(node=Artifacts, direction="out")
+        if not branches:
+            return []
+        items = await branches[0].nodes(node=Artifact, direction="out")
+        want_tags = set(tags or [])
+        out: List[Any] = []
+        for a in items:
+            if name is not None and a.name != name:
+                continue
+            if source is not None and a.source != source:
+                continue
+            if want_tags and not (want_tags & set(a.tags or [])):
+                continue
+            out.append(a)
+        return out
+
+    async def _reap_artifacts_for(self, interaction: Any) -> int:
+        """Refcounted cascade for a pruned ``interaction`` (ADR-0021).
+
+        Drop the interaction's ``PRODUCED`` edges; delete each artifact it solely
+        produced (no other live producing Interaction) unless ``pinned``. Shared
+        artifacts survive until their last producer is pruned. Best-effort.
+        """
+        from jvagent.memory.artifact import Artifact, Artifacts
+        from jvagent.memory.interaction import Interaction
+
+        try:
+            produced = await interaction.nodes(node=Artifact, direction="out")
+        except Exception:
+            return 0
+        if not produced:
+            return 0
+        branches = await self.nodes(node=Artifacts, direction="out")
+        branch = branches[0] if branches else None
+        reaped = 0
+        for artifact in produced:
+            try:
+                await interaction.disconnect(artifact)
+                remaining = await artifact.nodes(node=Interaction, direction="in")
+            except Exception:
+                continue
+            if remaining or getattr(artifact, "pinned", False):
+                continue
+            try:
+                if branch is not None:
+                    await branch.disconnect(artifact)
+                await artifact.delete()
+                reaped += 1
+            except Exception:
+                pass
+        return reaped
+
     async def _prune_old_interactions(self) -> int:
         """Prune interactions outside the rolling window limit.
 
@@ -358,6 +479,14 @@ class Conversation(DeferredSaveMixin, Node):
 
             if await current.is_connected_to(next_interaction):
                 await current.disconnect(next_interaction)
+
+            # Refcounted artifact cascade before the interaction node is gone
+            # (ADR-0021): reap artifacts this interaction solely produced.
+            if self.prune_artifacts_with_interaction:
+                try:
+                    await self._reap_artifacts_for(current)
+                except Exception as exc:  # never let artifact reaping block pruning
+                    logger.warning("artifact reap during prune failed: %s", exc)
 
             await current.delete()
             removed += 1
