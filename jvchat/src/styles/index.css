@@ -17,20 +17,11 @@
   }
 }
 
-/* Shimmer text effect used by assistant-ui reasoning/tool triggers. */
-.shimmer {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--foreground) 50%,
-    transparent 100%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: shimmer-sweep 1000ms linear infinite both;
-}
+/* Shimmer text effect used by assistant-ui reasoning/tool triggers.
+   Ported from Integral: a bright band (transparent → --foreground →
+   transparent) clipped to the glyphs travels across the letters. The single
+   `.shimmer` definition lower in this file (`@keyframes shimmer-text`) is the
+   source of truth — this comment is kept here for discoverability. */
 
 /* tschat-style viewport: hide scrollbar where .scrollbar-hidden is applied */
 .scrollbar-hidden {
@@ -215,21 +206,36 @@ code, pre {
   background: rgba(113, 113, 122, 0.4);
 }
 
-/* Shimmer overlay for reasoning */
+/* Shimmer overlay for reasoning/tool triggers — Integral's effect: a moving
+   transparent → --foreground → transparent gradient clipped to the glyphs, so
+   a bright band travels across the letters (brighter + smoother than the prior
+   faint-gray sweep). */
 .shimmer {
-  background: linear-gradient(
-    110deg,
-    transparent 35%,
-    rgba(161, 161, 170, 0.15) 45%,
-    rgba(161, 161, 170, 0.25) 50%,
-    rgba(161, 161, 170, 0.15) 55%,
-    transparent 65%
+  color: transparent;
+  background-image: linear-gradient(
+    100deg,
+    transparent 20%,
+    var(--foreground) 40%,
+    var(--foreground) 60%,
+    transparent 80%
   );
-  background-size: 250% 100%;
-  animation: shimmer-sweep 1000ms linear infinite both;
+  background-size: 200% 100%;
   background-clip: text;
   -webkit-background-clip: text;
-  color: transparent;
+  animation: shimmer-text 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .shimmer {
+    animation: none;
+  }
+}
+@keyframes shimmer-text {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 /* Mermaid graph dark mode */

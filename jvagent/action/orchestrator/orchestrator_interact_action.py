@@ -376,12 +376,13 @@ class OrchestratorInteractAction(InteractAction):
         description="Per-tool-call timeout (seconds); 0 disables.",
     )
     tool_thought_max_chars: int = attribute(
-        default=12000,
+        default=0,
         description="Max characters of a tool result surfaced in the transient "
-        "tool_call/tool_result thought (the TOOL CALLS UI detail). Results "
-        "longer than this are truncated for the bus envelope only (the model "
-        "still sees the full observation). Set high enough that structured "
-        "results (e.g. JSON) stay parseable in the UI; 0 = no cap.",
+        "tool_call/tool_result thought (the TOOL CALLS UI detail). Default 0 = "
+        "NO CAP — the full result is sent so structured results (e.g. JSON) "
+        "stay complete and parseable in the UI; truncating mid-value yields "
+        "invalid JSON. Set a positive value only to bound very large results "
+        "on the bus envelope (the model always sees the full observation).",
     )
     lean_tool_threshold: int = attribute(
         default=15,

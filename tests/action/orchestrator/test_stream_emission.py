@@ -73,7 +73,7 @@ async def test_emit_tool_thought_call_then_result_share_segment():
     assert result["metadata"]["is_error"] is False
 
 
-async def test_emit_tool_thought_flags_errors_and_truncates():
+async def test_emit_tool_thought_flags_errors():
     bus = _FakeBus()
     ex = OrchestratorInteractAction()
     await ex._emit_tool_thought(
@@ -81,12 +81,39 @@ async def test_emit_tool_thought_flags_errors_and_truncates():
     )
     assert bus.published[0]["metadata"]["is_error"] is True
 
-    bus2 = _FakeBus()
+
+async def test_emit_tool_thought_uncapped_by_default():
+    # Default (tool_thought_max_chars=0) = NO CAP: the full tool result is sent
+    # so structured JSON results stay COMPLETE and parseable in the UI rather
+    # than being cut mid-value into invalid JSON.
+    bus = _FakeBus()
+    ex = OrchestratorInteractAction()
+    big = "x" * 50000
+    await ex._emit_tool_thought(_visitor(bus=bus), "tool_result", "t", "s", obs=big)
+    p = bus.published[0]
+    assert len(p["content"]) == 50000
+    assert len(p["metadata"]["tool_result"]) == 50000
+
+
+async def test_emit_tool_thought_truncates_at_configured_cap():
+    # The cap is configurable; when a result exceeds it, the bus envelope is
+    # truncated (the model still sees the full observation elsewhere).
+    bus = _FakeBus()
+    ex = OrchestratorInteractAction(tool_thought_max_chars=2000)
     big = "x" * 5000
-    await ex._emit_tool_thought(_visitor(bus=bus2), "tool_result", "t", "s", obs=big)
-    p = bus2.published[0]
+    await ex._emit_tool_thought(_visitor(bus=bus), "tool_result", "t", "s", obs=big)
+    p = bus.published[0]
     assert len(p["content"]) == 2000
     assert len(p["metadata"]["tool_result"]) == 2000
+
+
+async def test_emit_tool_thought_no_cap_when_zero():
+    bus = _FakeBus()
+    ex = OrchestratorInteractAction(tool_thought_max_chars=0)
+    big = "x" * 5000
+    await ex._emit_tool_thought(_visitor(bus=bus), "tool_result", "t", "s", obs=big)
+    p = bus.published[0]
+    assert len(p["content"]) == 5000
 
 
 async def test_emit_tool_thought_noop_without_bus():
