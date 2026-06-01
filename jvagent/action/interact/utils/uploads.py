@@ -5,7 +5,8 @@ Files arrive in ``visitor.data`` under keys like ``image_urls`` /
 either a bare URL string or a mapping ``{url|base64, mime_type, filename}``.
 These pure helpers normalize an entry, classify it (image / text / file), and
 decode text payloads — the orchestrator's ``_ingest_uploads`` persists the bytes
-and writes one artifact per file.
+and writes one **consolidated** artifact per file (the file reference plus its
+content/interpretation, enriched in place by ``_interpret_upload``).
 """
 
 from __future__ import annotations

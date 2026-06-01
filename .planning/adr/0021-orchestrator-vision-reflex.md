@@ -1,6 +1,6 @@
 # ADR 0021 — Conversation-scoped artifact memory (branch node) + Orchestrator vision input
 
-**Status**: Proposed (design approved; implementation pending)
+**Status**: Accepted (implemented; extended by §9 S3/S4 below)
 **Date**: 2026-06-01
 **Relation**: Restores vision (lost when PersonaAction was replaced — ADR-0012/0014) for the orchestrator turn, and establishes a **general conversation-scoped artifact memory** as the substrate. Extends the deterministic pre-loop stage (ADR-0013 continuation check) with a vision reflex. Removes legacy remnants (`Interaction.image_interpretation`, the dormant `Interaction.artifacts` dict, PersonaAction's vision-storage code).
 
@@ -227,3 +227,54 @@ pruning ─ interaction_limit reaps interaction X ─▶ drop PRODUCED edges ─
 Image generation/editing; audio/video; channel media fetching (already populate
 `image_urls`); full PersonaAction removal (separate); the public-endpoint auth
 work (ADR-0020).
+
+## 9. Evolution (S3 / S4 — implemented)
+
+The original decision (§2) stored a vision interpretation as a standalone
+`source="vision"` artifact. Two follow-on increments built on the same artifact
+substrate; both shipped and are reflected in the living docs
+([`jvagent/memory/README.md`](../../jvagent/memory/README.md),
+[`reference/actions-catalog.md`](../reference/actions-catalog.md)).
+
+### S3 — Recall on back-reference
+
+Storing + surfacing `list_artifacts`/`get_artifact` wasn't enough: a weak model
+answered "I can't recall previous images" on a follow-up that referred back to an
+earlier upload (reproduced live). Two additions, gated by `vision`:
+
+- **Affordance** — `artifact_recall_prompt`, a system-prompt line telling the
+  model earlier uploads persist as artifacts to consult before claiming it can't
+  recall.
+- **Deterministic recall seed** — `_artifact_recall_seed`: when the turn carries
+  no new image, the conversation holds image artifacts, and the utterance reads
+  like a back-reference (`_BACKREF_CUE`), the most-recent interpretation(s) are
+  seeded straight into the loop (bounded), so recall doesn't depend on the model
+  choosing a tool. The artifact tools were already pinned visible when `vision`
+  is on.
+
+### S4 — All uploads as artifacts + consolidation
+
+- **Every uploaded file** in `visitor.data` (keys `image_urls`,
+  `whatsapp_media`, `files`, `attachments`, `documents` — `upload_data_keys`),
+  not just images, is recorded as ONE `source="upload"` artifact by the
+  orchestrator's `_ingest_uploads` reflex (`ingest_uploads`, default on). Bytes
+  are persisted to the caller's **per-user file storage** and referenced by
+  `Artifact.path` (+ `filename`/`mime`/`size`) — **never inline on the node**, so
+  the graph stays lean (base64-on-node would bloat every conversation
+  read/backup). Reaping a file-backed artifact also deletes its stored bytes
+  (`_reap_artifacts_for` → `_delete_artifact_file`) — no orphans.
+- **Consolidation**: an uploaded image is **one** artifact = file reference +
+  its **own** (per-image) VisionAction interpretation written into `data`
+  (tagged `interpreted`/`vision`), not a file artifact plus a separate
+  interpretation artifact. `_interpret_upload(visitor, item)` is the per-kind
+  extension point — document interpreters (extraction/summary) plug in there and
+  merge onto the same upload artifact later. The standalone `_vision_reflex`
+  (separate `source="vision"` artifact) remains only as the fallback when
+  `ingest_uploads` is off.
+
+Pure upload-normalization helpers live in
+[`jvagent/action/interact/utils/uploads.py`](../../jvagent/action/interact/utils/uploads.py).
+Tests: `tests/action/interact/test_uploads.py`,
+`tests/action/orchestrator/test_ingest_uploads.py`,
+`tests/action/orchestrator/test_artifact_recall.py`, and file-cleanup +
+file-backed-index-row cases in `tests/memory/test_artifacts.py`.

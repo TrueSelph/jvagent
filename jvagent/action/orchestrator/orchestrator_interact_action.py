@@ -434,13 +434,14 @@ class OrchestratorInteractAction(InteractAction):
     vision: bool = attribute(
         default=False,
         description=(
-            "When True, a deterministic pre-loop reflex interprets images in "
-            "visitor.data['image_urls'] via VisionAction (its own multimodal "
-            "model), stores the description as a conversation artifact "
-            "(source='vision'), and seeds it into the turn so the reply uses it "
-            "(ADR-0021). Off by default — no VisionAction call when unused. "
-            "Requires a VisionAction on the agent and is skipped when "
-            "visitor.data['image_interpretation'] is False."
+            "When True, images in visitor.data['image_urls'] are interpreted via "
+            "VisionAction (its own multimodal model). With ingest_uploads on "
+            "(default) the interpretation is consolidated into the image's "
+            "source='upload' artifact (per-image); the standalone reflex storing a "
+            "separate source='vision' artifact runs only as the fallback when "
+            "ingest_uploads is off (ADR-0021). Off by default — no VisionAction "
+            "call when unused. Requires a VisionAction on the agent and is skipped "
+            "when visitor.data['image_interpretation'] is False."
         ),
     )
     ingest_uploads: bool = attribute(
@@ -448,9 +449,13 @@ class OrchestratorInteractAction(InteractAction):
         description=(
             "When True (default), every uploaded file in visitor.data (keys in "
             "`upload_data_keys`) is persisted to the per-user file storage and "
-            "recorded as a source='upload' conversation artifact (ADR-0021 S4) — "
-            "text files decoded into the artifact payload, binaries referenced by "
-            "stored path. The vision interpretation remains a separate artifact."
+            "recorded as ONE consolidated source='upload' conversation artifact "
+            "(ADR-0021 S4) — its file reference (path/mime/size) plus its "
+            "content/understanding: text decoded into the payload, images enriched "
+            "in place with a per-image VisionAction interpretation (file + "
+            "interpretation in a single artifact, not two), other binaries a "
+            "descriptor. `_interpret_upload` is the per-kind extension point for "
+            "document interpreters."
         ),
     )
     upload_data_keys: List[str] = attribute(
