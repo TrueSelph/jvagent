@@ -37,6 +37,8 @@ Use this split for new app descriptors:
 ### Interact endpoint
 - `JVAGENT_INTERACT_RATE_LIMIT_PER_MINUTE` - Interact endpoint rate limit.
 - `JVAGENT_INTERACT_MAX_UTTERANCE_LENGTH` - Max utterance length for interact endpoint.
+- `JVAGENT_INTERACT_PUBLIC_AUTH` - Public-endpoint session auth (ADR-0020): `off` (default, legacy), `log` (observe-only), `required` (enforce 401). Needs `JVSPATIAL_JWT_SECRET_KEY`.
+- `JVAGENT_INTERACT_TOKEN_TTL_SECONDS` - Mode B session capability token lifetime (default `604800` = 7 days).
 
 ### PageIndex
 - `JVAGENT_PAGEINDEX_DB_TYPE` - PageIndex backend type.

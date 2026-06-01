@@ -1,7 +1,8 @@
 # ADR 0020 — Authenticating the public `interact` endpoint (session capability tokens)
 
-**Status**: Proposed (design approved; staged implementation pending)
+**Status**: Accepted (implemented; default-`off` staged rollout)
 **Date**: 2026-06-01
+**Implementation**: [`jvagent/action/interact/session_token.py`](../../jvagent/action/interact/session_token.py) (mint/verify + identity guard), [`jvagent/action/interact/endpoints.py`](../../jvagent/action/interact/endpoints.py) (pre-spawn guard + token issuance), [`jvagent/memory/conversation.py`](../../jvagent/memory/conversation.py) (`token_secret` + ensure/rotate). Config: `JVAGENT_INTERACT_PUBLIC_AUTH` (`off`|`log`|`required`), `JVAGENT_INTERACT_TOKEN_TTL_SECONDS`. Tests: `tests/action/interact/test_session_token.py`.
 **Relation**: Hardens the HTTP ingress in front of the interact subsystem (`jvagent/action/interact/endpoints.py`). Builds on **jvspatial** auth facilities (`jvspatial/api/auth/service.py` `AuthService`, `api_key_service.py` `APIKeyService`, `AuthConfig`/`JVSPATIAL_JWT_SECRET_KEY`). Does **not** touch `InteractWalker` or the channel adapters.
 
 ---

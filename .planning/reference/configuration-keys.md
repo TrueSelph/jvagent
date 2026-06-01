@@ -23,6 +23,8 @@ Code: [`jvagent/core/config.py:59-150`](../../jvagent/core/config.py) — `Confi
 | `JVAGENT_ADMIN_PASSWORD` | (required for fresh installs) | Initial admin user password |
 | `JVAGENT_BASE_PATH` | `.` | Base path for action package resolution ([`action/base.py:900`](../../jvagent/action/base.py)) |
 | `JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL` | `100` | Cap on per-call pruning ([`memory/conversation.py:320`](../../jvagent/memory/conversation.py)) |
+| `JVAGENT_INTERACT_PUBLIC_AUTH` | `off` | Public `interact` endpoint auth (ADR-0020): `off` (legacy, no guard), `log` (mint + verify but never reject — observe denials), `required` (enforce 401). Unknown → `off`. ([`action/interact/session_token.py`](../../jvagent/action/interact/session_token.py)) |
+| `JVAGENT_INTERACT_TOKEN_TTL_SECONDS` | `604800` (7d) | Lifetime of a minted Mode B session capability token ([`action/interact/session_token.py`](../../jvagent/action/interact/session_token.py)). Requires `JVSPATIAL_JWT_SECRET_KEY`. |
 | `JVAGENT_DISABLE_RUNTIME_PIP_INSTALL` | unset / `false` | If `true`, do not pip-install action dependencies at load time |
 | `JVAGENT_ENVIRONMENT` | — | informational (`development` / `staging` / `production`) |
 | `SERVERLESS_MODE` | unset | Set to `true` by `--serverless` ([`cli/main.py:144`](../../jvagent/cli/main.py)) |
