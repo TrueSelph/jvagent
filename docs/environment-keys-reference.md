@@ -39,6 +39,7 @@ Use this split for new app descriptors:
 - `JVAGENT_INTERACT_MAX_UTTERANCE_LENGTH` - Max utterance length for interact endpoint.
 - `JVAGENT_INTERACT_MAX_DATA_JSON_BYTES` - Max serialized size of the control portion of `data` (default 256 KB; media keys validated separately; `none` disables).
 - `JVAGENT_INTERACT_MAX_MEDIA_BYTES` - Max serialized size of the media portion of `data` — inline base64 uploads (default 20 MB; `none` disables).
+- `JVAGENT_INTERACT_REDACT_DEBUG` - When truthy, the public interact endpoint redacts debug/observability (interaction detail + report) outside production too. Off by default (dev keeps full detail); production always redacts.
 - `JVAGENT_INTERACT_PUBLIC_AUTH` - Public-endpoint session auth (ADR-0020): `off` (default, legacy), `log` (observe-only), `required` (enforce 401). Needs `JVSPATIAL_JWT_SECRET_KEY`.
 - `JVAGENT_INTERACT_TOKEN_TTL_SECONDS` - Mode B session capability token lifetime (default `604800` = 7 days).
 

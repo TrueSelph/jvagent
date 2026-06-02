@@ -6,6 +6,24 @@ from typing import Any, Dict, List, Optional
 from jvagent.core.config import is_production_mode
 from jvagent.memory.interaction import Interaction
 
+
+def _public_debug_hardened() -> bool:
+    """True when the public endpoint should redact debug outside production.
+
+    Off by default so local dev (the jvchat Debug view) keeps full detail; set
+    ``JVAGENT_INTERACT_REDACT_DEBUG`` truthy to harden a non-prod internet deploy
+    (production always redacts via ``is_production_mode``).
+    """
+    import os
+
+    return os.environ.get("JVAGENT_INTERACT_REDACT_DEBUG", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 _TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 
 
@@ -172,7 +190,12 @@ async def build_interact_response(
         "session_id": session_id,
         "response": interaction.response,
     }
-    redact = is_production_mode() or public_endpoint
+    # Debug/observability redaction. Production always redacts. The public
+    # endpoint (auth=False) additionally redacts only when explicitly hardened
+    # (``JVAGENT_INTERACT_REDACT_DEBUG``) so anonymous callers on a non-prod
+    # *internet* deploy don't leak internals — but local dev (the jvchat Debug
+    # view's audience) keeps full detail by default.
+    redact = is_production_mode() or (public_endpoint and _public_debug_hardened())
     if not redact:
         tasks: List[Dict[str, Any]] = []
         if interaction.conversation_id:
@@ -185,7 +208,7 @@ async def build_interact_response(
                     interaction, conversation, active_tasks
                 )
         response["interaction"] = build_interaction_payload(
-            interaction, tasks=tasks, redact_debug=public_endpoint
+            interaction, tasks=tasks, redact_debug=False
         )
 
     if not redact and report is not None:
