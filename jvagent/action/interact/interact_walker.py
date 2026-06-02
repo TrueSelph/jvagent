@@ -268,15 +268,27 @@ class InteractWalker(Walker):
         await self._apply_access_denied_to_interaction(here, action_label)
         return False
 
-    async def _bootstrap_interaction(self, here: "Agent") -> str:
+    async def _bootstrap_interaction(
+        self, here: "Agent", *, through: str = "full"
+    ) -> str:
         """Resolve session, enforce entry access control, create Interaction.
+
+        ``through`` selects a phase for turn-lock serialization:
+        - ``full`` (default): session resolution + create
+        - ``session``: resolve session and access only; returns ``ready`` on success
+        - ``create``: create Interaction only (requires ``self.conversation``)
 
         Preconditions: ``self._agent`` is set to ``here`` by caller.
 
         Returns:
-            Machine-readable outcome: ``ok``, ``no_memory``, ``access_denied``,
+            Machine-readable outcome: ``ok``, ``ready``, ``no_memory``, ``access_denied``,
             or ``init_error``.
         """
+        if through == "create":
+            if not self.conversation:
+                return "init_error"
+            return await self._bootstrap_create_interaction(here)
+
         t_start = time.perf_counter()
         memory = await here.get_memory()
         if not memory:
@@ -399,6 +411,21 @@ class InteractWalker(Walker):
                 )
                 return "access_denied"
 
+        if through == "session":
+            return "ready"
+
+        return await self._bootstrap_create_interaction(here, t_start=t_start)
+
+    async def _bootstrap_create_interaction(
+        self, here: "Agent", *, t_start: Optional[float] = None
+    ) -> str:
+        """Create and wire the Interaction under an active conversation turn lock."""
+        if t_start is None:
+            t_start = time.perf_counter()
+        conversation = self.conversation
+        if not conversation:
+            return "init_error"
+
         t_create = time.perf_counter()
         try:
             from jvagent.action.model.context import set_interaction
@@ -426,7 +453,6 @@ class InteractWalker(Walker):
                     "agent_id": self.agent_id,
                     "interaction_id": self.interaction.id,
                     "elapsed_ms": round((time.perf_counter() - t_start) * 1000, 3),
-                    "get_session_ms": round(get_session_ms, 3),
                     "create_interaction_ms": round(create_ms, 3),
                 },
             )
@@ -440,7 +466,6 @@ class InteractWalker(Walker):
                     "outcome": "init_error",
                     "agent_id": self.agent_id,
                     "elapsed_ms": round((time.perf_counter() - t_start) * 1000, 3),
-                    "get_session_ms": round(get_session_ms, 3),
                 },
             )
             return "init_error"
@@ -475,21 +500,41 @@ class InteractWalker(Walker):
             here: The Agent node being visited
         """
         self._agent = here
-        if not self.interaction:
-            code = await self._bootstrap_interaction(here)
-            if not self.interaction:
-                self._bootstrap_error = code
+
+        if not self.conversation and not self.interaction:
+            pre = await self._bootstrap_interaction(here, through="session")
+            if pre != "ready":
+                self._bootstrap_error = pre
                 return
 
-        # Get Actions node
+        conv_id = getattr(self.conversation, "id", None) if self.conversation else None
+
+        async def _execute_turn() -> None:
+            if not self.interaction:
+                code = await self._bootstrap_interaction(here, through="create")
+                if not self.interaction:
+                    self._bootstrap_error = code
+                    return
+            await self._visit_agent_actions(here)
+
+        if conv_id:
+            from jvagent.memory.distributed_conversation_lock import (
+                conversation_mutation_lock,
+            )
+
+            async with conversation_mutation_lock(conv_id):
+                await _execute_turn()
+        else:
+            await _execute_turn()
+
+    async def _visit_agent_actions(self, here: "Agent") -> None:
+        """Traverse Actions → InteractActions under the conversation turn lock."""
         actions_node = await here.get_actions_manager()
         if not actions_node:
             await self.report({"error": "Agent has no Actions node"})
             return
 
-        # Walk to Actions node (executes all actions)
         await self.visit(actions_node)
-        # Finalize here so programmatic callers get the same behavior as HTTP endpoints
         await self._finalize()
 
     async def _finalize(self) -> None:

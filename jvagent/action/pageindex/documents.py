@@ -286,22 +286,22 @@ async def _download_url_to_workdir(
     The HTTP upload endpoint does its own (richer) download with Google
     Drive/Workspace link rewriting; this is the lighter in-process counterpart.
     """
+    from jvspatial.api.exceptions import ValidationError
+
+    from .url_guard import fetch_url_bytes_capped, ssrf_guard_url
+
     if not url.startswith(("http://", "https://")):
         raise ValueError(f"unsupported URL scheme for ingestion: {url!r}")
-    import httpx
 
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-            resp = await client.get(
-                url, headers={"User-Agent": "jvagent-pageindex/1.0"}
-            )
-            resp.raise_for_status()
-            ctype = (
-                (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
-            )
-            raw = resp.content
-            encoding = resp.encoding or "utf-8"
-    except Exception as exc:  # surface a clear, actionable message to the model
+        ssrf_guard_url(url)
+        raw, _fname, ctype = await fetch_url_bytes_capped(
+            url, read_timeout=30.0, user_agent="jvagent-pageindex/1.0"
+        )
+        encoding = "utf-8"
+    except ValidationError as exc:
+        raise ValueError(f"could not download URL for ingestion: {exc}") from exc
+    except Exception as exc:
         raise ValueError(f"could not download URL for ingestion: {exc}") from exc
 
     url_ext = Path(unquote(urlparse(url).path)).suffix.lower()
@@ -319,7 +319,6 @@ async def _download_url_to_workdir(
     ):
         ext, data = url_ext, raw
     else:
-        # Unknown / generic text → ingest as text (markdown-enriched path).
         ext = url_ext if url_ext in PAGEINDEX_TEXT_LIKE_EXTENSIONS else ".md"
         data = raw
     tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False, dir=work_dir)
@@ -437,6 +436,10 @@ async def assimilate_document(
                 except (OSError, ValueError):
                     # OSError covers "filename too long" — definitively content.
                     is_existing_file = False
+                if is_existing_file:
+                    from .url_guard import require_path_under_work_dir
+
+                    require_path_under_work_dir(doc_str, work_dir)
                 if not is_existing_file:
                     inferred_ext = (
                         Path(doc_name).suffix.lower() if doc_name else ""

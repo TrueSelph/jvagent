@@ -13,6 +13,7 @@ If neither is configured, falls back to :class:`~jvagent.memory.lock_manager.Mem
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import os
 import time
@@ -21,6 +22,16 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional
 
 logger = logging.getLogger(__name__)
+
+_lock_holder: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "conversation_mutation_lock_holder", default=None
+)
+
+
+def holds_conversation_mutation_lock(conversation_id: str) -> bool:
+    """Return True when the current task already holds *conversation_id*'s turn lock."""
+    return _lock_holder.get() == conversation_id
+
 
 _REDIS_URL_ENV = "JVAGENT_CONVERSATION_LOCK_REDIS_URL"
 _REDIS_TTL_ENV = "JVAGENT_CONVERSATION_LOCK_TTL_SECONDS"
@@ -53,27 +64,54 @@ def _dynamo_ttl_seconds() -> int:
         return 45
 
 
+def warn_missing_distributed_conversation_lock() -> None:
+    """Warn when serverless mode runs without a cross-process conversation lock."""
+    try:
+        from jvspatial import is_serverless_mode
+    except ImportError:
+        return
+    if not is_serverless_mode():
+        return
+    if _redis_url() or _dynamo_table():
+        return
+    logger.warning(
+        "PRODUCTION SAFETY: serverless mode without %s or %s — concurrent "
+        "invocations do not share conversation locks and may fork interaction "
+        "chains. Configure Redis or DynamoDB for multi-worker deployments.",
+        _REDIS_URL_ENV,
+        _DYNAMO_TABLE_ENV,
+    )
+
+
 @asynccontextmanager
 async def conversation_mutation_lock(conversation_id: str) -> AsyncIterator[None]:
     """Serialize ``add_interaction`` / chain updates for *conversation_id* cluster-wide."""
-    redis_url = _redis_url()
-    if redis_url:
-        async with _redis_conversation_lock(conversation_id, redis_url):
-            yield
-        return
-
-    dynamo_table = _dynamo_table()
-    if dynamo_table:
-        async with _dynamo_conversation_lock(conversation_id, dynamo_table):
-            yield
-        return
-
-    from jvagent.memory.lock_manager import get_conversation_lock_manager
-
-    lock_mgr = get_conversation_lock_manager()
-    lock = await lock_mgr.acquire(conversation_id)
-    async with lock:
+    if holds_conversation_mutation_lock(conversation_id):
         yield
+        return
+
+    token = _lock_holder.set(conversation_id)
+    try:
+        redis_url = _redis_url()
+        if redis_url:
+            async with _redis_conversation_lock(conversation_id, redis_url):
+                yield
+            return
+
+        dynamo_table = _dynamo_table()
+        if dynamo_table:
+            async with _dynamo_conversation_lock(conversation_id, dynamo_table):
+                yield
+            return
+
+        from jvagent.memory.lock_manager import get_conversation_lock_manager
+
+        lock_mgr = get_conversation_lock_manager()
+        lock = await lock_mgr.acquire(conversation_id)
+        async with lock:
+            yield
+    finally:
+        _lock_holder.reset(token)
 
 
 @asynccontextmanager

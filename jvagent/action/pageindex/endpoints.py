@@ -60,6 +60,11 @@ from .pageindex_action import (
     ensure_ingestion_config_for_agent,
 )
 from .retrieval import search_documents
+from .url_guard import (
+    MAX_UPLOAD_BYTES,
+)
+from .url_guard import fetch_url_bytes_capped as _fetch_url_bytes_capped
+from .url_guard import ssrf_guard_url as _ssrf_guard_url
 
 logger = logging.getLogger(__name__)
 
@@ -106,9 +111,6 @@ async def _get_app_id_from_node() -> Optional[str]:
 
     app = await App.get()
     return getattr(app, "app_id", None) if app else None
-
-
-MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
 
 
 def _parse_metadata(value: Optional[str]) -> Optional[Dict[str, Any]]:
@@ -323,123 +325,6 @@ def _safe_pageindex_relative_path(*segments: str) -> str:
         return PathSanitizer.sanitize_path(rel.replace("\\", "/"))
     except (InvalidPathError, PathTraversalError) as e:
         raise ValidationError(f"Invalid storage path: {e}")
-
-
-def _ssrf_guard_url(raw: str) -> None:
-    """Reject URLs that point at non-public targets.
-
-    Blocks:
-      * non-http(s) schemes (file://, gopher://, data:, ftp://, etc.)
-      * hostnames that resolve to RFC1918, loopback, link-local (169.254/16),
-        unique-local IPv6 (fc00::/7), or carrier-grade NAT (100.64/10) ranges
-      * literal ``localhost``
-
-    Applied to the **initial** URL only; redirects are validated per-hop in
-    the response hook below.
-    """
-    parsed = urlparse(raw)
-    if parsed.scheme not in ("http", "https"):
-        raise ValidationError("URL must be http or https")
-    host = (parsed.hostname or "").lower()
-    if not host:
-        raise ValidationError("URL must include a hostname")
-    if host in {"localhost", "ip6-localhost", "ip6-loopback"}:
-        raise ValidationError("URL host is not allowed")
-    try:
-        import ipaddress
-
-        addrs: List[str] = []
-        try:
-            addrs.append(str(ipaddress.ip_address(host)))
-        except ValueError:
-            import socket
-
-            try:
-                infos = socket.getaddrinfo(host, None)
-                addrs = [info[4][0] for info in infos]
-            except socket.gaierror:
-                raise ValidationError("URL host could not be resolved")
-        for addr in addrs:
-            ip = ipaddress.ip_address(addr)
-            if (
-                ip.is_private
-                or ip.is_loopback
-                or ip.is_link_local
-                or ip.is_reserved
-                or ip.is_multicast
-                or ip.is_unspecified
-            ):
-                raise ValidationError(
-                    "URL resolves to a non-public address; refusing to fetch"
-                )
-    except ImportError:
-        pass
-
-
-async def _fetch_url_bytes_capped(
-    url: str, *, read_timeout: float = 120.0
-) -> Tuple[bytes, str, Optional[str]]:
-    """Fetch *url* with SSRF guards + per-hop redirect validation.
-
-    AUDIT-actions XC-23: each redirect target is re-validated. Returning
-    302→302→… targeting an internal IP cannot bypass the original
-    ``_ssrf_guard_url`` check, because each hop's ``Location`` value is
-    funnelled through it before httpx follows it.
-
-    Note on full DNS-rebind defence: the audit also asked for httpx
-    connection pinning to a pre-resolved IP. We choose NOT to pin in this
-    streaming path because httpx + HTTP/2 + multi-hop redirects make
-    Host-rewrite tricky to keep correct across redirects. Per-hop re-
-    validation (this function) plus a strict resolver in
-    ``_ssrf_guard_url`` (literal-IP rejection, IPv4-mapped-IPv6, etc.)
-    closes the practical bypass surface in our threat model. Operators
-    who need full pinning should run jvagent behind an egress proxy
-    that enforces it.
-    """
-    raw = url.strip()
-    _ssrf_guard_url(raw)
-    timeout = httpx.Timeout(read_timeout, connect=30.0)
-
-    async def _validate_redirect(response: httpx.Response) -> None:
-        # Fires on EVERY response (including the final 200); only
-        # validate when this is actually a redirect with a Location.
-        if 300 <= response.status_code < 400:
-            loc = response.headers.get("location")
-            if loc:
-                # httpx resolves relative redirects against response.url.
-                target = str(httpx.URL(response.url).join(loc))
-                _ssrf_guard_url(target)
-
-    async with httpx.AsyncClient(
-        timeout=timeout,
-        follow_redirects=True,
-        event_hooks={"response": [_validate_redirect]},
-    ) as client:
-        async with client.stream("GET", raw) as resp:
-            if resp.status_code != 200:
-                raise ValidationError(f"Download failed: HTTP {resp.status_code}")
-            ct_header = resp.headers.get("content-type")
-            content_type: Optional[str] = None
-            if ct_header:
-                content_type = ct_header.split(";")[0].strip()
-            cd = resp.headers.get("content-disposition")
-            fname = _filename_from_content_disposition(cd) or _filename_from_url(raw)
-            total = 0
-            chunks: List[bytes] = []
-            async for chunk in resp.aiter_bytes():
-                if not chunk:
-                    continue
-                total += len(chunk)
-                if total > MAX_UPLOAD_BYTES:
-                    raise ValidationError(
-                        f"Remote file exceeds maximum size "
-                        f"({MAX_UPLOAD_BYTES // (1024 * 1024)} MB)"
-                    )
-                chunks.append(chunk)
-            content = b"".join(chunks)
-    if not content:
-        raise ValidationError("Downloaded file is empty")
-    return content, fname, content_type
 
 
 def _resolve_ingest_filename(filename_hint: str, content_type: Optional[str]) -> str:

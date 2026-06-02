@@ -67,15 +67,12 @@ def pageindex_temp_db(temp_dir):
 
 
 @pytest.fixture
-def sample_markdown(temp_dir):
-    path = temp_dir / "sample_lex.md"
-    path.write_text(
+def sample_markdown():
+    return (
         "# Introduction\n\nThis is a test document about finance.\n\n"
         "## Budget Planning\n\nQuarterly budget planning involves revenue forecasting.\n\n"
-        "## Legal Compliance\n\nLegal compliance ensures regulatory adherence.\n",
-        encoding="utf-8",
+        "## Legal Compliance\n\nLegal compliance ensures regulatory adherence.\n"
     )
-    return path
 
 
 # ---------------------------------------------------------------------------

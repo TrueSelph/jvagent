@@ -27,6 +27,7 @@ Staged rollout via ``JVAGENT_INTERACT_PUBLIC_AUTH ∈ {off, log, required}``:
 
 from __future__ import annotations
 
+import hmac
 import logging
 import time
 import uuid
@@ -56,13 +57,19 @@ _VALID_MODES = (MODE_OFF, MODE_LOG, MODE_REQUIRED)
 
 
 def auth_mode() -> str:
-    """Resolve ``JVAGENT_INTERACT_PUBLIC_AUTH`` (default ``off``).
+    """Resolve ``JVAGENT_INTERACT_PUBLIC_AUTH``.
 
+    Defaults to ``off`` in development and ``required`` in production when
+    unset, so internet-facing deploys fail closed without an explicit opt-out.
     Unknown values fall back to ``off`` (fail-open) so a misconfiguration never
-    locks out the public endpoint — enforcement is opt-in.
+    locks out the public endpoint — enforcement is opt-in via explicit values.
     """
-    raw = (env("JVAGENT_INTERACT_PUBLIC_AUTH", default=MODE_OFF) or MODE_OFF).strip()
-    raw = raw.lower()
+    from jvagent.core.config import is_production_mode
+
+    raw = env("JVAGENT_INTERACT_PUBLIC_AUTH", default=None)
+    if raw is None or not str(raw).strip():
+        return MODE_REQUIRED if is_production_mode() else MODE_OFF
+    raw = str(raw).strip().lower()
     return raw if raw in _VALID_MODES else MODE_OFF
 
 
@@ -200,7 +207,7 @@ def claims_match_conversation(
         # job (lazy on resume). Treat as a soft miss so `log` mode can observe it
         # and `required` mode can reject until backfilled.
         return "no_token_secret"
-    if claims.get("cs") != secret:
+    if not hmac.compare_digest(str(claims.get("cs") or ""), secret):
         return "secret_mismatch"
     return None
 
@@ -359,6 +366,28 @@ async def resolve_interact_identity(
     )
 
 
+def warn_interact_auth_configuration() -> None:
+    """Log production safety warnings for public interact authentication."""
+    mode = auth_mode()
+    secret = _secret()
+    from jvagent.core.config import is_production_mode
+
+    if not is_production_mode():
+        return
+    if mode == MODE_OFF:
+        logger.warning(
+            "PRODUCTION SAFETY: JVAGENT_INTERACT_PUBLIC_AUTH=off — the public "
+            "interact endpoint accepts unauthenticated session resumes. Set "
+            "JVAGENT_INTERACT_PUBLIC_AUTH=required and JVSPATIAL_JWT_SECRET_KEY."
+        )
+    elif mode in (MODE_LOG, MODE_REQUIRED) and not secret:
+        logger.warning(
+            "PRODUCTION SAFETY: interact session tokens require "
+            "JVSPATIAL_JWT_SECRET_KEY when JVAGENT_INTERACT_PUBLIC_AUTH=%s.",
+            mode,
+        )
+
+
 __all__ = [
     "MODE_OFF",
     "MODE_LOG",
@@ -373,4 +402,5 @@ __all__ = [
     "verify_bearer",
     "claims_match_conversation",
     "resolve_interact_identity",
+    "warn_interact_auth_configuration",
 ]

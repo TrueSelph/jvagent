@@ -13,35 +13,19 @@ from jvagent.action.pageindex.documents import (
     _download_url_to_workdir,
     _html_to_text,
 )
+from jvagent.action.pageindex.url_guard import require_path_under_work_dir
 
 pytestmark = pytest.mark.asyncio
 
 
-class _Resp:
-    def __init__(self, content=b"", headers=None, encoding="utf-8"):
-        self.content = content
-        self.headers = headers or {}
-        self.encoding = encoding
+async def _patch_fetch(monkeypatch, *, content: bytes, content_type: str):
+    async def _fake(url: str, **kwargs):
+        return content, "download", content_type
 
-    def raise_for_status(self):
-        return None
-
-
-def _install(monkeypatch, resp):
-    class _Client:
-        def __init__(self, *a, **k):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            return False
-
-        async def get(self, url, headers=None):
-            return resp
-
-    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(
+        "jvagent.action.pageindex.url_guard.fetch_url_bytes_capped",
+        _fake,
+    )
 
 
 def test_html_to_text_strips_tags_and_scripts():
@@ -56,9 +40,10 @@ def test_html_to_text_strips_tags_and_scripts():
 
 
 async def test_download_pdf_keeps_bytes_and_ext(monkeypatch, tmp_path):
-    _install(
+    await _patch_fetch(
         monkeypatch,
-        _Resp(content=b"%PDF-1.7 ...", headers={"content-type": "application/pdf"}),
+        content=b"%PDF-1.7 ...",
+        content_type="application/pdf",
     )
     path, url = await _download_url_to_workdir(
         "https://example.com/report", None, str(tmp_path)
@@ -72,17 +57,14 @@ async def test_download_html_becomes_stripped_markdown(monkeypatch, tmp_path):
     html = (
         b"<html><body><script>x()</script><h1>Title</h1><p>Body text.</p></body></html>"
     )
-    _install(
-        monkeypatch,
-        _Resp(content=html, headers={"content-type": "text/html; charset=utf-8"}),
-    )
+    await _patch_fetch(monkeypatch, content=html, content_type="text/html")
     path, _ = await _download_url_to_workdir(
         "https://example.com/page", None, str(tmp_path)
     )
     assert path.endswith(".md")
     text = Path(path).read_text(encoding="utf-8")
     assert "Title" in text and "Body text." in text
-    assert "x()" not in text  # script stripped
+    assert "x()" not in text
 
 
 async def test_assimilate_tool_coalesces_content_alias(monkeypatch):
@@ -134,20 +116,26 @@ async def test_download_rejects_non_http_scheme(tmp_path):
         await _download_url_to_workdir("ftp://example.com/x", None, str(tmp_path))
 
 
+async def test_download_rejects_private_url(tmp_path):
+    with pytest.raises(ValueError, match="could not download URL"):
+        await _download_url_to_workdir("http://127.0.0.1/secret", None, str(tmp_path))
+
+
 async def test_download_network_error_raises_actionable(monkeypatch, tmp_path):
-    class _BoomClient:
-        def __init__(self, *a, **k):
-            pass
+    async def _boom(url: str, **kwargs):
+        raise httpx.ConnectError("boom")
 
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            return False
-
-        async def get(self, url, headers=None):
-            raise httpx.ConnectError("boom")
-
-    monkeypatch.setattr(httpx, "AsyncClient", _BoomClient)
+    monkeypatch.setattr(
+        "jvagent.action.pageindex.url_guard.fetch_url_bytes_capped",
+        _boom,
+    )
     with pytest.raises(ValueError, match="could not download URL"):
         await _download_url_to_workdir("https://example.com/x", None, str(tmp_path))
+
+
+def test_require_path_under_work_dir_rejects_outside(tmp_path):
+    outside = Path("/etc/passwd")
+    if not outside.is_file():
+        pytest.skip("no /etc/passwd on this host")
+    with pytest.raises(ValueError, match="work directory"):
+        require_path_under_work_dir(str(outside), str(tmp_path))

@@ -1331,7 +1331,18 @@ class OrchestratorInteractAction(InteractAction):
                 ended_via=ended,
                 activated=activated,
             )
+            await self._finalize_plan(visitor)
             return
+
+        if flow_owner and flow_owner not in tools:
+            from jvagent.action.orchestrator.continuation import (
+                cancel_orphan_flow_tasks,
+            )
+
+            await cancel_orphan_flow_tasks(
+                visitor, routable_tool_names=set(tools.keys())
+            )
+            flow_owner = active_flow_owner(visitor, flow_tool_names=flow_tool_names)
 
         flow_note = active_flow_note(flow_owner) if flow_owner else ""
 

@@ -98,6 +98,8 @@ def _consolidated_tasks_for_interaction(
 def build_interaction_payload(
     interaction: Interaction,
     tasks: Optional[List[Dict[str, Any]]] = None,
+    *,
+    redact_debug: bool = False,
 ) -> Dict[str, Any]:
     """Build interaction payload, filtering debug data in production.
 
@@ -116,7 +118,7 @@ def build_interaction_payload(
     Returns:
         Dictionary with interaction data (filtered based on environment)
     """
-    if is_production_mode():
+    if is_production_mode() or redact_debug:
         # Minimal production payload - only essential fields
         return {
             "id": interaction.id,
@@ -144,6 +146,8 @@ async def build_interact_response(
     session_id: str,
     interaction: Interaction,
     report: Optional[list] = None,
+    *,
+    public_endpoint: bool = False,
 ) -> Dict[str, Any]:
     """Build complete interact endpoint response with environment-based filtering.
 
@@ -168,7 +172,8 @@ async def build_interact_response(
         "session_id": session_id,
         "response": interaction.response,
     }
-    if not is_production_mode():
+    redact = is_production_mode() or public_endpoint
+    if not redact:
         tasks: List[Dict[str, Any]] = []
         if interaction.conversation_id:
             from jvagent.memory.conversation import Conversation
@@ -179,11 +184,11 @@ async def build_interact_response(
                 tasks = _consolidated_tasks_for_interaction(
                     interaction, conversation, active_tasks
                 )
-        response["interaction"] = build_interaction_payload(interaction, tasks=tasks)
+        response["interaction"] = build_interaction_payload(
+            interaction, tasks=tasks, redact_debug=public_endpoint
+        )
 
-    # Include report only in development mode
-    # In production mode, omit the field entirely (not set to None)
-    if not is_production_mode() and report is not None:
+    if not redact and report is not None:
         response["report"] = report
 
     return response

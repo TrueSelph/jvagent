@@ -29,6 +29,9 @@ DEFAULT_UPLOAD_KEYS = (
     "documents",
 )
 
+# Maximum decoded bytes per inline upload entry (base64 in ``data``).
+MAX_UPLOAD_ITEM_BYTES = 5 * 1024 * 1024
+
 # Non-``text/*`` MIME types that are nonetheless text payloads worth decoding
 # into the artifact's queryable ``data``.
 _TEXTUAL_MIMES = frozenset(
@@ -99,7 +102,9 @@ def classify_kind(mime: str) -> str:
     return "file"
 
 
-def normalize_upload_entry(entry: Any) -> Optional[UploadItem]:
+def normalize_upload_entry(
+    entry: Any, *, max_item_bytes: int = MAX_UPLOAD_ITEM_BYTES
+) -> Optional[UploadItem]:
     """Normalize one ``data`` upload entry, or None if it carries no usable file.
 
     Accepts a bare URL string or a ``{url|base64, mime_type, filename}`` mapping.
@@ -124,10 +129,16 @@ def normalize_upload_entry(entry: Any) -> Optional[UploadItem]:
             payload = (
                 b64.split(",", 1)[1] if isinstance(b64, str) and "," in b64 else b64
             )
+            if isinstance(payload, str):
+                est = (len(payload) * 3) // 4
+                if est > max_item_bytes:
+                    return None
             try:
                 raw = base64.b64decode(payload, validate=False)
             except (binascii.Error, ValueError, TypeError):
                 raw = None
+            if raw is not None and len(raw) > max_item_bytes:
+                return None
         if not raw:
             url = str(entry.get("url") or "").strip()
         if not filename:

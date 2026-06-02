@@ -82,16 +82,13 @@ def pageindex_temp_db(temp_dir):
 
 
 @pytest.fixture
-def sample_markdown(temp_dir):
-    """Create a minimal markdown file for assimilation (no LLM needed with if_add_node_summary=no)."""
-    path = temp_dir / "sample.md"
-    path.write_text(
+def sample_markdown():
+    """Markdown body for assimilation (passed as content, not an external file path)."""
+    return (
         "# Introduction\n\nThis is a test document.\n\n"
         "## Section One\n\nContent for section one.\n\n"
-        "## Section Two\n\nContent for section two with finance topic.\n",
-        encoding="utf-8",
+        "## Section Two\n\nContent for section two with finance topic.\n"
     )
-    return path
 
 
 @pytest.mark.asyncio
@@ -518,7 +515,7 @@ async def test_do_assimilate_with_if_add_node_summary(
     pageindex_temp_db, sample_markdown
 ):
     """_do_assimilate passes if_add_node_summary to assimilate_document."""
-    content = sample_markdown.read_bytes()
+    content = sample_markdown.encode("utf-8")
     result = await _do_assimilate(
         content,
         ".md",
@@ -948,15 +945,11 @@ def test_strip_page_markers_and_annotate_structure_pages():
 
 
 @pytest.mark.asyncio
-async def test_assimilate_paged_markdown_sets_chunk_pages(pageindex_temp_db, temp_dir):
+async def test_assimilate_paged_markdown_sets_chunk_pages(pageindex_temp_db):
     """Markdown with ``--- [ Page N ] ---`` persists physical_index on chunks."""
-    path = temp_dir / "paged.md"
-    path.write_text(
-        "# Intro\n\nHello.\n\n--- [ Page 2 ] ---\n\n## Section B\n\nMore.\n",
-        encoding="utf-8",
-    )
+    body = "# Intro\n\nHello.\n\n--- [ Page 2 ] ---\n\n## Section B\n\nMore.\n"
     await assimilate_document(
-        path,
+        body,
         doc_name="paged_assim",
         if_add_node_summary="no",
         collection_name="col_paged",
@@ -968,22 +961,18 @@ async def test_assimilate_paged_markdown_sets_chunk_pages(pageindex_temp_db, tem
 
 
 @pytest.mark.asyncio
-async def test_assimilate_markdown_no_atx_headings_still_indexes(
-    pageindex_temp_db, temp_dir
-):
+async def test_assimilate_markdown_no_atx_headings_still_indexes(pageindex_temp_db):
     """Docling-like export: page markers + tables + prose without # headings must persist."""
-    path = temp_dir / "toc_pages.md"
-    path.write_text(
+    body = (
         "\n--- [ Page 1 ] ---\n\n"
         "| Foreword | ...1 |\n"
         "|----------|------|\n\n"
         "--- [ Page 3 ] ---\n\n"
         "Foreword\n\n"
-        "Body paragraph here.\n",
-        encoding="utf-8",
+        "Body paragraph here.\n"
     )
     await assimilate_document(
-        path,
+        body,
         doc_name="no_headers_doc",
         if_add_node_summary="no",
         collection_name="col_nh",

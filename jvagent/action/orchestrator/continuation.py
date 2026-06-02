@@ -160,10 +160,44 @@ def active_flow_note(tool_name: str) -> str:
     )
 
 
+async def cancel_orphan_flow_tasks(
+    visitor: Any,
+    *,
+    routable_tool_names: Optional[Set[str]] = None,
+) -> int:
+    """Cancel active flow tasks whose owner is no longer routable on the surface."""
+    conversation = getattr(visitor, "conversation", None)
+    store = _store(conversation)
+    if store is None:
+        return 0
+    names: FrozenSet[str] = frozenset(routable_tool_names or ())
+    cancelled = 0
+    try:
+        active = store.list(status="active")
+    except Exception as exc:
+        logger.debug("continuation: list(active) for sweep failed: %s", exc)
+        return 0
+    for th in active or []:
+        task_type = (getattr(th, "task_type", None) or "").strip().upper()
+        if task_type in _NON_FLOW_TASK_TYPES:
+            continue
+        owner = str(getattr(th, "owner_action", "") or "")
+        if not owner or (names and owner not in names):
+            try:
+                await th.cancel(reason="orphan flow task — owner unroutable")
+                cancelled += 1
+            except Exception as exc:
+                logger.debug(
+                    "continuation: cancel orphan flow %s failed: %s", owner, exc
+                )
+    return cancelled
+
+
 __all__ = [
     "active_flow_owner",
     "active_flow_note",
     "active_plan",
     "plan_resume_note",
     "PLAN_TASK_TYPE",
+    "cancel_orphan_flow_tasks",
 ]

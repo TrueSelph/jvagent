@@ -45,6 +45,11 @@ def test_normalize_url_string_guesses_mime():
     assert item.raw is None and item.mime == "application/pdf"
 
 
+def test_normalize_rejects_oversized_base64():
+    huge = _b64(b"x" * (6 * 1024 * 1024))
+    assert u.normalize_upload_entry({"base64": huge, "filename": "big.bin"}) is None
+
+
 def test_normalize_rejects_empty():
     assert u.normalize_upload_entry({}) is None
     assert u.normalize_upload_entry("") is None

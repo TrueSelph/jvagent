@@ -264,7 +264,16 @@ class Conversation(DeferredSaveMixin, Node):
         """
         from jvagent.memory.distributed_conversation_lock import (
             conversation_mutation_lock,
+            holds_conversation_mutation_lock,
         )
+
+        if holds_conversation_mutation_lock(self.id):
+            return await self._add_interaction_unlocked(
+                interaction=interaction,
+                utterance=utterance,
+                channel=channel,
+                session_id=session_id,
+            )
 
         async with conversation_mutation_lock(self.id):
             return await self._add_interaction_unlocked(
