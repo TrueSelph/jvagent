@@ -5,12 +5,28 @@ utterance length validation for anonymous requests.
 """
 
 import asyncio
+import json
 import logging
 import time
 from collections import defaultdict
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
+
+from jvagent.action.interact.utils.uploads import DEFAULT_UPLOAD_KEYS
 
 logger = logging.getLogger(__name__)
+
+# Cap optional ``data`` JSON on public interact (bytes of serialized payload).
+# This bounds *control* data only — media keys are validated separately against
+# the larger media cap (base64 uploads legitimately dwarf control data).
+DEFAULT_MAX_DATA_JSON_BYTES = 256 * 1024
+# Cap the serialized MEDIA portion of ``data`` (inline base64 uploads inflate
+# ~33% over raw bytes; this is the total across all media keys).
+DEFAULT_MAX_MEDIA_JSON_BYTES = 20 * 1024 * 1024
+# Cap each inline base64 upload item before decode (uploads.py enforces too).
+DEFAULT_MAX_UPLOAD_ITEM_BYTES = 5 * 1024 * 1024
+
+# ``data`` keys that carry uploaded media (exempt from the control-data cap).
+MEDIA_DATA_KEYS = frozenset(DEFAULT_UPLOAD_KEYS)
 
 
 class InteractRateLimiter:
@@ -29,17 +45,32 @@ class InteractRateLimiter:
         self,
         rate_limit_per_minute: int = 60,
         max_utterance_length: Optional[int] = 2000,
+        max_data_json_bytes: Optional[int] = DEFAULT_MAX_DATA_JSON_BYTES,
+        max_upload_item_bytes: int = DEFAULT_MAX_UPLOAD_ITEM_BYTES,
+        max_media_json_bytes: Optional[int] = DEFAULT_MAX_MEDIA_JSON_BYTES,
     ):
         """Initialize the rate limiter.
 
         Args:
             rate_limit_per_minute: Maximum requests per minute per IP+agent_id
             max_utterance_length: Maximum characters for utterance (None to disable)
+            max_data_json_bytes: Max serialized size of the CONTROL portion of
+                ``data`` (media keys excluded; None to disable)
+            max_upload_item_bytes: Maximum decoded size per inline upload item
+            max_media_json_bytes: Max serialized size of the MEDIA portion of
+                ``data`` (the upload keys; None to disable)
         """
         self.rate_limit_per_minute = rate_limit_per_minute
         self.max_utterance_length = max_utterance_length
+        self.max_data_json_bytes = max_data_json_bytes
+        self.max_upload_item_bytes = max_upload_item_bytes
+        self.max_media_json_bytes = max_media_json_bytes
         self._request_timestamps: dict[str, list[float]] = defaultdict(list)
-        self._lock = asyncio.Lock()
+        self._lock = self._new_lock()
+
+    @staticmethod
+    def _new_lock() -> asyncio.Lock:
+        return asyncio.Lock()
 
     async def check_rate_limit(self, ip: str, agent_id: str) -> bool:
         """Check if request is within rate limit.
@@ -140,6 +171,52 @@ class InteractRateLimiter:
 
         return (True, None)
 
+    @staticmethod
+    def _json_size(obj: Any) -> int:
+        return len(json.dumps(obj, separators=(",", ":"), default=str).encode("utf-8"))
+
+    def validate_data_payload(
+        self, data: Optional[Dict[str, Any]]
+    ) -> Tuple[bool, Optional[str]]:
+        """Validate the interact ``data`` dict size — media-aware.
+
+        Uploaded media (the ``MEDIA_DATA_KEYS`` — image_urls, whatsapp_media,
+        files, attachments, documents) is base64 and legitimately large, so it is
+        validated against ``max_media_json_bytes`` (generous) while the rest of
+        ``data`` — control fields the model/flows read — stays bounded by the
+        small ``max_data_json_bytes`` cap (abuse protection). Either cap may be
+        ``None`` to disable that check.
+        """
+        if not data:
+            return (True, None)
+        media = {k: v for k, v in data.items() if k in MEDIA_DATA_KEYS}
+        control = {k: v for k, v in data.items() if k not in MEDIA_DATA_KEYS}
+
+        if control and self.max_data_json_bytes is not None:
+            try:
+                size = self._json_size(control)
+            except (TypeError, ValueError) as exc:
+                return (False, f"data is not JSON-serializable: {exc}")
+            if size > int(self.max_data_json_bytes):
+                return (
+                    False,
+                    "data (excluding uploaded media) exceeds maximum size of "
+                    f"{self.max_data_json_bytes} bytes (current: {size} bytes)",
+                )
+
+        if media and self.max_media_json_bytes is not None:
+            try:
+                size = self._json_size(media)
+            except (TypeError, ValueError) as exc:
+                return (False, f"data is not JSON-serializable: {exc}")
+            if size > int(self.max_media_json_bytes):
+                return (
+                    False,
+                    "uploaded media exceeds maximum size of "
+                    f"{self.max_media_json_bytes} bytes (current: {size} bytes)",
+                )
+        return (True, None)
+
 
 # Global rate limiter instance (will be initialized with config)
 _rate_limiter: Optional[InteractRateLimiter] = None
@@ -159,18 +236,28 @@ def get_rate_limiter() -> InteractRateLimiter:
 
 
 def initialize_rate_limiter(
-    rate_limit_per_minute: int = 60, max_utterance_length: Optional[int] = 2000
+    rate_limit_per_minute: int = 60,
+    max_utterance_length: Optional[int] = 2000,
+    max_data_json_bytes: Optional[int] = DEFAULT_MAX_DATA_JSON_BYTES,
+    max_upload_item_bytes: int = DEFAULT_MAX_UPLOAD_ITEM_BYTES,
+    max_media_json_bytes: Optional[int] = DEFAULT_MAX_MEDIA_JSON_BYTES,
 ) -> None:
     """Initialize the global rate limiter with configuration.
 
     Args:
         rate_limit_per_minute: Maximum requests per minute per IP+agent_id
         max_utterance_length: Maximum characters for utterance (None to disable)
+        max_data_json_bytes: Max serialized CONTROL ``data`` size (media excluded)
+        max_upload_item_bytes: Maximum decoded size per inline upload item
+        max_media_json_bytes: Max serialized MEDIA ``data`` size (upload keys)
     """
     global _rate_limiter
     _rate_limiter = InteractRateLimiter(
         rate_limit_per_minute=rate_limit_per_minute,
         max_utterance_length=max_utterance_length,
+        max_data_json_bytes=max_data_json_bytes,
+        max_upload_item_bytes=max_upload_item_bytes,
+        max_media_json_bytes=max_media_json_bytes,
     )
 
 

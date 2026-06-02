@@ -349,7 +349,8 @@ _rate_limiter_initialized = False
 def _initialize_rate_limiter_from_config() -> None:
     """Initialize rate limiter from config (env > app.yaml > default).
 
-    Env vars: JVAGENT_INTERACT_RATE_LIMIT_PER_MINUTE, JVAGENT_INTERACT_MAX_UTTERANCE_LENGTH
+    Env vars: JVAGENT_INTERACT_RATE_LIMIT_PER_MINUTE, JVAGENT_INTERACT_MAX_UTTERANCE_LENGTH,
+    JVAGENT_INTERACT_MAX_DATA_JSON_BYTES, JVAGENT_INTERACT_MAX_MEDIA_BYTES
     """
     global _rate_limiter_initialized
     if _rate_limiter_initialized:
@@ -359,6 +360,10 @@ def _initialize_rate_limiter_from_config() -> None:
     max_length: Optional[int] = 2000
 
     try:
+        from jvagent.action.interact.rate_limiter import (
+            DEFAULT_MAX_DATA_JSON_BYTES,
+            DEFAULT_MAX_MEDIA_JSON_BYTES,
+        )
         from jvagent.core.app_context import get_app_root
         from jvagent.core.config import get_config_value, load_app_config
 
@@ -395,13 +400,40 @@ def _initialize_rate_limiter_from_config() -> None:
                 )
                 max_length = 2000
 
+        def _byte_cap(key: str, env: str, default: int) -> Optional[int]:
+            raw = get_config_value(app_config, key, env, default)
+            if raw is None or (
+                isinstance(raw, str) and raw.strip().lower() in ("none", "null", "")
+            ):
+                return None
+            try:
+                return int(raw)
+            except (TypeError, ValueError):
+                logger.warning("Invalid %s value %r; using default", env, raw)
+                return default
+
+        max_data_bytes = _byte_cap(
+            "interact.max_data_json_bytes",
+            "JVAGENT_INTERACT_MAX_DATA_JSON_BYTES",
+            DEFAULT_MAX_DATA_JSON_BYTES,
+        )
+        max_media_bytes = _byte_cap(
+            "interact.max_media_bytes",
+            "JVAGENT_INTERACT_MAX_MEDIA_BYTES",
+            DEFAULT_MAX_MEDIA_JSON_BYTES,
+        )
+
         initialize_rate_limiter(
             rate_limit_per_minute=rate_limit,
             max_utterance_length=max_length,
+            max_data_json_bytes=max_data_bytes,
+            max_media_json_bytes=max_media_bytes,
         )
         logger.info(
             f"Initialized rate limiter: {rate_limit} req/min, "
-            f"max_utterance_length={max_length or 'unlimited'}"
+            f"max_utterance_length={max_length or 'unlimited'}, "
+            f"max_data_json_bytes={max_data_bytes}, "
+            f"max_media_bytes={max_media_bytes}"
         )
     except Exception as e:
         logger.debug(f"Could not load rate limiter config, using defaults: {e}")
@@ -609,6 +641,13 @@ async def interact_endpoint(
             },
         )
 
+    is_valid, data_error = rate_limiter.validate_data_payload(data)
+    if not is_valid:
+        raise ValidationError(
+            message=data_error or "data payload exceeds maximum size",
+            details={"max_data_json_bytes": rate_limiter.max_data_json_bytes},
+        )
+
     # Record the request for rate limiting
     await rate_limiter.record_request(client_ip, agent_id)
 
@@ -791,6 +830,7 @@ async def interact_endpoint(
                         session_id=walker.session_id or "",
                         interaction=interaction,
                         report=report,
+                        public_endpoint=True,
                     )
 
                 # Mint/refresh the Mode B session capability token (ADR-0020) so
@@ -1084,6 +1124,7 @@ async def _stream_interaction(
                 session_id=walker.session_id or "",
                 interaction=interaction,
                 report=report,
+                public_endpoint=True,
             )
             profile.record("build_response", time.time() - report_start)
             profile.record("total_stream_time", time.time() - stream_start_time)
@@ -1095,12 +1136,9 @@ async def _stream_interaction(
                 }
             )
 
-            # Fire background actions after final chunk is yielded
+            # Run background actions after final chunk is yielded (await for Lambda)
             if walker.background_actions:
-                await create_task(
-                    _run_background_actions(walker),
-                    name="interact_background_actions",
-                )
+                await _run_background_actions(walker)
 
             # Log profile summary
             await finalize_profile(profile.request_id, log=True)
@@ -1163,6 +1201,7 @@ async def _stream_interaction(
                 session_id=walker.session_id or "",
                 interaction=interaction,
                 report=report,
+                public_endpoint=True,
             )
             profile.record("build_response", time.time() - report_start)
             profile.record("total_stream_time", time.time() - stream_start_time)
@@ -1174,12 +1213,9 @@ async def _stream_interaction(
                 }
             )
 
-            # Fire background actions after final chunk is yielded
+            # Run background actions after final chunk is yielded (await for Lambda)
             if walker.background_actions:
-                await create_task(
-                    _run_background_actions(walker),
-                    name="interact_background_actions",
-                )
+                await _run_background_actions(walker)
 
             # Log profile summary
             await finalize_profile(profile.request_id, log=True)
