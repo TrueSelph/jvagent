@@ -14,7 +14,7 @@ from jvagent.action.orchestrator.orchestrator_interact_action import (
     _RECALL_MAX_CHARS,
     OrchestratorInteractAction,
 )
-from jvagent.action.orchestrator.prompts import ARTIFACT_RECALL_PROMPT
+from jvagent.action.orchestrator.prompts import MEMORY_PROMPT
 
 pytestmark = pytest.mark.asyncio
 
@@ -104,15 +104,18 @@ async def test_seed_caps_count_and_length():
         assert len(chunk) <= _RECALL_MAX_CHARS
 
 
-async def test_prompt_affordance_default_and_gating():
+async def test_memory_prompt_default_and_general_coverage():
     ex = _ex()
-    assert ex.artifact_recall_prompt == ARTIFACT_RECALL_PROMPT
-    assert "list_artifacts" in ARTIFACT_RECALL_PROMPT
-    # The affordance is NOT baked into the base template; _run_model appends it
-    # only when vision is on (this asserts the source of truth + gating intent).
+    assert ex.memory_prompt == MEMORY_PROMPT
+    # general memory protocol: covers BOTH conversation and artifacts
+    assert "CONVERSATION" in MEMORY_PROMPT
+    assert "ARTIFACTS" in MEMORY_PROMPT
+    assert "list_artifacts" in MEMORY_PROMPT
+    # rendered in the LOOP PROTOCOL, not baked into the base template; it's a
+    # standing protocol (not vision-gated) — present whenever memory_prompt is set.
     base = ex._compose_system_prompt(
         identity_section="", tools_section="", skills_section=""
     )
-    assert ARTIFACT_RECALL_PROMPT not in base
-    composed = f"{base}\n\n{ex.artifact_recall_prompt}" if ex.vision else base
-    assert ARTIFACT_RECALL_PROMPT in composed
+    assert MEMORY_PROMPT not in base
+    composed = f"{base}\n\n{ex.memory_prompt}" if ex.memory_prompt else base
+    assert MEMORY_PROMPT in composed

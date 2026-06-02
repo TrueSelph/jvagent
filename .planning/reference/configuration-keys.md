@@ -192,10 +192,12 @@ piece and logs a warning, so a bad string never breaks a turn.
 
 | Key | Placeholders | Effect |
 |---|---|---|
-| `system_prompt` | `{identity_section}` `{tools_section}` `{skills_section}` | the main system-prompt body |
+| `system_prompt` | `{identity_section}` `{capabilities_section}` `{tools_section}` `{skills_section}` `{loop_protocol_extra}` `{parameters_section}` | the main system-prompt body (identity → capabilities → tools → skills → step JSON → LOOP PROTOCOL → OPERATING RULES) |
 | `system_prompt_extra` | — | extra text appended after the base body (safe additive; no placeholders needed) |
-| `user_prompt` | `{history_section}` `{utterance}` `{observations_section}` | the per-tick user prompt |
-| `tool_use_policy_prompt` | — | appended when `block_raw_tool_invocation` is on |
+| `user_prompt` | `{utterance}` `{observations_section}` (`{history_section}` accepted but rendered empty — history rides the structured-message channel) | the per-tick user prompt; the `SAFEGUARDS_REMINDER` (peak-attention OPERATING-RULES reminder) is appended to it each step |
+| `parameters` | — | scoped behavioural rules `{scope, condition?, response}` (the **common parameter subsystem**, on the `Action` base). `scope: orchestration` rules render in the LOOP PROTOCOL; `scope: response` (default when unspecified) render in the reply compose; the executive natively owns the orchestration core, the ReplyAction the response core, and every action's params are pooled onto the interaction each turn |
+| `memory_prompt` | — | the standing memory-access protocol rendered in the LOOP PROTOCOL (search the conversation in context + saved artifacts before claiming you can't recall); set empty to omit |
+| `tool_use_policy_prompt` | — | rendered in the LOOP PROTOCOL when `block_raw_tool_invocation` is on |
 | `flow_in_progress_prompt` | `{flow_note}` | appended while a flow is active |
 | `length_limit_prompt` | `{max_chars}` | appended when `max_statement_length` is set |
 | `finalize_prompt` | — | appended on the partial-compose finalize tick |

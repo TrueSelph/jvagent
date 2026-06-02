@@ -63,8 +63,9 @@ CANCELLATION_MESSAGE = "Tell the user: I've gone ahead and cancelled the process
 # System Directive Templates
 # =============================================================================
 
-QUESTION_DIRECTIVE = """Make a request to the user based on the following:
-{question} ({description}){context_section}
+QUESTION_DIRECTIVE = """Ask the user the following, naturally and in one short \
+message. ALWAYS end with this exact request:
+{question}{context_section}
 {instructions}
 """
 
@@ -127,7 +128,7 @@ def get_state_event_message(state: str, class_name: str) -> str:
 # Task Tracker - Active Task Descriptions
 # =============================================================================
 
-ACTIVE_TASK_DESCRIPTION_TEMPLATE = "The user was in the {action_title} (Action Description: {action_description}). If the user diverges, respond naturally without redirecting. Only prompt them to continue at a natural pause or when they seem ready. Avoid repeating reminders."
+ACTIVE_TASK_DESCRIPTION_TEMPLATE = "The user has engaged the {action_title} (Action Description: {action_description}). If their latest message is off-topic or unrelated to it, answer that in at most one short sentence, then steer back and re-ask the current pending question — always ending your reply with that question. Do not abandon the {action_title} until it is complete or the user explicitly cancels."
 
 
 # =============================================================================

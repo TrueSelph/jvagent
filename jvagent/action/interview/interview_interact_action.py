@@ -267,11 +267,12 @@ class InterviewInteractAction(InteractAction, ABC):
     )
     active_task_description: str = attribute(
         default=ACTIVE_TASK_DESCRIPTION_TEMPLATE,
-        description="Guidance recorded on the active control-task that steers how "
-        "the agent handles off-topic input mid-interview. Placeholders: "
-        "{action_title}, {action_description}. Default answers divergences "
-        "without redirecting; override (e.g. in the agent YAML) to keep the user "
-        "on the pending step.",
+        description="Guidance for handling off-topic input mid-interview. The "
+        "interview injects it into the reply on a diverged turn (Intent.NONE) so "
+        "every host gets the behavior. Placeholders: {action_title}, "
+        "{action_description}. Default keeps the user on the pending step (answer "
+        "the aside briefly, then re-ask); override to answer naturally without "
+        "redirecting.",
     )
 
     # =========================================================================
@@ -669,6 +670,44 @@ class InterviewInteractAction(InteractAction, ABC):
             StateNode if found, None otherwise
         """
         return await self.node(node=StateNode, state_type=state_type)
+
+    def get_capabilities(self) -> List[str]:
+        """An interview is a user-facing flow, so it advertises itself to the
+        orchestrator's capability digest (uses the action ``description``; override
+        for more user-facing phrasing). This is what lets the agent confidently
+        say it can run the flow instead of "I can't sign you up directly…"."""
+        desc = (self.description or "").strip()
+        return [desc] if desc else []
+
+    def _active_task_title(self) -> str:
+        """Human title for this interview, for the active-task templates."""
+        title = (self.metadata.get("title", "") or "") if self.metadata else ""
+        title = title.split("Interact")[0].strip()
+        return title.replace("Action", "").strip()
+
+    def render_active_task_guidance(self) -> str:
+        """Render this interview's divergence guidance (``active_task_description``)
+        with ``{action_title}``/``{action_description}`` filled.
+
+        This is the single source of "how to handle an off-topic aside mid-
+        interview". The interview injects it into the question directive on a
+        diverged turn (see ``QuestionNode.execute``) so the reply follows the
+        policy — default answers naturally without redirecting; override
+        ``active_task_description`` (e.g. in agent YAML) to answer briefly then
+        re-ask the pending field. Centralizing it here means every interview
+        action and every host (orchestrator, rails) gets the behavior without
+        host-side wiring.
+        """
+        from .core.foundation.prompts import ACTIVE_TASK_DESCRIPTION_TEMPLATE
+
+        template = self.active_task_description or ACTIVE_TASK_DESCRIPTION_TEMPLATE
+        try:
+            return template.format(
+                action_title=self._active_task_title(),
+                action_description=self.description or "",
+            ).strip()
+        except Exception:
+            return (template or "").strip()
 
     async def _queue_directive(self, visitor: "InteractWalker", directive: str) -> None:
         """Queue a directive for later response generation.

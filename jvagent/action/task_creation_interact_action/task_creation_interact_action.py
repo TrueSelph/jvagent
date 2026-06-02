@@ -42,10 +42,6 @@ class TaskCreationInteractAction(InteractAction):
         default="gpt-4o-mini",
         description="Model identifier (fast model is fine for task extraction).",
     )
-    capabilities_cache_ttl_seconds: int = attribute(
-        default=300,
-        description="Cache TTL for capabilities string.",
-    )
     skip_intents: List[str] = attribute(
         default_factory=lambda: ["CONVERSATIONAL", "UNCLEAR"],
         description="Skip proactive scheduling for these intent types.",
@@ -251,12 +247,21 @@ class TaskCreationInteractAction(InteractAction):
             logger.error(f"BrainSchedulerAction: Error: {e}", exc_info=True)
 
     async def _get_capabilities(self) -> str:
+        """Render the agent's advertised abilities as a bullet list for the
+        proactive-scheduler prompt.
+
+        Aggregation lives on ``Agent.collect_capabilities()`` (the single source
+        of truth); this only formats. Freshness is handled at the agent layer —
+        ``Agent.save()`` invalidates the action caches — so no bespoke TTL cache
+        is needed here.
+        """
         agent = await self.get_agent()
         if not agent:
-            return "No capabilities."
-        return await self.get_agent_capabilities_brief(
-            agent, ttl_seconds=self.capabilities_cache_ttl_seconds
-        )
+            return "No specific capabilities registered."
+        caps = await agent.collect_capabilities()
+        if not caps:
+            return "No specific capabilities registered."
+        return "\n".join(f"- {c}" for c in caps)
 
     def _extract_tasks(self, response: str) -> List[Dict[str, Any]]:
         tasks = []

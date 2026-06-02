@@ -67,6 +67,7 @@ def _spy_model(monkeypatch):
         gear="heavy",
         lean=False,
         plan_note="",
+        **kwargs,
     ):
         calls["n"] += 1
         return {"action": "final", "answer": ""}

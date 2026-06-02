@@ -98,6 +98,7 @@ def make_orchestrator(monkeypatch, publish_log):
             gear="heavy",
             lean=False,
             plan_note="",
+            **kwargs,
         ):
             return seq.pop(0) if seq else {"action": "final", "answer": ""}
 

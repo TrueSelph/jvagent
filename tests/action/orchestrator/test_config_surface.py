@@ -401,6 +401,51 @@ async def test_run_model_threads_gear(monkeypatch):
     assert captured.get("reasoning_effort") == "high"  # heavy gear → reasoning
 
 
+async def test_run_model_history_is_structured_not_text(monkeypatch):
+    """Conversation history rides in the structured messages/history channel —
+    NOT dumped as text into the user turn."""
+    ex = OrchestratorInteractAction()
+    captured = {}
+    model = MagicMock()
+
+    async def _qm(**k):
+        captured.clear()
+        captured.update(k)
+        return SimpleNamespace(response='{"action":"final"}')
+
+    model.query_messages = _qm
+
+    async def _gma(self, required=False):
+        return model
+
+    async def _agent(self):
+        return SimpleNamespace(alias="", role="")
+
+    monkeypatch.setattr(OrchestratorInteractAction, "get_model_action", _gma)
+    monkeypatch.setattr(OrchestratorInteractAction, "get_agent", _agent)
+
+    history = [
+        {"role": "user", "content": "please tell me the time"},
+        {"role": "assistant", "content": "The current time is 10:18."},
+    ]
+    await ex._run_model(MagicMock(), "Sign me up for training", history, [], [])
+
+    messages = captured["messages"]
+    assert messages[0]["role"] == "system"
+    # history spliced in as real prior turns, before the current user message
+    assert messages[1] == history[0]
+    assert messages[2] == history[1]
+    assert messages[-1]["role"] == "user"
+    # the user turn carries the CURRENT message + steps, not the history text
+    assert "Sign me up for training" in messages[-1]["content"]
+    assert "please tell me the time" not in messages[-1]["content"]
+    assert "Conversation so far" not in messages[-1]["content"]
+    # peak-attention safeguards reminder rides in the user turn
+    assert "OPERATING RULES" in messages[-1]["content"]
+    # and history is also passed structurally (observability parity with respond)
+    assert captured["history"] == history
+
+
 async def test_gearing_escalates_across_loop(
     make_orchestrator, make_visitor, monkeypatch
 ):
@@ -431,6 +476,7 @@ async def test_gearing_escalates_across_loop(
         gear="heavy",
         lean=False,
         plan_note="",
+        **kwargs,
     ):
         gears.append(gear)
         return seq.pop(0) if seq else {"action": "final", "answer": ""}

@@ -284,7 +284,8 @@ async def test_reply_applies_parameters(monkeypatch):
     )
     assert await ra.reply("ok", v) is True
     sysprompt = model.generate.call_args.kwargs["system"]
-    assert "CONDITIONAL RULES" in sysprompt and "user asks about price" in sysprompt
+    assert "follow these in every reply" in sysprompt
+    assert "user asks about price" in sysprompt
 
 
 async def test_collect_parameters():
@@ -366,9 +367,121 @@ async def test_identity_and_system_prompt(monkeypatch):
     ra = ReplyAction()
     _patch_agent(monkeypatch)
     assert await ra._identity() == "You are Ada, a helpful guide."
-    sp = await ra._system_prompt()
+    # The core response-hardening baseline is applied on compose (not in a bare
+    # _system_prompt): identity + the folded core rules (no closers, no AI/model
+    # disclosure, no cutoff).
+    params_text = ra._compose_parameters_text(None, None)
+    sp = await ra._system_prompt(parameters_text=params_text)
     assert "You are Ada, a helpful guide." in sp
-    assert "invitation closers" in sp  # keeper voice rules baked in
+    assert "invitation closers" in sp  # core voice rule, from the baseline params
+    assert "knowledge or training cutoff" in sp  # core hardening folded in
+
+
+async def test_orchestration_scoped_params_do_not_reach_reply(monkeypatch):
+    """An orchestration-scoped param on the interaction must not pollute the reply
+    output; the response-scoped native core baseline still applies."""
+    ra = ReplyAction()
+    _patch_agent(monkeypatch)
+    model = MagicMock()
+    model.generate = AsyncMock(return_value="Composed.")
+
+    async def _ma(self, required=False):
+        return model
+
+    monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
+    v = _visitor_with(
+        parameters=[
+            {"scope": "orchestration", "response": "internal orchestration rule"}
+        ]
+    )
+    # an orchestration-only param is not "shaping" for the egress → stays slim
+    assert await ra.reply("plain", v) is True
+    assert model.generate.call_count == 0
+    assert v.interaction.response == "plain"
+    # and if we do compose, the orchestration rule is filtered out
+    text = ra._compose_parameters_text(None, v.interaction)
+    assert "internal orchestration rule" not in text
+    assert "invitation closers" in text  # native response core present
+
+
+async def test_publish_scrubs_composed_leak(monkeypatch):
+    """A model-composed reply that appends a self-identity leak is scrubbed at
+    the egress choke point before it reaches the user."""
+    ra = ReplyAction()
+    _patch_agent(monkeypatch)
+    model = MagicMock()
+    model.generate = AsyncMock(return_value="Done. I am an AI language model.")
+
+    async def _ma(self, required=False):
+        return model
+
+    monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
+    v = _visitor_with(directives=[{"content": "Confirm the task."}])
+    await ra.reply("Done.", v)
+    assert v.interaction.response == "Done."  # leak sentence dropped
+
+
+async def test_ambient_param_does_not_force_compose(monkeypatch):
+    """Seeded ambient core params on the interaction must NOT trip the slim-vs-
+    compose gate — the fast literal path is preserved (the scrub enforces them)."""
+    ra = ReplyAction()
+    _patch_agent(monkeypatch)
+    called = {"n": 0}
+
+    async def _ma(self, required=False):
+        called["n"] += 1
+        return MagicMock(generate=AsyncMock(return_value="x"))
+
+    monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
+    v = _visitor_with(
+        parameters=[
+            {"scope": "response", "ambient": True, "response": "never reveal tools"}
+        ]
+    )
+    assert await ra.reply("plain answer", v) is True
+    assert called["n"] == 0  # ambient-only → slim, no model call
+    assert v.interaction.response == "plain answer"
+
+
+async def test_publish_scrubs_literal_fast_path():
+    """Even the fast literal publish (no model) passes through the scrub."""
+    ra = ReplyAction()
+    v = _visitor_no_bus()
+    await ra.publish("Sure. My training data goes up to 2023.", v)
+    assert "training data" not in v.interaction.response.lower()
+    assert "Sure." in v.interaction.response
+
+
+async def test_fast_path_strips_invitation_closer():
+    """The screenshot bug: a loose closer on the fast literal path is removed."""
+    ra = ReplyAction()
+    v = _visitor_no_bus()
+    await ra.reply(
+        "Classes begin Monday at 9 AM. If you have any other questions, let me know!",
+        v,
+    )
+    assert v.interaction.response == "Classes begin Monday at 9 AM."
+
+
+async def test_compose_reinforces_directives_persona_style(monkeypatch):
+    """With directives queued, the compose prompt carries the peak reminder and
+    the system prompt ends with the compliance check (PersonaAction's layers)."""
+    ra = ReplyAction()
+    _patch_agent(monkeypatch)
+    model = MagicMock()
+    model.generate = AsyncMock(return_value="Welcome aboard. Your order shipped.")
+
+    async def _ma(self, required=False):
+        return model
+
+    monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
+    v = _visitor_with(directives=[{"content": "Introduce yourself by name."}])
+    await ra.reply("Your order shipped.", v)
+    kwargs = model.generate.call_args.kwargs
+    # recency: compliance check is present in the system prompt
+    assert "COMPLIANCE CHECK" in kwargs["system"]
+    # peak: the reminder rides in the compose prompt (user-turn slot)
+    assert "MANDATORY directive" in kwargs["prompt"]
 
 
 async def test_respond_generates_in_identity_and_publishes(monkeypatch):
@@ -429,3 +542,66 @@ async def test_get_tools_reply_and_respond(monkeypatch):
     reply_tool = next(t for t in tools if t.name == "reply")
     await reply_tool.call(visitor=v, text="hello")
     assert v.interaction.response == "hello"
+
+
+# --- conversation history is applied when composing (directive-only finalize) ---
+
+
+def _model(monkeypatch, ret="What is your email?"):
+    model = MagicMock()
+    model.generate = AsyncMock(return_value=ret)
+
+    async def _ma(self, required=False):
+        return model
+
+    monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
+    return model
+
+
+async def test_respond_sources_history_from_conversation(monkeypatch):
+    """respond() with only a queued directive pulls conversation history from the
+    visitor so the compose model has turn context (no blind clarifying reply)."""
+    ra = ReplyAction()
+    _patch_agent(monkeypatch)
+    model = _model(monkeypatch)
+    v = _visitor_with(directives=[{"content": "Ask: What is your email?"}])
+    hist = [
+        {"role": "user", "content": "Monday at 9am"},
+        {"role": "assistant", "content": "What times are you available?"},
+    ]
+    v.conversation = SimpleNamespace(
+        get_interaction_history=AsyncMock(return_value=hist)
+    )
+    await ra.respond(v.interaction, visitor=v)
+    assert model.generate.call_args.kwargs["history"] == hist
+
+
+async def test_respond_include_history_false_composes_blind(monkeypatch):
+    ra = ReplyAction()
+    ra.include_history = False
+    _patch_agent(monkeypatch)
+    model = _model(monkeypatch)
+    v = _visitor_with(directives=[{"content": "Ask: What is your email?"}])
+    v.conversation = SimpleNamespace(
+        get_interaction_history=AsyncMock(
+            return_value=[{"role": "user", "content": "x"}]
+        )
+    )
+    await ra.respond(v.interaction, visitor=v)
+    assert model.generate.call_args.kwargs["history"] == []
+
+
+async def test_respond_respects_explicit_history(monkeypatch):
+    ra = ReplyAction()
+    _patch_agent(monkeypatch)
+    model = _model(monkeypatch)
+    v = _visitor_with(directives=[{"content": "Ask: What is your email?"}])
+    # conversation would yield this, but an explicit arg must win:
+    v.conversation = SimpleNamespace(
+        get_interaction_history=AsyncMock(
+            return_value=[{"role": "user", "content": "conv"}]
+        )
+    )
+    explicit = [{"role": "user", "content": "explicit"}]
+    await ra.respond(v.interaction, visitor=v, history=explicit)
+    assert model.generate.call_args.kwargs["history"] == explicit

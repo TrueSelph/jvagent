@@ -108,21 +108,33 @@ function resolveAssistantThreadId(
   splitTurn: boolean,
 ): string {
   const textMsg = group.find((m) => isTextAssistantMessage(m));
-  const isStreaming = group.some((m) => m.streaming);
 
+  // Multi-adhoc (split) turns: each text row is keyed by its own jvchat id so
+  // sibling rows in one interaction never collide on `turn-${interactionId}`.
   if (splitTurn && textMsg?.id) {
     return textMsg.id;
   }
 
-  if (!isStreaming && textMsg?.id) {
+  // Anchor to the answer-text row's id whenever the turn has produced text. That
+  // id is identical during streaming and after completion, so the assistant
+  // bubble's React key never changes on finalize — which is what previously made
+  // assistant-ui unmount the streamed bubble and mount a fresh one with the final
+  // text (the visible "paints, then paints again" double render, plus the id
+  // churn that dropped earlier turns from the repository view). It is also unique
+  // per turn, even across turns that happen to share an interactionId. The
+  // earlier version returned `turn-${interactionId}` *while streaming* and only
+  // swapped to the text id on completion — that swap was the remount.
+  if (textMsg?.id) {
     return textMsg.id;
   }
 
+  // Pre-text phase (reasoning/tool ticks before any answer text): anchor to the
+  // interaction so those updates don't swap ids before the text arrives.
   if (interactionId) {
     return `turn-${interactionId}`;
   }
 
-  return textMsg?.id ?? group[0]?.id ?? "assistant-unknown";
+  return group[0]?.id ?? "assistant-unknown";
 }
 
 /** Partition one consecutive assistant run into thoughts vs user-visible text rows. */

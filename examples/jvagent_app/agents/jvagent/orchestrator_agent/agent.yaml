@@ -279,17 +279,3 @@ actions:
       max_statement_length: 100
       history_limit: 3
       auto_confirm: false
-      # Keep the user on the script. The directive that asks each field is what
-      # the responder composes its reply from, so the redirect instruction lives
-      # here. If the user's last message was off-topic, the agent answers it in
-      # one short sentence, then re-asks the pending field and ends with it.
-      # Keep the {question}/{description}/{context_section}/{instructions}
-      # placeholders.
-      question_directive: |-
-        You are running a signup interview and must stay on script. If the
-        user's most recent message is off-topic or unrelated to signing up,
-        reply to it in at most ONE short sentence — do NOT answer it at length —
-        then make the request below. ALWAYS end your message with this exact
-        request:
-        {question} ({description}){context_section}
-        {instructions}

@@ -207,6 +207,40 @@ class Agent(Node):
             return []
         return await actions_manager.get_actions(enabled_only=enabled_only)
 
+    async def collect_capabilities(self) -> List[str]:
+        """The agent's advertised abilities — the single aggregation point.
+
+        Flattens each enabled action's ``Action.get_capabilities()`` contribution
+        into one de-duplicated, order-preserving list. The per-action contribution
+        is defined on the action (``Action.get_capabilities``); rendering (bullets,
+        length caps) belongs to the caller; skills, when relevant, are merged in by
+        the caller (the orchestrator appends skill descriptions for its system-
+        prompt digest). The agent owns its action roster, so it owns the rollup.
+        """
+        caps: List[str] = []
+        seen: Set[str] = set()
+        for action in await self.get_actions(enabled_only=True):
+            getter = getattr(action, "get_capabilities", None)
+            if not callable(getter):
+                continue
+            try:
+                contributed = getter() or []
+            except Exception as exc:
+                namer = getattr(action, "get_class_name", None)
+                name = namer() if callable(namer) else type(action).__name__
+                logger.debug(
+                    "Agent.collect_capabilities: %s.get_capabilities failed: %s",
+                    name,
+                    exc,
+                )
+                continue
+            for cap in contributed:
+                text = str(cap).strip()
+                if text and text not in seen:
+                    seen.add(text)
+                    caps.append(text)
+        return caps
+
     async def get_memory(self) -> Optional[Any]:
         """Get the Memory node for this agent.
 

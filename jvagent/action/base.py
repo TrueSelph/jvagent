@@ -158,6 +158,44 @@ class Action(Node):
             "package module); used for indexed staleness checks vs filesystem."
         ),
     )
+    # Scoped behavioural parameters — the common parameter subsystem (every
+    # action carries these). Persona-shaped: each entry is
+    # ``{condition?, response}`` plus a ``scope`` that routes WHERE it's applied
+    # — ``orchestration`` (the agentic loop, under the Orchestrator) or
+    # ``response`` (the response prompt, under the ReplyAction). The Orchestrator
+    # accumulates every enabled action's parameters onto the interaction each
+    # turn; each injection site renders only the params in its scope. Actions
+    # natively declare their own core params (Orchestrator → orchestration,
+    # Reply → response) and any action may contribute more. See
+    # ``jvagent/action/parameters.py``.
+    parameters: List[Dict[str, Any]] = attribute(
+        default_factory=list,
+        description=(
+            "Scoped behavioural parameters this action contributes to the common "
+            "subsystem. Each is {scope, condition?, response}: scope='orchestration' "
+            "rules apply in the agentic loop, scope='response' rules in the reply "
+            "compose. Accumulated onto the interaction and rendered by scope."
+        ),
+    )
+
+    def get_capabilities(self) -> List[str]:
+        """User-facing 'what the agent can do' statements this action contributes
+        to the agent's advertised abilities.
+
+        The orchestrator aggregates these across all enabled actions (and merges
+        them with the available skill descriptions) to build the "WHAT YOU CAN
+        DO" digest in its system prompt — so the model knows a capability exists
+        and won't under-claim ("I can't sign you up…") even when the action's
+        tool is lean-surfaced off the prompt.
+
+        Default: none. Most actions are plumbing/egress and advertise nothing.
+        An action that exposes a user-facing ability overrides this to furnish
+        one or more short capability statements, e.g.::
+
+            def get_capabilities(self) -> List[str]:
+                return ["Sign users up for training (guided interview)"]
+        """
+        return []
 
     @staticmethod
     def canonical_import_module_path(metadata: Dict[str, Any]) -> str:

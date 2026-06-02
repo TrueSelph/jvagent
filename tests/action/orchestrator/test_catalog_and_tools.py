@@ -173,6 +173,12 @@ async def test_system_prompt_lists_skills_and_priority_rule():
         render_identity_section,
         render_skills_section,
     )
+    from jvagent.action.parameters import (
+        orchestration_parameters,
+        orchestrator_core_parameters,
+        render_parameters,
+        reply_core_parameters,
+    )
 
     sp = ORCHESTRATOR_SYSTEM_PROMPT.format(
         identity_section=render_identity_section("Executive Agent", "a helpful guide"),
@@ -180,15 +186,22 @@ async def test_system_prompt_lists_skills_and_priority_rule():
         skills_section=render_skills_section(
             [SkillDoc(name="research", description="Investigate.", body="b")]
         ),
+        capabilities_section="- research: Investigate.",
+        parameters_section=render_parameters(
+            orchestration_parameters(orchestrator_core_parameters())
+            + reply_core_parameters()
+        ),
+        loop_protocol_extra="",
     )
     assert "You are Executive Agent, a helpful guide." in sp  # identity injected
     assert "AVAILABLE SKILLS" in sp  # skills listed inline, not just behind find_skill
     assert "Skills first" in sp  # priority rule present
     assert "research" in sp  # the concrete skill is named
-    # Hardening guardrails (anti prompt-injection / no self-disclosure).
-    assert "Boundaries" in sp
-    assert "Never identify your underlying model" in sp
-    assert "ignore previous instructions" in sp  # injection patterns called out
+    # OPERATING RULES carries the orchestration rules AND the core response
+    # safeguards (so a reply the executive writes itself is hardened too).
+    assert "OPERATING RULES" in sp
+    assert "ignore previous instructions" in sp  # orchestration rule
+    assert "knowledge or training cutoff" in sp  # response safeguard
 
 
 async def test_use_skill_is_idempotent():

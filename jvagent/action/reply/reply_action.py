@@ -29,17 +29,14 @@ from typing import Any, Dict, List, Optional
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
+from jvagent.action.parameters import (
+    render_parameters,
+    reply_core_parameters,
+    response_parameters,
+    vet_egress,
+)
 
 logger = logging.getLogger(__name__)
-
-# Keeper voice guardrails (the genuinely useful part of PersonaAction's
-# framework) baked in statically — not collected per-interaction.
-VOICE_RULES = (
-    "End on the substantive answer — no invitation closers ('let me know', "
-    "'feel free to ask', 'anything else?'). Speak in the user's language with a "
-    "natural, concise voice. Never claim to be an AI language model or name a "
-    "model provider."
-)
 
 # Directive / parameter framing (the essential, non-bloated core borrowed from
 # PersonaAction). Numbered + "execute ALL" makes the compose model treat every
@@ -52,9 +49,32 @@ DIRECTIVES_SECTION = (
     "do not deny or disclaim a capability; if one is genuinely impossible, say "
     "briefly why instead:\n{directive_list}"
 )
+# Recency reinforcement (PersonaAction's COMPLIANCE CHECK): appended at the very
+# END of the system prompt when directives are present, so the last thing the
+# model reads is the obligation to verify it executed them all and to drop any
+# generic sign-off.
+DIRECTIVE_COMPLIANCE_CHECK = (
+    "COMPLIANCE CHECK (do this before you answer): confirm your reply executes "
+    "EVERY directive above and obeys every RESPONSE RULE. End on the substantive "
+    "content — no invitation closers ('let me know', 'feel free to ask', "
+    "'anything else?', 'happy to help'). If a directive is missing, revise before "
+    "sending."
+)
+# Peak-attention reinforcement: a terse reminder injected into the compose
+# *prompt* (the user-turn slot) so the obligation sits where the model attends
+# most, not only in the system preamble.
+DIRECTIVE_REMINDER = (
+    "[Deliver every MANDATORY directive from the system prompt, in the agent's "
+    "voice, ending on the substance with no sign-off closer.]"
+)
+# Behavioural rules section. The response-scoped core hardening (no model/AI
+# disclosure, no cutoff, no internal-architecture reveal, no closers) is folded
+# in as the always-on baseline, merged with any contributed/interaction params;
+# unconditional rules apply every reply, "When …" rules apply when they hold.
 PARAMETERS_SECTION = (
-    "CONDITIONAL RULES — apply each only when its condition is true "
-    "(parameters shape HOW; directives define WHAT):\n{parameter_list}"
+    "RESPONSE RULES — follow these in every reply (parameters shape HOW; directives "
+    "define WHAT). Apply each unconditional rule always, and each 'When …' rule "
+    "when its condition holds:\n{parameter_list}"
 )
 
 # Prefix that frames the Orchestrator's message as something to RELAY, not react
@@ -94,13 +114,43 @@ class ReplyAction(Action):
     model: str = attribute(default="gpt-4o-mini")
     model_temperature: float = attribute(default=0.4)
     model_max_tokens: int = attribute(default=1024)
+    # ReplyAction's native core: the response-scoped hardening (identity, cutoff,
+    # no-internal-reveal, no-closers, grounding), applied in the response prompt.
+    # Reuses the common Action.parameters subsystem; the Orchestrator pools these
+    # onto the interaction with every other action's response params, and they're
+    # rendered here on compose. Operators may extend/override in agent.yaml.
+    parameters: List[Dict[str, Any]] = attribute(
+        default_factory=reply_core_parameters,
+        description=(
+            "The reply's native response-scoped behavioural parameters, each "
+            "{scope, condition?, response}. Applied in the response prompt; "
+            "merged + deduped with the interaction's pooled response params."
+        ),
+    )
     apply_voice_rules: bool = attribute(
         default=True,
-        description="Bake the keeper guardrails (no-closer, identity) into respond.",
+        description=(
+            "Apply this action's native response-hardening parameters as the "
+            "always-on compose baseline (no AI/model/provider disclosure, no "
+            "knowledge cutoff, no internal-architecture reveal, no closers). The "
+            "deterministic egress scrub still runs regardless."
+        ),
     )
     apply_channel_format: bool = attribute(
         default=True,
         description="Apply channel-specific formatting in respond (default channel stays slim).",
+    )
+    include_history: bool = attribute(
+        default=True,
+        description=(
+            "Include recent conversation history when composing a reply so the "
+            "compose model has turn context (and doesn't improvise a clarifying "
+            "question on a directive-only finalize). Set false to compose blind."
+        ),
+    )
+    history_limit: int = attribute(
+        default=10,
+        description="Max prior interactions of history to include in respond().",
     )
     channel_formats: Dict[str, str] = attribute(
         default_factory=dict,
@@ -118,6 +168,35 @@ class ReplyAction(Action):
         key = normalize_channel(channel or "default")
         override = (self.channel_formats or {}).get(key)
         return (override or CHANNEL_FORMATS.get(key, "")).strip()
+
+    async def _conversation_history(
+        self, visitor: Optional[Any], interaction: Any
+    ) -> List[Dict[str, str]]:
+        """Recent ``{role, content}`` history for the compose model, or ``[]``.
+
+        Excludes the in-flight interaction so the current user turn isn't
+        duplicated. Sourced from the visitor's (or interaction's) conversation;
+        gated by ``include_history`` and bounded by ``history_limit``.
+        """
+        if not self.include_history:
+            return []
+        conversation = getattr(visitor, "conversation", None) if visitor else None
+        if conversation is None and interaction is not None:
+            conversation = getattr(interaction, "conversation", None)
+        getter = getattr(conversation, "get_interaction_history", None)
+        if not callable(getter):
+            return []
+        try:
+            return (
+                await getter(
+                    limit=int(self.history_limit),
+                    excluded=getattr(interaction, "id", None),
+                    formatted=True,
+                )
+                or []
+            )
+        except Exception:
+            return []
 
     # ------------------------------------------------------------------
     # Identity (from the Agent node) + system prompt
@@ -148,8 +227,6 @@ class ReplyAction(Action):
         identity = await self._identity()
         if identity:
             parts.append(identity)
-        if self.apply_voice_rules:
-            parts.append(VOICE_RULES)
         if format_text:
             parts.append(
                 "CHANNEL FORMATTING — format your reply for this "
@@ -167,6 +244,11 @@ class ReplyAction(Action):
             )
         if extra_system and extra_system.strip():
             parts.append(extra_system.strip())
+        # Recency layer: the compliance check is the LAST thing in the prompt so
+        # it's freshest at generation time (PersonaAction's pattern). Only when
+        # there are directives to be faithful to.
+        if items:
+            parts.append(DIRECTIVE_COMPLIANCE_CHECK)
         return "\n\n".join(parts).strip() or "You are a helpful assistant."
 
     # ------------------------------------------------------------------
@@ -186,9 +268,17 @@ class ReplyAction(Action):
         No bus → set/append ``interaction.response`` and save. Bus + streaming →
         no-op (the model already published). Bus + non-streaming → publish once.
         Returns True when something was emitted/persisted.
+
+        Every non-streaming egress — fast literal publish AND composed reply —
+        passes through here, so the deterministic ``vet_egress`` scrub runs once,
+        at the single choke point, dropping the catastrophic leak classes (self-
+        identifying as an AI/model/provider, stating a knowledge cutoff) the
+        prompt layer might miss. Streaming replies already left via the bus
+        token-by-token, so they rely on the prompt/parameter hardening alone.
         """
         if not content:
             return False
+        content = vet_egress(content)
         response_bus = getattr(visitor, "response_bus", None) if visitor else None
         has_bus = bool(
             response_bus and visitor and getattr(visitor, "session_id", None)
@@ -323,7 +413,7 @@ class ReplyAction(Action):
         # not the interaction's unexecuted-directives view reflects the enqueue.
         if relayed_directive and relayed_directive not in directive_contents:
             directive_contents.append(relayed_directive)
-        parameters_text = self._collect_parameters(parameters, interaction)
+        parameters_text = self._compose_parameters_text(parameters, interaction)
 
         # Directives are reply *instructions* and always go through the numbered
         # MANDATORY framing, so a multi-directive queue (e.g. the answer + an
@@ -334,6 +424,13 @@ class ReplyAction(Action):
             content = (getattr(interaction, "utterance", "") or "").strip()
         if not content and not directive_contents and not parameters_text:
             return ""
+        # Peak-attention layer: when there are directives, append a terse
+        # reminder to the compose prompt itself so the obligation sits in the
+        # user-turn slot the model weights most (PersonaAction's pattern).
+        if directive_contents:
+            content = (
+                f"{content}\n\n{DIRECTIVE_REMINDER}" if content else DIRECTIVE_REMINDER
+            )
         channel = getattr(visitor, "channel", "default") or "default"
         format_text = (
             self.get_channel_format(channel) if self.apply_channel_format else ""
@@ -347,6 +444,16 @@ class ReplyAction(Action):
             literal = original_text or content or " "
             await self.publish(literal, visitor, transient=transient)
             return original_text or content
+
+        # Conversation history for the compose model. Callers may pass it
+        # explicitly; otherwise source it from the visitor's conversation. This
+        # keeps EVERY reply/respond path consistent — including the locked-flow
+        # directive finalize, where the orchestrator hands control back to the
+        # responder with only a directive: without history the compose model has
+        # no idea it is mid-interview and improvises ("Could you clarify what you
+        # need for Monday at 9am?") instead of relaying the queued ask.
+        if history is None:
+            history = await self._conversation_history(visitor, interaction)
 
         system = await self._system_prompt(
             extra_system=extra_system,
@@ -456,27 +563,45 @@ class ReplyAction(Action):
 
     @staticmethod
     def _collect_parameters(parameters: Optional[List[Any]], interaction: Any) -> str:
-        """Render conditional parameters (``{condition, response}``) as a bulleted
-        section, from explicit ``parameters`` or ``interaction.parameters``."""
+        """Render the *contributed* response parameters (explicit or
+        ``interaction.parameters``) as a bulleted section — no core baseline.
+
+        This is the slim-vs-compose gate: it must reflect only genuine per-turn
+        shaping, so the fast literal-publish path is preserved. ``ambient`` params
+        (the always-on core hardening seeded onto the interaction) are excluded —
+        their presence alone never forces a compose; the egress scrub enforces
+        them on the fast path and ``_compose_parameters_text`` renders them when a
+        compose does happen. Loop-scoped params are filtered out too.
+        """
         items = parameters
         if items is None and interaction is not None:
             items = getattr(interaction, "parameters", None)
         if not isinstance(items, (list, tuple)):
             items = []
-        lines: List[str] = []
-        for p in items:
-            if isinstance(p, dict):
-                cond = (p.get("condition") or "").strip()
-                resp = (p.get("response") or "").strip()
-                if cond and resp:
-                    lines.append(f"- When {cond}: {resp}")
-                elif resp:
-                    lines.append(f"- {resp}")
-            else:
-                val = str(p).strip()
-                if val:
-                    lines.append(f"- {val}")
-        return "\n".join(lines).strip()
+        shaping = [p for p in items if not (isinstance(p, dict) and p.get("ambient"))]
+        return render_parameters(response_parameters(shaping))
+
+    def _compose_parameters_text(
+        self, parameters: Optional[List[Any]], interaction: Any
+    ) -> str:
+        """The response-parameter set rendered for a compose: this action's native
+        response core (the baseline) merged with explicit + interaction-pooled
+        params, filtered to response scope and de-duplicated.
+
+        The Orchestrator pools every action's response params onto the
+        interaction; this action's own native core is added too (so a standalone
+        reply, with no orchestrator accumulation, is still hardened). Only
+        ``response``-scoped rules render here — orchestration params stay in the
+        loop prompt.
+        """
+        merged: List[Any] = []
+        if self.apply_voice_rules:
+            merged.extend(self.parameters or [])
+        if parameters:
+            merged.extend(parameters)
+        if interaction is not None:
+            merged.extend(getattr(interaction, "parameters", None) or [])
+        return render_parameters(response_parameters(merged))
 
     # ------------------------------------------------------------------
     # Tools (the Orchestrator surface)

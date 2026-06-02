@@ -409,10 +409,18 @@ class QuestionNode(Node):
         )
         context_section = self._format_context_data(context_data)
 
-        # Format instructions - only include if present
-        formatted_instructions = ""
+        # Non-echoed guidance for the compose model. The field ``description`` is
+        # internal context (e.g. "The user's full name") — when the directive
+        # template does NOT reference {description}, fold it into a Note rather
+        # than dropping it, so it still guides the model without being echoed
+        # into the question (the "What's your full name? (The user's full name)"
+        # leak). Explicit per-question ``instructions`` are always included.
+        notes: List[str] = []
         if instructions:
-            formatted_instructions = f"\n\nNote: {instructions}"
+            notes.append(instructions)
+        if "{description}" not in directive_template and description:
+            notes.append(f"This field captures: {description}.")
+        formatted_instructions = ("\n\nNote: " + " ".join(notes)) if notes else ""
 
         # Format directive with optional context and instructions
         directive = directive_template.format(
@@ -421,6 +429,25 @@ class QuestionNode(Node):
             context_section=context_section,
             instructions=formatted_instructions,
         )
+
+        # Diverged turn (off-topic / nothing extracted → Intent.NONE): prepend the
+        # interview's active-task guidance so the reply handles the aside per the
+        # interview's own policy (default: answer naturally; override: answer
+        # briefly then re-ask) before re-asking the pending field. Scoped to
+        # Intent.NONE so a valid answer (SUBMISSION/UPDATE) is never deflected.
+        # The interview owns this injection so every host gets the behavior.
+        if directive and current_intent == Intent.NONE and self._interview_action:
+            guidance = ""
+            render = getattr(
+                self._interview_action, "render_active_task_guidance", None
+            )
+            if callable(render):
+                try:
+                    guidance = render() or ""
+                except Exception:
+                    guidance = ""
+            if guidance:
+                directive = f"{guidance}\n\n{directive}"
 
         return directive if directive else None
 

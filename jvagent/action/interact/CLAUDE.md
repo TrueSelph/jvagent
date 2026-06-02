@@ -32,7 +32,6 @@ The HTTP-facing interaction pipeline:
 | `base.py:193-274` | `publish()` — direct write to response bus |
 | `base.py:276-305` | `publish_thought()` — thought-category emit |
 | `base.py:307-444` | `respond()` — generate via agent egress responder (ReplyAction / PersonaAction) |
-| `base.py:446-481` | `get_agent_capabilities_brief()` — capability aggregation |
 | `interact_walker.py:38-48` | `InteractionInitResult` dataclass |
 | `interact_walker.py:50-150` | `InteractWalker` core (state + properties) |
 | `interact_walker.py:231` | `enforce_interact_action_access()` — access control |

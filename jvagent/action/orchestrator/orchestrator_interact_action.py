@@ -56,16 +56,17 @@ from jvagent.action.orchestrator.core_tools import (
     build_plan_tool,
 )
 from jvagent.action.orchestrator.prompts import (
-    ARTIFACT_RECALL_PROMPT,
     FINALIZE_PROMPT,
     FLOW_IN_PROGRESS_PROMPT,
     LENGTH_LIMIT_PROMPT,
+    MEMORY_PROMPT,
     NO_SKILLS_AVAILABLE,
     ORCHESTRATOR_SYSTEM_PROMPT,
     ORCHESTRATOR_USER_PROMPT_TEMPLATE,
     PLANNING_PROMPT,
+    SAFEGUARDS_REMINDER,
     TOOL_USE_POLICY,
-    render_history_section,
+    render_capabilities_section,
     render_identity_section,
     render_skills_section,
 )
@@ -76,6 +77,13 @@ from jvagent.action.orchestrator.tools import (
     render_observations_section,
     render_tools_section,
     wrap_action_tool,
+)
+from jvagent.action.parameters import (
+    accumulate_action_parameters,
+    orchestration_parameters,
+    orchestrator_core_parameters,
+    render_parameters,
+    reply_core_parameters,
 )
 from jvagent.tooling.tool_executor import bind_dispatch_context
 
@@ -362,7 +370,22 @@ class OrchestratorInteractAction(InteractAction):
         default=ORCHESTRATOR_SYSTEM_PROMPT,
         description=(
             "The executive's main system-prompt body. Placeholders: "
-            "{identity_section}, {tools_section}, {skills_section}."
+            "{identity_section}, {tools_section}, {skills_section}, "
+            "{capabilities_section}, {parameters_section}."
+        ),
+    )
+    # The Orchestrator's native core: the ``loop``-scoped hardening, applied in
+    # the agentic loop (rendered into this system prompt). Reuses the common
+    # ``Action.parameters`` subsystem. The Orchestrator also accumulates every
+    # enabled action's params onto the interaction each turn; the response-scoped
+    # ones are owned by the ReplyAction and applied in the response prompt.
+    # Operators may extend/override per agent in agent.yaml.
+    parameters: List[Dict[str, Any]] = attribute(
+        default_factory=orchestrator_core_parameters,
+        description=(
+            "The executive's native loop-scoped behavioural parameters, each "
+            "{scope, condition?, response}. Applied in the agentic loop; pooled "
+            "with every action's params onto the interaction each turn."
         ),
     )
     system_prompt_extra: str = attribute(
@@ -376,8 +399,10 @@ class OrchestratorInteractAction(InteractAction):
     user_prompt: str = attribute(
         default=ORCHESTRATOR_USER_PROMPT_TEMPLATE,
         description=(
-            "Per-tick user-prompt template. Placeholders: {history_section}, "
-            "{utterance}, {observations_section}."
+            "Per-tick user-prompt template. Placeholders: {utterance}, "
+            "{observations_section}. (Conversation history is supplied as "
+            "structured prior messages, not text; a legacy {history_section} "
+            "placeholder is still accepted but rendered empty.)"
         ),
     )
     tool_use_policy_prompt: str = attribute(
@@ -405,11 +430,11 @@ class OrchestratorInteractAction(InteractAction):
         description="Appended when planning is on (no placeholders). Nudges "
         "update_plan use for multi-step work.",
     )
-    artifact_recall_prompt: str = attribute(
-        default=ARTIFACT_RECALL_PROMPT,
-        description="Appended when vision is on (ADR-0021 S3). Tells the model "
-        "earlier uploads persist as artifacts and to consult "
-        "list_artifacts/get_artifact before claiming it can't recall.",
+    memory_prompt: str = attribute(
+        default=MEMORY_PROMPT,
+        description="Memory-access protocol rendered in the LOOP PROTOCOL: search "
+        "memory (the conversation in context + saved artifacts) before answering "
+        "from a blank or claiming you can't recall. Set empty to omit.",
     )
     lock_active_flow: bool = attribute(
         default=True,
@@ -627,6 +652,15 @@ class OrchestratorInteractAction(InteractAction):
         responder = await self.get_responder()
         if responder is None:
             return
+        # The directive already carries any divergence / stay-on-script guidance:
+        # the interview injects its own ``active_task_description`` into the
+        # question directive on a diverged turn (see InterviewInteractAction /
+        # QuestionNode), so the host just renders whatever was queued. No
+        # host-side active-task injection here.
+        #
+        # The executive's response params are already on interaction.parameters
+        # (seeded at loop start), so the responder renders them from the subsystem
+        # — no need to pass them explicitly here.
         try:
             await responder.respond(interaction, visitor=visitor)
         except Exception as exc:
@@ -1267,11 +1301,36 @@ class OrchestratorInteractAction(InteractAction):
     # Loop
     # ------------------------------------------------------------------
 
+    async def _accumulate_parameters(self, interaction: Any) -> None:
+        """Pool every enabled action's scoped parameters onto
+        ``interaction.parameters`` — the accumulation step of the common
+        subsystem. Params are queued like directives (observable, persisted,
+        de-duplicated); each injection site then renders only its scope: the
+        orchestration loop prompt here, the response prompt under the
+        ReplyAction. Core params carry ``ambient`` so seeding them doesn't force
+        a compose at the egress.
+        """
+        if interaction is None:
+            return
+        agent = await self._safe_agent()
+        actions = await self._enabled_actions(agent) if agent else [self]
+        try:
+            if await accumulate_action_parameters(interaction, actions):
+                await interaction.save()
+        except Exception as exc:
+            logger.debug("orchestrator: accumulating parameters failed: %s", exc)
+
     async def _run_loop(self, visitor: "InteractWalker") -> None:
         activated: List[str] = []
         visible: Set[str] = set()
         skill_docs: List[Any] = []
         utterance = getattr(visitor, "utterance", "") or ""
+
+        # Accumulate every action's scoped params onto the interaction so they
+        # flow through the subsystem of record (observable + deduped) and each
+        # injection site renders its scope.
+        interaction = getattr(visitor, "interaction", None)
+        await self._accumulate_parameters(interaction)
 
         # Resolve the active flow first so the surface gates its tool into the
         # prompt only when relevant (active flow, or anchor-relevant utterance).
@@ -1284,6 +1343,28 @@ class OrchestratorInteractAction(InteractAction):
         lean_surface = bool(surface_meta.get("lean"))
         skill_names = {getattr(d, "name", "") for d in skill_docs}
         skills_section = render_skills_section(skill_docs)
+        # Advertised abilities: each enabled action's get_capabilities() merged
+        # with the skill descriptions. Sourced from the actions/skills directly
+        # (not the lean-surfaced tool list), so it stays complete even when most
+        # callable tools are hidden behind find_tool — the model then never
+        # under-claims an ability ("I can't sign you up…" while holding the
+        # signup flow). Stable for the turn.
+        capabilities_section = render_capabilities_section(
+            await self._collect_capabilities(skill_docs)
+        )
+        # Orchestration-scoped rules from the accumulated pool, rendered into the
+        # system prompt — they govern how the executive reasons. Response-scoped
+        # rules belong to the reply compose, not here. Falls back to this action's
+        # own orchestration core when the interaction has no pool yet.
+        # The orchestration rules govern how the executive reasons; the core
+        # response params are applied here too as safeguards, because the
+        # executive can author a user-facing reply directly (the fast ``reply``
+        # path applies no compose-time shaping). The reply compose renders the
+        # response set as well — whichever path produces user text is hardened.
+        _pool = getattr(interaction, "parameters", None) or self.parameters
+        parameters_section = render_parameters(
+            orchestration_parameters(_pool) + reply_core_parameters()
+        )
 
         # Hard turn-lock (lock_active_flow): when a control-task points to an IA
         # that furnished a tool, restrict the callable surface to that one tool
@@ -1465,6 +1546,8 @@ class OrchestratorInteractAction(InteractAction):
                     gear=gear,
                     lean=lean_surface,
                     plan_note=plan_note,
+                    capabilities_section=capabilities_section,
+                    parameters_section=parameters_section,
                 )
                 if decision is None:
                     # A truncated/garbled decision (common when a verbose thinking
@@ -1641,6 +1724,8 @@ class OrchestratorInteractAction(InteractAction):
                     skills_section=skills_section,
                     finalize=True,
                     gear="light",  # wrap-up is single-dimensional
+                    capabilities_section=capabilities_section,
+                    parameters_section=parameters_section,
                 )
                 answer = _text_candidate(decision) if decision else ""
                 if answer:
@@ -2200,6 +2285,9 @@ class OrchestratorInteractAction(InteractAction):
         identity_section: str,
         tools_section: str,
         skills_section: str,
+        capabilities_section: str = "",
+        parameters_section: str = "",
+        loop_protocol_extra: str = "",
     ) -> str:
         """Build the base system prompt from the (overridable) ``system_prompt``
         template, then append ``system_prompt_extra`` if set."""
@@ -2209,6 +2297,9 @@ class OrchestratorInteractAction(InteractAction):
             identity_section=identity_section,
             tools_section=tools_section,
             skills_section=skills_section,
+            capabilities_section=capabilities_section,
+            parameters_section=parameters_section,
+            loop_protocol_extra=loop_protocol_extra,
         )
         extra = (self.system_prompt_extra or "").strip()
         if extra:
@@ -2339,6 +2430,33 @@ class OrchestratorInteractAction(InteractAction):
 
         return [a for a in mcp_actions if _names(a) & wanted]
 
+    async def _collect_capabilities(self, skill_docs: List[Any]) -> List[str]:
+        """The "WHAT YOU CAN DO" digest source: the agent's advertised abilities
+        merged with the available skill descriptions.
+
+        Aggregation across actions lives on ``Agent.collect_capabilities()``; here
+        we only append skill descriptions on top. Sourced from the actions/skills
+        themselves (not the lean-surfaced tool list), so the digest stays complete
+        regardless of tool surfacing and the model never under-claims an ability.
+        """
+        agent = await self._safe_agent()
+        caps: List[str] = []
+        collector = getattr(agent, "collect_capabilities", None) if agent else None
+        if callable(collector):
+            try:
+                collected = collector()
+                if inspect.isawaitable(collected):
+                    collected = await collected
+                caps = [str(c).strip() for c in (collected or []) if str(c).strip()]
+            except Exception as exc:
+                # The digest is non-essential; never let it crash a turn.
+                logger.debug("orchestrator: collect_capabilities failed: %s", exc)
+        for d in skill_docs or []:
+            desc = (getattr(d, "description", "") or "").strip()
+            if desc:
+                caps.append(desc)
+        return caps
+
     def _discover_skills(self, agent: Any) -> List[Any]:
         try:
             return discover_skill_docs(
@@ -2384,6 +2502,8 @@ class OrchestratorInteractAction(InteractAction):
         gear: str = "heavy",
         lean: bool = False,
         plan_note: str = "",
+        capabilities_section: str = "",
+        parameters_section: str = "",
     ) -> Optional[Dict[str, Any]]:
         """One model call → parsed JSON decision. Overridden/mocked in tests.
 
@@ -2402,10 +2522,36 @@ class OrchestratorInteractAction(InteractAction):
         if model_action is None:
             logger.warning("orchestrator: no model action (%s)", self.model_action_type)
             return None
+        # Loop-protocol extras live INSIDE the loop-protocol section of the
+        # system prompt (not trailing after the rules): planning, the tool-use
+        # policy, and the upload-memory affordance are all about how to run the
+        # loop. Each is gated; ordered planning → tool-use → memory.
+        loop_extra: List[str] = []
+        # Planning (ADR-0019): nudge update_plan for multi-step work; re-surface
+        # an unfinished prior plan so the turn resumes. Off on the finalize tick.
+        if self.planning and not finalize:
+            loop_extra.append(self.planning_prompt)
+            if plan_note:
+                loop_extra.append(plan_note)
+        # Tool-use policy: tool selection is the agent's job, not the user's to
+        # dictate (gated by block_raw_tool_invocation).
+        if self.block_raw_tool_invocation:
+            loop_extra.append(self.tool_use_policy_prompt)
+        # Memory-access protocol: search memory (the conversation in context +
+        # saved artifacts) before answering from a blank or claiming you can't
+        # recall. A standing protocol — not vision-gated; the artifact-tool part
+        # is phrased conditionally so it's safe when those tools aren't surfaced.
+        if self.memory_prompt:
+            loop_extra.append(self.memory_prompt)
+        loop_protocol_extra = ("\n\n" + "\n\n".join(loop_extra)) if loop_extra else ""
+
         system_prompt = self._compose_system_prompt(
             identity_section=await self._render_identity(),
             tools_section=render_tools_section(tools, lean=lean),
             skills_section=skills_section or self.no_skills_text,
+            capabilities_section=capabilities_section,
+            parameters_section=parameters_section,
+            loop_protocol_extra=loop_protocol_extra,
         )
         if flow_note:
             note = self._fmt(
@@ -2414,19 +2560,6 @@ class OrchestratorInteractAction(InteractAction):
                 flow_note=flow_note,
             )
             system_prompt = f"{system_prompt}\n\n{note}"
-        # Planning (ADR-0019): when on, nudge the model to use update_plan for
-        # multi-step work; when a prior plan is unfinished, re-surface it so the
-        # turn resumes. Both gated to keep simple/lean turns untouched.
-        if self.planning and not finalize:
-            system_prompt = f"{system_prompt}\n\n{self.planning_prompt}"
-            if plan_note:
-                system_prompt = f"{system_prompt}\n\n{plan_note}"
-        # Artifact recall affordance (ADR-0021 S3): when vision is on the
-        # list_artifacts/get_artifact tools are surfaced, but a weak model won't
-        # reach for them unprompted — this line tells it earlier uploads persist
-        # as artifacts to consult before claiming it can't recall.
-        if self.vision and self.artifact_recall_prompt:
-            system_prompt = f"{system_prompt}\n\n{self.artifact_recall_prompt}"
         if self.max_statement_length and self.max_statement_length > 0:
             limit = self._fmt(
                 self.length_limit_prompt,
@@ -2434,24 +2567,37 @@ class OrchestratorInteractAction(InteractAction):
                 max_chars=int(self.max_statement_length),
             )
             system_prompt = f"{system_prompt}\n\n{limit}"
-        if self.block_raw_tool_invocation:
-            system_prompt = f"{system_prompt}\n\n{self.tool_use_policy_prompt}"
         if finalize:
             system_prompt = f"{system_prompt}\n\n{self.finalize_prompt}"
+        # Conversation history travels as structured prior messages — the
+        # model's designated history channel — NOT dumped as text into the user
+        # turn. The user prompt carries only the current message + this turn's
+        # steps. ``history_section`` is passed empty so an override template that
+        # still references it renders cleanly. (``history_section`` is left blank
+        # because enforce_json_mode keeps the decision structured even with real
+        # assistant/user turns in context.)
         user_prompt = self._fmt(
             self.user_prompt,
             ORCHESTRATOR_USER_PROMPT_TEMPLATE,
-            history_section=render_history_section(history),
+            history_section="",
             utterance=utterance or "(no message)",
             observations_section=render_observations_section(observations),
         )
+        # Peak-attention reinforcement: the OPERATING-RULES reminder rides in the
+        # user turn (the slot the model weights most), so a weak model actually
+        # obeys the safeguards when it writes a reply — the same technique that
+        # got it to comply with directives in ReplyAction.
+        user_prompt = f"{user_prompt}\n\n{SAFEGUARDS_REMINDER}"
+        prior_messages = list(history or [])
         kwargs: Dict[str, Any] = {
             "messages": [
                 {"role": "system", "content": system_prompt},
+                *prior_messages,
                 {"role": "user", "content": user_prompt},
             ],
             "stream": False,
             "system": system_prompt,
+            "history": prior_messages,
             "prompt_for_observability": user_prompt,
             "tools": None,
             "model": model_id,
