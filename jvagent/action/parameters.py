@@ -287,7 +287,15 @@ _CLOSER_PATTERNS = [
     re.compile(r"\bhope (this|that|it)\b[^.!?]*\bhelps?\b", re.I),
 ]
 
-_SENTENCE_RE = re.compile(r"[^.!?\n]*[.!?]+|\S[^.!?\n]*$", re.S)
+# Tessellate the whole text into sentence-ish tokens with NO gaps: a run up to
+# (and including) its terminators, else a maximal run of non-terminators. Every
+# character — newlines and indentation included — belongs to some token, so
+# "".join() of the kept tokens reconstructs the original structure (line breaks,
+# blank lines, indentation) exactly; dropping a token removes only that token.
+# A class that excluded "\n" would leave newlines in the GAPS between matches,
+# and the join would silently weld adjacent lines into one run (regression:
+# markdown list items rendered as "city center.Jan Thiel" — no line break).
+_SENTENCE_RE = re.compile(r"[^.!?]*[.!?]+|[^.!?]+", re.S)
 
 
 def _is_leak(sentence: str) -> bool:
@@ -322,9 +330,13 @@ def vet_egress(text: str) -> str:
     while len(kept) > 1 and kept[-1].strip() and _is_closer(kept[-1]):
         kept.pop()
 
+    # No whitespace normalization. Downstream renderers own their spacing
+    # (markdown→HTML collapses runs of spaces/blank lines; plain-text channels
+    # keep the model's layout), so a server-side collapse changes nothing
+    # visible and only risks mangling intentional structure — indented code
+    # blocks, nested list items. Keep the model's layout verbatim; only trim
+    # leading/trailing blank space from the rejoin.
     cleaned = "".join(kept).strip()
-    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
-    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned or text
 
 

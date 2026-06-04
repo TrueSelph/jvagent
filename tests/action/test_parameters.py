@@ -153,3 +153,59 @@ def test_vet_egress_keeps_specific_ask_and_questions():
     )
     # never blank a reply that is only a closer
     assert vet_egress("Happy to help!") == "Happy to help!"
+
+
+def test_vet_egress_preserves_newlines_between_list_items():
+    # Markdown list items live on their own lines. The scrub must NOT weld
+    # consecutive sentences into one run (regression: "city center.Jan Thiel").
+    text = (
+        "**Pietermaai** — Historic and lively. Quick access to the city center.\n"
+        "**Jan Thiel** — A top pick for families. Known for villas.\n"
+        "**Blue Bay** — Favored by investors."
+    )
+    out = vet_egress(text)
+    assert out == text
+    assert "center.\n**Jan" in out
+    assert "center.**Jan" not in out
+
+
+def test_vet_egress_preserves_blank_line_paragraphs():
+    text = "First paragraph.\n\nSecond paragraph.\n\nThird paragraph."
+    assert vet_egress(text) == text
+
+
+def test_vet_egress_preserves_leading_indentation():
+    # Indented code / nested list items rely on leading whitespace; collapsing
+    # it would break the markdown block.
+    text = "Here is code:\n\n    def foo():\n        return 1"
+    out = vet_egress(text)
+    assert "    def foo():" in out
+    assert "        return 1" in out
+
+
+def test_vet_egress_does_not_truncate_emails_at_line_ends():
+    # An email's dots are not sentence boundaries; one sitting at the end of a
+    # line must keep its TLD and not weld into the next line (regression:
+    # "alice@acme.io" -> "alice@acme.").
+    text = "Reps:\nAlice — alice@acme.io\nBob — bob@acme.co.uk"
+    assert vet_egress(text) == text
+    assert vet_egress("Contact: john@example.com\nThanks.") == (
+        "Contact: john@example.com\nThanks."
+    )
+
+
+def test_vet_egress_leaves_whitespace_untouched():
+    # No server-side whitespace collapse — interior double spaces, indentation
+    # and multi-blank-line gaps survive for the renderer to handle.
+    text = "Cols:  a    b\n\n\n    indented\n\n\nend"
+    assert vet_egress(text) == text
+
+
+def test_vet_egress_drops_leak_line_but_keeps_surrounding_structure():
+    text = "Here is your itinerary.\nI am an AI here to help.\nEnjoy the trip."
+    out = vet_egress(text)
+    assert "Here is your itinerary." in out
+    assert "Enjoy the trip." in out
+    assert "AI" not in out
+    # the two surviving lines stay on separate lines
+    assert "itinerary.\nEnjoy" in out
