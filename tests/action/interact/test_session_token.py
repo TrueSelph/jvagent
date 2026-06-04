@@ -305,6 +305,49 @@ async def test_guard_resume_new_session_allowed():
     assert d.reason == "resume_new" and not d.reject
 
 
+# --- non-streaming response surfaces the token (regression) -----------------
+
+
+def test_interact_response_schema_declares_session_token():
+    """The non-streaming JSON path must surface ``session_token``.
+
+    Regression: the generated response model uses ``extra="ignore"``, so any
+    field the endpoint returns but does not *declare* is silently dropped on
+    serialization. Before the fix the token only appeared on the streaming SSE
+    path (raw, no response model) — ``stream=False`` callers never saw it.
+    """
+    from typing import Optional
+
+    from jvagent.action.interact.endpoints import interact_endpoint
+
+    cfg = getattr(interact_endpoint, "_jvspatial_endpoint_config", None)
+    assert cfg is not None
+    schema = cfg.get("response")
+    assert schema is not None and "session_token" in (schema.data or {})
+
+    model = schema.to_pydantic_model("InteractResponseTest")
+
+    # A populated token (web channel, auth != off) survives serialization.
+    with_token = model(
+        success=True,
+        user_id="u1",
+        session_id="s1",
+        response="hi",
+        session_token="tok123",
+    ).model_dump(exclude_none=True)
+    assert with_token.get("session_token") == "tok123"
+
+    # No token (off mode / non-web channel) is omitted, not emitted as null.
+    without_token = model(
+        success=True, user_id="u1", session_id="s1", response="hi"
+    ).model_dump(exclude_none=True)
+    assert "session_token" not in without_token
+
+    # The field is optional so omitting it never breaks the model.
+    field = (schema.data or {}).get("session_token")
+    assert field is not None and field.field_type == Optional[str]
+
+
 # --- Conversation token-secret helpers + end-to-end bind --------------------
 
 

@@ -545,6 +545,22 @@ async def _issue_session_token(
                 ],
                 default=None,
             ),
+            # ADR-0020 Mode B session capability token. MUST be declared here:
+            # the generated response model uses extra="ignore", so any field not
+            # listed is silently dropped from the non-streaming JSON response.
+            # The streaming path returns raw SSE (no response model) and so was
+            # the only path that surfaced the token before this was added.
+            "session_token": ResponseField(
+                field_type=Optional[str],  # type: ignore[arg-type]
+                description=(
+                    "Mode B session capability token (ADR-0020). Returned for "
+                    "web-channel conversations when session auth is not 'off'. "
+                    "Resend it on the next call to resume this session. "
+                    "Omitted in 'off' mode and for non-web channels."
+                ),
+                example="eyJhbGciOi...",
+                default=None,
+            ),
         }
     ),
     response_model_exclude_none=True,
