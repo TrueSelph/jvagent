@@ -286,8 +286,6 @@ async def resolve_interact_identity(
 
     bearer = _extract_bearer(request)
     stoken = _extract_session_token(request)
-    logger.info("Stoken is", stoken)
-    print("stoken, ", stoken)
 
     # --- Mode A: authenticated login JWT ---
     if bearer:
