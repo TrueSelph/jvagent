@@ -28,6 +28,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **`get_session` new-user race** — ``_check_is_new_user`` consults the
+  ``(memory_id, user_id)`` compound index, not only live Memory edges, and
+  resuming an existing conversation always returns ``new_user=False`` so
+  first-time intro does not re-fire after restart when the User row survived
+  but the Memory edge was temporarily missing.
 - **Restored interact debug/observability detail in local dev.** A public-endpoint hardening pass had `build_interact_response(public_endpoint=True)` redact the full `interaction` payload (events, `observability_metrics`, tasks) **and** the `report` unconditionally — so the jvchat Debug view went blank and lost observability metrics even in local dev. Redaction is now gated: production always redacts (unchanged); the public endpoint additionally redacts outside production only when `JVAGENT_INTERACT_REDACT_DEBUG` is set (for non-prod internet deploys). Local dev keeps full detail by default. Covered by `tests/action/interact/test_response_redaction.py`.
 - **Interview no longer leaks a field's internal `description` into the question.** The signup interview asked "What's your full name? (The user's full name)" — the field `description` was rendered inline via `QUESTION_DIRECTIVE` (`{question} ({description})`) and the model echoed the parenthetical. The default directive drops inline `{description}` (folded into non-echoed `Note:` guidance by `question_node`; custom templates that place `{description}` keep ownership), and the example signup agent's `question_directive` override — which still hardcoded `({description})` — was corrected. Covered by `tests/action/interview/test_question_directive_leak.py`.
 

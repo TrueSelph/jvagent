@@ -362,6 +362,16 @@ class Memory(Node):
         """Return True if no User with *user_id* is scoped to this Memory."""
         from jvagent.memory.user import User
 
+        # Prefer the compound-index lookup over graph connectivity alone.
+        # ``get_session`` may call this before ``get_user`` reconnects a User row
+        # whose Memory edge was dropped across restart/bootstrap; edge-only checks
+        # then mis-classify returning users as new (re-triggering intro).
+        scoped = await User.find_one(
+            {"context.memory_id": self.id, "context.user_id": user_id}
+        )
+        if scoped is not None:
+            return False
+
         existing_user = await self.node(node=User, user_id=user_id)
         if (
             existing_user
@@ -518,6 +528,10 @@ class Memory(Node):
                     f"Session '{session_id}' does not belong to user '{user_id}'"
                 )
             await self._maybe_set_user_name(user, user_name, is_new=False)
+            # Resuming an existing conversation is never a first-time greeting,
+            # even when ``is_new`` was computed before ``get_user`` reconnected
+            # an orphaned User row.
+            return user, conversation, user_id, resolved_sid, False
 
         return user, conversation, user_id, resolved_sid, is_new  # type: ignore[arg-type]
 
