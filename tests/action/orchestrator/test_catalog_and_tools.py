@@ -128,6 +128,38 @@ async def test_use_skill_without_visible_set_is_noop_on_surface():
     assert "Activated skill 's'" in out
 
 
+async def test_use_skill_reactivates_interview_session_when_missing():
+    doc = SkillDoc(
+        name="onboarding_interview",
+        description="Onboarding.",
+        body="SOP: ask phone.",
+        requires_actions=("InterviewAction",),
+        requires_tools=("interview__next_question",),
+    )
+    activated: list = []
+
+    async def _activate(skill_doc):
+        assert skill_doc.name == "onboarding_interview"
+        return "Interview session ready (onboarding_interview). Call interview__next_question next."
+
+    async def _reactivate(skill_doc):
+        return skill_doc.name == "onboarding_interview"
+
+    tools = build_skill_meta_tools(
+        [doc],
+        {"interview__next_question"},
+        activated,
+        activate_hook=_activate,
+        reactivate_hook=_reactivate,
+    )
+    await tools["use_skill"].run({"name": "onboarding_interview"})
+    out = await tools["use_skill"].run({"name": "onboarding_interview"})
+
+    assert "already active" in out
+    assert "Interview session ready" in out
+    assert "interview__next_question" in out
+
+
 async def test_render_skills_section():
     from jvagent.action.orchestrator.prompts import render_skills_section
 

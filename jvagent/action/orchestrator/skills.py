@@ -28,6 +28,7 @@ class SkillDoc:
     directory: str = ""
     spec: str = "jv"
     always_active: bool = False
+    locked_in: bool = False
     metadata: dict = field(default_factory=dict)
 
 
@@ -117,6 +118,7 @@ def discover_skill_docs(
                 directory=str(bundle.get("dir") or ""),
                 spec=str(bundle.get("spec") or "jv"),
                 always_active=bool(bundle.get("always_active", False)),
+                locked_in=bool(bundle.get("locked_in", False)),
                 metadata=bundle.get("metadata") or {},
             )
         )

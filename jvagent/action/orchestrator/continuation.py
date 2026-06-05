@@ -164,13 +164,20 @@ async def cancel_orphan_flow_tasks(
     visitor: Any,
     *,
     routable_tool_names: Optional[Set[str]] = None,
+    locked_skill_names: Optional[Set[str]] = None,
 ) -> int:
-    """Cancel active flow tasks whose owner is no longer routable on the surface."""
+    """Cancel active flow tasks whose owner is no longer routable on the surface.
+
+    Tasks owned by a locked-in skill (``locked_skill_names``) are **exempt**
+    from sweeping — they are not IA tools but are intentionally kept alive
+    until the skill itself marks the task complete or cancelled.
+    """
     conversation = getattr(visitor, "conversation", None)
     store = _store(conversation)
     if store is None:
         return 0
     names: FrozenSet[str] = frozenset(routable_tool_names or ())
+    exempt: FrozenSet[str] = frozenset(locked_skill_names or ())
     cancelled = 0
     try:
         active = store.list(status="active")
@@ -182,6 +189,10 @@ async def cancel_orphan_flow_tasks(
         if task_type in _NON_FLOW_TASK_TYPES:
             continue
         owner = str(getattr(th, "owner_action", "") or "")
+        # Never sweep tasks owned by a locked-in skill — they persist until
+        # the skill's own InterviewAction marks them complete/cancelled.
+        if owner and owner in exempt:
+            continue
         if not owner or (names and owner not in names):
             try:
                 await th.cancel(reason="orphan flow task — owner unroutable")

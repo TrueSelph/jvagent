@@ -65,6 +65,19 @@ disabling lean for the rest of the surface. (The raw-tool equivalent is the
 orchestrator's `pinned_tools` glob list.) It also lets the skill bypass the
 `skills:` allow-list selector.
 
+### Orchestrator `auto_start_skills_on_new_user`
+
+List skill names on the orchestrator (`auto_start_skills_on_new_user: [my_skill]`).
+For each **new user**, the orchestrator mechanically runs `use_skill` before the
+first model tick (no skill-specific tools such as `interview__init`).
+
+When a `locked-in: true` skill has an **active** TaskStore task (`owner_action`
+matches the skill name, or an `InterviewAction` task with matching
+`interview_type`), the orchestrator restricts the tool surface to that skill until
+the task is **completed**. The `use_skill` activate hook creates a `SKILL` task;
+finish the flow by completing that task from skill tools — not only via
+`conversation.context` flags.
+
 ## JV skills — coordinate existing tools
 
 A JV skill is pure judgment: a `SKILL.md` whose body steers tools that Actions

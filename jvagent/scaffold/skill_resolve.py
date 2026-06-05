@@ -212,6 +212,7 @@ def parse_skill_bundle(
     requires_jvagent = str(frontmatter.get("requires-jvagent") or "").strip()
     verbatim_final = bool(frontmatter.get("verbatim-final"))
     always_active = bool(frontmatter.get("always-active"))
+    locked_in = bool(frontmatter.get("locked-in") or frontmatter.get("locked_in"))
     # Skill spec: ``jv`` (default — an SOP that references action/IA tools) or
     # ``claude`` (a standard Anthropic Agent Skills folder whose bundled scripts
     # the model runs via the code-execution substrate). Unknown values fall back
@@ -259,6 +260,7 @@ def parse_skill_bundle(
         "requires_jvagent": requires_jvagent,
         "verbatim_final": verbatim_final,
         "always_active": always_active,
+        "locked_in": locked_in,
         "spec": spec,
         "dispatch": dispatch,
         "exports": exports,

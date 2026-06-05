@@ -445,6 +445,15 @@ class OrchestratorInteractAction(InteractAction):
             "continuation is model-mediated."
         ),
     )
+    auto_start_skills_on_new_user: Any = attribute(
+        default_factory=list,
+        description=(
+            "Skill names to activate via use_skill when visitor.new_user is true. "
+            "A list or single string. Order matters; the first locked_in skill in "
+            "the list that activates becomes the locked surface for that turn. "
+            "Empty disables. Does not call skill-specific tools (e.g. interview__init)."
+        ),
+    )
     planning: bool = attribute(
         default=False,
         description=(
@@ -1210,9 +1219,16 @@ class OrchestratorInteractAction(InteractAction):
         if skill_docs is not None:
             skill_docs.extend(docs)
         code_exec = self._select_code_execution_action(actions)
-        activate_hook = self._build_skill_activate_hook(code_exec, visitor)
+        activate_hook, reactivate_hook = self._build_skill_activate_hooks(
+            actions, visitor, code_exec
+        )
         for name, t in build_skill_meta_tools(
-            docs, set(tools.keys()), activated, visible, activate_hook=activate_hook
+            docs,
+            set(tools.keys()),
+            activated,
+            visible,
+            activate_hook=activate_hook,
+            reactivate_hook=reactivate_hook,
         ).items():
             tools[name] = t
             visible.add(name)
@@ -1296,6 +1312,219 @@ class OrchestratorInteractAction(InteractAction):
                 scored.append((score, name))
         scored.sort(key=lambda x: (-x[0], x[1]))
         return {name for _, name in scored[:k]}
+
+    # ------------------------------------------------------------------
+    # Auto-start skills on new user
+    # ------------------------------------------------------------------
+
+    def _normalized_auto_start_skill_names(self) -> List[str]:
+        """Skill names from config (list or single string)."""
+        raw = self.auto_start_skills_on_new_user
+        if isinstance(raw, str):
+            items = [raw] if raw.strip() else []
+        elif isinstance(raw, (list, tuple)):
+            items = list(raw)
+        else:
+            items = []
+        out: List[str] = []
+        seen: Set[str] = set()
+        for item in items:
+            name = str(item).strip()
+            if name and name not in seen:
+                seen.add(name)
+                out.append(name)
+        return out
+
+    @staticmethod
+    def _is_new_user(visitor: Any) -> bool:
+        if getattr(visitor, "new_user", False):
+            return True
+        conversation = getattr(visitor, "conversation", None)
+        if conversation is None:
+            return False
+        ctx = getattr(conversation, "context", None) or {}
+        return bool(ctx.get("new_user"))
+
+    @staticmethod
+    def _active_session_interview_type(conversation: Any) -> Optional[str]:
+        ctx = getattr(conversation, "context", None) or {}
+        data = ctx.get("interview") if isinstance(ctx, dict) else None
+        if not isinstance(data, dict):
+            return None
+        status = str(data.get("status", "") or "")
+        if status not in ("active", "review"):
+            return None
+        interview_type = data.get("interview_type")
+        return str(interview_type) if interview_type else None
+
+    def _find_active_locked_skill_doc(
+        self, visitor: Any, skill_docs: List[Any]
+    ) -> Optional[Any]:
+        """Return the SkillDoc for an active locked_in task, if any."""
+        if not self.lock_active_flow:
+            return None
+        conversation = getattr(visitor, "conversation", None)
+        if conversation is None:
+            return None
+
+        skill_by_name = {d.name: d for d in skill_docs if getattr(d, "name", None)}
+
+        session_type = self._active_session_interview_type(conversation)
+        if session_type and session_type in skill_by_name:
+            sd = skill_by_name[session_type]
+            if getattr(sd, "locked_in", False):
+                return sd
+
+        try:
+            from jvagent.memory.task_store import TaskStore
+
+            store = TaskStore(conversation)
+            active_tasks = store.list(status="active")
+        except Exception as exc:
+            logger.debug("orchestrator: failed to list active tasks: %s", exc)
+            return None
+
+        candidates: List[tuple[str, Any]] = []
+        for task in active_tasks or []:
+            owner = getattr(task, "owner_action", None)
+            sd = None
+            if owner and owner in skill_by_name:
+                sd = skill_by_name[owner]
+            elif owner == "InterviewAction":
+                task_data = getattr(task, "data", None) or {}
+                interview_type = (
+                    task_data.get("interview_type")
+                    if isinstance(task_data, dict)
+                    else None
+                )
+                if interview_type and interview_type in skill_by_name:
+                    sd = skill_by_name[interview_type]
+            if sd is not None and getattr(sd, "locked_in", False):
+                updated_at = str(getattr(task, "updated_at", "") or "")
+                candidates.append((updated_at, sd))
+
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        return candidates[0][1]
+
+    def _should_auto_start_skills(
+        self,
+        visitor: Any,
+        skill_docs: List[Any],
+        *,
+        active_skill_doc: Optional[Any],
+        flow_owner: Optional[str],
+    ) -> bool:
+        names = self._normalized_auto_start_skill_names()
+        if not names:
+            return False
+        if active_skill_doc is not None:
+            return False
+        if flow_owner:
+            return False
+        if not self._is_new_user(visitor):
+            return False
+        skill_by_name = {d.name: d for d in skill_docs if getattr(d, "name", None)}
+        return any(n in skill_by_name for n in names)
+
+    @staticmethod
+    def _restrict_tools_to_locked_skill(
+        skill_doc: Any,
+        tools: Dict[str, Any],
+        visible: Set[str],
+        activated: List[str],
+    ) -> Tuple[Dict[str, Any], Set[str], str]:
+        if skill_doc.name not in activated:
+            activated.append(skill_doc.name)
+        allowed_names = set(getattr(skill_doc, "requires_tools", ()) or ())
+        allowed_names.update({"reply", "respond"})
+        restricted_tools = {k: v for k, v in tools.items() if k in allowed_names}
+        restricted_visible = {k for k in visible if k in allowed_names}
+        restricted_visible.update(
+            k for k in allowed_names if k in restricted_tools
+        )
+        skills_section = (
+            f"ACTIVE SKILL IN PROGRESS: {skill_doc.name}\n"
+            f"PROCEDURE:\n{skill_doc.body}"
+        )
+        return restricted_tools, restricted_visible, skills_section
+
+    async def _run_tool_observation(
+        self,
+        tools: Dict[str, Any],
+        tool_name: str,
+        args: Dict[str, Any],
+        observations: List[Dict[str, Any]],
+    ) -> None:
+        tool = tools.get(tool_name)
+        if tool is None:
+            observations.append(
+                {
+                    "tool": tool_name,
+                    "args": args,
+                    "observation": f"(no such tool: {tool_name})",
+                }
+            )
+            return
+        try:
+            if self.tool_call_timeout and self.tool_call_timeout > 0:
+                obs = await asyncio.wait_for(
+                    tool.run(args), timeout=self.tool_call_timeout
+                )
+            else:
+                obs = await tool.run(args)
+        except asyncio.TimeoutError:
+            obs = (
+                f"(tool {tool_name} timed out after {self.tool_call_timeout}s)"
+            )
+        except Exception as exc:
+            logger.warning("orchestrator: onboard tool %r raised: %s", tool_name, exc)
+            obs = f"(tool error: {exc})"
+        observations.append(
+            {"tool": tool_name, "args": args, "observation": obs or ""}
+        )
+
+    async def _seed_auto_start_skills(
+        self,
+        visitor: Any,
+        skill_docs: List[Any],
+        tools: Dict[str, Any],
+        observations: List[Dict[str, Any]],
+    ) -> Optional[Any]:
+        """Mechanically use_skill for each configured new-user skill.
+        Returns the first locked_in skill doc in config order, if any."""
+        names = self._normalized_auto_start_skill_names()
+        skill_by_name = {d.name: d for d in skill_docs if getattr(d, "name", None)}
+        activated_names: List[str] = []
+        first_locked: Optional[Any] = None
+        for name in names:
+            doc = skill_by_name.get(name)
+            if doc is None:
+                continue
+            await self._run_tool_observation(
+                tools,
+                "use_skill",
+                {"name": name},
+                observations,
+            )
+            activated_names.append(name)
+            if first_locked is None and getattr(doc, "locked_in", False):
+                first_locked = doc
+        if activated_names:
+            observations.append(
+                {
+                    "tool": "(auto-start)",
+                    "args": {},
+                    "observation": (
+                        "Skills auto-activated for new user: "
+                        + ", ".join(activated_names)
+                        + ". Follow each skill's procedure above. Do not call "
+                        "use_skill again for those names this turn."
+                    ),
+                }
+            )
+        return first_locked
 
     # ------------------------------------------------------------------
     # Loop
@@ -1420,8 +1649,17 @@ class OrchestratorInteractAction(InteractAction):
                 cancel_orphan_flow_tasks,
             )
 
+            # Locked-in skill tasks use the skill name as owner_action — they
+            # are not routable IA tools, so exempt them from the orphan sweep.
+            _locked_skill_names: Set[str] = {
+                d.name
+                for d in skill_docs
+                if getattr(d, "locked_in", False) and getattr(d, "name", None)
+            }
             await cancel_orphan_flow_tasks(
-                visitor, routable_tool_names=set(tools.keys())
+                visitor,
+                routable_tool_names=set(tools.keys()),
+                locked_skill_names=_locked_skill_names,
             )
             flow_owner = active_flow_owner(visitor, flow_tool_names=flow_tool_names)
 
@@ -1437,6 +1675,12 @@ class OrchestratorInteractAction(InteractAction):
             if self.planning
             else ""
         )
+
+        active_skill_doc = self._find_active_locked_skill_doc(visitor, skill_docs)
+        if active_skill_doc is not None:
+            tools, visible, skills_section = self._restrict_tools_to_locked_skill(
+                active_skill_doc, tools, visible, activated
+            )
 
         observations: List[Dict[str, Any]] = []
         # Pre-loop upload ingestion (ADR-0021 S4): persist EVERY uploaded file in
@@ -1478,6 +1722,35 @@ class OrchestratorInteractAction(InteractAction):
                         ),
                     }
                 )
+
+        if active_skill_doc is None and self._should_auto_start_skills(
+            visitor,
+            skill_docs,
+            active_skill_doc=active_skill_doc,
+            flow_owner=flow_owner,
+        ):
+            first_locked = await self._seed_auto_start_skills(
+                visitor, skill_docs, tools, observations
+            )
+            if first_locked is not None:
+                active_skill_doc = first_locked
+                tools, visible, skills_section = self._restrict_tools_to_locked_skill(
+                    active_skill_doc, tools, visible, activated
+                )
+            elif activated:
+                for doc in skill_docs:
+                    if (
+                        getattr(doc, "locked_in", False)
+                        and doc.name in activated
+                    ):
+                        active_skill_doc = doc
+                        tools, visible, skills_section = (
+                            self._restrict_tools_to_locked_skill(
+                                active_skill_doc, tools, visible, activated
+                            )
+                        )
+                        break
+
         budget = max(1, int(self.activation_budget))
         history = await self._history(visitor)
         ticks = 0
@@ -1738,10 +2011,12 @@ class OrchestratorInteractAction(InteractAction):
             # with pending steps ACTIVE so the next turn resumes it. Runs on
             # every loop exit; no-op when planning is off.
             await self._finalize_plan(visitor)
+            rec_continuation_mode = "locked" if active_skill_doc else ("model_mediated" if flow_owner else "none")
+            rec_flow_owner = active_skill_doc.name if active_skill_doc else flow_owner
             await self._record_orchestrator_activation(
                 visitor,
-                continuation_mode="model_mediated" if flow_owner else "none",
-                flow_owner=flow_owner,
+                continuation_mode=rec_continuation_mode,
+                flow_owner=rec_flow_owner,
                 tools_invoked=[o.get("tool") for o in observations],
                 tick_count=ticks,
                 ended_via=ended_via,
@@ -2362,37 +2637,126 @@ class OrchestratorInteractAction(InteractAction):
         return None
 
     @staticmethod
-    def _build_skill_activate_hook(
-        code_exec: Optional[Any], visitor: Any
-    ) -> Optional[Any]:
-        """Hook that stages a Claude skill's folder into the per-user sandbox.
+    def _find_interview_action(actions: List[Any]) -> Optional[Any]:
+        for action in actions:
+            if not getattr(action, "enabled", True):
+                continue
+            if hasattr(action, "on_skill_activate") and hasattr(
+                action, "needs_session_rebootstrap"
+            ):
+                return action
+        return None
 
-        Returns ``None`` when code execution is unavailable; otherwise an async
-        ``(SkillDoc) -> Optional[str]`` that stages ``spec: claude`` skills and
-        returns a note telling the model where to run them. JV skills are
-        ignored (they execute by referencing already-surfaced tools).
-        """
-        if code_exec is None:
-            return None
+    @staticmethod
+    def _visitor_utterance(visitor: Any) -> str:
+        for attr in ("utterance", "message", "text"):
+            val = getattr(visitor, attr, None)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+        interaction = getattr(visitor, "interaction", None)
+        if interaction is not None:
+            for attr in ("utterance", "message", "text"):
+                val = getattr(interaction, attr, None)
+                if isinstance(val, str) and val.strip():
+                    return val.strip()
+        return ""
+
+    @staticmethod
+    def _skill_uses_interview_action(doc: Any, interview_action: Any) -> bool:
+        if hasattr(interview_action, "is_interview_skill") and interview_action.is_interview_skill(
+            doc.name
+        ):
+            return True
+        requires = getattr(doc, "requires_actions", ()) or ()
+        return any("InterviewAction" in str(req) for req in requires)
+
+    @staticmethod
+    def _build_skill_activate_hooks(
+        actions: List[Any], visitor: Any, code_exec: Optional[Any]
+    ) -> tuple[Optional[Any], Optional[Any]]:
+        """Hooks for skill activation: locked_in tasks, interview sessions, Claude staging."""
+        interview_action = OrchestratorInteractAction._find_interview_action(actions)
 
         async def _activate(doc: Any) -> Optional[str]:
-            if getattr(doc, "spec", "jv") != "claude":
-                return None
-            directory = getattr(doc, "directory", "") or ""
-            if not directory:
-                return None
-            try:
-                rel = await code_exec.stage_skill(visitor, directory, doc.name)
-            except Exception as exc:
-                return f"(could not stage skill files: {exc})"
-            return (
-                f"This skill's files are staged at '{rel}/' in your sandbox. Run "
-                f"its scripts with the code_execution__bash tool — e.g. "
-                f"`python {rel}/scripts/<script>.py`. Read bundled files there "
-                f"(e.g. `cat {rel}/reference.md`) only as needed."
-            )
+            notes: List[str] = []
+            if getattr(doc, "locked_in", False):
+                conversation = getattr(visitor, "conversation", None)
+                if conversation is not None:
+                    try:
+                        from jvagent.memory.task_store import TaskStore
+                        store = TaskStore(conversation)
+                        from jvagent.action.orchestrator.onboard import (
+                            has_active_onboard_task,
+                        )
 
-        return _activate
+                        if not has_active_onboard_task(store, doc.name):
+                            handle = await store.create(
+                                title=doc.name,
+                                description=doc.description or f"Executing skill {doc.name}",
+                                owner_action=doc.name,
+                                task_type="SKILL",
+                            )
+                            await handle.start()
+                    except Exception as exc:
+                        logger.warning(
+                            "orchestrator: failed to create task for locked_in skill %s: %s",
+                            doc.name,
+                            exc,
+                        )
+
+            if interview_action is not None and OrchestratorInteractAction._skill_uses_interview_action(
+                doc, interview_action
+            ):
+                try:
+                    note = await interview_action.on_skill_activate(
+                        doc.name,
+                        visitor,
+                        user_message=OrchestratorInteractAction._visitor_utterance(visitor),
+                    )
+                    if note:
+                        notes.append(note)
+                except Exception as exc:
+                    logger.warning(
+                        "orchestrator: interview session bootstrap failed for %s: %s",
+                        doc.name,
+                        exc,
+                    )
+                    notes.append(f"(interview session bootstrap error: {exc})")
+
+            if getattr(doc, "spec", "jv") == "claude" and code_exec is not None:
+                directory = getattr(doc, "directory", "") or ""
+                if directory:
+                    try:
+                        rel = await code_exec.stage_skill(visitor, directory, doc.name)
+                        notes.append(
+                            f"This skill's files are staged at '{rel}/' in your sandbox. Run "
+                            f"its scripts with the code_execution__bash tool — e.g. "
+                            f"`python {rel}/scripts/<script>.py`. Read bundled files there "
+                            f"(e.g. `cat {rel}/reference.md`) only as needed."
+                        )
+                    except Exception as exc:
+                        notes.append(f"(could not stage skill files: {exc})")
+
+            return "\n\n".join(notes) if notes else None
+
+        async def _reactivate(doc: Any) -> bool:
+            if interview_action is None:
+                return False
+            if not OrchestratorInteractAction._skill_uses_interview_action(
+                doc, interview_action
+            ):
+                return False
+            try:
+                return await interview_action.needs_session_rebootstrap(doc.name, visitor)
+            except Exception as exc:
+                logger.warning(
+                    "orchestrator: interview reactivate check failed for %s: %s",
+                    doc.name,
+                    exc,
+                )
+                return False
+
+        return _activate, _reactivate
 
     def _select_mcp_actions(self, actions: List[Any]) -> List[Any]:
         """MCPAction instances to pull tools from, per ``tool_servers``.

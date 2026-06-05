@@ -78,6 +78,7 @@ def build_skill_meta_tools(
     activated: List[str],
     visible: Optional[Set[str]] = None,
     activate_hook: Optional[Callable[[SkillDoc], Awaitable[Optional[str]]]] = None,
+    reactivate_hook: Optional[Callable[[SkillDoc], Awaitable[bool]]] = None,
 ) -> Dict[str, SkillTool]:
     """``find_skill`` / ``use_skill`` over skills (progressive disclosure).
 
@@ -116,9 +117,18 @@ def build_skill_meta_tools(
         # short directive instead of re-dumping the SOP, so the model proceeds
         # with the procedure instead of looping on use_skill.
         if name in activated:
+            staged = ""
+            if reactivate_hook is not None and activate_hook is not None:
+                try:
+                    if await reactivate_hook(doc):
+                        note = await activate_hook(doc)
+                        if note:
+                            staged = f"\n\n{note}"
+                except Exception as exc:
+                    staged = f"\n\n(activation hook error: {exc})"
             hint = f" Its tools are available: {', '.join(present)}." if present else ""
             return (
-                f"Skill '{doc.name}' is already active.{hint} Proceed with its "
+                f"Skill '{doc.name}' is already active.{hint}{staged} Proceed with its "
                 "steps now using the available tools; do not call use_skill for "
                 "it again."
             )

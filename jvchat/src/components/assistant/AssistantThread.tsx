@@ -152,7 +152,7 @@ export function AssistantThread({
     messages: threadMessages,
     convertMessage: (m) => m,
     isRunning: isStreaming,
-    isDisabled: composerDisabled,
+    isSendDisabled: composerDisabled,
     onNew: async (message: AppendMessage) => {
       const text = appendMessageText(message);
       const files = appendMessageFiles(message);
