@@ -68,7 +68,7 @@ _ALLOWED_AUTH_KEYS = {
     "exempt_paths",
 }
 _ALLOWED_INTERACT_KEYS = {"rate_limit_per_minute", "max_utterance_length"}
-_ALLOWED_CORS_KEYS = {"enabled", "origins"}
+_ALLOWED_CORS_KEYS = {"enabled", "origins", "methods", "headers"}
 _ALLOWED_PERFORMANCE_KEYS = {
     "enable_profiling",
     "enable_agent_cache",
@@ -266,6 +266,20 @@ def validate_app_yaml_config(config: Dict[str, Any]) -> List[AppYamlWarning]:
             warnings,
             "config.cors.origins",
             cors.get("origins"),
+            (str, list),
+            hint="Use comma-separated string or string list.",
+        )
+        _expect_type(
+            warnings,
+            "config.cors.methods",
+            cors.get("methods"),
+            (str, list),
+            hint="Use comma-separated string or string list.",
+        )
+        _expect_type(
+            warnings,
+            "config.cors.headers",
+            cors.get("headers"),
             (str, list),
             hint="Use comma-separated string or string list.",
         )

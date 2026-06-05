@@ -84,6 +84,8 @@ Secrets (env only):
 |---------------|---------|---------|
 | `config.cors.enabled` | `JVSPATIAL_CORS_ENABLED` | true |
 | `config.cors.origins` | `JVSPATIAL_CORS_ORIGINS` | (comma-separated list) |
+| `config.cors.methods` | `JVSPATIAL_CORS_METHODS` | (comma-separated list) |
+| `config.cors.headers` | `JVSPATIAL_CORS_HEADERS` | (comma-separated list) |
 
 ### Performance
 

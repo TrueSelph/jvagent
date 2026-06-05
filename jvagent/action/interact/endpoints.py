@@ -465,7 +465,10 @@ async def _issue_session_token(
     ):
         return None
     try:
+        secret_before = getattr(conversation, "token_secret", "") or ""
         secret = conversation.ensure_token_secret()
+        if not secret_before and secret:
+            await conversation.save()
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("session token secret provisioning failed: %s", exc)
         return None

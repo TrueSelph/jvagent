@@ -244,6 +244,36 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
             "http://localhost:8000",
             "http://127.0.0.1:8000",
         ]
+    cors_methods_value = get_config_value(
+        app_config, "cors.methods", "JVSPATIAL_CORS_METHODS", None
+    )
+    if isinstance(cors_methods_value, list):
+        cors_methods = [
+            method.strip()
+            for method in cors_methods_value
+            if isinstance(method, str) and method.strip()
+        ]
+    elif isinstance(cors_methods_value, str) and cors_methods_value.strip():
+        cors_methods = [
+            method.strip() for method in cors_methods_value.split(",") if method.strip()
+        ]
+    else:
+        cors_methods = None
+    cors_headers_value = get_config_value(
+        app_config, "cors.headers", "JVSPATIAL_CORS_HEADERS", None
+    )
+    if isinstance(cors_headers_value, list):
+        cors_headers = [
+            header.strip()
+            for header in cors_headers_value
+            if isinstance(header, str) and header.strip()
+        ]
+    elif isinstance(cors_headers_value, str) and cors_headers_value.strip():
+        cors_headers = [
+            header.strip() for header in cors_headers_value.split(",") if header.strip()
+        ]
+    else:
+        cors_headers = None
 
     # Build grouped configuration objects
     # Database configuration
@@ -301,10 +331,15 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
     )
 
     # CORS configuration
-    cors_config = CORSConfig(
-        cors_enabled=cors_enabled,
-        cors_origins=cors_origins,
-    )
+    cors_kwargs = {
+        "cors_enabled": cors_enabled,
+        "cors_origins": cors_origins,
+    }
+    if cors_methods is not None:
+        cors_kwargs["cors_methods"] = cors_methods
+    if cors_headers is not None:
+        cors_kwargs["cors_headers"] = cors_headers
+    cors_config = CORSConfig(**cors_kwargs)
 
     fs_cfg = get_file_storage_config(app_root, app_config)
     file_storage_config = FileStorageConfig(

@@ -384,3 +384,32 @@ async def test_conversation_token_secret_lifecycle(test_db):
         assert st.claims_match_conversation(stale_claims, conv) == "secret_mismatch"
     finally:
         await conv.delete(cascade=True)
+
+
+async def test_issue_session_token_persists_secret(test_db, monkeypatch):
+    from jvagent.action.interact.endpoints import _issue_session_token
+    from jvagent.memory.conversation import Conversation
+
+    conv = await Conversation.create(
+        session_id="sess-tok-2", user_id="u2", channel="default"
+    )
+    try:
+        save_called = {"value": False}
+        original_save = conv.save
+
+        async def _save_wrapper(*args, **kwargs):
+            save_called["value"] = True
+            return await original_save(*args, **kwargs)
+
+        monkeypatch.setattr(conv, "save", _save_wrapper)
+        walker = SimpleNamespace(
+            conversation=conv,
+            session_id=conv.session_id,
+            user_id=conv.user_id,
+        )
+        token = await _issue_session_token(walker, "a1")
+        assert token
+        assert save_called["value"] is True
+        assert conv.token_secret
+    finally:
+        await conv.delete(cascade=True)
