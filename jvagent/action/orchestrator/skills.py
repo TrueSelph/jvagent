@@ -122,6 +122,24 @@ def discover_skill_docs(
                 metadata=bundle.get("metadata") or {},
             )
         )
+
+    # Host overlay (embedded deployments): merge after filesystem resolution.
+    # Filesystem names take precedence — base tier cannot be shadowed.
+    try:
+        from jvagent.action.orchestrator.skill_providers import collect_host_skill_docs
+
+        host_docs = collect_host_skill_docs(agent)
+    except Exception as exc:
+        logger.debug("orchestrator.skills: host provider merge failed: %s", exc)
+        host_docs = []
+
+    if host_docs:
+        existing = {d.name for d in docs}
+        for hd in host_docs:
+            if hd.name not in existing:
+                docs.append(hd)
+                existing.add(hd.name)
+
     return docs
 
 

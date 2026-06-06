@@ -1,0 +1,21 @@
+package:
+  name: jvagent/interview_action
+  author: jvagent
+  archetype: InterviewAction
+  version: 1.0.0
+  meta:
+    title: Interview Action
+    description: >-
+      LLM-driven interview tool bundle. Exposes granular interview__* tools;
+      each interview skill is a contract.yaml + SKILL.md package under the
+      agent skills/ directory.
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []
+    pip:
+      - pyyaml

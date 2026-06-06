@@ -242,6 +242,8 @@ A skill is **judgment over capability, not capability** (ADR-0011). Tools answer
 
 Aliases `local`→`app` and `builtin`→`library` are accepted; `registry` is retired (treated as `library`).
 
+**Host skill providers (embedded deployments)** — after filesystem discovery, [`skill_providers.py`](../jvagent/action/orchestrator/skill_providers.py) merges skills from registered host callables (`register_host_skill_provider`). Integral uses this for per-workspace App-bundled skill overlays; filesystem/app-local skills win on name collision. Host providers run regardless of `skills_source`.
+
 **Selecting which skills** — `skills` is either `-all` (every discovered skill) or a **finite list of names** (fnmatch patterns) in the descriptor, e.g. `skills: [research, web_lookup]`. `denied_skills` subtracts; a skill with `always-active: true` in its frontmatter loads regardless of the selector.
 
 **Exposure + execution** — the loaded skills (name + description) are listed inline in the system prompt under **AVAILABLE SKILLS** (the skill index is *not* gated by lean tool surfacing — it stays fully shown), and the prompt's first rule is **skills-first**: *if a listed skill matches the user's task, activate it with `use_skill` before any ad-hoc tool call.* This makes skills preferred over tool-only handling rather than only discoverable on demand. The orchestrator also adds `find_skill` / `use_skill` meta-tools: `find_skill` searches names+descriptions (for larger catalogs); `use_skill` activates one by name. What activation does depends on the spec:

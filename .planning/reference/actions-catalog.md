@@ -23,6 +23,7 @@ Path convention: `jvagent/action/{dir}/`. Implementation file is `{dir}/{name}.p
 > | jvagent/handoff | jvagent/handoff_interact_action |
 > | jvagent/intro | jvagent/intro_interact_action |
 > | jvagent/interview | jvagent/interview_interact_action |
+> | jvagent/interview_action | jvagent/interview_action |
 > | jvagent/long_memory | jvagent/long_memory_interact_action |
 > | jvagent/long_memory_store | jvagent/long_memory_store_interact_action |
 > | jvagent/long_memory_retrieval | jvagent/long_memory_retrieval_interact_action |
@@ -68,7 +69,8 @@ Bases:
 | jvagent/interact_router | `InteractRouter` | `InteractAction` | -200 | Intent classifier → routes to InteractActions (Rails pattern; alternative to the Orchestrator) |
 | jvagent/converse | `ConverseInteractAction` | `InteractAction` | (late) | Smalltalk fallback |
 | jvagent/intro | `IntroInteractAction` | `InteractAction` | early | Initial greeting / first-interaction flow |
-| jvagent/interview | `InterviewInteractAction` | `InteractAction` | mid | Structured Q&A with branching, convergence, pruning |
+| jvagent/interview | `InterviewInteractAction` | `InteractAction` | mid | **Legacy** — structured Q&A state machine (Rails). Prefer `jvagent/interview_action` + skills-v2 |
+| jvagent/interview_action | `InterviewAction` | `Action` | — | Interview tool bundle (`interview__*` tools). Skills clone `example/example_interview/` + `contract.yaml`; activate via `requires-actions` |
 | jvagent/handoff | `HandoffInteractAction` | `InteractAction` | mid | Transfer to human (provides contact details) |
 | jvagent/retrieval | `RetrievalInteractAction` | `InteractAction` | mid | Base retrieval orchestrator |
 

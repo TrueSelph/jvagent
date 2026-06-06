@@ -984,6 +984,7 @@ class ActionLoader:
         metadata: ActionMetadata,
         agent_id: str,
         agent_name: str,
+        agent_namespace: str = "",
         action_class: Optional[Type[Action]] = None,
         property_overrides: Optional[Dict[str, Any]] = None,
         config_overrides: Optional[Dict[str, Any]] = None,
@@ -1117,11 +1118,20 @@ class ActionLoader:
                     ):
                         loaded_modules.append(parent_module)
 
+            ns = agent_namespace or getattr(metadata, "agent_namespace", "") or ""
+            agent_dir = ""
+            if ns and agent_name:
+                candidate = self.base_path / "agents" / ns / agent_name
+                if candidate.is_dir():
+                    agent_dir = str(candidate)
+
             action.metadata = factory.build_action_metadata_payload(
                 metadata=metadata,
                 merged_config=merged_config,
                 config_overrides=config_overrides,
                 agent_name=agent_name,
+                agent_namespace=ns,
+                agent_dir=agent_dir,
                 loaded_modules=loaded_modules,
             )
 
@@ -1259,6 +1269,7 @@ class ActionLoader:
                 metadata,
                 agent_id,
                 agent_name,
+                namespace,
                 property_overrides=property_overrides,
                 config_overrides=config_overrides,
             )

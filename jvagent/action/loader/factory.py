@@ -9,6 +9,8 @@ def build_action_metadata_payload(
     merged_config: Dict[str, Any],
     config_overrides: Optional[Dict[str, Any]],
     agent_name: str,
+    agent_namespace: str = "",
+    agent_dir: str = "",
     loaded_modules: List[str],
 ) -> Dict[str, Any]:
     """Build persisted action metadata payload for Action instances."""
@@ -28,6 +30,10 @@ def build_action_metadata_payload(
         "config_overrides": config_overrides or {},
         "dependencies": metadata.dependencies,
         "agent_name": agent_name,
+        "agent_namespace": agent_namespace
+        or getattr(metadata, "agent_namespace", "")
+        or "",
+        "agent_dir": agent_dir or "",
         "loaded_modules": loaded_modules,
         "is_core_action": bool(getattr(metadata, "is_core_action", False)),
         "core_module_path": getattr(metadata, "core_module_path", None),

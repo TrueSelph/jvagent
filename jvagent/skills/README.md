@@ -69,14 +69,13 @@ orchestrator's `pinned_tools` glob list.) It also lets the skill bypass the
 
 List skill names on the orchestrator (`auto_start_skills_on_new_user: [my_skill]`).
 For each **new user**, the orchestrator mechanically runs `use_skill` before the
-first model tick (no skill-specific tools such as `interview__init`).
+first model tick (activation/bootstrap is handled by the skill's `requires-actions` binding).
 
 When a `locked-in: true` skill has an **active** TaskStore task (`owner_action`
-matches the skill name, or an `InterviewAction` task with matching
-`interview_type`), the orchestrator restricts the tool surface to that skill until
-the task is **completed**. The `use_skill` activate hook creates a `SKILL` task;
-finish the flow by completing that task from skill tools — not only via
-`conversation.context` flags.
+matches the skill name), the orchestrator restricts the tool surface to that skill until
+the task is **completed**. Skills that declare `requires-actions: [InterviewAction]`
+delegate session resolution to that action's `resolve_locked_skill()`. The
+`use_skill` activate hook creates a `SKILL` task when `locked-in` is set.
 
 ## JV skills — coordinate existing tools
 
@@ -144,7 +143,10 @@ docstrings for the full posture.
 ## Sources, precedence, configuration
 
 1. Built-in: `jvagent/skills/*`  2. App-local: `agents/<ns>/<agent_id>/skills/*`
-(app-local overrides a built-in of the same `name`).
+(app-local overrides a built-in of the same `name`).  3. **Host providers** (optional):
+embedders register callables via `register_host_skill_provider()` in
+`jvagent.action.orchestrator.skill_providers`; merged after filesystem discovery
+(filesystem wins on name collision). Integral documents the workspace overlay pattern in `docs/backend/workspace-agent-profile.md`.
 
 ```yaml
 - action: jvagent/orchestrator

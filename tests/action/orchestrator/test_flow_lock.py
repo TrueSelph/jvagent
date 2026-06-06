@@ -279,7 +279,7 @@ async def test_skill_turn_lock_restricts_surface_when_locked_in_is_true(
                     name="web_search__search",
                     description="Search the web.",
                     parameters_schema={"type": "object", "properties": {}},
-                    execute=lambda *args, **kw: None
+                    execute=lambda *args, **kw: None,
                 )
             ]
 
@@ -291,16 +291,21 @@ async def test_skill_turn_lock_restricts_surface_when_locked_in_is_true(
                     name="reply",
                     description="Reply to the user.",
                     parameters_schema={"type": "object", "properties": {}},
-                    execute=lambda *args, **kw: None
+                    execute=lambda *args, **kw: None,
                 )
             ]
 
     search_ia = SearchIA()
     reply_ia = ReplyIA()
-    ex = make_orchestrator(actions=[search_ia, reply_ia], action_registry={"SearchIA": search_ia, "ReplyIA": reply_ia})
+    ex = make_orchestrator(
+        actions=[search_ia, reply_ia],
+        action_registry={"SearchIA": search_ia, "ReplyIA": reply_ia},
+    )
 
     # Mock skill discovery to return our skill
-    monkeypatch.setattr(OrchestratorInteractAction, "_discover_skills", lambda self, agent: [skill])
+    monkeypatch.setattr(
+        OrchestratorInteractAction, "_discover_skills", lambda self, agent: [skill]
+    )
     # Mock active_flow_owner to return None since there is no active IA flow
     monkeypatch.setattr(sei, "active_flow_owner", lambda v, **kw: None)
 
@@ -314,6 +319,7 @@ async def test_skill_turn_lock_restricts_surface_when_locked_in_is_true(
     class MockTaskStore:
         def __init__(self, conversation):
             pass
+
         def list(self, status="active"):
             return [MockTask("ResearchSkill")]
 
@@ -321,6 +327,7 @@ async def test_skill_turn_lock_restricts_surface_when_locked_in_is_true(
 
     # Spy on run_model to check the arguments it gets
     spied_calls = []
+
     async def _m(
         self,
         visitor,
@@ -336,10 +343,12 @@ async def test_skill_turn_lock_restricts_surface_when_locked_in_is_true(
         plan_note="",
         **kwargs,
     ):
-        spied_calls.append({
-            "tools": [t.name for t in tools],
-            "skills_section": skills_section,
-        })
+        spied_calls.append(
+            {
+                "tools": [t.name for t in tools],
+                "skills_section": skills_section,
+            }
+        )
         return {"action": "final", "answer": "done"}
 
     monkeypatch.setattr(OrchestratorInteractAction, "_run_model", _m)
@@ -385,7 +394,7 @@ async def test_skill_lock_not_locked_when_locked_in_is_false(
                     name="web_search__search",
                     description="Search the web.",
                     parameters_schema={"type": "object", "properties": {}},
-                    execute=lambda *args, **kw: None
+                    execute=lambda *args, **kw: None,
                 )
             ]
 
@@ -396,15 +405,20 @@ async def test_skill_lock_not_locked_when_locked_in_is_false(
                     name="reply",
                     description="Reply to the user.",
                     parameters_schema={"type": "object", "properties": {}},
-                    execute=lambda *args, **kw: None
+                    execute=lambda *args, **kw: None,
                 )
             ]
 
     search_ia = SearchIA()
     reply_ia = ReplyIA()
-    ex = make_orchestrator(actions=[search_ia, reply_ia], action_registry={"SearchIA": search_ia, "ReplyIA": reply_ia})
+    ex = make_orchestrator(
+        actions=[search_ia, reply_ia],
+        action_registry={"SearchIA": search_ia, "ReplyIA": reply_ia},
+    )
 
-    monkeypatch.setattr(OrchestratorInteractAction, "_discover_skills", lambda self, agent: [skill])
+    monkeypatch.setattr(
+        OrchestratorInteractAction, "_discover_skills", lambda self, agent: [skill]
+    )
     # Mock active_flow_owner to return None since there is no active IA flow
     monkeypatch.setattr(sei, "active_flow_owner", lambda v, **kw: None)
 
@@ -417,12 +431,14 @@ async def test_skill_lock_not_locked_when_locked_in_is_false(
     class MockTaskStore:
         def __init__(self, conversation):
             pass
+
         def list(self, status="active"):
             return [MockTask("ResearchSkill")]
 
     monkeypatch.setattr("jvagent.memory.task_store.TaskStore", MockTaskStore)
 
     spied_calls = []
+
     async def _m(
         self,
         visitor,
@@ -438,10 +454,12 @@ async def test_skill_lock_not_locked_when_locked_in_is_false(
         plan_note="",
         **kwargs,
     ):
-        spied_calls.append({
-            "tools": [t.name for t in tools],
-            "skills_section": skills_section,
-        })
+        spied_calls.append(
+            {
+                "tools": [t.name for t in tools],
+                "skills_section": skills_section,
+            }
+        )
         return {"action": "final", "answer": "done"}
 
     monkeypatch.setattr(OrchestratorInteractAction, "_run_model", _m)
@@ -471,8 +489,14 @@ def _interview_tool_action(calls: dict):
         return ToolResult(content='{"valid": true}')
 
     class InterviewToolsAction:
+        enabled = True
+
         def get_class_name(self):
-            return "InterviewToolsAction"
+            return "InterviewAction"
+
+        async def resolve_locked_skill(self, visitor, skill_docs):
+            skill_by_name = {d.name: d for d in skill_docs if getattr(d, "name", None)}
+            return skill_by_name.get("OnboardingSkill")
 
         async def get_tools(self):
             return [
@@ -559,7 +583,7 @@ async def test_locked_in_pins_visible_so_blocked_tools_dispatch(
     ex = make_orchestrator(
         actions=[interview_ia, filler_ia, reply_ia],
         action_registry={
-            "InterviewToolsAction": interview_ia,
+            "InterviewAction": interview_ia,
             "FillerAction": filler_ia,
             "ReplyIA": reply_ia,
         },
@@ -620,6 +644,7 @@ async def test_locked_in_via_interview_action_task_owner(
         description="Customer onboarding interview.",
         body="SOP: validate phone.",
         requires_tools=("interview__validate_phone",),
+        requires_actions=("InterviewAction",),
         locked_in=True,
     )
     interview_ia = _interview_tool_action(calls)
@@ -628,7 +653,7 @@ async def test_locked_in_via_interview_action_task_owner(
     ex = make_orchestrator(
         actions=[interview_ia, filler_ia, reply_ia],
         action_registry={
-            "InterviewToolsAction": interview_ia,
+            "InterviewAction": interview_ia,
             "FillerAction": filler_ia,
             "ReplyIA": reply_ia,
         },
@@ -681,8 +706,11 @@ async def test_locked_in_via_interview_action_task_owner(
     assert ev["data"]["flow_owner"] == "OnboardingSkill"
 
 
-def test_find_active_locked_skill_doc_prefers_active_session(monkeypatch):
-    """Active interview session wins over stale tasks from another skill."""
+@pytest.mark.asyncio
+async def test_find_active_locked_skill_doc_prefers_active_session():
+    """InterviewAction.resolve_locked_skill prefers active session over tasks."""
+    from jvagent.action.interview_action.interview_action import InterviewAction
+    from jvagent.action.orchestrator.skill_tasks import resolve_active_locked_skill
     from jvagent.action.orchestrator.skills import SkillDoc
 
     onboarding = SkillDoc(
@@ -691,6 +719,7 @@ def test_find_active_locked_skill_doc_prefers_active_session(monkeypatch):
         body="SOP",
         requires_tools=("interview__init",),
         locked_in=True,
+        requires_actions=("InterviewAction",),
     )
     pre_alert = SkillDoc(
         name="pre_alert_interview",
@@ -698,6 +727,7 @@ def test_find_active_locked_skill_doc_prefers_active_session(monkeypatch):
         body="SOP",
         requires_tools=("interview__init",),
         locked_in=True,
+        requires_actions=("InterviewAction",),
     )
 
     class MockTask:
@@ -723,8 +753,6 @@ def test_find_active_locked_skill_doc_prefers_active_session(monkeypatch):
                 ),
             ]
 
-    monkeypatch.setattr("jvagent.memory.task_store.TaskStore", MockTaskStore)
-
     visitor = type(
         "V",
         (),
@@ -737,6 +765,8 @@ def test_find_active_locked_skill_doc_prefers_active_session(monkeypatch):
                         "interview": {
                             "interview_type": "pre_alert_interview",
                             "status": "active",
+                            "fields": {},
+                            "skipped_fields": [],
                         }
                     }
                 },
@@ -744,9 +774,331 @@ def test_find_active_locked_skill_doc_prefers_active_session(monkeypatch):
         },
     )()
 
-    ex = OrchestratorInteractAction()
-    ex.lock_active_flow = True
-    doc = ex._find_active_locked_skill_doc(visitor, [onboarding, pre_alert])
+    action = InterviewAction()
+    action._get_conversation = AsyncMock(return_value=visitor.conversation)
+
+    doc = await resolve_active_locked_skill(
+        visitor,
+        [onboarding, pre_alert],
+        [action],
+        lock_active_flow=True,
+    )
     assert doc is not None
     assert doc.name == "pre_alert_interview"
 
+
+async def test_apply_locked_skill_rebootstraps_missing_session_into_observations(
+    make_orchestrator, make_visitor, monkeypatch
+):
+    """Turn-lock must re-bootstrap interview session when task exists but context is empty."""
+    from jvagent.action.orchestrator.skills import SkillDoc
+    from jvagent.tooling.tool import Tool
+
+    skill = SkillDoc(
+        name="OnboardingSkill",
+        description="Customer onboarding interview.",
+        body="SOP: ask for phone.",
+        requires_tools=("interview__next_question",),
+        requires_actions=("InterviewAction",),
+        locked_in=True,
+    )
+
+    class InterviewActionStub:
+        enabled = True
+
+        def get_class_name(self):
+            return "InterviewAction"
+
+        async def _get_conversation(self, visitor=None):
+            if visitor is not None:
+                return getattr(visitor, "conversation", None)
+            return None
+
+        async def needs_session_rebootstrap(self, skill_name, visitor=None):
+            return skill_name == "OnboardingSkill"
+
+        async def on_skill_activate(self, skill_name, visitor=None, *, user_message=""):
+            conv = await self._get_conversation(visitor)
+            if conv is not None:
+                conv.context["interview"] = {
+                    "interview_type": skill_name,
+                    "status": "active",
+                    "fields": {},
+                    "skipped_fields": [],
+                }
+            return f"Interview session ready ({skill_name}). Call interview__next_question next."
+
+        async def _handle_next_question(self, visitor=None):
+            return (
+                '{"ok":true,"status":"active","next_questions":'
+                '[{"name":"phone","question":"What is your best phone number?"}]}'
+            )
+
+        async def _interview_ready(self, visitor=None):
+            conv = await self._get_conversation(visitor)
+            if conv is None:
+                return False
+            from jvagent.action.interview_action.session import has_active_session
+
+            return has_active_session(conv)
+
+        async def skill_runtime_ready(self, skill_name, visitor=None):
+            return await self._interview_ready(visitor)
+
+        async def prepare_locked_skill_turn(self, skill_name, visitor=None):
+            from jvagent.action.orchestrator.skill_tasks import LockedSkillPrep
+
+            if not await self.skill_runtime_ready(skill_name, visitor):
+                return LockedSkillPrep(runtime_ready=False)
+            next_obs = await self._handle_next_question(visitor)
+            return LockedSkillPrep(
+                runtime_ready=True,
+                observations=[
+                    {
+                        "tool": "interview__next_question",
+                        "args": {},
+                        "observation": next_obs,
+                    }
+                ],
+            )
+
+        async def get_tools(self):
+            return [
+                Tool(
+                    name="interview__next_question",
+                    description="Next question.",
+                    parameters_schema={"type": "object", "properties": {}},
+                    execute=lambda *args, **kw: None,
+                )
+            ]
+
+    interview_ia = InterviewActionStub()
+    reply_ia = _reply_action()
+    ex = make_orchestrator(
+        actions=[interview_ia, reply_ia],
+        action_registry={
+            "InterviewAction": interview_ia,
+            "ReplyIA": reply_ia,
+        },
+        decisions=[{"action": "final", "answer": "What is your phone?"}],
+    )
+    ex.lock_active_flow = True
+
+    monkeypatch.setattr(
+        OrchestratorInteractAction, "_discover_skills", lambda self, agent: [skill]
+    )
+    monkeypatch.setattr(sei, "active_flow_owner", lambda v, **kw: None)
+
+    class MockTask:
+        def __init__(self, owner_action):
+            self.owner_action = owner_action
+            self.task_type = "SKILL"
+            self.updated_at = "2026-06-04T10:00:00Z"
+
+    class MockTaskStore:
+        def __init__(self, conversation):
+            pass
+
+        def list(self, status="active"):
+            return [MockTask("OnboardingSkill")]
+
+    monkeypatch.setattr("jvagent.memory.task_store.TaskStore", MockTaskStore)
+
+    spied_obs: list = []
+    spied_skills_section: list = []
+
+    async def _m(
+        self,
+        visitor,
+        utterance,
+        history,
+        tools,
+        observations,
+        flow_note="",
+        skills_section="",
+        finalize=False,
+        gear="heavy",
+        lean=False,
+        plan_note="",
+        **kwargs,
+    ):
+        spied_obs.append(list(observations))
+        spied_skills_section.append(skills_section)
+        return {"action": "final", "answer": "What is your phone?"}
+
+    monkeypatch.setattr(OrchestratorInteractAction, "_run_model", _m)
+
+    v = _capture_visitor(make_visitor, utterance="5926431531")
+    v.conversation.context = {}
+
+    await ex.execute(v)
+
+    assert len(spied_obs) == 1
+    session_obs = [o for o in spied_obs[0] if o.get("tool") == "(skill-session)"]
+    assert len(session_obs) == 1
+    assert "Interview session ready (OnboardingSkill)" in session_obs[0]["observation"]
+    assert "Turn-lock is ON" in spied_skills_section[0]
+    next_q_obs = [
+        o for o in spied_obs[0] if o.get("tool") == "interview__next_question"
+    ]
+    assert len(next_q_obs) == 1
+    assert "phone number" in next_q_obs[0]["observation"].lower()
+    ev = _activation(v)
+    assert ev is not None
+    assert ev["data"]["continuation_mode"] == "locked"
+    assert ev["data"]["flow_owner"] == "OnboardingSkill"
+
+
+async def test_auto_start_applies_session_ensure_after_use_skill(
+    make_orchestrator, make_visitor, monkeypatch
+):
+    """Auto-start path must run _apply_active_locked_skill (session + restrict)."""
+    from jvagent.action.orchestrator.skills import SkillDoc
+    from jvagent.tooling.tool import Tool
+
+    skill = SkillDoc(
+        name="OnboardingSkill",
+        description="Onboarding.",
+        body="SOP: phone first.",
+        requires_tools=("interview__next_question",),
+        requires_actions=("InterviewAction",),
+        locked_in=True,
+    )
+
+    activate_calls = {"n": 0}
+
+    class InterviewActionStub:
+        enabled = True
+
+        def get_class_name(self):
+            return "InterviewAction"
+
+        async def _get_conversation(self, visitor=None):
+            if visitor is not None:
+                return getattr(visitor, "conversation", None)
+            return None
+
+        async def needs_session_rebootstrap(self, skill_name, visitor=None):
+            return True
+
+        async def on_skill_activate(self, skill_name, visitor=None, *, user_message=""):
+            activate_calls["n"] += 1
+            conv = await self._get_conversation(visitor)
+            if conv is not None:
+                conv.context["interview"] = {
+                    "interview_type": skill_name,
+                    "status": "active",
+                    "fields": {},
+                    "skipped_fields": [],
+                }
+            return f"Session bootstrapped for {skill_name}."
+
+        async def _handle_next_question(self, visitor=None):
+            return (
+                '{"ok":true,"status":"active","next_questions":'
+                '[{"name":"phone","question":"What is your phone?"}]}'
+            )
+
+        async def _interview_ready(self, visitor=None):
+            conv = await self._get_conversation(visitor)
+            if conv is None:
+                return False
+            from jvagent.action.interview_action.session import has_active_session
+
+            return has_active_session(conv)
+
+        async def skill_runtime_ready(self, skill_name, visitor=None):
+            return await self._interview_ready(visitor)
+
+        async def prepare_locked_skill_turn(self, skill_name, visitor=None):
+            from jvagent.action.orchestrator.skill_tasks import LockedSkillPrep
+
+            if not await self.skill_runtime_ready(skill_name, visitor):
+                return LockedSkillPrep(runtime_ready=False)
+            next_obs = await self._handle_next_question(visitor)
+            return LockedSkillPrep(
+                runtime_ready=True,
+                observations=[
+                    {
+                        "tool": "interview__next_question",
+                        "args": {},
+                        "observation": next_obs,
+                    }
+                ],
+            )
+
+        async def get_tools(self):
+            return [
+                Tool(
+                    name="interview__next_question",
+                    description="Next.",
+                    parameters_schema={"type": "object", "properties": {}},
+                    execute=lambda *args, **kw: None,
+                )
+            ]
+
+    interview_ia = InterviewActionStub()
+    reply_ia = _reply_action()
+    ex = make_orchestrator(
+        actions=[interview_ia, reply_ia],
+        action_registry={
+            "InterviewAction": interview_ia,
+            "ReplyIA": reply_ia,
+        },
+        decisions=[{"action": "final", "answer": "Hi"}],
+    )
+    ex.auto_start_skills_on_new_user = ["OnboardingSkill"]
+    ex.lock_active_flow = True
+
+    monkeypatch.setattr(
+        OrchestratorInteractAction, "_discover_skills", lambda self, agent: [skill]
+    )
+    monkeypatch.setattr(sei, "active_flow_owner", lambda v, **kw: None)
+
+    spied: list = []
+
+    async def _m(
+        self,
+        visitor,
+        utterance,
+        history,
+        tools,
+        observations,
+        flow_note="",
+        skills_section="",
+        **kwargs,
+    ):
+        spied.append(
+            {
+                "tools": [t.name for t in tools],
+                "observations": list(observations),
+                "skills_section": skills_section,
+            }
+        )
+        return {"action": "final", "answer": "Hi"}
+
+    monkeypatch.setattr(OrchestratorInteractAction, "_run_model", _m)
+
+    v = _capture_visitor(make_visitor, utterance="hi")
+    v.new_user = True
+    v.conversation.context = {}
+    v.conversation.tasks = []
+    v.conversation.save = AsyncMock()
+
+    await ex.execute(v)
+
+    assert activate_calls["n"] >= 1
+    assert len(spied) == 1
+    assert set(spied[0]["tools"]) == {"interview__next_question", "reply"}
+    assert "ACTIVE SKILL IN PROGRESS: OnboardingSkill" in spied[0]["skills_section"]
+    session_obs = [
+        o for o in spied[0]["observations"] if o.get("tool") == "(skill-session)"
+    ]
+    assert len(session_obs) == 1
+    assert "Session bootstrapped" in session_obs[0]["observation"]
+    next_q_obs = [
+        o
+        for o in spied[0]["observations"]
+        if o.get("tool") == "interview__next_question"
+    ]
+    assert len(next_q_obs) == 1

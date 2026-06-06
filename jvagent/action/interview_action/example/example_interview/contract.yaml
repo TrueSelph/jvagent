@@ -1,0 +1,71 @@
+name: example_interview
+title: Product Feedback
+description: >-
+  Reference interview skill that collects product feedback (name, rating,
+  optional comments, follow-up email). Demonstrates all InterviewAction
+  contract features: builtin and custom validators, pre_tools, post_tools,
+  LLM-callable custom tools, custom review, and completion handlers.
+  Copy this folder to skills/<your_skill_name>/ to create a live skill.
+  The LLM decides which question to ask next based on SKILL.md.
+
+questions:
+  - name: customer_name
+    question: "What is your name?"
+    required: true
+    description: "Customer's full name for the feedback record."
+    validator:
+      function: name
+
+  - name: product_rating
+    question: "On a scale of 1 to 5, how would you rate the product?"
+    required: true
+    description: >-
+      Integer rating from 1 (poor) to 5 (excellent). post_tools runs
+      check_low_rating automatically after save — read post_tools_results
+      before advancing.
+    post_tools:
+      - check_low_rating
+    validator:
+      function: validate_rating
+
+  - name: feedback_comments
+    question: "Would you like to share any additional comments? (You can skip this)"
+    required: false
+    description: "Optional free-text feedback. Call interview__skip_field if the user declines."
+    validator:
+      function: description
+      kwargs:
+        min_length: 3
+        max_length: 500
+
+  - name: follow_up_email
+    question: "What email address should we use for follow-up?"
+    required: true
+    description: >-
+      Email for follow-up. pre_tools may suggest an address from conversation
+      context — ask the user to confirm before saving.
+    pre_tools:
+      - suggest_email
+    validator:
+      function: email
+
+tools:
+  - name: reset_example_interview
+    description: >-
+      When: User cancels the interview or wants to start over. Do: Clear the
+      session and restart from the first question. Then: Call interview__next_question.
+      Use this instead of interview__cancel when the user abandons and may return.
+    function: reset_example_interview
+    parameters: {}
+
+review:
+  function: example_review
+  description: >-
+    Escalation path when product_rating is low (terminate without complete),
+    or formatted summary for user confirmation before completion.
+
+completion:
+  function: example_complete
+  description: >-
+    Post-review completion handler called by interview__complete. Stores
+    feedback in session context and returns a confirmation message.

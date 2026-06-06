@@ -110,13 +110,12 @@ def build_skill_meta_tools(
             return f"(no such skill: {name})"
         present = [t for t in doc.requires_tools if t in available_tool_names]
         missing = [t for t in doc.requires_tools if t not in available_tool_names]
-        # Surface the skill's declared tools so the model can call them now.
-        if visible is not None and present:
-            visible.update(present)
         # Idempotent: re-activating a skill already loaded this turn returns a
         # short directive instead of re-dumping the SOP, so the model proceeds
         # with the procedure instead of looping on use_skill.
         if name in activated:
+            if visible is not None and present:
+                visible.update(present)
             staged = ""
             if reactivate_hook is not None and activate_hook is not None:
                 try:
@@ -133,7 +132,6 @@ def build_skill_meta_tools(
                 "it again."
             )
         activated.append(name)
-        surfaced = f" Tools now callable: {', '.join(present)}." if present else ""
         warn = ""
         if missing:
             warn = (
@@ -149,6 +147,12 @@ def build_skill_meta_tools(
                 note = f"(activation hook error: {exc})"
             if note:
                 staged = f"\n\n{note}"
+        # Surface declared tools only after activation hooks run (e.g. interview
+        # session bootstrap) so the model cannot call interview tools with
+        # NO_SESSION on the same turn.
+        if visible is not None and present:
+            visible.update(present)
+        surfaced = f" Tools now callable: {', '.join(present)}." if present else ""
         return (
             f"Activated skill '{doc.name}'.{surfaced}{staged}"
             f"\n\nPROCEDURE:\n{doc.body}{warn}"

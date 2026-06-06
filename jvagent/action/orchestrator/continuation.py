@@ -190,7 +190,7 @@ async def cancel_orphan_flow_tasks(
             continue
         owner = str(getattr(th, "owner_action", "") or "")
         # Never sweep tasks owned by a locked-in skill — they persist until
-        # the skill's own InterviewAction marks them complete/cancelled.
+        # the bound action marks them complete/cancelled.
         if owner and owner in exempt:
             continue
         if not owner or (names and owner not in names):

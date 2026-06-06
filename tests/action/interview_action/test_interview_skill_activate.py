@@ -1,0 +1,97 @@
+"""Tests for interview session bootstrap on use_skill activation."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from unittest.mock import ANY, AsyncMock, MagicMock
+
+import pytest
+
+from jvagent.action.interview_action.contract_loader import (
+    ContractRegistry,
+    load_contract,
+)
+from jvagent.action.interview_action.interview_action import (
+    InterviewAction,
+)
+from jvagent.action.interview_action.tools import build_tools
+
+_SKILLS_DIR = Path(__file__).resolve().parent / "fixtures/skills"
+
+
+def _interview_action_with_contracts() -> InterviewAction:
+    action = InterviewAction()
+    action._contract_registry = ContractRegistry()
+    action._contract_registry._contracts["onboarding_interview"] = load_contract(
+        str(_SKILLS_DIR / "onboarding_interview/contract.yaml")
+    )
+    action._contract_registry._contracts["pre_alert_interview"] = load_contract(
+        str(_SKILLS_DIR / "pre_alert_interview/contract.yaml")
+    )
+    action._get_conversation = AsyncMock(return_value=None)
+    action._ensure_active_task = AsyncMock()
+    return action
+
+
+@pytest.mark.asyncio
+async def test_on_skill_activate_returns_observation_for_interview_skill():
+    action = _interview_action_with_contracts()
+    action._handle_start = AsyncMock(
+        return_value=(
+            '{"ok": true, "status": "active", "interview_type": "onboarding_interview", '
+            '"fields": {}, "missing_required": ["phone_number", "email"]}'
+        )
+    )
+
+    note = await action.on_skill_activate(
+        "onboarding_interview", MagicMock(), user_message="hi"
+    )
+
+    assert note is not None
+    assert "Interview session ready" in note
+    assert "onboarding_interview" in note
+    assert "missing_required" in note
+    assert "interview__next_question" in note
+    action._handle_start.assert_awaited_once_with(
+        "onboarding_interview", ANY, user_message="hi"
+    )
+
+
+@pytest.mark.asyncio
+async def test_on_skill_activate_returns_guidance_for_non_interview_skill():
+    action = _interview_action_with_contracts()
+    note = await action.on_skill_activate("faq", MagicMock())
+    assert note is not None
+    assert "no contract.yaml" in note.lower() or "Available interview types" in note
+
+
+@pytest.mark.asyncio
+async def test_needs_session_rebootstrap_when_no_conversation():
+    action = _interview_action_with_contracts()
+    assert await action.needs_session_rebootstrap("onboarding_interview", MagicMock())
+
+
+@pytest.mark.asyncio
+async def test_needs_session_rebootstrap_false_when_session_active():
+    action = _interview_action_with_contracts()
+    conversation = MagicMock()
+    conversation.context = {
+        "interview": {
+            "interview_type": "onboarding_interview",
+            "status": "active",
+            "fields": {},
+            "skipped_fields": [],
+        }
+    }
+    action._get_conversation = AsyncMock(return_value=conversation)
+
+    assert not await action.needs_session_rebootstrap(
+        "onboarding_interview", MagicMock()
+    )
+
+
+def test_interview__init_not_registered():
+    action = _interview_action_with_contracts()
+    names = {t.name for t in build_tools(action)}
+    assert "interview__init" not in names
+    assert "interview__next_question" in names

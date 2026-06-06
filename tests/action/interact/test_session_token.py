@@ -386,7 +386,7 @@ async def test_conversation_token_secret_lifecycle(test_db):
         await conv.delete(cascade=True)
 
 
-async def test_issue_session_token_persists_secret(test_db, monkeypatch):
+async def test_issue_session_token_persists_secret(test_db):
     from jvagent.action.interact.endpoints import _issue_session_token
     from jvagent.memory.conversation import Conversation
 
@@ -394,14 +394,7 @@ async def test_issue_session_token_persists_secret(test_db, monkeypatch):
         session_id="sess-tok-2", user_id="u2", channel="default"
     )
     try:
-        save_called = {"value": False}
-        original_save = conv.save
-
-        async def _save_wrapper(*args, **kwargs):
-            save_called["value"] = True
-            return await original_save(*args, **kwargs)
-
-        monkeypatch.setattr(conv, "save", _save_wrapper)
+        assert conv.token_secret == ""
         walker = SimpleNamespace(
             conversation=conv,
             session_id=conv.session_id,
@@ -409,7 +402,11 @@ async def test_issue_session_token_persists_secret(test_db, monkeypatch):
         )
         token = await _issue_session_token(walker, "a1")
         assert token
-        assert save_called["value"] is True
         assert conv.token_secret
+
+        # Secret must survive a DB round-trip (not just in-memory mutation).
+        reloaded = await Conversation.get(conv.id)
+        assert reloaded is not None
+        assert reloaded.token_secret == conv.token_secret
     finally:
         await conv.delete(cascade=True)
