@@ -1,6 +1,6 @@
 """Custom tools for the onboarding_interview interview.
 
-Functions are loaded by ``function:`` name in contract.yaml. Sections:
+Functions are loaded by ``function:`` name in SKILL.md frontmatter ``interview:``. Sections:
 
 1. Constants
 2. Shared helpers — _get_conversation

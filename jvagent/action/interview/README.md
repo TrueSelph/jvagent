@@ -1,4 +1,6 @@
-# Interview Action
+# Interview Action (legacy)
+
+> **Superseded by [`../interview_action/`](../interview_action/README.md).** New structured interviews use skills-v2 + `InterviewAction` (`interview__*` tools, frontmatter `interview:` contract, standard procedure injected at discovery). This package (`InterviewInteractAction`) remains for existing Rails-style flows only.
 
 A reusable, extensible interview system for gathering structured information from users through multi-turn conversations with validation, revision, and confirmation flows.
 

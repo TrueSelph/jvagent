@@ -18,7 +18,7 @@ Session state lives in `conversation.context["interview"]` as a lightweight `Int
 |-------|------------------------------|------|
 | **Foundation** | `jvagent/action/interview_action/` | `interview__*` tools, session lifecycle, hook dispatch, validator *invocation*, turn-prep seeding, generic pipeline |
 | **Spec** | `skills/<name>/SKILL.md` frontmatter `interview:` | Questions, order, branches, validator `function:` refs, pre/post/review/complete hooks |
-| **Procedure** | `skills/<name>/SKILL.md` body | LLM SOP — when to call tools, reply rules, skill-specific edge cases |
+| **Procedure** | `procedure.py` + `skills/<name>/SKILL.md` body | Standard tool loop injected at discovery; body = custom behavioral rules only |
 | **Implementation** | `skills/<name>/scripts/custom_tools.py` | Validators, pre/post tools, completion handlers, custom LLM tools |
 
 When fixing behavior for one skill (e.g. `validate_full_name`, training slot matching), change the **skill extension** — not the foundation — unless the bug is in generic plumbing (chaining, utterance-vs-model validation, hook dispatch, session keys like `CTX_QUESTION_PRESENTED`).
@@ -39,6 +39,8 @@ interview_action/
 ├── session.py            # InterviewSession in conversation.context
 ├── responses.py          # tell_user_directive, interview_tool_response, …
 ├── decorators.py         # @interview_tool (prefer frontmatter interview.tools:)
+├── procedure.py          # Standard SOP load + compose for discover_skill_docs
+├── sop/                  # Framework SOP assets (runtime + authoring templates)
 ├── example/example_interview/   # Reference skill — copy to skills/
 ├── README.md             # Full reference (frontmatter interview:, tools, patterns)
 └── docs/                 # Focused guides (multi-turn, extending, troubleshooting)
@@ -51,7 +53,7 @@ interview_action/
 1. Copy [`example/example_interview/`](example/example_interview/) → `skills/<name>/`.
 2. Align `name` in folder and `SKILL.md` frontmatter.
 3. Implement every `function:` referenced in frontmatter `interview:` inside `scripts/custom_tools.py`.
-4. Write `SKILL.md` procedure (Core instructions + Custom instructions + step table).
+4. Write `SKILL.md` custom instructions only (standard procedure is injected at discovery — see `sop/skill_custom_instructions.md`).
 5. Set `requires-actions: [InterviewAction]` and list tools in `allowed-tools`.
 6. Register skill in agent `orchestrator.skills:`.
 7. Enable `InterviewAction` in agent actions.

@@ -70,7 +70,7 @@ Bases:
 | jvagent/converse | `ConverseInteractAction` | `InteractAction` | (late) | Smalltalk fallback |
 | jvagent/intro | `IntroInteractAction` | `InteractAction` | early | Initial greeting / first-interaction flow |
 | jvagent/interview | `InterviewInteractAction` | `InteractAction` | mid | **Legacy** — structured Q&A state machine (Rails). Prefer `jvagent/interview_action` + skills-v2 |
-| jvagent/interview_action | `InterviewAction` | `Action` | — | Interview tool bundle (`interview__*` tools). Skills clone `example/example_interview/` + `contract.yaml`; activate via `requires-actions` |
+| jvagent/interview_action | `InterviewAction` | `Action` | — | Interview tool bundle (`interview__*` tools). Skills clone `example/example_interview/` with frontmatter `interview:` + custom `SKILL.md` body; standard procedure injected at discovery; activate via `requires-actions` |
 | jvagent/handoff | `HandoffInteractAction` | `InteractAction` | mid | Transfer to human (provides contact details) |
 | jvagent/retrieval | `RetrievalInteractAction` | `InteractAction` | mid | Base retrieval orchestrator |
 

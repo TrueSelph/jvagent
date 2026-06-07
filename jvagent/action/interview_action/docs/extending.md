@@ -7,12 +7,12 @@ How to override validation, hooks, handlers, and LLM-callable tools when buildin
 ```
 skills/my_interview/
 ├── SKILL.md               # frontmatter.interview: questions, validators, hooks, tools
-│                          # body: LLM procedure (when/how to call tools)
+│                          # body: custom behavioral rules only (standard procedure injected at discovery)
 └── scripts/
     └── custom_tools.py    # Python functions referenced by function: names
 ```
 
-Standalone `interview.yaml` is deprecated; migrate its contents into the `interview:` key in `SKILL.md` frontmatter.
+Standalone `interview.yaml` is deprecated; declare the contract under `interview:` in `SKILL.md` frontmatter. The framework-standard tool loop ships in [`../sop/standard_procedure.md`](../sop/standard_procedure.md) and is composed onto `SkillDoc.body` by `discover_skill_docs`.
 
 Copy [`../example/example_interview/`](../example/example_interview/) as the starting template.
 
@@ -24,22 +24,23 @@ Copy [`../example/example_interview/`](../example/example_interview/) as the sta
 | Custom validator | `question.validator.function: my_validate` | `custom_tools.py` | No |
 | Pre-tool | `question.pre_tools: [fn]` | `custom_tools.py` | No |
 | Post-tool | `question.post_tools: [fn]` | `custom_tools.py` | No |
-| Custom LLM tool | `interview.yaml` `tools:` | `custom_tools.py` | Yes (`{skill}__{name}`) |
-| Review handler | `interview.yaml` `review.function` | `custom_tools.py` | No |
-| Completion handler | `interview.yaml` `completion.function` | `custom_tools.py` | No |
+| Custom LLM tool | `interview.tools` | `custom_tools.py` | Yes (`{skill}__{name}`) |
+| Review handler | `interview.review.function` | `custom_tools.py` | No |
+| Completion handler | `interview.completion.function` | `custom_tools.py` | No |
 | Field seeding | (implicit via validator name) | `field_extractors.py` | No |
 | `@interview_tool` decorator | — | `custom_tools.py` | Yes (legacy discovery) |
 
-**Rule:** Only `interview.yaml` `tools:` entries become LLM tools. Validators and hooks are invoked by the framework when their trigger fires.
+**Rule:** Only `interview.tools` entries become LLM tools. Validators and hooks are invoked by the framework when their trigger fires.
 
 ---
 
 ## Custom validators
 
-### Declaration (`interview.yaml`)
+### Declaration (SKILL.md frontmatter `interview.questions`)
 
 ```yaml
-questions:
+interview:
+  questions:
   - name: product_rating
     validator:
       function: validate_rating   # custom_tools.py function name
@@ -168,9 +169,10 @@ Prefer `interview_tool_response()` from `responses.py` for consistent envelopes.
 Optional. Default: built-in field summary.
 
 ```yaml
-review:
-  function: example_review
-  description: "Escalation or confirmation summary"
+interview:
+  review:
+    function: example_review
+    description: "Escalation or confirmation summary"
 ```
 
 ```python
@@ -202,10 +204,11 @@ async def example_review(
 
 ## Completion handler
 
-Required on every `interview.yaml`.
+Required on every interview skill (`interview.completion` in frontmatter).
 
 ```yaml
-completion:
+interview:
+  completion:
   function: example_complete
   description: "Persist data after user confirms review"
 ```
@@ -234,7 +237,8 @@ Always return a `directive` string the LLM delivers to the user. The foundation 
 For operations the LLM must initiate (send OTP, reset session, process image):
 
 ```yaml
-tools:
+interview:
+  tools:
   - name: reset_example_interview
     description: "When user cancels or wants to start over..."
     function: reset_example_interview
@@ -252,7 +256,7 @@ Tool name on the wire: `{skill_name}__{tool.name}`.
 
 ### Legacy `@interview_tool` decorator
 
-Prefer `interview.yaml` `tools:`. The decorator in [`../decorators.py`](../decorators.py) remains for auto-discovery when a function is not listed in the spec.
+Prefer frontmatter `interview.tools`. The decorator in [`../decorators.py`](../decorators.py) remains for auto-discovery when a function is not listed in the spec.
 
 ---
 
@@ -313,10 +317,11 @@ Organize `custom_tools.py` in labeled sections (see [`../example/example_intervi
 
 ## Checklist for a new skill
 
-- [ ] `interview.yaml` `name` matches folder and `SKILL.md` frontmatter
+- [ ] `SKILL.md` `name` matches folder; frontmatter includes `interview:` block
 - [ ] Every `function:` has an implementation in `custom_tools.py`
-- [ ] Hooks are **not** in `interview.yaml` `tools:`
-- [ ] LLM tools are in both `interview.yaml` `tools:` and `allowed-tools`
+- [ ] Hooks are **not** in `interview.tools`
+- [ ] LLM tools are in both `interview.tools` and `allowed-tools`
+- [ ] `SKILL.md` body is custom rules only (no per-field Procedure steps)
 - [ ] Validators return correct shape; use `interview_complete` when validation finishes the flow
 - [ ] Post-tools use `interview_tool_response` with clear `response_directive`
 - [ ] Review returns `directive`; terminate path sets `terminate: true`

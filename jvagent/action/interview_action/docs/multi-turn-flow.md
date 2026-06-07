@@ -7,9 +7,10 @@ How a skills-v2 interview progresses across user turns when the orchestrator dri
 | Actor | Responsibility |
 |-------|----------------|
 | **User** | Sends messages each turn |
-| **Orchestrator LLM** | Reads `SKILL.md`, calls tools, replies per `response_directive` |
+| **Orchestrator LLM** | Reads composed procedure (`SkillDoc.body`), calls tools, replies per `response_directive` |
 | **InterviewAction** | Session CRUD, validation, hook execution, task tracking |
-| **`interview.yaml`** | Field definitions, validators, hooks |
+| **`SKILL.md` frontmatter `interview:`** | Field definitions, validators, hooks, tools, review/completion |
+| **`SKILL.md` body** | Per-skill behavioral rules (standard procedure injected at discovery) |
 | **`scripts/custom_tools.py`** | Business logic referenced by `function:` names |
 
 The LLM decides *which* question to ask and *when* to call tools. The action enforces validation, runs hooks, and returns structured observations the LLM must read before advancing.
@@ -120,7 +121,7 @@ Document branches in `SKILL.md` and implement side effects in hooks.
 ```
 All required fields collected (+ optional handled)
   → interview__review()
-  → built-in summary OR interview.yaml review handler (confirmation framing via `review_confirmation_directive`)
+  → built-in summary OR `interview.review` handler (confirmation framing via `review_confirmation_directive`)
   → if terminate: true → stop (escalation path)
   → else user confirms → interview__complete()
   → completion handler → `clear_interview_context()` (honors `retain_context_keys`), INTERVIEW task closed
@@ -147,7 +148,10 @@ Both may be active during an interview. Custom completion handlers often close t
 
 ## Reference procedure
 
-See step-by-step tables in:
+The framework-standard tool loop lives in [`../sop/standard_procedure.md`](../sop/standard_procedure.md) and is prepended to each interview skill's `SkillDoc.body` at discovery. Per-skill exceptions belong in the custom `SKILL.md` body — see [`../sop/skill_custom_instructions.md`](../sop/skill_custom_instructions.md).
 
-- [`example/example_interview/SKILL.md`](../example/example_interview/SKILL.md)
-- Live skills: `skills/onboarding_interview/`, `skills/pre_alert_interview/` (in consuming apps)
+Examples:
+
+- [`example/example_interview/SKILL.md`](../example/example_interview/SKILL.md) — reference custom rules
+- zoon-ai `onboarding_interview/`, `pre_alert_interview/` — production behavioral rules
+- jvagent example app `signup_interview/` — demo signup flow

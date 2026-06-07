@@ -20,9 +20,9 @@ Common issues when building or running skills-v2 interviews with `InterviewActio
 
 **Symptom:** Model tries to call `verify_phone_number` directly.
 
-**Cause:** Function listed in `interview.yaml` `tools:` when it should only be a `post_tools` hook.
+**Cause:** Function listed in frontmatter `interview.tools` when it should only be a `post_tools` hook.
 
-**Fix:** Remove from `tools:`. Only declare LLM-initiated operations (send OTP, reset) as tools. Hooks run automatically on `set_field` / `next_question`.
+**Fix:** Remove from `interview.tools`. Only declare LLM-initiated operations (send OTP, reset) as tools. Hooks run automatically on `set_field` / `next_question`.
 
 ---
 
@@ -68,7 +68,7 @@ Common issues when building or running skills-v2 interviews with `InterviewActio
 
 **Causes:**
 - Custom validator returns wrong shape (missing `valid` key).
-- Validator function name mismatch between `interview.yaml` and `custom_tools.py`.
+- Validator function name mismatch between frontmatter `interview.questions` and `custom_tools.py`.
 - Builtin validator kwargs wrong (e.g. `exact_length: 10` on phone).
 
 **Fix:** Match function names exactly. Return `{"valid": True/False, "value": ..., "error": ...}`. Test with `pytest tests/action/interview_action/test_interview_set_field_validation.py`.
@@ -112,7 +112,7 @@ Common issues when building or running skills-v2 interviews with `InterviewActio
 
 **Cause:** LLM calls `interview__next_question` after turn prep already seeded the first question.
 
-**Fix:** Update `SKILL.md` critical rule 1 — reply from activation `response_directive`; do not call `next_question` again until after `set_field` returns `ok:true`.
+**Fix:** The standard procedure (injected at discovery) covers turn-prep — reply from activation `response_directive`; do not call `next_question` again until after `set_field` returns `ok:true`.
 
 ---
 

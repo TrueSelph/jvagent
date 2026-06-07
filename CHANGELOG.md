@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- **Scalable interview SOP.** Standard tool-loop procedure lives in `interview_action/sop/standard_procedure.md` and is composed onto `SkillDoc.body` at `discover_skill_docs` for skills with `requires-actions: [InterviewAction]` and frontmatter `interview:`. Per-skill `SKILL.md` bodies are custom behavioral rules only (no per-field Procedure steps). `parse_skill_bundle` passes through `interview` for detection. Covered by `tests/action/interview_action/test_interview_procedure.py`.
+
+- **InterviewAction docs aligned to scalable SOP.** `README.md`, `docs/` (index, extending, multi-turn-flow, troubleshooting), `CLAUDE.md`, legacy `interview/README.md` banner, zoon-ai `docs/interviews.md`, and planning `actions-catalog.md` updated for frontmatter `interview:` contract, procedure injection, and custom-only `SKILL.md` bodies.
+
+- **Interview SOP assets moved to `sop/`.** Runtime procedure (`standard_procedure.md`) and authoring template (`skill_custom_instructions.md`) relocated from `docs/` so they are not confused with how-to documentation.
+
 - **Interview spec in SKILL.md frontmatter.** `InterviewRegistry` now loads the machine contract from the `interview:` key in `SKILL.md` frontmatter (`parse_interview_spec`, `load_interview_spec_from_skill`). Standalone `interview.yaml` remains as a deprecated fallback (warning logged). Migrated reference/example/fixture skills and signup_interview; covered by `tests/action/interview_action/test_interview_frontmatter_load.py`.
 
 - **InterviewAction documentation pass.** `README.md`, `docs/extending.md`, `docs/multi-turn-flow.md`, and `docs/troubleshooting.md` now document `interview.yaml` (not `contract.yaml`), turn-prep seeding, `retain_context_keys` / `clear_interview_context()`, auto-chained `next_tool`, and review/complete confirmation patterns.

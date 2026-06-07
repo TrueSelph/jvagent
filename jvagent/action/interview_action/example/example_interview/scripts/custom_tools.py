@@ -1,6 +1,6 @@
 """Custom tools for the example_interview reference skill.
 
-Functions are loaded by ``function:`` name in contract.yaml. This file
+Functions are loaded by ``function:`` name in SKILL.md frontmatter ``interview:``. This file
 demonstrates every hook type used by live interview skills. Sections:
 
 1. Constants
@@ -12,7 +12,7 @@ demonstrates every hook type used by live interview skills. Sections:
 7. Completion handler — example_complete
 
 Copy this folder to skills/<your_skill_name>/ and adapt function names to
-match your contract.yaml references.
+match your frontmatter ``interview:`` references.
 """
 
 from __future__ import annotations

@@ -249,10 +249,19 @@ def parse_skill_bundle(
     else:
         dependencies = {}
 
+    interview_block = frontmatter.get("interview")
+    if interview_block is not None and not isinstance(interview_block, dict):
+        logger.warning(
+            "Skill bundle %s frontmatter 'interview' must be a mapping; ignoring",
+            skill_file,
+        )
+        interview_block = None
+
     return {
         "name": name,
         "description": description,
         "content": content,
+        "interview": interview_block,
         "dir": str(skill_dir),
         "tool_files": tool_files,
         "allowed_tools": allowed_tools,
