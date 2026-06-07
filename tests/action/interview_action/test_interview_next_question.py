@@ -12,18 +12,18 @@ from jvagent.action.interview_action.interview_action import (
     InterviewAction,
 )
 from jvagent.action.interview_action.interview_loader import (
-    load_interview_spec,
+    load_interview_spec_from_skill,
 )
 from jvagent.action.interview_action.session import InterviewSession
 
 _SKILLS_DIR = Path(__file__).resolve().parent / "fixtures/skills"
-_ONBOARDING_CONTRACT = _SKILLS_DIR / "onboarding_interview/interview.yaml"
+_ONBOARDING_SKILL = _SKILLS_DIR / "onboarding_interview"
 
 
 @pytest.fixture
 def onboarding_action():
     action = InterviewAction()
-    contract = load_interview_spec(str(_ONBOARDING_CONTRACT))
+    contract = load_interview_spec_from_skill(_ONBOARDING_SKILL)
     action._registry._specs[contract.name] = contract
     return action, contract
 

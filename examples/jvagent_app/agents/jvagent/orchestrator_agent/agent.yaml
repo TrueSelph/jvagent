@@ -138,7 +138,7 @@ actions:
         - pdf-generation  # library CLAUDE skill — renders a PDF via code_execution
         - triage          # library CLAUDE skill — sorts findings via code_execution
         - docx            # app-local CLAUDE skill (skills.sh / anthropics) — docx-js + OOXML scripts
-        - signup_interview  # app-local interview skill (InterviewAction + interview.yaml)
+        - signup_interview  # app-local interview skill (InterviewAction + SKILL.md interview:)
 
   # MCP gateway: a sandboxed filesystem server (npx). Its tools surface to the
   # executive (tool_servers above) as mcp_filesystem__<tool>, sandboxed per

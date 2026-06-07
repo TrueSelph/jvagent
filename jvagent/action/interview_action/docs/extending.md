@@ -6,11 +6,13 @@ How to override validation, hooks, handlers, and LLM-callable tools when buildin
 
 ```
 skills/my_interview/
-├── interview.yaml          # Declares questions, validators, hooks, tools
-├── SKILL.md               # LLM procedure (when/how to call tools)
+├── SKILL.md               # frontmatter.interview: questions, validators, hooks, tools
+│                          # body: LLM procedure (when/how to call tools)
 └── scripts/
     └── custom_tools.py    # Python functions referenced by function: names
 ```
+
+Standalone `interview.yaml` is deprecated; migrate its contents into the `interview:` key in `SKILL.md` frontmatter.
 
 Copy [`../example/example_interview/`](../example/example_interview/) as the starting template.
 

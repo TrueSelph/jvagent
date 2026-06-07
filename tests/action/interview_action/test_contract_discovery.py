@@ -1,4 +1,4 @@
-"""InterviewAction must discover interview.yaml from the hosting agent's skills/."""
+"""InterviewAction must discover interview specs from the hosting agent's skills/."""
 
 from __future__ import annotations
 

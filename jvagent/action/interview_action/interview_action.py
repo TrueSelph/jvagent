@@ -14,6 +14,8 @@ from jvagent.tooling.tool_executor import get_dispatch_visitor
 
 from .field_extractors import extract_candidates_for_question
 from .interview_loader import (
+    INTERVIEW_FRONTMATTER_KEY,
+    INTERVIEW_YAML,
     InterviewRegistry,
     InterviewSpec,
     QuestionDef,
@@ -514,7 +516,9 @@ class InterviewAction(Action):
         if not self.is_interview_skill(skill_name):
             available = self._registry.list_specs()
             return (
-                f"Interview skill '{skill_name}' has no interview.yaml on this agent. "
+                f"Interview skill '{skill_name}' has no interview spec on this agent "
+                f"(SKILL.md frontmatter '{INTERVIEW_FRONTMATTER_KEY}:' or deprecated "
+                f"{INTERVIEW_YAML}). "
                 f"Available interview types: {available or '(none)'}. "
                 "Do not call interview tools until the session is active."
             )

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 from jvagent.action.interview_action.interview_loader import (
     InterviewRegistry,
-    load_interview_spec,
+    load_interview_spec_from_skill,
 )
 from jvagent.action.interview_action.tools import build_tools
 
@@ -17,11 +17,11 @@ _SKILLS_DIR = Path(__file__).resolve().parent / "fixtures/skills"
 def _action_with_contracts():
     action = MagicMock()
     registry = InterviewRegistry()
-    registry._specs["pre_alert_interview"] = load_interview_spec(
-        str(_SKILLS_DIR / "pre_alert_interview/interview.yaml")
+    registry._specs["pre_alert_interview"] = load_interview_spec_from_skill(
+        _SKILLS_DIR / "pre_alert_interview"
     )
-    registry._specs["onboarding_interview"] = load_interview_spec(
-        str(_SKILLS_DIR / "onboarding_interview/interview.yaml")
+    registry._specs["onboarding_interview"] = load_interview_spec_from_skill(
+        _SKILLS_DIR / "onboarding_interview"
     )
     action._registry = registry
     return action

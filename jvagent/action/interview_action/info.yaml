@@ -7,8 +7,8 @@ package:
     title: Interview Action
     description: >-
       LLM-driven interview tool bundle. Exposes granular interview__* tools;
-      each interview skill is a interview.yaml + SKILL.md package under the
-      agent skills/ directory.
+      each interview skill is a SKILL.md package (frontmatter interview: block)
+      under the agent skills/ directory.
     group: jvagent
     type: action
   config:

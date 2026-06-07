@@ -1,27 +1,125 @@
 ---
 name: onboarding_interview
-description: >-
-  Customer onboarding and phone-update interview for Zoon users. Onboards
-  new accounts (phone, email, ID, review, create) or updates an existing
-  customer's WhatsApp number via OTP. Collected fields are stored on the
-  completed SKILL task for reuse (e.g. email on file for phone updates).
+description: Customer onboarding and phone-update interview for Zoon users. Onboards
+  new accounts (phone, email, ID, review, create) or updates an existing customer's
+  WhatsApp number via OTP. Collected fields are stored on the completed SKILL task
+  for reuse (e.g. email on file for phone updates).
 spec: jv
 locked-in: true
 requires-actions:
-  - InterviewAction
-  - ZoonAPIAction
+- InterviewAction
+- ZoonAPIAction
 allowed-tools:
-  - interview__set_field
-  - interview__get_field
-  - interview__skip_field
-  - interview__next_question
-  - interview__get_status
-  - interview__review
-  - interview__complete
-  - onboarding_interview__reset_onboarding
-  - onboarding_interview__process_id_card
-  - onboarding_interview__send_otp
-tags: [onboarding, customer, interview, phone-update]
+- interview__set_field
+- interview__get_field
+- interview__skip_field
+- interview__next_question
+- interview__get_status
+- interview__review
+- interview__complete
+- onboarding_interview__reset_onboarding
+- onboarding_interview__process_id_card
+- onboarding_interview__send_otp
+tags:
+- onboarding
+- customer
+- interview
+- phone-update
+interview:
+  title: Customer Onboarding
+  description: Collect customer details (contact number, email, ID card photo or ID/passport
+    number, full name, date of birth) for new Zoon account creation, or update an
+    existing customer's WhatsApp phone number via OTP. The LLM decides which question
+    to ask next based on SKILL.md.
+  questions:
+  - name: phone_number
+    question: What is your best phone number?
+    required: true
+    pre_tools:
+    - get_phone_number
+    post_tools:
+    - verify_phone_number
+    description: First onboarding question. On WhatsApp, pre_tools may suggest the
+      number on file — ask the user to confirm it. post_tools runs verify_phone_number
+      automatically after save.
+    validator:
+      function: phone
+      kwargs:
+        exact_length: 10
+  - name: email
+    question: What is your email address?
+    required: true
+    description: User's email address. pre_tools may suggest email from a completed
+      onboarding task. post_tools runs verify_email automatically after save.
+    pre_tools:
+    - suggest_email_from_task
+    post_tools:
+    - verify_email
+    validator:
+      function: email
+  - name: otp_code
+    question: Please enter the verification code sent to your email.
+    required: false
+    description: Only ask after onboarding_interview__send_otp succeeded (otp_sent
+      true). If OTP was not sent, call interview__skip_field. Validator confirms via
+      API.
+    validator:
+      function: validate_otp_code
+  - name: id_card
+    question: Do you have a photo of your ID card? Please upload it for faster verification,
+      or say 'no' to enter your details manually.
+    required: false
+    description: Photo of ID card for verification. If uploaded, call process_id_card
+      to extract id_number, full_name, and date_of_birth automatically. If the user
+      declines, ask for each field manually.
+  - name: id_number
+    question: What is your ID number?
+    required: true
+    description: National ID number (8 to 9 digits) or passport number. Only ask this
+      if id_card was skipped or no photo was uploaded.
+    validator:
+      function: validate_id_number
+  - name: full_name
+    question: What is your full name?
+    required: true
+    description: User's full name (first and last name). Only ask this if id_card
+      was skipped or no photo was uploaded.
+    validator:
+      function: name
+  - name: date_of_birth
+    question: What is your date of birth?
+    required: true
+    description: Must be a date in the past in DD-MM-YYYY format. Only ask this if
+      id_card was skipped or no photo was uploaded.
+    validator:
+      function: date_past
+  tools:
+  - name: send_otp
+    description: 'When: OTP is required (email mismatch during onboarding, or user
+      is updating their phone and email + phone_number are collected). Do: Send verification
+      code to the email on the account. Then: Ask for otp_code if ok, or interview__skip_field
+      otp_code if send failed.'
+    function: send_otp
+    parameters: {}
+  - name: process_id_card
+    description: 'When: User uploaded an ID photo, or you need to check whether one
+      is present. Do: Extract and save id_number, full_name, and date_of_birth automatically.
+      Then: continue the interview or go to review when missing_required is empty.'
+    function: process_id_card
+    parameters: {}
+  - name: reset_onboarding
+    description: 'When: User cancels onboarding or wants to start over. Do: Clear
+      the session, cancel tasks, and inform the user onboarding was cancelled. Then:
+      Tell the user they must complete onboarding to chat with the agent and stop
+      — do not ask questions or call interview__next_question. To restart later, user
+      re-initiates onboarding via use_skill. Call this instead of interview__cancel
+      when the user abandons onboarding.'
+    function: reset_onboarding
+    parameters: {}
+  completion:
+    function: complete_onboarding
+    description: Post-review completion handler called by interview__complete. Creates
+      the customer account via Zoon API and marks onboarding complete on success.
 ---
 
 # Customer Onboarding Interview

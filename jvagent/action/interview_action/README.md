@@ -2,7 +2,7 @@
 
 LLM-driven interview framework for structured data collection. The orchestrator LLM reads each skill's `SKILL.md` procedure and calls granular tools to conduct interviews. `InterviewAction` manages session state, validation, hook orchestration, and tool registration — it does not drive the conversation itself.
 
-**Custom interview skills** are template clones: copy [`example/example_interview/`](example/example_interview/) to `skills/<your_skill>/`, customize `interview.yaml` + `SKILL.md`, optionally add `scripts/custom_tools.py`. Set frontmatter `requires-actions: [InterviewAction]` and `locked-in: true` for turn-lock; the orchestrator has no interview-specific code — only generic skill lifecycle + `requires-actions` binding.
+**Custom interview skills** are template clones: copy [`example/example_interview/`](example/example_interview/) to `skills/<your_skill>/`, customize `SKILL.md` (frontmatter `interview:` block + procedure body), optionally add `scripts/custom_tools.py`. Set frontmatter `requires-actions: [InterviewAction]` and `locked-in: true` for turn-lock; the orchestrator has no interview-specific code — only generic skill lifecycle + `requires-actions` binding.
 
 **Agent entry point:** [CLAUDE.md](CLAUDE.md)
 
@@ -17,29 +17,29 @@ LLM-driven interview framework for structured data collection. The orchestrator 
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common failures and fixes |
 | [example/example_interview/](example/example_interview/) | Reference skill — copy to `skills/` |
 
-## Three-file skill package
+## Two-file skill package
 
-Every interview skill is a self-contained folder with three files:
+Every interview skill is a self-contained folder:
 
 | File | Responsibility |
 |------|----------------|
-| `interview.yaml` | **What** to collect — questions, validators, hooks, tools, review/completion handlers |
-| `SKILL.md` | **How** to conduct — LLM procedure, session rules, step-by-step flow |
+| `SKILL.md` | **Frontmatter `interview:`** — questions, validators, hooks, tools, review/completion (machine contract). **Body** — LLM procedure, session rules, step-by-step flow |
 | `scripts/custom_tools.py` | **Business logic** — validators, pre/post hooks, custom tools, review/completion handlers |
 
 ```
 skills/my_interview/
-├── interview.yaml
-├── SKILL.md
+├── SKILL.md          # frontmatter.interview + procedure body
 └── scripts/
     └── custom_tools.py
 ```
 
+> **Deprecated:** Standalone `interview.yaml` is still loaded with a warning when present, but new skills should declare the contract under `interview:` in `SKILL.md` frontmatter.
+
 ## Quick start
 
 1. **Copy the reference skill** from [`example/example_interview/`](example/example_interview/) to `skills/<your_skill_name>/`.
-2. **Rename consistently** — `name` in `interview.yaml` and `SKILL.md` frontmatter must match the folder name (e.g. `skills/feedback_interview/` → `name: feedback_interview`).
-3. **Implement functions** in `scripts/custom_tools.py` for every `function:` name referenced in `interview.yaml`.
+2. **Rename consistently** — `name` in `SKILL.md` frontmatter must match the folder name (e.g. `skills/feedback_interview/` → `name: feedback_interview`).
+3. **Implement functions** in `scripts/custom_tools.py` for every `function:` name referenced in frontmatter `interview:`.
 4. **Write the procedure** in `SKILL.md` — include Core instructions (shared pattern) plus Custom instructions (skill-specific flow).
 5. **Register the skill** in [`agent.yaml`](../../../agent.yaml) orchestrator `skills:` list.
 6. **Declare allowed tools** in `SKILL.md` frontmatter — list every `interview__*` tool plus any `{skill}__{tool}` custom tools.

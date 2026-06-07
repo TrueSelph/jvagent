@@ -69,7 +69,7 @@ def _build_data_tools(action: "InterviewAction") -> List[Tool]:
             name="interview__set_field",
             description=(
                 "Store a field value for the active interview question. Validation from "
-                "interview.yaml runs automatically inside this tool — never call validator "
+                "interview spec validation runs automatically inside this tool — never call validator "
                 "functions directly. The user's latest message is validated programmatically; "
                 "ok:false / validation_failed means the value was NOT stored. "
                 "On ok:true, saves and runs post_tools."
@@ -79,7 +79,7 @@ def _build_data_tools(action: "InterviewAction") -> List[Tool]:
                 "properties": {
                     "field": {
                         "type": "string",
-                        "description": "interview.yaml question name (e.g. available_times).",
+                        "description": "Interview question name from skill frontmatter (e.g. available_times).",
                     },
                     "name": {
                         "type": "string",

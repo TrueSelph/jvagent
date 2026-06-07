@@ -14,7 +14,7 @@ from jvagent.action.interview_action.interview_action import (
 )
 from jvagent.action.interview_action.interview_loader import (
     QuestionDef,
-    load_interview_spec,
+    load_interview_spec_from_skill,
     resolve_validator_def,
     resolve_validator_kwargs,
 )
@@ -22,12 +22,12 @@ from jvagent.action.interview_action.session import InterviewSession
 from jvagent.action.interview_action.validators import get_validator
 
 _SKILLS_DIR = Path(__file__).resolve().parent / "fixtures/skills"
-_PRE_ALERT_CONTRACT = _SKILLS_DIR / "pre_alert_interview/interview.yaml"
-_ONBOARDING_CONTRACT = _SKILLS_DIR / "onboarding_interview/interview.yaml"
+_PRE_ALERT_SKILL = _SKILLS_DIR / "pre_alert_interview"
+_ONBOARDING_SKILL = _SKILLS_DIR / "onboarding_interview"
 
 
 def test_phone_number_pre_and_post_tools_parsed():
-    contract = load_interview_spec(str(_ONBOARDING_CONTRACT))
+    contract = load_interview_spec_from_skill(_ONBOARDING_SKILL)
     q = contract.get_question("phone_number")
     assert q is not None
     assert q.pre_tools == ["get_phone_number"]
@@ -36,7 +36,7 @@ def test_phone_number_pre_and_post_tools_parsed():
 
 
 def test_email_post_tools_and_otp_code_parsed():
-    contract = load_interview_spec(str(_ONBOARDING_CONTRACT))
+    contract = load_interview_spec_from_skill(_ONBOARDING_SKILL)
     email_q = contract.get_question("email")
     assert email_q is not None
     assert email_q.post_tools == ["verify_email"]
@@ -53,14 +53,14 @@ def test_email_post_tools_and_otp_code_parsed():
 
 
 def test_tracking_number_post_tools_parsed():
-    contract = load_interview_spec(str(_PRE_ALERT_CONTRACT))
+    contract = load_interview_spec_from_skill(_PRE_ALERT_SKILL)
     q = contract.get_question("tracking_number")
     assert q is not None
     assert q.post_tools == ["check_tracking_status"]
 
 
 def test_inline_validator_parsed_for_tracking_number():
-    contract = load_interview_spec(str(_PRE_ALERT_CONTRACT))
+    contract = load_interview_spec_from_skill(_PRE_ALERT_SKILL)
     q = contract.get_question("tracking_number")
     assert isinstance(q.validator, dict)
     assert q.validator["function"] == "validate_tracking_number"
@@ -68,7 +68,7 @@ def test_inline_validator_parsed_for_tracking_number():
 
 
 def test_resolve_validator_def_custom_tracking():
-    contract = load_interview_spec(str(_PRE_ALERT_CONTRACT))
+    contract = load_interview_spec_from_skill(_PRE_ALERT_SKILL)
     q = contract.get_question("tracking_number")
     vdef = resolve_validator_def(q, contract)
     assert vdef is not None
@@ -79,7 +79,7 @@ def test_resolve_validator_def_custom_tracking():
 
 
 def test_resolve_validator_def_builtin_description():
-    contract = load_interview_spec(str(_PRE_ALERT_CONTRACT))
+    contract = load_interview_spec_from_skill(_PRE_ALERT_SKILL)
     q = contract.get_question("description")
     vdef = resolve_validator_def(q, contract)
     assert vdef is not None
@@ -91,7 +91,7 @@ def test_resolve_validator_def_builtin_description():
 
 
 def test_resolve_validator_def_builtin_email():
-    contract = load_interview_spec(str(_ONBOARDING_CONTRACT))
+    contract = load_interview_spec_from_skill(_ONBOARDING_SKILL)
     q = contract.get_question("email")
     vdef = resolve_validator_def(q, contract)
     assert vdef is not None
@@ -100,7 +100,7 @@ def test_resolve_validator_def_builtin_email():
 
 
 def test_legacy_builtin_marker_resolves_to_function_name():
-    contract = load_interview_spec(str(_ONBOARDING_CONTRACT))
+    contract = load_interview_spec_from_skill(_ONBOARDING_SKILL)
     q = QuestionDef(
         name="phone_number",
         question="Phone?",
@@ -117,7 +117,7 @@ def test_legacy_builtin_marker_resolves_to_function_name():
 
 
 def test_id_number_has_no_alternate_validator():
-    contract = load_interview_spec(str(_ONBOARDING_CONTRACT))
+    contract = load_interview_spec_from_skill(_ONBOARDING_SKILL)
     q = contract.get_question("id_number")
     assert isinstance(q.validator, dict)
     assert q.validator["function"] == "validate_id_number"
@@ -127,7 +127,7 @@ def test_id_number_has_no_alternate_validator():
 @pytest.fixture
 def pre_alert_action():
     action = InterviewAction()
-    contract = load_interview_spec(str(_PRE_ALERT_CONTRACT))
+    contract = load_interview_spec_from_skill(_PRE_ALERT_SKILL)
     action._registry._specs[contract.name] = contract
     return action, contract
 
@@ -135,7 +135,7 @@ def pre_alert_action():
 @pytest.fixture
 def onboarding_action():
     action = InterviewAction()
-    contract = load_interview_spec(str(_ONBOARDING_CONTRACT))
+    contract = load_interview_spec_from_skill(_ONBOARDING_SKILL)
     action._registry._specs[contract.name] = contract
     return action, contract
 

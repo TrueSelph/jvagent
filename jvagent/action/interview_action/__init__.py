@@ -2,7 +2,7 @@
 
 ``InterviewAction`` registers ``interview__*`` tools; the orchestrator LLM drives
 each turn via skill ``SKILL.md`` procedures. Custom skills live under
-``skills/<name>/`` with ``interview.yaml``, ``SKILL.md``, and
+``skills/<name>/`` with ``SKILL.md`` (frontmatter ``interview:`` block) and
 ``scripts/custom_tools.py``.
 
 Documentation: ``README.md``, ``CLAUDE.md``, ``docs/``.

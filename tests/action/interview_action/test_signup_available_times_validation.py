@@ -10,19 +10,21 @@ from unittest.mock import AsyncMock
 import pytest
 
 from jvagent.action.interview_action.interview_action import InterviewAction
-from jvagent.action.interview_action.interview_loader import load_interview_spec
+from jvagent.action.interview_action.interview_loader import (
+    load_interview_spec_from_skill,
+)
 from jvagent.action.interview_action.session import InterviewSession
 
-_SIGNUP_YAML = (
+_SIGNUP_SKILL_DIR = (
     Path(__file__).resolve().parents[3]
-    / "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup_interview/interview.yaml"
+    / "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup_interview"
 )
 
 
 @pytest.fixture
 def signup_action():
     action = InterviewAction()
-    contract = load_interview_spec(str(_SIGNUP_YAML))
+    contract = load_interview_spec_from_skill(_SIGNUP_SKILL_DIR)
     action._registry._specs[contract.name] = contract
     return action, contract
 

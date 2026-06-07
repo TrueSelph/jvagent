@@ -12,7 +12,7 @@ from jvagent.action.interview_action.interview_action import (
 )
 from jvagent.action.interview_action.interview_loader import (
     InterviewRegistry,
-    load_interview_spec,
+    load_interview_spec_from_skill,
 )
 from jvagent.action.interview_action.tools import build_tools
 
@@ -22,11 +22,11 @@ _SKILLS_DIR = Path(__file__).resolve().parent / "fixtures/skills"
 def _interview_action_with_contracts() -> InterviewAction:
     action = InterviewAction()
     action._registry = InterviewRegistry()
-    action._registry._specs["onboarding_interview"] = load_interview_spec(
-        str(_SKILLS_DIR / "onboarding_interview/interview.yaml")
+    action._registry._specs["onboarding_interview"] = load_interview_spec_from_skill(
+        _SKILLS_DIR / "onboarding_interview"
     )
-    action._registry._specs["pre_alert_interview"] = load_interview_spec(
-        str(_SKILLS_DIR / "pre_alert_interview/interview.yaml")
+    action._registry._specs["pre_alert_interview"] = load_interview_spec_from_skill(
+        _SKILLS_DIR / "pre_alert_interview"
     )
     action._get_conversation = AsyncMock(return_value=None)
     action._ensure_active_task = AsyncMock()
@@ -62,7 +62,10 @@ async def test_on_skill_activate_returns_guidance_for_non_interview_skill():
     action = _interview_action_with_contracts()
     note = await action.on_skill_activate("faq", MagicMock())
     assert note is not None
-    assert "no interview.yaml" in note.lower() or "Available interview types" in note
+    assert (
+        "no interview spec" in note.lower()
+        or "available interview types" in note.lower()
+    )
 
 
 @pytest.mark.asyncio

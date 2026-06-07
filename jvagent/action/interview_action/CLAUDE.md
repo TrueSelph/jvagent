@@ -17,8 +17,8 @@ Session state lives in `conversation.context["interview"]` as a lightweight `Int
 | Layer | Location (per consuming app) | Owns |
 |-------|------------------------------|------|
 | **Foundation** | `jvagent/action/interview_action/` | `interview__*` tools, session lifecycle, hook dispatch, validator *invocation*, turn-prep seeding, generic pipeline |
-| **Spec** | `skills/<name>/interview.yaml` | Questions, order, branches, validator `function:` refs, pre/post/review/complete hooks |
-| **Procedure** | `skills/<name>/SKILL.md` | LLM SOP — when to call tools, reply rules, skill-specific edge cases |
+| **Spec** | `skills/<name>/SKILL.md` frontmatter `interview:` | Questions, order, branches, validator `function:` refs, pre/post/review/complete hooks |
+| **Procedure** | `skills/<name>/SKILL.md` body | LLM SOP — when to call tools, reply rules, skill-specific edge cases |
 | **Implementation** | `skills/<name>/scripts/custom_tools.py` | Validators, pre/post tools, completion handlers, custom LLM tools |
 
 When fixing behavior for one skill (e.g. `validate_full_name`, training slot matching), change the **skill extension** — not the foundation — unless the bug is in generic plumbing (chaining, utterance-vs-model validation, hook dispatch, session keys like `CTX_QUESTION_PRESENTED`).
@@ -32,15 +32,15 @@ When fixing behavior for one skill (e.g. `validate_full_name`, training slot mat
 ```
 interview_action/
 ├── interview_action.py   # InterviewAction — session, hooks, skill activation
-├── interview_loader.py    # InterviewRegistry, interview.yaml parsing
+├── interview_loader.py    # InterviewRegistry, SKILL.md frontmatter parsing
 ├── tools.py              # interview__* tool builders
 ├── validators.py         # Builtin validators (phone, email, …)
 ├── field_extractors.py   # Opening-message field seeding
 ├── session.py            # InterviewSession in conversation.context
 ├── responses.py          # tell_user_directive, interview_tool_response, …
-├── decorators.py         # @interview_tool (prefer interview.yaml tools: instead)
+├── decorators.py         # @interview_tool (prefer frontmatter interview.tools:)
 ├── example/example_interview/   # Reference skill — copy to skills/
-├── README.md             # Full reference (interview.yaml, tools, patterns)
+├── README.md             # Full reference (frontmatter interview:, tools, patterns)
 └── docs/                 # Focused guides (multi-turn, extending, troubleshooting)
 ```
 
@@ -49,8 +49,8 @@ interview_action/
 ## Creating a new interview skill (minimum steps)
 
 1. Copy [`example/example_interview/`](example/example_interview/) → `skills/<name>/`.
-2. Align `name` in folder, `interview.yaml`, and `SKILL.md` frontmatter.
-3. Implement every `function:` referenced in `interview.yaml` inside `scripts/custom_tools.py`.
+2. Align `name` in folder and `SKILL.md` frontmatter.
+3. Implement every `function:` referenced in frontmatter `interview:` inside `scripts/custom_tools.py`.
 4. Write `SKILL.md` procedure (Core instructions + Custom instructions + step table).
 5. Set `requires-actions: [InterviewAction]` and list tools in `allowed-tools`.
 6. Register skill in agent `orchestrator.skills:`.
@@ -62,7 +62,7 @@ See [README.md](README.md) and [docs/extending.md](docs/extending.md) for valida
 
 ## Key invariants
 
-1. **Hook functions are not LLM tools** — only entries in `interview.yaml` `tools:` become `{skill}__{name}` tools.
+1. **Hook functions are not LLM tools** — only entries in frontmatter `interview.tools` become `{skill}__{name}` tools.
 2. **`interview__set_field` uses parameter `field`** — not `name`.
 3. **Chaining gate** — read `ok` from every tool response before advancing; `post_tools` do not run when `ok: false`.
 4. **`response_directive` beats `next_questions`** when they conflict — one action per turn.

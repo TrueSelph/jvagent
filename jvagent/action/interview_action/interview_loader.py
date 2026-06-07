@@ -1,4 +1,8 @@
-"""Interview spec loader — discovers and loads interview.yaml from skill directories."""
+"""Interview spec loader — discovers structured interview config from skill directories.
+
+Canonical source: ``interview:`` block in ``SKILL.md`` frontmatter.
+Legacy fallback: standalone ``interview.yaml`` (deprecated).
+"""
 
 from __future__ import annotations
 
@@ -11,7 +15,9 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+SKILL_MD = "SKILL.md"
 INTERVIEW_YAML = "interview.yaml"
+INTERVIEW_FRONTMATTER_KEY = "interview"
 
 ValidatorSpec = Union[str, Dict[str, Any]]
 
@@ -237,13 +243,31 @@ def _parse_review(data: Dict[str, Any]) -> ReviewDef:
     )
 
 
-def load_interview_spec(yaml_path: str) -> InterviewSpec:
-    with open(yaml_path, "r") as f:
-        data = yaml.safe_load(f)
+def parse_interview_spec(
+    data: Dict[str, Any],
+    *,
+    source_dir: str,
+    default_name: str = "",
+) -> InterviewSpec:
+    """Build ``InterviewSpec`` from a parsed mapping (frontmatter or yaml file)."""
+    if not isinstance(data, dict):
+        raise ValueError("Interview spec must be a YAML mapping")
 
-    questions = [_parse_question(q) for q in data.get("questions", [])]
-    validators = [_parse_validator(v) for v in data.get("validators", [])]
-    tools = [_parse_tool(t) for t in data.get("tools", [])]
+    name = str(data.get("name") or default_name or "").strip()
+    if default_name and data.get("name"):
+        declared = str(data["name"]).strip()
+        if declared and declared != default_name:
+            logger.warning(
+                "Interview spec name %r does not match skill name %r in %s",
+                declared,
+                default_name,
+                source_dir,
+            )
+            name = declared
+
+    questions = [_parse_question(q) for q in data.get("questions", []) or []]
+    validators = [_parse_validator(v) for v in data.get("validators", []) or []]
+    tools = [_parse_tool(t) for t in data.get("tools", []) or []]
     completion = (
         _parse_completion(data.get("completion", {}))
         if data.get("completion")
@@ -253,7 +277,7 @@ def load_interview_spec(yaml_path: str) -> InterviewSpec:
     cancel = _parse_completion(data.get("cancel", {})) if data.get("cancel") else None
 
     return InterviewSpec(
-        name=data.get("name", ""),
+        name=name,
         title=data.get("title", ""),
         description=data.get("description", ""),
         questions=questions,
@@ -262,12 +286,98 @@ def load_interview_spec(yaml_path: str) -> InterviewSpec:
         completion=completion,
         review=review,
         cancel=cancel,
-        source_dir=str(Path(yaml_path).parent),
+        source_dir=source_dir,
     )
 
 
+def load_interview_spec(yaml_path: str) -> InterviewSpec:
+    """Load interview spec from a standalone ``interview.yaml`` file (deprecated)."""
+    path = Path(yaml_path)
+    with open(path, "r") as f:
+        data = yaml.safe_load(f) or {}
+    return parse_interview_spec(data, source_dir=str(path.parent))
+
+
+def load_interview_spec_from_skill(
+    skill_dir: Union[str, Path]
+) -> Optional[InterviewSpec]:
+    """Load interview spec from ``SKILL.md`` frontmatter ``interview:`` block."""
+    skill_dir = Path(skill_dir)
+    skill_file = skill_dir / SKILL_MD
+    if not skill_file.is_file():
+        return None
+
+    from jvagent.scaffold.skill_resolve import _parse_frontmatter
+
+    raw = skill_file.read_text(encoding="utf-8")
+    frontmatter, _content = _parse_frontmatter(raw, skill_file)
+    interview_data = frontmatter.get(INTERVIEW_FRONTMATTER_KEY)
+    if not interview_data:
+        return None
+    if not isinstance(interview_data, dict):
+        raise ValueError(
+            f"Frontmatter '{INTERVIEW_FRONTMATTER_KEY}' must be a mapping in {skill_file}"
+        )
+
+    default_name = str(frontmatter.get("name") or skill_dir.name).strip()
+    return parse_interview_spec(
+        interview_data,
+        source_dir=str(skill_dir),
+        default_name=default_name,
+    )
+
+
+def _load_spec_from_skill_dir(skill_dir: Path) -> Optional[InterviewSpec]:
+    """Prefer SKILL.md frontmatter; fall back to deprecated interview.yaml."""
+    skill_file = skill_dir / SKILL_MD
+    interview_yaml = skill_dir / INTERVIEW_YAML
+
+    if skill_file.is_file():
+        try:
+            from jvagent.scaffold.skill_resolve import _parse_frontmatter
+
+            raw = skill_file.read_text(encoding="utf-8")
+            frontmatter, _ = _parse_frontmatter(raw, skill_file)
+            if frontmatter.get(INTERVIEW_FRONTMATTER_KEY):
+                spec = load_interview_spec_from_skill(skill_dir)
+                if spec is not None:
+                    if interview_yaml.exists():
+                        logger.warning(
+                            "Skill %s has both SKILL.md interview frontmatter and "
+                            "deprecated %s — using frontmatter",
+                            skill_dir.name,
+                            INTERVIEW_YAML,
+                        )
+                    return spec
+        except Exception as exc:
+            logger.error(
+                "Failed to load interview spec from %s frontmatter: %s",
+                skill_file,
+                exc,
+            )
+            return None
+
+    if interview_yaml.exists():
+        logger.warning(
+            "Loading deprecated %s from %s — migrate to SKILL.md frontmatter "
+            "under '%s:'",
+            INTERVIEW_YAML,
+            skill_dir,
+            INTERVIEW_FRONTMATTER_KEY,
+        )
+        try:
+            return load_interview_spec(str(interview_yaml))
+        except Exception as exc:
+            logger.error(
+                "Failed to load interview spec from %s: %s",
+                interview_yaml,
+                exc,
+            )
+    return None
+
+
 class InterviewRegistry:
-    """Discovers, loads, and caches interview.yaml from skill directories."""
+    """Discovers, loads, and caches interview specs from skill directories."""
 
     def __init__(self) -> None:
         self._specs: Dict[str, InterviewSpec] = {}
@@ -280,22 +390,23 @@ class InterviewRegistry:
             for skill_dir in skills_path.iterdir():
                 if not skill_dir.is_dir():
                     continue
-                interview_yaml = skill_dir / INTERVIEW_YAML
-                if interview_yaml.exists():
-                    try:
-                        spec = load_interview_spec(str(interview_yaml))
-                        self._specs[spec.name] = spec
-                        logger.info(
-                            "Loaded interview spec: %s from %s",
-                            spec.name,
-                            interview_yaml,
-                        )
-                    except Exception as e:
-                        logger.error(
-                            "Failed to load interview spec from %s: %s",
-                            interview_yaml,
-                            e,
-                        )
+                try:
+                    spec = _load_spec_from_skill_dir(skill_dir)
+                except Exception as e:
+                    logger.error(
+                        "Failed to load interview spec from %s: %s",
+                        skill_dir,
+                        e,
+                    )
+                    continue
+                if spec is None or not spec.name:
+                    continue
+                self._specs[spec.name] = spec
+                logger.info(
+                    "Loaded interview spec: %s from %s",
+                    spec.name,
+                    skill_dir,
+                )
         return self._specs
 
     def get(self, name: str) -> Optional[InterviewSpec]:
