@@ -92,12 +92,16 @@ def discover_skill_docs(
         logger.debug("orchestrator.skills: bundle resolution failed: %s", exc)
         return []
 
-    # ``app`` keeps only adjacent skills; ``library`` keeps only built-ins
-    # (resolve_merged_skill_bundles always folds in app-local, so filter here).
+    # ``app`` — app-local pure + action overlays; ``library`` — built-in pure +
+    # core action skills. ``both`` keeps the full merged set.
     if source == "app":
-        bundles = {k: v for k, v in bundles.items() if v.get("source") != "builtin"}
+        bundles = {k: v for k, v in bundles.items() if v.get("source") in ("app", None)}
     elif source == "library":
-        bundles = {k: v for k, v in bundles.items() if v.get("source") != "app"}
+        bundles = {
+            k: v
+            for k, v in bundles.items()
+            if v.get("source") in ("builtin", "action", None)
+        }
 
     try:
         kept = apply_skill_selector(bundles, selector or "-all", denied or None)
@@ -108,20 +112,6 @@ def discover_skill_docs(
     docs: List[SkillDoc] = []
     for nm, bundle in kept.items():
         body = (bundle.get("content") or "").strip()
-        try:
-            from jvagent.action.interview_action.procedure import (
-                compose_interview_skill_body_from_bundle,
-                is_interview_skill_bundle,
-            )
-
-            if is_interview_skill_bundle(bundle):
-                body = compose_interview_skill_body_from_bundle(bundle)
-        except Exception as exc:
-            logger.debug(
-                "orchestrator.skills: interview procedure compose failed for %s: %s",
-                nm,
-                exc,
-            )
         docs.append(
             SkillDoc(
                 name=nm,

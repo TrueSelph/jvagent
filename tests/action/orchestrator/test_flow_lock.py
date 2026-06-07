@@ -838,7 +838,7 @@ async def test_apply_locked_skill_rebootstraps_missing_session_into_observations
             conv = await self._get_conversation(visitor)
             if conv is None:
                 return False
-            from jvagent.action.interview_action.session import has_active_session
+            from jvagent.action.interview_action.core.session import has_active_session
 
             return has_active_session(conv)
 
@@ -1003,7 +1003,7 @@ async def test_auto_start_applies_session_ensure_after_use_skill(
             conv = await self._get_conversation(visitor)
             if conv is None:
                 return False
-            from jvagent.action.interview_action.session import has_active_session
+            from jvagent.action.interview_action.core.session import has_active_session
 
             return has_active_session(conv)
 

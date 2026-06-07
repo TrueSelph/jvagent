@@ -10,7 +10,7 @@ How a skills-v2 interview progresses across user turns when the orchestrator dri
 | **Orchestrator LLM** | Reads composed procedure (`SkillDoc.body`), calls tools, replies per `response_directive` |
 | **InterviewAction** | Session CRUD, validation, hook execution, task tracking |
 | **`SKILL.md` frontmatter `interview:`** | Field definitions, validators, hooks, tools, review/completion |
-| **`SKILL.md` body** | Per-skill behavioral rules (standard procedure injected at discovery) |
+| **`SKILL.md` body** | Per-skill behavioral rules (standard procedure composed via extends) |
 | **`scripts/custom_tools.py`** | Business logic referenced by `function:` names |
 
 The LLM decides *which* question to ask and *when* to call tools. The action enforces validation, runs hooks, and returns structured observations the LLM must read before advancing.
@@ -42,11 +42,11 @@ User message → Orchestrator selects use_skill("<skill_name>")
             → SKILL task created if locked-in: true
 ```
 
-On activation the observation includes `fields`, `missing_required`, and any seeded values from `field_extractors.py`. When the skill is `locked-in: true`, `prepare_locked_skill_turn` seeds `interview__next_question` on the first locked turn — **reply from `response_directive`**; do not call `interview__next_question` again until after a successful `interview__set_field`, unless the observation already indicates a branch (e.g. `skip_to_review`).
+On activation the observation includes `fields`, `missing_required`, and any seeded values from `core/field_extractors.py`. When the skill is `locked-in: true`, `prepare_locked_skill_turn` seeds `interview__next_question` on the first locked turn — **reply from `response_directive`**; do not call `interview__next_question` again until after a successful `interview__set_field`, unless the observation already indicates a branch (e.g. `skip_to_review`).
 
 ### Field seeding
 
-If the user's opening message contains extractable data (phone, email, tracking number, etc.), `field_extractors.py` may pre-populate fields before the first question. Seeded fields trigger their configured `post_tools` immediately. The LLM must still confirm suggested values with the user before treating them as final — pre-tools return `suggested_value`, not stored values.
+If the user's opening message contains extractable data (phone, email, tracking number, etc.), `core/field_extractors.py` may pre-populate fields before the first question. Seeded fields trigger their configured `post_tools` immediately. The LLM must still confirm suggested values with the user before treating them as final — pre-tools return `suggested_value`, not stored values.
 
 ## Turn N — Typical collection turn
 
@@ -148,10 +148,10 @@ Both may be active during an interview. Custom completion handlers often close t
 
 ## Reference procedure
 
-The framework-standard tool loop lives in [`../sop/standard_procedure.md`](../sop/standard_procedure.md) and is prepended to each interview skill's `SkillDoc.body` at discovery. Per-skill exceptions belong in the custom `SKILL.md` body — see [`../sop/skill_custom_instructions.md`](../sop/skill_custom_instructions.md).
+The framework-standard tool loop lives in [`../SKILL.md`](../SKILL.md) and is prepended to each interview skill's `SkillDoc.body` at discovery. Per-skill exceptions belong in the custom `SKILL.md` body — see [`../docs/skill_custom_instructions.md`](../docs/skill_custom_instructions.md).
 
 Examples:
 
-- [`example/example_interview/SKILL.md`](../example/example_interview/SKILL.md) — reference custom rules
+- [`examples/example_interview/SKILL.md`](../examples/example_interview/SKILL.md) — reference custom rules
 - zoon-ai `onboarding_interview/`, `pre_alert_interview/` — production behavioral rules
 - jvagent example app `signup_interview/` — demo signup flow

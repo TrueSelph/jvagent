@@ -19,7 +19,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from jvagent.action.interview_action.responses import (
+from jvagent.action.interview_action.core.responses import (
     call_tool_directive,
     interview_tool_response,
     no_session_directive,
@@ -279,7 +279,7 @@ async def _complete_otp_success(
     phone_updated: bool = False,
 ) -> str:
     """Mark onboarding complete after OTP verification; return welcome directive."""
-    from jvagent.action.interview_action.session import (
+    from jvagent.action.interview_action.core.session import (
         InterviewStatus,
     )
 
@@ -598,7 +598,7 @@ async def verify_phone_number(
                     flow_mode="onboard",
                 )
                 if session is not None:
-                    from jvagent.action.interview_action.session import (
+                    from jvagent.action.interview_action.core.session import (
                         InterviewStatus,
                     )
 

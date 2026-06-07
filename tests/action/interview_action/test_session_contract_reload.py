@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from jvagent.action.interview_action.core.session import InterviewSession, save_session
 from jvagent.action.interview_action.interview_action import InterviewAction
-from jvagent.action.interview_action.session import InterviewSession, save_session
 
 
 @pytest.mark.asyncio

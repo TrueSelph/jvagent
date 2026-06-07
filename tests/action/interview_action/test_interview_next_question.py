@@ -8,13 +8,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from jvagent.action.interview_action.core.interview_loader import (
+    load_interview_spec_from_skill,
+)
+from jvagent.action.interview_action.core.session import InterviewSession
 from jvagent.action.interview_action.interview_action import (
     InterviewAction,
 )
-from jvagent.action.interview_action.interview_loader import (
-    load_interview_spec_from_skill,
-)
-from jvagent.action.interview_action.session import InterviewSession
 
 _SKILLS_DIR = Path(__file__).resolve().parent / "fixtures/skills"
 _ONBOARDING_SKILL = _SKILLS_DIR / "onboarding_interview"

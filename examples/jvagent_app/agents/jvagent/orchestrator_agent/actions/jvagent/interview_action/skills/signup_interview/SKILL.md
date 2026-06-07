@@ -9,6 +9,7 @@ spec: jv
 locked-in: true
 requires-actions:
   - InterviewAction
+extends: action:jvagent/interview_action
 allowed-tools:
   - interview__set_field
   - interview__get_field

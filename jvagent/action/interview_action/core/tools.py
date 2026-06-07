@@ -6,7 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
-    from .interview_action import InterviewAction
+    from ..interview_action import InterviewAction
 
 from jvagent.tooling.tool import Tool
 
@@ -202,8 +202,8 @@ def _build_custom_tools(action: "InterviewAction") -> List[Tool]:
     import importlib.util
     import os
 
+    from ..runtime.hooks import load_hook_function
     from .decorators import interview_tool as _it
-    from .runtime.hooks import load_hook_function
 
     tools: List[Tool] = []
     seen: set = set()

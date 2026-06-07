@@ -9,9 +9,9 @@ from unittest.mock import AsyncMock
 import pytest
 import yaml
 
+from jvagent.action.interview_action.core.interview_loader import load_interview_spec
+from jvagent.action.interview_action.core.session import InterviewSession
 from jvagent.action.interview_action.interview_action import InterviewAction
-from jvagent.action.interview_action.interview_loader import load_interview_spec
-from jvagent.action.interview_action.session import InterviewSession
 
 
 @pytest.mark.asyncio

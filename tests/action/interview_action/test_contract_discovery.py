@@ -86,6 +86,110 @@ async def test_discover_specs_loads_agent_interview_skills(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_resolve_skills_dirs_includes_action_overlay(tmp_path):
+    overlay = (
+        tmp_path
+        / "agents"
+        / "jvagent"
+        / "orchestrator_agent"
+        / "actions"
+        / "jvagent"
+        / "interview_action"
+        / "skills"
+        / "signup_interview"
+    )
+    overlay.mkdir(parents=True)
+    (overlay / "SKILL.md").write_text(
+        "---\nname: signup_interview\ndescription: signup\n"
+        "requires-actions:\n  - InterviewAction\n"
+        "interview:\n  title: Signup\n  description: signup\n"
+        "  questions: []\n  completion:\n    function: noop\n---\n\nbody",
+        encoding="utf-8",
+    )
+
+    action = InterviewAction()
+    action.metadata = {
+        "namespace": "jvagent",
+        "name": "interview_action",
+        "agent_namespace": "jvagent",
+        "agent_name": "orchestrator_agent",
+    }
+
+    with patch("jvagent.core.app_context.get_app_root", return_value=str(tmp_path)):
+        dirs = await action._resolve_skills_dirs()
+
+    expected = str(
+        tmp_path
+        / "agents"
+        / "jvagent"
+        / "orchestrator_agent"
+        / "actions"
+        / "jvagent"
+        / "interview_action"
+        / "skills"
+    )
+    assert expected in dirs
+
+
+@pytest.mark.asyncio
+async def test_discover_specs_loads_action_overlay_signup(tmp_path):
+    overlay = (
+        tmp_path
+        / "agents"
+        / "jvagent"
+        / "orchestrator_agent"
+        / "actions"
+        / "jvagent"
+        / "interview_action"
+        / "skills"
+        / "signup_interview"
+    )
+    overlay.mkdir(parents=True)
+    (overlay / "SKILL.md").write_text(
+        "---\nname: signup_interview\ndescription: signup\n"
+        "requires-actions:\n  - InterviewAction\n"
+        "interview:\n  title: Signup\n  description: signup\n"
+        "  questions: []\n  completion:\n    function: noop\n---\n\nbody",
+        encoding="utf-8",
+    )
+
+    action = InterviewAction()
+    action.metadata = {
+        "namespace": "jvagent",
+        "name": "interview_action",
+        "agent_namespace": "jvagent",
+        "agent_name": "orchestrator_agent",
+    }
+
+    with patch("jvagent.core.app_context.get_app_root", return_value=str(tmp_path)):
+        await action._discover_specs()
+
+    assert action.is_interview_skill("signup_interview")
+
+
+@pytest.mark.asyncio
+async def test_discover_specs_loads_jvagent_app_signup_overlay():
+    """Regression: signup_interview lives under action overlay, not agent skills/."""
+    app_root = Path(__file__).resolve().parents[3] / "examples" / "jvagent_app"
+    action = InterviewAction()
+    action.metadata = {
+        "namespace": "jvagent",
+        "name": "interview_action",
+        "agent_namespace": "jvagent",
+        "agent_name": "orchestrator_agent",
+        "agent_dir": str(app_root / "agents" / "jvagent" / "orchestrator_agent"),
+    }
+
+    with patch("jvagent.core.app_context.get_app_root", return_value=str(app_root)):
+        await action._discover_specs()
+
+    assert action.is_interview_skill("signup_interview")
+    spec = action._registry.get("signup_interview")
+    assert spec is not None
+    assert "user_name" in [q.name for q in spec.questions]
+
+
+@pytest.mark.asyncio
 async def test_does_not_walk_up_to_jvagent_skills_library(monkeypatch):
     action = InterviewAction()
     action.metadata = {}

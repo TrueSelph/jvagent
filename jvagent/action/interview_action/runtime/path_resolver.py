@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional, Set
 
-from ..interview_loader import InterviewSpec, QuestionDef
-from ..session import InterviewSession
+from ..core.interview_loader import InterviewSpec, QuestionDef
+from ..core.session import InterviewSession
 from .branch_eval import matches_branch_condition
 
 
@@ -142,7 +142,7 @@ async def resolve_store_continuation(
     interview_action: Any = None,
 ) -> tuple[str, Optional[str]]:
     """Next mechanical step after a successful store or skip."""
-    from ..responses import call_tool_directive
+    from ..core.responses import call_tool_directive
 
     next_name = await resolve_next_question_name(
         session, spec, load_function, visitor, interview_action

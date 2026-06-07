@@ -8,7 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
-- **Scalable interview SOP.** Standard tool-loop procedure lives in `interview_action/sop/standard_procedure.md` and is composed onto `SkillDoc.body` at `discover_skill_docs` for skills with `requires-actions: [InterviewAction]` and frontmatter `interview:`. Per-skill `SKILL.md` bodies are custom behavioral rules only (no per-field Procedure steps). `parse_skill_bundle` passes through `interview` for detection. Covered by `tests/action/interview_action/test_interview_procedure.py`.
+- **Action-backed skill scan paths.** `Action.resolve_skill_scan_dirs()` and `skill_resolve.resolve_action_skill_scan_dirs()` derive overlay paths from loader metadata (`info.yaml` `package.name`) — no per-action hardcoded refs. Fixes `signup_interview` discovery after ADR-0020 overlay migration.
+
+- **`interview_action` package layout.** Root holds only `SKILL.md`, `interview_action.py`, `info.yaml`, `README.md`, `CLAUDE.md`, `AGENTS.md`. Core modules under `core/`; reference packages under `examples/` (not skill-discovered); empty `api/` removed; `sop/` retired (authoring template → `docs/skill_custom_instructions.md`).
+
+- **Skill SOP inheritance (`extends`) + action-backed placement (ADR-0020).** JV skills may declare `extends: action:<namespace>/<action>` or `extends: skill:<name>` to compose base SOP markdown at discovery (`jvagent/scaffold/sop_extend.py`). Action base SOPs live at `<action_dir>/SKILL.md`; action-backed skills live under `<action_dir>/skills/<name>/` (app overlays: `agents/.../actions/.../skills/`). Agent `agents/.../skills/` is reserved for pure JV SOPs and `spec: claude` bundles; legacy action-backed paths log a deprecation warning. Interview implicit injection removed — skills declare `extends: action:jvagent/interview_action`. `signup_interview` and `example_interview` relocated. Covered by `tests/scaffold/test_sop_extend.py`, `tests/scaffold/test_action_skill_discovery.py`.
+
+- **Scalable interview SOP (superseded by ADR-0020).** Standard tool-loop procedure now lives in `interview_action/SKILL.md` and is composed via explicit `extends` rather than implicit `requires-actions` detection.
 
 - **InterviewAction docs aligned to scalable SOP.** `README.md`, `docs/` (index, extending, multi-turn-flow, troubleshooting), `CLAUDE.md`, legacy `interview/README.md` banner, zoon-ai `docs/interviews.md`, and planning `actions-catalog.md` updated for frontmatter `interview:` contract, procedure injection, and custom-only `SKILL.md` bodies.
 

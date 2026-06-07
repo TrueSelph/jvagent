@@ -8,21 +8,27 @@ import pytest
 
 import jvagent.core.app_context as app_context
 import jvagent.scaffold.skill_resolve as skill_resolve
-from jvagent.action.interview_action.procedure import (
+from jvagent.action.interview_action.core.procedure import (
     compose_interview_skill_body,
     get_standard_interview_procedure,
     is_interview_skill_bundle,
 )
 from jvagent.action.orchestrator.skills import discover_skill_docs
+from jvagent.scaffold.sop_extend import reset_sop_extend_cache
 
 
-def test_get_standard_interview_procedure_cached():
-    first = get_standard_interview_procedure()
-    second = get_standard_interview_procedure()
-    assert first == second
-    assert "Standard Interview Procedure" in first
-    assert "next_questions" in first
-    assert "interview__set_field" in first
+@pytest.fixture(autouse=True)
+def _reset_cache():
+    reset_sop_extend_cache()
+    yield
+    reset_sop_extend_cache()
+
+
+def test_get_standard_interview_procedure():
+    body = get_standard_interview_procedure()
+    assert "Standard Interview Procedure" in body
+    assert "next_questions" in body
+    assert "interview__set_field" in body
 
 
 def test_compose_interview_skill_body_without_custom():
@@ -38,35 +44,33 @@ def test_compose_interview_skill_body_with_custom():
     assert composed.endswith(custom)
 
 
-def test_is_interview_skill_bundle():
-    assert is_interview_skill_bundle(
-        {
-            "requires_actions": ["InterviewAction"],
-            "interview": {"questions": []},
-        }
-    )
+def test_is_interview_skill_bundle_deprecated():
     assert not is_interview_skill_bundle(
         {
             "requires_actions": ["InterviewAction"],
-            "interview": None,
-        }
-    )
-    assert not is_interview_skill_bundle(
-        {
-            "requires_actions": ["OtherAction"],
             "interview": {"questions": []},
         }
     )
 
 
 @pytest.mark.asyncio
-async def test_discover_skill_docs_composes_interview_body(monkeypatch):
-    def _resolve(app_root, namespace, agent_name, *, include_builtin=True):
+async def test_discover_skill_docs_uses_precomposed_body(monkeypatch):
+    standard = get_standard_interview_procedure()
+    composed = compose_interview_skill_body("## Custom instructions\n\nBe friendly.")
+
+    def _resolve(
+        app_root,
+        namespace,
+        agent_name,
+        *,
+        include_builtin=True,
+        action_refs=None,
+    ):
         return {
             "signup_interview": {
                 "name": "signup_interview",
                 "description": "signup",
-                "content": "## Custom instructions\n\nBe friendly.",
+                "content": composed,
                 "requires_actions": ["InterviewAction"],
                 "interview": {"title": "Signup", "questions": [{"name": "user_name"}]},
                 "allowed_tools": [],

@@ -6,7 +6,7 @@ import asyncio
 import logging
 from typing import Any, Callable, Dict, Optional
 
-from ..session import InterviewSession
+from ..core.session import InterviewSession
 
 logger = logging.getLogger(__name__)
 

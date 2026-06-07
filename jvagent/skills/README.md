@@ -16,6 +16,33 @@ manages exactly **two skill specs** — no third variation:
 > (a Claude skill whose scripts run in the sandbox). If you find yourself
 > wrapping an action's operation in a skill, expose it on the action instead.
 
+## Where skills live (three tiers — ADR-0020)
+
+| Tier | Location | Role |
+|------|----------|------|
+| **Action base SOP** | `<action_dir>/SKILL.md` | Framework procedure inherited via `extends` — **not** discovered as a skill |
+| **Action-backed jvskill** | `<action_dir>/skills/<name>/` | Skill bound to an action tool bundle (`requires-actions`, hooks, `scripts/`) |
+| **Agent skill** | `jvagent/skills/<name>/` or `agents/<ns>/<agent>/skills/<name>/` | **Pure JV SOP** (no action binding) or **`spec: claude`** bundle |
+
+App overlays for action-backed skills:
+`agents/<ns>/<agent>/actions/<namespace>/<action>/skills/<name>/`.
+
+**Do not** place action-backed skills in `agents/.../skills/` — that folder is for
+pure SOPs and Claude skills only. Legacy paths log a deprecation warning.
+
+```
+jvagent/action/interview_action/
+├── SKILL.md                    # base SOP (extends target)
+├── interview_action.py         # InterviewAction implementation
+├── examples/example_interview/ # reference package (not auto-discovered)
+├── core/                       # loader, session, validators, tools, …
+└── runtime/                    # pipeline, hooks, branch eval
+
+agents/acme/bot/
+├── actions/jvagent/interview_action/skills/signup_interview/  # app overlay
+└── skills/research/            # pure JV SOP
+```
+
 ## SKILL.md anatomy
 
 Two parts: YAML frontmatter (between `---`) and a Markdown SOP body.
@@ -51,6 +78,7 @@ metadata:
 | `allowed-tools` | mostly JV | Runtime tool names the SOP uses (e.g. `gmail__send_email`, `web_fetch__fetch`, `code_execution__bash`). Surfaced into the visible set on activation. |
 | `requires-actions` | JV | Action class names that must resolve (enabled) on the agent, each with an **optional inline version constraint** (PEP 508-style — the comparison operator is the delimiter): `CodeExecutionAction`, `PageIndexAction>=2.0`, `WebFetchAction==1.4.0`, `GmailAction>=1.0,<2.0`. **Hard gate, enforced:** if any declared type is absent — or its `get_version()` doesn't satisfy the constraint — the orchestrator hides the skill entirely for that turn (not listed, found, activated, or always-active-pinned). Replaces the old `requires-action-versions` map. |
 | `requires-jvagent` | JV | Framework version constraint, checked at preflight. |
+| `extends` | JV | SOP inheritance only (body composition). `action:<namespace>/<action>` loads `<action_dir>/SKILL.md` body; `skill:<name>` inherits another skill's composed body. Separate from `requires-actions`. |
 | `license`, `metadata` | both | Claude-standard fields. `metadata.version` / `metadata.tags` for tracking + discovery cues. |
 
 (jvagent also parses chaining/dispatch extensions — `exports`, `imports`,
@@ -142,8 +170,11 @@ docstrings for the full posture.
 
 ## Sources, precedence, configuration
 
-1. Built-in: `jvagent/skills/*`  2. App-local: `agents/<ns>/<agent_id>/skills/*`
-(app-local overrides a built-in of the same `name`).  3. **Host providers** (optional):
+1. Built-in pure: `jvagent/skills/*`
+2. Core action skills: `<action_dir>/skills/*` for actions on the agent
+3. App pure: `agents/<ns>/<agent_id>/skills/*` (overrides built-in by name)
+4. App action overlays: `agents/.../actions/<ns>/<action>/skills/*` (overrides core action skill by name)
+5. **Host providers** (optional):
 embedders register callables via `register_host_skill_provider()` in
 `jvagent.action.orchestrator.skill_providers`; merged after filesystem discovery
 (filesystem wins on name collision). Integral documents the workspace overlay pattern in `docs/backend/workspace-agent-profile.md`.
@@ -170,10 +201,16 @@ embedders register callables via `register_host_skill_provider()` in
 
 ## Building a new skill
 
-**JV skill:** create `jvagent/skills/<name>/SKILL.md` with `spec: jv` (or omit),
-reference the action/IA tools in `allowed-tools`, write the SOP. No code.
+**Pure JV skill:** create `jvagent/skills/<name>/` or `agents/.../skills/<name>/`
+with `spec: jv`, reference tools in `allowed-tools`, write the SOP. No `scripts/`.
 
-**Claude skill:** create `jvagent/skills/<name>/` with `spec: claude`, add
+**Action-backed JV skill:** create `<action_dir>/skills/<name>/` (or app overlay
+under `agents/.../actions/.../skills/`). Declare `requires-actions`, optional
+`extends: action:<namespace>/<action>`, and `scripts/custom_tools.py` when needed.
+Action runtimes discover overlay paths via ``Action.resolve_skill_scan_dirs()``
+(identity from ``info.yaml`` metadata — no hardcoded package refs).
+
+**Claude skill:** create `jvagent/skills/<name>/` or `agents/.../skills/<name>/` with `spec: claude`, add
 `scripts/` (plain CLI scripts) and any `resources/`, and write a SKILL.md that
 tells the model how to run them via `code_execution__bash`. Declare runtime
 dependencies in `resources/requirements.txt` — the sandbox has no network, so

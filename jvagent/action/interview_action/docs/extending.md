@@ -5,29 +5,31 @@ How to override validation, hooks, handlers, and LLM-callable tools when buildin
 ## Skill package layout
 
 ```
-skills/my_interview/
-├── SKILL.md               # frontmatter.interview: questions, validators, hooks, tools
-│                          # body: custom behavioral rules only (standard procedure injected at discovery)
+<action_dir>/skills/my_interview/          # core or app overlay
+├── SKILL.md               # extends + interview: frontmatter; body = custom rules only
 └── scripts/
     └── custom_tools.py    # Python functions referenced by function: names
 ```
 
-Standalone `interview.yaml` is deprecated; declare the contract under `interview:` in `SKILL.md` frontmatter. The framework-standard tool loop ships in [`../sop/standard_procedure.md`](../sop/standard_procedure.md) and is composed onto `SkillDoc.body` by `discover_skill_docs`.
+App overlay path: `agents/<ns>/<agent>/actions/jvagent/interview_action/skills/my_interview/`.
 
-Copy [`../example/example_interview/`](../example/example_interview/) as the starting template.
+Declare `extends: action:jvagent/interview_action` and `requires-actions: [InterviewAction]`.
+The framework base SOP lives in [`../SKILL.md`](../SKILL.md); composition happens at discovery.
+
+Copy [`../examples/example_interview/`](../examples/example_interview/) as the starting template.
 
 ## Extension point overview
 
 | Extension | Declared in | Implemented in | LLM-callable? |
 |-----------|-------------|----------------|---------------|
-| Builtin validator | `question.validator.function: phone` | `validators.py` | No |
+| Builtin validator | `question.validator.function: phone` | `core/validators.py` | No |
 | Custom validator | `question.validator.function: my_validate` | `custom_tools.py` | No |
 | Pre-tool | `question.pre_tools: [fn]` | `custom_tools.py` | No |
 | Post-tool | `question.post_tools: [fn]` | `custom_tools.py` | No |
 | Custom LLM tool | `interview.tools` | `custom_tools.py` | Yes (`{skill}__{name}`) |
 | Review handler | `interview.review.function` | `custom_tools.py` | No |
 | Completion handler | `interview.completion.function` | `custom_tools.py` | No |
-| Field seeding | (implicit via validator name) | `field_extractors.py` | No |
+| Field seeding | (implicit via validator name) | `core/field_extractors.py` | No |
 | `@interview_tool` decorator | — | `custom_tools.py` | Yes (legacy discovery) |
 
 **Rule:** Only `interview.tools` entries become LLM tools. Validators and hooks are invoked by the framework when their trigger fires.
@@ -90,7 +92,7 @@ Use for OTP confirmation and other cases where validating the value should finis
 
 ### Builtin validators
 
-Defined in [`../validators.py`](../validators.py): `phone`, `email`, `name`, `number`, `date`, `date_past`, `date_future`, `yes_no`, `text`, `address`, `description`, `list`.
+Defined in [`../core/validators.py`](../core/validators.py): `phone`, `email`, `name`, `number`, `date`, `date_past`, `date_future`, `yes_no`, `text`, `address`, `description`, `list`.
 
 ---
 
@@ -149,7 +151,7 @@ async def check_low_rating(session=None, interview_action=None, **kwargs) -> str
 
 ### Post-tool result keys
 
-Exposed via `POST_TOOL_RESULT_KEYS` in [`../responses.py`](../responses.py):
+Exposed via `POST_TOOL_RESULT_KEYS` in [`../core/responses.py`](../core/responses.py):
 
 | Key | Meaning |
 |-----|---------|
@@ -160,7 +162,7 @@ Exposed via `POST_TOOL_RESULT_KEYS` in [`../responses.py`](../responses.py):
 | `next_tool` | Suggested next tool |
 | `response_directive` | Override for this hook result |
 
-Prefer `interview_tool_response()` from `responses.py` for consistent envelopes.
+Prefer `interview_tool_response()` from `core/responses.py` for consistent envelopes.
 
 ---
 
@@ -262,7 +264,7 @@ Prefer frontmatter `interview.tools`. The decorator in [`../decorators.py`](../d
 
 ## Field seeding (opening message)
 
-Add branches in [`../field_extractors.py`](../field_extractors.py) `extract_candidates_for_question()` keyed by validator function name. Called once on skill activation.
+Add branches in [`../core/field_extractors.py`](../core/field_extractors.py) `extract_candidates_for_question()` keyed by validator function name. Called once on skill activation.
 
 Built-in extraction: `email`, `phone`, `date_past`. Custom examples: `validate_tracking_number`, `validate_id_number`.
 
@@ -270,10 +272,10 @@ Built-in extraction: `email`, `phone`, `date_past`. Custom examples: `validate_t
 
 ## Response helpers
 
-Use [`../responses.py`](../responses.py) — do not invent ad-hoc directive formats:
+Use [`../core/responses.py`](../core/responses.py) — do not invent ad-hoc directive formats:
 
 ```python
-from jvagent.action.interview_action.responses import (
+from jvagent.action.interview_action.core.responses import (
     call_tool_directive,
     interview_tool_response,
     tell_user_directive,
@@ -303,7 +305,7 @@ Post-tools may set `present_field` so turn-prep does not re-seed the same questi
 | `extracted_values` | All collected fields at review/complete time |
 | `review_data` | Review-stage snapshot |
 
-Organize `custom_tools.py` in labeled sections (see [`../example/example_interview/scripts/custom_tools.py`](../example/example_interview/scripts/custom_tools.py)):
+Organize `custom_tools.py` in labeled sections (see [`../examples/example_interview/scripts/custom_tools.py`](../examples/example_interview/scripts/custom_tools.py)):
 
 1. Constants
 2. Shared helpers

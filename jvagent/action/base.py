@@ -1078,6 +1078,53 @@ class Action(Node):
         """
         return self.metadata.get("name") or self.label
 
+    def get_action_ref(self) -> Optional[str]:
+        """Package ref ``namespace/action_name`` from loader metadata (info.yaml)."""
+        from jvagent.scaffold.skill_resolve import action_ref_from_metadata
+
+        return action_ref_from_metadata(self.metadata or {})
+
+    async def resolve_skill_scan_dirs(
+        self,
+        *,
+        include_legacy_agent_skills: bool = True,
+    ) -> List[str]:
+        """Filesystem directories to scan for action-backed skill packages.
+
+        Uses this action's ``info.yaml`` identity (``namespace`` + ``name`` in
+        metadata) and the hosting agent's tree — no per-action hardcoded refs.
+        See ADR-0020 overlay layout: ``agents/.../actions/<ns>/<action>/skills/``.
+        """
+        from jvagent.scaffold.skill_resolve import resolve_action_skill_scan_dirs
+
+        meta = self.metadata or {}
+        app_root = None
+        try:
+            from jvagent.core.app_context import get_app_root
+
+            app_root = get_app_root()
+        except Exception:
+            app_root = None
+
+        agent_ns = meta.get("agent_namespace")
+        agent_name = meta.get("agent_name")
+        if not agent_ns or not agent_name:
+            try:
+                agent = await self.get_agent()
+            except Exception:
+                agent = None
+            if agent is not None:
+                agent_ns = agent_ns or getattr(agent, "namespace", None)
+                agent_name = agent_name or getattr(agent, "name", None)
+
+        return resolve_action_skill_scan_dirs(
+            meta,
+            app_root=app_root,
+            agent_namespace=agent_ns,
+            agent_name=agent_name,
+            include_legacy_agent_skills=include_legacy_agent_skills,
+        )
+
     async def get_type(self) -> str:
         """Get the type/category of the action.
 

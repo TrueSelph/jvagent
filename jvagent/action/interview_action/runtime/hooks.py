@@ -9,9 +9,9 @@ import logging
 import os
 from typing import Any, Callable, Dict, Optional
 
-from ..interview_loader import InterviewSpec
-from ..session import InterviewSession
-from ..validators import ExtractionStatus
+from ..core.interview_loader import InterviewSpec
+from ..core.session import InterviewSession
+from ..core.validators import ExtractionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ def load_hook_function(spec: InterviewSpec, function_name: str) -> Optional[Call
         if not os.path.isfile(custom_tools_path):
             return None
         try:
-            from ..decorators import interview_tool as _it
+            from ..core.decorators import interview_tool as _it
 
             mod_name = f"interview_custom_tools_{spec.name}"
             loader_spec = importlib.util.spec_from_file_location(

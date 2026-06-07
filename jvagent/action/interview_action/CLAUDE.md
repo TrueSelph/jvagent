@@ -17,8 +17,9 @@ Session state lives in `conversation.context["interview"]` as a lightweight `Int
 | Layer | Location (per consuming app) | Owns |
 |-------|------------------------------|------|
 | **Foundation** | `jvagent/action/interview_action/` | `interview__*` tools, session lifecycle, hook dispatch, validator *invocation*, turn-prep seeding, generic pipeline |
+| **Base SOP** | `SKILL.md` (action root) | Inherited via `extends: action:jvagent/interview_action` |
 | **Spec** | `skills/<name>/SKILL.md` frontmatter `interview:` | Questions, order, branches, validator `function:` refs, pre/post/review/complete hooks |
-| **Procedure** | `procedure.py` + `skills/<name>/SKILL.md` body | Standard tool loop injected at discovery; body = custom behavioral rules only |
+| **Procedure** | `skills/<name>/SKILL.md` body | Custom behavioral rules only (base composed via `extends`) |
 | **Implementation** | `skills/<name>/scripts/custom_tools.py` | Validators, pre/post tools, completion handlers, custom LLM tools |
 
 When fixing behavior for one skill (e.g. `validate_full_name`, training slot matching), change the **skill extension** — not the foundation — unless the bug is in generic plumbing (chaining, utterance-vs-model validation, hook dispatch, session keys like `CTX_QUESTION_PRESENTED`).
@@ -31,29 +32,24 @@ When fixing behavior for one skill (e.g. `validate_full_name`, training slot mat
 
 ```
 interview_action/
+├── SKILL.md              # Base SOP (extends target)
 ├── interview_action.py   # InterviewAction — session, hooks, skill activation
-├── interview_loader.py    # InterviewRegistry, SKILL.md frontmatter parsing
-├── tools.py              # interview__* tool builders
-├── validators.py         # Builtin validators (phone, email, …)
-├── field_extractors.py   # Opening-message field seeding
-├── session.py            # InterviewSession in conversation.context
-├── responses.py          # tell_user_directive, interview_tool_response, …
-├── decorators.py         # @interview_tool (prefer frontmatter interview.tools:)
-├── procedure.py          # Standard SOP load + compose for discover_skill_docs
-├── sop/                  # Framework SOP assets (runtime + authoring templates)
-├── example/example_interview/   # Reference skill — copy to skills/
-├── README.md             # Full reference (frontmatter interview:, tools, patterns)
-└── docs/                 # Focused guides (multi-turn, extending, troubleshooting)
+├── info.yaml
+├── README.md / CLAUDE.md / AGENTS.md
+├── core/                 # Loader, session, validators, tools, responses
+├── runtime/              # Pipeline, path resolution, hooks, branching
+├── examples/             # Reference skill packages (not auto-discovered)
+└── docs/                 # How-to guides + skill_custom_instructions.md
 ```
 
 ---
 
 ## Creating a new interview skill (minimum steps)
 
-1. Copy [`example/example_interview/`](example/example_interview/) → `skills/<name>/`.
+1. Copy [`examples/example_interview/`](examples/example_interview/) → app overlay `agents/.../actions/jvagent/interview_action/skills/<name>/`.
 2. Align `name` in folder and `SKILL.md` frontmatter.
 3. Implement every `function:` referenced in frontmatter `interview:` inside `scripts/custom_tools.py`.
-4. Write `SKILL.md` custom instructions only (standard procedure is injected at discovery — see `sop/skill_custom_instructions.md`).
+4. Write `SKILL.md` custom instructions only; set `extends: action:jvagent/interview_action` (see `docs/skill_custom_instructions.md`).
 5. Set `requires-actions: [InterviewAction]` and list tools in `allowed-tools`.
 6. Register skill in agent `orchestrator.skills:`.
 7. Enable `InterviewAction` in agent actions.
@@ -69,7 +65,7 @@ See [README.md](README.md) and [docs/extending.md](docs/extending.md) for valida
 3. **Chaining gate** — read `ok` from every tool response before advancing; `post_tools` do not run when `ok: false`.
 4. **`response_directive` beats `next_questions`** when they conflict — one action per turn.
 5. **Review before complete** — always call `interview__review()` before `interview__complete()` unless review sets `terminate: true`.
-6. **Contract discovery** — `InterviewRegistry` scans `skills/` only; `example/` is not auto-discovered.
+6. **Contract discovery** — `InterviewRegistry` scans dirs from `Action.resolve_skill_scan_dirs()` (overlay + legacy); reference packages live under `examples/` (not discovered).
 7. **Never reuse stale field values** from older chat turns unless the user repeats them in the latest message.
 
 ---
@@ -86,9 +82,8 @@ pytest tests/action/interview_action/ -v
 
 | Doc | Topic |
 |-----|-------|
-| [README.md](README.md) | Full contract reference, tool envelope, live skill patterns |
-| [docs/README.md](docs/README.md) | Documentation index |
+| [README.md](README.md) | Full contract reference, reading paths, tool envelope, live skill patterns |
 | [docs/multi-turn-flow.md](docs/multi-turn-flow.md) | Turn-by-turn lifecycle, turn-lock, session states |
 | [docs/extending.md](docs/extending.md) | Validators, pre/post tools, review/completion, custom tools |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common failures and fixes |
-| [example/example_interview/](example/example_interview/) | Reference implementation |
+| [examples/example_interview/](examples/example_interview/) | Reference implementation |

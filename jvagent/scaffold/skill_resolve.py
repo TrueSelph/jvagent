@@ -5,10 +5,17 @@ from __future__ import annotations
 import fnmatch
 import importlib
 import logging
+import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import yaml
+
+from jvagent.scaffold.sop_extend import (
+    compose_extended_sop_bodies,
+    parse_extends_ref,
+    resolve_action_package_dir,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -257,10 +264,25 @@ def parse_skill_bundle(
         )
         interview_block = None
 
+    extends_raw = frontmatter.get("extends")
+    extends_value: Optional[str] = None
+    if extends_raw is not None:
+        parsed_extends = parse_extends_ref(extends_raw)
+        if parsed_extends is not None:
+            kind, target = parsed_extends
+            extends_value = f"{kind}:{target}"
+        else:
+            logger.warning(
+                "Skill bundle %s has invalid extends %r; ignoring",
+                skill_file,
+                extends_raw,
+            )
+
     return {
         "name": name,
         "description": description,
         "content": content,
+        "extends": extends_value,
         "interview": interview_block,
         "dir": str(skill_dir),
         "tool_files": tool_files,
@@ -326,7 +348,7 @@ def resolve_agent_skills(
     namespace: str,
     agent_name: str,
 ) -> Dict[str, Dict[str, Any]]:
-    """Resolve app-local skills from agents/<ns>/<agent>/skills/*."""
+    """Resolve pure app-local skills from agents/<ns>/<agent>/skills/*."""
     skills_dir = Path(app_root).resolve() / "agents" / namespace / agent_name / "skills"
     if not skills_dir.is_dir():
         return {}
@@ -338,8 +360,209 @@ def resolve_agent_skills(
         parsed = parse_skill_bundle(skill_dir, source="app")
         if not parsed:
             continue
+        if parsed.get("requires_actions"):
+            primary = str(parsed["requires_actions"][0]).split(">=")[0].split("==")[0]
+            logger.warning(
+                "Skill '%s' in agents/%s/%s/skills/ declares requires-actions "
+                "(%s). Action-backed skills belong under "
+                "agents/.../actions/<namespace>/<action>/skills/<name>/",
+                parsed["name"],
+                namespace,
+                agent_name,
+                primary,
+            )
         key = parsed["name"]
         discovered[key] = parsed
+    return discovered
+
+
+def resolve_agent_action_refs_from_yaml(
+    app_root: str,
+    namespace: str,
+    agent_name: str,
+) -> List[str]:
+    """Read action refs from agent.yaml (synchronous, best-effort)."""
+    agent_yaml = (
+        Path(app_root).resolve() / "agents" / namespace / agent_name / "agent.yaml"
+    )
+    if not agent_yaml.is_file():
+        return []
+    try:
+        with open(agent_yaml, "r", encoding="utf-8") as handle:
+            data = yaml.safe_load(handle) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        logger.debug("Failed to read %s: %s", agent_yaml, exc)
+        return []
+    if not isinstance(data, dict):
+        return []
+    refs: List[str] = []
+    for item in data.get("actions") or []:
+        if not isinstance(item, dict):
+            continue
+        ref = str(item.get("action") or "").strip()
+        if "/" in ref:
+            refs.append(ref)
+    return refs
+
+
+def action_ref_from_metadata(metadata: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Build ``namespace/action_name`` from action loader metadata (info.yaml)."""
+    if not metadata:
+        return None
+    namespace = str(metadata.get("namespace") or "").strip()
+    action_name = str(metadata.get("name") or "").strip()
+    if namespace and action_name:
+        return f"{namespace}/{action_name}"
+    return None
+
+
+def action_overlay_skills_dir(
+    agent_base: Union[str, Path],
+    action_ref: str,
+) -> Optional[str]:
+    """Return ``agents/.../actions/<ns>/<action>/skills`` when it exists."""
+    ref = str(action_ref).strip()
+    if "/" not in ref:
+        return None
+    namespace, action_name = ref.split("/", 1)
+    skills_root = Path(agent_base) / "actions" / namespace / action_name / "skills"
+    return str(skills_root) if skills_root.is_dir() else None
+
+
+def legacy_agent_skills_dir(agent_base: Union[str, Path]) -> Optional[str]:
+    """Deprecated agent-level ``agents/.../skills`` (pre ADR-0020 overlay)."""
+    skills_root = Path(agent_base) / "skills"
+    return str(skills_root) if skills_root.is_dir() else None
+
+
+def resolve_action_skill_scan_dirs(
+    metadata: Dict[str, Any],
+    *,
+    app_root: Optional[str] = None,
+    agent_namespace: Optional[str] = None,
+    agent_name: Optional[str] = None,
+    include_legacy_agent_skills: bool = True,
+) -> List[str]:
+    """Directories an action-backed runtime should scan for per-skill packages.
+
+    Order: action overlay ``skills/`` first, then legacy agent ``skills/``.
+    Overlay paths require loader metadata (``namespace`` + ``name`` from
+    ``info.yaml`` ``package.name``). Legacy agent ``skills/`` is still scanned
+    when ``include_legacy_agent_skills`` is true (deprecated layout).
+    """
+    action_ref = action_ref_from_metadata(metadata)
+    dirs: List[str] = []
+    agent_bases: List[str] = []
+
+    def _append(path: Optional[str]) -> None:
+        if path and path not in dirs:
+            dirs.append(path)
+
+    agent_dir = metadata.get("agent_dir")
+    if agent_dir:
+        agent_bases.append(str(agent_dir))
+
+    if app_root and agent_namespace and agent_name:
+        agent_base = os.path.join(
+            str(app_root), "agents", str(agent_namespace), str(agent_name)
+        )
+        if not agent_dir or os.path.normpath(str(agent_dir)) != os.path.normpath(
+            agent_base
+        ):
+            agent_bases.append(agent_base)
+
+    for base in agent_bases:
+        if action_ref:
+            _append(action_overlay_skills_dir(base, action_ref))
+        if include_legacy_agent_skills:
+            _append(legacy_agent_skills_dir(base))
+
+    return dirs
+
+
+def _scan_action_skills_dir(
+    skills_root: Path,
+    *,
+    source: str,
+    action_ref: str,
+) -> Dict[str, Dict[str, Any]]:
+    if not skills_root.is_dir():
+        return {}
+    discovered: Dict[str, Dict[str, Any]] = {}
+    for skill_dir in sorted(skills_root.iterdir()):
+        if not skill_dir.is_dir():
+            continue
+        parsed = parse_skill_bundle(skill_dir, source=source)
+        if not parsed:
+            continue
+        parsed = dict(parsed)
+        parsed["action_ref"] = action_ref
+        discovered[parsed["name"]] = parsed
+    return discovered
+
+
+def resolve_core_action_skills(
+    action_refs: Optional[List[str]] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Discover skills under core action packages' ``skills/`` subdirs."""
+    if not action_refs:
+        return {}
+    discovered: Dict[str, Dict[str, Any]] = {}
+    for ref in action_refs:
+        ref = str(ref).strip()
+        if not ref.startswith("jvagent/"):
+            continue
+        action_dir = resolve_action_package_dir(ref)
+        if action_dir is None:
+            continue
+        skills_root = action_dir / "skills"
+        for name, bundle in _scan_action_skills_dir(
+            skills_root, source="action", action_ref=ref
+        ).items():
+            discovered[name] = bundle
+    return discovered
+
+
+def resolve_agent_action_skills(
+    app_root: str,
+    namespace: str,
+    agent_name: str,
+    *,
+    action_refs: Optional[List[str]] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Discover app overlays at agents/.../actions/<ns>/<action>/skills/*."""
+    actions_root = (
+        Path(app_root).resolve() / "agents" / namespace / agent_name / "actions"
+    )
+    if not actions_root.is_dir():
+        return {}
+
+    discovered: Dict[str, Dict[str, Any]] = {}
+    if action_refs:
+        for ref in action_refs:
+            ref = str(ref).strip()
+            if "/" not in ref:
+                continue
+            ns_part, action_name = ref.split("/", 1)
+            skills_root = actions_root / ns_part / action_name / "skills"
+            for name, bundle in _scan_action_skills_dir(
+                skills_root, source="app", action_ref=ref
+            ).items():
+                discovered[name] = bundle
+        return discovered
+
+    for ns_dir in sorted(actions_root.iterdir()):
+        if not ns_dir.is_dir():
+            continue
+        for action_dir in sorted(ns_dir.iterdir()):
+            if not action_dir.is_dir():
+                continue
+            action_ref = f"{ns_dir.name}/{action_dir.name}"
+            skills_root = action_dir / "skills"
+            for name, bundle in _scan_action_skills_dir(
+                skills_root, source="app", action_ref=action_ref
+            ).items():
+                discovered[name] = bundle
     return discovered
 
 
@@ -349,22 +572,52 @@ def resolve_merged_skill_bundles(
     agent_name: str,
     *,
     include_builtin: bool = True,
+    action_refs: Optional[List[str]] = None,
 ) -> Dict[str, Dict[str, Any]]:
-    """Resolve skills with deterministic precedence: app-local overrides built-in."""
-    builtin = resolve_builtin_skills() if include_builtin else {}
-    app_local = resolve_agent_skills(app_root, namespace, agent_name)
+    """Resolve skills with deterministic precedence.
 
-    merged = dict(builtin)
+    Merge order: builtin pure → core action skills → app pure (overrides
+    builtin) → app action overlays (overrides core action skills by name).
+    """
+    refs = action_refs
+    if refs is None:
+        refs = resolve_agent_action_refs_from_yaml(app_root, namespace, agent_name)
+
+    merged: Dict[str, Dict[str, Any]] = {}
+    if include_builtin:
+        merged.update(resolve_builtin_skills())
+    merged.update(resolve_core_action_skills(refs))
+
+    app_local = resolve_agent_skills(app_root, namespace, agent_name)
     for skill_name, skill_data in app_local.items():
         if skill_name in merged:
             logger.info(
-                "App-local skill '%s' overrides built-in skill for %s/%s",
+                "App-local skill '%s' overrides skill for %s/%s",
                 skill_name,
                 namespace,
                 agent_name,
             )
         merged[skill_name] = skill_data
-    return merged
+
+    app_action = resolve_agent_action_skills(
+        app_root, namespace, agent_name, action_refs=refs
+    )
+    for skill_name, skill_data in app_action.items():
+        if skill_name in merged:
+            logger.info(
+                "App action skill '%s' overrides skill for %s/%s",
+                skill_name,
+                namespace,
+                agent_name,
+            )
+        merged[skill_name] = skill_data
+
+    return compose_extended_sop_bodies(
+        merged,
+        app_root=app_root,
+        agent_namespace=namespace,
+        agent_name=agent_name,
+    )
 
 
 def list_builtin_skill_names() -> List[str]:

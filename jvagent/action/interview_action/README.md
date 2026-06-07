@@ -2,23 +2,30 @@
 
 LLM-driven interview framework for structured data collection. The orchestrator LLM reads the composed interview procedure (`SkillDoc.body` = standard tool loop + per-skill custom rules) and calls granular tools to conduct interviews. `InterviewAction` manages session state, validation, hook orchestration, and tool registration — it does not drive the conversation itself.
 
-**Custom interview skills** are template clones: copy [`example/example_interview/`](example/example_interview/) to `skills/<your_skill>/`, customize `SKILL.md` (frontmatter `interview:` contract + custom behavioral rules in the body), optionally add `scripts/custom_tools.py`. Set frontmatter `requires-actions: [InterviewAction]` and `locked-in: true` for turn-lock; the orchestrator has no interview-specific code — only generic skill lifecycle + `requires-actions` binding.
+**Custom interview skills** are action-backed packages under `skills/<name>/` (app overlay: `agents/.../actions/jvagent/interview_action/skills/`). Copy [`examples/example_interview/`](examples/example_interview/) as a template, set `extends: action:jvagent/interview_action`, `requires-actions: [InterviewAction]`, and `locked-in: true` for turn-lock.
 
 **Agent entry point:** [CLAUDE.md](CLAUDE.md)
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [README.md](README.md) | This file — full contract reference, tools, patterns, checklist |
-| [docs/README.md](docs/README.md) | Documentation index |
-| [docs/multi-turn-flow.md](docs/multi-turn-flow.md) | Turn-by-turn lifecycle, turn-lock, review/complete paths |
-| [docs/extending.md](docs/extending.md) | Custom validators, pre/post tools, review/completion, LLM tools |
-| [docs/troubleshooting.md](docs/troubleshooting.md) | Common failures and fixes |
-| [sop/README.md](sop/README.md) | Framework SOP assets (runtime + authoring templates) |
-| [sop/standard_procedure.md](sop/standard_procedure.md) | Standard tool loop (injected at discovery) |
-| [sop/skill_custom_instructions.md](sop/skill_custom_instructions.md) | Authoring template for custom `SKILL.md` body only |
-| [example/example_interview/](example/example_interview/) | Reference skill — copy to `skills/` |
+### Reading paths
+
+| Audience | Start with |
+|----------|------------|
+| **Building a new interview skill** | [Quick start](#quick-start) → [docs/extending.md](docs/extending.md) → [examples/example_interview/](examples/example_interview/) |
+| **AI agent editing this package** | [CLAUDE.md](CLAUDE.md) |
+| **Debugging a stuck turn** | [docs/troubleshooting.md](docs/troubleshooting.md) → [docs/multi-turn-flow.md](docs/multi-turn-flow.md) |
+| **Authoring `SKILL.md` body only** | [docs/skill_custom_instructions.md](docs/skill_custom_instructions.md) (base SOP: [SKILL.md](SKILL.md)) |
+
+### How-to guides
+
+| Guide | Covers |
+|-------|--------|
+| [docs/multi-turn-flow.md](docs/multi-turn-flow.md) | Turn-by-turn lifecycle, turn-lock, session states, branching |
+| [docs/extending.md](docs/extending.md) | Validators, pre/post tools, review/completion, LLM custom tools |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | Common failures, symptom → fix |
+
+Skill placement convention (action-backed vs pure SOP): [jvagent/skills/README.md](../../skills/README.md).
 
 ## Two-file skill package
 
@@ -26,7 +33,7 @@ Every interview skill is a self-contained folder:
 
 | File | Responsibility |
 |------|----------------|
-| `SKILL.md` | **Frontmatter `interview:`** — questions, validators, hooks, tools, review/completion (machine contract). **Body** — custom behavioral rules only (standard procedure is injected at discovery) |
+| `SKILL.md` | **Frontmatter `interview:`** — questions, validators, hooks, tools, review/completion (machine contract). **Body** — custom behavioral rules only (standard procedure is composed via extends) |
 | `scripts/custom_tools.py` | **Business logic** — validators, pre/post hooks, custom tools, review/completion handlers |
 
 ```
@@ -40,16 +47,16 @@ skills/my_interview/
 
 ## Quick start
 
-1. **Copy the reference skill** from [`example/example_interview/`](example/example_interview/) to `skills/<your_skill_name>/`.
+1. **Copy the reference skill** from [`examples/example_interview/`](examples/example_interview/) to your app overlay at `agents/<ns>/<agent>/actions/jvagent/interview_action/skills/<your_skill_name>/`.
 2. **Rename consistently** — `name` in `SKILL.md` frontmatter must match the folder name (e.g. `skills/feedback_interview/` → `name: feedback_interview`).
 3. **Implement functions** in `scripts/custom_tools.py` for every `function:` name referenced in frontmatter `interview:`.
-4. **Write custom instructions** in `SKILL.md` body — when to use, session overrides, and behavioral rules. The [standard procedure](sop/standard_procedure.md) is composed automatically at skill discovery; do not copy core steps or enumerate fields.
+4. **Write custom instructions** in `SKILL.md` body — when to use, session overrides, and behavioral rules. Add `extends: action:jvagent/interview_action`; do not copy the base procedure into the body.
 5. **Register the skill** in [`agent.yaml`](../../../agent.yaml) orchestrator `skills:` list.
 6. **Declare allowed tools** in `SKILL.md` frontmatter — list every `interview__*` tool plus any `{skill}__{tool}` custom tools.
-7. **(Optional)** Add field-seeding regex in [`field_extractors.py`](field_extractors.py) if your custom validators should extract values from the user's opening message.
+7. **(Optional)** Add field-seeding regex in [`core/field_extractors.py`](core/field_extractors.py) if your custom validators should extract values from the user's opening message.
 8. **(Optional)** Add to `auto_start_skills_on_new_user` in `agent.yaml` if the skill should activate automatically for new users.
 
-> **Important:** `InterviewRegistry.discover()` only scans `skills/` directories. The reference skill in `example/` is **not** auto-discovered — you must copy it to `skills/` to activate it.
+> **Important:** Reference packages live under `interview_action/examples/` (not auto-discovered). Live skills go in the app action overlay `skills/` path.
 
 ## Architecture
 
@@ -258,14 +265,14 @@ tags: [tag1, tag2]
 
 ### Body (custom instructions only)
 
-At discovery, `discover_skill_docs` prepends the framework [standard procedure](sop/standard_procedure.md) to each interview skill's body. Authors write only:
+At discovery, `discover_skill_docs` prepends the framework [standard procedure](SKILL.md) to each interview skill's body. Authors write only:
 
 1. **When to use** — 1–3 bullets.
 2. **Rules** — behavioral exceptions (OTP gates, `exists: true` stop, post_tool branching).
 3. **Session overrides** — cancel/reset tools.
 4. **Custom tool callouts** — when non-obvious.
 
-Do **not** list fields as Procedure steps or Flow overview — question order and prompts come from frontmatter `interview.questions` and runtime `next_questions`. See [sop/skill_custom_instructions.md](sop/skill_custom_instructions.md).
+Do **not** list fields as Procedure steps or Flow overview — question order and prompts come from frontmatter `interview.questions` and runtime `next_questions`. See [docs/skill_custom_instructions.md](docs/skill_custom_instructions.md).
 
 ### Reply rules (enforce in every skill)
 
@@ -277,7 +284,7 @@ Do **not** list fields as Procedure steps or Flow overview — question order an
 
 ## `custom_tools.py` function types
 
-Organize the file into labeled sections (see [example](example/example_interview/scripts/custom_tools.py)):
+Organize the file into labeled sections (see [example](examples/example_interview/scripts/custom_tools.py)):
 
 | Type | Referenced in | Return type | LLM-callable? |
 |------|---------------|-------------|---------------|
@@ -292,10 +299,10 @@ LLM-facing custom tools should use `interview_tool_response()` for a consistent 
 
 ### Response helpers
 
-Use helpers from [`responses.py`](responses.py) — do not invent ad-hoc directive formats:
+Use helpers from [`core/responses.py`](core/responses.py) — do not invent ad-hoc directive formats:
 
 ```python
-from jvagent.action.interview_action.responses import (
+from jvagent.action.interview_action.core.responses import (
     call_tool_directive,
     interview_tool_response,
     tell_user_directive,
@@ -319,7 +326,7 @@ interview_tool_response(
 
 ## Core `interview__*` tools
 
-Eight fixed tools registered by [`tools.py`](tools.py). Sessions start via `use_skill` → `on_skill_activate` (there is no `interview__init`).
+Eight fixed tools registered by [`core/tools.py`](core/tools.py). Sessions start via `use_skill` → `on_skill_activate` (there is no `interview__init`).
 
 | Tool | Purpose |
 |------|---------|
@@ -356,7 +363,7 @@ All tools return JSON with these key fields:
 
 ### Post-tool result keys
 
-Exposed to the LLM via `POST_TOOL_RESULT_KEYS` in `responses.py`:
+Exposed to the LLM via `POST_TOOL_RESULT_KEYS` in [`core/responses.py`](core/responses.py):
 
 | Key | Meaning |
 |-----|---------|
@@ -371,7 +378,7 @@ Exposed to the LLM via `POST_TOOL_RESULT_KEYS` in `responses.py`:
 
 ## Builtin validators
 
-Defined in [`validators.py`](validators.py):
+Defined in [`core/validators.py`](core/validators.py):
 
 | Name | Purpose | Common kwargs |
 |------|---------|---------------|
@@ -392,9 +399,9 @@ Custom validators go in `scripts/custom_tools.py` and are referenced by function
 
 ## Field seeding
 
-On skill activation, `field_extractors.py` attempts to extract field values from the user's opening message (e.g. a tracking number in "Please track 291421515335"). Builtin validators (`email`, `phone`, `date_past`) and known custom validators (`validate_tracking_number`, `validate_id_number`, `validate_invoice_value`) have extraction logic.
+On skill activation, [`core/field_extractors.py`](core/field_extractors.py) attempts to extract field values from the user's opening message (e.g. a tracking number in "Please track 291421515335"). Builtin validators (`email`, `phone`, `date_past`) and known custom validators (`validate_tracking_number`, `validate_id_number`, `validate_invoice_value`) have extraction logic.
 
-To add seeding for a new custom validator, add a branch in `extract_candidates_for_question()` in [`field_extractors.py`](field_extractors.py).
+To add seeding for a new custom validator, add a branch in `extract_candidates_for_question()` in [`core/field_extractors.py`](core/field_extractors.py).
 
 ## Patterns from live skills
 
@@ -494,7 +501,7 @@ Existing tests under `agents/zoon-ai/tests/`:
 - [ ] Every `function:` name in `interview:` has a matching function in `custom_tools.py`
 - [ ] Hook functions (pre/post tools, validators) are **not** in `interview.tools`
 - [ ] LLM-callable tools are in both `interview.tools` and `SKILL.md` `allowed-tools`
-- [ ] `SKILL.md` body is custom rules only — no per-field Procedure steps (standard procedure is injected at discovery)
+- [ ] `SKILL.md` body is custom rules only — no per-field Procedure steps (standard procedure is composed via extends)
 - [ ] Terminal paths return `retain_context_keys` only for keys that must survive `clear_interview_context()`
 - [ ] Validators return correct shape (`valid`, `value`, `error`); use `interview_complete` + `response_directive` when validation finishes the interview
 - [ ] Post-tools return `interview_tool_response` with `response_directive`
@@ -505,16 +512,14 @@ Existing tests under `agents/zoon-ai/tests/`:
 - [ ] Skill registered in `agent.yaml` orchestrator `skills:` list
 - [ ] `requires-actions` lists all dependencies (`InterviewAction`, `ZoonAPIAction`, etc.)
 
-## Reference implementation
+## Reference implementations
 
-See [`example/example_interview/`](example/example_interview/) for a self-contained reference skill that demonstrates every contract feature. Copy it to `skills/<your_skill_name>/` and adapt.
-
-Live production skills for comparison (zoon-ai):
-
-- `zoon-ai/agents/zoon/zoon_ai/skills/onboarding_interview/` — phone/email verification, OTP linking, ID photo extraction, SKILL task persistence, dual onboard + update-phone flows
-- `zoon-ai/agents/zoon/zoon_ai/skills/pre_alert_interview/` — lean flow with hook-driven branching, custom review terminate path, no LLM custom tools
-
-Demo skill (jvagent example app): `examples/jvagent_app/.../skills/signup_interview/`
+| Path | Notes |
+|------|-------|
+| [examples/example_interview/](examples/example_interview/) | Copy template — **not** auto-discovered; activate via app overlay `skills/` |
+| `examples/jvagent_app/.../actions/jvagent/interview_action/skills/signup_interview/` | jvagent demo signup interview |
+| `zoon-ai/agents/zoon/zoon_ai/skills/onboarding_interview/` | Production onboarding — OTP, ID extraction, SKILL task persistence |
+| `zoon-ai/agents/zoon/zoon_ai/skills/pre_alert_interview/` | Production pre-alert — hook branching, custom review terminate path |
 
 ## License
 

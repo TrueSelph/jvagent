@@ -12,8 +12,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from jvagent.action.base import Action
 from jvagent.tooling.tool_executor import get_dispatch_visitor
 
-from .field_extractors import extract_candidates_for_question
-from .interview_loader import (
+from .core.field_extractors import extract_candidates_for_question
+from .core.interview_loader import (
     INTERVIEW_FRONTMATTER_KEY,
     INTERVIEW_YAML,
     InterviewRegistry,
@@ -24,7 +24,7 @@ from .interview_loader import (
     resolve_validator_def,
     resolve_validator_kwargs,
 )
-from .responses import (
+from .core.responses import (
     call_tool_directive,
     interview_step_response,
     interview_tool_response,
@@ -33,6 +33,18 @@ from .responses import (
     review_confirmation_directive,
     tell_user_directive,
 )
+from .core.session import (
+    CONVERSATION_CONTEXT_PLATFORM_KEYS,
+    CTX_QUESTION_PRESENTED,
+    InterviewSession,
+    InterviewStatus,
+    clear_interview_context,
+    clear_session,
+    load_session,
+    save_session,
+)
+from .core.tools import build_tools, skill_tool_name
+from .core.validators import ExtractionStatus, get_validator
 from .runtime.hooks import call_hook, clear_module_cache, load_hook_function
 from .runtime.path_resolver import (
     build_next_questions,
@@ -44,23 +56,11 @@ from .runtime.path_resolver import (
     resolve_store_continuation,
 )
 from .runtime.pipeline import apply_store_pipeline, run_pre_tools, validate_field
-from .session import (
-    CONVERSATION_CONTEXT_PLATFORM_KEYS,
-    CTX_QUESTION_PRESENTED,
-    InterviewSession,
-    InterviewStatus,
-    clear_interview_context,
-    clear_session,
-    load_session,
-    save_session,
-)
-from .tools import build_tools, skill_tool_name
-from .validators import ExtractionStatus, get_validator
 
 logger = logging.getLogger(__name__)
 
 _TASK_OWNER_ACTION = "InterviewAction"
-_TASK_TYPE_INTERVIEW = "INTERVIEW"
+_TASK_TYPE = "INTERVIEW"
 
 _ACTIVE_TASK_DESCRIPTION_TEMPLATE = (
     "The user has engaged the {action_title} (Action Description: {action_description}). "
@@ -127,39 +127,7 @@ class InterviewAction(Action):
         await self._ensure_specs_loaded()
 
     async def _resolve_skills_dirs(self) -> List[str]:
-        meta = self.metadata or {}
-        agent_dir = meta.get("agent_dir")
-        if agent_dir:
-            skills_dir = os.path.join(str(agent_dir), "skills")
-            if os.path.isdir(skills_dir):
-                return [skills_dir]
-
-        app_root = None
-        try:
-            from jvagent.core.app_context import get_app_root
-
-            app_root = get_app_root()
-        except Exception:
-            app_root = None
-
-        agent_ns = meta.get("agent_namespace")
-        agent_name = meta.get("agent_name")
-        if not agent_ns or not agent_name:
-            try:
-                agent = await self.get_agent()
-            except Exception:
-                agent = None
-            if agent is not None:
-                agent_ns = agent_ns or getattr(agent, "namespace", None)
-                agent_name = agent_name or getattr(agent, "name", None)
-
-        if app_root and agent_ns and agent_name:
-            skills_dir = os.path.join(
-                str(app_root), "agents", str(agent_ns), str(agent_name), "skills"
-            )
-            if os.path.isdir(skills_dir):
-                return [skills_dir]
-        return []
+        return await self.resolve_skill_scan_dirs()
 
     async def get_tools(self) -> List[Any]:
         await self._ensure_specs_loaded()
@@ -181,7 +149,9 @@ class InterviewAction(Action):
     async def prepare_locked_skill_turn(
         self, skill_name: str, visitor: Any = None
     ) -> Any:
-        from jvagent.action.interview_action.responses import tool_observation_failed
+        from jvagent.action.interview_action.core.responses import (
+            tool_observation_failed,
+        )
         from jvagent.action.orchestrator.skill_tasks import LockedSkillPrep
 
         if not await self.skill_runtime_ready(skill_name, visitor):
@@ -435,7 +405,7 @@ class InterviewAction(Action):
                 title=title,
                 description=description,
                 owner_action=_TASK_OWNER_ACTION,
-                task_type=_TASK_TYPE_INTERVIEW,
+                task_type=_TASK_TYPE,
                 data={"interview_type": spec.name, "state": "active"},
             )
             await handle.start()

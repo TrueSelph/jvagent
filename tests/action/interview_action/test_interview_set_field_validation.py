@@ -9,17 +9,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from jvagent.action.interview_action.interview_action import (
-    InterviewAction,
-)
-from jvagent.action.interview_action.interview_loader import (
+from jvagent.action.interview_action.core.interview_loader import (
     QuestionDef,
     load_interview_spec_from_skill,
     resolve_validator_def,
     resolve_validator_kwargs,
 )
-from jvagent.action.interview_action.session import InterviewSession
-from jvagent.action.interview_action.validators import get_validator
+from jvagent.action.interview_action.core.session import InterviewSession
+from jvagent.action.interview_action.core.validators import get_validator
+from jvagent.action.interview_action.interview_action import (
+    InterviewAction,
+)
 
 _SKILLS_DIR = Path(__file__).resolve().parent / "fixtures/skills"
 _PRE_ALERT_SKILL = _SKILLS_DIR / "pre_alert_interview"

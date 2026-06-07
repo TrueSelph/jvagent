@@ -3,11 +3,12 @@ name: example_interview
 description: 'Reference product feedback interview. Collects customer name, product
   rating, optional comments, and follow-up email. Demonstrates all InterviewAction
   patterns: validators, pre_tools, post_tools, custom tools, review, and completion.
-  Copy to skills/<your_skill_name>/ to create a live skill.'
+  Copy to <action>/skills/<your_skill_name>/ to create a live skill.'
 spec: jv
 locked-in: true
 requires-actions:
 - InterviewAction
+extends: action:jvagent/interview_action
 allowed-tools:
 - interview__set_field
 - interview__get_field
@@ -29,7 +30,7 @@ interview:
     optional comments, follow-up email). Demonstrates all InterviewAction frontmatter
     interview: features: builtin and custom validators, pre_tools, post_tools, LLM-callable custom
     tools, custom review, and completion handlers. Copy this folder to skills/<your_skill_name>/
-    to create a live skill. The LLM decides which question to ask next based on SKILL.md.'
+    to create a live skill under the action skills/ folder. The LLM decides which question to ask next based on SKILL.md.'
   questions:
   - name: customer_name
     question: What is your name?
@@ -82,7 +83,7 @@ interview:
       feedback in session context and returns a confirmation message.
 ---
 
-> **Note:** Reference skill under `interview_action/example/`. Copy to `skills/<your_skill_name>/` and register in `agent.yaml` to activate.
+> **Note:** Reference package under `interview_action/examples/` (not auto-discovered). Copy to your app overlay at `agents/<ns>/<agent>/actions/jvagent/interview_action/skills/<name>/` and register in `agent.yaml` to activate.
 
 ## Custom instructions
 

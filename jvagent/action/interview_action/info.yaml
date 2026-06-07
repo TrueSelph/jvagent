@@ -6,9 +6,11 @@ package:
   meta:
     title: Interview Action
     description: >-
-      LLM-driven interview tool bundle. Exposes granular interview__* tools;
-      each interview skill is a SKILL.md package (frontmatter interview: block)
-      under the agent skills/ directory.
+      LLM-driven interview tool bundle (interview__* tools). Base SOP at
+      SKILL.md. Reference templates in examples/ (not discovered). Live skills
+      belong in the agent app overlay. Each skill declares
+      extends: action:jvagent/interview_action, requires-actions, and
+      interview: frontmatter.
     group: jvagent
     type: action
   config:

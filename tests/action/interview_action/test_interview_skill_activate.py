@@ -7,14 +7,14 @@ from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
 
-from jvagent.action.interview_action.interview_action import (
-    InterviewAction,
-)
-from jvagent.action.interview_action.interview_loader import (
+from jvagent.action.interview_action.core.interview_loader import (
     InterviewRegistry,
     load_interview_spec_from_skill,
 )
-from jvagent.action.interview_action.tools import build_tools
+from jvagent.action.interview_action.core.tools import build_tools
+from jvagent.action.interview_action.interview_action import (
+    InterviewAction,
+)
 
 _SKILLS_DIR = Path(__file__).resolve().parent / "fixtures/skills"
 

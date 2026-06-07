@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from jvagent.action.interview_action.session import (
+from jvagent.action.interview_action.core.session import (
     InterviewSession,
     clear_interview_context,
     save_session,

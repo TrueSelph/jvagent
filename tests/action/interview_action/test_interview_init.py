@@ -5,11 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from jvagent.action.interview_action.interview_loader import (
+from jvagent.action.interview_action.core.interview_loader import (
     InterviewRegistry,
     load_interview_spec_from_skill,
 )
-from jvagent.action.interview_action.tools import build_tools
+from jvagent.action.interview_action.core.tools import build_tools
 
 _SKILLS_DIR = Path(__file__).resolve().parent / "fixtures/skills"
 

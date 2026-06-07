@@ -112,7 +112,7 @@ Common issues when building or running skills-v2 interviews with `InterviewActio
 
 **Cause:** LLM calls `interview__next_question` after turn prep already seeded the first question.
 
-**Fix:** The standard procedure (injected at discovery) covers turn-prep — reply from activation `response_directive`; do not call `next_question` again until after `set_field` returns `ok:true`.
+**Fix:** The standard procedure (composed via extends) covers turn-prep — reply from activation `response_directive`; do not call `next_question` again until after `set_field` returns `ok:true`.
 
 ---
 
@@ -130,7 +130,7 @@ Common issues when building or running skills-v2 interviews with `InterviewActio
 
 **Symptom:** Opening message seeds incorrect field.
 
-**Fix:** Adjust regex/logic in `field_extractors.py` for your validator name, or disable seeding by not adding an extractor branch.
+**Fix:** Adjust regex/logic in `core/field_extractors.py` for your validator name, or disable seeding by not adding an extractor branch.
 
 ---
 

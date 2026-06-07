@@ -174,12 +174,14 @@ jvagent --update
 
 ## Skill catalogs and custom skills
 
-Orchestrator agents (skills come in two specs — JV + Claude; see [`jvagent/skills/README.md`](../jvagent/skills/README.md)) support two skill *sources*:
+Orchestrator agents (skills come in two specs — JV + Claude; see [`jvagent/skills/README.md`](../jvagent/skills/README.md)) discover skills from several tiers (ADR-0020):
 
-1. Built-in reusable skill catalog shipped with jvagent (`jvagent/skills/*`)
-2. App-local custom skills in `agents/<ns>/<id>/skills/<skill_name>/SKILL.md`
+1. Built-in pure skills (`jvagent/skills/*`)
+2. Core action skills (`<action_dir>/skills/*` for actions on the agent)
+3. App pure skills (`agents/<ns>/<id>/skills/<name>/`) — pure JV SOP or Claude only
+4. App action overlays (`agents/.../actions/<ns>/<action>/skills/<name>/`)
 
-When a skill name exists in both, app-local overrides built-in.
+`agents/.../skills/` is **not** for action-backed skills (those with `requires-actions` and hook scripts) — place those under the action overlay path. App-local overrides built-in / core by name.
 
 Runtime exposure is controlled per agent in `agents/<ns>/<id>/agent.yaml` on
 the `jvagent/orchestrator` action via:

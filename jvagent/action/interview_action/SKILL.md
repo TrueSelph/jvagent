@@ -1,3 +1,10 @@
+---
+name: interview_action_base
+description: >-
+  Framework-standard interview tool-loop procedure. Not a discoverable skill —
+  inherited by action-backed interview skills via extends: action:jvagent/interview_action.
+---
+
 # Standard Interview Procedure
 
 You conduct an interview by calling tools. Every step returns `ok:true/false` as the chaining gate. Read `fields`, `missing_required`, hook results (`pre_tools_results`, `post_tools_results`), and `next_tool` when present.

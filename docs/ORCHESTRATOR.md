@@ -232,13 +232,15 @@ A skill is **judgment over capability, not capability** (ADR-0011). Tools answer
 - **JV skill** (`spec: jv`, default) — a `SKILL.md` body that references action/IA tools by their `namespace__tool` name (via `allowed-tools`/`requires-actions`) and carries **no executable code**. It coordinates existing actions-as-tools. Examples: `research`, `answer`.
 - **Claude skill** (`spec: claude`) — a standard [Anthropic Agent Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview) folder (drop-in with agentskills.io): `SKILL.md` + bundled `scripts/`/`resources/`. On activation the orchestrator **stages the folder into the caller's per-user sandbox** (`staged_skills/<name>/`) and the model runs its scripts via `code_execution__bash` — the multitenant [`jvagent/code_execution`](../jvagent/action/code_execution) substrate (off by default). Examples: `pdf-generation`, `triage`. The earlier "skill `scripts/` as typed tools" idea was reverted — there is no third spec.
 
-**Sources** — discovery ([`orchestrator/skills.py`](../jvagent/action/orchestrator/skills.py)) reuses the neutral `jvagent.scaffold.skill_resolve` over two locations, selected by `skills_source`:
+**Sources** — discovery ([`orchestrator/skills.py`](../jvagent/action/orchestrator/skills.py)) reuses the neutral `jvagent.scaffold.skill_resolve` (ADR-0020), selected by `skills_source`:
 
 | `skills_source` | Loads from |
 |---|---|
-| `app` | adjacent `agents/<ns>/<agent>/skills/*` only |
-| `library` | built-in `jvagent/skills/*` only |
-| `both` (default) | both, app-local overriding built-in by name |
+| `app` | `agents/<ns>/<agent>/skills/*` (pure + Claude) and `agents/.../actions/.../skills/*` (action overlays) |
+| `library` | `jvagent/skills/*` (pure) and core `<action_dir>/skills/*` for installed actions |
+| `both` (default) | full merged set; app-local overrides built-in / core action skills by name |
+
+Action-backed skills co-locate under action packages; `agents/.../skills/` is for pure JV SOPs and Claude bundles only. See [`jvagent/skills/README.md`](../jvagent/skills/README.md).
 
 Aliases `local`→`app` and `builtin`→`library` are accepted; `registry` is retired (treated as `library`).
 

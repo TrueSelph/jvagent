@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from jvagent.action.interview_action.responses import (
+from jvagent.action.interview_action.core.responses import (
     POST_TOOL_RESULT_KEYS,
     interview_tool_response,
     slim_post_tool_entry,

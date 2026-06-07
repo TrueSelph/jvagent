@@ -9,15 +9,15 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from jvagent.action.interview_action.interview_action import InterviewAction
-from jvagent.action.interview_action.interview_loader import (
+from jvagent.action.interview_action.core.interview_loader import (
     load_interview_spec_from_skill,
 )
-from jvagent.action.interview_action.session import InterviewSession
+from jvagent.action.interview_action.core.session import InterviewSession
+from jvagent.action.interview_action.interview_action import InterviewAction
 
 _SIGNUP_SKILL_DIR = (
     Path(__file__).resolve().parents[3]
-    / "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup_interview"
+    / "examples/jvagent_app/agents/jvagent/orchestrator_agent/actions/jvagent/interview_action/skills/signup_interview"
 )
 
 

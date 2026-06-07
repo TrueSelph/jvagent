@@ -6,23 +6,23 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from ..field_extractors import extract_candidates_for_question
-from ..interview_loader import (
+from ..core.field_extractors import extract_candidates_for_question
+from ..core.interview_loader import (
     InterviewSpec,
     QuestionDef,
     question_has_validator,
     resolve_validator_def,
     resolve_validator_kwargs,
 )
-from ..responses import (
+from ..core.responses import (
     call_tool_directive,
     interview_tool_response,
     slim_post_tool_entry,
     tell_user_directive,
     validation_guidance_directive,
 )
-from ..session import CTX_QUESTION_PRESENTED, InterviewSession, InterviewStatus
-from ..validators import ExtractionStatus
+from ..core.session import CTX_QUESTION_PRESENTED, InterviewSession, InterviewStatus
+from ..core.validators import ExtractionStatus
 from .hooks import call_hook, load_hook_function
 from .path_resolver import (
     build_next_questions,

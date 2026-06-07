@@ -11,7 +11,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from jvagent.action.interview_action.responses import (
+from jvagent.action.interview_action.core.responses import (
     call_tool_directive,
     interview_tool_response,
     tell_user_directive,

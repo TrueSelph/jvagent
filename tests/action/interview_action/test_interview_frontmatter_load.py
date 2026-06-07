@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from jvagent.action.interview_action.interview_loader import (
+from jvagent.action.interview_action.core.interview_loader import (
     InterviewRegistry,
     load_interview_spec,
     load_interview_spec_from_skill,
@@ -16,7 +16,7 @@ from jvagent.action.interview_action.interview_loader import (
 _FIXTURES = Path(__file__).resolve().parent / "fixtures/skills/onboarding_interview"
 _SIGNUP = (
     Path(__file__).resolve().parents[3]
-    / "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup_interview"
+    / "examples/jvagent_app/agents/jvagent/orchestrator_agent/actions/jvagent/interview_action/skills/signup_interview"
 )
 
 
