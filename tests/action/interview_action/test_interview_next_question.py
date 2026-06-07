@@ -8,23 +8,23 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from jvagent.action.interview_action.contract_loader import (
-    load_contract,
-)
 from jvagent.action.interview_action.interview_action import (
     InterviewAction,
+)
+from jvagent.action.interview_action.interview_loader import (
+    load_interview_spec,
 )
 from jvagent.action.interview_action.session import InterviewSession
 
 _SKILLS_DIR = Path(__file__).resolve().parent / "fixtures/skills"
-_ONBOARDING_CONTRACT = _SKILLS_DIR / "onboarding_interview/contract.yaml"
+_ONBOARDING_CONTRACT = _SKILLS_DIR / "onboarding_interview/interview.yaml"
 
 
 @pytest.fixture
 def onboarding_action():
     action = InterviewAction()
-    contract = load_contract(str(_ONBOARDING_CONTRACT))
-    action._contract_registry._contracts[contract.name] = contract
+    contract = load_interview_spec(str(_ONBOARDING_CONTRACT))
+    action._registry._specs[contract.name] = contract
     return action, contract
 
 

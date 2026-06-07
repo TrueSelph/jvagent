@@ -3,7 +3,7 @@ title: Product Feedback
 description: >-
   Reference interview skill that collects product feedback (name, rating,
   optional comments, follow-up email). Demonstrates all InterviewAction
-  contract features: builtin and custom validators, pre_tools, post_tools,
+  interview.yaml features: builtin and custom validators, pre_tools, post_tools,
   LLM-callable custom tools, custom review, and completion handlers.
   Copy this folder to skills/<your_skill_name>/ to create a live skill.
   The LLM decides which question to ask next based on SKILL.md.

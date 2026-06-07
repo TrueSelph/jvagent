@@ -308,7 +308,6 @@ async def _complete_otp_success(
         status="completed",
         contract_name=_ONBOARDING_SKILL_NAME,
     )
-    await interview_action._clear_interview_session(visitor)
 
     conversation = await _get_conversation(visitor)
     if conversation is not None:
@@ -481,6 +480,7 @@ async def validate_otp_code(
             "validator": "validate_otp_code",
             "interview_complete": True,
             "response_directive": welcome,
+            "retain_context_keys": ["user_is_onboarded", "customer_id"],
         }
     except Exception as e:
         logger.error("validate_otp_code failed: %s", e)
@@ -925,8 +925,8 @@ async def process_id_card(
         validation_errors = persist_result.get("validation_errors", {})
 
         contract = None
-        if hasattr(interview_action, "_contract_registry"):
-            contract = interview_action._contract_registry.get(session.interview_type)
+        if hasattr(interview_action, "_registry"):
+            contract = interview_action._registry.get(session.interview_type)
         missing = (
             session.missing_required(contract.get_required_fields()) if contract else []
         )
@@ -1135,6 +1135,8 @@ async def complete_onboarding(
                 await handle.complete()
         except Exception as exc:
             logger.debug("complete_onboarding: complete skill task failed: %s", exc)
+
+        result["retain_context_keys"] = ["user_is_onboarded", "customer_id"]
 
     return result
 

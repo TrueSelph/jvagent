@@ -243,8 +243,8 @@ async def reset_example_interview(
     if interview_action is not None and visitor is not None:
         try:
             start_result = await interview_action._handle_start(
+                _SKILL_NAME,
                 visitor,
-                interview_type=_SKILL_NAME,
                 user_message="",
             )
             return {

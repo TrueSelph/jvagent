@@ -9,7 +9,7 @@ and [`.planning/adr/0012-skill-executive-architecture.md`](../../../../../.plann
 ```
 OrchestratorInteractAction (-200)
   ├─ think-act-observe loop over unified tool surface
-  ├─ signup interview (IA-as-tool, multi-turn flow via TaskStore)
+  ├─ signup interview (signup_interview skill + InterviewAction, turn-lock)
   └─ ReplyAction — egress voice (identity from Agent alias + role)
 intro_interact_action runs BEFORE the executive (always_execute sidecar)
 ```
@@ -41,9 +41,9 @@ intro_interact_action runs BEFORE the executive (always_execute sidecar)
 | `hi there` | Orchestrator loop → `reply` tool (slim publish) |
 | `what is 19 x 23?` | Loop → web search or skill → `reply` |
 | `what do our internal docs say about X?` | `answer` skill → `pageindex__search` (internal KB) first, web fallback, cited synthesis → `respond` |
-| `sign up for jvagent training` | Model selects signup interview IA-as-tool → flow starts, TaskStore control-task recorded |
-| your answers on following turns | With `lock_active_flow: true` (default), orchestrator dispatches the interview IA directly; with `false`, model may continue or detour |
-| `stop` / `cancel` mid-interview | Interview IA handles cancellation via its own session logic |
+| `sign up for jvagent training` | Model activates `signup_interview` skill → InterviewAction session starts, turn-lock via TaskStore |
+| your answers on following turns | With `lock_active_flow: true` (default), orchestrator stays in the locked skill; interview tools drive collection |
+| `stop` / `cancel` mid-interview | `interview__cancel` or `signup_interview__reset_signup_interview` |
 | `make a PDF of a short status report` | **Claude skill** `pdf-generation` → `use_skill` stages it into your per-user slice → model writes markdown + runs `code_execution__bash` (`render_pdf.py`) → PDF lands under `output/` in your slice |
 | `rank these issues by severity: …` | **Claude skill** `triage` → `code_execution__bash` runs `prioritize.py` to sort deterministically |
 | `list the files in my workspace` | `file_interface__list_directory` (same per-user slice the PDF was written to) |
@@ -76,5 +76,5 @@ the script reports the missing dependency.
 
 - Skills live under `skills/` (app-local) and `jvagent/skills/` (library); configure via `skills_source` and `skills` in `agent.yaml`.
 - `jvagent/pageindex_action` provides the internal knowledge base (`pageindex__search/assimilate/list/delete`). Ingest documents first (`pageindex__assimilate`), then the `answer` skill searches them before falling back to the web. PageIndex auto-installs its pip deps (litellm, pdf libs) on first load.
-- The signup interview (`signup_interview_interact_action`) is the demo multi-turn flow. Swap in your own anchored `InteractAction`s the same way.
+- The signup interview (`skills/signup_interview/` + `jvagent/interview_action`) is the demo multi-turn flow. Copy the skill folder pattern for other structured interviews.
 - This agent occupies weight `-200` as the single pattern orchestrator; it runs fine beside other agents in the same app.

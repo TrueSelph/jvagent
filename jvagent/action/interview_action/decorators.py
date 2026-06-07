@@ -1,6 +1,6 @@
 """Optional decorator for InterviewAction custom tools.
 
-Prefer declaring tools in ``contract.yaml`` (``tools:`` with ``name``,
+Prefer declaring tools in ``interview.yaml`` (``tools:`` with ``name``,
 ``description``, ``parameters``, ``function``) and implementing plain
 ``async def`` functions in ``scripts/custom_tools.py``. Contract-declared
 tools do not need ``@interview_tool``.

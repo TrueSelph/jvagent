@@ -128,6 +128,7 @@ The detailed walkthrough lives at [`/.planning/reference/action-authoring.md`](.
 | Subdir | Local guide |
 |---|---|
 | `interact/` | [`interact/CLAUDE.md`](interact/CLAUDE.md) |
+| `interview_action/` | [`interview_action/CLAUDE.md`](interview_action/CLAUDE.md) |
 | `orchestrator/` | (see [`/.planning/adr/0012-skill-executive-architecture.md`](../../.planning/adr/0012-skill-executive-architecture.md)) |
 | All other action dirs | Per-package `info.yaml` + class docstring |
 

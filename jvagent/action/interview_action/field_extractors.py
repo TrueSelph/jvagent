@@ -5,7 +5,13 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List
 
-from .contract_loader import QuestionDef, ValidatorDef
+from .interview_loader import QuestionDef, ValidatorDef
+
+_EMAIL_RE = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
+
+
+def _looks_like_email_validator(vdef: ValidatorDef) -> bool:
+    return "email" in (vdef.name or "").lower()
 
 
 def extract_candidates_for_question(
@@ -21,14 +27,8 @@ def extract_candidates_for_question(
 
     candidates: List[str] = []
 
-    if vdef.name == "email":
-        candidates.extend(
-            re.findall(
-                r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
-                msg,
-                re.IGNORECASE,
-            )
-        )
+    if vdef.name == "email" or _looks_like_email_validator(vdef):
+        candidates.extend(re.findall(_EMAIL_RE, msg, re.IGNORECASE))
 
     elif vdef.name == "phone":
         exact = int(kwargs.get("exact_length", kwargs.get("length", 10)))

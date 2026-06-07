@@ -45,7 +45,21 @@ POST_TOOL_RESULT_KEYS = (
     "error_code",
     "response_directive",
     "next_tool",
+    "present_field",
 )
+
+
+def validation_guidance_directive(error: str, *, question_text: str = "") -> str:
+    """Build a single user-facing directive from a validator error message."""
+    err = (error or "").strip()
+    if err.lower().startswith("tell the user:"):
+        err = err.split(":", 1)[1].strip()
+    if err.lower().startswith("ask:"):
+        err = err.split(":", 1)[1].strip()
+    body = err
+    if question_text:
+        body = f"{err} {question_text}".strip()
+    return tell_user_directive(body)
 
 
 def tell_user_directive(question: str, *, note: str = "") -> str:
@@ -58,6 +72,33 @@ def tell_user_directive(question: str, *, note: str = "") -> str:
     if note:
         text += f" {note}"
     return text
+
+
+def tell_user_with_followup_directive(message: str, follow_up_question: str) -> str:
+    """Sidebar note plus the next interview question in one user-facing reply."""
+    return (
+        f"Tell the user: {message} "
+        f"Then ask: {follow_up_question} "
+        "You may paraphrase slightly but include both the note and the follow-up question."
+    )
+
+
+def review_confirmation_directive(
+    summary: str,
+    *,
+    preamble: str = "Please review your details before we finalize.",
+) -> str:
+    """Confirmation-step directive — not completion."""
+    summary_block = f"\n\n{summary}" if summary else ""
+    return (
+        f"Tell the user: {preamble}{summary_block} "
+        "Ask whether everything looks correct and they want to confirm. "
+        "If they want changes, ask what to update. "
+        "This is a confirmation step only — registration is NOT complete yet. "
+        "Do NOT say they are signed up, registered, or that registration is complete. "
+        "Do NOT call interview__complete until they explicitly confirm. "
+        "Do NOT call interview__review again."
+    )
 
 
 def call_tool_directive(next_tool: str) -> str:
@@ -113,6 +154,13 @@ def directive_for_missing_fields(
     return call_tool_directive("interview__review"), "interview__review"
 
 
+def directive_after_store(missing_required: List[str]) -> tuple[str, Optional[str]]:
+    """Mechanistic next step after a successful set_field or skip_field."""
+    if not missing_required:
+        return call_tool_directive("interview__review"), "interview__review"
+    return call_tool_directive("interview__next_question"), "interview__next_question"
+
+
 def classify_user_session_intent(user_message: str) -> SessionIntent:
     """Classify latest user message as continue, fresh, or unclear."""
     text = (user_message or "").strip().lower()
@@ -147,6 +195,7 @@ def interview_tool_response(
     system_message: Optional[str] = None,
     response_directive: Optional[str] = None,
     next_tool: Optional[str] = None,
+    present_field: Optional[str] = None,
     error: Optional[str] = None,
     error_code: Optional[str] = None,
     exists: Optional[bool] = None,
@@ -169,8 +218,12 @@ def interview_tool_response(
     validators: Optional[List[Dict[str, Any]]] = None,
     custom_tools: Optional[List[str]] = None,
     available_types: Optional[List[str]] = None,
+    started_at: Optional[str] = None,
     terminate: Optional[bool] = None,
     custom_message: Optional[str] = None,
+    summary: Optional[str] = None,
+    review_ready: Optional[bool] = None,
+    completion_result: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Build a consistent JSON tool response string.
 
@@ -184,6 +237,7 @@ def interview_tool_response(
         "system_message": system_message,
         "response_directive": response_directive,
         "next_tool": next_tool,
+        "present_field": present_field,
         "error": error,
         "error_code": error_code,
         "exists": exists,
@@ -206,8 +260,12 @@ def interview_tool_response(
         "validators": validators,
         "custom_tools": custom_tools,
         "available_types": available_types,
+        "started_at": started_at,
         "terminate": terminate,
         "custom_message": custom_message,
+        "summary": summary,
+        "review_ready": review_ready,
+        "completion_result": completion_result,
     }
     for key, val in optional_fields.items():
         if val is not None:
@@ -218,54 +276,3 @@ def interview_tool_response(
 def interview_step_response(*, ok: bool, status: str, **fields: Any) -> str:
     """Build a step response; delegates to interview_tool_response."""
     return interview_tool_response(ok=ok, status=status, **fields)
-
-
-def resolve_interview_session_intent(
-    user_message: str,
-    session: Any,
-    interview_type: str,
-) -> Dict[str, Any]:
-    """Map session state + user message to status, next_tool, and directives."""
-    from .session import InterviewStatus
-
-    intent = classify_user_session_intent(user_message)
-
-    if session and getattr(session, "is_active", None) and session.is_active():
-        return {
-            "status": "in_progress",
-            "intent": intent,
-            "interview_type": getattr(session, "interview_type", interview_type),
-            "next_tool": None,
-            "force_fresh": False,
-            "response_directive": call_tool_directive("interview__get_status"),
-        }
-
-    status_val = None
-    if session and hasattr(session, "status"):
-        status_val = (
-            session.status.value
-            if hasattr(session.status, "value")
-            else str(session.status)
-        )
-
-    if status_val in (
-        InterviewStatus.CANCELLED.value,
-        InterviewStatus.COMPLETED.value,
-    ):
-        return {
-            "status": "start_new",
-            "intent": "fresh",
-            "interview_type": interview_type,
-            "next_tool": None,
-            "force_fresh": False,
-            "response_directive": restart_session_directive(interview_type),
-        }
-
-    return {
-        "status": "start_new",
-        "intent": intent,
-        "interview_type": interview_type,
-        "next_tool": None,
-        "force_fresh": False,
-        "response_directive": restart_session_directive(interview_type),
-    }

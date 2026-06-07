@@ -51,7 +51,7 @@ Each tool returns **one** `response_directive` — do **one** thing that turn (`
 
 ### Critical rules (core)
 
-1. **Session starts when this skill is activated** (`use_skill`) — read the activation observation for `fields` / `missing_required`, then call `interview__next_question`. After complete, call `use_skill` again to restart.
+1. **Session starts when this skill is activated** (`use_skill`) — turn prep seeds the first question via `interview__next_question`. **Reply immediately** using `response_directive` from that observation. Do **not** call `interview__next_question` again until after `set_field` returns `ok:true`. After complete, call `use_skill` again to restart.
 2. **Chaining:** `set_field` → read `ok`; if `ok:false`, handle error (post_tools do not run). If `post_tools_results` present, read them before advancing. Call `interview__next_question` when continuing.
 3. **Call `interview__set_field(field, value)`** with the user's answer — validation runs automatically. On `ok:false` / `validation_failed`, read `error` and re-ask.
 4. **Never skip review** — always call `interview__review()` before `interview__complete()`.

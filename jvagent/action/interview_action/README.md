@@ -2,9 +2,20 @@
 
 LLM-driven interview framework for structured data collection. The orchestrator LLM reads each skill's `SKILL.md` procedure and calls granular tools to conduct interviews. `InterviewAction` manages session state, validation, hook orchestration, and tool registration — it does not drive the conversation itself.
 
-**Custom interview skills** are template clones: copy [`example/example_interview/`](example/example_interview/) to `skills/<your_skill>/`, customize `contract.yaml` + `SKILL.md`, optionally add `scripts/custom_tools.py`. Set frontmatter `requires-actions: [InterviewAction]` and `locked-in: true` for turn-lock; the orchestrator has no interview-specific code — only generic skill lifecycle + `requires-actions` binding.
+**Custom interview skills** are template clones: copy [`example/example_interview/`](example/example_interview/) to `skills/<your_skill>/`, customize `interview.yaml` + `SKILL.md`, optionally add `scripts/custom_tools.py`. Set frontmatter `requires-actions: [InterviewAction]` and `locked-in: true` for turn-lock; the orchestrator has no interview-specific code — only generic skill lifecycle + `requires-actions` binding.
 
-The legacy rails path (`jvagent/interview` / `InterviewInteractAction`) remains for backward compatibility; new agents should use this package + skills-v2 instead.
+**Agent entry point:** [CLAUDE.md](CLAUDE.md)
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [README.md](README.md) | This file — full contract reference, tools, patterns, checklist |
+| [docs/README.md](docs/README.md) | Documentation index |
+| [docs/multi-turn-flow.md](docs/multi-turn-flow.md) | Turn-by-turn lifecycle, turn-lock, review/complete paths |
+| [docs/extending.md](docs/extending.md) | Custom validators, pre/post tools, review/completion, LLM tools |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | Common failures and fixes |
+| [example/example_interview/](example/example_interview/) | Reference skill — copy to `skills/` |
 
 ## Three-file skill package
 
@@ -12,13 +23,13 @@ Every interview skill is a self-contained folder with three files:
 
 | File | Responsibility |
 |------|----------------|
-| `contract.yaml` | **What** to collect — questions, validators, hooks, tools, review/completion handlers |
+| `interview.yaml` | **What** to collect — questions, validators, hooks, tools, review/completion handlers |
 | `SKILL.md` | **How** to conduct — LLM procedure, session rules, step-by-step flow |
 | `scripts/custom_tools.py` | **Business logic** — validators, pre/post hooks, custom tools, review/completion handlers |
 
 ```
 skills/my_interview/
-├── contract.yaml
+├── interview.yaml
 ├── SKILL.md
 └── scripts/
     └── custom_tools.py
@@ -27,15 +38,15 @@ skills/my_interview/
 ## Quick start
 
 1. **Copy the reference skill** from [`example/example_interview/`](example/example_interview/) to `skills/<your_skill_name>/`.
-2. **Rename consistently** — `name` in `contract.yaml` and `SKILL.md` frontmatter must match the folder name (e.g. `skills/feedback_interview/` → `name: feedback_interview`).
-3. **Implement functions** in `scripts/custom_tools.py` for every `function:` name referenced in `contract.yaml`.
+2. **Rename consistently** — `name` in `interview.yaml` and `SKILL.md` frontmatter must match the folder name (e.g. `skills/feedback_interview/` → `name: feedback_interview`).
+3. **Implement functions** in `scripts/custom_tools.py` for every `function:` name referenced in `interview.yaml`.
 4. **Write the procedure** in `SKILL.md` — include Core instructions (shared pattern) plus Custom instructions (skill-specific flow).
 5. **Register the skill** in [`agent.yaml`](../../../agent.yaml) orchestrator `skills:` list.
 6. **Declare allowed tools** in `SKILL.md` frontmatter — list every `interview__*` tool plus any `{skill}__{tool}` custom tools.
 7. **(Optional)** Add field-seeding regex in [`field_extractors.py`](field_extractors.py) if your custom validators should extract values from the user's opening message.
 8. **(Optional)** Add to `auto_start_skills_on_new_user` in `agent.yaml` if the skill should activate automatically for new users.
 
-> **Important:** `ContractRegistry.discover()` only scans `skills/` directories. The reference skill in `example/` is **not** auto-discovered — you must copy it to `skills/` to activate it.
+> **Important:** `InterviewRegistry.discover()` only scans `skills/` directories. The reference skill in `example/` is **not** auto-discovered — you must copy it to `skills/` to activate it.
 
 ## Architecture
 
@@ -47,13 +58,13 @@ flowchart TB
     end
 
     subgraph skillPkg ["skills/my_interview/"]
-        CY[contract.yaml]
+        CY[interview.yaml]
         SM[SKILL.md]
         CT[scripts/custom_tools.py]
     end
 
     subgraph interviewAction [InterviewAction]
-        CR[ContractRegistry]
+        CR[InterviewRegistry]
         SS["Session in conversation.context interview"]
         TH[Tool handlers]
     end
@@ -105,7 +116,7 @@ Set `binds_tools_to_visitor = True` on `InterviewAction` so tool dispatch receiv
 
 Custom validators receive `session` (in addition to `value`, `visitor`, `interview_action`) so they can read `session.context` and collected fields during validation.
 
-## `contract.yaml` reference
+## `interview.yaml` reference
 
 ### Top-level fields
 
@@ -160,14 +171,15 @@ Validators may also return extra keys forwarded into `interview__set_field` on s
 
 | Key | Effect |
 |-----|--------|
-| `interview_complete` | Stops the interview; `post_tools` for that field are skipped |
+| `interview_complete` | Stops the interview; `post_tools` for that field are skipped; session cleared |
 | `response_directive` | Tells the LLM what to do next (welcome message, stop, etc.) |
+| `retain_context_keys` | `conversation.context` keys to keep after terminal cleanup |
 
 Use this when validation itself completes the flow (e.g. OTP confirmation in `validate_otp_code`) instead of a `post_tool`.
 
 ### Tools section
 
-Only functions listed in `contract.tools` become LLM-callable tools prefixed `{skill_name}__{tool_name}`:
+Only functions listed in `interview.yaml` `tools:` become LLM-callable tools prefixed `{skill_name}__{tool_name}`:
 
 ```yaml
 tools:
@@ -177,7 +189,7 @@ tools:
     parameters: {}
 ```
 
-**Rule:** Hook functions (`pre_tools`, `post_tools`, validators, review, completion) are **not** exposed as LLM tools. Only `contract.tools` entries are registered.
+**Rule:** Hook functions (`pre_tools`, `post_tools`, validators, review, completion) are **not** exposed as LLM tools. Only `interview.yaml` `tools:` entries are registered.
 
 ### Review and completion
 
@@ -215,14 +227,14 @@ allowed-tools:
   - interview__review
   - interview__complete
   - interview__cancel
-  - my_interview__my_custom_tool   # only if declared in contract.tools
+  - my_interview__my_custom_tool   # only if declared in interview.yaml tools:
 tags: [tag1, tag2]
 ---
 ```
 
 | Field | Purpose |
 |-------|---------|
-| `name` | Must match `contract.yaml` `name` and folder name |
+| `name` | Must match `interview.yaml` `name` and folder name |
 | `requires-actions` | Runtime dependencies — orchestrator verifies these are enabled |
 | `allowed-tools` | Explicit allowlist surfaced to the LLM on activation |
 | `locked-in` | When `true`, creates a SKILL task that locks the active flow |
@@ -252,9 +264,9 @@ Organize the file into labeled sections (see [example](example/example_interview
 | Validator | `question.validator.function` | JSON string or `dict` | No |
 | Pre-tool | `question.pre_tools` | Dict or `interview_tool_response` JSON | No |
 | Post-tool | `question.post_tools` | `interview_tool_response` JSON | No |
-| Custom tool | `contract.tools` | `interview_tool_response` JSON (preferred) or `dict` | Yes (`{skill}__{name}`) |
-| Review handler | `contract.review.function` | `Dict` with `directive` | No |
-| Completion handler | `contract.completion.function` | `Dict` with `directive` | No |
+| Custom tool | `interview.yaml` `tools:` | `interview_tool_response` JSON (preferred) or `dict` | Yes (`{skill}__{name}`) |
+| Review handler | `interview.yaml` `review.function` | `Dict` with `directive` | No |
+| Completion handler | `interview.yaml` `completion.function` | `Dict` with `directive`, optional `retain_context_keys` | No |
 
 LLM-facing custom tools should use `interview_tool_response()` for a consistent envelope (`ok`, `status`, `system_message`, `response_directive`). The framework also accepts plain `dict` returns via `_finalize_tool_response`.
 
@@ -356,7 +368,7 @@ Defined in [`validators.py`](validators.py):
 | `description` | Description text | `min_length`, `max_length` |
 | `list` | Value from allowed list | `items` |
 
-Custom validators go in `scripts/custom_tools.py` and are referenced by function name in `contract.yaml`.
+Custom validators go in `scripts/custom_tools.py` and are referenced by function name in `interview.yaml`.
 
 ## Field seeding
 
@@ -383,7 +395,7 @@ To add seeding for a new custom validator, add a branch in `extract_candidates_f
 - **Pre-tools** — suggest a value the system already knows (WhatsApp phone, email from a prior completed SKILL task). The LLM must confirm before `set_field`.
 - **Post-tools** — run side effects after a field is saved (API lookup, branching). The LLM reads results; never calls the hook manually.
 - **Validator-side completion** — when confirming a value should finish the interview (OTP verify). Return `interview_complete: true` and `response_directive` from the validator; do not use a `post_tool` for the same step.
-- **LLM custom tools** — operations the LLM must initiate (send OTP, image extraction, session reset). Declare in `contract.tools` and `allowed-tools`.
+- **LLM custom tools** — operations the LLM must initiate (send OTP, image extraction, session reset). Declare in `interview.yaml` `tools:` and `allowed-tools`.
 - **Custom review** — when review can terminate without completion (status lookup, escalation) or needs special formatting.
 - **Custom completion** — always required; calls external APIs or persists final data.
 
@@ -458,10 +470,11 @@ Existing tests under `agents/zoon-ai/tests/`:
 
 ### Checklist for a new skill
 
-- [ ] `contract.yaml` `name` matches folder name and `SKILL.md` frontmatter
+- [ ] `interview.yaml` `name` matches folder name and `SKILL.md` frontmatter
 - [ ] Every `function:` name in contract has a matching function in `custom_tools.py`
-- [ ] Hook functions (pre/post tools, validators) are **not** in `contract.tools`
-- [ ] LLM-callable tools are in both `contract.tools` and `SKILL.md` `allowed-tools`
+- [ ] Hook functions (pre/post tools, validators) are **not** in `interview.yaml` `tools:`
+- [ ] LLM-callable tools are in both `interview.yaml` `tools:` and `SKILL.md` `allowed-tools`
+- [ ] Terminal paths return `retain_context_keys` only for keys that must survive `clear_interview_context()`
 - [ ] Validators return correct shape (`valid`, `value`, `error`); use `interview_complete` + `response_directive` when validation finishes the interview
 - [ ] Post-tools return `interview_tool_response` with `response_directive`
 - [ ] LLM custom tools return `interview_tool_response` with clear `response_directive` (especially stop/cancel paths)

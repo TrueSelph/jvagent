@@ -1,15 +1,8 @@
-"""Contract loader — discovers and loads contract.yaml from skill directories.
-
-Each contract.yaml declares the questions, validators, tools, and completion
-handler for an interview.  The LLM reads the SKILL.md procedure and uses the
-tools exposed by InterviewAction to conduct the interview, choosing
-which validator, API call, or data operation to invoke at each step.
-"""
+"""Interview spec loader — discovers and loads interview.yaml from skill directories."""
 
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -18,8 +11,15 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+INTERVIEW_YAML = "interview.yaml"
 
 ValidatorSpec = Union[str, Dict[str, Any]]
+
+
+@dataclass
+class BranchDef:
+    condition: Dict[str, Any] = field(default_factory=dict)
+    target: str = ""
 
 
 @dataclass
@@ -30,12 +30,14 @@ class QuestionDef:
     required: bool = True
     validator: ValidatorSpec = ""
     validator_kwargs: Dict[str, Any] = field(default_factory=dict)
+    input_handler: Optional[str] = None
     input_context_provider: Optional[str] = None
     pre_tools: List[str] = field(default_factory=list)
     post_tools: List[str] = field(default_factory=list)
+    branches: List[BranchDef] = field(default_factory=list)
+    default_next: Optional[str] = None
 
     def resolved_pre_tools(self) -> List[str]:
-        """pre_tools list, or input_context_provider as a single entry."""
         if self.pre_tools:
             return list(self.pre_tools)
         if self.input_context_provider:
@@ -48,20 +50,6 @@ class ValidatorDef:
     name: str
     description: str = ""
     kwargs: Dict[str, Any] = field(default_factory=dict)
-
-
-def _resolve_validator_name(spec: Dict[str, Any], fallback: str = "") -> str:
-    """Map YAML validator spec to ValidatorDef.name (function name)."""
-    if spec.get("name") == "builtin":
-        return spec.get("function", "")
-    return spec.get("function") or spec.get("name") or fallback
-
-
-@dataclass
-class ToolParamDef:
-    name: str = ""
-    type: str = "string"
-    description: str = ""
 
 
 @dataclass
@@ -85,7 +73,7 @@ class ReviewDef:
 
 
 @dataclass
-class InterviewContract:
+class InterviewSpec:
     name: str
     title: str = ""
     description: str = ""
@@ -94,6 +82,7 @@ class InterviewContract:
     tools: List[ToolDef] = field(default_factory=list)
     completion: Optional[CompletionDef] = None
     review: Optional[ReviewDef] = None
+    cancel: Optional[CompletionDef] = None
     source_dir: str = ""
 
     def get_required_fields(self) -> List[str]:
@@ -117,13 +106,21 @@ class InterviewContract:
                 return t
         return None
 
+    def question_names(self) -> List[str]:
+        return [q.name for q in self.questions]
+
+
+def _resolve_validator_name(spec: Dict[str, Any], fallback: str = "") -> str:
+    if spec.get("name") == "builtin":
+        return spec.get("function", "")
+    return spec.get("function") or spec.get("name") or fallback
+
 
 def _validator_spec_to_def(
     spec: ValidatorSpec,
-    contract: InterviewContract,
+    interview_spec: InterviewSpec,
     fallback_name: str = "",
 ) -> Optional[ValidatorDef]:
-    """Resolve a question validator spec (inline dict or registry name) to ValidatorDef."""
     if not spec:
         return None
     if isinstance(spec, dict):
@@ -133,25 +130,35 @@ def _validator_spec_to_def(
             kwargs=spec.get("kwargs", {}),
         )
     if isinstance(spec, str):
-        return contract.get_validator(spec)
+        return interview_spec.get_validator(spec)
     return None
 
 
 def resolve_validator_def(
     question: QuestionDef,
-    contract: InterviewContract,
+    interview_spec: InterviewSpec,
 ) -> Optional[ValidatorDef]:
-    """Resolve the primary validator for a question."""
     return _validator_spec_to_def(
-        question.validator, contract, fallback_name=question.name
+        question.validator, interview_spec, fallback_name=question.name
     )
+
+
+def question_has_validator(question: QuestionDef) -> bool:
+    """True when interview.yaml declares a validator for this question."""
+    spec = question.validator
+    if not spec:
+        return False
+    if isinstance(spec, str):
+        return bool(spec.strip())
+    if isinstance(spec, dict):
+        return bool(spec.get("function") or spec.get("name"))
+    return False
 
 
 def resolve_validator_kwargs(
     question: QuestionDef,
     vdef: Optional[ValidatorDef],
 ) -> Dict[str, Any]:
-    """Merge inline, registry, and question-level validator kwargs."""
     kwargs: Dict[str, Any] = {}
     if vdef and vdef.kwargs:
         kwargs.update(vdef.kwargs)
@@ -174,7 +181,15 @@ def _parse_string_list(raw: Any) -> List[str]:
     return []
 
 
+def _parse_branch(data: Dict[str, Any]) -> BranchDef:
+    return BranchDef(
+        condition=data.get("condition", {}) or {},
+        target=data.get("target", "") or "",
+    )
+
+
 def _parse_question(data: Dict[str, Any]) -> QuestionDef:
+    branches = [_parse_branch(b) for b in data.get("branches", []) or []]
     return QuestionDef(
         name=data.get("name", ""),
         question=data.get("question", ""),
@@ -182,9 +197,12 @@ def _parse_question(data: Dict[str, Any]) -> QuestionDef:
         required=data.get("required", True),
         validator=data.get("validator", ""),
         validator_kwargs=data.get("validator_kwargs", {}),
+        input_handler=data.get("input_handler"),
         input_context_provider=data.get("input_context_provider"),
         pre_tools=_parse_string_list(data.get("pre_tools")),
         post_tools=_parse_string_list(data.get("post_tools")),
+        branches=branches,
+        default_next=data.get("default_next"),
     )
 
 
@@ -219,7 +237,7 @@ def _parse_review(data: Dict[str, Any]) -> ReviewDef:
     )
 
 
-def load_contract(yaml_path: str) -> InterviewContract:
+def load_interview_spec(yaml_path: str) -> InterviewSpec:
     with open(yaml_path, "r") as f:
         data = yaml.safe_load(f)
 
@@ -232,8 +250,9 @@ def load_contract(yaml_path: str) -> InterviewContract:
         else None
     )
     review = _parse_review(data.get("review", {})) if data.get("review") else None
+    cancel = _parse_completion(data.get("cancel", {})) if data.get("cancel") else None
 
-    return InterviewContract(
+    return InterviewSpec(
         name=data.get("name", ""),
         title=data.get("title", ""),
         description=data.get("description", ""),
@@ -242,17 +261,18 @@ def load_contract(yaml_path: str) -> InterviewContract:
         tools=tools,
         completion=completion,
         review=review,
+        cancel=cancel,
         source_dir=str(Path(yaml_path).parent),
     )
 
 
-class ContractRegistry:
-    """Discovers, loads, and caches contract.yaml from skill directories."""
+class InterviewRegistry:
+    """Discovers, loads, and caches interview.yaml from skill directories."""
 
-    def __init__(self):
-        self._contracts: Dict[str, InterviewContract] = {}
+    def __init__(self) -> None:
+        self._specs: Dict[str, InterviewSpec] = {}
 
-    def discover(self, skills_dirs: List[str]) -> Dict[str, InterviewContract]:
+    def discover(self, skills_dirs: List[str]) -> Dict[str, InterviewSpec]:
         for skills_dir in skills_dirs:
             skills_path = Path(skills_dir)
             if not skills_path.is_dir():
@@ -260,26 +280,34 @@ class ContractRegistry:
             for skill_dir in skills_path.iterdir():
                 if not skill_dir.is_dir():
                     continue
-                contract_yaml = skill_dir / "contract.yaml"
-                if contract_yaml.exists():
+                interview_yaml = skill_dir / INTERVIEW_YAML
+                if interview_yaml.exists():
                     try:
-                        contract = load_contract(str(contract_yaml))
-                        self._contracts[contract.name] = contract
+                        spec = load_interview_spec(str(interview_yaml))
+                        self._specs[spec.name] = spec
                         logger.info(
-                            f"Loaded interview contract: {contract.name} from {contract_yaml}"
+                            "Loaded interview spec: %s from %s",
+                            spec.name,
+                            interview_yaml,
                         )
                     except Exception as e:
                         logger.error(
-                            f"Failed to load contract from {contract_yaml}: {e}"
+                            "Failed to load interview spec from %s: %s",
+                            interview_yaml,
+                            e,
                         )
-        return self._contracts
+        return self._specs
 
-    def get(self, name: str) -> Optional[InterviewContract]:
-        return self._contracts.get(name)
+    def get(self, name: str) -> Optional[InterviewSpec]:
+        return self._specs.get(name)
 
-    def list_contracts(self) -> List[str]:
-        return list(self._contracts.keys())
+    def list_specs(self) -> List[str]:
+        return list(self._specs.keys())
 
-    def reload(self, skills_dirs: List[str]) -> Dict[str, InterviewContract]:
-        self._contracts.clear()
+    def reload(self, skills_dirs: List[str]) -> Dict[str, InterviewSpec]:
+        self._specs.clear()
         return self.discover(skills_dirs)
+
+    @property
+    def specs(self) -> Dict[str, InterviewSpec]:
+        return self._specs

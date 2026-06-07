@@ -9,25 +9,25 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from jvagent.action.interview_action.contract_loader import (
-    QuestionDef,
-    load_contract,
-    resolve_validator_def,
-    resolve_validator_kwargs,
-)
 from jvagent.action.interview_action.interview_action import (
     InterviewAction,
+)
+from jvagent.action.interview_action.interview_loader import (
+    QuestionDef,
+    load_interview_spec,
+    resolve_validator_def,
+    resolve_validator_kwargs,
 )
 from jvagent.action.interview_action.session import InterviewSession
 from jvagent.action.interview_action.validators import get_validator
 
 _SKILLS_DIR = Path(__file__).resolve().parent / "fixtures/skills"
-_PRE_ALERT_CONTRACT = _SKILLS_DIR / "pre_alert_interview/contract.yaml"
-_ONBOARDING_CONTRACT = _SKILLS_DIR / "onboarding_interview/contract.yaml"
+_PRE_ALERT_CONTRACT = _SKILLS_DIR / "pre_alert_interview/interview.yaml"
+_ONBOARDING_CONTRACT = _SKILLS_DIR / "onboarding_interview/interview.yaml"
 
 
 def test_phone_number_pre_and_post_tools_parsed():
-    contract = load_contract(str(_ONBOARDING_CONTRACT))
+    contract = load_interview_spec(str(_ONBOARDING_CONTRACT))
     q = contract.get_question("phone_number")
     assert q is not None
     assert q.pre_tools == ["get_phone_number"]
@@ -36,7 +36,7 @@ def test_phone_number_pre_and_post_tools_parsed():
 
 
 def test_email_post_tools_and_otp_code_parsed():
-    contract = load_contract(str(_ONBOARDING_CONTRACT))
+    contract = load_interview_spec(str(_ONBOARDING_CONTRACT))
     email_q = contract.get_question("email")
     assert email_q is not None
     assert email_q.post_tools == ["verify_email"]
@@ -53,14 +53,14 @@ def test_email_post_tools_and_otp_code_parsed():
 
 
 def test_tracking_number_post_tools_parsed():
-    contract = load_contract(str(_PRE_ALERT_CONTRACT))
+    contract = load_interview_spec(str(_PRE_ALERT_CONTRACT))
     q = contract.get_question("tracking_number")
     assert q is not None
     assert q.post_tools == ["check_tracking_status"]
 
 
 def test_inline_validator_parsed_for_tracking_number():
-    contract = load_contract(str(_PRE_ALERT_CONTRACT))
+    contract = load_interview_spec(str(_PRE_ALERT_CONTRACT))
     q = contract.get_question("tracking_number")
     assert isinstance(q.validator, dict)
     assert q.validator["function"] == "validate_tracking_number"
@@ -68,7 +68,7 @@ def test_inline_validator_parsed_for_tracking_number():
 
 
 def test_resolve_validator_def_custom_tracking():
-    contract = load_contract(str(_PRE_ALERT_CONTRACT))
+    contract = load_interview_spec(str(_PRE_ALERT_CONTRACT))
     q = contract.get_question("tracking_number")
     vdef = resolve_validator_def(q, contract)
     assert vdef is not None
@@ -79,7 +79,7 @@ def test_resolve_validator_def_custom_tracking():
 
 
 def test_resolve_validator_def_builtin_description():
-    contract = load_contract(str(_PRE_ALERT_CONTRACT))
+    contract = load_interview_spec(str(_PRE_ALERT_CONTRACT))
     q = contract.get_question("description")
     vdef = resolve_validator_def(q, contract)
     assert vdef is not None
@@ -91,7 +91,7 @@ def test_resolve_validator_def_builtin_description():
 
 
 def test_resolve_validator_def_builtin_email():
-    contract = load_contract(str(_ONBOARDING_CONTRACT))
+    contract = load_interview_spec(str(_ONBOARDING_CONTRACT))
     q = contract.get_question("email")
     vdef = resolve_validator_def(q, contract)
     assert vdef is not None
@@ -100,7 +100,7 @@ def test_resolve_validator_def_builtin_email():
 
 
 def test_legacy_builtin_marker_resolves_to_function_name():
-    contract = load_contract(str(_ONBOARDING_CONTRACT))
+    contract = load_interview_spec(str(_ONBOARDING_CONTRACT))
     q = QuestionDef(
         name="phone_number",
         question="Phone?",
@@ -117,7 +117,7 @@ def test_legacy_builtin_marker_resolves_to_function_name():
 
 
 def test_id_number_has_no_alternate_validator():
-    contract = load_contract(str(_ONBOARDING_CONTRACT))
+    contract = load_interview_spec(str(_ONBOARDING_CONTRACT))
     q = contract.get_question("id_number")
     assert isinstance(q.validator, dict)
     assert q.validator["function"] == "validate_id_number"
@@ -127,16 +127,16 @@ def test_id_number_has_no_alternate_validator():
 @pytest.fixture
 def pre_alert_action():
     action = InterviewAction()
-    contract = load_contract(str(_PRE_ALERT_CONTRACT))
-    action._contract_registry._contracts[contract.name] = contract
+    contract = load_interview_spec(str(_PRE_ALERT_CONTRACT))
+    action._registry._specs[contract.name] = contract
     return action, contract
 
 
 @pytest.fixture
 def onboarding_action():
     action = InterviewAction()
-    contract = load_contract(str(_ONBOARDING_CONTRACT))
-    action._contract_registry._contracts[contract.name] = contract
+    contract = load_interview_spec(str(_ONBOARDING_CONTRACT))
+    action._registry._specs[contract.name] = contract
     return action, contract
 
 
@@ -163,13 +163,20 @@ async def test_set_field_stores_cleaned_tracking_number(pre_alert_action):
     session = InterviewSession(interview_type="pre_alert_interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, contract))
     action._save_session = AsyncMock()
-    action._merge_post_tools = AsyncMock(side_effect=lambda payload, *args: payload)
+    from unittest.mock import patch
 
-    result = json.loads(
-        await action._handle_set_field(
-            field="tracking_number", value="abc291421515335xyz"
+    async def _passthrough_post_tools(*args, **kwargs):
+        return args[-1]
+
+    with patch(
+        "jvagent.action.interview_action.runtime.pipeline.run_post_tools",
+        side_effect=_passthrough_post_tools,
+    ):
+        result = json.loads(
+            await action._handle_set_field(
+                field="tracking_number", value="abc291421515335xyz"
+            )
         )
-    )
 
     assert result["ok"] is True
     assert result["status"] == "active"
@@ -184,14 +191,21 @@ async def test_init_seeds_tracking_from_user_message(pre_alert_action):
     action._save_session = AsyncMock()
     action._ensure_active_task = AsyncMock()
     action._get_conversation = AsyncMock(return_value=None)
-    action._merge_post_tools = AsyncMock(side_effect=lambda payload, *args: payload)
+    from unittest.mock import patch
 
-    result = json.loads(
-        await action._handle_start(
-            "pre_alert_interview",
-            user_message="Please track my package 291421515335",
+    async def _passthrough_post_tools(*args, **kwargs):
+        return args[-1]
+
+    with patch(
+        "jvagent.action.interview_action.runtime.pipeline.run_post_tools",
+        side_effect=_passthrough_post_tools,
+    ):
+        result = json.loads(
+            await action._handle_start(
+                "pre_alert_interview",
+                user_message="Please track my package 291421515335",
+            )
         )
-    )
 
     assert result["status"] == "active"
     assert result["fields"].get("tracking_number") == "291421515335"
@@ -323,7 +337,8 @@ async def test_post_tools_verify_phone_number_after_set_field_not_registered(
     assert result["exists"] is False
     assert result["status"] == "not_registered"
     assert "next_questions" not in result
-    assert "response_directive" not in result
+    assert result["response_directive"] == "Call interview__next_question."
+    assert result["next_tool"] == "interview__next_question"
     api.find_customer_by_phone.assert_awaited_once_with("5926431530")
 
 

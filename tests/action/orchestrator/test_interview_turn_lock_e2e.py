@@ -40,7 +40,7 @@ async def test_new_user_auto_start_opens_session_and_seeds_next_question(
         tmp_path / "agents" / "zoon" / "zoon_ai" / "skills" / "onboarding_interview"
     )
     skill_dir.mkdir(parents=True)
-    (skill_dir / "contract.yaml").write_text(
+    (skill_dir / "interview.yaml").write_text(
         "name: onboarding_interview\n"
         "questions:\n"
         "  - name: phone\n"
@@ -65,7 +65,7 @@ async def test_new_user_auto_start_opens_session_and_seeds_next_question(
         "agent_name": "zoon_ai",
         "agent_dir": str(tmp_path / "agents" / "zoon" / "zoon_ai"),
     }
-    await interview._discover_contracts()
+    await interview._discover_specs()
 
     reply_ia = _reply_tool()
     ex = make_orchestrator(
