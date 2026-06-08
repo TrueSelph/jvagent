@@ -10,15 +10,9 @@ requires-actions:
 - InterviewAction
 - ZoonAPIAction
 extends: action:jvagent/interview_action
+disabled-tools:
+- interview__cancel
 allowed-tools:
-- interview__set_field
-- interview__get_field
-- interview__skip_field
-- interview__next_question
-- interview__get_status
-- interview__review
-- interview__complete
-- onboarding_interview__reset_onboarding
 - onboarding_interview__process_id_card
 - onboarding_interview__send_otp
 tags:
@@ -108,15 +102,13 @@ interview:
       Then: continue the interview or go to review when missing_required is empty.'
     function: process_id_card
     parameters: {}
-  - name: reset_onboarding
-    description: 'When: User cancels onboarding or wants to start over. Do: Clear
-      the session, cancel tasks, and inform the user onboarding was cancelled. Then:
-      Tell the user they must complete onboarding to chat with the agent and stop
-      — do not ask questions or call interview__next_question. To restart later, user
-      re-initiates onboarding via use_skill. Call this instead of interview__cancel
-      when the user abandons onboarding.'
+  reset:
     function: reset_onboarding
-    parameters: {}
+    description: >-
+      When user cancels onboarding or wants to start over. Clears session, cancels
+      tasks, and informs the user onboarding was cancelled. Stop after the directive
+      — do not call interview__next_question. To restart later, user re-initiates
+      via use_skill.
   completion:
     function: complete_onboarding
     description: Post-review completion handler called by interview__complete. Creates
@@ -136,13 +128,13 @@ interview:
 | Situation                                             | Action                                                                                                                                                  |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | After **complete**                                    | Session cleared — call `use_skill` with `onboarding_interview` to start again                                                                    |
-| User **cancels** onboarding                           | `onboarding_interview__reset_onboarding()` — clears session, cancels tasks, informs user; then **stop** (not `interview__cancel`)               |
-| User wants to start over (same as cancel)             | `onboarding_interview__reset_onboarding()` — same cancel-and-exit behavior                                                                     |
+| User **cancels** onboarding                           | `interview__reset_interview()` — clears session, cancels tasks, informs user; then **stop** (not `interview__cancel`)               |
+| User wants to start over (same as cancel)             | `interview__reset_interview()` — same cancel-and-exit behavior                                                                     |
 | `post_tools_results` shows `exists: true`             | **Stop** — follow `response_directive` in one `reply`; persisted interview state is cleared; do not continue onboarding                                 |
 
 ### Rules
 
-1. If the user cancels, call **`onboarding_interview__reset_onboarding()`** (not `interview__cancel`). Deliver the `response_directive` message and **stop** — do not call `interview__next_question` or ask onboarding questions.
+1. If the user cancels, call **`interview__reset_interview()`** (not `interview__cancel`). Deliver the `response_directive` message and **stop** — do not call `interview__next_question` or ask onboarding questions.
 2. **Tools persist data; you do not.** `process_id_card` writes `id_number`, `full_name`, and `date_of_birth` to `fields` automatically. After extraction succeeds, call `interview__review()` when `missing_required` is empty — **never** call `interview__set_field` for extracted values. Use `set_field` when the user types an answer, or to fix a field at review.
 3. **Phone confirm is not a reply-only turn.** When the user confirms the WhatsApp number (`yes`, `ok`, `sure`), call `interview__set_field(field="phone_number", value=<digits>)` — **do not** only acknowledge the number in a reply.
 4. **Phone verification runs automatically via `post_tools`** after `phone_number` is saved. Read `post_tools_results` — never call a verify tool manually; do not call `interview__next_question` until `exists: false`.
@@ -163,11 +155,6 @@ interview:
   - **When:** User uploaded an ID photo.
   - **Do:** Extract and save `id_number`, `full_name`, `date_of_birth` from the image.
   - **Then:** Read `ok`, `system_message`, `fields`, and `missing_required`; continue with `interview__next_question` or `interview__review` as appropriate.
-
-- **`onboarding_interview__reset_onboarding()`**
-  - **When:** User cancels onboarding or wants to start over.
-  - **Do:** Clear session, cancel tasks, inform user onboarding was cancelled.
-  - **Then:** Tell user they must complete onboarding to chat with the agent. **Stop** — do not call `interview__next_question` or ask for phone/email/ID.
 
 ### Update phone flow (alternate)
 

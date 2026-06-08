@@ -12,7 +12,6 @@ import re
 from typing import Any, Dict, List, Optional
 
 from jvagent.action.interview_action.core.responses import (
-    call_tool_directive,
     interview_tool_response,
     tell_user_directive,
     tell_user_with_followup_directive,
@@ -335,63 +334,6 @@ async def append_work_email_note(
             phone_q,
         ),
     )
-
-
-# ─── LLM custom tools ────────────────────────────────────────────────
-
-
-async def reset_signup_interview(
-    visitor: Any = None,
-    interview_action: Any = None,
-    **kwargs,
-) -> Dict[str, Any]:
-    conversation = await _get_conversation(visitor)
-    if conversation is None:
-        return {
-            "status": "error",
-            "response_directive": "No conversation available to reset signup.",
-        }
-
-    if interview_action is not None and visitor is not None:
-        try:
-            await interview_action._clear_interview_session(visitor)
-        except Exception as exc:
-            logger.debug("reset_signup_interview: clear session failed: %s", exc)
-    elif conversation is not None:
-        ctx = getattr(conversation, "context", None)
-        if isinstance(ctx, dict):
-            ctx.clear()
-        try:
-            await conversation.save()
-        except Exception as exc:
-            logger.debug("reset_signup_interview: save failed: %s", exc)
-
-    if interview_action is not None and visitor is not None:
-        try:
-            await interview_action._close_task(visitor, status="cancelled")
-        except Exception as exc:
-            logger.debug("reset_signup_interview: close task failed: %s", exc)
-
-        try:
-            await interview_action._handle_start(
-                _SKILL_NAME,
-                visitor,
-                user_message="",
-            )
-            return {
-                "status": "restarted",
-                "response_directive": call_tool_directive("interview__next_question"),
-            }
-        except Exception as exc:
-            logger.error("reset_signup_interview: re-init failed: %s", exc)
-
-    return {
-        "status": "cleared",
-        "response_directive": (
-            f"Call use_skill with name '{_SKILL_NAME}' to start a new signup, "
-            "then call interview__next_question."
-        ),
-    }
 
 
 # ─── Review handler ──────────────────────────────────────────────────

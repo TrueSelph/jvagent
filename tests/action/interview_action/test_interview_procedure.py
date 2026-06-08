@@ -27,6 +27,12 @@ def _reset_cache():
 def test_get_standard_interview_procedure():
     body = get_standard_interview_procedure()
     assert "Standard Interview Procedure" in body
+    assert "Answer quality gate" in body
+    assert "Intent routing" in body
+    assert "Reset tool" in body
+    assert "standard ruleset" in body.lower()
+    assert "interview__cancel" in body
+    assert "substantively answers" in body.lower()
     assert "next_questions" in body
     assert "interview__set_field" in body
 
@@ -73,7 +79,17 @@ async def test_discover_skill_docs_uses_precomposed_body(monkeypatch):
                 "content": composed,
                 "requires_actions": ["InterviewAction"],
                 "interview": {"title": "Signup", "questions": [{"name": "user_name"}]},
-                "allowed_tools": [],
+                "allowed_tools": [
+                    "interview__set_field",
+                    "interview__get_field",
+                    "interview__skip_field",
+                    "interview__next_question",
+                    "interview__get_status",
+                    "interview__review",
+                    "interview__complete",
+                    "interview__cancel",
+                    "interview__reset_interview",
+                ],
                 "source": "app",
                 "metadata": {},
             },
@@ -98,6 +114,11 @@ async def test_discover_skill_docs_uses_precomposed_body(monkeypatch):
     }
 
     assert "Standard Interview Procedure" in docs["signup_interview"].body
+    assert "Intent routing" in docs["signup_interview"].body
+    assert "Answer quality gate" in docs["signup_interview"].body
+    assert "Cancel vs start over" not in docs["signup_interview"].body
+    assert "interview__reset_interview" in docs["signup_interview"].requires_tools
+    assert "interview__set_field" in docs["signup_interview"].requires_tools
     assert "## Custom instructions" in docs["signup_interview"].body
     assert "Be friendly." in docs["signup_interview"].body
     assert docs["plain_skill"].body == "Plain SOP only."

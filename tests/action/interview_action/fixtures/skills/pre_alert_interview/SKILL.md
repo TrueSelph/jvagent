@@ -9,15 +9,6 @@ requires-actions:
 - InterviewAction
 - ZoonAPIAction
 extends: action:jvagent/interview_action
-allowed-tools:
-- interview__set_field
-- interview__get_field
-- interview__skip_field
-- interview__next_question
-- interview__get_status
-- interview__review
-- interview__complete
-- interview__cancel
 tags:
 - pre-alert
 - shipment

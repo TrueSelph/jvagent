@@ -10,16 +10,6 @@ locked-in: true
 requires-actions:
   - InterviewAction
 extends: action:jvagent/interview_action
-allowed-tools:
-  - interview__set_field
-  - interview__get_field
-  - interview__skip_field
-  - interview__next_question
-  - interview__get_status
-  - interview__review
-  - interview__complete
-  - interview__cancel
-  - signup_interview__reset_signup_interview
 interview:
   title: JVAgent Training Signup
   description: >-
@@ -31,8 +21,9 @@ interview:
       question: "What's your full name?"
       required: true
       description: >-
-        User's full name — must include first and last name (at least two words,
-        letters/spaces/hyphens/apostrophes only).
+        A real person's first and last name (e.g. "Jane Doe", "Li Wei"). Not an
+        acknowledgement, filler, or conversational reply. If the user says "ok",
+        "sure", or repeats a filler word, do not store it — ask again for their name.
       validator:
         function: validate_full_name
     - name: available_times
@@ -65,14 +56,6 @@ interview:
         function: phone
         kwargs:
           exact_length: 10
-  tools:
-    - name: reset_signup_interview
-      description: >-
-        When: User cancels signup or wants to start over. Do: Clear the session
-        and restart from the first question. Then: Call interview__next_question.
-        Use instead of interview__cancel when the user may return later.
-      function: reset_signup_interview
-      parameters: {}
   review:
     function: signup_review
     description: >-
@@ -102,7 +85,6 @@ tags: [signup, training, interview, onboarding]
 
 | Situation | Action |
 | --------- | ------ |
-| User **cancels** or wants to start over | `signup_interview__reset_signup_interview()` or `interview__cancel()` |
 | Optional phone declined | `interview__skip_field("phone_number")` then continue |
 | After **complete** | Session cleared — call `use_skill` with `signup_interview` to start again |
 

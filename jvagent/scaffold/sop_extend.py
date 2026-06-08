@@ -1,7 +1,8 @@
 """SOP inheritance via ``extends`` frontmatter (ADR-0020).
 
 Resolves ``action:<namespace>/<action>`` and ``skill:<name>`` refs and composes
-base markdown onto skill bundle bodies at discovery time.
+base markdown onto skill bundle bodies at discovery time. Merges ``allowed-tools``
+from action/skill extends chains (additive) with optional ``disabled-tools``.
 """
 
 from __future__ import annotations
@@ -10,6 +11,8 @@ import importlib.util
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
+
+import yaml
 
 from jvagent.action.loader import info_yaml
 
@@ -97,6 +100,158 @@ def parse_extends_ref(raw: Any) -> Optional[Tuple[str, str]]:
         "sop_extend: extends must use action: or skill: prefix (got %r)", value
     )
     return None
+
+
+def _load_skill_md_frontmatter(skill_file: Path) -> Dict[str, Any]:
+    """Parse YAML frontmatter from a SKILL.md file."""
+    try:
+        raw = skill_file.read_text(encoding="utf-8")
+    except OSError as exc:
+        logger.warning("sop_extend: failed to read %s: %s", skill_file, exc)
+        return {}
+    if not raw.strip().startswith("---"):
+        return {}
+    parts = raw.split("---", 2)
+    if len(parts) < 3:
+        return {}
+    try:
+        parsed = yaml.safe_load(parts[1])
+    except yaml.YAMLError as exc:
+        logger.warning("sop_extend: invalid frontmatter in %s: %s", skill_file, exc)
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def load_action_frontmatter(
+    action_ref: str,
+    *,
+    app_root: Optional[str] = None,
+    agent_namespace: Optional[str] = None,
+    agent_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Load frontmatter mapping from ``<action_dir>/SKILL.md``."""
+    action_dir = resolve_action_package_dir(
+        action_ref,
+        app_root=app_root,
+        agent_namespace=agent_namespace,
+        agent_name=agent_name,
+    )
+    if action_dir is None:
+        return {}
+    skill_file = action_dir / "SKILL.md"
+    if not skill_file.is_file():
+        return {}
+    return _load_skill_md_frontmatter(skill_file)
+
+
+def _normalize_tool_name_list(raw_value: Any) -> List[str]:
+    if raw_value is None:
+        return []
+    if isinstance(raw_value, str):
+        value = raw_value.strip()
+        return [value] if value else []
+    if isinstance(raw_value, list):
+        return [str(item).strip() for item in raw_value if str(item).strip()]
+    return []
+
+
+def _merge_allowed_tools_for_bundle(
+    name: str,
+    bundle: Mapping[str, Any],
+    bundles: Mapping[str, Mapping[str, Any]],
+    *,
+    memo: Dict[str, List[str]],
+    stack: List[str],
+    app_root: Optional[str],
+    agent_namespace: Optional[str],
+    agent_name: Optional[str],
+) -> List[str]:
+    if name in memo:
+        return memo[name]
+
+    extends_raw = bundle.get("extends")
+    child_add = _normalize_tool_name_list(bundle.get("allowed_tools_add"))
+    disabled = set(_normalize_tool_name_list(bundle.get("disabled_tools")))
+
+    base: List[str] = []
+    if extends_raw:
+        chain_key = str(extends_raw)
+        if chain_key in stack:
+            raise ValueError(
+                f"extends cycle detected: {' -> '.join(stack + [chain_key])}"
+            )
+        parsed = parse_extends_ref(extends_raw)
+        if parsed is not None:
+            kind, target = parsed
+            new_stack = stack + [chain_key]
+            if kind == "action":
+                fm = load_action_frontmatter(
+                    target,
+                    app_root=app_root,
+                    agent_namespace=agent_namespace,
+                    agent_name=agent_name,
+                )
+                base = _normalize_tool_name_list(fm.get("allowed-tools"))
+            elif kind == "skill":
+                parent = bundles.get(target)
+                if parent is not None:
+                    base = _merge_allowed_tools_for_bundle(
+                        target,
+                        parent,
+                        bundles,
+                        memo=memo,
+                        stack=new_stack,
+                        app_root=app_root,
+                        agent_namespace=agent_namespace,
+                        agent_name=agent_name,
+                    )
+
+    merged: List[str] = []
+    seen: set = set()
+    for tool in base + child_add:
+        if tool in disabled or tool in seen:
+            continue
+        merged.append(tool)
+        seen.add(tool)
+    memo[name] = merged
+    return merged
+
+
+def merge_extends_allowed_tools(
+    bundles: Dict[str, Dict[str, Any]],
+    *,
+    app_root: Optional[str] = None,
+    agent_namespace: Optional[str] = None,
+    agent_name: Optional[str] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Merge ``allowed-tools`` along ``extends`` chains for each bundle."""
+    memo: Dict[str, List[str]] = {}
+    out = dict(bundles)
+    for name, bundle in bundles.items():
+        if not bundle.get("extends"):
+            continue
+        try:
+            merged = _merge_allowed_tools_for_bundle(
+                name,
+                bundle,
+                bundles,
+                memo=memo,
+                stack=[],
+                app_root=app_root,
+                agent_namespace=agent_namespace,
+                agent_name=agent_name,
+            )
+        except ValueError:
+            raise
+        except Exception as exc:
+            logger.warning(
+                "sop_extend: allowed-tools merge failed for %s: %s", name, exc
+            )
+            continue
+        updated = dict(bundle)
+        updated["allowed_tools"] = merged
+        out[name] = updated
+    return out
 
 
 def _load_skill_md_body(skill_file: Path) -> str:
@@ -284,7 +439,12 @@ def compose_extended_sop_bodies(
         updated["content"] = compose_skill_body(base, raw_content.get(name, ""))
         out[name] = updated
 
-    return out
+    return merge_extends_allowed_tools(
+        out,
+        app_root=app_root,
+        agent_namespace=agent_namespace,
+        agent_name=agent_name,
+    )
 
 
 def reset_sop_extend_cache() -> None:
@@ -299,6 +459,8 @@ __all__ = [
     "compose_extended_sop_bodies",
     "compose_skill_body",
     "load_action_base_sop_body",
+    "load_action_frontmatter",
+    "merge_extends_allowed_tools",
     "parse_extends_ref",
     "resolve_action_package_dir",
     "reset_sop_extend_cache",

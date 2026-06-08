@@ -68,11 +68,13 @@ def _build_data_tools(action: "InterviewAction") -> List[Tool]:
         Tool(
             name="interview__set_field",
             description=(
-                "Store a field value for the active interview question. Validation from "
-                "interview spec validation runs automatically inside this tool — never call validator "
-                "functions directly. The user's latest message is validated programmatically; "
-                "ok:false / validation_failed means the value was NOT stored. "
-                "On ok:true, saves and runs post_tools."
+                "Store a field value for the active interview question. Only call when the "
+                "user's latest message substantively answers the active question per "
+                "next_questions[0].description — otherwise reply and re-ask without calling "
+                "tools. Validation from interview spec validation runs automatically inside "
+                "this tool — never call validator functions directly. The user's latest message "
+                "is validated programmatically; ok:false / validation_failed means the value "
+                "was NOT stored. On ok:true, saves and runs post_tools."
             ),
             parameters_schema={
                 "type": "object",
@@ -189,9 +191,31 @@ def _build_data_tools(action: "InterviewAction") -> List[Tool]:
     tools.append(
         Tool(
             name="interview__cancel",
-            description="Cancel the active interview session.",
+            description=(
+                "Cancel and close the active interview session. Use when the user "
+                "wants to stop, quit, or cancel — not when they want to start over. "
+                "Reply per response_directive only; do not call set_field, next_question, "
+                "or reset tools in the same turn."
+            ),
             parameters_schema={"type": "object", "properties": {}},
             execute=_cancel,
+        )
+    )
+
+    async def _reset_interview(visitor: Any = None) -> str:
+        return await action._handle_reset_interview(visitor)
+
+    tools.append(
+        Tool(
+            name="interview__reset_interview",
+            description=(
+                "Clear progress and restart the active interview from the first "
+                "question. Use for start-over intent — not for cancel/stop/quit. "
+                "Follow response_directive only; do not chain interview__next_question "
+                "in the same turn."
+            ),
+            parameters_schema={"type": "object", "properties": {}},
+            execute=_reset_interview,
         )
     )
 

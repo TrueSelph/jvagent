@@ -196,31 +196,37 @@ Use this when validation itself completes the flow (e.g. OTP confirmation in `va
 
 ### Tools section
 
-Only functions listed in frontmatter `interview.tools` become LLM-callable tools prefixed `{skill_name}__{tool_name}`:
+Only functions listed in frontmatter `interview.tools` become LLM-callable tools prefixed `{skill_name}__{tool_name}`. Reset handlers use `interview.reset` (not `interview.tools`).
 
 ```yaml
 tools:
-  - name: reset_example_interview
-    description: "When user cancels..."
-    function: reset_example_interview
+  - name: send_otp
+    description: "When OTP is required..."
+    function: send_otp
     parameters: {}
 ```
 
-**Rule:** Hook functions (`pre_tools`, `post_tools`, validators, review, completion) are **not** exposed as LLM tools. Only `interview.tools` entries are registered.
+**Rule:** Hook functions (`pre_tools`, `post_tools`, validators, review, reset, completion) are **not** exposed as LLM tools. Only `interview.tools` entries are registered as `{skill}__{name}`.
 
-### Review and completion
+### Review, reset, and completion
 
 ```yaml
 review:
   function: example_review
   description: "Custom review logic"
 
+reset:
+  function: reset_my_interview
+  description: "Optional — override start-over or cancel-and-exit behavior"
+
 completion:
   function: example_complete
   description: "Called by interview__complete after user confirms"
 ```
 
-Review/completion handlers return a `Dict` with at least `directive` (user-facing message). Optional keys: `terminate`, `modified_values`, `additional_data`, `custom_message`.
+Review/completion handlers return a `Dict` with at least `directive` (user-facing message). Reset handlers return `interview_tool_response(...)` or a dict with `response_directive` / `status`. The model always calls `interview__reset_interview()` — the foundation routes to `reset.function` when set.
+
+Optional keys for review: `terminate`, `modified_values`, `additional_data`, `custom_message`.
 
 ## `SKILL.md` reference
 
@@ -234,21 +240,20 @@ spec: jv
 locked-in: true
 requires-actions:
   - InterviewAction
-  - ZoonAPIAction          # if your completion handler calls APIs
+extends: action:jvagent/interview_action
+# Additive — list custom LLM tools only; base interview__* tools are inherited
 allowed-tools:
-  - interview__set_field
-  - interview__get_field
-  - interview__skip_field
-  - interview__next_question
-  - interview__get_status
-  - interview__review
-  - interview__complete
+  - my_interview__send_otp
+# Optional — remove base tools this skill replaces or must not expose
+disabled-tools:
   - interview__cancel
-  - my_interview__my_custom_tool   # only if declared in interview.tools
 interview:
   title: My Interview
   description: Purpose summary for task tracking
   questions: []
+  reset:
+    function: reset_my_interview
+    description: Optional custom reset handler
   completion:
     function: my_complete
 tags: [tag1, tag2]
@@ -258,9 +263,11 @@ tags: [tag1, tag2]
 | Field | Purpose |
 |-------|---------|
 | `name` | Must match folder name and `interview` skill identity |
-| `interview` | Machine contract — questions, hooks, tools, review, completion |
+| `extends` | Inherits base procedure + merges base `allowed-tools` from action `SKILL.md` |
+| `interview` | Machine contract — questions, hooks, tools, review, reset, completion |
 | `requires-actions` | Runtime dependencies — orchestrator verifies these are enabled |
-| `allowed-tools` | Explicit allowlist surfaced to the LLM on activation |
+| `allowed-tools` | **Additive** custom LLM tools merged onto inherited base tools |
+| `disabled-tools` | Base tools to remove from the merged set (e.g. `interview__cancel` when reset handler replaces cancel) |
 | `locked-in` | When `true`, creates a SKILL task that locks the active flow |
 
 ### Body (custom instructions only)
@@ -293,6 +300,7 @@ Organize the file into labeled sections (see [example](examples/example_intervie
 | Post-tool | `question.post_tools` | `interview_tool_response` JSON | No |
 | Custom tool | `interview.tools` | `interview_tool_response` JSON (preferred) or `dict` | Yes (`{skill}__{name}`) |
 | Review handler | `interview.review.function` | `Dict` with `directive` | No |
+| Reset handler | `interview.reset.function` | `interview_tool_response` or dict with `response_directive` | No |
 | Completion handler | `interview.completion.function` | `Dict` with `directive`, optional `retain_context_keys` | No |
 
 LLM-facing custom tools should use `interview_tool_response()` for a consistent envelope (`ok`, `status`, `system_message`, `response_directive`). The framework also accepts plain `dict` returns via `_finalize_tool_response`.
@@ -410,9 +418,10 @@ To add seeding for a new custom validator, add a branch in `extract_candidates_f
 | Pre-tool suggestion | `get_phone_number`, `suggest_email_from_task` | — | `suggest_email` |
 | Post-tool branch | `verify_phone_number` (stop if exists), `verify_email` (OTP branch) | `check_tracking_status` (skip_to_review) | `check_low_rating` (skip_to_review) |
 | Validator completes flow | `validate_otp_code` (`interview_complete`) | — | — |
-| LLM custom tools | `send_otp`, `process_id_card`, `reset_onboarding` | none | `reset_example_interview` |
+| LLM custom tools | `send_otp`, `process_id_card` | none | — |
+| Custom reset | `interview.reset` → `reset_onboarding` (cancel-and-exit) | base `interview__reset_interview` | base default |
 | Custom review | default (built-in summary) | `pre_alert_review` (terminate path) | `example_review` (terminate path) |
-| Cancel behavior | `reset_onboarding` (cancel + inform + stop) | `interview__cancel` | `interview__cancel` or `reset_example_interview` |
+| Cancel behavior | `interview__reset_interview` (routes to reset handler) | `interview__cancel` | `interview__cancel` |
 | SKILL task persistence | yes — all three completion paths | no | no |
 | External API | `ZoonAPIAction` (lookup, OTP, create) | `ZoonAPIAction.create_pre_alert` | mock (stores in context) |
 | Auto-start | yes (`auto_start_skills_on_new_user`) | no | no |
@@ -422,7 +431,8 @@ To add seeding for a new custom validator, add a branch in `extract_candidates_f
 - **Pre-tools** — suggest a value the system already knows (WhatsApp phone, email from a prior completed SKILL task). The LLM must confirm before `set_field`.
 - **Post-tools** — run side effects after a field is saved (API lookup, branching). The LLM reads results; never calls the hook manually.
 - **Validator-side completion** — when confirming a value should finish the interview (OTP verify). Return `interview_complete: true` and `response_directive` from the validator; do not use a `post_tool` for the same step.
-- **LLM custom tools** — operations the LLM must initiate (send OTP, image extraction, session reset). Declare in `interview.tools` and `allowed-tools`.
+- **LLM custom tools** — operations the LLM must initiate (send OTP, image extraction). Declare in `interview.tools` and additive `allowed-tools`.
+- **Custom reset** — when cancel/start-over needs skill-specific behavior, declare `interview.reset.function` (same pattern as review). Model calls `interview__reset_interview()`.
 - **Custom review** — when review can terminate without completion (status lookup, escalation) or needs special formatting.
 - **Custom completion** — always required; calls external APIs or persists final data.
 
@@ -435,9 +445,9 @@ To add seeding for a new custom validator, add a branch in `extract_candidates_f
 3. If sent → ask `otp_code`; if not → `interview__skip_field("otp_code")`.
 4. `validate_otp_code` validator calls `confirm_whatsapp_otp` and returns `interview_complete: true` on success.
 
-**Cancel (`reset_onboarding`):**
+**Cancel / reset (`reset_onboarding` via `interview.reset`):**
 
-Clears session, cancels SKILL + INTERVIEW tasks, informs the user onboarding was cancelled and is required to chat, then **stops** — no `interview__next_question`. User re-initiates via `use_skill`.
+Onboarding disables `interview__cancel` and routes cancel/start-over through `interview__reset_interview()` → `reset_onboarding` handler. Clears session, cancels SKILL + INTERVIEW tasks, informs the user onboarding was cancelled and is required to chat, then **stops** — no `interview__next_question`. User re-initiates via `use_skill`.
 
 ### SKILL task data persistence
 
@@ -492,7 +502,7 @@ Existing tests under `agents/zoon-ai/tests/`:
 | `test_interview_tool_response_envelope.py` | Response envelope shape |
 | `test_field_extractors.py` | Field seeding from user messages |
 | `test_check_customer_exists.py` | `verify_phone_number` stop path, field mapper helpers |
-| `test_reset_onboarding.py` | Cancel-and-exit behavior for `reset_onboarding` |
+| `test_reset_onboarding.py` | Cancel-and-exit behavior for `reset_onboarding` via `interview.reset` |
 | `test_complete_onboarding.py` | Account creation task persistence |
 
 ### Checklist for a new skill
@@ -500,7 +510,8 @@ Existing tests under `agents/zoon-ai/tests/`:
 - [ ] `SKILL.md` `name` matches folder name; frontmatter includes `interview:` block
 - [ ] Every `function:` name in `interview:` has a matching function in `custom_tools.py`
 - [ ] Hook functions (pre/post tools, validators) are **not** in `interview.tools`
-- [ ] LLM-callable tools are in both `interview.tools` and `SKILL.md` `allowed-tools`
+- [ ] LLM-callable tools are in both `interview.tools` and additive `allowed-tools` (do not re-list base `interview__*` tools)
+- [ ] Custom reset (if needed) uses `interview.reset.function` — not a separate LLM tool
 - [ ] `SKILL.md` body is custom rules only — no per-field Procedure steps (standard procedure is composed via extends)
 - [ ] Terminal paths return `retain_context_keys` only for keys that must survive `clear_interview_context()`
 - [ ] Validators return correct shape (`valid`, `value`, `error`); use `interview_complete` + `response_directive` when validation finishes the interview
@@ -518,8 +529,8 @@ Existing tests under `agents/zoon-ai/tests/`:
 |------|-------|
 | [examples/example_interview/](examples/example_interview/) | Copy template — **not** auto-discovered; activate via app overlay `skills/` |
 | `examples/jvagent_app/.../actions/jvagent/interview_action/skills/signup_interview/` | jvagent demo signup interview |
-| `zoon-ai/agents/zoon/zoon_ai/skills/onboarding_interview/` | Production onboarding — OTP, ID extraction, SKILL task persistence |
-| `zoon-ai/agents/zoon/zoon_ai/skills/pre_alert_interview/` | Production pre-alert — hook branching, custom review terminate path |
+| `zoon-ai/agents/zoon/zoon_ai/actions/jvagent/interview_action/skills/onboarding_interview/` | Production onboarding — OTP, ID extraction, SKILL task persistence |
+| `zoon-ai/agents/zoon/zoon_ai/actions/jvagent/interview_action/skills/pre_alert_interview/` | Production pre-alert — hook branching, custom review terminate path |
 
 ## License
 

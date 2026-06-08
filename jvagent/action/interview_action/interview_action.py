@@ -32,6 +32,7 @@ from .core.responses import (
     restart_session_directive,
     review_confirmation_directive,
     tell_user_directive,
+    tell_user_with_followup_directive,
 )
 from .core.session import (
     CONVERSATION_CONTEXT_PLATFORM_KEYS,
@@ -172,11 +173,17 @@ class InterviewAction(Action):
                 if pending_field
                 else "interview__set_field(field=<missing field>, ...)"
             )
+            quality_gate = (
+                "First apply the Answer quality gate: only call set_field when the "
+                "user's latest message substantively answers the active question "
+                f"({pending_field or 'see next_questions'}). If it is an acknowledgement, "
+                "filler, or off-topic reply, respond only and re-ask — do not call tools."
+            )
             return LockedSkillPrep(
                 runtime_ready=True,
                 pending_directive=(
-                    f"Call {field_hint} — the user's latest message is validated "
-                    "automatically inside set_field. Do NOT call interview__next_question "
+                    f"{quality_gate} When the answer is substantive, call {field_hint} — "
+                    "validation runs inside set_field. Do NOT call interview__next_question "
                     "before set_field returns ok:true."
                 ),
             )
@@ -1060,6 +1067,142 @@ class InterviewAction(Action):
             response_directive=tell_user_directive(cancel_message),
             fields={},
         )
+
+    async def _handle_reset_interview(self, visitor: Any = None) -> str:
+        session, spec = await self._get_session_and_contract(visitor)
+        if not session or not spec:
+            return interview_tool_response(
+                ok=False,
+                status="error",
+                error_code="NO_SESSION",
+                response_directive="No active interview session to reset.",
+            )
+
+        if spec.reset and spec.reset.function:
+            return await self._handle_custom_reset(session, spec, visitor)
+
+        return await self._default_reset_interview(session, spec, visitor)
+
+    async def _default_reset_interview(
+        self,
+        session: InterviewSession,
+        spec: InterviewSpec,
+        visitor: Any = None,
+    ) -> str:
+        skill_name = session.interview_type
+        await self._clear_interview_session(visitor)
+        try:
+            await self._close_task(
+                visitor, status="cancelled", spec_name=spec.name if spec else None
+            )
+        except Exception:
+            pass
+
+        try:
+            await self._handle_start(skill_name, visitor, user_message="")
+            next_obs = await self._handle_next_question(visitor)
+            first_question = "Please continue."
+            try:
+                parsed = json.loads(next_obs)
+                next_qs = parsed.get("next_questions") or []
+                if next_qs and next_qs[0].get("question"):
+                    first_question = str(next_qs[0]["question"])
+            except (json.JSONDecodeError, TypeError, IndexError, KeyError):
+                pass
+            return interview_tool_response(
+                ok=True,
+                status="restarted",
+                response_directive=tell_user_with_followup_directive(
+                    "No problem — let's start over.",
+                    first_question,
+                ),
+            )
+        except Exception as exc:
+            logger.error("reset_interview failed for %s: %s", skill_name, exc)
+            return interview_tool_response(
+                ok=False,
+                status="error",
+                response_directive=tell_user_directive(
+                    "I couldn't restart the interview. Say when you'd like to try again."
+                ),
+            )
+
+    async def _handle_custom_reset(
+        self,
+        session: InterviewSession,
+        spec: InterviewSpec,
+        visitor: Any = None,
+    ) -> str:
+        reset_def = spec.reset
+        if not reset_def or not reset_def.function:
+            return await self._default_reset_interview(session, spec, visitor)
+
+        func = load_hook_function(spec, reset_def.function)
+        if not func:
+            return await self._default_reset_interview(session, spec, visitor)
+
+        try:
+            result = await call_hook(
+                func,
+                session=session,
+                spec=spec,
+                visitor=visitor,
+                interview_action=self,
+            )
+        except Exception as exc:
+            logger.error("Custom reset handler failed: %s", exc)
+            return interview_tool_response(
+                ok=False,
+                status="error",
+                response_directive=tell_user_directive(
+                    "I couldn't reset the interview. Say when you'd like to try again."
+                ),
+            )
+
+        coerced = self._coerce_reset_hook_result(result)
+        if coerced is not None:
+            return coerced
+        return await self._default_reset_interview(session, spec, visitor)
+
+    @staticmethod
+    def _coerce_reset_hook_result(result: Any) -> Optional[str]:
+        if isinstance(result, str):
+            try:
+                json.loads(result)
+                return result
+            except json.JSONDecodeError:
+                text = result.strip()
+                if not text:
+                    return None
+                return interview_tool_response(
+                    ok=True,
+                    status="restarted",
+                    response_directive=(
+                        text
+                        if text.startswith("Tell the user:")
+                        else tell_user_directive(text)
+                    ),
+                )
+
+        if isinstance(result, dict):
+            directive = (
+                result.get("response_directive")
+                or result.get("directive")
+                or result.get("message")
+            )
+            status = str(result.get("status") or "restarted")
+            ok = result.get("ok")
+            if ok is None:
+                ok = status not in ("error", "validation_failed")
+            if directive and not str(directive).startswith("Tell the user:"):
+                directive = tell_user_directive(str(directive))
+            return interview_tool_response(
+                ok=bool(ok),
+                status=status,
+                response_directive=directive,
+                system_message=result.get("system_message"),
+            )
+        return None
 
     async def _handle_custom_review(self, visitor: Any = None) -> str:
         session, spec = await self._get_session_and_contract(visitor)

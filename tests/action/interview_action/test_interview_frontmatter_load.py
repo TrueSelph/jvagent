@@ -28,6 +28,8 @@ def test_load_interview_spec_from_skill_fixture():
     assert spec.get_tool("send_otp") is not None
     assert spec.completion is not None
     assert spec.completion.function == "complete_onboarding"
+    assert spec.reset is not None
+    assert spec.reset.function == "reset_onboarding"
 
 
 def test_registry_discovers_frontmatter_skill(tmp_path):
@@ -119,7 +121,6 @@ def test_signup_frontmatter_matches_parse_interview_spec():
     # name comes from SKILL.md frontmatter when omitted inside interview:
     assert from_skill.name == "signup_interview"
     assert len(from_skill.questions) == 4
-    assert from_skill.get_tool("reset_signup_interview") is not None
 
 
 @pytest.mark.parametrize(

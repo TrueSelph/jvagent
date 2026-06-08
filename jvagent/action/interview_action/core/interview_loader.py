@@ -79,6 +79,12 @@ class ReviewDef:
 
 
 @dataclass
+class ResetDef:
+    function: Optional[str] = None
+    description: str = ""
+
+
+@dataclass
 class InterviewSpec:
     name: str
     title: str = ""
@@ -88,6 +94,7 @@ class InterviewSpec:
     tools: List[ToolDef] = field(default_factory=list)
     completion: Optional[CompletionDef] = None
     review: Optional[ReviewDef] = None
+    reset: Optional[ResetDef] = None
     cancel: Optional[CompletionDef] = None
     source_dir: str = ""
 
@@ -243,6 +250,13 @@ def _parse_review(data: Dict[str, Any]) -> ReviewDef:
     )
 
 
+def _parse_reset(data: Dict[str, Any]) -> ResetDef:
+    return ResetDef(
+        function=data.get("function"),
+        description=data.get("description", ""),
+    )
+
+
 def parse_interview_spec(
     data: Dict[str, Any],
     *,
@@ -274,6 +288,7 @@ def parse_interview_spec(
         else None
     )
     review = _parse_review(data.get("review", {})) if data.get("review") else None
+    reset = _parse_reset(data.get("reset", {})) if data.get("reset") else None
     cancel = _parse_completion(data.get("cancel", {})) if data.get("cancel") else None
 
     return InterviewSpec(
@@ -285,6 +300,7 @@ def parse_interview_spec(
         tools=tools,
         completion=completion,
         review=review,
+        reset=reset,
         cancel=cancel,
         source_dir=source_dir,
     )

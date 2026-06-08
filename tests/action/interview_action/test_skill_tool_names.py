@@ -35,7 +35,7 @@ def test_custom_tools_use_skill_prefix():
     assert "pre_alert_interview__check_tracking_status" not in names
     assert "pre_alert_interview__check_pre_alert_intent" not in names
     assert "onboarding_interview__process_id_card" in names
-    assert "onboarding_interview__reset_onboarding" in names
+    assert "onboarding_interview__reset_onboarding" not in names
     assert "onboarding_interview__verify_phone_number" not in names
     assert "onboarding_interview__verify_email" not in names
     assert "onboarding_interview__confirm_otp_code" not in names

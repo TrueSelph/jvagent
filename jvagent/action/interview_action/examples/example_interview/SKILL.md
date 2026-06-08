@@ -9,16 +9,6 @@ locked-in: true
 requires-actions:
 - InterviewAction
 extends: action:jvagent/interview_action
-allowed-tools:
-- interview__set_field
-- interview__get_field
-- interview__skip_field
-- interview__next_question
-- interview__get_status
-- interview__review
-- interview__complete
-- interview__cancel
-- example_interview__reset_example_interview
 tags:
 - example
 - feedback
@@ -66,13 +56,6 @@ interview:
     - suggest_email
     validator:
       function: email
-  tools:
-  - name: reset_example_interview
-    description: 'When: User cancels the interview or wants to start over. Do: Clear
-      the session and restart from the first question. Then: Call interview__next_question.
-      Use this instead of interview__cancel when the user abandons and may return.'
-    function: reset_example_interview
-    parameters: {}
   review:
     function: example_review
     description: Escalation path when product_rating is low (terminate without complete),
@@ -97,7 +80,6 @@ interview:
 | Situation                                             | Action                                                                                                      |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | After **complete**                                    | Session cleared — call `use_skill` with `example_interview` to start again                                  |
-| User **cancels** or wants to start over               | `example_interview__reset_example_interview()` — clears session and re-inits; or `interview__cancel()`      |
 | `post_tools_results` shows `skip_to_review: true`     | Call `interview__review()` — do not ask remaining questions                                                 |
 | Review sets `terminate: true`                         | Deliver escalation message — do **not** call `interview__complete()`                                        |
 

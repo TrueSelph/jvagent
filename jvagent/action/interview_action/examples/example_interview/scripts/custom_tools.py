@@ -27,6 +27,7 @@ from jvagent.action.interview_action.core.responses import (
     interview_tool_response,
     no_session_directive,
     tell_user_directive,
+    tell_user_with_followup_directive,
 )
 
 logger = logging.getLogger(__name__)
@@ -242,24 +243,34 @@ async def reset_example_interview(
 
     if interview_action is not None and visitor is not None:
         try:
-            start_result = await interview_action._handle_start(
+            await interview_action._handle_start(
                 _SKILL_NAME,
                 visitor,
                 user_message="",
             )
+            next_obs = await interview_action._handle_next_question(visitor)
+            first_question = "What is your name?"
+            try:
+                parsed = json.loads(next_obs)
+                next_qs = parsed.get("next_questions") or []
+                if next_qs and next_qs[0].get("question"):
+                    first_question = str(next_qs[0]["question"])
+            except (json.JSONDecodeError, TypeError, IndexError, KeyError):
+                pass
             return {
                 "status": "restarted",
-                "response_directive": call_tool_directive("interview__next_question"),
-                "start_result": start_result,
+                "response_directive": tell_user_with_followup_directive(
+                    "No problem — let's start over.",
+                    first_question,
+                ),
             }
         except Exception as exc:
             logger.error("reset_example_interview: re-init failed: %s", exc)
 
     return {
         "status": "cleared",
-        "response_directive": (
-            f"Call use_skill with name '{_SKILL_NAME}' to start a new session, "
-            "then call interview__next_question."
+        "response_directive": tell_user_directive(
+            "Your progress was cleared. Say when you'd like to start again."
         ),
     }
 

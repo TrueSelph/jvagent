@@ -43,7 +43,8 @@ intro_interact_action runs BEFORE the executive (always_execute sidecar)
 | `what do our internal docs say about X?` | `answer` skill → `pageindex__search` (internal KB) first, web fallback, cited synthesis → `respond` |
 | `sign up for jvagent training` | Model activates `signup_interview` skill → InterviewAction session starts, turn-lock via TaskStore |
 | your answers on following turns | With `lock_active_flow: true` (default), orchestrator stays in the locked skill; interview tools drive collection |
-| `stop` / `cancel` mid-interview | `interview__cancel` or `signup_interview__reset_signup_interview` |
+| `stop` / `cancel` mid-interview | `interview__cancel` |
+| `start over` mid-interview | `interview__reset_interview` |
 | `make a PDF of a short status report` | **Claude skill** `pdf-generation` → `use_skill` stages it into your per-user slice → model writes markdown + runs `code_execution__bash` (`render_pdf.py`) → PDF lands under `output/` in your slice |
 | `rank these issues by severity: …` | **Claude skill** `triage` → `code_execution__bash` runs `prioritize.py` to sort deterministically |
 | `list the files in my workspace` | `file_interface__list_directory` (same per-user slice the PDF was written to) |

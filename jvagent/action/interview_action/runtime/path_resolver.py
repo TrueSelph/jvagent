@@ -177,6 +177,8 @@ async def build_next_questions(
         "required": q.required,
         "validator": q.validator,
     }
+    if q.description:
+        entry["description"] = q.description
     if q.input_context_provider:
         entry["input_context_provider"] = q.input_context_provider
     if q.pre_tools:

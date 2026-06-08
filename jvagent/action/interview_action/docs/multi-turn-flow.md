@@ -112,7 +112,8 @@ Branching is **procedure-driven**, not graph-evaluated:
 | Custom validator | Returns `interview_complete: true` → stop; post_tools skipped |
 | Review handler | Returns `terminate: true` → deliver message; no `interview__complete()` |
 | `session.context` | Post-tools set flags (e.g. `escalate`, `otp_pending`) read by later hooks or SKILL.md |
-| LLM custom tools | e.g. `send_otp`, `reset_onboarding` — LLM calls `{skill}__{tool}` explicitly |
+| LLM custom tools | e.g. `send_otp` — LLM calls `{skill}__{tool}` explicitly |
+| Custom reset | `interview.reset.function` — LLM calls `interview__reset_interview()` |
 
 Document branches in `SKILL.md` and implement side effects in hooks.
 
@@ -133,9 +134,12 @@ If the user wants to edit during review, call `interview__set_field(field, new_v
 
 | Path | When | Effect |
 |------|------|--------|
-| `interview__cancel()` | User explicitly cancels | Clear session, cancel tasks |
-| `{skill}__reset_*` custom tool | User abandons but may return | Clear + re-init session (see onboarding `reset_onboarding`) |
+| `interview__cancel()` | User explicitly cancels (default skills) | Clear session, cancel tasks |
+| `interview__reset_interview()` | User wants to start over (default) | Clear + re-init from first question |
+| `interview__reset_interview()` + `interview.reset` | Skill overrides reset (e.g. onboarding) | Routes to custom handler — may cancel-and-exit instead of restart |
 | New session after complete/cancel | User starts again | Call `use_skill("<name>")` again |
+
+Skills that replace cancel semantics may set `disabled-tools: [interview__cancel]` and implement `interview.reset.function`.
 
 ## Dual task model
 

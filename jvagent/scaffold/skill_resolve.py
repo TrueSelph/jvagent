@@ -210,8 +210,11 @@ def parse_skill_bundle(
             skill_file,
         )
 
-    allowed_tools = _normalize_allowed_tools(
+    allowed_tools_add = _normalize_allowed_tools(
         frontmatter.get("allowed-tools"), skill_file
+    )
+    disabled_tools = _normalize_allowed_tools(
+        frontmatter.get("disabled-tools"), skill_file
     )
     requires_actions = _normalize_requires_actions(
         frontmatter.get("requires-actions"), skill_file
@@ -286,7 +289,9 @@ def parse_skill_bundle(
         "interview": interview_block,
         "dir": str(skill_dir),
         "tool_files": tool_files,
-        "allowed_tools": allowed_tools,
+        "allowed_tools": allowed_tools_add,
+        "allowed_tools_add": allowed_tools_add,
+        "disabled_tools": disabled_tools,
         "requires_actions": requires_actions,
         "requires_jvagent": requires_jvagent,
         "verbatim_final": verbatim_final,

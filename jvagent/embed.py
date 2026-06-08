@@ -40,6 +40,46 @@ from jvspatial.api.exceptions import (
 
 logger = logging.getLogger(__name__)
 
+# In-flight embed interact walker tasks keyed by host thread_id and/or
+# jvagent session_id — enables explicit cancel from the host API.
+_interact_task_lock = asyncio.Lock()
+_interact_tasks: Dict[str, asyncio.Task[Any]] = {}
+
+
+async def _register_interact_task(key: str, task: asyncio.Task[Any]) -> None:
+    if not key:
+        return
+    async with _interact_task_lock:
+        existing = _interact_tasks.get(key)
+        if existing is not None and not existing.done() and existing is not task:
+            existing.cancel()
+        _interact_tasks[key] = task
+
+
+async def _clear_interact_task(key: str, task: asyncio.Task[Any]) -> None:
+    if not key:
+        return
+    async with _interact_task_lock:
+        if _interact_tasks.get(key) is task:
+            del _interact_tasks[key]
+
+
+def cancel_interact(
+    *,
+    session_id: Optional[str] = None,
+    thread_id: Optional[str] = None,
+) -> bool:
+    """Cancel an in-flight :func:`interact_stream` walker task, if any."""
+    for key in (thread_id, session_id):
+        if not key:
+            continue
+        task = _interact_tasks.get(key)
+        if task is not None and not task.done():
+            task.cancel()
+            return True
+    return False
+
+
 _ENDPOINT_DISABLE_ENV_VAR = "JVAGENT_EMBED_ENDPOINTS_DISABLED"
 _TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
 
@@ -590,10 +630,13 @@ async def interact_stream(
             *before* the generator yields its first envelope.
     """
     if not utterance or not utterance.strip():
-        raise ValidationError(
-            message="utterance is required and cannot be empty",
-            details={"utterance": utterance},
-        )
+        trigger = (data or {}).get("trigger")
+        if trigger != "agent_workstream":
+            raise ValidationError(
+                message="utterance is required and cannot be empty",
+                details={"utterance": utterance},
+            )
+        utterance = (data or {}).get("system_utterance") or "[agent workstream]"
 
     from jvspatial import create_task, flush_deferred_entities
 
@@ -635,12 +678,20 @@ async def interact_stream(
     )
 
     walk_task: Optional[asyncio.Task[Any]] = None
+    task_keys: List[str] = []
     try:
         walk_task = await create_task(
             walker.spawn(agent),
             name="embed_interact_stream_spawn",
             concurrent=True,
         )
+        thread_key = str((data or {}).get("thread_id") or "").strip()
+        if thread_key:
+            task_keys.append(thread_key)
+        if session_id:
+            task_keys.append(session_id)
+        for key in task_keys:
+            await _register_interact_task(key, walk_task)
 
         # Wait up to 5s for InteractWalker to instantiate the Interaction.
         max_wait = 5.0
@@ -703,6 +754,12 @@ async def interact_stream(
             "session_id": walker.session_id or "",
             "user_id": walker.user_id or "",
         }
+
+        if walk_task is not None and walker.session_id:
+            sid = walker.session_id
+            if sid not in task_keys:
+                task_keys.append(sid)
+                await _register_interact_task(sid, walk_task)
 
         # Stream messages off the response bus until the walker finishes.
         if walker.response_bus and walker.session_id:
@@ -815,6 +872,9 @@ async def interact_stream(
 
             await _run_background_actions(walker)
     finally:
+        if walk_task is not None:
+            for key in task_keys:
+                await _clear_interact_task(key, walk_task)
         try:
             from jvagent.core.cache import maybe_cleanup_on_request
 
@@ -1020,6 +1080,7 @@ __all__ = [
     "register_jvagent_endpoints_on_host",
     "interact",
     "interact_stream",
+    "cancel_interact",
     "list_agents",
     "get_agent_id_by_name",
     "ensure_user",

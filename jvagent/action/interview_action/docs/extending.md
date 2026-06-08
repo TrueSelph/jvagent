@@ -18,6 +18,8 @@ The framework base SOP lives in [`../SKILL.md`](../SKILL.md); composition happen
 
 Copy [`../examples/example_interview/`](../examples/example_interview/) as the starting template.
 
+**Answer quality:** The inherited base procedure ([`../SKILL.md`](../SKILL.md)) is the **standard ruleset for all interview skills** — Answer quality gate, Intent routing (cancel vs start over vs answer), reply/chaining rules, and reset-tool usage. Do not duplicate these in per-skill custom instructions. Write per-question `description` fields as acceptance criteria so the model can apply the gate. See [`skill_custom_instructions.md`](skill_custom_instructions.md).
+
 ## Extension point overview
 
 | Extension | Declared in | Implemented in | LLM-callable? |
@@ -28,6 +30,7 @@ Copy [`../examples/example_interview/`](../examples/example_interview/) as the s
 | Post-tool | `question.post_tools: [fn]` | `custom_tools.py` | No |
 | Custom LLM tool | `interview.tools` | `custom_tools.py` | Yes (`{skill}__{name}`) |
 | Review handler | `interview.review.function` | `custom_tools.py` | No |
+| Reset handler | `interview.reset.function` | `custom_tools.py` | No |
 | Completion handler | `interview.completion.function` | `custom_tools.py` | No |
 | Field seeding | (implicit via validator name) | `core/field_extractors.py` | No |
 | `@interview_tool` decorator | — | `custom_tools.py` | Yes (legacy discovery) |
@@ -236,23 +239,38 @@ Always return a `directive` string the LLM delivers to the user. The foundation 
 
 ## LLM-callable custom tools
 
-For operations the LLM must initiate (send OTP, reset session, process image):
+For operations the LLM must initiate (send OTP, custom reset, process image):
 
 ```yaml
 interview:
   tools:
-  - name: reset_example_interview
-    description: "When user cancels or wants to start over..."
-    function: reset_example_interview
+  - name: send_otp
+    description: "Send verification code when user confirms phone..."
+    function: send_otp
     parameters: {}
 ```
 
-Also add to `SKILL.md` frontmatter `allowed-tools`:
+Add custom tool names to frontmatter **`allowed-tools`** (additive — base `interview__*` tools are inherited from `extends: action:jvagent/interview_action`):
 
 ```yaml
 allowed-tools:
-  - example_interview__reset_example_interview
+  - my_interview__send_otp
 ```
+
+To **override** the base reset (restart, cancel-and-exit, or other skill-specific behavior), declare a reset handler like review/completion:
+
+```yaml
+interview:
+  reset:
+    function: reset_my_interview
+    description: >-
+      When user wants to start over. Clears session and re-asks the first question
+      with a custom message.
+```
+
+Implement `reset_my_interview` in `scripts/custom_tools.py`. The model calls **`interview__reset_interview()`** — the foundation invokes your handler when `reset.function` is set. Return `interview_tool_response(...)` or a dict with `response_directive` / `status`.
+
+Most skills use the built-in default reset (no `interview.reset` block).
 
 Tool name on the wire: `{skill_name}__{tool.name}`.
 
@@ -322,7 +340,7 @@ Organize `custom_tools.py` in labeled sections (see [`../examples/example_interv
 - [ ] `SKILL.md` `name` matches folder; frontmatter includes `interview:` block
 - [ ] Every `function:` has an implementation in `custom_tools.py`
 - [ ] Hooks are **not** in `interview.tools`
-- [ ] LLM tools are in both `interview.tools` and `allowed-tools`
+- [ ] LLM tools are in both `interview.tools` and frontmatter `allowed-tools` (additive; do not re-list base `interview__*` tools)
 - [ ] `SKILL.md` body is custom rules only (no per-field Procedure steps)
 - [ ] Validators return correct shape; use `interview_complete` when validation finishes the flow
 - [ ] Post-tools use `interview_tool_response` with clear `response_directive`

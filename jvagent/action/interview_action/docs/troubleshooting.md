@@ -22,7 +22,7 @@ Common issues when building or running skills-v2 interviews with `InterviewActio
 
 **Cause:** Function listed in frontmatter `interview.tools` when it should only be a `post_tools` hook.
 
-**Fix:** Remove from `interview.tools`. Only declare LLM-initiated operations (send OTP, reset) as tools. Hooks run automatically on `set_field` / `next_question`.
+**Fix:** Remove from `interview.tools`. Only declare LLM-initiated operations (send OTP, process image) as tools. Hooks (pre/post, validators, review, reset, completion) run automatically on the appropriate path.
 
 ---
 
@@ -102,7 +102,7 @@ Common issues when building or running skills-v2 interviews with `InterviewActio
 - Skill wrote interview scratch to `conversation.context` without `retain_context_keys`.
 - Custom reset tool did not call `_clear_interview_session`.
 
-**Fix:** After complete/cancel, require `use_skill` to start fresh. Persist only platform/profile keys via `retain_context_keys` on completion handlers or `interview_complete` validators. For reset tools, call `_clear_interview_session` then re-init (see `reset_signup_interview`).
+**Fix:** After complete/cancel, require `use_skill` to start fresh. Persist only platform/profile keys via `retain_context_keys` on completion handlers or `interview_complete` validators. For custom reset behavior, declare `interview.reset.function` in frontmatter (see `_handle_custom_reset` in `interview_action.py`). Most skills use the built-in default via `interview__reset_interview()` with no `reset` block.
 
 ---
 

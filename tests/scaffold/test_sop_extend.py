@@ -8,6 +8,7 @@ from jvagent.scaffold.sop_extend import (
     compose_extended_sop_bodies,
     compose_skill_body,
     load_action_base_sop_body,
+    merge_extends_allowed_tools,
     parse_extends_ref,
     reset_sop_extend_cache,
 )
@@ -99,3 +100,37 @@ def test_compose_extended_sop_bodies_missing_target_warns():
     }
     out = compose_extended_sop_bodies(bundles)
     assert out["orphan"]["content"] == "Only custom."
+
+
+def test_merge_extends_allowed_tools_from_action_base():
+    bundles = {
+        "signup_interview": {
+            "name": "signup_interview",
+            "content": "Custom.",
+            "extends": "action:jvagent/interview_action",
+            "allowed_tools_add": [],
+            "disabled_tools": [],
+        }
+    }
+    out = merge_extends_allowed_tools(bundles)
+    tools = out["signup_interview"]["allowed_tools"]
+    assert "interview__set_field" in tools
+    assert "interview__reset_interview" in tools
+    assert "interview__cancel" in tools
+
+
+def test_merge_extends_allowed_tools_additive_and_disabled():
+    bundles = {
+        "child": {
+            "name": "child",
+            "content": "Custom.",
+            "extends": "action:jvagent/interview_action",
+            "allowed_tools_add": ["child__custom_tool"],
+            "disabled_tools": ["interview__reset_interview"],
+        }
+    }
+    out = merge_extends_allowed_tools(bundles)
+    tools = out["child"]["allowed_tools"]
+    assert "interview__set_field" in tools
+    assert "child__custom_tool" in tools
+    assert "interview__reset_interview" not in tools

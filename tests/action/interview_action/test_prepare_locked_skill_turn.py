@@ -115,4 +115,6 @@ async def test_prepare_directs_set_field_on_answer_turn(interview_action):
     assert prep.runtime_ready is True
     assert prep.observations == []
     assert "interview__set_field" in (prep.pending_directive or "")
+    assert "Answer quality gate" in (prep.pending_directive or "")
+    assert "substantively answers" in (prep.pending_directive or "").lower()
     assert "Do NOT call interview__next_question" in (prep.pending_directive or "")
