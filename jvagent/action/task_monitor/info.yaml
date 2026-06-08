@@ -1,0 +1,16 @@
+package:
+  name: jvagent/task_monitor
+  author: V75 Inc.
+  archetype: TaskMonitor
+  version: 1.0.0
+  meta:
+    title: Task Monitor
+    description: Periodic monitor that dispatches eligible PROACTIVE tasks through the Orchestrator
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
+    pip: []

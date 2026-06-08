@@ -179,8 +179,6 @@ async def build_next_questions(
     }
     if q.description:
         entry["description"] = q.description
-    if q.input_context_provider:
-        entry["input_context_provider"] = q.input_context_provider
     if q.pre_tools:
         entry["pre_tools"] = q.pre_tools
     if q.post_tools:

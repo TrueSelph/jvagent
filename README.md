@@ -1842,9 +1842,9 @@ LLM history rendering treats this as a standalone assistant turn — no blank
 user role is injected.
 
 For LLM-generated proactive messages (the message body is produced by a model
-based on conversation state), use the `TaskDispatcher` walker pattern instead;
-see [Task Tracking](docs/task-tracking.md). Full reference:
-[Proactive Messages](docs/proactive-messages.md).
+based on conversation state), queue a `PROACTIVE` task and let `TaskMonitor`
+dispatch it through the Orchestrator; see [Task Tracking](docs/task-tracking.md).
+Full reference: [Proactive Messages](docs/proactive-messages.md).
 
 #### Optimized Query Patterns
 

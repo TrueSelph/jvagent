@@ -211,7 +211,7 @@ class Task:
         ):
             raise TaskError(f"Cannot transition task from 'pending' -> '{new_status}'")
         if self.status == "active" and new_status not in frozenset(
-            {"completed", "failed", "cancelled"}
+            {"completed", "failed", "cancelled", "pending"}
         ):
             raise TaskError(f"Cannot transition task from 'active' -> '{new_status}'")
         self.status = new_status
@@ -414,6 +414,7 @@ class TaskHandle:
         if result is not None:
             self._task.data["result"] = result
         await self._store._persist_task(self._task)
+        await self._store._emit_task_callback(self._task, "completed")
 
     async def fail(self, reason: Optional[str] = None) -> None:
         """Transition -> failed."""
@@ -421,6 +422,7 @@ class TaskHandle:
         if reason is not None:
             self._task.data["failure_reason"] = reason
         await self._store._persist_task(self._task)
+        await self._store._emit_task_callback(self._task, "failed")
 
     async def cancel(self, reason: Optional[str] = None) -> None:
         """Transition -> cancelled."""
@@ -428,12 +430,14 @@ class TaskHandle:
         if reason is not None:
             self._task.data["cancel_reason"] = reason
         await self._store._persist_task(self._task)
+        await self._store._emit_task_callback(self._task, "cancelled")
 
     async def update(self, **data: Any) -> None:
         """Merge key-value pairs into the task's data bag."""
         self._task.data.update(data)
         self._task._touch()
         await self._store._persist_task(self._task)
+        await self._store._emit_task_callback(self._task, "updated")
 
     # --- Steps ---
 
@@ -751,6 +755,130 @@ class TaskStore:
         return True
 
     # --- Utility ---
+
+    def _task_entry_for_callback(self, task: Task) -> Dict[str, Any]:
+        return {
+            "task_id": task.id,
+            "task_type": task.task_type,
+            "description": task.description,
+            "status": task.status,
+            "created_at": task.created_at,
+            "updated_at": task.updated_at,
+            "metadata": dict(task.data or {}),
+            "next_trigger_at": (task.data or {}).get("not_before"),
+        }
+
+    async def _emit_task_callback(self, task: Task, event: str) -> None:
+        try:
+            from jvagent.core import callback as task_callbacks
+
+            entry = self._task_entry_for_callback(task)
+            conv = self._conversation
+            if event == "created":
+                await task_callbacks.trigger_task_created_callback(conv, entry)
+            elif event == "updated":
+                await task_callbacks.trigger_task_updated_callback(conv, entry)
+            elif event == "completed":
+                await task_callbacks.trigger_task_completed_callback(conv, entry)
+            elif event == "failed":
+                await task_callbacks.trigger_task_failed_callback(conv, entry)
+            elif event == "cancelled":
+                await task_callbacks.trigger_task_cancelled_callback(conv, entry)
+        except Exception as exc:
+            logger.debug("task_store: callback %s failed: %s", event, exc)
+
+    async def enqueue_proactive(
+        self,
+        spec: Any,
+        *,
+        owner_action: Optional[str] = None,
+        title: str = "",
+    ) -> TaskHandle:
+        """Create a pending PROACTIVE queue entry from a :class:`ProactiveTaskSpec`."""
+        from jvagent.memory.task_proactive import PROACTIVE_TASK_TYPE, ProactiveTaskSpec
+
+        if not isinstance(spec, ProactiveTaskSpec):
+            spec = ProactiveTaskSpec.from_data(dict(spec or {}))
+        spec.validate()
+        label = (title or spec.directive or "").strip() or "Proactive task"
+        handle = await self.create(
+            title=label,
+            description=label,
+            owner_action=owner_action,
+            task_type=PROACTIVE_TASK_TYPE,
+            data=spec.to_data(),
+        )
+        await self._emit_task_callback(handle._task, "created")
+        return handle
+
+    async def claim_proactive(self, task_id: str, lease_id: str) -> bool:
+        """Transition pending → active with a dispatch lease."""
+        from jvagent.memory.task_eligibility import conversation_has_blockers
+        from jvagent.memory.task_proactive import PROACTIVE_TASK_TYPE, ProactiveTaskSpec
+
+        if conversation_has_blockers(self):
+            return False
+
+        handle = self.get(task_id)
+        if handle is None:
+            return False
+        if handle.task_type != PROACTIVE_TASK_TYPE or handle.status != "pending":
+            return False
+        try:
+            spec = ProactiveTaskSpec.from_task_handle(handle)
+        except ValueError:
+            return False
+        spec.dispatch_lease_id = lease_id
+        spec.dispatch_claimed_at = _now_iso()
+        handle._task.data = spec.to_data()
+        handle._task.transition("active")
+        await self._persist_task(handle._task)
+        await self._emit_task_callback(handle._task, "updated")
+        return True
+
+    async def requeue_proactive(self, task_id: str, reason: str) -> bool:
+        """Transition active → pending and increment attempt_count."""
+        from jvagent.memory.task_proactive import PROACTIVE_TASK_TYPE, ProactiveTaskSpec
+
+        handle = self.get(task_id)
+        if handle is None:
+            return False
+        if handle.task_type != PROACTIVE_TASK_TYPE or handle.status != "active":
+            return False
+        try:
+            spec = ProactiveTaskSpec.from_task_handle(handle)
+        except ValueError:
+            return False
+        spec.attempt_count = int(spec.attempt_count or 0) + 1
+        spec.dispatch_lease_id = None
+        spec.dispatch_claimed_at = None
+        if reason:
+            handle._task.data["last_requeue_reason"] = reason
+        handle._task.data = spec.to_data()
+        handle._task.transition("pending")
+        await self._persist_task(handle._task)
+        await self._emit_task_callback(handle._task, "updated")
+        return True
+
+    def list_queue(
+        self,
+        *,
+        statuses: tuple = ("pending",),
+    ) -> List[TaskHandle]:
+        """List PROACTIVE queue entries sorted by priority then FIFO."""
+        from jvagent.memory.task_eligibility import (
+            _queue_sort_key,
+            is_proactive_spec_task,
+        )
+        from jvagent.memory.task_proactive import PROACTIVE_TASK_TYPE
+
+        handles = [
+            h
+            for h in self.list(status=list(statuses))
+            if h.task_type == PROACTIVE_TASK_TYPE and is_proactive_spec_task(h)
+        ]
+        handles.sort(key=_queue_sort_key)
+        return handles
 
     async def sweep_terminal(self, *, older_than_seconds: Optional[int] = None) -> int:
         """Remove terminal tasks, optionally older than a TTL.

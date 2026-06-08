@@ -170,7 +170,7 @@ Full CLI reference in [`jvagent/cli/CLAUDE.md`](jvagent/cli/CLAUDE.md) and [`doc
 | Setting `Agent.interaction_limit` very low after long history | Latency spike on next append | Pruning is capped per-call by `JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL` (default 100); see [`adr/0003`](.planning/adr/0003-interaction-limit-pruning.md) |
 | Caching jvspatial objects across event loops | `RuntimeError: attached to different loop` on serverless warm starts | Use the per-loop lock pattern from [`app.py:97-117`](jvagent/core/app.py) |
 | Using `count()` on a jvspatial entity | Method may not exist | `len(await Entity.find(query))` |
-| Long blocking work in `InteractAction.execute()` | Slow user-facing response | Use `run_in_background=True` or push to `task_dispatcher` |
+| Long blocking work in `InteractAction.execute()` | Slow user-facing response | Use `run_in_background=True` or enqueue a `PROACTIVE` task (`TaskMonitor`) |
 | Creating new App nodes | Singleton violation | Always use `await App.get()` |
 
 ---

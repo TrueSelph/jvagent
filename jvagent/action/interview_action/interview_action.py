@@ -15,7 +15,6 @@ from jvagent.tooling.tool_executor import get_dispatch_visitor
 from .core.field_extractors import extract_candidates_for_question
 from .core.interview_loader import (
     INTERVIEW_FRONTMATTER_KEY,
-    INTERVIEW_YAML,
     InterviewRegistry,
     InterviewSpec,
     QuestionDef,
@@ -122,10 +121,6 @@ class InterviewAction(Action):
             return
         if not self._registry.specs:
             await self._discover_specs()
-
-    async def _ensure_contracts_loaded(self) -> None:
-        """Back-compat alias for skill_tasks.ensure_locked_skill_session."""
-        await self._ensure_specs_loaded()
 
     async def _resolve_skills_dirs(self) -> List[str]:
         return await self.resolve_skill_scan_dirs()
@@ -330,11 +325,6 @@ class InterviewAction(Action):
             return None, None
         return session, self._registry.get(session.interview_type)
 
-    async def _get_session_and_spec(
-        self, visitor: Any = None
-    ) -> Tuple[Optional[InterviewSession], Optional[InterviewSpec]]:
-        return await self._get_session_and_contract(visitor)
-
     @staticmethod
     def _task_interview_type(handle: Any) -> Optional[str]:
         task_data = getattr(handle, "data", None) or {}
@@ -424,9 +414,7 @@ class InterviewAction(Action):
         visitor: Any,
         status: str = "completed",
         spec_name: Optional[str] = None,
-        contract_name: Optional[str] = None,
     ) -> None:
-        spec_name = spec_name or contract_name
         try:
             store = visitor.tasks
             interview_handles = store.list(
@@ -494,8 +482,7 @@ class InterviewAction(Action):
             available = self._registry.list_specs()
             return (
                 f"Interview skill '{skill_name}' has no interview spec on this agent "
-                f"(SKILL.md frontmatter '{INTERVIEW_FRONTMATTER_KEY}:' or deprecated "
-                f"{INTERVIEW_YAML}). "
+                f"(SKILL.md frontmatter '{INTERVIEW_FRONTMATTER_KEY}:'). "
                 f"Available interview types: {available or '(none)'}. "
                 "Do not call interview tools until the session is active."
             )
@@ -700,7 +687,6 @@ class InterviewAction(Action):
         field: str = "",
         value: str = "",
         visitor: Any = None,
-        name: str = "",
         **kwargs: Any,
     ) -> str:
         session, spec = await self._get_session_and_contract(visitor)
@@ -712,9 +698,7 @@ class InterviewAction(Action):
                 response_directive=no_session_directive(),
             )
 
-        resolved_field, field_err = self._resolve_field_param(
-            field, name, spec, **kwargs
-        )
+        resolved_field, field_err = self._resolve_field_param(field, spec, **kwargs)
         if field_err:
             return interview_tool_response(
                 ok=False,
@@ -1415,38 +1399,6 @@ class InterviewAction(Action):
         except Exception as e:
             return json.dumps({"error": str(e)})
 
-    async def _handle_decorated_function(
-        self, func: Callable, spec: InterviewSpec, **kwargs
-    ) -> str:
-        try:
-            visitor = kwargs.pop("visitor", None) or get_dispatch_visitor()
-            session = await self._get_session(visitor)
-            result = await call_hook(
-                func,
-                session=session,
-                spec=spec,
-                visitor=visitor,
-                interview_action=self,
-                kwargs=kwargs,
-            )
-            if isinstance(result, dict):
-                return await self._finalize_tool_response(result, session, visitor)
-            if isinstance(result, str):
-                try:
-                    parsed = json.loads(result)
-                    if isinstance(parsed, dict):
-                        return await self._finalize_tool_response(
-                            parsed, session, visitor
-                        )
-                except (json.JSONDecodeError, TypeError):
-                    pass
-                return result
-            return json.dumps(
-                {"result": "ok"} if result is not None else {"result": "empty"}
-            )
-        except Exception as e:
-            return json.dumps({"error": str(e)})
-
     async def persist_interview_fields(
         self,
         session: InterviewSession,
@@ -1693,15 +1645,11 @@ class InterviewAction(Action):
         return json.dumps(parsed)
 
     def _resolve_field_param(
-        self, field: str, name: str, spec: InterviewSpec, **kwargs: Any
+        self, field: str, spec: InterviewSpec, **kwargs: Any
     ) -> tuple[str, Optional[str]]:
-        raw_field = (field or "").strip()
-        raw_name = (name or kwargs.get("name") or "").strip()
-        if raw_field and raw_name and raw_field != raw_name:
-            return "", "field and name disagree — use field only"
-        resolved = raw_field or raw_name
+        resolved = (field or "").strip()
         if not resolved:
-            return "", "Missing field — use parameter field (not name)"
+            return "", "Missing field parameter"
         valid = {q.name for q in spec.questions}
         if resolved not in valid:
             return "", f"Unknown field '{resolved}'. Valid: {sorted(valid)}"
@@ -1770,8 +1718,6 @@ def _question_def_to_dict(q: QuestionDef) -> Dict[str, Any]:
         result["validator_kwargs"] = q.validator_kwargs
     if q.input_handler:
         result["input_handler"] = q.input_handler
-    if q.input_context_provider:
-        result["input_context_provider"] = q.input_context_provider
     if q.pre_tools:
         result["pre_tools"] = q.pre_tools
     if q.post_tools:

@@ -344,7 +344,7 @@ See [`observability.md`](reference/observability.md) for the unified index over 
 - Are dispatched as fire-and-forget asyncio tasks. Each is wrapped in try/except — failures do not block siblings.
 - Use cases: analytics, model updates, follow-up notifications, task scheduling.
 
-There is **no persistent task queue** (no Celery / RQ). Long-lived autonomous work uses `task_dispatcher` and stored `task` nodes on the `Conversation`/`Interaction`.
+There is **no external task queue** (no Celery / RQ). Long-lived autonomous work uses conversation-embedded `PROACTIVE` tasks (`ProactiveTaskSpec`, `spec_version: 2`) on `Conversation.tasks`, dispatched by `TaskMonitor` (schedule path) or `TaskTriggerInteractAction` (event path) through the full Orchestrator pipeline. See ADR-0022 and [`docs/task-tracking.md`](../docs/task-tracking.md).
 
 ---
 

@@ -2,7 +2,15 @@
 
 A **proactive message** is text the agent emits *without* an inbound user webhook — for example, a scheduled reminder, an integration callback, an admin-triggered notification, or any code path that pushes a message out to a specific user/session/channel.
 
-This page documents the canonical programmatic API: **`Agent.send_proactive_message(...)`**.
+This page documents the canonical programmatic API for **canned** proactive delivery: **`Agent.send_proactive_message(...)`**.
+
+For **agentic** follow-ups (the model must reason, use tools/skills, and compose a reply from conversation state), queue a `PROACTIVE` task and let **`TaskMonitor`** dispatch it through the full Orchestrator — see [task-tracking.md](task-tracking.md).
+
+| Need | API / action |
+|------|----------------|
+| Pre-formed text, deliver now | `Agent.send_proactive_message(...)` (this page) |
+| LLM-generated reply from context | `enqueue_proactive` / `queue_task` / `TaskCreationInteractAction` → `TaskMonitor` |
+| Keyword/mood trigger on user turn | `TaskTriggerInteractAction` + Orchestrator finalizer |
 
 ---
 
@@ -159,7 +167,7 @@ Example transcript fed to the LLM:
 
 **Do not use it when:**
 
-- The message must be LLM-generated based on conversation state. Use the `TaskDispatcher` walker pattern instead — it constructs an `InteractWalker`, creates an `Interaction`, and calls `PersonaAction.respond(...)`. See [`task_dispatcher.py:222-335`](../jvagent/action/task_dispatcher/task_dispatcher.py).
+- The message must be LLM-generated based on conversation state. Queue a `PROACTIVE` task (`enqueue_proactive`, `queue_task`, or `TaskCreationInteractAction`) and let `TaskMonitor` dispatch it through the full Orchestrator pipeline. See [`docs/task-tracking.md`](task-tracking.md) and ADR-0022.
 - You want to record a message that another system already delivered (e.g. the human owner of a WhatsApp account typed a reply directly via the WhatsApp UI). Publishing through this method would re-send the text. A record-only sibling helper is out of scope for now.
 - You are already inside an `InteractAction.execute(visitor)` and just want to send a reply for the current turn. Use `await self.publish(visitor, content)` / `await self.respond(visitor, ...)` — the canonical in-pipeline path ([`interact/base.py:193-274`](../jvagent/action/interact/base.py)).
 
@@ -233,6 +241,28 @@ for user_id in target_users:
 
 (For multi-channel fan-out to a single user, iterate the channels yourself.)
 
+### Queued agentic follow-up (TaskMonitor)
+
+When the agent must **generate** the message using tools and conversation context:
+
+```python
+from jvagent.memory.task_proactive import ProactiveTaskSpec
+
+spec = ProactiveTaskSpec(
+    directive="Check whether the user finished scheduling and offer to continue",
+    context="User said they were busy; follow up in 10 minutes",
+    not_before="2026-06-08T10:10:00+00:00",
+    trigger_on="schedule",
+)
+await agent.enqueue_proactive_task(
+    user_id=user_id,
+    spec=spec,
+    channel="whatsapp",
+)
+```
+
+`TaskMonitor` (native scheduler or `GET /api/proactive/tick/{agent_id}`) claims the task and runs a full Orchestrator turn. Do **not** call `send_proactive_message` for this path unless you already have final text.
+
 ---
 
 ## Tests
@@ -247,5 +277,6 @@ for user_id in target_users:
 - [SPEC §7.1](../.planning/SPEC.md) — normative semantics.
 - [GLOSSARY: Proactive message / Proactive interaction](../.planning/GLOSSARY.md).
 - [Architecture §6.1 — Proactive (out-of-walker) sends](../.planning/architecture.md).
-- [`docs/task-tracking.md`](task-tracking.md) — relationship to `TaskDispatcher`.
+- [`docs/task-tracking.md`](task-tracking.md) — `PROACTIVE` queue, `TaskMonitor`, scheduler setup.
+- [ADR-0022](../.planning/adr/0022-proactive-task-monitor.md) — architecture and dispatch model.
 - [`docs/ORCHESTRATOR.md`](ORCHESTRATOR.md) — in-walker response emission (the inbound counterpart).

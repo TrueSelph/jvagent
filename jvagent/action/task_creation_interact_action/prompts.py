@@ -37,9 +37,12 @@ If there are no pending tasks then do not output any completed tasks.
 
 To SCHEDULE A NEW TASK, output in this exact format:
 TASK: [clear, specific action the agent should take]
-TRIGGER_TIME: [ISO 8601: YYYY-MM-DD HH:MM — calculate from Current Time]
-TRIGGER_CONDITION: [keyword/phrase that should trigger it, OR "none" for time-only]
+NOT_BEFORE: [ISO 8601 UTC instant when the task becomes eligible — calculate from Current Time]
+TRIGGER_ON: [schedule | user_message | keyword | mood | any]
+TRIGGER_KEYWORD: [keyword/phrase for keyword trigger, or "none"]
+TRIGGER_MOOD: [mood label for mood trigger, or "none"]
 CONTEXT: [what the agent needs to remember to perform this task]
+PRIORITY: [integer, higher runs sooner; default 0]
 
 Examples of good tasks:
 - User is busy/distracted → schedule a check-in for 10 minutes from now (TASK: Check in with user to finish scheduling)

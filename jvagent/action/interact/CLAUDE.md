@@ -118,7 +118,7 @@ pytest tests/action/interact/ tests/action/gating/ -v
 | Calling `publish()` with `stream=True` on a non-streaming channel | Adapter mishandles. Pass `stream=False` or let visitor.stream propagate. |
 | `await visitor.visit(self)` for re-visit | Cycle risk; walker may trip `max_visits_per_node=100`. If you must re-enqueue, use `visitor.prepend([self])` and persist state explicitly (no shipped pattern needs this — the Executive avoids re-visits entirely). |
 | Setting `run_in_background=True` on an action that emits the user response | Response never reaches the client. Background = post-response only. |
-| Long sleeps in `execute()` | Blocks the walker; latency spike. Use background or task_dispatcher. |
+| Long sleeps in `execute()` | Blocks the walker; latency spike. Use background or enqueue via `TaskMonitor` / `queue_task`. |
 | Reading `visitor.interaction` in a background action | It's closed/saved by then — read-only, don't mutate. |
 | Forgetting to call `await visitor.add_directives(...)` before `respond()` | Directives won't reach PersonaAction. |
 

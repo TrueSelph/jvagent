@@ -58,10 +58,10 @@ def _build_data_tools(action: "InterviewAction") -> List[Tool]:
     tools: List[Tool] = []
 
     async def _set_field(
-        field: str = "", value: str = "", visitor: Any = None, name: str = "", **kwargs
+        field: str = "", value: str = "", visitor: Any = None, **kwargs
     ) -> str:
         return await action._handle_set_field(
-            field=field, value=value, visitor=visitor, name=name, **kwargs
+            field=field, value=value, visitor=visitor, **kwargs
         )
 
     tools.append(
@@ -82,10 +82,6 @@ def _build_data_tools(action: "InterviewAction") -> List[Tool]:
                     "field": {
                         "type": "string",
                         "description": "Interview question name from skill frontmatter (e.g. available_times).",
-                    },
-                    "name": {
-                        "type": "string",
-                        "description": "Deprecated alias for field.",
                     },
                     "value": {
                         "type": "string",
@@ -223,12 +219,6 @@ def _build_data_tools(action: "InterviewAction") -> List[Tool]:
 
 
 def _build_custom_tools(action: "InterviewAction") -> List[Tool]:
-    import importlib.util
-    import os
-
-    from ..runtime.hooks import load_hook_function
-    from .decorators import interview_tool as _it
-
     tools: List[Tool] = []
     seen: set = set()
 
@@ -240,56 +230,7 @@ def _build_custom_tools(action: "InterviewAction") -> List[Tool]:
             seen.add(full_name)
             tools.append(_make_custom_py_tool(action, tdef, spec))
 
-        custom_tools_path = os.path.join(spec.source_dir, "scripts", "custom_tools.py")
-        if not os.path.isfile(custom_tools_path):
-            custom_tools_path = os.path.join(spec.source_dir, "custom_tools.py")
-        if not os.path.isfile(custom_tools_path):
-            continue
-        try:
-            mod_name = f"interview_custom_tools_{spec.name}"
-            loader_spec = importlib.util.spec_from_file_location(
-                mod_name, custom_tools_path
-            )
-            if not loader_spec or not loader_spec.loader:
-                continue
-            module = importlib.util.module_from_spec(loader_spec)
-            module.__dict__["interview_tool"] = _it
-            loader_spec.loader.exec_module(module)
-            for attr_name in dir(module):
-                attr = getattr(module, attr_name)
-                if callable(attr) and getattr(attr, "_interview_tool", False):
-                    tool_name = getattr(attr, "_tool_name", attr_name)
-                    full_name = skill_tool_name(spec, tool_name)
-                    if full_name in seen:
-                        continue
-                    seen.add(full_name)
-                    tools.append(
-                        Tool(
-                            name=full_name,
-                            description=getattr(
-                                attr, "_tool_description", attr.__doc__ or ""
-                            ),
-                            parameters_schema=getattr(
-                                attr,
-                                "_tool_parameters_schema",
-                                {"type": "object", "properties": {}},
-                            ),
-                            execute=_make_decorated_handler(action, attr, spec),
-                        )
-                    )
-        except Exception as e:
-            logger.error(
-                "Failed to load custom_tools from %s: %s", custom_tools_path, e
-            )
-
     return tools
-
-
-def _make_decorated_handler(action: "InterviewAction", func, spec: InterviewSpec):
-    async def _handler(**kwargs):
-        return await action._handle_decorated_function(func, spec, **kwargs)
-
-    return _handler
 
 
 def _make_custom_py_tool(

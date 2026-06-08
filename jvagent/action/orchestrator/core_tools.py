@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
+from jvagent.action.orchestrator.proactive_tools import build_proactive_tools
 from jvagent.action.orchestrator.tools import SkillTool
 
 logger = logging.getLogger(__name__)
@@ -221,4 +222,9 @@ def build_core_tools(action: Any, tier: str = "standard") -> List[SkillTool]:
     ]
 
 
-__all__ = ["build_core_tools", "build_plan_tool", "build_artifact_tools"]
+__all__ = [
+    "build_core_tools",
+    "build_plan_tool",
+    "build_artifact_tools",
+    "build_proactive_tools",
+]

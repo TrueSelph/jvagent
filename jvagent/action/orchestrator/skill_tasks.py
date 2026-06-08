@@ -343,8 +343,8 @@ async def ensure_locked_skill_session(
     if bound is None or not hasattr(bound, "needs_session_rebootstrap"):
         return None
     try:
-        if hasattr(bound, "_ensure_contracts_loaded"):
-            await bound._ensure_contracts_loaded()
+        if hasattr(bound, "_ensure_specs_loaded"):
+            await bound._ensure_specs_loaded()
         needs = await bound.needs_session_rebootstrap(doc.name, visitor)
         if needs and hasattr(bound, "on_skill_activate"):
             note = await bound.on_skill_activate(

@@ -6,7 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Proactive Task Monitor (ADR-0022).** Unified proactive execution: `ProactiveTaskSpec` (`spec_version: 2`) on `TaskStore`, eligibility engine (`task_eligibility.py`), `TaskMonitor` action (replaces `TaskDispatcher`) dispatching one eligible `PROACTIVE` task per conversation through the full Orchestrator; `TaskTriggerInteractAction` event bridge; `queue_task` orchestrator tool; `Agent.enqueue_proactive_task()` and `embed.enqueue_proactive_task()`. Covered by `tests/memory/test_task_proactive.py`, `test_task_eligibility.py`, `test_task_store_proactive.py`, `tests/action/task_monitor/`, and updated task creation/trigger tests.
+
+### Removed
+
+- **`jvagent/task_dispatcher`.** Replaced by `jvagent/task_monitor` (forward-only; no migration shims).
+
+- **InterviewAction deprecation shims.** Removed standalone `interview.yaml` loader, `@interview_tool` decorator auto-discovery, `input_context_provider` alias (use `pre_tools`), `set_field` `name` parameter alias, `contract_name` / `_ensure_contracts_loaded` back-compat APIs, `is_interview_skill_bundle`, and root-level `custom_tools.py` path fallback. Spec discovery is SKILL.md frontmatter only.
+
 ### Changed
+
+- **Proactive task documentation.** `docs/task-tracking.md`, `docs/proactive-messages.md`, `docs/configuration.md`, and `docs/environment-keys-reference.md` document `TaskMonitor`, scheduler bootstrap (`JVSPATIAL_SCHEDULER_*`), serverless HTTP tick, and enqueue APIs. Planning refs updated in `configuration-keys.md` and `action-authoring.md`.
+
+- **App-local skill placement.** `agents/.../skills/` accepts any skill type (pure JV SOP, action-backed with `requires-actions`, or Claude bundles). The deprecation warning for `requires-actions` in app-local folders is removed; action overlays remain an optional co-location path.
 
 - **Action-backed skill scan paths.** `Action.resolve_skill_scan_dirs()` and `skill_resolve.resolve_action_skill_scan_dirs()` derive overlay paths from loader metadata (`info.yaml` `package.name`) — no per-action hardcoded refs. Fixes `signup_interview` discovery after ADR-0020 overlay migration.
 

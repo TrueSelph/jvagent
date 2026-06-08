@@ -54,6 +54,20 @@ This matrix is the recommended baseline for new apps and refreshed templates.
 | `config.server.version` | `JVAGENT_VERSION` | (package version) |
 | `config.server.host` | `JVAGENT_HOST` | 127.0.0.1 |
 | `config.server.port` | `JVAGENT_PORT` | 8000 |
+| `config.server.scheduler_enabled` | `JVSPATIAL_SCHEDULER_ENABLED` | auto `true` when any agent installs `jvagent/task_monitor`; else `false` |
+| `config.server.scheduler_interval` | `JVSPATIAL_SCHEDULER_INTERVAL` | `1` (scheduler thread poll interval, seconds) |
+
+### Proactive task webhooks (optional)
+
+| Env var | Purpose |
+|---------|---------|
+| `JVAGENT_TASK_CREATED_WEBHOOK_URL` | Outbound callback when a task is created |
+| `JVAGENT_TASK_UPDATED_WEBHOOK_URL` | Outbound callback when a task is updated |
+| `JVAGENT_TASK_COMPLETED_WEBHOOK_URL` | Outbound callback when a task completes |
+| `JVAGENT_TASK_FAILED_WEBHOOK_URL` | Outbound callback when a task fails |
+| `JVAGENT_TASK_CANCELLED_WEBHOOK_URL` | Outbound callback when a task is cancelled |
+
+See [task-tracking.md](task-tracking.md) for the proactive queue and `TaskMonitor` scheduler notes.
 
 ### Authentication
 
@@ -116,6 +130,8 @@ Do not commit real secret values in `app.yaml`.
 
 ## Related Documentation
 
+- [task-tracking.md](task-tracking.md) - `PROACTIVE` queue, `TaskMonitor`, scheduler bootstrap.
+- [proactive-messages.md](proactive-messages.md) - Canned `send_proactive_message` vs queued agentic tasks.
 - [environment-keys-reference.md](environment-keys-reference.md) - Canonical env key inventory.
 - [integrations-environment.md](integrations-environment.md) - Integration/vendor env keys.
 - [scaffolding.md](scaffolding.md) - CLI app and agent scaffolding flow.

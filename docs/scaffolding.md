@@ -178,10 +178,10 @@ Orchestrator agents (skills come in two specs — JV + Claude; see [`jvagent/ski
 
 1. Built-in pure skills (`jvagent/skills/*`)
 2. Core action skills (`<action_dir>/skills/*` for actions on the agent)
-3. App pure skills (`agents/<ns>/<id>/skills/<name>/`) — pure JV SOP or Claude only
-4. App action overlays (`agents/.../actions/<ns>/<action>/skills/<name>/`)
+3. App-local skills (`agents/<ns>/<id>/skills/<name>/`) — any JV SOP or Claude bundle
+4. App action overlays (`agents/.../actions/<ns>/<action>/skills/<name>/`) — optional co-location beside an action
 
-`agents/.../skills/` is **not** for action-backed skills (those with `requires-actions` and hook scripts) — place those under the action overlay path. App-local overrides built-in / core by name.
+`agents/.../skills/` accepts pure SOPs, action-backed skills (`requires-actions`, hooks, `scripts/`), and Claude bundles. Action overlays remain available when you prefer skills beside the action package. App-local overrides built-in / core by name.
 
 Runtime exposure is controlled per agent in `agents/<ns>/<id>/agent.yaml` on
 the `jvagent/orchestrator` action via:

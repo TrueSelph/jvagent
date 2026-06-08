@@ -29,6 +29,7 @@ from jvagent.core.config import (
     resolve_db_path,
     resolve_log_db_path,
 )
+from jvagent.core.scheduler_bootstrap import app_has_task_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -350,10 +351,15 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         file_storage_max_size=fs_cfg["max_size"],
     )
 
-    # Scheduler configuration — off by default; auto-enabled when TaskDispatcher is present
+    # Scheduler: off by default unless app.yaml/env sets it, or an agent installs
+    # TaskMonitor (proactive ticks need the native scheduler or HTTP /proactive/tick).
     scheduler_enabled = get_config_value(
-        app_config, "server.scheduler_enabled", "JVSPATIAL_SCHEDULER_ENABLED", False
+        app_config, "server.scheduler_enabled", "JVSPATIAL_SCHEDULER_ENABLED", None
     )
+    if scheduler_enabled is None:
+        scheduler_enabled = app_has_task_monitor(app_root)
+    else:
+        scheduler_enabled = bool(scheduler_enabled)
     scheduler_interval = int(
         get_config_value(
             app_config, "server.scheduler_interval", "JVSPATIAL_SCHEDULER_INTERVAL", 1
@@ -588,11 +594,18 @@ async def pre_startup_bootstrap(
             update_mode=effective_update_mode, app_root=app_root
         )
 
-        # Initialize all actions by calling their on_startup() hooks
-        # This ensures runtime components like channel adapters are initialized
+        from jvspatial.api.context import ServerContext
+
+        from jvagent.core.scheduler_bootstrap import ensure_scheduler_for_server
         from jvagent.core.startup import run_app_startup
 
-        await run_app_startup()
+        with ServerContext(server):
+            if getattr(
+                server.config, "scheduler_enabled", False
+            ) or app_has_task_monitor(app_root):
+                await ensure_scheduler_for_server(server)
+            # Initialize all actions (channel adapters, TaskMonitor registration, …)
+            await run_app_startup()
 
         # Ensure admin user exists
         admin_exists = await ensure_admin_user()

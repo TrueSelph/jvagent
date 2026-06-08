@@ -40,13 +40,17 @@ async def test_new_user_auto_start_opens_session_and_seeds_next_question(
         tmp_path / "agents" / "zoon" / "zoon_ai" / "skills" / "onboarding_interview"
     )
     skill_dir.mkdir(parents=True)
-    (skill_dir / "interview.yaml").write_text(
-        "name: onboarding_interview\n"
-        "questions:\n"
-        "  - name: phone\n"
-        "    question: What is your best phone number?\n"
-        "    required: true\n"
-        "    type: text\n",
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: onboarding_interview
+interview:
+  title: Onboarding
+  questions:
+    - name: phone
+      question: What is your best phone number?
+      required: true
+---
+""",
         encoding="utf-8",
     )
 

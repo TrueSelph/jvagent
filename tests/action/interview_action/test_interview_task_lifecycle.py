@@ -66,7 +66,7 @@ def test_find_existing_active_task_finds_skill_task():
 
 
 @pytest.mark.asyncio
-async def test_close_task_filters_by_contract_name():
+async def test_close_task_filters_by_spec_name():
     onboarding = _task("InterviewAction", "onboarding_interview")
     pre_alert = _task("InterviewAction", "pre_alert_interview")
     skill = _task("onboarding_interview")
@@ -85,7 +85,7 @@ async def test_close_task_filters_by_contract_name():
 
     action = InterviewAction()
     await action._close_task(
-        visitor, status="cancelled", contract_name="onboarding_interview"
+        visitor, status="cancelled", spec_name="onboarding_interview"
     )
 
     onboarding.cancel.assert_awaited_once()

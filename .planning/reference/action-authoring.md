@@ -465,7 +465,7 @@ async def on_register(self):
 | Forgetting `from . import endpoints` in `__init__.py` | Endpoints don't register. Add the import. |
 | Naming the class differently from `archetype` in `info.yaml` | Loader fails to find the class. Match exactly. |
 | Top-level `InteractAction` not routing to children | Child actions never execute. Call `await visitor.visit(child)` from `execute()`. |
-| Long sync work inside `execute()` | Blocks the response. Use `run_in_background=True` for non-critical work, or push to `task_dispatcher`. |
+| Long sync work inside `execute()` | Blocks the response. Use `run_in_background=True` for non-critical work, or enqueue a `PROACTIVE` task via `TaskStore.enqueue_proactive` / `TaskMonitor`. |
 | Mutating `self.metadata` directly | Lost on next load — `metadata` is rebuilt from `info.yaml`. Use `attribute(...)` fields for persistent state. |
 | Swallowing exceptions in lifecycle hooks | Errors go silent. Let them propagate — the framework's `enable()`/`disable()` wrappers log them. |
 | Hard-coding API keys | Use `attribute(default="")` + agent.yaml `${ENV_VAR}` indirection. |

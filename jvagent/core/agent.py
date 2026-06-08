@@ -356,6 +356,55 @@ class Agent(Node):
 
         return interaction
 
+    async def enqueue_proactive_task(
+        self,
+        *,
+        user_id: str,
+        spec: Any,
+        session_id: Optional[str] = None,
+        channel: str = "default",
+        owner_action: str = "Agent.enqueue_proactive_task",
+        title: str = "",
+    ) -> Optional[Any]:
+        """Enqueue a PROACTIVE task on the user's conversation TaskStore."""
+        from jvagent.memory.task_proactive import ProactiveTaskSpec
+        from jvagent.memory.task_store import TaskStore
+
+        if not user_id:
+            return None
+        if not isinstance(spec, ProactiveTaskSpec):
+            spec = ProactiveTaskSpec.from_data(dict(spec or {}))
+
+        memory = await self.get_memory()
+        if not memory:
+            return None
+
+        user = await memory.get_user(user_id, create_if_missing=True)
+        if not user:
+            return None
+
+        conversation = None
+        if session_id:
+            conversation = await user.get_conversation_by_session(session_id)
+        if conversation is None:
+            get_active = getattr(user, "get_active_conversation", None)
+            if callable(get_active):
+                conversation = await get_active()
+        if conversation is None:
+            conversation = await user.create_conversation(
+                session_id=session_id,
+                channel=channel,
+            )
+
+        if spec.channel is None:
+            spec.channel = channel
+        store = TaskStore(conversation)
+        return await store.enqueue_proactive(
+            spec,
+            owner_action=owner_action,
+            title=title,
+        )
+
     async def save(self, *args, **kwargs):
         """Save the agent and invalidate cache.
 

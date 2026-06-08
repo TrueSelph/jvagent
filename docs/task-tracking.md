@@ -56,18 +56,24 @@ async with visitor.tasks.track(
     task.complete(summary="Done")
 ```
 
-For scheduler-style flows:
+For proactive queue entries (`ProactiveTaskSpec`, `spec_version: 2`):
 
 ```python
-task = visitor.tasks.create(
-    description="Follow up tomorrow",
-    task_type="PROACTIVE",
-    data={"trigger_at": "2026-04-19T09:00", "trigger_condition": "none"},
+from jvagent.memory.task_proactive import ProactiveTaskSpec
+
+spec = ProactiveTaskSpec(
+    directive="Follow up tomorrow",
+    context="User asked for a check-in",
+    not_before="2026-04-19T09:00:00+00:00",
+    trigger_on="schedule",
+    priority=0,
 )
-handle = visitor.tasks.get(task["id"])
-handle.start()
-# ... later ...
-handle.complete()
+handle = await visitor.tasks.enqueue_proactive(
+    spec,
+    owner_action=self.get_class_name(),
+    title="Follow up tomorrow",
+)
+# pending → active (claimed by TaskMonitor or TaskTrigger) → completed
 ```
 
 ## Read accessors
@@ -101,16 +107,135 @@ Webhook URLs can be configured with:
 - `JVAGENT_TASK_FAILED_WEBHOOK_URL`
 - `JVAGENT_TASK_CANCELLED_WEBHOOK_URL`
 
+## PROACTIVE queue lifecycle
+
+| Status | Meaning |
+|--------|---------|
+| `pending` | In queue; eligibility engine evaluates schedule/prereqs/events |
+| `active` | Claimed; Orchestrator turn in flight (at most one per conversation) |
+| `completed` / `failed` / `cancelled` | Terminal; finalizer or explicit store API |
+
+`ProactiveTaskSpec` fields: `directive`, `context`, `not_before`, `not_after`, `priority`, `requires_tasks`, `trigger_on` (`schedule` \| `user_message` \| `keyword` \| `mood` \| `any`), `trigger_keyword`, `trigger_mood`, `skill`, `max_attempts`.
+
+Queued proactive tasks persist `spec_version: 2` in `task.data`:
+
+```json
+{
+  "id": "TaskCreationInteractAction:abc123",
+  "task_type": "PROACTIVE",
+  "status": "pending",
+  "description": "Follow up tomorrow",
+  "owner_action": "TaskCreationInteractAction",
+  "data": {
+    "spec_version": 2,
+    "directive": "Check in with the user about scheduling",
+    "context": "User asked for a reminder",
+    "not_before": "2026-06-08T09:00:00+00:00",
+    "trigger_on": "schedule",
+    "priority": 0,
+    "max_attempts": 3
+  }
+}
+```
+
+Legacy rows that use ad-hoc `trigger_at` / `trigger_condition` without `spec_version: 2` are ignored by the eligibility engine (forward-only; no migration).
+
+### Agent wiring
+
+Install the proactive pipeline on agents that need scheduled or event-triggered follow-ups:
+
+```yaml
+actions:
+  - action: jvagent/task_trigger_interact_action   # weight -250 — event bridge on user turns
+    context:
+      enabled: true
+
+  - action: jvagent/task_creation_interact_action    # weight 200 — post-turn LLM scheduler
+    context:
+      enabled: true
+
+  - action: jvagent/task_monitor                   # periodic dispatch via Orchestrator
+    context:
+      enabled: true
+      tick_interval: "every 2 minutes"
+      max_parallel_conversations: 5
+      terminal_ttl_days: 0   # optional: prune old terminal PROACTIVE rows
+```
+
+The orchestrator reference agent at `examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml` includes this stack.
+
+### Dispatch paths
+
+| Trigger | Who claims the task | When it runs |
+|---------|---------------------|--------------|
+| `trigger_on: schedule` (default) | `TaskMonitor` | Native scheduler tick or `GET /api/proactive/tick/{agent_id}` |
+| `keyword` / `mood` / `user_message` / `any` | `TaskTriggerInteractAction` | Same turn as the matching user message (Orchestrator finalizes) |
+
+At most **one** `PROACTIVE` task is `active` per conversation. An active `SKILL` control-task blocks the monitor until the skill session completes.
+
+### Scheduler setup
+
+`TaskMonitor` relies on jvspatial's `SchedulerService` for periodic ticks. jvagent bootstraps it during `pre_startup_bootstrap` via `jvagent/core/scheduler_bootstrap.py`:
+
+- If any `agents/**/agent.yaml` lists `jvagent/task_monitor`, **`server.scheduler_enabled` is auto-enabled** unless you override it.
+- You can also set explicitly in `app.yaml`:
+
+```yaml
+config:
+  server:
+    scheduler_enabled: true
+    scheduler_interval: 1   # seconds between scheduler thread checks
+```
+
+Or via environment: `JVSPATIAL_SCHEDULER_ENABLED=true`, `JVSPATIAL_SCHEDULER_INTERVAL=1`.
+
+**Serverless** (`--serverless` / `SERVERLESS_MODE=true`): the native background scheduler does not start. Poll proactively instead:
+
+```http
+GET /api/proactive/tick/{agent_id}?api_key=<webhook-key>
+```
+
+Mint the URL from `TaskCreationInteractAction.get_webhook_url()` or list webhooks at `GET /api/proactive/webhooks/{agent_id}` (admin).
+
+If you see `TaskMonitor: scheduler service unavailable after startup` on a **non-serverless** deploy, enable the scheduler as above and restart. The HTTP tick endpoint still works as a fallback.
+
+### Programmatic enqueue
+
+Outside the walker pipeline:
+
+```python
+from jvagent.memory.task_proactive import ProactiveTaskSpec
+
+spec = ProactiveTaskSpec(
+    directive="Send a check-in about the open ticket",
+    not_before="2026-06-08T14:00:00+00:00",
+    trigger_on="schedule",
+)
+handle = await agent.enqueue_proactive_task(
+    user_id=user_id,
+    spec=spec,
+    channel="whatsapp",
+)
+# handle.id, handle.status == "pending"
+```
+
+Embed hosts use `jvagent.embed.enqueue_proactive_task(agent_id=..., user_id=..., spec=...)`.
+
+During an Orchestrator turn, the model can call the **`queue_task`** tool when `proactive_tasks_enabled: true` (default) on `jvagent/orchestrator`.
+
 ## Integration notes
 
 - **Orchestrator** and **DirectiveBuilder** start and complete/cancel flow tasks through `visitor.tasks`.
-- **TaskCreationInteractAction** creates proactive tasks via `visitor.tasks.create(...)`.
-- **TaskDispatcher** starts tasks before dispatch and completes/fails through store APIs. It generates the dispatched message via `PersonaAction.respond(...)` (LLM-generated). For **canned** (pre-formed) proactive messages from any task or scheduler, use `Agent.send_proactive_message(...)` directly instead — see [proactive-messages.md](proactive-messages.md).
-- **TaskTriggerInteractAction** marks matched proactive tasks complete through the store.
+- **TaskCreationInteractAction** enqueues proactive tasks via `enqueue_proactive()`.
+- **TaskMonitor** ticks on a schedule (or `GET /api/proactive/tick/{agent_id}`), claims one eligible task per conversation, and dispatches through the full Orchestrator pipeline.
+- **TaskTriggerInteractAction** claims event-eligible tasks on user turns; completion is deferred to the Orchestrator finalizer.
+- **queue_task** orchestrator tool and **`Agent.enqueue_proactive_task()`** / **`embed.enqueue_proactive_task()`** are programmatic enqueue paths.
+- For **canned** (pre-formed) proactive messages, use `Agent.send_proactive_message(...)` — see [proactive-messages.md](proactive-messages.md).
 
 ## See also
 
-- [Proactive messages](proactive-messages.md)
+- [Proactive messages](proactive-messages.md) — canned `send_proactive_message` vs queued agentic tasks
+- [ADR-0022](../.planning/adr/0022-proactive-task-monitor.md) — design decision record
 - [Conversation](jvagent/memory/conversation.py)
 - [TaskStore](jvagent/memory/task_store.py)
 - [InteractWalker](jvagent/action/interact/interact_walker.py)

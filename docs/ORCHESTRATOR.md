@@ -236,11 +236,11 @@ A skill is **judgment over capability, not capability** (ADR-0011). Tools answer
 
 | `skills_source` | Loads from |
 |---|---|
-| `app` | `agents/<ns>/<agent>/skills/*` (pure + Claude) and `agents/.../actions/.../skills/*` (action overlays) |
+| `app` | `agents/<ns>/<agent>/skills/*` (app-local) and `agents/.../actions/.../skills/*` (action overlays) |
 | `library` | `jvagent/skills/*` (pure) and core `<action_dir>/skills/*` for installed actions |
 | `both` (default) | full merged set; app-local overrides built-in / core action skills by name |
 
-Action-backed skills co-locate under action packages; `agents/.../skills/` is for pure JV SOPs and Claude bundles only. See [`jvagent/skills/README.md`](../jvagent/skills/README.md).
+App-local skills live under `agents/.../skills/`; action overlays under `agents/.../actions/.../skills/` are optional co-location. See [`jvagent/skills/README.md`](../jvagent/skills/README.md).
 
 Aliases `local`→`app` and `builtin`→`library` are accepted; `registry` is retired (treated as `library`).
 

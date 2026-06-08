@@ -137,7 +137,7 @@ Base: `BaseWebSearchAction` — `web_search/base.py`. Plus an InteractAction wra
 |---|---|---|---|
 | jvagent/task_creation_interact_action | `TaskCreationInteractAction` | `InteractAction` | Convert model output → structured task plan |
 | jvagent/task_trigger_interact_action | `TaskTriggerInteractAction` | `InteractAction` | Fire external tasks / webhooks |
-| jvagent/task_dispatcher | `TaskDispatcher` | `Action` | Dispatch tasks to external systems |
+| jvagent/task_monitor | `TaskMonitor` | `Action` | Periodic proactive queue monitor; dispatches via Orchestrator |
 
 See [`../docs/task-tracking.md`](../../docs/task-tracking.md).
 

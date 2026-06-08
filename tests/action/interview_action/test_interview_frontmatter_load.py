@@ -8,7 +8,6 @@ import pytest
 
 from jvagent.action.interview_action.core.interview_loader import (
     InterviewRegistry,
-    load_interview_spec,
     load_interview_spec_from_skill,
     parse_interview_spec,
 )
@@ -56,63 +55,6 @@ interview:
     spec = registry.get("demo_interview")
     assert spec is not None
     assert spec.questions[0].name == "q1"
-
-
-def test_deprecated_interview_yaml_fallback(tmp_path, caplog):
-    skill_dir = tmp_path / "legacy_interview"
-    skill_dir.mkdir()
-    (skill_dir / "interview.yaml").write_text(
-        """
-name: legacy_interview
-title: Legacy
-questions:
-  - name: only
-    question: "Only?"
-    required: true
-""",
-        encoding="utf-8",
-    )
-    registry = InterviewRegistry()
-    with caplog.at_level("WARNING"):
-        registry.discover([str(tmp_path)])
-    assert "deprecated" in caplog.text.lower()
-    assert registry.get("legacy_interview") is not None
-
-
-def test_frontmatter_preferred_over_yaml(tmp_path, caplog):
-    skill_dir = tmp_path / "dual_interview"
-    skill_dir.mkdir()
-    (skill_dir / "SKILL.md").write_text(
-        """---
-name: dual_interview
-interview:
-  title: From frontmatter
-  questions:
-    - name: fm_field
-      question: "FM?"
-      required: true
----
-""",
-        encoding="utf-8",
-    )
-    (skill_dir / "interview.yaml").write_text(
-        """
-name: dual_interview
-title: From yaml
-questions:
-  - name: yaml_field
-    question: "YAML?"
-    required: true
-""",
-        encoding="utf-8",
-    )
-    registry = InterviewRegistry()
-    with caplog.at_level("WARNING"):
-        registry.discover([str(tmp_path)])
-    spec = registry.get("dual_interview")
-    assert spec is not None
-    assert spec.questions[0].name == "fm_field"
-    assert "deprecated" in caplog.text.lower()
 
 
 def test_signup_frontmatter_matches_parse_interview_spec():

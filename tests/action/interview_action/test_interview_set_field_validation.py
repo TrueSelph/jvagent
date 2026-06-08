@@ -99,23 +99,6 @@ def test_resolve_validator_def_builtin_email():
     assert get_validator(vdef.name) is not None
 
 
-def test_legacy_builtin_marker_resolves_to_function_name():
-    contract = load_interview_spec_from_skill(_ONBOARDING_SKILL)
-    q = QuestionDef(
-        name="phone_number",
-        question="Phone?",
-        validator={
-            "name": "builtin",
-            "function": "phone",
-            "kwargs": {"exact_length": 10},
-        },
-    )
-    vdef = resolve_validator_def(q, contract)
-    assert vdef is not None
-    assert vdef.name == "phone"
-    assert get_validator(vdef.name) is not None
-
-
 def test_id_number_has_no_alternate_validator():
     contract = load_interview_spec_from_skill(_ONBOARDING_SKILL)
     q = contract.get_question("id_number")

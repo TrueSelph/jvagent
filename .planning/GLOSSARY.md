@@ -119,7 +119,7 @@ A `SKILL.md`-first folder the Orchestrator loads through progressive disclosure 
 A flow declaring it owns the turn across user messages. Realized as **flow continuation**, whose mode is set by `lock_active_flow` (ADR-0013): the flow records a control-task on the conversation's declarative `TaskStore` while active, and each turn the Orchestrator detects it. When `lock_active_flow=True` (default) the orchestrator routes the turn deterministically to the flow's IA (mechanistic turn-lock); when `False` it surfaces the flow as a tool and the model decides whether to continue it or route an off-topic request elsewhere (the control-task persists and resumes later). See *Flow continuation* and [`../docs/ORCHESTRATOR.md`](../docs/ORCHESTRATOR.md).
 
 ### Task
-A structured plan/step node created by `task_creation_interact_action` and dispatched by `task_dispatcher`, or a declarative record in the conversation `TaskStore`. Persists on the `Conversation` or `Interaction` so long-running work survives restarts.
+A structured plan/step node created by `task_creation_interact_action` and dispatched by `task_monitor`, or a declarative record in the conversation `TaskStore`. Persists on the `Conversation` or `Interaction` so long-running work survives restarts.
 
 ### Tool
 A named callable wrapped with a JSON Schema for arguments, exposed to the model. Source: `jvagent.tooling.tool.Tool`; built from `Action.get_tools()` for action tools.

@@ -7,9 +7,8 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
-import yaml
 
-from jvagent.action.interview_action.core.interview_loader import load_interview_spec
+from jvagent.action.interview_action.core.interview_loader import parse_interview_spec
 from jvagent.action.interview_action.core.session import InterviewSession
 from jvagent.action.interview_action.interview_action import InterviewAction
 from jvagent.action.interview_action.runtime.path_resolver import (
@@ -59,9 +58,9 @@ def branching_spec(tmp_path):
             {"name": "contact", "question": "Contact info?", "required": True},
         ],
     }
-    yaml_path = skill_dir / "interview.yaml"
-    yaml_path.write_text(yaml.safe_dump(spec_data), encoding="utf-8")
-    return load_interview_spec(str(yaml_path))
+    return parse_interview_spec(
+        spec_data, source_dir=str(skill_dir), default_name="branch_demo"
+    )
 
 
 @pytest.mark.asyncio

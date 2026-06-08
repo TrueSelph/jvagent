@@ -353,7 +353,7 @@ def resolve_agent_skills(
     namespace: str,
     agent_name: str,
 ) -> Dict[str, Dict[str, Any]]:
-    """Resolve pure app-local skills from agents/<ns>/<agent>/skills/*."""
+    """Resolve app-local skills from agents/<ns>/<agent>/skills/*."""
     skills_dir = Path(app_root).resolve() / "agents" / namespace / agent_name / "skills"
     if not skills_dir.is_dir():
         return {}
@@ -365,17 +365,6 @@ def resolve_agent_skills(
         parsed = parse_skill_bundle(skill_dir, source="app")
         if not parsed:
             continue
-        if parsed.get("requires_actions"):
-            primary = str(parsed["requires_actions"][0]).split(">=")[0].split("==")[0]
-            logger.warning(
-                "Skill '%s' in agents/%s/%s/skills/ declares requires-actions "
-                "(%s). Action-backed skills belong under "
-                "agents/.../actions/<namespace>/<action>/skills/<name>/",
-                parsed["name"],
-                namespace,
-                agent_name,
-                primary,
-            )
         key = parsed["name"]
         discovered[key] = parsed
     return discovered
@@ -435,7 +424,7 @@ def action_overlay_skills_dir(
 
 
 def legacy_agent_skills_dir(agent_base: Union[str, Path]) -> Optional[str]:
-    """Deprecated agent-level ``agents/.../skills`` (pre ADR-0020 overlay)."""
+    """Agent-level ``agents/.../skills`` co-location directory when present."""
     skills_root = Path(agent_base) / "skills"
     return str(skills_root) if skills_root.is_dir() else None
 
@@ -452,8 +441,8 @@ def resolve_action_skill_scan_dirs(
 
     Order: action overlay ``skills/`` first, then legacy agent ``skills/``.
     Overlay paths require loader metadata (``namespace`` + ``name`` from
-    ``info.yaml`` ``package.name``). Legacy agent ``skills/`` is still scanned
-    when ``include_legacy_agent_skills`` is true (deprecated layout).
+    ``info.yaml`` ``package.name``). Agent ``skills/`` is also scanned when
+    ``include_legacy_agent_skills`` is true (alternate co-location path).
     """
     action_ref = action_ref_from_metadata(metadata)
     dirs: List[str] = []
@@ -581,7 +570,7 @@ def resolve_merged_skill_bundles(
 ) -> Dict[str, Dict[str, Any]]:
     """Resolve skills with deterministic precedence.
 
-    Merge order: builtin pure → core action skills → app pure (overrides
+    Merge order: builtin pure → core action skills → app-local (overrides
     builtin) → app action overlays (overrides core action skills by name).
     """
     refs = action_refs

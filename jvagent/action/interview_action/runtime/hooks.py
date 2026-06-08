@@ -23,18 +23,14 @@ def _cache_key(spec: InterviewSpec) -> str:
 
 
 def load_hook_function(spec: InterviewSpec, function_name: str) -> Optional[Callable]:
-    """Load a named function from the skill's custom_tools.py."""
+    """Load a named function from the skill's scripts/custom_tools.py."""
     key = _cache_key(spec)
     module = _module_cache.get(key)
     if module is None:
         custom_tools_path = os.path.join(spec.source_dir, "scripts", "custom_tools.py")
         if not os.path.isfile(custom_tools_path):
-            custom_tools_path = os.path.join(spec.source_dir, "custom_tools.py")
-        if not os.path.isfile(custom_tools_path):
             return None
         try:
-            from ..core.decorators import interview_tool as _it
-
             mod_name = f"interview_custom_tools_{spec.name}"
             loader_spec = importlib.util.spec_from_file_location(
                 mod_name, custom_tools_path
@@ -42,7 +38,6 @@ def load_hook_function(spec: InterviewSpec, function_name: str) -> Optional[Call
             if not loader_spec or not loader_spec.loader:
                 return None
             module = importlib.util.module_from_spec(loader_spec)
-            module.__dict__["interview_tool"] = _it
             module.__dict__["ExtractionStatus"] = ExtractionStatus
             module.__dict__["InterviewSession"] = InterviewSession
             loader_spec.loader.exec_module(module)

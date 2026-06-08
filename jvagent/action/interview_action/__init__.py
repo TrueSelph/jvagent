@@ -13,7 +13,6 @@ from .core.procedure import (
     compose_interview_skill_body,
     compose_interview_skill_body_from_bundle,
     get_standard_interview_procedure,
-    is_interview_skill_bundle,
 )
 from .interview_action import InterviewAction
 
@@ -22,5 +21,4 @@ __all__ = [
     "compose_interview_skill_body",
     "compose_interview_skill_body_from_bundle",
     "get_standard_interview_procedure",
-    "is_interview_skill_bundle",
 ]

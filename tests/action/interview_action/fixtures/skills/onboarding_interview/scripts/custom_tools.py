@@ -306,7 +306,7 @@ async def _complete_otp_success(
     await interview_action._close_task(
         visitor,
         status="completed",
-        contract_name=_ONBOARDING_SKILL_NAME,
+        spec_name=_ONBOARDING_SKILL_NAME,
     )
 
     conversation = await _get_conversation(visitor)
@@ -607,7 +607,7 @@ async def verify_phone_number(
                 await interview_action._close_task(
                     visitor,
                     status="completed",
-                    contract_name=_ONBOARDING_SKILL_NAME,
+                    spec_name=_ONBOARDING_SKILL_NAME,
                 )
                 await interview_action._clear_interview_session(visitor)
 
@@ -1010,7 +1010,7 @@ async def reset_onboarding(
             await interview_action._close_task(
                 visitor,
                 status="cancelled",
-                contract_name=_ONBOARDING_SKILL_NAME,
+                spec_name=_ONBOARDING_SKILL_NAME,
             )
         except Exception as exc:
             logger.debug("reset_onboarding: close interview task failed: %s", exc)

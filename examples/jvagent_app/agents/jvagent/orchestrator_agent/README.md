@@ -75,7 +75,7 @@ the script reports the missing dependency.
 
 ## Notes
 
-- Skills live under `skills/` (app-local) and `jvagent/skills/` (library); configure via `skills_source` and `skills` in `agent.yaml`.
+- Skills live under `skills/` (app-local), `actions/<ns>/<action>/skills/` (optional action overlays), and `jvagent/skills/` (library); configure via `skills_source` and `skills` in `agent.yaml`.
 - `jvagent/pageindex_action` provides the internal knowledge base (`pageindex__search/assimilate/list/delete`). Ingest documents first (`pageindex__assimilate`), then the `answer` skill searches them before falling back to the web. PageIndex auto-installs its pip deps (litellm, pdf libs) on first load.
 - The signup interview (`actions/jvagent/interview_action/skills/signup_interview/` + `jvagent/interview_action`) is the demo multi-turn flow: frontmatter `interview:` contract, custom rules in `SKILL.md` body, standard procedure composed via extends. Copy the skill folder pattern for other structured interviews.
 - This agent occupies weight `-200` as the single pattern orchestrator; it runs fine beside other agents in the same app.

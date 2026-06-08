@@ -2,13 +2,12 @@
 
 from .interview_loader import (
     INTERVIEW_FRONTMATTER_KEY,
-    INTERVIEW_YAML,
     InterviewRegistry,
     InterviewSpec,
     QuestionDef,
     ToolDef,
     ValidatorDef,
-    load_interview_spec,
+    load_interview_spec_from_skill,
     resolve_validator_def,
     resolve_validator_kwargs,
 )
@@ -16,7 +15,6 @@ from .procedure import (
     compose_interview_skill_body,
     compose_interview_skill_body_from_bundle,
     get_standard_interview_procedure,
-    is_interview_skill_bundle,
 )
 from .responses import (
     call_tool_directive,
@@ -38,7 +36,6 @@ from .validators import ExtractionStatus, get_validator
 
 __all__ = [
     "INTERVIEW_FRONTMATTER_KEY",
-    "INTERVIEW_YAML",
     "ExtractionStatus",
     "InterviewRegistry",
     "InterviewSession",
@@ -57,8 +54,7 @@ __all__ = [
     "get_validator",
     "has_active_session",
     "interview_tool_response",
-    "is_interview_skill_bundle",
-    "load_interview_spec",
+    "load_interview_spec_from_skill",
     "load_session",
     "resolve_validator_def",
     "resolve_validator_kwargs",

@@ -43,7 +43,7 @@ skills/my_interview/
     └── custom_tools.py
 ```
 
-> **Deprecated:** Standalone `interview.yaml` is still loaded with a warning when present, but new skills should declare the contract under `interview:` in `SKILL.md` frontmatter.
+Declare the machine contract under `interview:` in `SKILL.md` frontmatter (not a standalone yaml file).
 
 ## Quick start
 
@@ -133,7 +133,7 @@ Custom validators receive `session` (in addition to `value`, `visitor`, `intervi
 
 ## `interview:` contract reference
 
-Machine contract lives under the `interview:` key in `SKILL.md` frontmatter (loaded by `InterviewRegistry` via `load_interview_spec_from_skill`). Standalone `interview.yaml` is a deprecated fallback only.
+Machine contract lives under the `interview:` key in `SKILL.md` frontmatter (loaded by `InterviewRegistry` via `load_interview_spec_from_skill`).
 
 ### Top-level fields (`interview:`)
 

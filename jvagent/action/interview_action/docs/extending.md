@@ -33,7 +33,6 @@ Copy [`../examples/example_interview/`](../examples/example_interview/) as the s
 | Reset handler | `interview.reset.function` | `custom_tools.py` | No |
 | Completion handler | `interview.completion.function` | `custom_tools.py` | No |
 | Field seeding | (implicit via validator name) | `core/field_extractors.py` | No |
-| `@interview_tool` decorator | — | `custom_tools.py` | Yes (legacy discovery) |
 
 **Rule:** Only `interview.tools` entries become LLM tools. Validators and hooks are invoked by the framework when their trigger fires.
 
@@ -273,10 +272,6 @@ Implement `reset_my_interview` in `scripts/custom_tools.py`. The model calls **`
 Most skills use the built-in default reset (no `interview.reset` block).
 
 Tool name on the wire: `{skill_name}__{tool.name}`.
-
-### Legacy `@interview_tool` decorator
-
-Prefer frontmatter `interview.tools`. The decorator in [`../decorators.py`](../decorators.py) remains for auto-discovery when a function is not listed in the spec.
 
 ---
 

@@ -18,15 +18,22 @@ def _make_action():
         return_value=[
             {
                 "description": "Follow up tomorrow",
-                "trigger_time": "2026-04-18T10:30",
+                "not_before": "2026-04-18T10:30",
+                "trigger_on": "schedule",
+                "trigger_keyword": "none",
+                "trigger_mood": "none",
                 "trigger_condition": "none",
                 "context": "check-in",
+                "priority": "0",
             }
         ]
     )
     action.get_model_action = AsyncMock()
     action.get_class_name = MagicMock(return_value="TaskCreationInteractAction")
     action.model = "gpt-4o-mini"
+    action._to_proactive_spec = TaskCreationInteractAction._to_proactive_spec.__get__(
+        action, TaskCreationInteractAction
+    )
     return action
 
 
@@ -35,7 +42,16 @@ async def test_execute_uses_visitor_tasks_create_and_complete():
     action = _make_action()
     model_action = MagicMock()
     model_action.generate = AsyncMock(
-        return_value="COMPLETE_TASK: abc123\nTASK: Follow up tomorrow\nTRIGGER_TIME: 2026-04-18 10:30\nTRIGGER_CONDITION: none\nCONTEXT: check-in"
+        return_value=(
+            "COMPLETE_TASK: abc123\n"
+            "TASK: Follow up tomorrow\n"
+            "NOT_BEFORE: 2026-04-18 10:30\n"
+            "TRIGGER_ON: schedule\n"
+            "TRIGGER_KEYWORD: none\n"
+            "TRIGGER_MOOD: none\n"
+            "CONTEXT: check-in\n"
+            "PRIORITY: 0"
+        )
     )
     action.get_model_action.return_value = model_action
 
@@ -58,14 +74,17 @@ async def test_execute_uses_visitor_tasks_create_and_complete():
     )
     visitor.tasks = MagicMock()
     visitor.tasks.get = MagicMock(return_value=completed_handle)
-    visitor.tasks.create = AsyncMock()
+    visitor.tasks.enqueue_proactive = AsyncMock()
+    visitor.tasks.list_queue = MagicMock(return_value=[])
 
     await TaskCreationInteractAction.execute(action, visitor)
 
     visitor.tasks.get.assert_called_once_with("abc123")
     completed_handle.complete.assert_awaited_once()
-    visitor.tasks.create.assert_awaited_once()
-    kwargs = visitor.tasks.create.await_args.kwargs
-    assert kwargs["title"] == "Follow up tomorrow"
-    assert kwargs["owner_action"] == "TaskCreationInteractAction"
-    assert kwargs["data"]["trigger_at"] == "2026-04-18T10:30"
+    visitor.tasks.enqueue_proactive.assert_awaited_once()
+    call = visitor.tasks.enqueue_proactive.await_args
+    spec = call.args[0]
+    assert call.kwargs["title"] == "Follow up tomorrow"
+    assert call.kwargs["owner_action"] == "TaskCreationInteractAction"
+    assert spec.not_before == "2026-04-18T10:30"
+    assert spec.trigger_on == "schedule"

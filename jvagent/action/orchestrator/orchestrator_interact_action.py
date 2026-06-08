@@ -54,6 +54,7 @@ from jvagent.action.orchestrator.core_tools import (
     build_artifact_tools,
     build_core_tools,
     build_plan_tool,
+    build_proactive_tools,
 )
 from jvagent.action.orchestrator.prompts import (
     FINALIZE_PROMPT,
@@ -465,6 +466,14 @@ class OrchestratorInteractAction(InteractAction):
             "when on, cost is incurred only when the model calls update_plan."
         ),
     )
+    proactive_tasks_enabled: bool = attribute(
+        default=True,
+        description="When True, surface queue_task for proactive task enqueueing.",
+    )
+    default_max_attempts: int = attribute(
+        default=3,
+        description="Default retry ceiling for queue_task when max_attempts is omitted.",
+    )
     vision: bool = attribute(
         default=False,
         description=(
@@ -609,6 +618,8 @@ class OrchestratorInteractAction(InteractAction):
         # context-aware tools (per-user MCP servers) route correctly.
         with bind_dispatch_context(visitor):
             await self._run_loop(visitor)
+
+        await self._finalize_proactive_task(visitor)
 
         # A rails IA invoked as a tool emits via interaction.directives rather
         # than publishing — render any it left through the responder.
@@ -1063,6 +1074,10 @@ class OrchestratorInteractAction(InteractAction):
             tools[plan_tool.name] = plan_tool
             visible.add(plan_tool.name)
 
+        for t in build_proactive_tools(self, visitor):
+            tools[t.name] = t
+            visible.add(t.name)
+
         # Artifact back-reference tools (ADR-0021). Surfaced with vision (its
         # only producer today) so the model can list/read prior artifacts (e.g.
         # a past image interpretation) without re-upload; visitor-bound for
@@ -1484,6 +1499,59 @@ class OrchestratorInteractAction(InteractAction):
             )
         return first_locked
 
+    async def _seed_proactive_dispatch(
+        self,
+        visitor: Any,
+        skill_docs: List[Any],
+        tools: Dict[str, Any],
+        observations: List[Dict[str, Any]],
+    ) -> None:
+        """Pre-load proactive task context and optional skill before the loop."""
+        data = getattr(visitor, "data", None) or {}
+        task_id = data.get("proactive_task_id")
+        directive = str(data.get("proactive_directive") or "").strip()
+        if not task_id or not directive:
+            return
+        observations.append(
+            {
+                "tool": "(proactive-task)",
+                "args": {},
+                "observation": (
+                    f"Proactive task {task_id} is active this turn. "
+                    f"Complete this objective: {directive}"
+                ),
+            }
+        )
+        skill = str(data.get("proactive_skill") or "").strip()
+        if not skill:
+            return
+        skill_by_name = {d.name: d for d in skill_docs if getattr(d, "name", None)}
+        if skill not in skill_by_name:
+            return
+        await self._run_tool_observation(
+            tools,
+            "use_skill",
+            {"name": skill},
+            observations,
+        )
+
+    async def _finalize_proactive_task(self, visitor: Any) -> None:
+        """Complete, requeue, or fail an in-flight proactive dispatch."""
+        data = getattr(visitor, "data", None) or {}
+        task_id = data.get("proactive_task_id")
+        if not task_id:
+            return
+        store = getattr(visitor, "tasks", None)
+        if store is None:
+            return
+        from jvagent.action.task_monitor.finalize import finalize_proactive_task
+
+        await finalize_proactive_task(
+            store,
+            str(task_id),
+            interaction=getattr(visitor, "interaction", None),
+        )
+
     # ------------------------------------------------------------------
     # Loop
     # ------------------------------------------------------------------
@@ -1677,6 +1745,8 @@ class OrchestratorInteractAction(InteractAction):
                         ),
                     }
                 )
+
+        await self._seed_proactive_dispatch(visitor, skill_docs, tools, observations)
 
         active_skill_doc = await self._find_active_locked_skill_doc(
             visitor, skill_docs, loop_actions

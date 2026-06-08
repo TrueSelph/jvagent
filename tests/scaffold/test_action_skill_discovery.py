@@ -99,16 +99,18 @@ def test_merged_bundles_includes_action_skill_with_extends(tmp_path: Path):
     assert "Be friendly." in merged["signup_interview"]["content"]
 
 
-def test_deprecated_agent_skills_path_warns(tmp_path: Path, caplog):
-    """requires-actions in agents/.../skills/ triggers deprecation warning."""
-    skill_dir = tmp_path / "agents" / "jv" / "bot" / "skills" / "legacy_skill"
+def test_agent_skills_accepts_requires_actions(tmp_path: Path, caplog):
+    """requires-actions in agents/.../skills/ is valid app-local placement."""
+    skill_dir = tmp_path / "agents" / "jv" / "bot" / "skills" / "web_lookup"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(
-        "---\nname: legacy_skill\ndescription: legacy\n"
-        "requires-actions:\n  - InterviewAction\n---\n\nbody",
+        "---\nname: web_lookup\ndescription: lookup\n"
+        "requires-actions:\n  - SerperWebSearchAction\n---\n\nbody",
         encoding="utf-8",
     )
     with caplog.at_level("WARNING"):
-        resolve_agent_skills(str(tmp_path), "jv", "bot")
+        found = resolve_agent_skills(str(tmp_path), "jv", "bot")
 
-    assert any("agents/jv/bot/skills/" in r.message for r in caplog.records)
+    assert "web_lookup" in found
+    assert found["web_lookup"]["requires_actions"] == ["SerperWebSearchAction"]
+    assert not any("agents/jv/bot/skills/" in r.message for r in caplog.records)

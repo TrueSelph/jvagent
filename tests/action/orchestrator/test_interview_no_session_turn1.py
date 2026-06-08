@@ -41,7 +41,7 @@ async def test_new_user_without_session_prunes_interview_tools_from_surface(
         tmp_path / "agents" / "zoon" / "zoon_ai" / "skills" / "onboarding_interview"
     )
     skill_dir.mkdir(parents=True)
-    # No interview.yaml — on_skill_activate cannot open a session.
+    # No SKILL.md interview spec — on_skill_activate cannot open a session.
 
     skill = SkillDoc(
         name="onboarding_interview",
@@ -113,13 +113,17 @@ async def test_contract_reload_after_on_register_empty_registry(
         tmp_path / "agents" / "zoon" / "zoon_ai" / "skills" / "onboarding_interview"
     )
     skill_dir.mkdir(parents=True)
-    (skill_dir / "interview.yaml").write_text(
-        "name: onboarding_interview\n"
-        "questions:\n"
-        "  - name: phone_number\n"
-        "    question: What is your phone number?\n"
-        "    required: true\n"
-        "    type: text\n",
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: onboarding_interview
+interview:
+  title: Onboarding
+  questions:
+    - name: phone_number
+      question: What is your phone number?
+      required: true
+---
+""",
         encoding="utf-8",
     )
 

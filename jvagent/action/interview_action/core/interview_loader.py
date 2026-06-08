@@ -1,7 +1,6 @@
 """Interview spec loader — discovers structured interview config from skill directories.
 
 Canonical source: ``interview:`` block in ``SKILL.md`` frontmatter.
-Legacy fallback: standalone ``interview.yaml`` (deprecated).
 """
 
 from __future__ import annotations
@@ -11,12 +10,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-import yaml
-
 logger = logging.getLogger(__name__)
 
 SKILL_MD = "SKILL.md"
-INTERVIEW_YAML = "interview.yaml"
 INTERVIEW_FRONTMATTER_KEY = "interview"
 
 ValidatorSpec = Union[str, Dict[str, Any]]
@@ -37,18 +33,13 @@ class QuestionDef:
     validator: ValidatorSpec = ""
     validator_kwargs: Dict[str, Any] = field(default_factory=dict)
     input_handler: Optional[str] = None
-    input_context_provider: Optional[str] = None
     pre_tools: List[str] = field(default_factory=list)
     post_tools: List[str] = field(default_factory=list)
     branches: List[BranchDef] = field(default_factory=list)
     default_next: Optional[str] = None
 
     def resolved_pre_tools(self) -> List[str]:
-        if self.pre_tools:
-            return list(self.pre_tools)
-        if self.input_context_provider:
-            return [self.input_context_provider]
-        return []
+        return list(self.pre_tools)
 
 
 @dataclass
@@ -124,8 +115,6 @@ class InterviewSpec:
 
 
 def _resolve_validator_name(spec: Dict[str, Any], fallback: str = "") -> str:
-    if spec.get("name") == "builtin":
-        return spec.get("function", "")
     return spec.get("function") or spec.get("name") or fallback
 
 
@@ -157,7 +146,7 @@ def resolve_validator_def(
 
 
 def question_has_validator(question: QuestionDef) -> bool:
-    """True when interview.yaml declares a validator for this question."""
+    """True when the question declares a validator in frontmatter."""
     spec = question.validator
     if not spec:
         return False
@@ -211,7 +200,6 @@ def _parse_question(data: Dict[str, Any]) -> QuestionDef:
         validator=data.get("validator", ""),
         validator_kwargs=data.get("validator_kwargs", {}),
         input_handler=data.get("input_handler"),
-        input_context_provider=data.get("input_context_provider"),
         pre_tools=_parse_string_list(data.get("pre_tools")),
         post_tools=_parse_string_list(data.get("post_tools")),
         branches=branches,
@@ -263,7 +251,7 @@ def parse_interview_spec(
     source_dir: str,
     default_name: str = "",
 ) -> InterviewSpec:
-    """Build ``InterviewSpec`` from a parsed mapping (frontmatter or yaml file)."""
+    """Build ``InterviewSpec`` from a parsed mapping (frontmatter)."""
     if not isinstance(data, dict):
         raise ValueError("Interview spec must be a YAML mapping")
 
@@ -306,14 +294,6 @@ def parse_interview_spec(
     )
 
 
-def load_interview_spec(yaml_path: str) -> InterviewSpec:
-    """Load interview spec from a standalone ``interview.yaml`` file (deprecated)."""
-    path = Path(yaml_path)
-    with open(path, "r") as f:
-        data = yaml.safe_load(f) or {}
-    return parse_interview_spec(data, source_dir=str(path.parent))
-
-
 def load_interview_spec_from_skill(
     skill_dir: Union[str, Path]
 ) -> Optional[InterviewSpec]:
@@ -344,52 +324,18 @@ def load_interview_spec_from_skill(
 
 
 def _load_spec_from_skill_dir(skill_dir: Path) -> Optional[InterviewSpec]:
-    """Prefer SKILL.md frontmatter; fall back to deprecated interview.yaml."""
-    skill_file = skill_dir / SKILL_MD
-    interview_yaml = skill_dir / INTERVIEW_YAML
-
-    if skill_file.is_file():
-        try:
-            from jvagent.scaffold.skill_resolve import _parse_frontmatter
-
-            raw = skill_file.read_text(encoding="utf-8")
-            frontmatter, _ = _parse_frontmatter(raw, skill_file)
-            if frontmatter.get(INTERVIEW_FRONTMATTER_KEY):
-                spec = load_interview_spec_from_skill(skill_dir)
-                if spec is not None:
-                    if interview_yaml.exists():
-                        logger.warning(
-                            "Skill %s has both SKILL.md interview frontmatter and "
-                            "deprecated %s — using frontmatter",
-                            skill_dir.name,
-                            INTERVIEW_YAML,
-                        )
-                    return spec
-        except Exception as exc:
-            logger.error(
-                "Failed to load interview spec from %s frontmatter: %s",
-                skill_file,
-                exc,
-            )
-            return None
-
-    if interview_yaml.exists():
-        logger.warning(
-            "Loading deprecated %s from %s — migrate to SKILL.md frontmatter "
-            "under '%s:'",
-            INTERVIEW_YAML,
-            skill_dir,
-            INTERVIEW_FRONTMATTER_KEY,
+    """Load interview spec from SKILL.md frontmatter."""
+    if not (skill_dir / SKILL_MD).is_file():
+        return None
+    try:
+        return load_interview_spec_from_skill(skill_dir)
+    except Exception as exc:
+        logger.error(
+            "Failed to load interview spec from %s frontmatter: %s",
+            skill_dir / SKILL_MD,
+            exc,
         )
-        try:
-            return load_interview_spec(str(interview_yaml))
-        except Exception as exc:
-            logger.error(
-                "Failed to load interview spec from %s: %s",
-                interview_yaml,
-                exc,
-            )
-    return None
+        return None
 
 
 class InterviewRegistry:

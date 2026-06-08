@@ -7,6 +7,7 @@ from jvspatial.core.annotations import attribute
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.task_creation_interact_action.prompts import TASK_SCHEDULER_PROMPT
 from jvagent.core.app import App, app_now_aware_utc
+from jvagent.memory.task_proactive import ProactiveTaskSpec
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -172,21 +173,13 @@ class TaskCreationInteractAction(InteractAction):
 
         try:
             # Robust task retrieval
-            active_tasks: List[Dict[str, Any]] = []
-            if hasattr(conversation, "get_tasks"):
-                active_tasks = conversation.get_tasks(status="active")
-            elif hasattr(conversation, "tasks"):
-                active_tasks = [
-                    t for t in conversation.tasks if t.get("status") == "active"
-                ]
-
+            pending_handles = visitor.tasks.list_queue(statuses=("pending", "active"))
             pending_tasks_section = "No pending tasks."
-            if active_tasks:
+            if pending_handles:
                 pending_tasks_section = "\n".join(
                     [
-                        f"ID: {t.get('id')} | TASK: {t.get('description')}"
-                        for t in active_tasks
-                        if t.get("task_type") == "PROACTIVE"
+                        f"ID: {h.id} | TASK: {h.title} | STATUS: {h.status}"
+                        for h in pending_handles
                     ]
                 )
 
@@ -224,23 +217,19 @@ class TaskCreationInteractAction(InteractAction):
                 # 2. Process New Tasks
                 new_tasks = self._extract_tasks(response)
                 for task in new_tasks:
-                    t = await visitor.tasks.create(
-                        title=task["description"],
-                        description=task["description"],
+                    spec = self._to_proactive_spec(task, interaction)
+                    await visitor.tasks.enqueue_proactive(
+                        spec,
                         owner_action=self.get_class_name(),
-                        task_type="PROACTIVE",
-                        data={
-                            "context": task["context"],
-                            "channel": interaction.channel or "default",
-                            "trigger_at": task["trigger_time"],
-                            "trigger_condition": task["trigger_condition"],
-                        },
+                        title=task["description"],
                     )
-                    await t.start()
-
-                for task in new_tasks:
                     logger.info(
-                        f"TaskCreation: Successfully ADDED task '{task['description']}' for session {conversation.session_id} @ {task['trigger_time']}"
+                        "TaskCreation: queued proactive task '%s' for session %s "
+                        "(not_before=%s, trigger_on=%s)",
+                        task["description"],
+                        conversation.session_id,
+                        spec.not_before,
+                        spec.trigger_on,
                     )
 
         except Exception as e:
@@ -268,9 +257,13 @@ class TaskCreationInteractAction(InteractAction):
         content = response.replace("\r\n", "\n")
         pattern = (
             r"TASK:[ \t]*(?P<desc>.*?)\s*"
-            r"TRIGGER_TIME:[ \t]*(?P<time>.*?)\s*"
-            r"TRIGGER_CONDITION:[ \t]*(?P<cond>.*?)\s*"
+            r"(?:NOT_BEFORE|TRIGGER_TIME):[ \t]*(?P<time>.*?)\s*"
+            r"(?:TRIGGER_ON:[ \t]*(?P<trigger_on>.*?)\s*)?"
+            r"(?:TRIGGER_KEYWORD:[ \t]*(?P<keyword>.*?)\s*)?"
+            r"(?:TRIGGER_MOOD:[ \t]*(?P<mood>.*?)\s*)?"
+            r"(?:TRIGGER_CONDITION:[ \t]*(?P<cond>.*?)\s*)?"
             r"CONTEXT:[ \t]*(?P<ctx>.*?)\s*"
+            r"(?:PRIORITY:[ \t]*(?P<priority>.*?)\s*)?"
             r"(?=\n+TASK:|$)"
         )
 
@@ -280,9 +273,62 @@ class TaskCreationInteractAction(InteractAction):
             tasks.append(
                 {
                     "description": match.group("desc").strip(),
-                    "trigger_time": normalized_time_str,
-                    "trigger_condition": match.group("cond").strip(),
+                    "not_before": normalized_time_str or None,
+                    "trigger_on": (match.group("trigger_on") or "").strip(),
+                    "trigger_keyword": (match.group("keyword") or "").strip(),
+                    "trigger_mood": (match.group("mood") or "").strip(),
+                    "trigger_condition": (match.group("cond") or "").strip(),
                     "context": match.group("ctx").strip(),
+                    "priority": (match.group("priority") or "").strip(),
                 }
             )
         return tasks
+
+    def _to_proactive_spec(
+        self,
+        task: Dict[str, Any],
+        interaction: Any,
+    ) -> ProactiveTaskSpec:
+        trigger_on = (task.get("trigger_on") or "").strip().lower()
+        trigger_keyword = (task.get("trigger_keyword") or "").strip()
+        trigger_mood = (task.get("trigger_mood") or "").strip()
+        legacy_cond = (task.get("trigger_condition") or "").strip().lower()
+
+        if not trigger_on:
+            if legacy_cond in ("none", ""):
+                trigger_on = "schedule"
+            elif legacy_cond in (
+                "schedule",
+                "user_message",
+                "keyword",
+                "mood",
+                "any",
+            ):
+                trigger_on = legacy_cond
+            else:
+                trigger_on = "keyword"
+                trigger_keyword = legacy_cond
+
+        if trigger_keyword.lower() in ("none", ""):
+            trigger_keyword = None
+        if trigger_mood.lower() in ("none", ""):
+            trigger_mood = None
+
+        priority = 0
+        raw_priority = task.get("priority")
+        if raw_priority:
+            try:
+                priority = int(raw_priority)
+            except (TypeError, ValueError):
+                priority = 0
+
+        return ProactiveTaskSpec(
+            directive=task["description"],
+            context=task.get("context", ""),
+            channel=interaction.channel or "default",
+            not_before=task.get("not_before"),
+            trigger_on=trigger_on,  # type: ignore[arg-type]
+            trigger_keyword=trigger_keyword,
+            trigger_mood=trigger_mood,
+            priority=priority,
+        )

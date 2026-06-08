@@ -92,6 +92,8 @@ database:                    # optional — overrides JVSPATIAL_* env if set
 server:                      # optional
   host: 127.0.0.1
   port: 8000
+  scheduler_enabled: true    # auto-enabled when jvagent/task_monitor is installed
+  scheduler_interval: 1      # scheduler thread poll interval (seconds)
   cors:
     enabled: true
     allowed_origins: ["*"]
@@ -175,6 +177,8 @@ See [`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) for the full pattern. H
 | `history_limit` | 4 | prior turns fed into the loop prompt (working context). The rolling memory window is the agent-level `interaction_limit` |
 | `lock_active_flow` | `true` | deterministic turn-lock to an active flow's IA; `false` = model-mediated continuation (ADR-0013) |
 | `planning` | `false` | surface the `update_plan` tool so the model records a multi-step plan that persists across turns (`AGENTIC_LOOP` task on the `TaskStore`) and resumes an interrupted turn; off = zero cost (ADR-0019) |
+| `proactive_tasks_enabled` | `true` | surface the `queue_task` tool for enqueueing `PROACTIVE` tasks (ADR-0022) |
+| `default_max_attempts` | `3` | default retry ceiling for `queue_task` when `max_attempts` is omitted |
 | `planning_prompt` | (built-in) | override the gated nudge appended when `planning` is on |
 | `clarify_text` | (fallback prompt) | reply when a turn ends with nothing emitted |
 | `skills_source` | `both` | skill discovery source (both specs): `app` (adjacent `skills/`), `library` (`jvagent/skills`), or `both`. Aliases: `local`→`app`, `builtin`→`library`; `registry` retired→`library` |
@@ -313,6 +317,31 @@ The multitenant sandbox `spec: claude` skills run their bundled scripts in. Surf
 
 `file_interface` exposes per-user sandboxed file-I/O tools (`file_interface__read_file`/`write_file`/`list_directory`/…) on the same per-user slice as `code_execution` and the filesystem MCP; `skill_hub` exposes skill-registry management tools (`skill_hub__search_registry`/`install_skill`/`list_installed`/`remove_skill`). Both just need `enabled: true`; no further config.
 
+### Proactive task pipeline (`jvagent/task_monitor`, ADR-0022)
+
+Install on agents that need scheduled or event-triggered follow-ups:
+
+| Action | Weight | Role |
+|---|---|---|
+| `jvagent/task_trigger_interact_action` | `-250` | Claims event-eligible `PROACTIVE` tasks on user turns |
+| `jvagent/orchestrator` | `-200` | Runs dispatched tasks; exposes `queue_task` when `proactive_tasks_enabled` |
+| `jvagent/task_creation_interact_action` | `200` | Post-turn LLM scheduler → `enqueue_proactive` |
+| `jvagent/task_monitor` | (Action) | Periodic tick; dispatches schedule-only tasks via full Orchestrator |
+
+**`TaskMonitor` context keys:**
+
+| Key | Default | Effect |
+|---|---|---|
+| `enabled` | `true` | Master switch |
+| `tick_interval` | `"every 2 minutes"` | `@on_schedule` expression |
+| `max_parallel_conversations` | `5` | Concurrent dispatches per tick |
+| `default_max_attempts` | `3` | Retry ceiling when spec omits `max_attempts` |
+| `terminal_ttl_days` | `0` | When `> 0`, prune terminal `PROACTIVE` rows older than N days on each tick |
+
+**Scheduler:** jvagent bootstraps jvspatial `SchedulerService` in `pre_startup_bootstrap` when `server.scheduler_enabled` is true or any agent installs `task_monitor`. Env: `JVSPATIAL_SCHEDULER_ENABLED`, `JVSPATIAL_SCHEDULER_INTERVAL`. Serverless: use `GET /api/proactive/tick/{agent_id}` (external cron). Detail: [`docs/task-tracking.md`](../../docs/task-tracking.md).
+
+**Task lifecycle webhooks:** `JVAGENT_TASK_CREATED_WEBHOOK_URL`, `JVAGENT_TASK_UPDATED_WEBHOOK_URL`, `JVAGENT_TASK_COMPLETED_WEBHOOK_URL`, `JVAGENT_TASK_FAILED_WEBHOOK_URL`, `JVAGENT_TASK_CANCELLED_WEBHOOK_URL`.
+
 ---
 
 ## 7. Update modes
@@ -380,6 +409,7 @@ backward compatibility. AUDIT-interact MED-12.
 |---|---|
 | Configuration mechanics | [`docs/configuration.md`](../../docs/configuration.md) |
 | Every env var jvagent + jvspatial reads | [`docs/environment-keys-reference.md`](../../docs/environment-keys-reference.md) |
+| Proactive queue + TaskMonitor | [`docs/task-tracking.md`](../../docs/task-tracking.md), [ADR-0022](../adr/0022-proactive-task-monitor.md) |
 | Integration-specific env keys (Google, Microsoft, Anthropic, etc.) | [`docs/integrations-environment.md`](../../docs/integrations-environment.md) |
 | Scaffolding new app/profile/agent | [`docs/scaffolding.md`](../../docs/scaffolding.md) |
 | Security review of secrets in config | [`docs/security-review.md`](../../docs/security-review.md) |

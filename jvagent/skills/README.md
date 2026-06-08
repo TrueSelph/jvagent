@@ -22,13 +22,10 @@ manages exactly **two skill specs** — no third variation:
 |------|----------|------|
 | **Action base SOP** | `<action_dir>/SKILL.md` | Framework procedure inherited via `extends` — **not** discovered as a skill |
 | **Action-backed jvskill** | `<action_dir>/skills/<name>/` | Skill bound to an action tool bundle (`requires-actions`, hooks, `scripts/`) |
-| **Agent skill** | `jvagent/skills/<name>/` or `agents/<ns>/<agent>/skills/<name>/` | **Pure JV SOP** (no action binding) or **`spec: claude`** bundle |
+| **Agent skill** | `jvagent/skills/<name>/` or `agents/<ns>/<agent>/skills/<name>/` | Any JV SOP (with or without `requires-actions`) or **`spec: claude`** bundle |
 
-App overlays for action-backed skills:
+Optional app overlays for action-backed skills:
 `agents/<ns>/<agent>/actions/<namespace>/<action>/skills/<name>/`.
-
-**Do not** place action-backed skills in `agents/.../skills/` — that folder is for
-pure SOPs and Claude skills only. Legacy paths log a deprecation warning.
 
 ```
 jvagent/action/interview_action/
@@ -39,8 +36,8 @@ jvagent/action/interview_action/
 └── runtime/                    # pipeline, hooks, branch eval
 
 agents/acme/bot/
-├── actions/jvagent/interview_action/skills/signup_interview/  # app overlay
-└── skills/research/            # pure JV SOP
+├── actions/jvagent/interview_action/skills/signup_interview/  # optional app overlay
+└── skills/web_lookup/          # app-local JV SOP (may declare requires-actions)
 ```
 
 ## SKILL.md anatomy
@@ -201,14 +198,16 @@ embedders register callables via `register_host_skill_provider()` in
 
 ## Building a new skill
 
-**Pure JV skill:** create `jvagent/skills/<name>/` or `agents/.../skills/<name>/`
-with `spec: jv`, reference tools in `allowed-tools`, write the SOP. No `scripts/`.
+**JV skill:** create `jvagent/skills/<name>/` or `agents/.../skills/<name>/`
+with `spec: jv`, reference tools in `allowed-tools`, write the SOP. Declare
+`requires-actions` when the skill hard-gates on specific actions. Add
+`scripts/custom_tools.py` only when the skill needs action-local hooks.
 
-**Action-backed JV skill:** create `<action_dir>/skills/<name>/` (or app overlay
-under `agents/.../actions/.../skills/`). Declare `requires-actions`, optional
-`extends: action:<namespace>/<action>`, and `scripts/custom_tools.py` when needed.
-Action runtimes discover overlay paths via ``Action.resolve_skill_scan_dirs()``
-(identity from ``info.yaml`` metadata — no hardcoded package refs).
+**Action overlay (optional):** create `<action_dir>/skills/<name>/` or
+`agents/.../actions/.../skills/<name>/` when you prefer co-location beside an
+action. Declare `extends: action:<namespace>/<action>` when composing the
+action base SOP. Action runtimes discover overlay paths via
+``Action.resolve_skill_scan_dirs()`` (identity from ``info.yaml`` metadata).
 
 **Claude skill:** create `jvagent/skills/<name>/` or `agents/.../skills/<name>/` with `spec: claude`, add
 `scripts/` (plain CLI scripts) and any `resources/`, and write a SKILL.md that

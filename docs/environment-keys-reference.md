@@ -52,6 +52,13 @@ Use this split for new app descriptors:
 - `JVAGENT_PAGEINDEX_DB_TABLE_NAME` - PageIndex DynamoDB table.
 - `JVAGENT_PAGEINDEX_DB_REGION` - PageIndex DynamoDB region.
 
+### Proactive task lifecycle webhooks
+- `JVAGENT_TASK_CREATED_WEBHOOK_URL` - Outbound webhook on task create.
+- `JVAGENT_TASK_UPDATED_WEBHOOK_URL` - Outbound webhook on task update.
+- `JVAGENT_TASK_COMPLETED_WEBHOOK_URL` - Outbound webhook on task complete.
+- `JVAGENT_TASK_FAILED_WEBHOOK_URL` - Outbound webhook on task fail.
+- `JVAGENT_TASK_CANCELLED_WEBHOOK_URL` - Outbound webhook on task cancel.
+
 ### Performance and runtime behavior
 - `JVAGENT_DISABLE_RUNTIME_PIP_INSTALL` - Disables runtime package installation for action deps.
 - `JVAGENT_ENABLE_PROFILING` - Enables profiling.
@@ -101,6 +108,8 @@ These are commonly used by `jvagent` and should be configured in `jvagent` deplo
 - `JVSPATIAL_CORS_ORIGINS`
 - `JVSPATIAL_CORS_METHODS`
 - `JVSPATIAL_CORS_HEADERS`
+- `JVSPATIAL_SCHEDULER_ENABLED` - Enable jvspatial native scheduler (`TaskMonitor` auto-enables when `jvagent/task_monitor` is installed unless overridden).
+- `JVSPATIAL_SCHEDULER_INTERVAL` - Scheduler thread poll interval in seconds (default `1`).
 
 ### File storage and S3
 - `JVSPATIAL_FILE_STORAGE_ENABLED`

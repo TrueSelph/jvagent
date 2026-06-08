@@ -11,7 +11,6 @@ import jvagent.scaffold.skill_resolve as skill_resolve
 from jvagent.action.interview_action.core.procedure import (
     compose_interview_skill_body,
     get_standard_interview_procedure,
-    is_interview_skill_bundle,
 )
 from jvagent.action.orchestrator.skills import discover_skill_docs
 from jvagent.scaffold.sop_extend import reset_sop_extend_cache
@@ -48,15 +47,6 @@ def test_compose_interview_skill_body_with_custom():
     composed = compose_interview_skill_body(custom)
     assert composed.startswith(get_standard_interview_procedure())
     assert composed.endswith(custom)
-
-
-def test_is_interview_skill_bundle_deprecated():
-    assert not is_interview_skill_bundle(
-        {
-            "requires_actions": ["InterviewAction"],
-            "interview": {"questions": []},
-        }
-    )
 
 
 @pytest.mark.asyncio

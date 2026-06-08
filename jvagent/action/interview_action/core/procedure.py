@@ -1,8 +1,7 @@
-"""Backward-compatible re-exports for interview SOP composition (ADR-0020).
+"""Interview SOP composition helpers (ADR-0020).
 
-Runtime composition now lives in ``jvagent.scaffold.sop_extend``; skills declare
-``extends: action:jvagent/interview_action`` in frontmatter instead of implicit
-injection via ``requires-actions``.
+Runtime composition lives in ``jvagent.scaffold.sop_extend``; skills declare
+``extends: action:jvagent/interview_action`` in frontmatter.
 """
 
 from __future__ import annotations
@@ -27,14 +26,8 @@ def compose_interview_skill_body_from_bundle(bundle: dict) -> str:
     return str(bundle.get("content") or "").strip()
 
 
-def is_interview_skill_bundle(bundle: dict) -> bool:
-    """Deprecated: interview detection via requires-actions is no longer used for SOP compose."""
-    return False
-
-
 __all__ = [
     "compose_interview_skill_body",
     "compose_interview_skill_body_from_bundle",
     "get_standard_interview_procedure",
-    "is_interview_skill_bundle",
 ]

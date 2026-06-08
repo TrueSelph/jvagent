@@ -1071,6 +1071,37 @@ async def purge_user(*, agent_id: str, user_id: str) -> bool:
     return bool(purged)
 
 
+async def enqueue_proactive_task(
+    *,
+    agent_id: str,
+    user_id: str,
+    spec: Any,
+    session_id: Optional[str] = None,
+    channel: str = "default",
+    title: str = "",
+) -> Optional[Dict[str, Any]]:
+    """Enqueue a PROACTIVE task on a user's conversation via the embed surface."""
+    from jvagent.core.cache import get_cached_agent
+
+    agent = await get_cached_agent(agent_id)
+    if not agent:
+        raise ResourceNotFoundError(
+            message=f"Agent with ID {agent_id!r} not found",
+            details={"agent_id": agent_id},
+        )
+    handle = await agent.enqueue_proactive_task(
+        user_id=user_id,
+        spec=spec,
+        session_id=session_id,
+        channel=channel,
+        owner_action="embed.enqueue_proactive_task",
+        title=title,
+    )
+    if handle is None:
+        return None
+    return {"task_id": handle.id, "status": handle.status}
+
+
 __all__ = [
     "Server",
     "bootstrap",
@@ -1087,4 +1118,5 @@ __all__ = [
     "list_user_conversations",
     "delete_conversation",
     "purge_user",
+    "enqueue_proactive_task",
 ]
