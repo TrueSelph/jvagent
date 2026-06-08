@@ -46,7 +46,7 @@ interview_action/
 
 ## Creating a new interview skill (minimum steps)
 
-1. Copy [`examples/example_interview/`](examples/example_interview/) → app overlay `agents/.../actions/jvagent/interview_action/skills/<name>/`.
+1. Copy [`examples/example_interview/`](examples/example_interview/) → `agents/<ns>/<agent>/skills/<name>/`.
 2. Align `name` in folder and `SKILL.md` frontmatter.
 3. Implement every `function:` referenced in frontmatter `interview:` inside `scripts/custom_tools.py`.
 4. Write `SKILL.md` custom instructions only; set `extends: action:jvagent/interview_action` (see `docs/skill_custom_instructions.md`).
@@ -65,7 +65,7 @@ See [README.md](README.md) and [docs/extending.md](docs/extending.md) for valida
 3. **Chaining gate** — read `ok` from every tool response before advancing; `post_tools` do not run when `ok: false`.
 4. **`response_directive` beats `next_questions`** when they conflict — one action per turn.
 5. **Review before complete** — always call `interview__review()` before `interview__complete()` unless review sets `terminate: true`.
-6. **Contract discovery** — `InterviewRegistry` scans dirs from `Action.resolve_skill_scan_dirs()` (overlay + legacy); reference packages live under `examples/` (not discovered).
+6. **Contract discovery** — `InterviewRegistry` scans dirs from `Action.resolve_skill_scan_dirs()` (app `skills/` + action-bundled paths). Author interview skills under `agents/.../skills/<name>/` (ADR-0023). Reference packages live under `examples/` (not discovered).
 7. **Never reuse stale field values** from older chat turns unless the user repeats them in the latest message.
 
 ---

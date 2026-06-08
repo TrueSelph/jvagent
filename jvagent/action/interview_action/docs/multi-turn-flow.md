@@ -42,11 +42,14 @@ User message → Orchestrator selects use_skill("<skill_name>")
             → SKILL task created if locked-in: true
 ```
 
-On activation the observation includes `fields`, `missing_required`, and any seeded values from `core/field_extractors.py`. When the skill is `locked-in: true`, `prepare_locked_skill_turn` seeds `interview__next_question` on the first locked turn — **reply from `response_directive`**; do not call `interview__next_question` again until after a successful `interview__set_field`, unless the observation already indicates a branch (e.g. `skip_to_review`).
+On every turn (including activation), `prepare_locked_skill_turn` runs **message evaluation** on the user's latest utterance:
 
-### Field seeding
+- **`interview__message_evaluation` observation** when applicable entities are found — model calls `interview__set_field` with a candidate, then replies using the merged `response_directive`.
+- **`interview__next_question` observation** when no applicable entities (empty utterance, intent-only message, or no valid candidates) — reply using the scripted question.
 
-If the user's opening message contains extractable data (phone, email, tracking number, etc.), `core/field_extractors.py` may pre-populate fields before the first question. Seeded fields trigger their configured `post_tools` immediately. The LLM must still confirm suggested values with the user before treating them as final — pre-tools return `suggested_value`, not stored values.
+### Entity candidate registry
+
+[`core/field_extractors.py`](../core/field_extractors.py) surfaces validator-keyed candidates for evaluation (email, phone, names, tracking numbers, training slots, etc.). Evaluation pre-validates candidates; the model performs extraction via `set_field`.
 
 ## Turn N — Typical collection turn
 

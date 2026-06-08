@@ -5,13 +5,13 @@ How to override validation, hooks, handlers, and LLM-callable tools when buildin
 ## Skill package layout
 
 ```
-<action_dir>/skills/my_interview/          # core or app overlay
+agents/<ns>/<agent>/skills/my_interview/   # required default (ADR-0023)
 ├── SKILL.md               # extends + interview: frontmatter; body = custom rules only
 └── scripts/
     └── custom_tools.py    # Python functions referenced by function: names
 ```
 
-App overlay path: `agents/<ns>/<agent>/actions/jvagent/interview_action/skills/my_interview/`.
+Only use `<action_dir>/skills/my_interview/` when bundling the skill with a custom action package you distribute under `agents/.../actions/...`.
 
 Declare `extends: action:jvagent/interview_action` and `requires-actions: [InterviewAction]`.
 The framework base SOP lives in [`../SKILL.md`](../SKILL.md); composition happens at discovery.
@@ -32,7 +32,7 @@ Copy [`../examples/example_interview/`](../examples/example_interview/) as the s
 | Review handler | `interview.review.function` | `custom_tools.py` | No |
 | Reset handler | `interview.reset.function` | `custom_tools.py` | No |
 | Completion handler | `interview.completion.function` | `custom_tools.py` | No |
-| Field seeding | (implicit via validator name) | `core/field_extractors.py` | No |
+| Entity candidates | (implicit via validator name) | `core/field_extractors.py` | No |
 
 **Rule:** Only `interview.tools` entries become LLM tools. Validators and hooks are invoked by the framework when their trigger fires.
 
@@ -275,11 +275,11 @@ Tool name on the wire: `{skill_name}__{tool.name}`.
 
 ---
 
-## Field seeding (opening message)
+## Per-message entity evaluation
 
-Add branches in [`../core/field_extractors.py`](../core/field_extractors.py) `extract_candidates_for_question()` keyed by validator function name. Called once on skill activation.
+Every user message is evaluated for applicable entities. Turn prep injects `interview__message_evaluation` when candidates pass validator pre-check; the model calls `interview__set_field` with an extracted value.
 
-Built-in extraction: `email`, `phone`, `date_past`. Custom examples: `validate_tracking_number`, `validate_id_number`.
+Add validator-keyed candidate branches in [`../core/field_extractors.py`](../core/field_extractors.py) (e.g. `validate_full_name`, `validate_tracking_number`). Document field-specific acceptance in `questions[].description`.
 
 ---
 

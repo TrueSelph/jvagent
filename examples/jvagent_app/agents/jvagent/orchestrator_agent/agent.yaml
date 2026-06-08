@@ -273,16 +273,16 @@ actions:
       description: Interview action — granular interview__* tools for skill-driven flows
 
   # ── Proactive task pipeline (TaskMonitor queue + event bridge) ──
-  - action: jvagent/task_trigger_interact_action
-    context:
-      enabled: true
+  # - action: jvagent/task_trigger_interact_action
+  #   context:
+  #     enabled: true
 
-  - action: jvagent/task_creation_interact_action
-    context:
-      enabled: true
+  # - action: jvagent/task_creation_interact_action
+  #   context:
+  #     enabled: true
 
-  - action: jvagent/task_monitor
-    context:
-      enabled: true
-      tick_interval: "every 2 minutes"
-      max_parallel_conversations: 5
+  # - action: jvagent/task_monitor
+  #   context:
+  #     enabled: true
+  #     tick_interval: "every 2 minutes"
+  #     max_parallel_conversations: 5

@@ -13,9 +13,11 @@ Canonical base SOP: [`../SKILL.md`](../SKILL.md).
 | Behavioral rules (OTP gates, exists:true stop) | Duplicated core instructions |
 | Custom tool callouts when non-obvious | Question wording (use `interview.questions[].description` + `next_questions`) |
 | | **Answer quality gate** (base procedure) |
+| | **Message evaluation** — `interview__message_evaluation` / `interview__next_question` prep (base procedure) |
 | | **Intent routing** — cancel vs start over vs answer (base procedure) |
 | | Cancel/reset/`set_field` decision rules (base procedure) |
 | | Chaining rules and `Tell the user:` reply-only turns (base procedure) |
+| | Per-field "when X appears in applicable, call set_field" restatements (base covers first missing applicable field) |
 
 ## Question descriptions as acceptance criteria
 
@@ -92,7 +94,7 @@ interview:
 | --------- | ------ |
 | Domain-specific branch (e.g. OTP gate) | `{skill}__custom_tool()` |
 
-Cancel, start over, and answer-quality rules are inherited from the base procedure — do not restate them here.
+Cancel, start over, message evaluation, and answer-quality rules are inherited from the base procedure — do not restate them here.
 
 ### Rules
 - ...

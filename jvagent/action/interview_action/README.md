@@ -2,7 +2,7 @@
 
 LLM-driven interview framework for structured data collection. The orchestrator LLM reads the composed interview procedure (`SkillDoc.body` = standard tool loop + per-skill custom rules) and calls granular tools to conduct interviews. `InterviewAction` manages session state, validation, hook orchestration, and tool registration — it does not drive the conversation itself.
 
-**Custom interview skills** are action-backed packages under `skills/<name>/` (app overlay: `agents/.../actions/jvagent/interview_action/skills/`). Copy [`examples/example_interview/`](examples/example_interview/) as a template, set `extends: action:jvagent/interview_action`, `requires-actions: [InterviewAction]`, and `locked-in: true` for turn-lock.
+**Custom interview skills** are two-file packages under `agents/<ns>/<agent>/skills/<name>/` ([ADR-0023 placement standard](../../.planning/adr/0023-skill-placement-standard.md)). Copy [`examples/example_interview/`](examples/example_interview/) as a template, set `extends: action:jvagent/interview_action`, `requires-actions: [InterviewAction]`, and `locked-in: true` for turn-lock.
 
 **Agent entry point:** [CLAUDE.md](CLAUDE.md)
 
@@ -47,13 +47,13 @@ Declare the machine contract under `interview:` in `SKILL.md` frontmatter (not a
 
 ## Quick start
 
-1. **Copy the reference skill** from [`examples/example_interview/`](examples/example_interview/) to your app overlay at `agents/<ns>/<agent>/actions/jvagent/interview_action/skills/<your_skill_name>/`.
+1. **Copy the reference skill** from [`examples/example_interview/`](examples/example_interview/) to `agents/<ns>/<agent>/skills/<your_skill_name>/`.
 2. **Rename consistently** — `name` in `SKILL.md` frontmatter must match the folder name (e.g. `skills/feedback_interview/` → `name: feedback_interview`).
 3. **Implement functions** in `scripts/custom_tools.py` for every `function:` name referenced in frontmatter `interview:`.
 4. **Write custom instructions** in `SKILL.md` body — when to use, session overrides, and behavioral rules. Add `extends: action:jvagent/interview_action`; do not copy the base procedure into the body.
 5. **Register the skill** in [`agent.yaml`](../../../agent.yaml) orchestrator `skills:` list.
 6. **Declare allowed tools** in `SKILL.md` frontmatter — list every `interview__*` tool plus any `{skill}__{tool}` custom tools.
-7. **(Optional)** Add field-seeding regex in [`core/field_extractors.py`](core/field_extractors.py) if your custom validators should extract values from the user's opening message.
+7. **(Optional)** Add entity-candidate branches in [`core/field_extractors.py`](core/field_extractors.py) keyed by validator name so message evaluation can surface candidates for model extraction.
 8. **(Optional)** Add to `auto_start_skills_on_new_user` in `agent.yaml` if the skill should activate automatically for new users.
 
 > **Important:** Reference packages live under `interview_action/examples/` (not auto-discovered). Live skills go in the app action overlay `skills/` path.
@@ -100,12 +100,10 @@ flowchart TB
 1. Orchestrator calls `use_skill("<skill_name>")`.
 2. `InterviewAction.on_skill_activate()` runs `_handle_start()`:
    - Creates or resumes an `InterviewSession` in `conversation.context["interview"]`.
-   - Seeds fields from the user's opening message via `field_extractors.py`.
-   - Runs `post_tools` for any seeded fields.
    - Creates an `INTERVIEW` task owned by `InterviewAction`.
 3. On turn-lock turns, the orchestrator calls generic bound-action hooks on `InterviewAction` (via `skill_tasks.apply_locked_skill_turn` — **not** interview-specific orchestrator code):
    - `skill_runtime_ready(skill_name, visitor)` — session + contract loaded
-   - `prepare_locked_skill_turn(skill_name, visitor)` — mechanical `interview__next_question` seed
+   - `prepare_locked_skill_turn(skill_name, visitor)` — runs per-message entity evaluation; injects `interview__message_evaluation` or `interview__next_question` observation
    - `prune_turn_tools(tools, visible, visitor)` — drop interview tools when runtime not ready
 4. The LLM reads observations and drives the flow until `interview__complete()` or cancel.
 
@@ -405,11 +403,13 @@ Defined in [`core/validators.py`](core/validators.py):
 
 Custom validators go in `scripts/custom_tools.py` and are referenced by function name in `interview.questions[].validator`.
 
-## Field seeding
+## Per-message entity evaluation (model extracts)
 
-On skill activation, [`core/field_extractors.py`](core/field_extractors.py) attempts to extract field values from the user's opening message (e.g. a tracking number in "Please track 291421515335"). Builtin validators (`email`, `phone`, `date_past`) and known custom validators (`validate_tracking_number`, `validate_id_number`, `validate_invoice_value`) have extraction logic.
+On **every** user message (including the skill-trigger message), turn prep runs [`evaluate_message_for_extraction`](jvagent/action/interview_action/runtime/message_evaluation.py). The server surfaces applicable fields and validator-checked **candidates** via an `interview__message_evaluation` observation — it does **not** auto-store.
 
-To add seeding for a new custom validator, add a branch in `extract_candidates_for_question()` in [`core/field_extractors.py`](core/field_extractors.py).
+The model calls `interview__set_field(field, value)` with an extracted candidate; validators accept or reject. After `ok:true`, `merge_auto_next_question` returns the next `Tell the user:` directive.
+
+[`core/field_extractors.py`](core/field_extractors.py) is the entity-candidate registry (validator-keyed). Add branches there for new field types — no per-skill extractor hooks.
 
 ## Patterns from live skills
 
@@ -527,10 +527,10 @@ Existing tests under `agents/zoon-ai/tests/`:
 
 | Path | Notes |
 |------|-------|
-| [examples/example_interview/](examples/example_interview/) | Copy template — **not** auto-discovered; activate via app overlay `skills/` |
-| `examples/jvagent_app/.../actions/jvagent/interview_action/skills/signup_interview/` | jvagent demo signup interview |
-| `zoon-ai/agents/zoon/zoon_ai/actions/jvagent/interview_action/skills/onboarding_interview/` | Production onboarding — OTP, ID extraction, SKILL task persistence |
-| `zoon-ai/agents/zoon/zoon_ai/actions/jvagent/interview_action/skills/pre_alert_interview/` | Production pre-alert — hook branching, custom review terminate path |
+| [examples/example_interview/](examples/example_interview/) | Copy template — **not** auto-discovered; copy to `agents/.../skills/<name>/` |
+| `examples/jvagent_app/.../skills/signup_interview/` | jvagent demo signup interview |
+| `zoon-ai/agents/zoon/zoon_ai/skills/onboarding_interview/` | Production onboarding — OTP, ID extraction, SKILL task persistence |
+| `zoon-ai/agents/zoon/zoon_ai/skills/pre_alert_interview/` | Production pre-alert — hook branching, custom review terminate path |
 
 ## License
 

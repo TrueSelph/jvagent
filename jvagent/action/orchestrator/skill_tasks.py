@@ -6,6 +6,7 @@ and auto-start pending resolution — no domain-specific interview logic here.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from dataclasses import dataclass, field
 from typing import (
@@ -391,6 +392,101 @@ class LockedSkillPrep:
     pending_directive: Optional[str] = None
 
 
+def locked_skills_section_text(
+    skill_doc: Any, *, pending_directive: Optional[str] = None
+) -> str:
+    """Build the turn-lock PROCEDURE block surfaced to the model each tick."""
+    header = (
+        f"ACTIVE SKILL IN PROGRESS: {skill_doc.name}\n"
+        "Turn-lock is ON — complete this skill before routing to any other "
+        "capability. Use only the tools listed below plus reply/respond.\n"
+    )
+    if pending_directive:
+        header += f"{pending_directive}\n"
+    return f"{header}PROCEDURE:\n{skill_doc.body}"
+
+
+_STALE_PREP_OBSERVATION_TOOLS = frozenset(
+    {"interview__message_evaluation", "interview__next_question"}
+)
+
+
+def drop_stale_locked_skill_prep_observations(
+    observations: List[Dict[str, Any]],
+) -> None:
+    """Remove server-injected prep the model must not re-follow after a store."""
+    observations[:] = [
+        o for o in observations if o.get("tool") not in _STALE_PREP_OBSERVATION_TOOLS
+    ]
+
+
+async def ensure_skill_tools_materialized(
+    skill_doc: Any,
+    actions: List[Any],
+    visitor: Any,
+    tools: Dict[str, Any],
+    visible: Set[str],
+) -> None:
+    """Re-add bound-action tools pruned before the interview session was ready."""
+    required = set(getattr(skill_doc, "requires_tools", ()) or ())
+    missing = {name for name in required if name not in tools}
+    if not missing:
+        return
+    from jvagent.action.orchestrator.tools import wrap_action_tool
+
+    for action in enabled_actions(actions):
+        get_tools = getattr(action, "get_tools", None)
+        if not callable(get_tools):
+            continue
+        try:
+            result = get_tools()
+            if inspect.isawaitable(result):
+                result = await result
+        except Exception as exc:
+            logger.debug(
+                "skill_tasks: ensure_skill_tools_materialized get_tools failed: %s",
+                exc,
+            )
+            continue
+        wrap_visitor = (
+            visitor if getattr(action, "binds_tools_to_visitor", False) else None
+        )
+        for tool in result or []:
+            name = getattr(tool, "name", None)
+            if name and name in missing:
+                tools[name] = wrap_action_tool(tool, visitor=wrap_visitor)
+                visible.add(name)
+                missing.discard(name)
+        if not missing:
+            return
+
+
+async def refresh_locked_skill_prep(
+    skill_doc: Any,
+    actions: List[Any],
+    visitor: Any,
+    observations: List[Dict[str, Any]],
+) -> Optional[str]:
+    """Re-run bound-action prep after a successful interview store."""
+    bound = action_for_skill(skill_doc, actions)
+    if bound is None or not hasattr(bound, "prepare_locked_skill_turn"):
+        return None
+    drop_stale_locked_skill_prep_observations(observations)
+    try:
+        prep = await bound.prepare_locked_skill_turn(skill_doc.name, visitor)
+    except Exception as exc:
+        logger.warning(
+            "skill_tasks: refresh_locked_skill_prep failed for %s via %s: %s",
+            skill_doc.name,
+            type(bound).__name__,
+            exc,
+        )
+        return None
+    if prep.observations:
+        observations.extend(prep.observations)
+    return prep.pending_directive
+
+
 def restrict_tools_to_locked_skill(
     skill_doc: Any,
     tools: Dict[str, Any],
@@ -407,14 +503,9 @@ def restrict_tools_to_locked_skill(
     restricted_tools = {k: v for k, v in tools.items() if k in allowed_names}
     restricted_visible = {k for k in visible if k in allowed_names}
     restricted_visible.update(k for k in allowed_names if k in restricted_tools)
-    header = (
-        f"ACTIVE SKILL IN PROGRESS: {skill_doc.name}\n"
-        "Turn-lock is ON — complete this skill before routing to any other "
-        "capability. Use only the tools listed below plus reply/respond.\n"
+    skills_section = locked_skills_section_text(
+        skill_doc, pending_directive=pending_directive
     )
-    if pending_directive:
-        header += f"{pending_directive}\n"
-    skills_section = f"{header}PROCEDURE:\n{skill_doc.body}"
     return restricted_tools, restricted_visible, skills_section
 
 
@@ -504,6 +595,8 @@ async def apply_locked_skill_turn(
         return _reply_only_surface(
             skill_doc, tools, visible, pending_directive=directive
         )
+
+    await ensure_skill_tools_materialized(skill_doc, actions, visitor, tools, visible)
 
     return restrict_tools_to_locked_skill(
         skill_doc, tools, visible, activated, pending_directive=pending_directive

@@ -353,7 +353,7 @@ def resolve_agent_skills(
     namespace: str,
     agent_name: str,
 ) -> Dict[str, Dict[str, Any]]:
-    """Resolve app-local skills from agents/<ns>/<agent>/skills/*."""
+    """Resolve agent skills from agents/<ns>/<agent>/skills/* (ADR-0023 default)."""
     skills_dir = Path(app_root).resolve() / "agents" / namespace / agent_name / "skills"
     if not skills_dir.is_dir():
         return {}
@@ -524,7 +524,11 @@ def resolve_agent_action_skills(
     *,
     action_refs: Optional[List[str]] = None,
 ) -> Dict[str, Dict[str, Any]]:
-    """Discover app overlays at agents/.../actions/<ns>/<action>/skills/*."""
+    """Discover action-bundled skills at agents/.../actions/<ns>/<action>/skills/*.
+
+    ADR-0023: general agent skills belong in agents/.../skills/; this path is for
+    skills shipped alongside a custom app action package.
+    """
     actions_root = (
         Path(app_root).resolve() / "agents" / namespace / agent_name / "actions"
     )

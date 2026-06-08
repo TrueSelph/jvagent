@@ -174,14 +174,16 @@ jvagent --update
 
 ## Skill catalogs and custom skills
 
-Orchestrator agents (skills come in two specs — JV + Claude; see [`jvagent/skills/README.md`](../jvagent/skills/README.md)) discover skills from several tiers (ADR-0020):
+Orchestrator agents (skills come in two specs — JV + Claude; see [`jvagent/skills/README.md`](../jvagent/skills/README.md)) discover skills from several tiers. **Placement standard (ADR-0023):** put every agent skill in `agents/<ns>/<id>/skills/<name>/` unless it is (a) a base action SOP at `<action_dir>/SKILL.md` (not a skill), or (b) bundled with a custom/core action under `<action_dir>/skills/<name>/`.
 
-1. Built-in pure skills (`jvagent/skills/*`)
+Discovery merge order:
+
+1. Built-in library skills (`jvagent/skills/*`)
 2. Core action skills (`<action_dir>/skills/*` for actions on the agent)
-3. App-local skills (`agents/<ns>/<id>/skills/<name>/`) — any JV SOP or Claude bundle
-4. App action overlays (`agents/.../actions/<ns>/<action>/skills/<name>/`) — optional co-location beside an action
+3. App-local agent skills (`agents/<ns>/<id>/skills/*`) — **default drop zone**
+4. App action overlays (`agents/.../actions/<ns>/<action>/skills/*`) — action-bundled only
 
-`agents/.../skills/` accepts pure SOPs, action-backed skills (`requires-actions`, hooks, `scripts/`), and Claude bundles. Action overlays remain available when you prefer skills beside the action package. App-local overrides built-in / core by name.
+App-local overrides built-in / core by name. `jvagent skill add` writes to tier 3.
 
 Runtime exposure is controlled per agent in `agents/<ns>/<id>/agent.yaml` on
 the `jvagent/orchestrator` action via:

@@ -34,6 +34,57 @@ from .path_resolver import (
 )
 
 
+async def merge_auto_next_question(
+    action: "InterviewAction",
+    visitor: Any,
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Inline next_question after store so the model replies once per user turn."""
+    next_raw = await action._handle_next_question(visitor)
+    try:
+        next_step = json.loads(next_raw)
+    except (json.JSONDecodeError, TypeError):
+        return payload
+    if not next_step.get("ok", True):
+        return payload
+    for key in (
+        "response_directive",
+        "next_questions",
+        "pre_tools_results",
+        "missing_required",
+        "fields",
+        "skipped_fields",
+    ):
+        if key in next_step:
+            payload[key] = next_step[key]
+    payload.pop("next_tool", None)
+    return payload
+
+
+def _should_auto_advance_next_question(payload: Dict[str, Any]) -> bool:
+    """True when the store response only asks the model to call next_question."""
+    if payload.get("next_tool") != "interview__next_question":
+        return False
+    directive = payload.get("response_directive") or ""
+    return directive in (
+        "",
+        call_tool_directive("interview__next_question"),
+    )
+
+
+async def finalize_store_continuation(
+    action: "InterviewAction",
+    visitor: Any,
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Apply merge_auto_review / merge_auto_next_question when continuation is mechanical."""
+    if payload.get("next_tool") == "interview__review":
+        return await merge_auto_review(action, visitor, payload)
+    if _should_auto_advance_next_question(payload):
+        return await merge_auto_next_question(action, visitor, payload)
+    return payload
+
+
 async def merge_auto_review(
     action: "InterviewAction",
     visitor: Any,
@@ -216,6 +267,14 @@ async def resolve_and_validate_field_value(
     supplied = (supplied_value or "").strip()
 
     if utterance:
+        if supplied and _supplied_grounded_in_utterance(supplied, utterance):
+            grounded = await validate_field(
+                action, spec, field_name, supplied, session, visitor
+            )
+            if grounded.get("valid"):
+                grounded["validated_from"] = "supplied_grounded"
+                return grounded
+
         last_failure: Optional[Dict[str, Any]] = None
         for candidate in _utterance_candidates(q, spec, utterance):
             check = await validate_field(
@@ -225,13 +284,6 @@ async def resolve_and_validate_field_value(
                 check["validated_from"] = "utterance"
                 return check
             last_failure = check
-        if supplied and _supplied_grounded_in_utterance(supplied, utterance):
-            grounded = await validate_field(
-                action, spec, field_name, supplied, session, visitor
-            )
-            if grounded.get("valid"):
-                grounded["validated_from"] = "supplied_grounded"
-                return grounded
         if last_failure:
             last_failure["validated_from"] = "utterance"
             return last_failure
@@ -467,6 +519,24 @@ async def apply_store_pipeline(
     def load_fn(fn: str):
         return load_hook_function(spec, fn)
 
+    required = await compute_reachable_required(session, spec, load_fn, visitor, action)
+    if field_name not in missing_required_reachable(session, required):
+        existing = (session.get_value(field_name) or "").strip()
+        incoming = (raw_value or "").strip()
+        if existing and existing == incoming:
+            payload: Dict[str, Any] = {
+                "ok": True,
+                "stored": False,
+                "already_stored": True,
+                "status": session.status.value,
+                "field": field_name,
+                "value": existing,
+                "fields": session.get_collected_summary(),
+                "skipped_fields": sorted(session.skipped_fields),
+                "missing_required": missing_required_reachable(session, required),
+            }
+            return await finalize_store_continuation(action, visitor, payload)
+
     q = spec.get_question(field_name)
     value = raw_value
 
@@ -546,7 +616,7 @@ async def apply_store_pipeline(
     )
     missing = missing_required_reachable(session, required)
 
-    payload: Dict[str, Any] = {
+    payload = {
         "ok": True,
         "stored": True,
         "status": session.status.value,
@@ -589,10 +659,8 @@ async def apply_store_pipeline(
             session.context[CTX_QUESTION_PRESENTED] = present_field
             await action._save_session(session, visitor)
 
-        if payload.get("next_tool") == "interview__review":
-            return await merge_auto_review(action, visitor, payload)
         if payload.get("next_tool") or payload.get("response_directive"):
-            return payload
+            return await finalize_store_continuation(action, visitor, payload)
         if payload.get("post_tools_results"):
             return payload
 
@@ -604,7 +672,4 @@ async def apply_store_pipeline(
     if not payload.get("next_tool"):
         payload["next_tool"] = next_tool
 
-    if payload.get("next_tool") == "interview__review":
-        return await merge_auto_review(action, visitor, payload)
-
-    return payload
+    return await finalize_store_continuation(action, visitor, payload)

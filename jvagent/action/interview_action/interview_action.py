@@ -12,7 +12,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from jvagent.action.base import Action
 from jvagent.tooling.tool_executor import get_dispatch_visitor
 
-from .core.field_extractors import extract_candidates_for_question
 from .core.interview_loader import (
     INTERVIEW_FRONTMATTER_KEY,
     InterviewRegistry,
@@ -20,8 +19,6 @@ from .core.interview_loader import (
     QuestionDef,
     ToolDef,
     ValidatorDef,
-    resolve_validator_def,
-    resolve_validator_kwargs,
 )
 from .core.responses import (
     call_tool_directive,
@@ -46,6 +43,7 @@ from .core.session import (
 from .core.tools import build_tools, skill_tool_name
 from .core.validators import ExtractionStatus, get_validator
 from .runtime.hooks import call_hook, clear_module_cache, load_hook_function
+from .runtime.message_evaluation import evaluate_message_for_extraction
 from .runtime.path_resolver import (
     build_next_questions,
     compute_reachable_question_names,
@@ -142,7 +140,7 @@ class InterviewAction(Action):
             return False
         return await self._interview_ready(visitor)
 
-    async def prepare_locked_skill_turn(
+    async def _prep_seed_next_question(
         self, skill_name: str, visitor: Any = None
     ) -> Any:
         from jvagent.action.interview_action.core.responses import (
@@ -150,44 +148,11 @@ class InterviewAction(Action):
         )
         from jvagent.action.orchestrator.skill_tasks import LockedSkillPrep
 
-        if not await self.skill_runtime_ready(skill_name, visitor):
-            return LockedSkillPrep(
-                runtime_ready=False,
-                pending_directive=(
-                    "Interview session is not open yet — reply to the user only; "
-                    "do not call interview tools this turn."
-                ),
-            )
-
-        should_seed, pending_field = await self._should_seed_next_question(
-            skill_name, visitor
-        )
-        if not should_seed:
-            field_hint = (
-                f"interview__set_field(field='{pending_field}', ...)"
-                if pending_field
-                else "interview__set_field(field=<missing field>, ...)"
-            )
-            quality_gate = (
-                "First apply the Answer quality gate: only call set_field when the "
-                "user's latest message substantively answers the active question "
-                f"({pending_field or 'see next_questions'}). If it is an acknowledgement, "
-                "filler, or off-topic reply, respond only and re-ask — do not call tools."
-            )
-            return LockedSkillPrep(
-                runtime_ready=True,
-                pending_directive=(
-                    f"{quality_gate} When the answer is substantive, call {field_hint} — "
-                    "validation runs inside set_field. Do NOT call interview__next_question "
-                    "before set_field returns ok:true."
-                ),
-            )
-
         try:
             next_obs = await self._handle_next_question(visitor)
         except Exception as exc:
             logger.warning(
-                "InterviewAction.prepare_locked_skill_turn failed for %s: %s",
+                "InterviewAction._prep_seed_next_question failed for %s: %s",
                 skill_name,
                 exc,
             )
@@ -215,53 +180,63 @@ class InterviewAction(Action):
                 }
             ],
             pending_directive=(
-                "The first question is in the interview__next_question observation "
+                "The next question is in the interview__next_question observation "
                 "above — reply to the user using response_directive. "
                 "Do NOT call interview__next_question again this turn."
             ),
         )
 
-    async def _should_seed_next_question(
+    async def prepare_locked_skill_turn(
         self, skill_name: str, visitor: Any = None
-    ) -> tuple[bool, Optional[str]]:
-        """Return (seed_next_question, pending_field_for_set_field).
+    ) -> Any:
+        from jvagent.action.orchestrator.skill_tasks import (
+            LockedSkillPrep,
+            visitor_utterance,
+        )
 
-        Seed next_question until that field's question has been presented via
-        interview__next_question. After presentation, a user utterance is routed to
-        set_field (validators run there).
-        """
-        from jvagent.action.orchestrator.skill_tasks import visitor_utterance
+        if not await self.skill_runtime_ready(skill_name, visitor):
+            return LockedSkillPrep(
+                runtime_ready=False,
+                pending_directive=(
+                    "Interview session is not open yet — reply to the user only; "
+                    "do not call interview tools this turn."
+                ),
+            )
 
         session, spec = await self._get_session_and_contract(visitor)
-        if not session or not spec or session.interview_type != skill_name:
-            return True, None
-        if not session.is_active():
-            return True, None
-
-        if session.status == InterviewStatus.REVIEW:
-            return False, None
-
-        load_fn = self._load_fn(spec)
-        pending_field = await resolve_next_question_name(
-            session, spec, load_fn, visitor, self
-        )
+        if not session or not spec:
+            return await self._prep_seed_next_question(skill_name, visitor)
 
         utterance = visitor_utterance(visitor).strip()
         if not utterance:
-            return True, pending_field
+            return await self._prep_seed_next_question(skill_name, visitor)
 
-        if pending_field is None:
-            return False, None
+        evaluation = await evaluate_message_for_extraction(
+            self, session, spec, utterance, visitor
+        )
+        if evaluation.applicable:
+            first_field = evaluation.first_applicable_field or ""
+            return LockedSkillPrep(
+                runtime_ready=True,
+                observations=[
+                    {
+                        "tool": "interview__message_evaluation",
+                        "args": {},
+                        "observation": json.dumps(evaluation.to_dict()),
+                    }
+                ],
+                pending_directive=(
+                    "Message evaluation found applicable entities in the user's "
+                    "latest message. For the first missing applicable field "
+                    f"({first_field or 'see applicable'}), pick a candidate from "
+                    "the evaluation observation and call "
+                    "interview__set_field(field=..., value=...). On ok:true, reply "
+                    "using response_directive only — do not call "
+                    "interview__next_question."
+                ),
+            )
 
-        if not session.get_value(pending_field) and not session.is_skipped(
-            pending_field
-        ):
-            ctx = session.context if isinstance(session.context, dict) else {}
-            if ctx.get(CTX_QUESTION_PRESENTED) != pending_field:
-                return True, pending_field
-            return False, pending_field
-
-        return False, None
+        return await self._prep_seed_next_question(skill_name, visitor)
 
     async def prune_turn_tools(
         self, tools: Dict[str, Any], visible: set, visitor: Any = None
@@ -513,15 +488,12 @@ class InterviewAction(Action):
             parts.append("skip_to_review=true. Call interview__review next.")
         elif parsed.get("fresh_session"):
             parts.append(
-                "Turn prep seeds the first question via interview__next_question — "
-                "reply to the user using that observation's response_directive. "
-                "Do NOT call interview__next_question again until after set_field "
-                "returns ok:true."
+                "Turn prep runs message evaluation on the triggering utterance — "
+                "follow the prepare_locked_skill_turn observation and directive."
             )
         else:
             parts.append(
-                "Call interview__set_field for the user's answer, then "
-                "interview__next_question once on ok:true."
+                "Turn prep runs message evaluation on the user's latest message."
             )
         return " ".join(parts)
 
@@ -645,18 +617,6 @@ class InterviewAction(Action):
             except Exception:
                 pass
 
-        user_message = (kwargs.get("user_message") or "").strip()
-        seeded_fields: List[str] = []
-        skip_to_review = False
-        post_tools_results: List[Dict[str, Any]] = []
-        if user_message:
-            seed_result = await self._seed_fields_from_user_message(
-                session, spec, user_message, visitor
-            )
-            seeded_fields = seed_result.get("seeded", [])
-            skip_to_review = bool(seed_result.get("skip_to_review"))
-            post_tools_results = seed_result.get("post_tools_results") or []
-
         required = await compute_reachable_required(
             session, spec, self._load_fn(spec), visitor, self
         )
@@ -673,13 +633,6 @@ class InterviewAction(Action):
             questions=[_question_def_to_dict(q) for q in spec.questions],
             validators=[_validator_def_to_dict(v) for v in spec.validators],
             custom_tools=[skill_tool_name(spec, t.name) for t in spec.tools],
-            seeded_fields=seeded_fields or None,
-            post_tools_results=post_tools_results or None,
-            skip_to_review=True if skip_to_review else None,
-            next_tool="interview__review" if skip_to_review else None,
-            response_directive=(
-                call_tool_directive("interview__review") if skip_to_review else None
-            ),
         )
 
     async def _handle_set_field(
@@ -859,31 +812,20 @@ class InterviewAction(Action):
             session, spec, self._load_fn(spec), visitor, self
         )
 
-        if next_tool == "interview__review":
-            from .runtime.pipeline import merge_auto_review
+        from .runtime.pipeline import finalize_store_continuation
 
-            payload = {
-                "ok": True,
-                "status": session.status.value,
-                "field": field,
-                "value": None,
-                "fields": session.get_collected_summary(),
-                "skipped_fields": sorted(session.skipped_fields),
-                "missing_required": missing,
-            }
-            return json.dumps(await merge_auto_review(self, visitor, payload))
-
-        return interview_tool_response(
-            ok=True,
-            status=session.status.value,
-            field=field,
-            value=None,
-            fields=session.get_collected_summary(),
-            skipped_fields=sorted(session.skipped_fields),
-            missing_required=missing,
-            response_directive=_directive,
-            next_tool=next_tool,
-        )
+        payload = {
+            "ok": True,
+            "status": session.status.value,
+            "field": field,
+            "value": None,
+            "fields": session.get_collected_summary(),
+            "skipped_fields": sorted(session.skipped_fields),
+            "missing_required": missing,
+            "response_directive": _directive,
+            "next_tool": next_tool,
+        }
+        return json.dumps(await finalize_store_continuation(self, visitor, payload))
 
     async def _handle_get_status(self, visitor: Any = None) -> str:
         session, spec = await self._get_session_and_contract(visitor)
@@ -1554,74 +1496,6 @@ class InterviewAction(Action):
                 "validator": vdef.name,
             }
         )
-
-    async def _seed_fields_from_user_message(
-        self,
-        session: InterviewSession,
-        spec: InterviewSpec,
-        user_message: str,
-        visitor: Any,
-    ) -> Dict[str, Any]:
-        msg = (user_message or "").strip()
-        if not msg:
-            return {"seeded": [], "skip_to_review": False}
-
-        seeded: List[str] = []
-        skip_to_review = False
-        post_tools_results: List[Dict[str, Any]] = []
-        load_fn = self._load_fn(spec)
-
-        for q in spec.questions:
-            if session.get_value(q.name) or session.is_skipped(q.name):
-                continue
-            if not q.required or not q.validator:
-                break
-            vdef = resolve_validator_def(q, spec)
-            if not vdef:
-                break
-            kwargs = resolve_validator_kwargs(q, vdef)
-            candidates = extract_candidates_for_question(q, vdef, msg, kwargs)
-            if not candidates:
-                break
-            stored_value = None
-            for candidate in candidates:
-                check = await validate_field(
-                    self, spec, q.name, candidate, session, visitor
-                )
-                if check.get("valid"):
-                    stored_value = check.get("value", candidate)
-                    break
-            if not stored_value:
-                break
-            session.set_value(q.name, stored_value)
-            seeded.append(q.name)
-            reachable = await compute_reachable_question_names(
-                session, spec, load_fn, visitor, self
-            )
-            prune_unreachable_fields(session, reachable)
-            if q.post_tools:
-                from .runtime.pipeline import run_post_tools
-
-                payload: Dict[str, Any] = {
-                    "status": session.status.value,
-                    "field": q.name,
-                    "value": stored_value,
-                    "fields": session.get_collected_summary(),
-                }
-                merged = await run_post_tools(
-                    self, q, session, spec, visitor, stored_value, payload
-                )
-                skip_to_review = bool(merged.get("skip_to_review"))
-                post_tools_results.extend(merged.get("post_tools_results") or [])
-
-        if seeded:
-            await self._save_session(session, visitor)
-
-        return {
-            "seeded": seeded,
-            "skip_to_review": skip_to_review,
-            "post_tools_results": post_tools_results,
-        }
 
     async def _finalize_tool_response(
         self, parsed: Dict[str, Any], session: Optional[InterviewSession], visitor: Any

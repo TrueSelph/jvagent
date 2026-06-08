@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Locked-skill turn prep after mid-loop `use_skill`.** When the model activates a `locked-in` skill via `use_skill` on tick 1 (not new-user auto-start), the orchestrator now runs `apply_locked_skill_turn` immediately so `interview__message_evaluation` / `interview__next_question` prep reaches the same turn. Fixes signup activation with inline name (`"Hello my name is Eldon Marks…"`) skipping extraction and re-asking for full name. Covered by `tests/action/orchestrator/test_use_skill_locked_prep.py`.
+
+- **Interview tools after mid-loop `use_skill`.** `InterviewAction.prune_turn_tools` could remove `interview__*` tools before the session was ready; mid-loop activation then left the model with `(no such tool: interview__set_field)`. `ensure_skill_tools_materialized` re-adds bound-action tools when turn-lock applies with a ready runtime.
+
+- **Duplicate `set_field` on activation.** After a successful store, the orchestrator refreshes locked-skill prep (drops stale `interview__message_evaluation`, injects updated `interview__next_question`) and idempotent `set_field` only short-circuits when the same normalized value is already stored — not on review corrections or branching updates.
+
+- **jvchat tool-call panel for server prep.** Server-injected prep observations (`interview__message_evaluation`, `interview__next_question`) now emit `tool_call` / `tool_result` thoughts so the TOOL CALLS section appears alongside Reasoning.
+
 ### Added
 
 - **Proactive Task Monitor (ADR-0022).** Unified proactive execution: `ProactiveTaskSpec` (`spec_version: 2`) on `TaskStore`, eligibility engine (`task_eligibility.py`), `TaskMonitor` action (replaces `TaskDispatcher`) dispatching one eligible `PROACTIVE` task per conversation through the full Orchestrator; `TaskTriggerInteractAction` event bridge; `queue_task` orchestrator tool; `Agent.enqueue_proactive_task()` and `embed.enqueue_proactive_task()`. Covered by `tests/memory/test_task_proactive.py`, `test_task_eligibility.py`, `test_task_store_proactive.py`, `tests/action/task_monitor/`, and updated task creation/trigger tests.
@@ -18,9 +28,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- **InterviewAction unified per-message entity evaluation.** Every user message (including skill activation) is evaluated via `evaluate_message_for_extraction` in `runtime/message_evaluation.py`. Turn prep injects `interview__message_evaluation` when applicable candidates are found, or `interview__next_question` otherwise — never text-only directives. The model extracts via `interview__set_field`; validators accept/reject. Init-time `_seed_fields_from_user_message` auto-store removed. `field_extractors.py` expanded for `validate_full_name` and `validate_available_times` intro/slot candidates. Covered by `test_message_evaluation.py`, `test_prepare_locked_skill_turn.py`, `test_signup_activation_inline.py`.
+
+- **InterviewAction set_field auto-advance (cascade fix).** After a successful `interview__set_field`, the server now inlines `interview__next_question` via `merge_auto_next_question` (same pattern as `merge_auto_review`) and returns a `Tell the user:` directive with `next_questions` — no `next_tool` chain for the model to follow in the same turn. Fixes activation-turn tool cascades (`set_field` → `next_question` → spurious `set_field` loops). Signup `get_available_training_times` pre-tool no longer embeds a `Call interview__set_field` hint inside the user-facing directive.
+
+- **Interview base SOP owns message evaluation.** Prep observations (`interview__message_evaluation`, `interview__next_question`) documented in base `SKILL.md`; per-skill custom instructions no longer restate field-specific evaluation rules (signup, zoon onboarding/pre-alert).
+
 - **Proactive task documentation.** `docs/task-tracking.md`, `docs/proactive-messages.md`, `docs/configuration.md`, and `docs/environment-keys-reference.md` document `TaskMonitor`, scheduler bootstrap (`JVSPATIAL_SCHEDULER_*`), serverless HTTP tick, and enqueue APIs. Planning refs updated in `configuration-keys.md` and `action-authoring.md`.
 
-- **App-local skill placement.** `agents/.../skills/` accepts any skill type (pure JV SOP, action-backed with `requires-actions`, or Claude bundles). The deprecation warning for `requires-actions` in app-local folders is removed; action overlays remain an optional co-location path.
+- **Skill placement standard (ADR-0023).** Agent skills default to `agents/.../skills/<name>/`. Exceptions: base action SOP at `<action_dir>/SKILL.md` (extends only); skills bundled with a custom/core action under that action's `skills/`. Documented in [`jvagent/skills/README.md`](jvagent/skills/README.md). Deprecation warning for `requires-actions` in app-local folders removed. Example `signup_interview` and Zoon interview skills migrated to app `skills/`.
 
 - **Action-backed skill scan paths.** `Action.resolve_skill_scan_dirs()` and `skill_resolve.resolve_action_skill_scan_dirs()` derive overlay paths from loader metadata (`info.yaml` `package.name`) — no per-action hardcoded refs. Fixes `signup_interview` discovery after ADR-0020 overlay migration.
 

@@ -288,8 +288,7 @@ async def get_available_training_times(
             "What times are you available to train?",
             note=(
                 "Present these available slots (Eastern Time) and ask the user to pick one:\n"
-                f"{slots_text}\n"
-                "When they choose, call interview__set_field(field='available_times', value=<their choice>)."
+                f"{slots_text}"
             ),
         ),
     }

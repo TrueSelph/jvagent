@@ -168,8 +168,8 @@ async def test_discover_specs_loads_action_overlay_signup(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_discover_specs_loads_jvagent_app_signup_overlay():
-    """Regression: signup_interview lives under action overlay, not agent skills/."""
+async def test_discover_specs_loads_jvagent_app_signup_from_agent_skills():
+    """Regression: signup_interview lives under app-local agents/.../skills/."""
     app_root = Path(__file__).resolve().parents[3] / "examples" / "jvagent_app"
     action = InterviewAction()
     action.metadata = {

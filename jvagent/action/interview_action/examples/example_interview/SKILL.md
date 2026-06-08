@@ -66,7 +66,7 @@ interview:
       feedback in session context and returns a confirmation message.
 ---
 
-> **Note:** Reference package under `interview_action/examples/` (not auto-discovered). Copy to your app overlay at `agents/<ns>/<agent>/actions/jvagent/interview_action/skills/<name>/` and register in `agent.yaml` to activate.
+> **Note:** Reference package under `interview_action/examples/` (not auto-discovered). Copy to `agents/<ns>/<agent>/skills/<name>/` and register in `agent.yaml` to activate.
 
 ## Custom instructions
 

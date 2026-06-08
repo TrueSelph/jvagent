@@ -1,10 +1,10 @@
 """Skills-v2 interview framework for structured multi-turn data collection.
 
 ``InterviewAction`` registers ``interview__*`` tools; the orchestrator LLM drives
-each turn via skill ``SKILL.md`` procedures. Live skills live in the agent app overlay
-``agents/.../actions/jvagent/interview_action/skills/<name>/`` (this package has
-no ``skills/`` subdir). Reference templates are under ``examples/`` (not
-discovered). Declare ``extends: action:jvagent/interview_action``.
+each turn via skill ``SKILL.md`` procedures. Live skills live in app-local
+``agents/.../skills/<name>/`` (or optionally under action overlay paths). This
+package has no ``skills/`` subdir. Reference templates are under ``examples/``
+(not discovered). Declare ``extends: action:jvagent/interview_action``.
 
 Documentation: ``README.md``, ``CLAUDE.md``, ``docs/``.
 """

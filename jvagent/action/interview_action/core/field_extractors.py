@@ -1,4 +1,4 @@
-"""Extract field value candidates from a user message for init-time seeding."""
+"""Entity candidate extraction for per-message evaluation (not auto-store)."""
 
 from __future__ import annotations
 
@@ -9,9 +9,71 @@ from .interview_loader import QuestionDef, ValidatorDef
 
 _EMAIL_RE = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
 
+_NAME_INTRO_PATTERNS = (
+    re.compile(
+        r"(?:my name is|i'm|i am|call me|this is)\s+"
+        r"([A-Za-z][A-Za-z\s'\-]{1,60}?)"
+        r"(?:\s+and\b|\s*,|\s*\.|$)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:hello|hi|hey)[,.]?\s+(?:my name is|i'm|i am)\s+"
+        r"([A-Za-z][A-Za-z\s'\-]{1,60}?)"
+        r"(?:\s+and\b|\s*,|\s*\.|$)",
+        re.IGNORECASE,
+    ),
+)
+
+_DAY_NAMES = (
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+)
+
 
 def _looks_like_email_validator(vdef: ValidatorDef) -> bool:
     return "email" in (vdef.name or "").lower()
+
+
+def _extract_name_candidates(msg: str) -> List[str]:
+    candidates: List[str] = []
+    for pattern in _NAME_INTRO_PATTERNS:
+        for match in pattern.finditer(msg):
+            name = (match.group(1) or "").strip().strip(".,;")
+            if name and name not in candidates:
+                candidates.append(name)
+    return candidates
+
+
+def _extract_training_time_candidates(msg: str) -> List[str]:
+    """Surface day/time phrases that validate_available_times may match."""
+    candidates: List[str] = []
+    lower = msg.lower()
+    for day in _DAY_NAMES:
+        if day not in lower:
+            continue
+        for match in re.finditer(
+            rf"\b{day}\b[^.;]{{0,50}}",
+            msg,
+            re.IGNORECASE,
+        ):
+            chunk = match.group().strip().strip(".,;")
+            if chunk and chunk not in candidates:
+                candidates.append(chunk)
+        # compact forms: "Monday at 9", "Monday 9am"
+        for match in re.finditer(
+            rf"\b{day}\s+(?:at\s+)?\d{{1,2}}(?::\d{{2}})?\s*(?:am|pm)?\b",
+            msg,
+            re.IGNORECASE,
+        ):
+            chunk = match.group().strip()
+            if chunk not in candidates:
+                candidates.append(chunk)
+    return candidates
 
 
 def extract_candidates_for_question(
@@ -27,7 +89,13 @@ def extract_candidates_for_question(
 
     candidates: List[str] = []
 
-    if vdef.name == "email" or _looks_like_email_validator(vdef):
+    if vdef.name == "validate_full_name":
+        candidates.extend(_extract_name_candidates(msg))
+
+    elif vdef.name == "validate_available_times":
+        candidates.extend(_extract_training_time_candidates(msg))
+
+    elif vdef.name == "email" or _looks_like_email_validator(vdef):
         candidates.extend(re.findall(_EMAIL_RE, msg, re.IGNORECASE))
 
     elif vdef.name == "phone":

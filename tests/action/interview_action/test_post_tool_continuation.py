@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -17,19 +16,16 @@ from jvagent.action.interview_action.core.session import (
     InterviewSession,
 )
 from jvagent.action.interview_action.interview_action import InterviewAction
-
-_SIGNUP_SKILL_DIR = (
-    Path(__file__).resolve().parents[3]
-    / "examples/jvagent_app/agents/jvagent/orchestrator_agent/actions/jvagent/interview_action/skills/signup_interview"
+from tests.action.interview_action.conftest import (
+    ORCHESTRATOR_AGENT_DIR,
+    SIGNUP_INTERVIEW_SKILL_DIR,
 )
 
 
 @pytest.fixture
 def signup_action():
-    action = InterviewAction(
-        metadata={"agent_dir": str(_SIGNUP_SKILL_DIR.parent.parent)}
-    )
-    spec = load_interview_spec_from_skill(_SIGNUP_SKILL_DIR)
+    action = InterviewAction(metadata={"agent_dir": str(ORCHESTRATOR_AGENT_DIR)})
+    spec = load_interview_spec_from_skill(SIGNUP_INTERVIEW_SKILL_DIR)
     action._registry._specs[spec.name] = spec
     return action, spec
 
@@ -48,8 +44,9 @@ async def test_email_store_chains_to_optional_phone(signup_action):
     )
 
     assert result["ok"] is True
-    assert result["next_tool"] == "interview__next_question"
-    assert result["response_directive"] == "Call interview__next_question."
+    assert "next_tool" not in result
+    assert result["next_questions"][0]["name"] == "phone_number"
+    assert result["response_directive"].startswith("Tell the user:")
 
 
 @pytest.mark.asyncio

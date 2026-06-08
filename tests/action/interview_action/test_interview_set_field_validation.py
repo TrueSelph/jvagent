@@ -165,37 +165,27 @@ async def test_set_field_stores_cleaned_tracking_number(pre_alert_action):
     assert result["status"] == "active"
     assert session.get_value("tracking_number") == "291421515335"
     assert result["value"] == "291421515335"
-    assert "next_questions" not in result
+    assert result["next_questions"]
+    assert "next_tool" not in result
 
 
 @pytest.mark.asyncio
-async def test_init_seeds_tracking_from_user_message(pre_alert_action):
+async def test_init_does_not_auto_store_tracking_from_user_message(pre_alert_action):
     action, contract = pre_alert_action
     action._save_session = AsyncMock()
     action._ensure_active_task = AsyncMock()
     action._get_conversation = AsyncMock(return_value=None)
-    from unittest.mock import patch
 
-    async def _passthrough_post_tools(*args, **kwargs):
-        return args[-1]
-
-    with patch(
-        "jvagent.action.interview_action.runtime.pipeline.run_post_tools",
-        side_effect=_passthrough_post_tools,
-    ):
-        result = json.loads(
-            await action._handle_start(
-                "pre_alert_interview",
-                user_message="Please track my package 291421515335",
-            )
+    result = json.loads(
+        await action._handle_start(
+            "pre_alert_interview",
+            user_message="Please track my package 291421515335",
         )
+    )
 
     assert result["status"] == "active"
-    assert result["fields"].get("tracking_number") == "291421515335"
-    assert "tracking_number" in result.get("seeded_fields", [])
-    assert "tracking_number" not in [
-        q["name"] for q in result.get("next_questions", [])
-    ]
+    assert "tracking_number" not in result.get("fields", {})
+    assert "seeded_fields" not in result
 
 
 @pytest.mark.asyncio
@@ -251,7 +241,7 @@ async def test_next_question_falls_back_to_phone_question_off_whatsapp(
 
 
 @pytest.mark.asyncio
-async def test_init_seeds_phone_from_user_message(onboarding_action):
+async def test_init_does_not_auto_store_phone_from_user_message(onboarding_action):
     action, contract = onboarding_action
     action._save_session = AsyncMock()
     action._ensure_active_task = AsyncMock()
@@ -264,8 +254,8 @@ async def test_init_seeds_phone_from_user_message(onboarding_action):
         )
     )
 
-    assert result["fields"].get("phone_number") == "5912345678"
-    assert "phone_number" in result.get("seeded_fields", [])
+    assert "phone_number" not in result.get("fields", {})
+    assert "seeded_fields" not in result
 
 
 @pytest.mark.asyncio
@@ -319,9 +309,9 @@ async def test_post_tools_verify_phone_number_after_set_field_not_registered(
     assert "customer" not in result["post_tools_results"][0]
     assert result["exists"] is False
     assert result["status"] == "not_registered"
-    assert "next_questions" not in result
-    assert result["response_directive"] == "Call interview__next_question."
-    assert result["next_tool"] == "interview__next_question"
+    assert result["next_questions"]
+    assert "next_tool" not in result
+    assert result["response_directive"].startswith("Tell the user:")
     api.find_customer_by_phone.assert_awaited_once_with("5926431530")
 
 

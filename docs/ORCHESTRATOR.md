@@ -232,15 +232,17 @@ A skill is **judgment over capability, not capability** (ADR-0011). Tools answer
 - **JV skill** (`spec: jv`, default) — a `SKILL.md` body that references action/IA tools by their `namespace__tool` name (via `allowed-tools`/`requires-actions`) and carries **no executable code**. It coordinates existing actions-as-tools. Examples: `research`, `answer`.
 - **Claude skill** (`spec: claude`) — a standard [Anthropic Agent Skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview) folder (drop-in with agentskills.io): `SKILL.md` + bundled `scripts/`/`resources/`. On activation the orchestrator **stages the folder into the caller's per-user sandbox** (`staged_skills/<name>/`) and the model runs its scripts via `code_execution__bash` — the multitenant [`jvagent/code_execution`](../jvagent/action/code_execution) substrate (off by default). Examples: `pdf-generation`, `triage`. The earlier "skill `scripts/` as typed tools" idea was reverted — there is no third spec.
 
-**Sources** — discovery ([`orchestrator/skills.py`](../jvagent/action/orchestrator/skills.py)) reuses the neutral `jvagent.scaffold.skill_resolve` (ADR-0020), selected by `skills_source`:
+**Placement (ADR-0023)** — author agent skills under `agents/<ns>/<agent>/skills/<name>/`. Exceptions: base action procedures at `<action_dir>/SKILL.md` (composition only, not listed); skills bundled with a custom/core action under that action's `skills/` subtree.
+
+**Sources** — discovery ([`orchestrator/skills.py`](../jvagent/action/orchestrator/skills.py)) reuses `jvagent.scaffold.skill_resolve` (ADR-0020), selected by `skills_source`:
 
 | `skills_source` | Loads from |
 |---|---|
-| `app` | `agents/<ns>/<agent>/skills/*` (app-local) and `agents/.../actions/.../skills/*` (action overlays) |
-| `library` | `jvagent/skills/*` (pure) and core `<action_dir>/skills/*` for installed actions |
+| `app` | `agents/<ns>/<agent>/skills/*` and action-bundled `agents/.../actions/.../skills/*` |
+| `library` | `jvagent/skills/*` and core `<action_dir>/skills/*` for installed actions |
 | `both` (default) | full merged set; app-local overrides built-in / core action skills by name |
 
-App-local skills live under `agents/.../skills/`; action overlays under `agents/.../actions/.../skills/` are optional co-location. See [`jvagent/skills/README.md`](../jvagent/skills/README.md).
+See [`jvagent/skills/README.md`](../jvagent/skills/README.md) for the full placement standard.
 
 Aliases `local`→`app` and `builtin`→`library` are accepted; `registry` is retired (treated as `library`).
 

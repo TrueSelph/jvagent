@@ -24,6 +24,7 @@ import asyncio
 import base64
 import fnmatch
 import inspect
+import json
 import logging
 import re
 import time
@@ -1427,6 +1428,49 @@ class OrchestratorInteractAction(InteractAction):
             observations=observations,
         )
 
+    async def _apply_locked_skill_after_use_skill(
+        self,
+        *,
+        skill_name: str,
+        activation_obs: str,
+        skill_docs: List[Any],
+        loop_actions: List[Any],
+        visitor: Any,
+        utterance: str,
+        tools: Dict[str, Any],
+        visible: Set[str],
+        activated: List[str],
+        observations: List[Dict[str, Any]],
+    ) -> Tuple[Optional[Any], Dict[str, Any], Set[str], str]:
+        """Run turn-lock prep when use_skill first-activates a locked skill mid-loop.
+
+        Pre-loop ``apply_locked_skill_turn`` covers auto-start and resumed tasks;
+        model-driven ``use_skill`` on tick 1 skipped that path, so message
+        evaluation / next_question prep never ran on the activation turn.
+        """
+        if not (activation_obs or "").startswith("Activated skill"):
+            return None, tools, visible, ""
+        doc = next(
+            (d for d in skill_docs if getattr(d, "name", None) == skill_name),
+            None,
+        )
+        if doc is None or not getattr(doc, "locked_in", False):
+            return None, tools, visible, ""
+        tools, visible, skills_section = await self._apply_active_locked_skill(
+            doc,
+            loop_actions,
+            visitor,
+            utterance,
+            tools,
+            visible,
+            activated,
+            observations,
+        )
+        from jvagent.action.orchestrator.skill_tasks import prune_turn_tools_for_actions
+
+        await prune_turn_tools_for_actions(loop_actions, visitor, tools, visible)
+        return doc, tools, visible, skills_section
+
     async def _run_tool_observation(
         self,
         tools: Dict[str, Any],
@@ -1769,7 +1813,9 @@ class OrchestratorInteractAction(InteractAction):
                         active_skill_doc = doc
                         break
 
+        locked_pending_directive: Optional[str] = None
         if active_skill_doc is not None:
+            prep_obs_before = len(observations)
             tools, visible, skills_section = await self._apply_active_locked_skill(
                 active_skill_doc,
                 loop_actions,
@@ -1779,6 +1825,9 @@ class OrchestratorInteractAction(InteractAction):
                 visible,
                 activated,
                 observations,
+            )
+            await self._emit_server_prep_tool_thoughts(
+                visitor, observations, since_index=prep_obs_before
             )
 
         from jvagent.action.orchestrator.skill_tasks import prune_turn_tools_for_actions
@@ -1967,6 +2016,64 @@ class OrchestratorInteractAction(InteractAction):
                     observations.append(
                         {"tool": tool_name, "args": args, "observation": obs}
                     )
+                    if tool_name == "use_skill":
+                        skill_name = ((args or {}).get("name") or "").strip()
+                        prep_obs_before = len(observations)
+                        locked_doc, tools, visible, new_section = (
+                            await self._apply_locked_skill_after_use_skill(
+                                skill_name=skill_name,
+                                activation_obs=obs if isinstance(obs, str) else "",
+                                skill_docs=skill_docs,
+                                loop_actions=loop_actions,
+                                visitor=visitor,
+                                utterance=utterance,
+                                tools=tools,
+                                visible=visible,
+                                activated=activated,
+                                observations=observations,
+                            )
+                        )
+                        if locked_doc is not None:
+                            active_skill_doc = locked_doc
+                            if new_section:
+                                skills_section = new_section
+                            await self._emit_server_prep_tool_thoughts(
+                                visitor, observations, since_index=prep_obs_before
+                            )
+                    elif (
+                        tool_name == "interview__set_field"
+                        and active_skill_doc is not None
+                        and isinstance(obs, str)
+                    ):
+                        try:
+                            store_payload = json.loads(obs)
+                        except json.JSONDecodeError:
+                            store_payload = {}
+                        if store_payload.get("ok") and (
+                            store_payload.get("stored")
+                            or store_payload.get("already_stored")
+                        ):
+                            from jvagent.action.orchestrator.skill_tasks import (
+                                locked_skills_section_text,
+                                refresh_locked_skill_prep,
+                            )
+
+                            prep_obs_before = len(observations)
+                            new_directive = await refresh_locked_skill_prep(
+                                active_skill_doc,
+                                loop_actions,
+                                visitor,
+                                observations,
+                            )
+                            if new_directive:
+                                locked_pending_directive = new_directive
+                                skills_section = locked_skills_section_text(
+                                    active_skill_doc,
+                                    pending_directive=locked_pending_directive,
+                                )
+                            await self._emit_server_prep_tool_thoughts(
+                                visitor, observations, since_index=prep_obs_before
+                            )
                     # Gearing: count substantive (non-meta, non-egress) tool calls
                     # toward escalation to the heavy model.
                     if tool is not None and tool_name not in _NON_SUBSTANTIVE_TOOLS:
@@ -2291,6 +2398,34 @@ class OrchestratorInteractAction(InteractAction):
             )
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("orchestrator: thought emit failed: %s", exc)
+
+    async def _emit_server_prep_tool_thoughts(
+        self,
+        visitor: "InteractWalker",
+        observations: List[Dict[str, Any]],
+        *,
+        since_index: int = 0,
+    ) -> None:
+        """Surface server-injected interview prep in the TOOL CALLS panel."""
+        for entry in observations[since_index:]:
+            tool = str(entry.get("tool") or "")
+            if not tool.startswith("interview__"):
+                continue
+            seg = f"prep-{uuid.uuid4().hex[:10]}"
+            await self._emit_tool_thought(
+                visitor,
+                "tool_call",
+                tool,
+                seg,
+                args=entry.get("args") if isinstance(entry.get("args"), dict) else {},
+            )
+            await self._emit_tool_thought(
+                visitor,
+                "tool_result",
+                tool,
+                seg,
+                obs=entry.get("observation") or "",
+            )
 
     async def _emit_tool_thought(
         self,

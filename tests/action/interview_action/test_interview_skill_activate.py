@@ -51,7 +51,7 @@ async def test_on_skill_activate_returns_observation_for_interview_skill():
     assert "Interview session ready" in note
     assert "onboarding_interview" in note
     assert "missing_required" in note
-    assert "interview__next_question" in note
+    assert "message evaluation" in note.lower()
     action._handle_start.assert_awaited_once_with(
         "onboarding_interview", ANY, user_message="hi"
     )

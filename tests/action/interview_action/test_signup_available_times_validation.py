@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -14,17 +13,13 @@ from jvagent.action.interview_action.core.interview_loader import (
 )
 from jvagent.action.interview_action.core.session import InterviewSession
 from jvagent.action.interview_action.interview_action import InterviewAction
-
-_SIGNUP_SKILL_DIR = (
-    Path(__file__).resolve().parents[3]
-    / "examples/jvagent_app/agents/jvagent/orchestrator_agent/actions/jvagent/interview_action/skills/signup_interview"
-)
+from tests.action.interview_action.conftest import SIGNUP_INTERVIEW_SKILL_DIR
 
 
 @pytest.fixture
 def signup_action():
     action = InterviewAction()
-    contract = load_interview_spec_from_skill(_SIGNUP_SKILL_DIR)
+    contract = load_interview_spec_from_skill(SIGNUP_INTERVIEW_SKILL_DIR)
     action._registry._specs[contract.name] = contract
     return action, contract
 

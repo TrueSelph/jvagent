@@ -11,12 +11,9 @@ from jvagent.action.interview_action.core.interview_loader import (
     load_interview_spec_from_skill,
     parse_interview_spec,
 )
+from tests.action.interview_action.conftest import SIGNUP_INTERVIEW_SKILL_DIR as _SIGNUP
 
 _FIXTURES = Path(__file__).resolve().parent / "fixtures/skills/onboarding_interview"
-_SIGNUP = (
-    Path(__file__).resolve().parents[3]
-    / "examples/jvagent_app/agents/jvagent/orchestrator_agent/actions/jvagent/interview_action/skills/signup_interview"
-)
 
 
 def test_load_interview_spec_from_skill_fixture():

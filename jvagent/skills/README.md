@@ -16,29 +16,49 @@ manages exactly **two skill specs** — no third variation:
 > (a Claude skill whose scripts run in the sandbox). If you find yourself
 > wrapping an action's operation in a skill, expose it on the action instead.
 
-## Where skills live (three tiers — ADR-0020)
+## Skill placement standard (ADR-0023)
 
-| Tier | Location | Role |
-|------|----------|------|
-| **Action base SOP** | `<action_dir>/SKILL.md` | Framework procedure inherited via `extends` — **not** discovered as a skill |
-| **Action-backed jvskill** | `<action_dir>/skills/<name>/` | Skill bound to an action tool bundle (`requires-actions`, hooks, `scripts/`) |
-| **Agent skill** | `jvagent/skills/<name>/` or `agents/<ns>/<agent>/skills/<name>/` | Any JV SOP (with or without `requires-actions`) or **`spec: claude`** bundle |
+**Rule:** drop every agent skill into `agents/<ns>/<agent>/skills/<name>/` unless one of the two exceptions below applies.
 
-Optional app overlays for action-backed skills:
-`agents/<ns>/<agent>/actions/<namespace>/<action>/skills/<name>/`.
+| You are… | Put it here | Listed as orchestrator skill? |
+|----------|-------------|-------------------------------|
+| **Authoring a skill for an agent** (JV SOP, interview, Claude bundle) | `agents/<ns>/<agent>/skills/<name>/` | Yes |
+| **Shipping a reusable library skill in jvagent** | `jvagent/skills/<name>/` | Yes (`source: builtin`) |
+| **Furnishing a base action procedure** (inherited, not activated alone) | `<action_dir>/SKILL.md` | **No** — `extends: action:…` source only |
+| **Bundling a skill with a custom/core action package** | `<action_dir>/skills/<name>/` or `agents/.../actions/<ns>/<action>/skills/<name>/` | Yes — only when the skill ships **with** that action distribution |
+
+### Decision flow
+
+```
+New skill for my agent?
+  └─ YES → agents/<ns>/<agent>/skills/<name>/     ← default (always)
+
+Bundled inside an action package I own (agents/.../actions/... or jvagent/action/...)?
+  └─ YES → <that action>/skills/<name>/
+
+Base procedure for an action (interview tool loop, etc.)?
+  └─ YES → <action_dir>/SKILL.md  (not a skill folder)
+```
+
+**Interview skills** (`interview:` frontmatter, `scripts/custom_tools.py`) follow the same default: `agents/.../skills/<name>/` plus `extends: action:jvagent/interview_action`. Do not place them under `agents/.../actions/jvagent/interview_action/skills/` unless you are distributing a **custom fork** of `InterviewAction` with its own bundled skills.
+
+`jvagent skill add <agent_ref> <name>` scaffolds into `agents/.../skills/<name>/` by design.
+
+### Layout example
 
 ```
 jvagent/action/interview_action/
-├── SKILL.md                    # base SOP (extends target)
-├── interview_action.py         # InterviewAction implementation
-├── examples/example_interview/ # reference package (not auto-discovered)
-├── core/                       # loader, session, validators, tools, …
-└── runtime/                    # pipeline, hooks, branch eval
+├── SKILL.md                    # base SOP (extends target — not discovered)
+├── interview_action.py
+└── examples/example_interview/ # copy template (not auto-discovered)
 
-agents/acme/bot/
-├── actions/jvagent/interview_action/skills/signup_interview/  # optional app overlay
-└── skills/web_lookup/          # app-local JV SOP (may declare requires-actions)
+agents/acme/bot/skills/         # ← all agent skills live here
+├── signup_interview/           # extends action:jvagent/interview_action
+├── web_lookup/
+└── docx/                       # spec: claude
 ```
+
+Discovery tiers (merge order): builtin library → core action `skills/` → app `skills/` → app action overlays. See [ADR-0020](../../.planning/adr/0020-skill-sop-extends.md) for `extends` and [ADR-0023](../../.planning/adr/0023-skill-placement-standard.md) for placement.
 
 ## SKILL.md anatomy
 
@@ -198,18 +218,19 @@ embedders register callables via `register_host_skill_provider()` in
 
 ## Building a new skill
 
-**JV skill:** create `jvagent/skills/<name>/` or `agents/.../skills/<name>/`
-with `spec: jv`, reference tools in `allowed-tools`, write the SOP. Declare
-`requires-actions` when the skill hard-gates on specific actions. Add
-`scripts/custom_tools.py` only when the skill needs action-local hooks.
+**Agent skill (default):** `jvagent skill add <ns>/<agent> <name>` or manually
+create `agents/.../skills/<name>/`. Use `spec: jv`, reference tools in
+`allowed-tools`, write the SOP. Declare `requires-actions` when the skill
+hard-gates on specific actions. Add `scripts/custom_tools.py` for interview
+hooks or other action-coordinated logic. Set `extends: action:<namespace>/<action>`
+when composing a base action SOP.
 
-**Action overlay (optional):** create `<action_dir>/skills/<name>/` or
-`agents/.../actions/.../skills/<name>/` when you prefer co-location beside an
-action. Declare `extends: action:<namespace>/<action>` when composing the
-action base SOP. Action runtimes discover overlay paths via
-``Action.resolve_skill_scan_dirs()`` (identity from ``info.yaml`` metadata).
+**Library skill:** `jvagent/skills/<name>/` for framework-shipped reusables only.
 
-**Claude skill:** create `jvagent/skills/<name>/` or `agents/.../skills/<name>/` with `spec: claude`, add
+**Action-bundled skill:** `<action_dir>/skills/<name>/` only when the skill is
+part of the action package you ship (core plugin or `agents/.../actions/...`).
+
+**Claude skill:** `agents/.../skills/<name>/` (or library) with `spec: claude`, add
 `scripts/` (plain CLI scripts) and any `resources/`, and write a SKILL.md that
 tells the model how to run them via `code_execution__bash`. Declare runtime
 dependencies in `resources/requirements.txt` — the sandbox has no network, so
@@ -227,6 +248,7 @@ from jvagent.scaffold.skill_resolve import (
 
 ## See also
 
+- [ADR-0023 placement standard](../../.planning/adr/0023-skill-placement-standard.md)
 - [Orchestrator](../../docs/ORCHESTRATOR.md) — the loop and skill lifecycle
 - [`jvagent/code_execution`](../action/code_execution) — the sandbox substrate
 - [`jvagent/core/sandbox.py`](../core/sandbox.py) — the per-user FS convention

@@ -59,6 +59,16 @@ Before every `interview__set_field` call, decide whether the user's **latest mes
 
 Per-field acceptance criteria live in `next_questions[0].description` — use them together with this gate.
 
+### Message evaluation (every turn)
+
+Turn prep runs **message evaluation** on the user's **latest message** — including the message that triggered skill activation. Read the `interview__message_evaluation` observation when present.
+
+1. When `applicable` lists fields with `candidates`, call `interview__set_field` for the **first missing applicable field**, using a candidate value you extract from the message.
+2. On `ok:true`, the response includes `next_questions` and a `Tell the user:` `response_directive` — **reply only**; do not call `interview__next_question` (the server already advanced).
+3. When `applicable` is empty, use the `interview__next_question` observation — reply using its `response_directive`; do not call `set_field` with the full utterance.
+4. Intent-only messages (e.g. "sign me up" without extractable entities) have empty `applicable` — present the scripted next question from the observation.
+5. Multiple inline entities in one message: extract the **first missing applicable field** this turn; call `set_field` again only if evaluation still lists another applicable field after a successful store.
+
 ## Intent routing
 
 Before any tool call, classify the user's **latest message** into one intent. Pick **one primary tool** for that turn — do not chain unrelated tools.
@@ -94,12 +104,19 @@ Implement `reset_onboarding` in `scripts/custom_tools.py`. The model still calls
 ## Critical rules
 
 1. **Do not enumerate fields in your head** — the active question comes from `next_questions[0]` after `interview__next_question` or from `response_directive`. Never invent questions or skip ahead of `missing_required`.
-2. **Session starts when this skill is activated** (`use_skill`) — turn prep seeds the first question. Reply using `response_directive`; do not call `interview__next_question` again until after `set_field` returns `ok:true` (unless activation says `skip_to_review`).
-3. **Chaining:** `interview__set_field(field, value)` → read `ok`; if `ok:false`, handle the error (`post_tools` do not run). Read `post_tools_results` before advancing. When `next_tool` is present, call it next — **unless** the current `response_directive` is `Tell the user:` (reply only that turn).
+2. **Every turn starts with message evaluation** — turn prep injects either `interview__message_evaluation` or `interview__next_question`. Follow that observation's directive; never reply with a field question without reading the prep observation first.
+3. **After `set_field`:** read `ok`; if `ok:false`, handle the error (`post_tools` do not run). Read `post_tools_results` before advancing. On `ok:true`, a `Tell the user:` `response_directive` with `next_questions` means the next question is ready — **reply only**; do not call `interview__next_question` in the same turn. Call `interview__next_question` only when a tool returns `Call interview__next_question.` with no `next_questions` yet (e.g. after `skip_field` when the response still chains mechanically).
 4. **`interview__set_field` uses parameter `field`** — not `name`. Validation runs inside the tool; do not call validator functions directly.
 5. **Optional fields:** call `interview__skip_field(field)` when the user declines.
 6. **Never skip review** — call `interview__review()` before `interview__complete()` unless review sets `terminate: true`.
 7. When `missing_required` is empty, call `interview__review()` then `interview__complete()` after user confirms.
+
+## Prep observations (server-injected, not callable)
+
+Turn-lock prep may inject these **before** your first tool decision each turn. They are **not** in `allowed-tools` — do not try to call them.
+
+- `interview__message_evaluation` — Applicable fields and validator-checked `candidates` from the user's latest message. Follow the Message evaluation rules above; call `interview__set_field` for the first missing applicable field when `applicable` is non-empty.
+- `interview__next_question` — Scripted next question when no extractable entities matched. Reply using `response_directive` only.
 
 ## Core tools (`interview__*`)
 
