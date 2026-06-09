@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional, Set
 
 from ..core.interview_loader import FieldDef, InterviewSpec
-from ..core.session import InterviewSession
+from ..core.session import (
+    CTX_FIELD_SUGGESTION,
+    CTX_QUESTION_PRESENTED,
+    InterviewSession,
+)
 from .branch_eval import matches_branch_condition
 
 
@@ -39,7 +43,12 @@ async def compute_reachable_question_names(
     visitor: Any = None,
     interview_action: Any = None,
 ) -> List[str]:
-    """Ordered list of field keys on the active path from start to end."""
+    """Ordered list of field keys on the full active path from start to terminal field.
+
+    Unlike ``resolve_next_question_name``, this includes unanswered fields after
+    the first gap so prune/status logic can retain downstream answers that remain
+    valid after a branch pivot.
+    """
     if not spec.fields:
         return []
 
@@ -58,9 +67,6 @@ async def compute_reachable_question_names(
         if not fdef:
             break
         reachable.append(current)
-
-        if not session.has_field(current) and not session.is_skipped(current):
-            break
 
         nxt = await _resolve_next_from_field(
             fdef, session, spec, load_function, visitor, interview_action
@@ -185,6 +191,24 @@ async def build_next_questions(
     return [entry]
 
 
+def _clear_stale_context_for_pruned(
+    session: InterviewSession,
+    pruned: List[str],
+) -> None:
+    """Drop question/suggestion scratch keys that reference pruned fields."""
+    if not pruned or not isinstance(session.context, dict):
+        return
+    pruned_set = set(pruned)
+    presented = session.context.get(CTX_QUESTION_PRESENTED)
+    if isinstance(presented, str) and presented.strip() in pruned_set:
+        session.context.pop(CTX_QUESTION_PRESENTED, None)
+    suggestion = session.context.get(CTX_FIELD_SUGGESTION)
+    if isinstance(suggestion, dict):
+        field = (suggestion.get("field") or "").strip()
+        if field in pruned_set:
+            session.context.pop(CTX_FIELD_SUGGESTION, None)
+
+
 def prune_unreachable_fields(
     session: InterviewSession,
     reachable_names: List[str],
@@ -196,8 +220,11 @@ def prune_unreachable_fields(
         if name not in reachable:
             pruned.append(name)
             session.fields.pop(name, None)
+            session.skipped_fields.discard(name)
     if pruned:
-        audit = session.context.setdefault("pruned_fields", [])
-        if isinstance(audit, list):
-            audit.extend(pruned)
+        if isinstance(session.context, dict):
+            audit = session.context.setdefault("pruned_fields", [])
+            if isinstance(audit, list):
+                audit.extend(pruned)
+        _clear_stale_context_for_pruned(session, pruned)
     return pruned

@@ -69,7 +69,7 @@ async def test_branch_premium_path(branching_spec):
     session.set_value("user_type", "premium")
     load_fn = lambda _: None
     reachable = await compute_reachable_question_names(session, branching_spec, load_fn)
-    assert reachable == ["user_type", "premium_q"]
+    assert reachable == ["user_type", "premium_q", "contact"]
     nxt = await resolve_next_question_name(session, branching_spec, load_fn)
     assert nxt == "premium_q"
 

@@ -594,7 +594,7 @@ async def apply_store_pipeline(
         visitor,
         action,
     )
-    prune_unreachable_fields(session, reachable)
+    pruned = prune_unreachable_fields(session, reachable)
 
     if session.status == InterviewStatus.REVIEW:
         required = await compute_reachable_required(
@@ -630,6 +630,8 @@ async def apply_store_pipeline(
         "skipped_fields": sorted(session.skipped_fields),
         "missing_required": missing,
     }
+    if pruned:
+        payload["pruned_fields"] = pruned
 
     if check.get("interview_complete"):
         payload["interview_complete"] = True

@@ -131,6 +131,14 @@ Branching is **procedure-driven**, not graph-evaluated:
 
 Document branches in `SKILL.md` and implement side effects in hooks.
 
+### Branch path invalidation (corrections)
+
+When the user corrects a field that determines a branch (`fields[].branches`), the runtime recomputes the **full active path** (start → terminal field) from stored values and **prunes only off-path fields** — answers on the new path that remain valid (e.g. `contact` after `user_type` premium→standard, or `phone_number` after email branch pivot) are preserved.
+
+- Pruned field names are recorded in `session.context.pruned_fields` and may appear as `pruned_fields` on `interview__set_fields` responses.
+- Prune also clears `skipped_fields` entries and stale `question_presented` / `field_suggestion` scratch keys for pruned fields.
+- `resolve_next_question_name` still returns the first unanswered field on the active path; use `missing_required` / `next_questions` after a correction — do not assume every spec field is still collected.
+
 ## Review and completion turns
 
 ```
