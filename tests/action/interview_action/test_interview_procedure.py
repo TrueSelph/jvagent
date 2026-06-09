@@ -14,6 +14,7 @@ from jvagent.action.interview_action.core.procedure import (
 )
 from jvagent.action.orchestrator.skills import discover_skill_docs
 from jvagent.scaffold.sop_extend import reset_sop_extend_cache
+from tests.action.interview_action.conftest import SIGNUP_INTERVIEW_SKILL_DIR
 
 
 @pytest.fixture(autouse=True)
@@ -26,14 +27,20 @@ def _reset_cache():
 def test_get_standard_interview_procedure():
     body = get_standard_interview_procedure()
     assert "Standard Interview Procedure" in body
-    assert "Answer quality gate" in body
     assert "Intent routing" in body
-    assert "Reset tool" in body
-    assert "standard ruleset" in body.lower()
+    assert "Corrections" in body
     assert "interview__cancel" in body
-    assert "substantively answers" in body.lower()
-    assert "next_questions" in body
-    assert "interview__set_field" in body
+    assert "interview__set_fields" in body
+    assert "interview__reset" in body
+
+
+def test_standard_procedure_includes_session_gate():
+    body = get_standard_interview_procedure()
+    assert "Activation (session gate)" in body
+    assert "**Start interview**" in body
+    assert "use_skill" in body
+    assert "no interview questions via `reply` alone" in body.lower()
+    assert "Late activation" in body
 
 
 def test_compose_interview_skill_body_without_custom():
@@ -68,17 +75,20 @@ async def test_discover_skill_docs_uses_precomposed_body(monkeypatch):
                 "description": "signup",
                 "content": composed,
                 "requires_actions": ["InterviewAction"],
-                "interview": {"title": "Signup", "questions": [{"name": "user_name"}]},
+                "interview": {
+                    "title": "Signup",
+                    "fields": [{"key": "user_name", "prompt": "Name?"}],
+                },
                 "allowed_tools": [
-                    "interview__set_field",
-                    "interview__get_field",
+                    "interview__set_fields",
+                    "interview__get_fields",
                     "interview__skip_field",
                     "interview__next_question",
                     "interview__get_status",
                     "interview__review",
                     "interview__complete",
                     "interview__cancel",
-                    "interview__reset_interview",
+                    "interview__reset",
                 ],
                 "source": "app",
                 "metadata": {},
@@ -105,10 +115,23 @@ async def test_discover_skill_docs_uses_precomposed_body(monkeypatch):
 
     assert "Standard Interview Procedure" in docs["signup_interview"].body
     assert "Intent routing" in docs["signup_interview"].body
-    assert "Answer quality gate" in docs["signup_interview"].body
-    assert "Cancel vs start over" not in docs["signup_interview"].body
-    assert "interview__reset_interview" in docs["signup_interview"].requires_tools
-    assert "interview__set_field" in docs["signup_interview"].requires_tools
+    assert "Corrections" in docs["signup_interview"].body
+    assert "interview__reset" in docs["signup_interview"].requires_tools
+    assert "interview__set_fields" in docs["signup_interview"].requires_tools
     assert "## Custom instructions" in docs["signup_interview"].body
     assert "Be friendly." in docs["signup_interview"].body
     assert docs["plain_skill"].body == "Plain SOP only."
+
+
+def test_signup_skill_custom_instructions_model_owned_flow():
+    """Orchestrator signup_interview SOP matches stripped harness (no prep steering)."""
+    skill_md = SIGNUP_INTERVIEW_SKILL_DIR / "SKILL.md"
+    custom_body = skill_md.read_text(encoding="utf-8").split("---", 2)[-1].strip()
+    composed = compose_interview_skill_body(custom_body)
+
+    assert "interview__set_fields" in composed
+    assert "interview__reset" in composed
+    assert "Corrections" in composed
+    assert "interview__message_evaluation" not in composed
+    assert "Turn flow" in composed
+    assert "Activation" in composed

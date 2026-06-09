@@ -17,61 +17,43 @@ tags:
 - order
 interview:
   title: Tracking & Pre-Alert
-  description: 'Handles tracking number lookups: checks shipment/pre-alert status
-    and creates new pre-alerts. When the user provides a tracking number, checks conversation
-    context for an existing pre-alert. If found or a known status number, returns
-    status at review. Otherwise collects description, invoice value, and alternative
-    tracking number to create a new pre-alert via the Zoon API. The LLM decides which
-    question to ask next based on SKILL.md.'
-  questions:
-  - name: tracking_number
-    question: What is the tracking number for your package?
+  summary: >-
+    Handles tracking number lookups: checks shipment/pre-alert status and creates new
+    pre-alerts. When the user provides a tracking number, checks conversation context
+    for an existing pre-alert. If found or a known status number, returns status at
+    review. Otherwise collects description, invoice value, and alternative tracking
+    number to create a new pre-alert via the Zoon API.
+  confirm: manual
+  fields:
+  - key: tracking_number
+    prompt: What is the tracking number for your package?
     required: true
-    description: User's tracking number for the shipment
-    post_tools:
-    - check_tracking_status
-    validator:
-      function: validate_tracking_number
-      kwargs:
-        min_length: 10
-  - name: description
-    question: What is the description of the item(s) you're shipping?
+    guidance: User's tracking number for the shipment
+    post_processor: check_tracking_status
+    validator: validate_tracking_number
+    validator_args:
+      min_length: 10
+  - key: description
+    prompt: What is the description of the item(s) you're shipping?
     required: true
-    description: Description of the shipped item(s)
-    validator:
-      function: description
-      kwargs:
-        min_length: 10
-        max_length: 500
-  - name: invoice_value
-    question: What is the invoice value of the item? (You can skip this if you don't
-      know)
+    guidance: Description of the shipped item(s)
+    validator: description
+    validator_args:
+      min_length: 10
+      max_length: 500
+  - key: invoice_value
+    prompt: What is the invoice value of the item? (You can skip this if you don't know)
     required: false
-    description: Invoice or declared value (optional)
-    validator:
-      function: validate_invoice_value
-  - name: alternative_tracking_number
-    question: Do you have an alternative tracking number? (You can skip this if you
-      don't have one)
+    guidance: Invoice or declared value (optional)
+    validator: validate_invoice_value
+  - key: alternative_tracking_number
+    prompt: Do you have an alternative tracking number? (You can skip this if you don't have one)
     required: false
-    description: Alternative tracking number (optional)
-    validator:
-      function: validate_alternative_tracking_number
-  review:
-    function: pre_alert_review
-    description: Status-only path when tracking_status is in session context (terminate),
-      or formatted summary for user confirmation before completion.
-  completion:
-    function: pre_alert_complete
-    description: Creates the pre-alert via Zoon API after user confirms at review.
-      Updates user_pre_alerts in conversation context on success.
-  extractors:
-    - validator: validate_tracking_number
-      function: extract_tracking_number_candidates
-    - validator: validate_invoice_value
-      function: extract_invoice_value_candidates
-    - validator: validate_alternative_tracking_number
-      function: extract_alternative_tracking_candidates
+    guidance: Alternative tracking number (optional)
+    validator: validate_alternative_tracking_number
+  handlers:
+    review: pre_alert_review
+    complete: pre_alert_complete
 ---
 
 ## Custom instructions

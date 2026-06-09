@@ -17,7 +17,7 @@ async def test_resolve_skills_dirs_uses_app_root_and_agent_metadata(tmp_path):
     )
     skills.mkdir(parents=True)
     (skills / "SKILL.md").write_text(
-        "---\nname: onboarding_interview\ninterview:\n  title: Onboarding\n  questions: []\n---\n",
+        "---\nname: onboarding_interview\ninterview:\n  title: Onboarding\n  fields: []\n---\n",
         encoding="utf-8",
     )
 
@@ -38,7 +38,7 @@ async def test_resolve_skills_dirs_falls_back_to_agent_node(tmp_path, monkeypatc
     skills = tmp_path / "agents" / "zoon" / "zoon_ai" / "skills" / "pre_alert_interview"
     skills.mkdir(parents=True)
     (skills / "SKILL.md").write_text(
-        "---\nname: pre_alert_interview\ninterview:\n  title: Pre-alert\n  questions: []\n---\n",
+        "---\nname: pre_alert_interview\ninterview:\n  title: Pre-alert\n  fields: []\n---\n",
         encoding="utf-8",
     )
 
@@ -68,7 +68,7 @@ async def test_discover_specs_loads_agent_interview_skills(tmp_path):
     )
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(
-        "---\nname: onboarding_interview\ninterview:\n  title: Onboarding\n  questions: []\n---\n",
+        "---\nname: onboarding_interview\ninterview:\n  title: Onboarding\n  fields: []\n---\n",
         encoding="utf-8",
     )
 
@@ -102,8 +102,8 @@ async def test_resolve_skills_dirs_includes_action_overlay(tmp_path):
     (overlay / "SKILL.md").write_text(
         "---\nname: signup_interview\ndescription: signup\n"
         "requires-actions:\n  - InterviewAction\n"
-        "interview:\n  title: Signup\n  description: signup\n"
-        "  questions: []\n  completion:\n    function: noop\n---\n\nbody",
+        "interview:\n  title: Signup\n  summary: signup\n"
+        "  fields: []\n  handlers:\n    complete: noop\n---\n\nbody",
         encoding="utf-8",
     )
 
@@ -148,8 +148,8 @@ async def test_discover_specs_loads_action_overlay_signup(tmp_path):
     (overlay / "SKILL.md").write_text(
         "---\nname: signup_interview\ndescription: signup\n"
         "requires-actions:\n  - InterviewAction\n"
-        "interview:\n  title: Signup\n  description: signup\n"
-        "  questions: []\n  completion:\n    function: noop\n---\n\nbody",
+        "interview:\n  title: Signup\n  summary: signup\n"
+        "  fields: []\n  handlers:\n    complete: noop\n---\n\nbody",
         encoding="utf-8",
     )
 
@@ -186,7 +186,7 @@ async def test_discover_specs_loads_jvagent_app_signup_from_agent_skills():
     assert action.is_interview_skill("signup_interview")
     spec = action._registry.get("signup_interview")
     assert spec is not None
-    assert "user_name" in [q.name for q in spec.questions]
+    assert "user_name" in [f.key for f in spec.fields]
 
 
 @pytest.mark.asyncio

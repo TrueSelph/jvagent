@@ -42,9 +42,11 @@ intro_interact_action runs BEFORE the executive (always_execute sidecar)
 | `what is 19 x 23?` | Loop → web search or skill → `reply` |
 | `what do our internal docs say about X?` | `answer` skill → `pageindex__search` (internal KB) first, web fallback, cited synthesis → `respond` |
 | `sign up for jvagent training` | Model activates `signup_interview` skill → InterviewAction session starts, turn-lock via TaskStore |
-| your answers on following turns | With `lock_active_flow: true` (default), orchestrator stays in the locked skill; interview tools drive collection |
+| `Hello my name is Jane Doe` (activation) | Model calls `interview__set_fields`, chains `interview__next_question`, then replies — no server prep steering |
+| your answers on following turns | Model classifies intent per SKILL SOP; `interview__set_fields` → `interview__next_question` → reply |
+| `change my email to X` mid-interview | `interview__set_fields` correction — works on any stored field, not only the active question |
 | `stop` / `cancel` mid-interview | `interview__cancel` |
-| `start over` mid-interview | `interview__reset_interview` |
+| `start over` mid-interview | `interview__reset` |
 | `make a PDF of a short status report` | **Claude skill** `pdf-generation` → `use_skill` stages it into your per-user slice → model writes markdown + runs `code_execution__bash` (`render_pdf.py`) → PDF lands under `output/` in your slice |
 | `rank these issues by severity: …` | **Claude skill** `triage` → `code_execution__bash` runs `prioritize.py` to sort deterministically |
 | `list the files in my workspace` | `file_interface__list_directory` (same per-user slice the PDF was written to) |

@@ -92,7 +92,7 @@ class InterviewTaskMixin(InterviewHandlersHost):
         title = spec.title or spec.name.replace("_", " ").title()
         description = ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(
             action_title=title,
-            action_description=spec.description or self.description or "",
+            action_description=spec.summary or self.description or "",
         )
         try:
             handle = await visitor.tasks.create(

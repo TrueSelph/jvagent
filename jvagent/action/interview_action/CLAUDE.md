@@ -8,6 +8,8 @@
 
 Session state lives in `conversation.context["interview"]` as a lightweight `InterviewSession` dataclass (field values, skipped fields, status, scratch `context` dict).
 
+**Design contract:** always build and extend interviews with the **[thin harness principle](../../../docs/thin-harness.md)** (platform) and **[interview profile](docs/thin-harness.md)** — thick SOP + skill extensions, thin server steering.
+
 ---
 
 ## Foundation vs skill extensions
@@ -16,9 +18,9 @@ Session state lives in `conversation.context["interview"]` as a lightweight `Int
 
 | Layer | Location (per consuming app) | Owns |
 |-------|------------------------------|------|
-| **Foundation** | `jvagent/action/interview_action/` | `interview__*` tools, session lifecycle, hook dispatch, validator *invocation*, turn-prep seeding, generic pipeline |
+| **Foundation** | `jvagent/action/interview_action/` | `interview__*` tools, session lifecycle, hook dispatch, validator *invocation*, runtime-ready turn-lock gate, generic pipeline |
 | **Base SOP** | `SKILL.md` (action root) | Inherited via `extends: action:jvagent/interview_action` |
-| **Spec** | `skills/<name>/SKILL.md` frontmatter `interview:` | Questions, order, branches, validator `function:` refs, pre/post/review/reset/complete hooks |
+| **Spec** | `skills/<name>/SKILL.md` frontmatter `interview:` | Fields, order, branches, validator names, pre/post processors, handlers, skill_tools |
 | **Procedure** | `skills/<name>/SKILL.md` body | Custom behavioral rules only (base composed via `extends`) |
 | **Implementation** | `skills/<name>/scripts/custom_tools.py` | Validators, pre/post tools, completion handlers, custom LLM tools |
 
@@ -64,13 +66,16 @@ See [README.md](README.md) and [docs/extending.md](docs/extending.md) for valida
 
 ## Key invariants
 
-1. **Hook functions are not LLM tools** — only entries in frontmatter `interview.tools` become `{skill}__{name}` tools. Reset uses `interview.reset.function` (invoked via `interview__reset_interview()`).
-2. **`interview__set_field` uses parameter `field`** — not `name`.
-3. **Chaining gate** — read `ok` from every tool response before advancing; `post_tools` do not run when `ok: false`.
+Full tables: **[interview profile](docs/thin-harness.md)** (+ [platform](../../../docs/thin-harness.md)). Summary:
+
+1. **Thin harness** — no server intent classification, no prep observations, no activation auto-store, no merge-inlined next/review responses, no `extractors` in frontmatter.
+2. **Hook functions are not LLM tools** — only entries in frontmatter `interview.skill_tools` become `{skill}__{name}` tools. Reset uses `handlers.reset` (invoked via `interview__reset()`).
+3. **Model owns extraction and chaining** — `interview__set_fields` + base SOP; read `ok` before advancing; post-processors do not run when `ok: false`.
 4. **`response_directive` beats `next_questions`** when they conflict — one action per turn.
-5. **Review before complete** — always call `interview__review()` before `interview__complete()` unless review sets `terminate: true`.
+5. **Review before complete** — always call `interview__review()` before `interview__complete()` unless review sets `terminate: true` or `confirm: auto` chains complete.
 6. **Contract discovery** — `InterviewRegistry` scans dirs from `Action.resolve_skill_scan_dirs()` (app `skills/` + action-bundled paths). Author interview skills under `agents/.../skills/<name>/` (ADR-0023). Reference packages live under `examples/` (not discovered).
 7. **Never reuse stale field values** from older chat turns unless the user repeats them in the latest message.
+8. **Domain logic in skills** — validators, processors, handlers, and branching in `custom_tools.py` + `interview:` frontmatter; never in foundation code.
 
 ---
 
@@ -86,8 +91,11 @@ pytest tests/action/interview_action/ -v
 
 | Doc | Topic |
 |-----|-------|
-| [README.md](README.md) | Full contract reference, reading paths, tool envelope, live skill patterns |
+| [docs/thin-harness.md](../../../docs/thin-harness.md) | **Thin harness** (jvagent-wide principle) |
+| [docs/thin-harness.md](docs/thin-harness.md) | **Interview profile** (subsystem invariants) |
+| [docs/frontmatter-schema.md](docs/frontmatter-schema.md) | Canonical `interview:` YAML schema |
+| [README.md](README.md) | Reading paths, tool envelope, live skill patterns |
 | [docs/multi-turn-flow.md](docs/multi-turn-flow.md) | Turn-by-turn lifecycle, turn-lock, session states |
-| [docs/extending.md](docs/extending.md) | Validators, pre/post tools, review/reset/completion, custom tools |
+| [docs/extending.md](docs/extending.md) | Validators, processors, handlers, skill tools |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common failures and fixes |
 | [examples/example_interview/](examples/example_interview/) | Reference implementation |

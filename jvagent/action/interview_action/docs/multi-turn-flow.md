@@ -2,6 +2,8 @@
 
 How a skills-v2 interview progresses across user turns when the orchestrator drives the conversation via `interview__*` tools.
 
+Turn flow assumes the **[thin harness principle](../../../../docs/thin-harness.md)** and [interview profile](thin-harness.md): the LLM drives each turn from the composed SOP; `InterviewAction` does not inject prep observations or auto-chain tools server-side.
+
 ## Roles
 
 | Actor | Responsibility |
@@ -40,17 +42,24 @@ User message → Orchestrator selects use_skill("<skill_name>")
             → _handle_start(): create or resume session (no auto-store on activation)
             → INTERVIEW task created (owner: InterviewAction)
             → SKILL task created if locked-in: true
-            → prepare_locked_skill_turn(): message evaluation on the activation utterance
+            → prepare_locked_skill_turn(): runtime-ready gate (no prep observations)
 ```
 
-On every turn (including activation), `prepare_locked_skill_turn` runs **message evaluation** on the user's latest utterance:
+On every turn (including activation), the model follows base `SKILL.md` intent routing:
 
-- **`interview__message_evaluation` observation** when applicable entities are found — model calls `interview__set_field` with a candidate, then replies using the merged `response_directive`.
-- **`interview__next_question` observation** when no applicable entities (empty utterance, intent-only message, or no valid candidates) — reply using the scripted question.
+- Classify the user's message (answer, correct/update, multi-answer, cancel, etc.).
+- Call the matching tool (`interview__set_fields`, `interview__next_question`, `interview__reset`, …).
+- Chain follow-up tools per SOP (e.g. `set_fields` → `next_question` → reply).
 
-### Entity candidate registry
+`prepare_locked_skill_turn` only confirms the interview runtime is ready — it does **not** inject observations or directives.
 
-[`core/field_extractors.py`](../core/field_extractors.py) surfaces builtin candidates (email, phone, name, date) plus skill-declared extractors in frontmatter `interview.extractors` (functions in `scripts/custom_tools.py`). Evaluation pre-validates candidates; the model performs extraction via `set_field`.
+### Anti-pattern: chat-only roleplay before activation
+
+If the model skips `use_skill` and asks field prompts via `reply` alone, there is no session — `prune_turn_tools` hides `interview__*` tools and answers are not stored. Late `use_skill` cannot backfill values from earlier chat turns (utterance grounding). The user may need to repeat one field once. Fix: follow base SOP **Activation (session gate)** — `use_skill` first, then `interview__next_question`, then `reply`.
+
+### Field extraction
+
+The model extracts values from utterances and passes them to `interview__set_fields`. Validators are the hard gate; [`core/field_extractors.py`](../core/field_extractors.py) supports validation-time hints.
 
 ## Turn N — Typical collection turn
 
@@ -62,7 +71,7 @@ sequenceDiagram
     participant H as custom_tools.py
 
     U->>O: Answer to current question
-    O->>IA: interview__set_field(field, value)
+    O->>IA: interview__set_fields({field: value})
     IA->>H: validator (if configured)
     H-->>IA: valid / invalid
     alt valid
@@ -94,7 +103,7 @@ When a skill declares `locked-in: true`, the orchestrator stays in the active sk
 | Hook | Purpose |
 |------|---------|
 | `skill_runtime_ready(skill_name, visitor)` | Session + contract loaded |
-| `prepare_locked_skill_turn(skill_name, visitor)` | Runs message evaluation on the latest utterance; injects `interview__message_evaluation` or `interview__next_question` observation |
+| `prepare_locked_skill_turn(skill_name, visitor)` | Runtime-ready gate only — no prep observations |
 | `prune_turn_tools(tools, visible, visitor)` | Hide interview tools when runtime not ready |
 
 This keeps multi-turn interviews on-rails without hardcoding interview logic in the orchestrator.
@@ -112,12 +121,13 @@ Branching is **procedure-driven**, not graph-evaluated:
 
 | Mechanism | How branching works |
 |-----------|---------------------|
-| `post_tools` | Returns `skip_to_review: true` → LLM calls `interview__review()` |
-| Custom validator | Returns `interview_complete: true` → stop; post_tools skipped |
+| `post_processor` | Returns `skip_to_review: true` → LLM calls `interview__review()` |
+| Custom validator | Returns `interview_complete: true` → stop; post-processors skipped |
 | Review handler | Returns `terminate: true` → deliver message; no `interview__complete()` |
-| `session.context` | Post-tools set flags (e.g. `escalate`, `otp_pending`) read by later hooks or SKILL.md |
-| LLM custom tools | e.g. `send_otp` — LLM calls `{skill}__{tool}` explicitly |
-| Custom reset | `interview.reset.function` — LLM calls `interview__reset_interview()` |
+| `session.context` | Post-processors set flags (e.g. `escalate`, `otp_pending`) read by later hooks or SKILL.md |
+| Skill tools | e.g. `send_otp` — LLM calls `{skill}__{tool}` explicitly |
+| Custom reset | `handlers.reset` — LLM calls `interview__reset()` |
+| `fields[].branches` | `when` / `goto` / `else` — declarative routing after field save |
 
 Document branches in `SKILL.md` and implement side effects in hooks.
 
@@ -126,24 +136,24 @@ Document branches in `SKILL.md` and implement side effects in hooks.
 ```
 All required fields collected (+ optional handled)
   → interview__review()
-  → built-in summary OR `interview.review` handler (confirmation framing via `review_confirmation_directive`)
+  → built-in summary OR `handlers.review` (confirmation framing via `review_confirmation_directive` or `confirm: auto`)
   → if terminate: true → stop (escalation path)
   → else user confirms → interview__complete()
   → completion handler → `clear_interview_context()` (honors `retain_context_keys`), INTERVIEW task closed
 ```
 
-If the user wants to edit during review, call `interview__set_field(field, new_value)` and re-run `interview__review()`.
+If the user wants to edit during review, call `interview__set_fields` for the field(s) and re-run `interview__review()`.
 
 ## Cancel and restart
 
 | Path | When | Effect |
 |------|------|--------|
 | `interview__cancel()` | User explicitly cancels (default skills) | Clear session, cancel tasks |
-| `interview__reset_interview()` | User wants to start over (default) | Clear + re-init from first question |
-| `interview__reset_interview()` + `interview.reset` | Skill overrides reset (e.g. onboarding) | Routes to custom handler — may cancel-and-exit instead of restart |
+| `interview__reset()` | User wants to start over (default) | Clear + re-init from first question |
+| `interview__reset()` + `handlers.reset` | Skill overrides reset (e.g. onboarding) | Routes to custom handler — may cancel-and-exit instead of restart |
 | New session after complete/cancel | User starts again | Call `use_skill("<name>")` again |
 
-Skills that replace cancel semantics may set `disabled-tools: [interview__cancel]` and implement `interview.reset.function`.
+Skills that replace cancel semantics may set `disabled-tools: [interview__cancel]` and set `handlers.reset`.
 
 ## Dual task model
 

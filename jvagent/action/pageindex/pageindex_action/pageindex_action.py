@@ -761,6 +761,7 @@ class PageIndexAction(Action):
             if visitor.user_id in users or visitor.session_id in users
         ]
         if not matched_groups:
+            mf["access"] = []
             return mf
 
         existing = mf.get("access")

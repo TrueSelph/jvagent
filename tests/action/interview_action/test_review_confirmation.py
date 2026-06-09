@@ -36,7 +36,7 @@ async def test_skip_field_inlines_review_once(signup_action):
     session = InterviewSession(interview_type="signup_interview")
     session.set_value("user_name", "Eldon Marks")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
-    session.set_value("user_email", "eldon@mail.com")
+    session.set_value("user_email", "eldon.marks@gmail.com")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
     action._save_session = AsyncMock()
 
@@ -45,13 +45,9 @@ async def test_skip_field_inlines_review_once(signup_action):
     )
 
     assert result["ok"] is True
-    assert result["status"] == "review"
-    assert result.get("review_ready") is True
-    assert "next_tool" not in result
-    directive = result["response_directive"].lower()
-    assert "not complete" in directive or "not complete yet" in directive
-    assert "interview__complete" in directive
-    assert session.status == InterviewStatus.REVIEW
+    assert result.get("next_tool") == "interview__review"
+    assert "interview__review" in (result.get("response_directive") or "")
+    assert session.status == InterviewStatus.ACTIVE
 
 
 @pytest.mark.asyncio

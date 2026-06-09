@@ -118,9 +118,9 @@ async def test_contract_reload_after_on_register_empty_registry(
 name: onboarding_interview
 interview:
   title: Onboarding
-  questions:
-    - name: phone_number
-      question: What is your phone number?
+  fields:
+    - key: phone_number
+      prompt: What is your phone number?
       required: true
 ---
 """,
@@ -193,4 +193,4 @@ interview:
     assert v.conversation.context.get("interview", {}).get("status") == "active"
     assert "interview__next_question" in captured[0]["tools"]
     tool_names = [o.get("tool") for o in captured[0]["observations"]]
-    assert "interview__next_question" in tool_names
+    assert "use_skill" in tool_names

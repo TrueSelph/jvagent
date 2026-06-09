@@ -31,6 +31,12 @@ The **Orchestrator** pattern is a brain-shaped, additive deployment pattern: a s
 
 Active-flow detection reads persisted state only. With `lock_active_flow=False` it is **not** a parallel router and does not force a flow to run; with `lock_active_flow=True` the loop's surface is restricted to the flow's IA tool and that tool is dispatched.
 
+## Thin harness
+
+The orchestrator and every action on its tool surface follow the **[thin harness principle](thin-harness.md)**: the server exposes primitives (tools, session state, validation gates, raw JSON results); the model and skill SOP own intent, routing, extraction, and multi-step chaining. The orchestrator must not classify user intent, inject prep observations that pre-select tools, auto-store extracted values on skill activation, inline multi-step tool results, or post-process one action's outputs to force follow-up calls. Turn-lock ([ADR-0013](../.planning/adr/0013-togglable-deterministic-turn-lock.md)) is a mechanical surface restriction — not semantic routing.
+
+Subsystem-specific rules (e.g. interviews) extend the platform doc as **profiles** — see [Interview profile](../jvagent/action/interview_action/docs/thin-harness.md).
+
 ## Flow continuation (configurable: deterministic lock or model-mediated)
 
 A *flow* is any action that wants to span turns (today: the interview). It (a) records a control-task on the conversation `TaskStore` while active (the flow does this itself — the orchestrator does not manage it), and (b) is continued by being run again. The flow's only orchestrator-facing modification is being exposed via `get_tools()` (forwarding to `execute(visitor)`) — it gains no special resume entry point, no flow-control task-type hook, and no orchestrator-specific flags.

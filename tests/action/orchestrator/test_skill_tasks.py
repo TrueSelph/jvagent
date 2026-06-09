@@ -14,7 +14,6 @@ from jvagent.action.orchestrator.skill_tasks import (
     pending_auto_start_skills,
     resolve_active_locked_skill,
     resolve_onboard_locked_skill_doc,
-    set_field_has_reply_directive,
 )
 from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.memory.task_store import TaskStore
@@ -286,21 +285,3 @@ async def test_ensure_locked_skill_session_rebootstraps_when_missing():
     )
     assert note == "session ready"
     InterviewActionStub.on_skill_activate.assert_awaited_once()
-
-
-def test_set_field_has_reply_directive():
-    assert set_field_has_reply_directive(
-        {
-            "ok": True,
-            "stored": True,
-            "response_directive": "Tell the user: What is your email?",
-        }
-    )
-    assert not set_field_has_reply_directive(
-        {
-            "ok": True,
-            "stored": True,
-            "response_directive": "Call interview__next_question",
-        }
-    )
-    assert not set_field_has_reply_directive({"ok": False, "stored": True})

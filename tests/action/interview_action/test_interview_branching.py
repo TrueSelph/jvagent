@@ -25,37 +25,37 @@ def branching_spec(tmp_path):
     skill_dir.mkdir()
     spec_data = {
         "name": "branch_demo",
-        "questions": [
+        "fields": [
             {
-                "name": "user_type",
-                "question": "Premium or standard?",
+                "key": "user_type",
+                "prompt": "Premium or standard?",
                 "required": True,
-                "validator": {"function": "text"},
+                "validator": "text",
                 "branches": [
                     {
-                        "condition": {"op": "equals", "value": "premium"},
-                        "target": "premium_q",
+                        "when": {"op": "equals", "value": "premium"},
+                        "goto": "premium_q",
                     },
                     {
-                        "condition": {"op": "equals", "value": "standard"},
-                        "target": "standard_q",
+                        "when": {"op": "equals", "value": "standard"},
+                        "goto": "standard_q",
                     },
                 ],
-                "default_next": "contact",
+                "else": "contact",
             },
             {
-                "name": "premium_q",
-                "question": "Premium features?",
+                "key": "premium_q",
+                "prompt": "Premium features?",
                 "required": True,
-                "default_next": "contact",
+                "else": "contact",
             },
             {
-                "name": "standard_q",
-                "question": "Standard setup?",
+                "key": "standard_q",
+                "prompt": "Standard setup?",
                 "required": True,
-                "default_next": "contact",
+                "else": "contact",
             },
-            {"name": "contact", "question": "Contact info?", "required": True},
+            {"key": "contact", "prompt": "Contact info?", "required": True},
         ],
     }
     return parse_interview_spec(

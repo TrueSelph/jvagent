@@ -44,9 +44,8 @@ async def test_email_store_chains_to_optional_phone(signup_action):
     )
 
     assert result["ok"] is True
-    assert "next_tool" not in result
-    assert result["next_questions"][0]["name"] == "phone_number"
-    assert result["response_directive"].startswith("Tell the user:")
+    assert result.get("next_tool") == "interview__next_question"
+    assert "Call interview__next_question" in (result.get("response_directive") or "")
 
 
 @pytest.mark.asyncio
@@ -63,8 +62,7 @@ async def test_work_email_post_tool_delivers_phone_followup(signup_action):
     )
 
     assert result["ok"] is True
-    assert "next_tool" not in result
-    directive = result["response_directive"]
+    directive = result.get("response_directive") or ""
     assert "work email" in directive.lower()
     assert "phone" in directive.lower()
     assert session.context.get(CTX_QUESTION_PRESENTED) == "phone_number"

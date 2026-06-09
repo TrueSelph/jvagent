@@ -59,3 +59,5 @@ async def test_next_question_no_session_returns_ok_false(onboarding_action):
 
     assert result["ok"] is False
     assert result["error_code"] == "NO_SESSION"
+    assert "use_skill" in result["response_directive"]
+    assert "reply" in result["response_directive"].lower()

@@ -154,16 +154,7 @@ async def test_apply_locked_skill_turn_binds_interview_over_api_dependency():
             return True
 
         prepare_locked_skill_turn = AsyncMock(
-            return_value=LockedSkillPrep(
-                runtime_ready=True,
-                observations=[
-                    {
-                        "tool": "interview__message_evaluation",
-                        "args": {},
-                        "observation": "prep ok",
-                    }
-                ],
-            )
+            return_value=LockedSkillPrep(runtime_ready=True)
         )
 
     tools = {
@@ -186,4 +177,4 @@ async def test_apply_locked_skill_turn_binds_interview_over_api_dependency():
     )
 
     interview.prepare_locked_skill_turn.assert_awaited_once()
-    assert any(o.get("observation") == "prep ok" for o in observations)
+    assert not observations

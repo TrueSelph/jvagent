@@ -41,6 +41,7 @@ records it links into. User-facing onboarding lives in the root
 | Logging, metrics, observability | [`reference/observability.md`](reference/observability.md) |
 | Memory model + rolling-window pruning | [`reference/memory-and-pruning.md`](reference/memory-and-pruning.md) |
 | The jvspatial dependency boundary | [`reference/jvspatial-integration.md`](reference/jvspatial-integration.md) |
+| Thin harness principle (platform-wide) | [`../docs/thin-harness.md`](../docs/thin-harness.md) |
 
 ## runbooks/ — procedures
 

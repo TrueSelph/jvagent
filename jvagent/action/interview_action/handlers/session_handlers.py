@@ -8,10 +8,7 @@ from typing import Any, List, Optional, Tuple
 
 from jvagent.tooling.tool_executor import get_dispatch_visitor
 
-from .._constants import (
-    _question_def_to_dict,
-    _validator_def_to_dict,
-)
+from .._constants import _field_def_to_dict
 from ..core.interview_loader import InterviewSpec
 from ..core.responses import (
     interview_tool_response,
@@ -129,9 +126,9 @@ class InterviewSessionHandlersMixin(InterviewHandlersHost):
                 fields=existing.get_collected_summary(),
                 skipped_fields=sorted(existing.skipped_fields),
                 missing_required=missing_required_reachable(existing, required),
-                questions=[_question_def_to_dict(q) for q in spec.questions],
-                validators=[_validator_def_to_dict(v) for v in spec.validators],
-                custom_tools=[skill_tool_name(spec, t.name) for t in spec.tools],
+                field_definitions=[_field_def_to_dict(f) for f in spec.fields],
+                confirm=spec.confirm,
+                custom_tools=[skill_tool_name(spec, t.name) for t in spec.skill_tools],
             )
 
         fresh_session = False
@@ -176,9 +173,9 @@ class InterviewSessionHandlersMixin(InterviewHandlersHost):
             fields=session.get_collected_summary(),
             skipped_fields=sorted(session.skipped_fields),
             missing_required=missing,
-            questions=[_question_def_to_dict(q) for q in spec.questions],
-            validators=[_validator_def_to_dict(v) for v in spec.validators],
-            custom_tools=[skill_tool_name(spec, t.name) for t in spec.tools],
+            field_definitions=[_field_def_to_dict(f) for f in spec.fields],
+            confirm=spec.confirm,
+            custom_tools=[skill_tool_name(spec, t.name) for t in spec.skill_tools],
         )
 
     async def _handle_get_status(self, visitor: Any = None) -> str:
@@ -220,14 +217,14 @@ class InterviewSessionHandlersMixin(InterviewHandlersHost):
                 else []
             ),
             started_at=session.started_at,
-            questions=(
-                [_question_def_to_dict(q) for q in spec.questions] if spec else None
+            field_definitions=(
+                [_field_def_to_dict(f) for f in spec.fields] if spec else None
             ),
-            validators=(
-                [_validator_def_to_dict(v) for v in spec.validators] if spec else None
-            ),
+            confirm=spec.confirm if spec else None,
             custom_tools=(
-                [skill_tool_name(spec, t.name) for t in spec.tools] if spec else None
+                [skill_tool_name(spec, t.name) for t in spec.skill_tools]
+                if spec
+                else None
             ),
         )
 
@@ -244,8 +241,9 @@ class InterviewSessionHandlersMixin(InterviewHandlersHost):
             "I've cancelled this. Say what you'd like to do next, or start a new "
             "interview when you're ready."
         )
-        if spec and spec.cancel and spec.cancel.function:
-            func = load_hook_function(spec, spec.cancel.function)
+        cancel_fn = spec.handlers.cancel if spec else None
+        if spec and cancel_fn:
+            func = load_hook_function(spec, cancel_fn)
             if func:
                 try:
                     result = await call_hook(
@@ -282,7 +280,7 @@ class InterviewSessionHandlersMixin(InterviewHandlersHost):
             fields={},
         )
 
-    async def _handle_reset_interview(self, visitor: Any = None) -> str:
+    async def _handle_reset(self, visitor: Any = None) -> str:
         session, spec = await self._get_session_and_contract(visitor)
         if not session or not spec:
             return interview_tool_response(
@@ -292,7 +290,7 @@ class InterviewSessionHandlersMixin(InterviewHandlersHost):
                 response_directive="No active interview session to reset.",
             )
 
-        if spec.reset and spec.reset.function:
+        if spec.handlers.reset:
             return await self._handle_custom_reset(session, spec, visitor)
 
         return await self._default_reset_interview(session, spec, visitor)
@@ -319,8 +317,10 @@ class InterviewSessionHandlersMixin(InterviewHandlersHost):
             try:
                 parsed = json.loads(next_obs)
                 next_qs = parsed.get("next_questions") or []
-                if next_qs and next_qs[0].get("question"):
-                    first_question = str(next_qs[0]["question"])
+                if next_qs and (next_qs[0].get("prompt") or next_qs[0].get("question")):
+                    first_question = str(
+                        next_qs[0].get("prompt") or next_qs[0]["question"]
+                    )
             except (json.JSONDecodeError, TypeError, IndexError, KeyError):
                 pass
             return interview_tool_response(
@@ -332,7 +332,7 @@ class InterviewSessionHandlersMixin(InterviewHandlersHost):
                 ),
             )
         except Exception as exc:
-            logger.error("reset_interview failed for %s: %s", skill_name, exc)
+            logger.error("reset failed for %s: %s", skill_name, exc)
             return interview_tool_response(
                 ok=False,
                 status="error",
@@ -347,11 +347,11 @@ class InterviewSessionHandlersMixin(InterviewHandlersHost):
         spec: InterviewSpec,
         visitor: Any = None,
     ) -> str:
-        reset_def = spec.reset
-        if not reset_def or not reset_def.function:
+        reset_fn = spec.handlers.reset
+        if not reset_fn:
             return await self._default_reset_interview(session, spec, visitor)
 
-        func = load_hook_function(spec, reset_def.function)
+        func = load_hook_function(spec, reset_fn)
         if not func:
             return await self._default_reset_interview(session, spec, visitor)
 

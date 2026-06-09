@@ -2,6 +2,8 @@
 
 How to override validation, hooks, handlers, and LLM-callable tools when building a multi-turn interview skill.
 
+> **Mandatory:** Read [platform thin-harness](../../../../docs/thin-harness.md) and the [interview profile](thin-harness.md) first. All extensions must keep the server harness thin (session + hooks + raw tools) and put intent, extraction, and domain logic in the SOP + skill package.
+
 ## Skill package layout
 
 ```
@@ -18,48 +20,24 @@ The framework base SOP lives in [`../SKILL.md`](../SKILL.md); composition happen
 
 Copy [`../examples/example_interview/`](../examples/example_interview/) as the starting template.
 
-**Answer quality:** The inherited base procedure ([`../SKILL.md`](../SKILL.md)) is the **standard ruleset for all interview skills** — Answer quality gate, Intent routing (cancel vs start over vs answer), reply/chaining rules, and reset-tool usage. Do not duplicate these in per-skill custom instructions. Write per-question `description` fields as acceptance criteria so the model can apply the gate. See [`skill_custom_instructions.md`](skill_custom_instructions.md).
+**Answer quality:** The inherited base procedure ([`../SKILL.md`](../SKILL.md)) is the **standard ruleset for all interview skills** — Answer quality gate, Intent routing (cancel vs start over vs answer), reply/chaining rules, and reset-tool usage. Do not duplicate these in per-skill custom instructions. Write per-field `guidance` as acceptance criteria so the model can apply the gate. See [`skill_custom_instructions.md`](skill_custom_instructions.md).
+
+Full key reference: [`frontmatter-schema.md`](frontmatter-schema.md).
 
 ## Extension point overview
 
 | Extension | Declared in | Implemented in | LLM-callable? |
 |-----------|-------------|----------------|---------------|
-| Builtin validator | `question.validator.function: phone` | `core/validators.py` | No |
-| Custom validator | `question.validator.function: my_validate` | `custom_tools.py` | No |
-| Pre-tool | `question.pre_tools: [fn]` | `custom_tools.py` | No |
-| Post-tool | `question.post_tools: [fn]` | `custom_tools.py` | No |
-| Custom LLM tool | `interview.tools` | `custom_tools.py` | Yes (`{skill}__{name}`) |
-| Review handler | `interview.review.function` | `custom_tools.py` | No |
-| Reset handler | `interview.reset.function` | `custom_tools.py` | No |
-| Completion handler | `interview.completion.function` | `custom_tools.py` | No |
-| Message extractors | `interview.extractors` | `custom_tools.py` | No |
+| Builtin validator | `fields[].validator: phone` | `core/validators.py` | No |
+| Custom validator | `fields[].validator: my_validate` | `custom_tools.py` | No |
+| Pre-processor | `fields[].pre_processor: [fn]` | `custom_tools.py` | No |
+| Post-processor | `fields[].post_processor: [fn]` | `custom_tools.py` | No |
+| Custom LLM tool | `interview.skill_tools` | `custom_tools.py` | Yes (`{skill}__{name}`) |
+| Review handler | `handlers.review` | `custom_tools.py` | No |
+| Reset handler | `handlers.reset` | `custom_tools.py` | No |
+| Completion handler | `handlers.complete` | `custom_tools.py` | No |
 
-**Rule:** Only `interview.tools` entries become LLM tools. Validators, hooks, and extractors are invoked by the framework when their trigger fires.
-
----
-
-## Message evaluation extractors
-
-Declare skill-local candidate extractors when builtin patterns (email, phone, date, number) are not enough:
-
-```yaml
-interview:
-  extractors:
-    - validator: validate_full_name
-      function: extract_full_name_candidates
-```
-
-Implement in `custom_tools.py`:
-
-```python
-def extract_full_name_candidates(user_message: str, **kwargs) -> list[str]:
-    """Return ordered candidate substrings from the latest user message."""
-    ...
-```
-
-The framework calls the extractor when message evaluation scans missing fields whose validator matches `extractors[].validator`. Builtin extractors in [`../core/field_extractors.py`](../core/field_extractors.py) cover generic types only — domain patterns belong in the skill extension.
-
-Optional: add `extract_pattern` to a builtin validator's `kwargs` for simple regex extraction without a custom function.
+**Rule:** Only `skill_tools` entries become LLM tools. Validators and processor hooks are invoked by the framework when their trigger fires. Utterance extraction is model-owned via `interview__set_fields`; builtin patterns in [`../core/field_extractors.py`](../core/field_extractors.py) support validation-time hints only.
 
 ---
 
@@ -80,20 +58,20 @@ Pre-tools may return a plain dict when the payload is small (e.g. slot list + `d
 
 ## Custom validators
 
-### Declaration (SKILL.md frontmatter `interview.questions`)
+### Declaration (SKILL.md frontmatter `interview.fields`)
 
 ```yaml
 interview:
-  questions:
-  - name: product_rating
-    validator:
-      function: validate_rating   # custom_tools.py function name
+  fields:
+  - key: product_rating
+    prompt: Rate the product 1-5
+    validator: validate_rating   # custom_tools.py function name
 
-  - name: follow_up_email
-    validator:
-      function: email           # builtin
-      kwargs:
-        pattern: "^.+@.+\\..+$"
+  - key: follow_up_email
+    prompt: Follow-up email?
+    validator: email           # builtin
+    validator_args:
+      pattern: "^.+@.+\\..+$"
 ```
 
 ### Implementation (`custom_tools.py`)
@@ -118,7 +96,7 @@ The framework filters kwargs by function signature:
 | `session` | Always |
 | `visitor` | When accepted |
 | `interview_action` | When accepted |
-| Contract `kwargs` | Merged from `validator.kwargs` |
+| Contract `kwargs` | Merged from `validator_args` |
 
 ### Validator-side flow control
 
@@ -126,7 +104,7 @@ Validators may return extra keys on success:
 
 | Key | Effect |
 |-----|--------|
-| `interview_complete` | Stop interview; skip `post_tools` for this field; clears session |
+| `interview_complete` | Stop interview; skip `post_processor` for this field; clears session |
 | `response_directive` | Tell LLM what to do next (e.g. welcome message, stop) |
 | `retain_context_keys` | List of `conversation.context` keys to keep after terminal cleanup |
 
@@ -138,17 +116,17 @@ Defined in [`../core/validators.py`](../core/validators.py): `phone`, `email`, `
 
 ---
 
-## Pre-tools and post-tools
+## Pre-processors and post-processors
 
-### Pre-tools (before asking)
+### Pre-processors (before asking)
 
 Run when `interview__next_question()` reaches a field. Use to suggest values the system already knows.
 
 ```yaml
-questions:
-  - name: follow_up_email
-    pre_tools:
-      - suggest_email
+fields:
+  - key: follow_up_email
+    prompt: Follow-up email?
+    pre_processor: suggest_email
 ```
 
 ```python
@@ -166,15 +144,15 @@ async def suggest_email(session=None, visitor=None, **kwargs) -> dict:
 
 The LLM must **confirm** before `set_field` — a pre-tool suggestion is not a stored value.
 
-### Post-tools (after save)
+### Post-processors (after save)
 
-Run automatically after successful `interview__set_field`. The LLM reads `post_tools_results`; never calls the hook manually.
+Run automatically after successful `interview__set_fields`. The LLM reads `post_tools_results`; never calls the hook manually.
 
 ```yaml
-questions:
-  - name: product_rating
-    post_tools:
-      - check_low_rating
+fields:
+  - key: product_rating
+    prompt: Rate 1-5
+    post_processor: check_low_rating
 ```
 
 ```python
@@ -300,26 +278,23 @@ To **override** the base reset (restart, cancel-and-exit, or other skill-specifi
 
 ```yaml
 interview:
-  reset:
-    function: reset_my_interview
-    description: >-
-      When user wants to start over. Clears session and re-asks the first question
-      with a custom message.
+  handlers:
+    reset: reset_my_interview
 ```
 
-Implement `reset_my_interview` in `scripts/custom_tools.py`. The model calls **`interview__reset_interview()`** — the foundation invokes your handler when `reset.function` is set. Return `interview_tool_response(...)` or a dict with `response_directive` / `status`.
+Implement `reset_my_interview` in `scripts/custom_tools.py`. The model calls **`interview__reset()`** — the foundation invokes your handler when `handlers.reset` is set. Return `interview_tool_response(...)` or a dict with `response_directive` / `status`.
 
-Most skills use the built-in default reset (no `interview.reset` block).
+Most skills use the built-in default reset (no `handlers.reset`).
 
 Tool name on the wire: `{skill_name}__{tool.name}`.
 
 ---
 
-## Per-message entity evaluation
+## Utterance extraction (model-owned)
 
-Every user message is evaluated for applicable entities. Turn prep injects `interview__message_evaluation` when candidates pass validator pre-check; the model calls `interview__set_field` with an extracted value.
+The model classifies each user message per the base procedure and calls `interview__set_fields` with extracted values. The server validates and stores; it does not auto-scan utterances at activation or inject `message_evaluation` tools.
 
-Add validator-keyed candidate branches in [`../core/field_extractors.py`](../core/field_extractors.py) (e.g. `validate_full_name`, `validate_tracking_number`). Document field-specific acceptance in `questions[].description`.
+Document acceptance criteria in `fields[].guidance`. Builtin validation-time hints live in [`../core/field_extractors.py`](../core/field_extractors.py) (email, phone, date patterns keyed by validator name).
 
 ---
 
@@ -374,8 +349,8 @@ Organize `custom_tools.py` in labeled sections (see [`../examples/example_interv
 
 - [ ] `SKILL.md` `name` matches folder; frontmatter includes `interview:` block
 - [ ] Every `function:` has an implementation in `custom_tools.py`
-- [ ] Hooks are **not** in `interview.tools`
-- [ ] LLM tools are in both `interview.tools` and frontmatter `allowed-tools` (additive; do not re-list base `interview__*` tools)
+- [ ] Processors and handlers are **not** in `interview.skill_tools`
+- [ ] LLM tools are in both `interview.skill_tools` and frontmatter `allowed-tools` (additive; do not re-list base `interview__*` tools)
 - [ ] `SKILL.md` body is custom rules only (no per-field Procedure steps)
 - [ ] Validators return correct shape; use `interview_complete` when validation finishes the flow
 - [ ] Post-tools use `interview_tool_response` with clear `response_directive`

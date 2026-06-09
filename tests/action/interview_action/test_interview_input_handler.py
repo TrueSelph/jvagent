@@ -24,13 +24,12 @@ async def test_input_handler_runs_before_validator(tmp_path):
 name: handler_demo
 interview:
   title: Handler demo
-  questions:
-    - name: slot
-      question: Pick a slot
+  fields:
+    - key: slot
+      prompt: Pick a slot
       required: true
       input_handler: normalize_slot
-      validator:
-        function: text
+      validator: text
 ---
 """,
         encoding="utf-8",

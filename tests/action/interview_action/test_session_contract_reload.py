@@ -22,12 +22,11 @@ name: onboarding_interview
 description: Onboarding
 interview:
   title: Onboarding
-  questions:
-    - name: phone_number
-      question: What is your phone number?
+  fields:
+    - key: phone_number
+      prompt: What is your phone number?
       required: true
-      validator:
-        function: phone
+      validator: phone
 ---
 """,
         encoding="utf-8",
@@ -97,9 +96,9 @@ name: onboarding_interview
 description: Onboarding
 interview:
   title: Onboarding
-  questions:
-    - name: phone_number
-      question: What is your phone number?
+  fields:
+    - key: phone_number
+      prompt: What is your phone number?
       required: true
 ---
 """,

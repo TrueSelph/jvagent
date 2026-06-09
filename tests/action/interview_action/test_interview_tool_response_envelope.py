@@ -7,6 +7,7 @@ import json
 from jvagent.action.interview_action.core.responses import (
     POST_TOOL_RESULT_KEYS,
     interview_tool_response,
+    no_session_directive,
     slim_post_tool_entry,
 )
 
@@ -66,3 +67,10 @@ def test_slim_post_tool_entry_whitelist():
         "interview_complete",
         "response_directive",
     }
+
+
+def test_no_session_directive_forbids_reply_roleplay():
+    directive = no_session_directive()
+    assert "use_skill" in directive
+    assert "interview__next_question" in directive
+    assert "reply" in directive.lower()

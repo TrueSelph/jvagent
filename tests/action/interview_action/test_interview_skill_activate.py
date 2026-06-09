@@ -51,10 +51,27 @@ async def test_on_skill_activate_returns_observation_for_interview_skill():
     assert "Interview session ready" in note
     assert "onboarding_interview" in note
     assert "missing_required" in note
-    assert "message evaluation" in note.lower()
+    assert "SKILL procedure" in note
+    assert "interview__next_question" in note
     action._handle_start.assert_awaited_once_with(
         "onboarding_interview", ANY, user_message="hi"
     )
+
+
+@pytest.mark.asyncio
+async def test_on_skill_activate_omits_next_question_hint_when_complete():
+    action = _interview_action_with_contracts()
+    action._handle_start = AsyncMock(
+        return_value=(
+            '{"ok": true, "status": "active", "interview_type": "onboarding_interview", '
+            '"fields": {"phone_number": "5912345678"}, "missing_required": []}'
+        )
+    )
+
+    note = await action.on_skill_activate("onboarding_interview", MagicMock())
+
+    assert note is not None
+    assert "New session:" not in note
 
 
 @pytest.mark.asyncio
@@ -98,3 +115,11 @@ def test_interview__init_not_registered():
     names = {t.name for t in build_tools(action)}
     assert "interview__init" not in names
     assert "interview__next_question" in names
+
+
+def test_core_interview_tools_require_active_session_in_description():
+    action = _interview_action_with_contracts()
+    by_name = {t.name: t for t in build_tools(action)}
+    for tool_name in ("interview__set_fields", "interview__next_question"):
+        assert "use_skill" in by_name[tool_name].description.lower()
+        assert "active interview session" in by_name[tool_name].description.lower()

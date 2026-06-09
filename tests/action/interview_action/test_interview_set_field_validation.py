@@ -26,85 +26,81 @@ _PRE_ALERT_SKILL = _SKILLS_DIR / "pre_alert_interview"
 _ONBOARDING_SKILL = _SKILLS_DIR / "onboarding_interview"
 
 
-def test_phone_number_pre_and_post_tools_parsed():
+def test_phone_number_pre_and_post_processors_parsed():
     contract = load_interview_spec_from_skill(_ONBOARDING_SKILL)
-    q = contract.get_question("phone_number")
-    assert q is not None
-    assert q.pre_tools == ["get_phone_number"]
-    assert q.post_tools == ["verify_phone_number"]
-    assert q.resolved_pre_tools() == ["get_phone_number"]
+    f = contract.get_field("phone_number")
+    assert f is not None
+    assert f.pre_processor == ["get_phone_number"]
+    assert f.post_processor == ["verify_phone_number"]
+    assert f.resolved_pre_processors() == ["get_phone_number"]
 
 
-def test_email_post_tools_and_otp_code_parsed():
+def test_email_post_processors_and_otp_code_parsed():
     contract = load_interview_spec_from_skill(_ONBOARDING_SKILL)
-    email_q = contract.get_question("email")
-    assert email_q is not None
-    assert email_q.post_tools == ["verify_email"]
-    assert email_q.pre_tools == ["suggest_email_from_task"]
+    email_f = contract.get_field("email")
+    assert email_f is not None
+    assert email_f.post_processor == ["verify_email"]
+    assert email_f.pre_processor == ["suggest_email_from_task"]
 
-    otp_q = contract.get_question("otp_code")
-    assert otp_q is not None
-    assert otp_q.required is False
-    assert otp_q.post_tools == []
-    assert otp_q.validator["function"] == "validate_otp_code"
+    otp_f = contract.get_field("otp_code")
+    assert otp_f is not None
+    assert otp_f.required is False
+    assert otp_f.post_processor == []
+    assert otp_f.validator == "validate_otp_code"
 
-    send_otp_tool = next(t for t in contract.tools if t.name == "send_otp")
+    send_otp_tool = next(t for t in contract.skill_tools if t.name == "send_otp")
     assert send_otp_tool.function == "send_otp"
 
 
-def test_tracking_number_post_tools_parsed():
+def test_tracking_number_post_processor_parsed():
     contract = load_interview_spec_from_skill(_PRE_ALERT_SKILL)
-    q = contract.get_question("tracking_number")
-    assert q is not None
-    assert q.post_tools == ["check_tracking_status"]
+    f = contract.get_field("tracking_number")
+    assert f is not None
+    assert f.post_processor == ["check_tracking_status"]
 
 
 def test_inline_validator_parsed_for_tracking_number():
     contract = load_interview_spec_from_skill(_PRE_ALERT_SKILL)
-    q = contract.get_question("tracking_number")
-    assert isinstance(q.validator, dict)
-    assert q.validator["function"] == "validate_tracking_number"
-    assert "name" not in q.validator
+    f = contract.get_field("tracking_number")
+    assert f.validator == "validate_tracking_number"
 
 
 def test_resolve_validator_def_custom_tracking():
     contract = load_interview_spec_from_skill(_PRE_ALERT_SKILL)
-    q = contract.get_question("tracking_number")
-    vdef = resolve_validator_def(q, contract)
+    f = contract.get_field("tracking_number")
+    vdef = resolve_validator_def(f)
     assert vdef is not None
     assert vdef.name == "validate_tracking_number"
     assert get_validator(vdef.name) is None
-    kwargs = resolve_validator_kwargs(q, vdef)
+    kwargs = resolve_validator_kwargs(f, vdef)
     assert kwargs.get("min_length") == 10
 
 
 def test_resolve_validator_def_builtin_description():
     contract = load_interview_spec_from_skill(_PRE_ALERT_SKILL)
-    q = contract.get_question("description")
-    vdef = resolve_validator_def(q, contract)
+    f = contract.get_field("description")
+    vdef = resolve_validator_def(f)
     assert vdef is not None
     assert vdef.name == "description"
     assert get_validator(vdef.name) is not None
-    kwargs = resolve_validator_kwargs(q, vdef)
+    kwargs = resolve_validator_kwargs(f, vdef)
     assert kwargs.get("min_length") == 10
     assert kwargs.get("max_length") == 500
 
 
 def test_resolve_validator_def_builtin_email():
     contract = load_interview_spec_from_skill(_ONBOARDING_SKILL)
-    q = contract.get_question("email")
-    vdef = resolve_validator_def(q, contract)
+    f = contract.get_field("email")
+    vdef = resolve_validator_def(f)
     assert vdef is not None
     assert vdef.name == "email"
     assert get_validator(vdef.name) is not None
 
 
-def test_id_number_has_no_alternate_validator():
+def test_id_number_validator_string():
     contract = load_interview_spec_from_skill(_ONBOARDING_SKILL)
-    q = contract.get_question("id_number")
-    assert isinstance(q.validator, dict)
-    assert q.validator["function"] == "validate_id_number"
-    assert "alternate_validator" not in q.validator
+    f = contract.get_field("id_number")
+    assert f.validator == "validate_id_number"
 
 
 @pytest.fixture
@@ -148,12 +144,12 @@ async def test_set_field_stores_cleaned_tracking_number(pre_alert_action):
     action._save_session = AsyncMock()
     from unittest.mock import patch
 
-    async def _passthrough_post_tools(*args, **kwargs):
+    async def _passthrough_post_processors(*args, **kwargs):
         return args[-1]
 
     with patch(
-        "jvagent.action.interview_action.runtime.pipeline.run_post_tools",
-        side_effect=_passthrough_post_tools,
+        "jvagent.action.interview_action.runtime.pipeline.run_post_processors",
+        side_effect=_passthrough_post_processors,
     ):
         result = json.loads(
             await action._handle_set_field(
@@ -165,8 +161,7 @@ async def test_set_field_stores_cleaned_tracking_number(pre_alert_action):
     assert result["status"] == "active"
     assert session.get_value("tracking_number") == "291421515335"
     assert result["value"] == "291421515335"
-    assert result["next_questions"]
-    assert "next_tool" not in result
+    assert result.get("next_tool") == "interview__next_question"
 
 
 @pytest.mark.asyncio
@@ -309,9 +304,7 @@ async def test_post_tools_verify_phone_number_after_set_field_not_registered(
     assert "customer" not in result["post_tools_results"][0]
     assert result["exists"] is False
     assert result["status"] == "not_registered"
-    assert result["next_questions"]
-    assert "next_tool" not in result
-    assert result["response_directive"].startswith("Tell the user:")
+    assert result.get("next_tool") == "interview__next_question"
     api.find_customer_by_phone.assert_awaited_once_with("5926431530")
 
 

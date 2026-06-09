@@ -1,4 +1,4 @@
-"""Mid-loop use_skill must run locked-skill turn prep (message evaluation)."""
+"""Mid-loop use_skill with minimal interview turn prep (no server steering)."""
 
 from __future__ import annotations
 
@@ -37,16 +37,16 @@ def _reply_tool():
     return ReplyIA()
 
 
-async def test_use_skill_mid_loop_injects_message_evaluation(
+async def test_use_skill_mid_loop_minimal_prep(
     make_orchestrator, make_visitor, monkeypatch
 ):
-    """Model-driven use_skill on tick 1 must prep evaluation before tick 2."""
+    """Model-driven use_skill on tick 1 — prep is runtime gate only."""
     signup = SkillDoc(
         name="signup_interview",
         description="JVAgent training signup.",
-        body="SOP: evaluate message, set_field, then reply.",
+        body="SOP: set_fields, next_question, reply.",
         requires_tools=(
-            "interview__set_field",
+            "interview__set_fields",
             "interview__next_question",
             "interview__get_status",
         ),
@@ -61,14 +61,7 @@ async def test_use_skill_mid_loop_injects_message_evaluation(
     ex = make_orchestrator(
         actions=[interview, reply_ia],
         action_registry={"InterviewAction": interview, "ReplyIA": reply_ia},
-        decisions=[
-            {
-                "action": "tool",
-                "tool": "use_skill",
-                "args": {"name": "signup_interview"},
-            },
-            {"action": "tool", "tool": "reply", "args": {}},
-        ],
+        decisions=[],
     )
     ex.lock_active_flow = True
     ex.lean_tool_threshold = 0
@@ -130,28 +123,22 @@ async def test_use_skill_mid_loop_injects_message_evaluation(
 
     assert len(model_calls) == 2
     second_obs_tools = [o.get("tool") for o in model_calls[1]["observations"]]
-    assert "interview__message_evaluation" in second_obs_tools
+    assert "interview__message_evaluation" not in second_obs_tools
+    assert "interview__next_question" not in second_obs_tools
     assert "Turn-lock is ON" in model_calls[1]["skills_section"]
-    eval_obs = next(
-        o
-        for o in model_calls[1]["observations"]
-        if o.get("tool") == "interview__message_evaluation"
-    )
-    assert "user_name" in eval_obs["observation"]
-    assert "Eldon Marks" in eval_obs["observation"]
 
 
 @pytest.mark.asyncio
-async def test_set_field_refresh_replaces_stale_message_evaluation(
+async def test_set_field_returns_next_tool_chain_directive(
     make_orchestrator, make_visitor, monkeypatch
 ):
-    """After a successful store, stale message_evaluation must not linger."""
+    """After store, model receives next_tool — no auto-inlined next_question."""
     signup = SkillDoc(
         name="signup_interview",
         description="JVAgent training signup.",
-        body="SOP: evaluate message, set_field, then reply.",
+        body="SOP.",
         requires_tools=(
-            "interview__set_field",
+            "interview__set_fields",
             "interview__next_question",
             "interview__get_status",
         ),
@@ -187,13 +174,8 @@ async def test_set_field_refresh_replaces_stale_message_evaluation(
         },
         {
             "action": "tool",
-            "tool": "interview__set_field",
-            "args": {"field": "user_name", "value": "Eldon Marks"},
-        },
-        {
-            "action": "tool",
-            "tool": "interview__set_field",
-            "args": {"field": "user_name", "value": "Eldon Marks"},
+            "tool": "interview__set_fields",
+            "args": {"fields": {"user_name": "Eldon Marks"}},
         },
         {"action": "tool", "tool": "reply", "args": {}},
     ]
@@ -209,12 +191,7 @@ async def test_set_field_refresh_replaces_stale_message_evaluation(
         skills_section="",
         **kwargs,
     ):
-        model_calls.append(
-            {
-                "observations": list(observations),
-                "skills_section": skills_section,
-            }
-        )
+        model_calls.append({"observations": list(observations)})
         idx = len(model_calls) - 1
         return (
             decisions[idx]
@@ -233,21 +210,16 @@ async def test_set_field_refresh_replaces_stale_message_evaluation(
 
     await ex.execute(v)
 
-    assert len(model_calls) == 4
+    assert len(model_calls) == 3
     set_obs = [
         o
         for o in model_calls[2]["observations"]
-        if o.get("tool") == "interview__set_field"
+        if o.get("tool") in ("interview__set_fields", "interview__set_field")
     ]
-    assert set_obs, "expected first set_field observation before second attempt"
+    assert set_obs
     set_payload = json.loads(set_obs[0]["observation"])
     assert set_payload.get("stored") is True, set_payload
-    assert (set_payload.get("response_directive") or "").startswith("Tell the user:")
-    third_tools = [o.get("tool") for o in model_calls[2]["observations"]]
-    assert "interview__message_evaluation" not in third_tools
-    assert "interview__next_question" not in third_tools
-    assert "(guard)" in third_tools
-    assert "Do NOT call interview__set_field" in model_calls[2]["skills_section"]
+    assert set_payload.get("next_tool") == "interview__next_question"
 
 
 @pytest.mark.asyncio
@@ -259,7 +231,7 @@ async def test_locked_skill_name_as_tool_gets_steer_not_dispatch(
         name="signup_interview",
         description="JVAgent training signup.",
         body="SOP.",
-        requires_tools=("interview__set_field", "interview__next_question"),
+        requires_tools=("interview__set_fields", "interview__next_question"),
         requires_actions=("InterviewAction",),
         locked_in=True,
     )

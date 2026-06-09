@@ -15,27 +15,22 @@ from .runtime.hooks import load_hook_function
 
 def _collect_function_refs(spec: Any) -> Set[str]:
     refs: Set[str] = set()
-    for q in spec.questions:
-        validator = q.validator
-        if isinstance(validator, dict):
-            fn = validator.get("function") or validator.get("name")
-            if fn:
-                refs.add(str(fn))
-        elif isinstance(validator, str) and validator:
-            refs.add(validator)
-        refs.update(q.pre_tools or [])
-        refs.update(q.post_tools or [])
-    for ext in spec.extractors or []:
-        if ext.function:
-            refs.add(ext.function)
-    for tool in spec.tools or []:
+    for f in spec.fields:
+        if f.validator:
+            refs.add(f.validator)
+        if f.input_handler:
+            refs.add(f.input_handler)
+        refs.update(f.pre_processor or [])
+        refs.update(f.post_processor or [])
+    for tool in spec.skill_tools or []:
         if tool.function:
             refs.add(tool.function)
         elif tool.name:
             refs.add(tool.name)
-    for block in (spec.review, spec.completion, spec.reset, spec.cancel):
-        if block and getattr(block, "function", None):
-            refs.add(block.function)
+    h = spec.handlers
+    for fn in (h.review, h.complete, h.reset, h.cancel):
+        if fn:
+            refs.add(fn)
     return refs
 
 

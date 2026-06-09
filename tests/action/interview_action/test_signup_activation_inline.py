@@ -1,4 +1,4 @@
-"""Activation with inline answers — evaluation obs → set_field → merged next question."""
+"""Activation with inline answers — model-driven set_fields (no server prep steering)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import pytest
 from jvagent.action.interview_action.core.interview_loader import (
     load_interview_spec_from_skill,
 )
-from jvagent.action.interview_action.core.session import InterviewSession, save_session
+from jvagent.action.interview_action.core.session import save_session
 from jvagent.action.interview_action.interview_action import InterviewAction
 from tests.action.interview_action.conftest import (
     ORCHESTRATOR_AGENT_DIR,
@@ -30,7 +30,7 @@ def signup_action():
 
 
 @pytest.mark.asyncio
-async def test_on_skill_activate_notes_message_evaluation(signup_action):
+async def test_on_skill_activate_notes_skill_procedure(signup_action):
     action, _spec = signup_action
     action._save_session = AsyncMock()
     action._ensure_active_task = AsyncMock()
@@ -42,11 +42,11 @@ async def test_on_skill_activate_notes_message_evaluation(signup_action):
     )
 
     assert note is not None
-    assert "message evaluation" in note.lower()
+    assert "SKILL procedure" in note
 
 
 @pytest.mark.asyncio
-async def test_activation_eval_then_set_field_then_next_question(signup_action):
+async def test_activation_set_fields_then_model_chains_next_question(signup_action):
     action, spec = signup_action
     conv = MagicMock()
     conv.context = {}
@@ -59,20 +59,18 @@ async def test_activation_eval_then_set_field_then_next_question(signup_action):
     await action._handle_start("signup_interview", visitor, user_message=_OPENING)
 
     prep = await action.prepare_locked_skill_turn("signup_interview", visitor)
-    assert prep.observations[0]["tool"] == "interview__message_evaluation"
+    assert prep.runtime_ready is True
+    assert not prep.observations
 
     set_result = json.loads(
-        await action._handle_set_field(
-            field="user_name",
-            value="Eldon Marks",
+        await action._handle_set_fields(
+            fields={"user_name": "Eldon Marks"},
             visitor=visitor,
         )
     )
     assert set_result["ok"] is True
     assert set_result["fields"].get("user_name") == "Eldon Marks"
-    assert "next_tool" not in set_result
-    assert set_result["next_questions"][0]["name"] == "available_times"
-    assert set_result["response_directive"].startswith("Tell the user:")
+    assert set_result.get("next_tool") == "interview__next_question"
 
 
 @pytest.mark.asyncio
@@ -89,18 +87,16 @@ async def test_set_field_idempotent_when_field_already_stored(signup_action):
     await action._handle_start("signup_interview", visitor, user_message=_OPENING)
 
     first = json.loads(
-        await action._handle_set_field(
-            field="user_name",
-            value="Eldon Marks",
+        await action._handle_set_fields(
+            fields={"user_name": "Eldon Marks"},
             visitor=visitor,
         )
     )
     assert first["stored"] is True
 
     second = json.loads(
-        await action._handle_set_field(
-            field="user_name",
-            value="Eldon Marks",
+        await action._handle_set_fields(
+            fields={"user_name": "Eldon Marks"},
             visitor=visitor,
         )
     )

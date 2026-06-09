@@ -4,129 +4,137 @@ description: >-
   Framework-standard interview tool-loop procedure. Not a discoverable skill —
   inherited by action-backed interview skills via extends: action:jvagent/interview_action.
 allowed-tools:
-  - interview__set_field
-  - interview__get_field
+  - interview__set_fields
+  - interview__get_fields
   - interview__skip_field
   - interview__next_question
   - interview__get_status
   - interview__review
   - interview__complete
   - interview__cancel
-  - interview__reset_interview
+  - interview__reset
 ---
 
 # Standard Interview Procedure
 
-You conduct an interview by calling tools. Every step returns `ok:true/false` as the chaining gate. Read `fields`, `missing_required`, hook results (`pre_tools_results`, `post_tools_results`), and `next_tool` when present.
+You conduct an interview by calling tools. Every step returns `ok:true/false` as the chaining gate. Read `fields`, `missing_required`, `results`, hook outputs (`pre_tools_results`, `post_tools_results`), and `next_tool` / `response_directive` when present.
 
-**All skills that extend this procedure inherit the rules below** — Answer quality gate, Intent routing, reply/chaining rules, and cancel/start-over handling. Do not rely on per-skill custom instructions for these; they are the standard ruleset for every interview.
+**Harness design:** the server does not steer your turns — no prep injections, no auto-stored fields on activation. You classify intent, extract values, and chain tools per this procedure. Platform principle: [`docs/thin-harness.md`](../../../docs/thin-harness.md). Interview profile: [`docs/thin-harness.md`](docs/thin-harness.md).
+
+**All skills that extend this procedure inherit the rules below** — activation gate, intent routing, reply/chaining rules, and cancel/start-over handling.
+
+## Activation (session gate)
+
+There is no `interview__init` tool. Sessions open only when the orchestrator calls `use_skill(<skill_name>)`, which runs `on_skill_activate` and creates `conversation.context["interview"]`.
+
+1. **No session → no interview questions via `reply` alone.** Field prompts live in `interview.fields[].prompt` and are surfaced through `interview__next_question` after `use_skill` opens the session. Do not role-play the interview in chat.
+2. **First entry:** when user intent matches a listed interview skill and there is no active session (`interview__get_status` or context) → call `use_skill(<skill_name>)` **before** asking any field question.
+3. **Activation turn chain:**
+   - If the latest message contains extractable answers → `interview__set_fields` (this message only) → `interview__next_question` if `missing_required` is non-empty → `reply`.
+   - Otherwise → `interview__next_question` first → `reply` using tool output (do not paraphrase prompts from memory).
+4. **Late activation:** values from chat turns **before** `use_skill` are not stored; only the activation message counts (see utterance grounding below).
+5. **One locked interview at a time** when turn-lock applies; do not run parallel interview flows in plain chat.
 
 ## Session rules
 
 | Situation | Action |
 | --------- | ------ |
-| `active` or `review` | Session is open — use interview tools and `next_questions` |
+| User wants an interview skill, **no active session** | `use_skill(<name>)` then activation chain above |
+| `active` or `review` | Session is open — use interview tools |
 | After **cancel** or **complete** | Call `use_skill` again with this skill to open a new session |
 
 Never reuse field values from older chat turns unless the user repeats them in the **latest** message.
 
-## Reply rules
+## Turn loop (every user message)
 
-Each tool returns one `response_directive` — do one thing that turn. **`response_directive` beats `next_questions` when they conflict.** If it starts with `Tell the user:`, paraphrase OK. If it is `Call interview__…`, call that tool only.
-
-When `response_directive` starts with **`Tell the user:`**, reply to the user only — do **not** call another tool that turn unless the directive explicitly says `Call interview__…`.
-
-## Answer quality gate
-
-Before every `interview__set_field` call, decide whether the user's **latest message** substantively answers the active question.
-
-1. Read `next_questions[0]` — its `question`, `description`, and `name`.
-2. Compare the latest user message to what that field is asking for. Use `description` as acceptance criteria when present.
-3. **Do not call `interview__set_field`** when the message is:
-   - An acknowledgement or filler (e.g. "ok", "sure", "got it", "yeah yeah")
-   - A greeting or small talk unrelated to the question
-   - Off-topic or answering a different field
-   - Clearly not the kind of information the field expects
-4. On those turns: **reply only** — politely say you still need their answer and re-ask the active question. Do not call interview tools that turn.
-5. **Exception:** fields that expect yes/no (validator `yes_no`) — acknowledgements may be valid answers there. For optional fields, use `interview__skip_field` when the user declines.
-
-| Active field type | User says | Action |
-| ----------------- | --------- | ------ |
-| Name / identity question | "Ok Ok" | Reply only — not a substantive answer |
-| Name / identity question | "Jane Doe" | `interview__set_field` |
-| Choice from a presented list | "sure" | Reply only — not a selection |
-| Optional field | "no thanks" / "skip" | `interview__skip_field` |
-
-Per-field acceptance criteria live in `next_questions[0].description` — use them together with this gate.
-
-### Message evaluation (every turn)
-
-Turn prep runs **message evaluation** on the user's **latest message** — including the message that triggered skill activation. Read the `interview__message_evaluation` observation when present.
-
-1. When `applicable` lists fields with `candidates`, call `interview__set_field` for the **first missing applicable field**, using a candidate value you extract from the message.
-2. On `ok:true`, the response includes `next_questions` and a `Tell the user:` `response_directive` — **reply only**; do not call `interview__next_question` (the server already advanced).
-3. When `applicable` is empty, use the `interview__next_question` observation — reply using its `response_directive`; do not call `set_field` with the full utterance.
-4. Intent-only messages (e.g. "sign me up" without extractable entities) have empty `applicable` — present the scripted next question from the observation.
-5. Cancel/stop or start-over/restart messages have empty `applicable` — classify intent yourself (see Intent routing) and call `interview__cancel` or `interview__reset_interview`; do not treat them as field answers.
-6. Multiple inline entities in one message: extract the **first missing applicable field** this turn; call `set_field` again only if evaluation still lists another applicable field after a successful store.
+1. Read the user's **latest message**.
+2. Classify **one primary intent** (table below).
+3. Call **one tool** for that intent (or `reply`/`respond` if clarification is needed).
+4. Read tool `ok` and `response_directive`; chain another tool **only** when `response_directive` says `Call interview__…` or the SKILL procedure below requires it.
 
 ## Intent routing
 
-Before any tool call, classify the user's **latest message** into one intent. Pick **one primary tool** for that turn — do not chain unrelated tools.
-
 | User intent | Signals (examples) | Tool | Do not call |
 | ----------- | ------------------ | ---- | ----------- |
-| **Answer** the active question | Supplies the requested information | `interview__set_field` (after Answer quality gate) | `cancel`, reset tool, `next_question` |
-| **Cancel** / stop / quit | "cancel", "stop", "I want to cancel", "never mind", "forget it" | `interview__cancel` | reset tool, `set_field`, `next_question` — session ends; confirm and stop |
-| **Start over** (same interview) | "start over", "restart", "try again from the beginning" | `interview__reset_interview`, or a skill-specific reset tool if one replaced it | `cancel` when user asked to restart, not leave |
-| **Decline optional field** | "skip", "no thanks" on optional question | `interview__skip_field` | `set_field` with empty filler |
+| **Start interview** | Signup, verify, tracking flow, etc.; matching AVAILABLE SKILL; no session | `use_skill` → `interview__next_question` or activation `set_fields` | `reply` with field prompts; `interview__*` before session |
+| **Answer** active question | Supplies info for the current question | `interview__set_fields` | `cancel`, `reset`, unrelated tools |
+| **Correct / update** prior answer | "change my email", "actually…", "wrong", names a stored field | `interview__set_fields` for that field | Treating as off-topic |
+| **Multi-answer** (e.g. activation) | User gives several fields at once | `interview__set_fields` with all extractable fields | Storing filler or acknowledgements |
+| **Cancel** / stop / quit | "cancel", "stop", "never mind", "forget it" | `interview__cancel` | `reset`, `set_fields`, `next_question` |
+| **Start over** (same interview) | "start over", "restart", "try again from the beginning" | `interview__reset` | `cancel` when user asked to restart |
+| **Decline optional field** | "skip", "no thanks" on optional question | `interview__skip_field` | `set_fields` with empty filler |
+| **Confirm review** | yes / looks good (at review) | `interview__complete` after `interview__review` if needed | Skipping review when required — **only when `confirm` is `manual`** |
 
-After **`interview__cancel`**: the session is closed. Reply with the tool's `response_directive` only — do **not** call `interview__next_question`, `set_field`, or a reset tool that turn.
+Use `interview__get_status` or `interview__get_fields` when you need to see what is already stored.
 
-### Reset tool (`interview__reset_interview`)
+## Confirm mode
 
-The base reset tool clears progress and restarts the active interview from the first question.
+`interview__get_status` and `interview__review` include `confirm`: `manual` (default) or `auto`.
+
+| Mode | Behavior |
+| ---- | -------- |
+| **`manual`** | After `interview__review`, show the summary and wait for explicit user confirmation before `interview__complete`. |
+| **`auto`** | When `missing_required` is empty, call `interview__review()` then `interview__complete()` in the **same turn** — do not ask "does this look correct?". Review may set `next_tool: interview__complete`. |
+
+Skills with review handlers that return `terminate: true` are unchanged — auto-confirm does not apply on the terminate path.
+
+## Corrections
+
+- Any stored field may be updated at any time via `interview__set_fields` — mid-interview or at review.
+- Corrections are **not** off-topic; they are a first-class intent.
+- At **review**: after correcting, call `interview__review()` again to refresh the summary before asking for confirmation.
+
+## Chaining
+
+- After successful `interview__set_fields` for a **forward answer**: if `missing_required` is non-empty, call `interview__next_question`, then reply to the user.
+- After successful `interview__set_fields` for a **correction**: acknowledge the update, then continue (call `interview__next_question` if you need the active question).
+- After `interview__skip_field`: follow `response_directive`; call `interview__next_question` when the response says to.
+- When `response_directive` starts with **`Tell the user:`**, reply to the user — chain another tool only if the directive explicitly says `Call interview__…`.
+
+## Reply rules
+
+Each tool returns one `response_directive` — prefer one primary action per tick. **`response_directive` beats `next_questions` when they conflict.**
+
+Do not store obvious filler (e.g. "ok ok" as a full name) — validators are the hard gate; ask again when validation fails.
+
+Never ask `fields[].prompt` text via `reply`/`respond` unless `interview__next_question` (or `response_directive`) supplied it **this turn** with an active session.
+
+## Reset tool (`interview__reset`)
 
 - Use only for **start over** intent — never for cancel/stop/quit (`interview__cancel` handles those).
-- Call **one** reset tool that turn; follow its `response_directive` only.
-- Do **not** chain `interview__next_question` or other interview tools in the same turn — the reset handler prepares the next step.
+- Call **one** reset tool that turn; follow its `response_directive`.
 
-A skill may **override** the base reset by declaring `interview.reset` in frontmatter (same pattern as `review` / `completion`):
+A skill may override reset by declaring `handlers.reset` in frontmatter:
 
 ```yaml
 interview:
-  reset:
-    function: reset_onboarding
-    description: Custom cancel-and-exit behavior for this skill.
+  handlers:
+    reset: reset_onboarding
 ```
 
-Implement `reset_onboarding` in `scripts/custom_tools.py`. The model still calls `interview__reset_interview()` — the foundation routes to your handler when `reset.function` is set.
+Implement the handler in `scripts/custom_tools.py`. The model still calls `interview__reset()` — the foundation routes to your handler when `handlers.reset` is set.
 
 ## Critical rules
 
-1. **Do not enumerate fields in your head** — the active question comes from `next_questions[0]` after `interview__next_question` or from `response_directive`. Never invent questions or skip ahead of `missing_required`.
-2. **Every turn starts with message evaluation** — turn prep injects either `interview__message_evaluation` or `interview__next_question`. Follow that observation's directive; never reply with a field question without reading the prep observation first.
-3. **After `set_field`:** read `ok`; if `ok:false`, handle the error (`post_tools` do not run). Read `post_tools_results` before advancing. On `ok:true`, a `Tell the user:` `response_directive` with `next_questions` means the next question is ready — **reply only**; do not call `interview__next_question` in the same turn. Call `interview__next_question` only when a tool returns `Call interview__next_question.` with no `next_questions` yet (e.g. after `skip_field` when the response still chains mechanically).
-4. **`interview__set_field` uses parameter `field`** — not `name`. Validation runs inside the tool; do not call validator functions directly.
-5. **Optional fields:** call `interview__skip_field(field)` when the user declines.
-6. **Never skip review** — call `interview__review()` before `interview__complete()` unless review sets `terminate: true`.
-7. When `missing_required` is empty, call `interview__review()` then `interview__complete()` after user confirms.
-
-## Prep observations (server-injected, not callable)
-
-Turn-lock prep may inject these **before** your first tool decision each turn. They are **not** in `allowed-tools` — do not try to call them.
-
-- `interview__message_evaluation` — Applicable fields and validator-checked `candidates` from the user's latest message. Follow the Message evaluation rules above; call `interview__set_field` for the first missing applicable field when `applicable` is non-empty.
-- `interview__next_question` — Scripted next question when no extractable entities matched. Reply using `response_directive` only.
+1. **Active question** — call `interview__next_question` when you need `next_questions[0]`; do not invent questions.
+2. **After `set_fields`:** read `ok` and per-field `results`; if `ok:false`, handle errors (`post_processor` hooks do not run for failed fields).
+3. **`interview__set_fields`** accepts a `fields` map `{field_name: value}`; single-field `field`/`value` is a deprecated alias.
+4. **Optional fields:** call `interview__skip_field(field)` when the user declines.
+5. **Never skip review** — call `interview__review()` before `interview__complete()` unless review sets `terminate: true`.
+6. **`manual` confirm:** when `missing_required` is empty, call `interview__review()` then `interview__complete()` after user confirms.
+7. **`auto` confirm:** when `missing_required` is empty and `confirm` is `auto`, call `interview__review()` then `interview__complete()` in the same turn without asking for confirmation.
+8. **Session required:** `interview__*` tools require an active session. On `NO_SESSION`, call `use_skill` then `interview__next_question` — do not compensate with chat-only field questions.
 
 ## Core tools (`interview__*`)
 
-- `interview__set_field(field, value)` — Validate and store; runs `post_tools` when configured. Only call when the latest message passes the Answer quality gate.
-- `interview__next_question()` — Next question; runs `pre_tools`. Returns `next_questions` and `response_directive`.
-- `interview__get_field(field)` — Retrieve stored value.
-- `interview__skip_field(field)` — Skip optional field when the user declines.
-- `interview__get_status()` — Full status dump.
+- `interview__set_fields(fields)` — Validate and store one or more fields; runs `post_processor` hooks per field when configured.
+- `interview__get_fields(fields?)` — Read stored values; omit `fields` for all collected.
+- `interview__next_question()` — Next question; runs `pre_processor` hooks.
+- `interview__get_status()` — Full session dump.
+- `interview__skip_field(field)` — Skip optional field.
 - `interview__review()` — Review summary before complete.
 - `interview__complete()` — Finalize after user confirms review.
-- `interview__cancel()` — Cancel and close the session. Use for stop/quit/cancel intent — not for start over.
-- `interview__reset_interview()` — Clear progress and restart from the first question. Use for start-over intent — not for cancel.
+- `interview__cancel()` — Cancel and close session.
+- `interview__reset()` — Clear progress and restart, or custom reset handler.
+
+Deprecated aliases: `interview__set_field`, `interview__get_field` — prefer `set_fields` / `get_fields`.

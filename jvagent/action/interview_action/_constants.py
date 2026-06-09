@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict
 
-from .core.interview_loader import QuestionDef, ValidatorDef
+from .core.interview_loader import FieldDef, ValidatorDef
 from .core.validators import ExtractionStatus
 
 TASK_OWNER_ACTION = "InterviewAction"
@@ -70,33 +70,35 @@ def _parse_validation_result(
     }
 
 
-def _question_def_to_dict(q: QuestionDef) -> Dict[str, Any]:
+def _field_def_to_dict(f: FieldDef) -> Dict[str, Any]:
     result = {
-        "name": q.name,
-        "question": q.question,
-        "description": q.description,
-        "required": q.required,
-        "validator": q.validator,
+        "key": f.key,
+        "prompt": f.prompt,
+        "guidance": f.guidance,
+        "required": f.required,
+        "validator": f.validator,
     }
-    if q.validator_kwargs:
-        result["validator_kwargs"] = q.validator_kwargs
-    if q.input_handler:
-        result["input_handler"] = q.input_handler
-    if q.pre_tools:
-        result["pre_tools"] = q.pre_tools
-    if q.post_tools:
-        result["post_tools"] = q.post_tools
-    if q.branches:
-        result["branches"] = [
-            {"condition": b.condition, "target": b.target} for b in q.branches
-        ]
-    if q.default_next:
-        result["default_next"] = q.default_next
+    if f.validator_args:
+        result["validator_args"] = f.validator_args
+    if f.input_handler:
+        result["input_handler"] = f.input_handler
+    if f.pre_processor:
+        result["pre_processor"] = f.pre_processor
+    if f.post_processor:
+        result["post_processor"] = f.post_processor
+    if f.branches:
+        result["branches"] = [{"when": b.when, "goto": b.goto} for b in f.branches]
+    if f.else_field:
+        result["else"] = f.else_field
     return result
 
 
 def _validator_def_to_dict(v: ValidatorDef) -> Dict[str, Any]:
-    result: Dict[str, Any] = {"function": v.name, "description": v.description}
+    result: Dict[str, Any] = {"function": v.name}
     if v.kwargs:
         result["kwargs"] = v.kwargs
     return result
+
+
+# Back-compat alias
+_question_def_to_dict = _field_def_to_dict

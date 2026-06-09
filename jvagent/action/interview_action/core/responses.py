@@ -74,6 +74,22 @@ def review_confirmation_directive(
     )
 
 
+def auto_confirm_directive(
+    summary: str,
+    *,
+    preamble: str = "",
+) -> str:
+    """Review summary shown; chain interview__complete without user confirmation."""
+    summary_block = f"\n\n{summary}" if summary else ""
+    intro = (preamble or "Here is a summary of what was collected.").strip()
+    return (
+        f"Tell the user: {intro}{summary_block} "
+        "Do not ask whether everything looks correct. "
+        "Call interview__complete now in this same turn. "
+        "Do NOT call interview__review again."
+    )
+
+
 def call_tool_directive(next_tool: str) -> str:
     """Single-action directive: model should call one interview tool."""
     return f"Call {next_tool}."
@@ -82,8 +98,9 @@ def call_tool_directive(next_tool: str) -> str:
 def no_session_directive() -> str:
     """Directive when interview tools run without an active session."""
     return (
-        "Activate the interview skill with use_skill, then call "
-        "interview__next_question."
+        "Activate the matching interview skill with use_skill, then call "
+        "interview__next_question. Do not ask interview field questions via "
+        "reply until the session is active."
     )
 
 

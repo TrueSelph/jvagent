@@ -32,71 +32,6 @@ AVAILABLE_TRAINING_TIMES: List[str] = [
 
 _INVALID_TEST_DOMAINS = frozenset({"example.com", "test.com", "invalid.com"})
 
-_NAME_INTRO_PATTERNS = (
-    re.compile(
-        r"(?:my name is|i'm|i am|call me|this is)\s+"
-        r"([A-Za-z][A-Za-z\s'\-]{1,60}?)"
-        r"(?:\s+and\b|\s*,|\s*\.|$)",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"(?:hello|hi|hey)[,.]?\s+(?:my name is|i'm|i am)\s+"
-        r"([A-Za-z][A-Za-z\s'\-]{1,60}?)"
-        r"(?:\s+and\b|\s*,|\s*\.|$)",
-        re.IGNORECASE,
-    ),
-)
-
-
-# ─── Message evaluation extractors ───────────────────────────────────
-
-
-def extract_full_name_candidates(user_message: str, **kwargs: Any) -> List[str]:
-    """Surface intro-style name phrases from the user's latest message."""
-    msg = (user_message or "").strip()
-    candidates: List[str] = []
-    for pattern in _NAME_INTRO_PATTERNS:
-        for match in pattern.finditer(msg):
-            name = (match.group(1) or "").strip().strip(".,;")
-            if name and name not in candidates:
-                candidates.append(name)
-    return candidates
-
-
-def extract_available_times_candidates(user_message: str, **kwargs: Any) -> List[str]:
-    """Surface day/time phrases that validate_available_times may match."""
-    msg = (user_message or "").strip()
-    if not msg:
-        return []
-    candidates: List[str] = []
-    lower = msg.lower()
-    day_names = (
-        "monday",
-        "tuesday",
-        "wednesday",
-        "thursday",
-        "friday",
-        "saturday",
-        "sunday",
-    )
-    for day in day_names:
-        if day not in lower:
-            continue
-        for match in re.finditer(rf"\b{day}\b[^.;]{{0,50}}", msg, re.IGNORECASE):
-            chunk = match.group().strip().strip(".,;")
-            if chunk and chunk not in candidates:
-                candidates.append(chunk)
-        for match in re.finditer(
-            rf"\b{day}\s+(?:at\s+)?\d{{1,2}}(?::\d{{2}})?\s*(?:am|pm)?\b",
-            msg,
-            re.IGNORECASE,
-        ):
-            chunk = match.group().strip()
-            if chunk not in candidates:
-                candidates.append(chunk)
-    return candidates
-
-
 def _validation_result(
     valid: bool,
     value: str,
@@ -296,6 +231,38 @@ async def validate_available_times(
     )
 
 
+_IN_PERSON_ALIASES = frozenset(
+    {"in person", "in-person", "inperson", "onsite", "on-site", "on site", "physical"}
+)
+_VIRTUAL_ALIASES = frozenset(
+    {"virtual", "online", "remote", "zoom", "video", "from home"}
+)
+
+
+async def validate_training_format(value: str, **kwargs) -> str:
+    """Normalize Saturday-session attendance preference (branch-only field)."""
+    if not value or not isinstance(value, str):
+        return _validation_result(
+            False,
+            value or "",
+            "validate_training_format",
+            "Ask: Will you attend in person or join virtually?",
+        )
+
+    normalized = _normalize_spaces(value)
+    if normalized in _IN_PERSON_ALIASES or "in person" in normalized:
+        return _validation_result(True, "In person", "validate_training_format")
+    if normalized in _VIRTUAL_ALIASES or "virtual" in normalized or "online" in normalized:
+        return _validation_result(True, "Virtual", "validate_training_format")
+
+    return _validation_result(
+        False,
+        value.strip(),
+        "validate_training_format",
+        "Tell the user: Please say whether you will attend in person or join virtually.",
+    )
+
+
 async def validate_signup_email(value: str, **kwargs) -> str:
     if not value or not isinstance(value, str):
         return _validation_result(
@@ -362,12 +329,12 @@ async def get_available_training_times(
 
 
 def _question_text(config: Any, field_name: str, default: str) -> str:
-    if config is None or not hasattr(config, "get_question"):
+    if config is None or not hasattr(config, "get_field"):
         return default
-    q = config.get_question(field_name)
-    if q is None:
+    fdef = config.get_field(field_name)
+    if fdef is None:
         return default
-    return (getattr(q, "question", None) or default).strip()
+    return (getattr(fdef, "prompt", None) or default).strip()
 
 
 async def append_work_email_note(
@@ -472,14 +439,19 @@ async def signup_complete(
         available_times,
     )
 
+    training_format = (values.get("training_format") or "").strip()
+    employer_name = (values.get("employer_name") or "").strip()
     times_note = (
         f"Your preferred times were: {', '.join(matched_times)}."
         if matched_times
         else f"Your availability: {available_times}."
     )
+    if training_format:
+        times_note = f"{times_note} Format: {training_format}."
+    employer_note = f" Employer: {employer_name}." if employer_name else ""
     return {
         "directive": (
             f"Thank you, {user_name}! Your signup for jvagent training is complete. "
-            f"We will contact you at {user_email}. {times_note}"
+            f"We will contact you at {user_email}.{employer_note} {times_note}"
         )
     }

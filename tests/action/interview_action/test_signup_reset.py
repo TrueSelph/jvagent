@@ -1,4 +1,4 @@
-"""Base interview__reset_interview tool."""
+"""Base interview__reset tool."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def signup_action():
 
 
 @pytest.mark.asyncio
-async def test_reset_interview_returns_reply_directive_not_next_question_chain(
+async def test_reset_returns_reply_directive_not_next_question_chain(
     signup_action,
 ):
     action, _spec = signup_action
@@ -47,7 +47,7 @@ async def test_reset_interview_returns_reply_directive_not_next_question_chain(
         return_value='{"next_questions": [{"question": "What is your email?"}]}'
     )
 
-    result = json.loads(await action._handle_reset_interview(visitor=visitor))
+    result = json.loads(await action._handle_reset(visitor=visitor))
 
     assert result["ok"] is True
     assert result["status"] == "restarted"

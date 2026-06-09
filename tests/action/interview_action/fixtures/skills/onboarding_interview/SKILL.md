@@ -22,97 +22,89 @@ tags:
 - phone-update
 interview:
   title: Customer Onboarding
-  description: Collect customer details (contact number, email, ID card photo or ID/passport
+  summary: >-
+    Collect customer details (contact number, email, ID card photo or ID/passport
     number, full name, date of birth) for new Zoon account creation, or update an
-    existing customer's WhatsApp phone number via OTP. The LLM decides which question
-    to ask next based on SKILL.md.
-  questions:
-  - name: phone_number
-    question: What is your best phone number?
+    existing customer's WhatsApp phone number via OTP.
+  confirm: manual
+  fields:
+  - key: phone_number
+    prompt: What is your best phone number?
     required: true
-    pre_tools:
-    - get_phone_number
-    post_tools:
-    - verify_phone_number
-    description: First onboarding question. On WhatsApp, pre_tools may suggest the
-      number on file — ask the user to confirm it. post_tools runs verify_phone_number
+    pre_processor: get_phone_number
+    post_processor: verify_phone_number
+    guidance: >-
+      First onboarding question. On WhatsApp, pre_processor may suggest the number
+      on file — ask the user to confirm it. post_processor runs verify_phone_number
       automatically after save.
-    validator:
-      function: phone
-      kwargs:
-        exact_length: 10
-  - name: email
-    question: What is your email address?
+    validator: phone
+    validator_args:
+      exact_length: 10
+  - key: email
+    prompt: What is your email address?
     required: true
-    description: User's email address. pre_tools may suggest email from a completed
-      onboarding task. post_tools runs verify_email automatically after save.
-    pre_tools:
-    - suggest_email_from_task
-    post_tools:
-    - verify_email
-    validator:
-      function: email
-  - name: otp_code
-    question: Please enter the verification code sent to your email.
+    guidance: >-
+      User's email address. pre_processor may suggest email from a completed onboarding
+      task. post_processor runs verify_email automatically after save.
+    pre_processor: suggest_email_from_task
+    post_processor: verify_email
+    validator: email
+  - key: otp_code
+    prompt: Please enter the verification code sent to your email.
     required: false
-    description: Only ask after onboarding_interview__send_otp succeeded (otp_sent
-      true). If OTP was not sent, call interview__skip_field. Validator confirms via
-      API.
-    validator:
-      function: validate_otp_code
-  - name: id_card
-    question: Do you have a photo of your ID card? Please upload it for faster verification,
+    guidance: >-
+      Only ask after onboarding_interview__send_otp succeeded (otp_sent true). If OTP
+      was not sent, call interview__skip_field. Validator confirms via API.
+    validator: validate_otp_code
+  - key: id_card
+    prompt: >-
+      Do you have a photo of your ID card? Please upload it for faster verification,
       or say 'no' to enter your details manually.
     required: false
-    description: Photo of ID card for verification. If uploaded, call process_id_card
-      to extract id_number, full_name, and date_of_birth automatically. If the user
-      declines, ask for each field manually.
-  - name: id_number
-    question: What is your ID number?
+    guidance: >-
+      Photo of ID card for verification. If uploaded, call process_id_card to extract
+      id_number, full_name, and date_of_birth automatically. If the user declines,
+      ask for each field manually.
+  - key: id_number
+    prompt: What is your ID number?
     required: true
-    description: National ID number (8 to 9 digits) or passport number. Only ask this
-      if id_card was skipped or no photo was uploaded.
-    validator:
-      function: validate_id_number
-  - name: full_name
-    question: What is your full name?
-    required: true
-    description: User's full name (first and last name). Only ask this if id_card
+    guidance: >-
+      National ID number (8 to 9 digits) or passport number. Only ask this if id_card
       was skipped or no photo was uploaded.
-    validator:
-      function: name
-  - name: date_of_birth
-    question: What is your date of birth?
+    validator: validate_id_number
+  - key: full_name
+    prompt: What is your full name?
     required: true
-    description: Must be a date in the past in DD-MM-YYYY format. Only ask this if
-      id_card was skipped or no photo was uploaded.
-    validator:
-      function: date_past
-  tools:
+    guidance: >-
+      User's full name (first and last name). Only ask this if id_card was skipped
+      or no photo was uploaded.
+    validator: name
+  - key: date_of_birth
+    prompt: What is your date of birth?
+    required: true
+    guidance: >-
+      Must be a date in the past in DD-MM-YYYY format. Only ask this if id_card was
+      skipped or no photo was uploaded.
+    validator: date_past
+  skill_tools:
   - name: send_otp
-    description: 'When: OTP is required (email mismatch during onboarding, or user
-      is updating their phone and email + phone_number are collected). Do: Send verification
-      code to the email on the account. Then: Ask for otp_code if ok, or interview__skip_field
-      otp_code if send failed.'
+    description: >-
+      When OTP is required (email mismatch during onboarding, or user is updating
+      their phone and email + phone_number are collected). Send verification code to
+      the email on the account. Then ask for otp_code if ok, or interview__skip_field
+      otp_code if send failed.
     function: send_otp
     parameters: {}
   - name: process_id_card
-    description: 'When: User uploaded an ID photo, or you need to check whether one
-      is present. Do: Extract and save id_number, full_name, and date_of_birth automatically.
-      Then: continue the interview or go to review when missing_required is empty.'
+    description: >-
+      When user uploaded an ID photo. Extract and save id_number, full_name, and
+      date_of_birth automatically. Then continue the interview or go to review when
+      missing_required is empty.
     function: process_id_card
     parameters: {}
-  reset:
-    function: reset_onboarding
-    description: >-
-      When user cancels onboarding or wants to start over. Clears session, cancels
-      tasks, and informs the user onboarding was cancelled. Stop after the directive
-      — do not call interview__next_question. To restart later, user re-initiates
-      via use_skill.
-  completion:
-    function: complete_onboarding
-    description: Post-review completion handler called by interview__complete. Creates
-      the customer account via Zoon API and marks onboarding complete on success.
+  handlers:
+    reset: reset_onboarding
+    complete: complete_onboarding
 ---
 
 ## Custom instructions
@@ -128,13 +120,13 @@ interview:
 | Situation                                             | Action                                                                                                                                                  |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | After **complete**                                    | Session cleared — call `use_skill` with `onboarding_interview` to start again                                                                    |
-| User **cancels** onboarding                           | `interview__reset_interview()` — clears session, cancels tasks, informs user; then **stop** (not `interview__cancel`)               |
-| User wants to start over (same as cancel)             | `interview__reset_interview()` — same cancel-and-exit behavior                                                                     |
+| User **cancels** onboarding                           | `interview__reset()` — clears session, cancels tasks, informs user; then **stop** (not `interview__cancel`)               |
+| User wants to start over (same as cancel)             | `interview__reset()` — same cancel-and-exit behavior                                                                     |
 | `post_tools_results` shows `exists: true`             | **Stop** — follow `response_directive` in one `reply`; persisted interview state is cleared; do not continue onboarding                                 |
 
 ### Rules
 
-1. If the user cancels, call **`interview__reset_interview()`** (not `interview__cancel`). Deliver the `response_directive` message and **stop** — do not call `interview__next_question` or ask onboarding questions.
+1. If the user cancels, call **`interview__reset()`** (not `interview__cancel`). Deliver the `response_directive` message and **stop** — do not call `interview__next_question` or ask onboarding questions.
 2. **Tools persist data; you do not.** `process_id_card` writes `id_number`, `full_name`, and `date_of_birth` to `fields` automatically. After extraction succeeds, call `interview__review()` when `missing_required` is empty — **never** call `interview__set_field` for extracted values. Use `set_field` when the user types an answer, or to fix a field at review.
 3. **Phone confirm is not a reply-only turn.** When the user confirms the WhatsApp number (`yes`, `ok`, `sure`), call `interview__set_field(field="phone_number", value=<digits>)` — **do not** only acknowledge the number in a reply.
 4. **Phone verification runs automatically via `post_tools`** after `phone_number` is saved. Read `post_tools_results` — never call a verify tool manually; do not call `interview__next_question` until `exists: false`.

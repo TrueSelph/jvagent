@@ -1,13 +1,12 @@
-"""Entity candidate extraction for per-message evaluation (not auto-store)."""
+"""Builtin utterance candidate extraction for validation grounding."""
 
 from __future__ import annotations
 
-import inspect
 import logging
 import re
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List
 
-from .interview_loader import InterviewSpec, QuestionDef, ValidatorDef
+from .interview_loader import FieldDef, ValidatorDef
 
 logger = logging.getLogger(__name__)
 
@@ -17,30 +16,6 @@ _EMAIL_RE = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
 def _looks_like_email_validator(vdef: ValidatorDef) -> bool:
     name = (vdef.name or "").lower()
     return name == "email" or "email" in name
-
-
-def _call_custom_extractor(
-    func: Callable[..., Any],
-    user_message: str,
-    kwargs: Dict[str, Any],
-    *,
-    session: Any = None,
-) -> List[str]:
-    params = set(inspect.signature(func).parameters.keys())
-    call_kwargs = {k: v for k, v in kwargs.items() if k in params}
-    if "user_message" in params:
-        call_kwargs["user_message"] = user_message
-    elif "message" in params:
-        call_kwargs["message"] = user_message
-    if session is not None and "session" in params:
-        call_kwargs["session"] = session
-    try:
-        result = func(**call_kwargs)
-    except TypeError:
-        result = func(user_message)
-    if not isinstance(result, list):
-        return []
-    return [str(item).strip() for item in result if str(item).strip()]
 
 
 def _extract_builtin_candidates(
@@ -56,7 +31,6 @@ def _extract_builtin_candidates(
     name = vdef.name or ""
 
     if name == "name" or name == "text":
-        # Short direct answers handled via CTX_QUESTION_PRESENTED in message_evaluation.
         pass
 
     elif name == "email" or _looks_like_email_validator(vdef):
@@ -93,35 +67,19 @@ def _extract_builtin_candidates(
     return candidates
 
 
-def extract_candidates_for_question(
-    question: QuestionDef,
+def extract_candidates_for_field(
+    field: FieldDef,
     vdef: ValidatorDef,
     user_message: str,
     kwargs: Dict[str, Any],
     *,
-    spec: Optional[InterviewSpec] = None,
-    load_fn: Optional[Callable[[str], Any]] = None,
     session: Any = None,
 ) -> List[str]:
-    """Return ordered unique candidate substrings from user_message for a question."""
+    """Return ordered unique candidate substrings from user_message for a field."""
     msg = (user_message or "").strip()
     if not msg:
         return []
-
-    candidates: List[str] = []
-
-    if spec and load_fn:
-        edef = spec.get_extractor(vdef.name)
-        if edef and edef.function:
-            func = load_fn(edef.function)
-            if func:
-                candidates.extend(
-                    _call_custom_extractor(func, msg, kwargs, session=session)
-                )
-                return _dedupe(candidates)
-
-    candidates.extend(_extract_builtin_candidates(vdef, msg, kwargs))
-    return _dedupe(candidates)
+    return _dedupe(_extract_builtin_candidates(vdef, msg, kwargs))
 
 
 def _dedupe(items: List[str]) -> List[str]:
@@ -133,3 +91,7 @@ def _dedupe(items: List[str]) -> List[str]:
             seen.add(key)
             out.append(key)
     return out
+
+
+# Back-compat alias
+extract_candidates_for_question = extract_candidates_for_field

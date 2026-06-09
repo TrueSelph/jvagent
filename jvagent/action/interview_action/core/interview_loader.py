@@ -8,49 +8,78 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 logger = logging.getLogger(__name__)
 
 SKILL_MD = "SKILL.md"
 INTERVIEW_FRONTMATTER_KEY = "interview"
 
-ValidatorSpec = Union[str, Dict[str, Any]]
+ConfirmMode = Literal["manual", "auto"]
+
+_LEGACY_INTERVIEW_KEYS = frozenset(
+    {
+        "questions",
+        "description",
+        "tools",
+        "extractors",
+        "validators",
+        "review",
+        "completion",
+        "reset",
+        "cancel",
+    }
+)
+
+_LEGACY_FIELD_KEYS = frozenset(
+    {
+        "name",
+        "question",
+        "description",
+        "pre_tools",
+        "post_tools",
+        "default_next",
+        "validator_kwargs",
+    }
+)
+
+_LEGACY_BRANCH_KEYS = frozenset({"condition", "target"})
 
 
 @dataclass
 class BranchDef:
-    condition: Dict[str, Any] = field(default_factory=dict)
-    target: str = ""
+    when: Dict[str, Any] = field(default_factory=dict)
+    goto: str = ""
 
 
 @dataclass
-class QuestionDef:
-    name: str
-    question: str
-    description: str = ""
+class FieldDef:
+    key: str
+    prompt: str
+    guidance: str = ""
     required: bool = True
-    validator: ValidatorSpec = ""
-    validator_kwargs: Dict[str, Any] = field(default_factory=dict)
+    validator: str = ""
+    validator_args: Dict[str, Any] = field(default_factory=dict)
     input_handler: Optional[str] = None
-    pre_tools: List[str] = field(default_factory=list)
-    post_tools: List[str] = field(default_factory=list)
+    pre_processor: List[str] = field(default_factory=list)
+    post_processor: List[str] = field(default_factory=list)
     branches: List[BranchDef] = field(default_factory=list)
-    default_next: Optional[str] = None
+    else_field: Optional[str] = None
 
-    def resolved_pre_tools(self) -> List[str]:
-        return list(self.pre_tools)
-
-
-@dataclass
-class ValidatorDef:
-    name: str
-    description: str = ""
-    kwargs: Dict[str, Any] = field(default_factory=dict)
+    def resolved_pre_processors(self) -> List[str]:
+        return list(self.pre_processor)
 
 
 @dataclass
-class ToolDef:
+class HandlersDef:
+    review: Optional[str] = None
+    complete: Optional[str] = None
+    reset: Optional[str] = None
+    cancel: Optional[str] = None
+
+
+@dataclass
+class SkillToolDef:
     name: str
     description: str = ""
     function: str = ""
@@ -58,134 +87,50 @@ class ToolDef:
 
 
 @dataclass
-class CompletionDef:
-    function: Optional[str] = None
-    description: str = ""
-
-
-@dataclass
-class ReviewDef:
-    function: Optional[str] = None
-    description: str = ""
-
-
-@dataclass
-class ResetDef:
-    function: Optional[str] = None
-    description: str = ""
-
-
-@dataclass
-class ExtractorDef:
-    """Maps a validator function name to a custom_tools.py candidate extractor."""
-
-    validator: str
-    function: str = ""
-
-
-@dataclass
 class InterviewSpec:
     name: str
     title: str = ""
-    description: str = ""
-    questions: List[QuestionDef] = field(default_factory=list)
-    validators: List[ValidatorDef] = field(default_factory=list)
-    tools: List[ToolDef] = field(default_factory=list)
-    completion: Optional[CompletionDef] = None
-    review: Optional[ReviewDef] = None
-    reset: Optional[ResetDef] = None
-    cancel: Optional[CompletionDef] = None
-    extractors: List[ExtractorDef] = field(default_factory=list)
+    summary: str = ""
+    fields: List[FieldDef] = field(default_factory=list)
+    skill_tools: List[SkillToolDef] = field(default_factory=list)
+    handlers: HandlersDef = field(default_factory=HandlersDef)
+    confirm: ConfirmMode = "manual"
     source_dir: str = ""
 
     def get_required_fields(self) -> List[str]:
-        return [q.name for q in self.questions if q.required]
+        return [f.key for f in self.fields if f.required]
 
-    def get_question(self, name: str) -> Optional[QuestionDef]:
-        for q in self.questions:
-            if q.name == name:
-                return q
+    def get_field(self, key: str) -> Optional[FieldDef]:
+        for f in self.fields:
+            if f.key == key:
+                return f
         return None
 
-    def get_validator(self, name: str) -> Optional[ValidatorDef]:
-        for v in self.validators:
-            if v.name == name:
-                return v
-        return None
-
-    def get_tool(self, name: str) -> Optional[ToolDef]:
-        for t in self.tools:
+    def get_skill_tool(self, name: str) -> Optional[SkillToolDef]:
+        for t in self.skill_tools:
             if t.name == name:
                 return t
         return None
 
-    def get_extractor(self, validator_name: str) -> Optional[ExtractorDef]:
-        for ext in self.extractors:
-            if ext.validator == validator_name:
-                return ext
-        return None
-
-    def question_names(self) -> List[str]:
-        return [q.name for q in self.questions]
+    def field_keys(self) -> List[str]:
+        return [f.key for f in self.fields]
 
 
-def _resolve_validator_name(spec: Dict[str, Any], fallback: str = "") -> str:
-    return spec.get("function") or spec.get("name") or fallback
+def _reject_legacy_keys(data: Dict[str, Any], legacy: frozenset, *, path: str) -> None:
+    for key in legacy:
+        if key in data:
+            raise ValueError(
+                f"Legacy frontmatter key '{key}' at {path} is no longer supported"
+            )
 
 
-def _validator_spec_to_def(
-    spec: ValidatorSpec,
-    interview_spec: InterviewSpec,
-    fallback_name: str = "",
-) -> Optional[ValidatorDef]:
-    if not spec:
-        return None
-    if isinstance(spec, dict):
-        return ValidatorDef(
-            name=_resolve_validator_name(spec, fallback_name),
-            description=spec.get("description", ""),
-            kwargs=spec.get("kwargs", {}),
+def _reject_legacy_validator(field_data: Dict[str, Any], path: str) -> None:
+    validator = field_data.get("validator")
+    if isinstance(validator, dict):
+        raise ValueError(
+            f"Nested validator object at {path} is no longer supported; "
+            "use validator: <function_name> and validator_args:"
         )
-    if isinstance(spec, str):
-        return interview_spec.get_validator(spec)
-    return None
-
-
-def resolve_validator_def(
-    question: QuestionDef,
-    interview_spec: InterviewSpec,
-) -> Optional[ValidatorDef]:
-    return _validator_spec_to_def(
-        question.validator, interview_spec, fallback_name=question.name
-    )
-
-
-def question_has_validator(question: QuestionDef) -> bool:
-    """True when the question declares a validator in frontmatter."""
-    spec = question.validator
-    if not spec:
-        return False
-    if isinstance(spec, str):
-        return bool(spec.strip())
-    if isinstance(spec, dict):
-        return bool(spec.get("function") or spec.get("name"))
-    return False
-
-
-def resolve_validator_kwargs(
-    question: QuestionDef,
-    vdef: Optional[ValidatorDef],
-) -> Dict[str, Any]:
-    kwargs: Dict[str, Any] = {}
-    if vdef and vdef.kwargs:
-        kwargs.update(vdef.kwargs)
-    if isinstance(question.validator, dict):
-        inline_kwargs = question.validator.get("kwargs", {})
-        if inline_kwargs:
-            kwargs.update(inline_kwargs)
-    if question.validator_kwargs:
-        kwargs.update(question.validator_kwargs)
-    return kwargs
 
 
 def _parse_string_list(raw: Any) -> List[str]:
@@ -198,75 +143,75 @@ def _parse_string_list(raw: Any) -> List[str]:
     return []
 
 
-def _parse_branch(data: Dict[str, Any]) -> BranchDef:
+def _parse_branch(data: Dict[str, Any], *, path: str) -> BranchDef:
+    _reject_legacy_keys(data, _LEGACY_BRANCH_KEYS, path=path)
     return BranchDef(
-        condition=data.get("condition", {}) or {},
-        target=data.get("target", "") or "",
+        when=data.get("when", {}) or {},
+        goto=data.get("goto", "") or "",
     )
 
 
-def _parse_question(data: Dict[str, Any]) -> QuestionDef:
-    branches = [_parse_branch(b) for b in data.get("branches", []) or []]
-    return QuestionDef(
-        name=data.get("name", ""),
-        question=data.get("question", ""),
-        description=data.get("description", ""),
-        required=data.get("required", True),
-        validator=data.get("validator", ""),
-        validator_kwargs=data.get("validator_kwargs", {}),
+def _parse_field(data: Dict[str, Any], *, index: int) -> FieldDef:
+    path = f"fields[{index}]"
+    _reject_legacy_keys(data, _LEGACY_FIELD_KEYS, path=path)
+    _reject_legacy_validator(data, path)
+
+    branches = [
+        _parse_branch(b, path=f"{path}.branches[{i}]")
+        for i, b in enumerate(data.get("branches", []) or [])
+    ]
+    validator = data.get("validator", "")
+    if validator is not None and not isinstance(validator, str):
+        raise ValueError(f"validator at {path} must be a function name string")
+
+    return FieldDef(
+        key=str(data.get("key", "") or "").strip(),
+        prompt=str(data.get("prompt", "") or ""),
+        guidance=str(data.get("guidance", "") or ""),
+        required=bool(data.get("required", True)),
+        validator=str(validator or "").strip(),
+        validator_args=dict(data.get("validator_args") or {}),
         input_handler=data.get("input_handler"),
-        pre_tools=_parse_string_list(data.get("pre_tools")),
-        post_tools=_parse_string_list(data.get("post_tools")),
+        pre_processor=_parse_string_list(data.get("pre_processor")),
+        post_processor=_parse_string_list(data.get("post_processor")),
         branches=branches,
-        default_next=data.get("default_next"),
+        else_field=data.get("else"),
     )
 
 
-def _parse_validator(data: Dict[str, Any]) -> ValidatorDef:
-    return ValidatorDef(
-        name=_resolve_validator_name(data),
-        description=data.get("description", ""),
-        kwargs=data.get("kwargs", {}),
+def _parse_handlers(data: Any) -> HandlersDef:
+    if not data:
+        return HandlersDef()
+    if not isinstance(data, dict):
+        raise ValueError("handlers must be a mapping of handler name to function name")
+    for key in ("review", "complete", "reset", "cancel"):
+        val = data.get(key)
+        if val is not None and not isinstance(val, str):
+            raise ValueError(f"handlers.{key} must be a function name string")
+    return HandlersDef(
+        review=data.get("review"),
+        complete=data.get("complete"),
+        reset=data.get("reset"),
+        cancel=data.get("cancel"),
     )
 
 
-def _parse_tool(data: Dict[str, Any]) -> ToolDef:
-    return ToolDef(
+def _parse_skill_tool(data: Dict[str, Any]) -> SkillToolDef:
+    return SkillToolDef(
         name=data.get("name", ""),
         description=data.get("description", ""),
         function=data.get("function", ""),
-        parameters=data.get("parameters", {}),
+        parameters=data.get("parameters", {}) or {},
     )
 
 
-def _parse_completion(data: Dict[str, Any]) -> CompletionDef:
-    return CompletionDef(
-        function=data.get("function"),
-        description=data.get("description", ""),
-    )
-
-
-def _parse_review(data: Dict[str, Any]) -> ReviewDef:
-    return ReviewDef(
-        function=data.get("function"),
-        description=data.get("description", ""),
-    )
-
-
-def _parse_reset(data: Dict[str, Any]) -> ResetDef:
-    return ResetDef(
-        function=data.get("function"),
-        description=data.get("description", ""),
-    )
-
-
-def _parse_extractor(data: Dict[str, Any]) -> ExtractorDef:
-    if isinstance(data, str):
-        return ExtractorDef(validator=data, function=data)
-    return ExtractorDef(
-        validator=str(data.get("validator") or data.get("name") or "").strip(),
-        function=str(data.get("function") or "").strip(),
-    )
+def _parse_confirm(raw: Any) -> ConfirmMode:
+    if raw is None or raw == "":
+        return "manual"
+    mode = str(raw).strip().lower()
+    if mode not in ("manual", "auto"):
+        raise ValueError("confirm must be 'manual' or 'auto'")
+    return mode  # type: ignore[return-value]
 
 
 def parse_interview_spec(
@@ -278,6 +223,8 @@ def parse_interview_spec(
     """Build ``InterviewSpec`` from a parsed mapping (frontmatter)."""
     if not isinstance(data, dict):
         raise ValueError("Interview spec must be a YAML mapping")
+
+    _reject_legacy_keys(data, _LEGACY_INTERVIEW_KEYS, path="interview")
 
     name = str(data.get("name") or default_name or "").strip()
     if default_name and data.get("name"):
@@ -291,35 +238,58 @@ def parse_interview_spec(
             )
             name = declared
 
-    questions = [_parse_question(q) for q in data.get("questions", []) or []]
-    validators = [_parse_validator(v) for v in data.get("validators", []) or []]
-    tools = [_parse_tool(t) for t in data.get("tools", []) or []]
-    completion = (
-        _parse_completion(data.get("completion", {}))
-        if data.get("completion")
-        else None
-    )
-    review = _parse_review(data.get("review", {})) if data.get("review") else None
-    reset = _parse_reset(data.get("reset", {})) if data.get("reset") else None
-    cancel = _parse_completion(data.get("cancel", {})) if data.get("cancel") else None
-    extractors = [
-        _parse_extractor(item) for item in (data.get("extractors", []) or []) if item
+    fields = [
+        _parse_field(q, index=i) for i, q in enumerate(data.get("fields", []) or [])
+    ]
+    skill_tools = [
+        _parse_skill_tool(t) for t in (data.get("skill_tools", []) or []) if t
     ]
 
     return InterviewSpec(
         name=name,
-        title=data.get("title", ""),
-        description=data.get("description", ""),
-        questions=questions,
-        validators=validators,
-        tools=tools,
-        completion=completion,
-        review=review,
-        reset=reset,
-        cancel=cancel,
-        extractors=extractors,
+        title=str(data.get("title", "") or ""),
+        summary=str(data.get("summary", "") or ""),
+        fields=fields,
+        skill_tools=skill_tools,
+        handlers=_parse_handlers(data.get("handlers")),
+        confirm=_parse_confirm(data.get("confirm")),
         source_dir=source_dir,
     )
+
+
+@dataclass
+class ValidatorDef:
+    """Resolved validator metadata for a field at runtime."""
+
+    name: str
+    kwargs: Dict[str, Any] = field(default_factory=dict)
+
+
+def resolve_validator_def(field: FieldDef) -> Optional[ValidatorDef]:
+    if not field.validator:
+        return None
+    return ValidatorDef(name=field.validator, kwargs=dict(field.validator_args))
+
+
+def field_has_validator(field: FieldDef) -> bool:
+    return bool((field.validator or "").strip())
+
+
+def resolve_validator_kwargs(
+    field: FieldDef,
+    vdef: Optional[ValidatorDef],
+) -> Dict[str, Any]:
+    kwargs: Dict[str, Any] = {}
+    if vdef and vdef.kwargs:
+        kwargs.update(vdef.kwargs)
+    if field.validator_args:
+        kwargs.update(field.validator_args)
+    return kwargs
+
+
+# Back-compat aliases for internal migration (remove after full sweep)
+QuestionDef = FieldDef
+ToolDef = SkillToolDef
 
 
 def load_interview_spec_from_skill(
@@ -352,7 +322,6 @@ def load_interview_spec_from_skill(
 
 
 def _load_spec_from_skill_dir(skill_dir: Path) -> Optional[InterviewSpec]:
-    """Load interview spec from SKILL.md frontmatter."""
     if not (skill_dir / SKILL_MD).is_file():
         return None
     try:

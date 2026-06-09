@@ -29,10 +29,9 @@ def onboarding_action():
 
 
 @pytest.mark.asyncio
-async def test_reset_interview_delegates_to_custom_handler(onboarding_action):
+async def test_reset_delegates_to_custom_handler(onboarding_action):
     action, spec = onboarding_action
-    assert spec.reset is not None
-    assert spec.reset.function == "reset_onboarding"
+    assert spec.handlers.reset == "reset_onboarding"
 
     session = InterviewSession(interview_type="onboarding_interview")
     conv = MagicMock()
@@ -43,7 +42,7 @@ async def test_reset_interview_delegates_to_custom_handler(onboarding_action):
 
     action._close_task = AsyncMock()
 
-    result = json.loads(await action._handle_reset_interview(visitor=visitor))
+    result = json.loads(await action._handle_reset(visitor=visitor))
 
     assert result["ok"] is True
     assert result["status"] == "cancelled"

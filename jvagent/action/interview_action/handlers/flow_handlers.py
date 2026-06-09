@@ -9,8 +9,9 @@ from typing import Any, Dict, List, Optional
 from jvagent.tooling.tool_executor import get_dispatch_visitor
 
 from .._constants import _parse_validation_result
-from ..core.interview_loader import InterviewSpec, ToolDef, ValidatorDef
+from ..core.interview_loader import InterviewSpec, SkillToolDef, ValidatorDef
 from ..core.responses import (
+    auto_confirm_directive,
     call_tool_directive,
     interview_tool_response,
     interview_tool_response_from_payload,
@@ -20,6 +21,7 @@ from ..core.responses import (
     tell_user_with_followup_directive,
 )
 from ..core.session import (
+    CTX_FIELD_SUGGESTION,
     CTX_QUESTION_PRESENTED,
     InterviewSession,
     InterviewStatus,
@@ -37,7 +39,7 @@ from ..runtime.path_resolver import (
 )
 from ..runtime.pipeline import (
     finalize_store_continuation,
-    run_pre_tools,
+    run_pre_processors,
     validate_field,
 )
 from ._host import InterviewHandlersHost
@@ -77,32 +79,41 @@ class InterviewFlowHandlersMixin(InterviewHandlersHost):
                 response_directive=call_tool_directive("interview__review"),
             )
 
-        q_def = spec.get_question(next_qs[0]["name"])
-        if not q_def:
+        field_key = next_qs[0].get("key") or next_qs[0].get("name")
+        f_def = spec.get_field(field_key) if field_key else None
+        if not f_def:
             return interview_tool_response(
                 ok=False,
                 status="error",
-                error="No question definition found for the next step.",
+                error="No field definition found for the next step.",
             )
 
-        directive, extras = await run_pre_tools(self, session, spec, q_def, visitor)
+        directive, extras = await run_pre_processors(
+            self, session, spec, f_def, visitor
+        )
         pre_tools_results = extras.get("pre_tools_results") or []
         if any(not r.get("ok", True) for r in pre_tools_results):
             return interview_tool_response(
                 ok=False,
                 status="error",
-                error="One or more pre_tools failed.",
+                error="One or more pre_processor hooks failed.",
                 fields=session.get_collected_summary(),
                 missing_required=missing,
                 next_questions=next_qs,
                 pre_tools_results=pre_tools_results,
             )
-        if extras.get("suggested_value") is not None:
-            next_qs[0]["suggested_value"] = extras["suggested_value"]
-
         if not isinstance(session.context, dict):
             session.context = {}
-        session.context[CTX_QUESTION_PRESENTED] = next_qs[0]["name"]
+        if extras.get("suggested_value") is not None:
+            next_qs[0]["suggested_value"] = extras["suggested_value"]
+            session.context[CTX_FIELD_SUGGESTION] = {
+                "field": field_key,
+                "value": str(extras["suggested_value"]),
+            }
+        else:
+            session.context.pop(CTX_FIELD_SUGGESTION, None)
+
+        session.context[CTX_QUESTION_PRESENTED] = field_key
         await self._save_session(session, visitor)
 
         return interview_tool_response(
@@ -126,9 +137,9 @@ class InterviewFlowHandlersMixin(InterviewHandlersHost):
                 response_directive="No active interview session.",
             )
 
-        q = spec.get_question(field)
-        if q and q.required:
-            question = q.question or f"Please provide your {field.replace('_', ' ')}."
+        fdef = spec.get_field(field)
+        if fdef and fdef.required:
+            question = fdef.prompt or f"Please provide your {field.replace('_', ' ')}."
             return interview_tool_response(
                 ok=False,
                 status=session.status.value,
@@ -175,7 +186,7 @@ class InterviewFlowHandlersMixin(InterviewHandlersHost):
                 status="error",
                 response_directive="No active interview session.",
             )
-        if spec.review and spec.review.function:
+        if spec.handlers.review:
             return await self._handle_custom_review(visitor)
         return await self._default_review(session, spec, visitor)
 
@@ -190,14 +201,14 @@ class InterviewFlowHandlersMixin(InterviewHandlersHost):
     ) -> str:
         omitted = omit_fields or set()
         review_lines = []
-        for q in spec.questions:
-            if q.name in omitted or session.is_skipped(q.name):
+        for f in spec.fields:
+            if f.key in omitted or session.is_skipped(f.key):
                 continue
-            if q.name in collected:
-                label = q.name.replace("_", " ").title()
-                review_lines.append(f"**{label}**: {collected[q.name]}")
-            elif q.required:
-                label = q.name.replace("_", " ").title()
+            if f.key in collected:
+                label = f.key.replace("_", " ").title()
+                review_lines.append(f"**{label}**: {collected[f.key]}")
+            elif f.required:
+                label = f.key.replace("_", " ").title()
                 review_lines.append(f"**{label}**: *(not provided)*")
         for label, value in (additional_data or {}).items():
             review_lines.append(f"**{label}**: {value}")
@@ -210,18 +221,32 @@ class InterviewFlowHandlersMixin(InterviewHandlersHost):
         summary = self._build_review_summary(session, spec, collected)
         session.status = InterviewStatus.REVIEW
         await self._save_session(session, visitor)
-        return interview_tool_response(
-            ok=True,
-            status="review",
-            response_directive=review_confirmation_directive(summary),
-            fields=collected,
-            skipped_fields=sorted(session.skipped_fields),
-            summary=summary,
-            next_questions=[],
-            system_message=(
-                "Confirmation step — wait for user to confirm before interview__complete."
-            ),
+        auto = spec.confirm == "auto"
+        directive = (
+            auto_confirm_directive(summary)
+            if auto
+            else review_confirmation_directive(summary)
         )
+        payload: Dict[str, Any] = {
+            "ok": True,
+            "status": "review",
+            "response_directive": directive,
+            "fields": collected,
+            "skipped_fields": sorted(session.skipped_fields),
+            "summary": summary,
+            "next_questions": [],
+            "confirm": spec.confirm,
+        }
+        if auto:
+            payload["next_tool"] = "interview__complete"
+            payload["system_message"] = (
+                "Auto-confirm mode — call interview__complete in this same turn."
+            )
+        else:
+            payload["system_message"] = (
+                "Confirmation step — wait for user to confirm before interview__complete."
+            )
+        return interview_tool_response(**payload)
 
     async def _handle_complete(self, visitor: Any = None) -> str:
         session, spec = await self._get_session_and_contract(visitor)
@@ -231,7 +256,7 @@ class InterviewFlowHandlersMixin(InterviewHandlersHost):
                 status="error",
                 response_directive="No active interview session.",
             )
-        if spec.completion and spec.completion.function:
+        if spec.handlers.complete:
             return await self._handle_custom_complete(visitor)
         fields_summary = session.get_collected_summary()
         await self._clear_interview_session(visitor)
@@ -249,10 +274,11 @@ class InterviewFlowHandlersMixin(InterviewHandlersHost):
 
     async def _handle_custom_review(self, visitor: Any = None) -> str:
         session, spec = await self._get_session_and_contract(visitor)
-        if not session or not spec or not spec.review or not spec.review.function:
+        review_fn = spec.handlers.review if spec else None
+        if not session or not spec or not review_fn:
             return await self._handle_review(visitor)
 
-        func = load_hook_function(spec, spec.review.function)
+        func = load_hook_function(spec, review_fn)
         if not func:
             return await self._default_review(session, spec, visitor)
 
@@ -320,25 +346,39 @@ class InterviewFlowHandlersMixin(InterviewHandlersHost):
         )
 
         preamble = custom_message or directive
-        if preamble and not preamble.strip().startswith("Tell the user:"):
+        auto = spec.confirm == "auto"
+        if auto:
+            directive = auto_confirm_directive(
+                summary,
+                preamble=preamble if preamble else "",
+            )
+        elif preamble and not preamble.strip().startswith("Tell the user:"):
             directive = review_confirmation_directive(summary, preamble=preamble)
         else:
             directive = review_confirmation_directive(summary)
 
         session.status = InterviewStatus.REVIEW
         await self._save_session(session, visitor)
-        return interview_tool_response(
-            ok=True,
-            status="review",
-            response_directive=directive,
-            fields=collected,
-            skipped_fields=sorted(session.skipped_fields),
-            summary=summary,
-            custom_message=custom_message,
-            system_message=(
+        payload: Dict[str, Any] = {
+            "ok": True,
+            "status": "review",
+            "response_directive": directive,
+            "fields": collected,
+            "skipped_fields": sorted(session.skipped_fields),
+            "summary": summary,
+            "custom_message": custom_message,
+            "confirm": spec.confirm,
+        }
+        if auto:
+            payload["next_tool"] = "interview__complete"
+            payload["system_message"] = (
+                "Auto-confirm mode — call interview__complete in this same turn."
+            )
+        else:
+            payload["system_message"] = (
                 "Confirmation step — wait for user to confirm before interview__complete."
-            ),
-        )
+            )
+        return interview_tool_response(**payload)
 
     async def _handle_custom_complete(self, visitor: Any = None) -> str:
         session, spec = await self._get_session_and_contract(visitor)
@@ -348,19 +388,19 @@ class InterviewFlowHandlersMixin(InterviewHandlersHost):
                 status="error",
                 response_directive="No active interview session.",
             )
-        cc = spec.completion
-        if not cc or not cc.function:
+        complete_fn = spec.handlers.complete
+        if not complete_fn:
             return interview_tool_response(
                 ok=False,
                 status="error",
                 response_directive="No completion function configured.",
             )
-        func = load_hook_function(spec, cc.function)
+        func = load_hook_function(spec, complete_fn)
         if not func:
             return interview_tool_response(
                 ok=False,
                 status="error",
-                response_directive=f"Completion function '{cc.function}' not found.",
+                response_directive=f"Completion function '{complete_fn}' not found.",
             )
         try:
             result = await call_hook(
@@ -414,7 +454,7 @@ class InterviewFlowHandlersMixin(InterviewHandlersHost):
         )
 
     async def _handle_custom_tool(
-        self, tdef: ToolDef, spec: InterviewSpec, **kwargs
+        self, tdef: SkillToolDef, spec: InterviewSpec, **kwargs
     ) -> str:
         if not tdef.function:
             return json.dumps({"error": f"Custom tool '{tdef.name}' has no function"})

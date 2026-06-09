@@ -49,6 +49,7 @@ The plugin-loadable extension surface of jvagent:
 5. **`Action.metadata` is owned by the loader.** Mutations to it are not persisted across restarts. Use `attribute(...)` fields for persistent state.
 6. **Child Nodes attached via outgoing edges are cascade-deleted** when the action is deleted ([`base.py:225`](base.py)). Always connect via `await self.connect(child, direction="out")`.
 7. **`is_singleton` default is `True`** ([`base.py:221`](base.py)). Override `config.singleton: false` in `info.yaml` if multiple instances per agent are allowed.
+8. **Thin harness** — Actions expose capabilities via `get_tools()`; they must not classify user intent, inject prep steering, auto-store extracted values, or inline multi-step workflows. Put judgment in skill SOPs and domain logic in skill extensions. See [`docs/thin-harness.md`](../../docs/thin-harness.md).
 
 ---
 

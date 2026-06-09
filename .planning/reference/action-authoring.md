@@ -2,7 +2,7 @@
 
 > **Contract for building a new jvagent action.** This is the single source of truth — `README.md` and `docs/` may link here. If you're an AI agent dropped into the repo to add a new capability, you're in the right file.
 
-Cross-refs: [`SPEC.md`](../SPEC.md) for invariants, [`GLOSSARY.md`](../GLOSSARY.md) for terms, [`actions-catalog.md`](actions-catalog.md) for existing actions, [`jvspatial-integration.md`](jvspatial-integration.md) for `@attribute` / `@endpoint`.
+Cross-refs: [`SPEC.md`](../SPEC.md) for invariants, [`GLOSSARY.md`](../GLOSSARY.md) for terms, [`actions-catalog.md`](actions-catalog.md) for existing actions, [`jvspatial-integration.md`](jvspatial-integration.md) for `@attribute` / `@endpoint`, [`thin-harness.md`](../../docs/thin-harness.md) for the platform-wide harness contract (actions expose capabilities; skills add judgment — no server-side turn steering).
 
 ---
 

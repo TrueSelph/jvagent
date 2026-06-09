@@ -2,9 +2,11 @@
 
 from .interview_loader import (
     INTERVIEW_FRONTMATTER_KEY,
+    FieldDef,
     InterviewRegistry,
     InterviewSpec,
     QuestionDef,
+    SkillToolDef,
     ToolDef,
     ValidatorDef,
     load_interview_spec_from_skill,
@@ -41,7 +43,9 @@ __all__ = [
     "InterviewSession",
     "InterviewSpec",
     "InterviewStatus",
+    "FieldDef",
     "QuestionDef",
+    "SkillToolDef",
     "ToolDef",
     "ValidatorDef",
     "build_tools",

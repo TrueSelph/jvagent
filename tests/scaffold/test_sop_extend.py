@@ -37,7 +37,7 @@ def test_parse_extends_ref_invalid():
 def test_load_action_base_sop_body_interview():
     body = load_action_base_sop_body("jvagent/interview_action")
     assert "Standard Interview Procedure" in body
-    assert "interview__set_field" in body
+    assert "interview__set_fields" in body
 
 
 def test_compose_skill_body():
@@ -114,8 +114,8 @@ def test_merge_extends_allowed_tools_from_action_base():
     }
     out = merge_extends_allowed_tools(bundles)
     tools = out["signup_interview"]["allowed_tools"]
-    assert "interview__set_field" in tools
-    assert "interview__reset_interview" in tools
+    assert "interview__set_fields" in tools
+    assert "interview__reset" in tools
     assert "interview__cancel" in tools
 
 
@@ -126,11 +126,11 @@ def test_merge_extends_allowed_tools_additive_and_disabled():
             "content": "Custom.",
             "extends": "action:jvagent/interview_action",
             "allowed_tools_add": ["child__custom_tool"],
-            "disabled_tools": ["interview__reset_interview"],
+            "disabled_tools": ["interview__reset"],
         }
     }
     out = merge_extends_allowed_tools(bundles)
     tools = out["child"]["allowed_tools"]
-    assert "interview__set_field" in tools
+    assert "interview__set_fields" in tools
     assert "child__custom_tool" in tools
-    assert "interview__reset_interview" not in tools
+    assert "interview__reset" not in tools

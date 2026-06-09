@@ -30,6 +30,8 @@ Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email /
 | **See diagrams** (boot, interact, executive, pruning) | [`.planning/architecture.md`](.planning/architecture.md) |
 | **Define a term** | [`.planning/GLOSSARY.md`](.planning/GLOSSARY.md) |
 | **Build a new action** | [`.planning/reference/action-authoring.md`](.planning/reference/action-authoring.md) |
+| **Thin harness principle** (platform-wide) | [`docs/thin-harness.md`](docs/thin-harness.md) |
+| **Build / extend an interview skill** | [`docs/thin-harness.md`](docs/thin-harness.md) + [`jvagent/action/interview_action/docs/thin-harness.md`](jvagent/action/interview_action/docs/thin-harness.md) (profile) + [`jvagent/action/interview_action/CLAUDE.md`](jvagent/action/interview_action/CLAUDE.md) |
 | **See every existing action** | [`.planning/reference/actions-catalog.md`](.planning/reference/actions-catalog.md) |
 | **Understand the jvspatial dependency** | [`.planning/reference/jvspatial-integration.md`](.planning/reference/jvspatial-integration.md) |
 | **Understand memory pruning** | [`.planning/reference/memory-and-pruning.md`](.planning/reference/memory-and-pruning.md) |
@@ -172,6 +174,7 @@ Full CLI reference in [`jvagent/cli/CLAUDE.md`](jvagent/cli/CLAUDE.md) and [`doc
 | Using `count()` on a jvspatial entity | Method may not exist | `len(await Entity.find(query))` |
 | Long blocking work in `InteractAction.execute()` | Slow user-facing response | Use `run_in_background=True` or enqueue a `PROACTIVE` task (`TaskMonitor`) |
 | Creating new App nodes | Singleton violation | Always use `await App.get()` |
+| Fattening the harness (prep steering, extractors, auto-store, orchestrator special-casing) | Server fights the model; regressions to pre-refactor behavior | Follow [docs/thin-harness.md](docs/thin-harness.md); for interviews also [interview profile](jvagent/action/interview_action/docs/thin-harness.md); extend SOP + skill extensions instead |
 
 ---
 

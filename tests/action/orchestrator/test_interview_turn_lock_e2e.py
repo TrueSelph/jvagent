@@ -1,4 +1,4 @@
-"""E2E: new-user auto-start opens interview session and seeds next_question."""
+"""E2E: new-user auto-start opens interview session and materializes interview tools."""
 
 from __future__ import annotations
 
@@ -45,9 +45,9 @@ async def test_new_user_auto_start_opens_session_and_seeds_next_question(
 name: onboarding_interview
 interview:
   title: Onboarding
-  questions:
-    - name: phone
-      question: What is your best phone number?
+  fields:
+    - key: phone
+      prompt: What is your best phone number?
       required: true
 ---
 """,
@@ -58,7 +58,7 @@ interview:
         name="onboarding_interview",
         description="Onboarding.",
         body="SOP: collect phone.",
-        requires_tools=("interview__next_question", "interview__set_field"),
+        requires_tools=("interview__next_question", "interview__set_fields"),
         requires_actions=("InterviewAction",),
         locked_in=True,
     )
@@ -120,12 +120,8 @@ interview:
     assert v.conversation.context.get("interview", {}).get("status") == "active"
     assert len(captured) == 1
     assert "interview__next_question" in captured[0]["tools"]
+    assert "interview__set_fields" in captured[0]["tools"]
     tool_names = [o.get("tool") for o in captured[0]["observations"]]
     assert "use_skill" in tool_names
-    assert "interview__next_question" in tool_names
-    next_obs = next(
-        o
-        for o in captured[0]["observations"]
-        if o.get("tool") == "interview__next_question"
-    )
-    assert "phone" in next_obs["observation"].lower()
+    # Prep no longer auto-injects next_question; model calls it per SOP.
+    assert "interview__next_question" not in tool_names

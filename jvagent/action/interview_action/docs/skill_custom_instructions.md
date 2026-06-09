@@ -2,7 +2,7 @@
 
 The **standard interview procedure** is composed via `extends: action:jvagent/interview_action` at skill discovery. Authors write **custom instructions only** in the per-skill `SKILL.md` body — do not copy core procedure steps or enumerate fields.
 
-Canonical base SOP: [`../SKILL.md`](../SKILL.md).
+Canonical base SOP: [`../SKILL.md`](../SKILL.md). Design contract: [platform thin-harness](../../../../docs/thin-harness.md), [interview profile](thin-harness.md) — never duplicate server steering in the skill body; put acceptance criteria in `fields[].guidance` and domain rules in custom instructions.
 
 ## What to put in the body
 
@@ -11,17 +11,19 @@ Canonical base SOP: [`../SKILL.md`](../SKILL.md).
 | When to use (1–3 bullets) | Flow overview listing each field |
 | Domain-specific session overrides | Procedure Step 1…N per field |
 | Behavioral rules (OTP gates, exists:true stop) | Duplicated core instructions |
-| Custom tool callouts when non-obvious | Question wording (use `interview.questions[].description` + `next_questions`) |
+| Custom tool callouts when non-obvious | Question wording (use `interview.fields[].guidance` + `next_questions`) |
+| Strong `description` frontmatter for orchestrator routing | Activation / session-gate rules (`use_skill` before field questions) |
 | | **Answer quality gate** (base procedure) |
-| | **Message evaluation** — `interview__message_evaluation` / `interview__next_question` prep (base procedure) |
-| | **Intent routing** — cancel vs start over vs answer (base procedure) |
+| | **Model extraction** — user utterances → `interview__set_fields` per base procedure (no server prep steering) |
+| | **Intent routing** — cancel vs start over vs answer vs start interview (base procedure) |
+| | **Activation (session gate)** — `use_skill`, late activation, utterance grounding (base procedure) |
 | | Cancel/reset/`set_field` decision rules (base procedure) |
 | | Chaining rules and `Tell the user:` reply-only turns (base procedure) |
 | | Per-field "when X appears in applicable, call set_field" restatements (base covers first missing applicable field) |
 
-## Question descriptions as acceptance criteria
+## Field guidance as acceptance criteria
 
-Each `interview.questions[].description` is **model-facing acceptance criteria** — what counts as a substantive answer for that field. It is surfaced in `next_questions` tool observations alongside the question text.
+Each `interview.fields[].guidance` is **model-facing acceptance criteria** — what counts as a substantive answer for that field. It is surfaced in `next_questions` tool observations alongside the prompt.
 
 Write descriptions to help the model apply the base procedure's **Answer quality gate** (see [`../SKILL.md`](../SKILL.md)):
 
@@ -32,9 +34,9 @@ Write descriptions to help the model apply the base procedure's **Answer quality
 Example:
 
 ```yaml
-- name: user_name
-  question: "What's your full name?"
-  description: >-
+- key: user_name
+  prompt: "What's your full name?"
+  guidance: >-
     A real first and last name (e.g. "Jane Doe"). Not an acknowledgement or
     filler — if the user says "ok" or "sure", reply only and re-ask.
 ```
@@ -54,11 +56,10 @@ allowed-tools:
   - my_interview__send_otp
 interview:
   title: My Interview
-  # Optional: override base reset (same pattern as review/completion)
-  reset:
-    function: reset_my_interview
-    description: Custom start-over or cancel-and-exit behavior.
-  questions: [...]
+  confirm: manual
+  handlers:
+    reset: reset_my_interview
+  fields: [...]
 ---
 ```
 
@@ -67,7 +68,7 @@ interview:
 When a skill declares `extends: action:jvagent/interview_action`, the base action's `allowed-tools` frontmatter is merged at discovery:
 
 - **`allowed-tools` on the skill** — **additive only**. List custom LLM tools (e.g. `{skill}__send_otp`). Base `interview__*` tools are inherited automatically — do not re-list them.
-- **`disabled-tools`** — Remove specific base tools from the merged set. Use when the skill must not expose a base tool (e.g. `interview__cancel` when cancel is handled via `interview.reset` + `interview__reset_interview`).
+- **`disabled-tools`** — Remove specific base tools from the merged set. Use when the skill must not expose a base tool (e.g. `interview__cancel` when cancel is handled via `handlers.reset` + `interview__reset`).
 
 Example: onboarding-style cancel-and-exit via reset handler:
 
@@ -76,8 +77,8 @@ extends: action:jvagent/interview_action
 disabled-tools:
   - interview__cancel
 interview:
-  reset:
-    function: reset_onboarding
+  handlers:
+    reset: reset_onboarding
     description: Cancel onboarding and stop — do not chain next_question.
 ```
 

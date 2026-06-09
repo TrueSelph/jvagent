@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from ..core.field_extractors import extract_candidates_for_question
+from ..core.field_extractors import extract_candidates_for_field
 from ..core.interview_loader import (
+    FieldDef,
     InterviewSpec,
-    QuestionDef,
-    question_has_validator,
+    field_has_validator,
     resolve_validator_def,
     resolve_validator_kwargs,
 )
@@ -21,7 +22,12 @@ from ..core.responses import (
     tell_user_directive,
     validation_guidance_directive,
 )
-from ..core.session import CTX_QUESTION_PRESENTED, InterviewSession, InterviewStatus
+from ..core.session import (
+    CTX_FIELD_SUGGESTION,
+    CTX_QUESTION_PRESENTED,
+    InterviewSession,
+    InterviewStatus,
+)
 from ..core.validators import ExtractionStatus
 from .hooks import call_hook, load_hook_function
 from .path_resolver import (
@@ -37,83 +43,12 @@ if TYPE_CHECKING:
     from ..handlers._host import InterviewHandlersHost
 
 
-async def merge_auto_next_question(
-    action: "InterviewHandlersHost",
-    visitor: Any,
-    payload: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Inline next_question after store so the model replies once per user turn."""
-    next_raw = await action._handle_next_question(visitor)
-    try:
-        next_step = json.loads(next_raw)
-    except (json.JSONDecodeError, TypeError):
-        return payload
-    if not next_step.get("ok", True):
-        return payload
-    for key in (
-        "response_directive",
-        "next_questions",
-        "pre_tools_results",
-        "missing_required",
-        "fields",
-        "skipped_fields",
-    ):
-        if key in next_step:
-            payload[key] = next_step[key]
-    payload.pop("next_tool", None)
-    return payload
-
-
-def _should_auto_advance_next_question(payload: Dict[str, Any]) -> bool:
-    """True when the store response only asks the model to call next_question."""
-    if payload.get("next_tool") != "interview__next_question":
-        return False
-    directive = payload.get("response_directive") or ""
-    return directive in (
-        "",
-        call_tool_directive("interview__next_question"),
-    )
-
-
 async def finalize_store_continuation(
     action: "InterviewHandlersHost",
     visitor: Any,
     payload: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Apply merge_auto_review / merge_auto_next_question when continuation is mechanical."""
-    if payload.get("next_tool") == "interview__review":
-        return await merge_auto_review(action, visitor, payload)
-    if _should_auto_advance_next_question(payload):
-        return await merge_auto_next_question(action, visitor, payload)
-    return payload
-
-
-async def merge_auto_review(
-    action: "InterviewHandlersHost",
-    visitor: Any,
-    payload: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Inline review into a store/skip response so the model does not re-call review."""
-    review_raw = await action._handle_review(visitor)
-    try:
-        review = json.loads(review_raw)
-    except (json.JSONDecodeError, TypeError):
-        return payload
-    if not review.get("ok", True):
-        return payload
-    for key in (
-        "response_directive",
-        "summary",
-        "status",
-        "fields",
-        "skipped_fields",
-        "custom_message",
-        "system_message",
-    ):
-        if key in review:
-            payload[key] = review[key]
-    payload.pop("next_tool", None)
-    payload["review_ready"] = True
+    """Return store/skip payload unchanged — model chains next_question/review per SOP."""
     return payload
 
 
@@ -123,15 +58,15 @@ logger = logging.getLogger(__name__)
 async def run_input_handler(
     action: "InterviewHandlersHost",
     spec: InterviewSpec,
-    question: QuestionDef,
+    field: FieldDef,
     raw_value: str,
     session: InterviewSession,
     visitor: Any,
 ) -> tuple[str, Optional[str]]:
     """Return (normalized_value, optional_directive)."""
-    if not question.input_handler:
+    if not field.input_handler:
         return raw_value, None
-    func = load_hook_function(spec, question.input_handler)
+    func = load_hook_function(spec, field.input_handler)
     if not func:
         return raw_value, None
     result = await call_hook(
@@ -167,8 +102,40 @@ def _supplied_grounded_in_utterance(supplied: str, utterance: str) -> bool:
     return s in u
 
 
+def _values_match_for_suggestion(supplied: str, suggested: str) -> bool:
+    """True when model value matches a server-suggested value (e.g. confirm yes)."""
+    s = (supplied or "").strip()
+    g = (suggested or "").strip()
+    if not s or not g:
+        return False
+    if s == g:
+        return True
+    sd = re.sub(r"\D", "", s)
+    gd = re.sub(r"\D", "", g)
+    return bool(sd and gd and sd == gd)
+
+
+def _field_suggestion_for(session: InterviewSession, field_name: str) -> Optional[str]:
+    ctx = session.context if isinstance(session.context, dict) else {}
+    raw = ctx.get(CTX_FIELD_SUGGESTION)
+    if not isinstance(raw, dict):
+        return None
+    if (raw.get("field") or "").strip() != field_name:
+        return None
+    value = raw.get("value")
+    return str(value).strip() if value is not None else None
+
+
+def _clear_field_suggestion(session: InterviewSession, field_name: str) -> None:
+    if not isinstance(session.context, dict):
+        return
+    raw = session.context.get(CTX_FIELD_SUGGESTION)
+    if isinstance(raw, dict) and (raw.get("field") or "").strip() == field_name:
+        session.context.pop(CTX_FIELD_SUGGESTION, None)
+
+
 def _utterance_candidates(
-    question: QuestionDef,
+    field: FieldDef,
     spec: InterviewSpec,
     utterance: str,
     *,
@@ -179,18 +146,16 @@ def _utterance_candidates(
     msg = (utterance or "").strip()
     if not msg:
         return []
-    vdef = resolve_validator_def(question, spec)
+    vdef = resolve_validator_def(field)
     if not vdef:
         return [msg]
-    kwargs = resolve_validator_kwargs(question, vdef)
+    kwargs = resolve_validator_kwargs(field, vdef)
     candidates = [msg]
-    for extracted in extract_candidates_for_question(
-        question,
+    for extracted in extract_candidates_for_field(
+        field,
         vdef,
         msg,
         kwargs,
-        spec=spec,
-        load_fn=load_fn,
         session=session,
     ):
         if extracted not in candidates:
@@ -207,11 +172,11 @@ async def validate_field(
     visitor: Any,
 ) -> Dict[str, Any]:
     """Run the configured validator for one candidate value."""
-    q = spec.get_question(field_name)
-    if not q or not question_has_validator(q):
+    fdef = spec.get_field(field_name)
+    if not fdef or not field_has_validator(fdef):
         return {"valid": True, "value": (value or "").strip()}
 
-    vdef = resolve_validator_def(q, spec)
+    vdef = resolve_validator_def(fdef)
     if not vdef:
         return {
             "valid": False,
@@ -219,7 +184,7 @@ async def validate_field(
             "validator": "",
         }
 
-    kwargs = resolve_validator_kwargs(q, vdef)
+    kwargs = resolve_validator_kwargs(fdef, vdef)
     raw = await action._run_validator(vdef, value, kwargs, visitor, session, spec)
     try:
         parsed = json.loads(raw)
@@ -266,11 +231,11 @@ async def resolve_and_validate_field_value(
     """
     from jvagent.action.orchestrator.skill_tasks import visitor_utterance
 
-    q = spec.get_question(field_name)
-    if not q:
+    fdef = spec.get_field(field_name)
+    if not fdef:
         return {"valid": False, "error": f"Unknown field '{field_name}'"}
 
-    if not question_has_validator(q):
+    if not field_has_validator(fdef):
         resolved = (visitor_utterance(visitor) or supplied_value or "").strip()
         return {"valid": True, "value": resolved, "validator": None}
 
@@ -287,10 +252,7 @@ async def resolve_and_validate_field_value(
                 return grounded
 
         last_failure: Optional[Dict[str, Any]] = None
-        load_fn = action._load_fn(spec)
-        for candidate in _utterance_candidates(
-            q, spec, utterance, load_fn=load_fn, session=session
-        ):
+        for candidate in _utterance_candidates(fdef, spec, utterance, session=session):
             check = await validate_field(
                 action, spec, field_name, candidate, session, visitor
             )
@@ -298,6 +260,29 @@ async def resolve_and_validate_field_value(
                 check["validated_from"] = "utterance"
                 return check
             last_failure = check
+
+        suggested = _field_suggestion_for(session, field_name)
+        if supplied and suggested and _values_match_for_suggestion(supplied, suggested):
+            check = await validate_field(
+                action, spec, field_name, supplied, session, visitor
+            )
+            if check.get("valid"):
+                check["validated_from"] = "suggested"
+                return check
+            last_failure = check
+
+        if supplied:
+            vdef = resolve_validator_def(fdef)
+            return {
+                "valid": False,
+                "error": (
+                    "That value does not appear in the user's latest message. "
+                    "Use only what they said in this turn, or ask them to repeat it."
+                ),
+                "validator": vdef.name if vdef else "",
+                "validated_from": "rejected_ungrounded",
+            }
+
         if last_failure:
             last_failure["validated_from"] = "utterance"
             return last_failure
@@ -309,7 +294,7 @@ async def resolve_and_validate_field_value(
         check["validated_from"] = "supplied"
         return check
 
-    vdef = resolve_validator_def(q, spec)
+    vdef = resolve_validator_def(fdef)
     return {
         "valid": False,
         "error": f"No value provided for field '{field_name}'",
@@ -328,7 +313,9 @@ def build_validation_failed_payload(
 ) -> Dict[str, Any]:
     """Envelope returned when set_field validation fails — value is not stored."""
     err = check.get("error", "Invalid value")
-    question_text = next_qs[0]["question"] if next_qs else ""
+    question_text = (
+        next_qs[0].get("prompt") or next_qs[0].get("question", "") if next_qs else ""
+    )
     directive = check.get("response_directive") or validation_guidance_directive(
         err, question_text=question_text
     )
@@ -350,21 +337,21 @@ def build_validation_failed_payload(
     }
 
 
-async def run_post_tools(
+async def run_post_processors(
     action: "InterviewHandlersHost",
-    question_def: QuestionDef,
+    field_def: FieldDef,
     session: InterviewSession,
     spec: InterviewSpec,
     visitor: Any,
     stored_value: str,
     payload: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Run post_tools and merge results into payload."""
+    """Run post_processor hooks and merge results into payload."""
     post_results: List[Dict[str, Any]] = []
     last_directive: Optional[str] = None
     last_next_tool: Optional[str] = None
 
-    for tool_name in question_def.post_tools:
+    for tool_name in field_def.post_processor:
         func = load_hook_function(spec, tool_name)
         if not func:
             continue
@@ -427,9 +414,9 @@ async def run_post_tools(
                 last_directive = parsed["response_directive"]
         except Exception as e:
             logger.error(
-                "post_tools '%s' failed for question '%s': %s",
+                "post_processor '%s' failed for field '%s': %s",
                 tool_name,
-                question_def.name,
+                field_def.key,
                 e,
             )
             post_results.append({"tool": tool_name, "ok": False, "error": str(e)})
@@ -449,23 +436,23 @@ async def run_post_tools(
     return payload
 
 
-async def run_pre_tools(
+async def run_pre_processors(
     action: "InterviewHandlersHost",
     session: InterviewSession,
     spec: InterviewSpec,
-    question_def: QuestionDef,
+    field_def: FieldDef,
     visitor: Any = None,
 ) -> tuple[str, Dict[str, Any]]:
-    """Run pre_tools before asking; return directive and extras."""
+    """Run pre_processor hooks before asking; return directive and extras."""
     extras: Dict[str, Any] = {}
-    pre_tools = question_def.resolved_pre_tools()
+    pre_processors = field_def.resolved_pre_processors()
     pre_results: List[Dict[str, Any]] = []
 
-    if not pre_tools:
-        return tell_user_directive(question_def.question), extras
+    if not pre_processors:
+        return tell_user_directive(field_def.prompt), extras
 
     directive: Optional[str] = None
-    for tool_name in pre_tools:
+    for tool_name in pre_processors:
         func = load_hook_function(spec, tool_name)
         if not func:
             continue
@@ -507,9 +494,9 @@ async def run_pre_tools(
                     directive = parsed["response_directive"]
         except Exception as e:
             logger.error(
-                "pre_tools '%s' failed for question '%s': %s",
+                "pre_processor '%s' failed for field '%s': %s",
                 tool_name,
-                question_def.name,
+                field_def.key,
                 e,
             )
             pre_results.append({"tool": tool_name, "ok": False, "error": str(e)})
@@ -517,7 +504,7 @@ async def run_pre_tools(
     extras["pre_tools_results"] = pre_results
     if directive:
         return directive, extras
-    return tell_user_directive(question_def.question), extras
+    return tell_user_directive(field_def.prompt), extras
 
 
 async def apply_store_pipeline(
@@ -551,12 +538,12 @@ async def apply_store_pipeline(
             }
             return await finalize_store_continuation(action, visitor, payload)
 
-    q = spec.get_question(field_name)
+    fdef = spec.get_field(field_name)
     value = raw_value
 
-    if q and q.input_handler:
+    if fdef and fdef.input_handler:
         value, handler_directive = await run_input_handler(
-            action, spec, q, raw_value, session, visitor
+            action, spec, fdef, raw_value, session, visitor
         )
         if handler_directive:
             return {
@@ -598,6 +585,7 @@ async def apply_store_pipeline(
     session.set_value(field_name, stored_value)
     if isinstance(session.context, dict):
         session.context.pop(CTX_QUESTION_PRESENTED, None)
+        _clear_field_suggestion(session, field_name)
 
     reachable = await compute_reachable_question_names(
         session,
@@ -651,9 +639,9 @@ async def apply_store_pipeline(
         await action._clear_interview_session(visitor, retain_context_keys=retain)
         return payload
 
-    if q and q.post_tools:
-        payload = await run_post_tools(
-            action, q, session, spec, visitor, stored_value, payload
+    if fdef and fdef.post_processor:
+        payload = await run_post_processors(
+            action, fdef, session, spec, visitor, stored_value, payload
         )
         if payload.get("skip_to_review") or payload.get("interview_complete"):
             return payload
@@ -687,3 +675,8 @@ async def apply_store_pipeline(
         payload["next_tool"] = next_tool
 
     return await finalize_store_continuation(action, visitor, payload)
+
+
+# Back-compat aliases for tests and external patches
+run_pre_tools = run_pre_processors
+run_post_tools = run_post_processors

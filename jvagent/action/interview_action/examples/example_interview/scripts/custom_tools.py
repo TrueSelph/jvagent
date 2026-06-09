@@ -60,12 +60,6 @@ async def _get_conversation(visitor: Any) -> Any:
 # ─── Validators ──────────────────────────────────────────────────────
 
 
-def extract_rating_candidates(user_message: str, **kwargs) -> list:
-    """Surface integer rating candidates from the user's latest message."""
-    matches = re.findall(r"\b([1-5])\b", user_message or "")
-    return list(dict.fromkeys(matches))
-
-
 async def validate_rating(value: str, **kwargs) -> str:
     """Validate product rating (integer 1–5)."""
     cleaned = re.sub(r"\D", "", str(value or "").strip())
@@ -247,7 +241,7 @@ async def reset_example_interview(
 
     Pattern from onboarding_interview ``reset_onboarding``: clear session,
     close task, re-init interview. Wired via ``interview.reset.function`` —
-    the model still calls ``interview__reset_interview()``.
+    the model still calls ``interview__reset()``.
     """
     conversation = await _get_conversation(visitor)
     if conversation is None:

@@ -1943,7 +1943,7 @@ class OrchestratorInteractAction(InteractAction):
                                 f"({tool_name} is the active locked skill, not a "
                                 "callable tool. Follow the ACTIVE SKILL procedure "
                                 "and use its listed tools — e.g. "
-                                "interview__set_field — or reply/respond to the "
+                                "interview__set_fields — or reply/respond to the "
                                 "user. Do not invoke the skill name as a tool.)"
                             ),
                         }
@@ -1953,12 +1953,7 @@ class OrchestratorInteractAction(InteractAction):
                 # on both gears so single-step (light) turns still show their
                 # reasoning, not just multi-step heavy ones. Skip when substantive
                 # tool thoughts will surface the same tick in TOOL CALLS.
-                will_emit_tool_thought = (
-                    action == "tool"
-                    and tool_name
-                    and tool_name not in _NON_SUBSTANTIVE_TOOLS
-                )
-                if self.stream_internal_progress and not will_emit_tool_thought:
+                if self.stream_internal_progress:
                     await self._emit_thought(
                         visitor,
                         self._progress_line(action, tool_name, args, decision),
@@ -2065,72 +2060,6 @@ class OrchestratorInteractAction(InteractAction):
                             await self._emit_server_prep_tool_thoughts(
                                 visitor, observations, since_index=prep_obs_before
                             )
-                    elif (
-                        tool_name == "interview__set_field"
-                        and active_skill_doc is not None
-                        and isinstance(obs, str)
-                    ):
-                        try:
-                            store_payload = json.loads(obs)
-                        except json.JSONDecodeError:
-                            store_payload = {}
-                        if store_payload.get("ok") and (
-                            store_payload.get("stored")
-                            or store_payload.get("already_stored")
-                        ):
-                            from jvagent.action.orchestrator.skill_tasks import (
-                                drop_stale_locked_skill_prep_observations,
-                                locked_skills_section_text,
-                                refresh_locked_skill_prep,
-                                set_field_has_reply_directive,
-                            )
-
-                            if set_field_has_reply_directive(store_payload):
-                                drop_stale_locked_skill_prep_observations(observations)
-                                directive = (
-                                    store_payload.get("response_directive") or ""
-                                ).strip()
-                                locked_pending_directive = (
-                                    f"{directive}\n"
-                                    "Field stored successfully. Reply to the user "
-                                    "using the response_directive above. Do NOT "
-                                    "call interview__set_field, "
-                                    "interview__next_question, or use_skill again "
-                                    "this turn."
-                                )
-                                skills_section = locked_skills_section_text(
-                                    active_skill_doc,
-                                    pending_directive=locked_pending_directive,
-                                )
-                                observations.append(
-                                    {
-                                        "tool": "(guard)",
-                                        "args": {},
-                                        "observation": (
-                                            "(Field stored — reply to the user "
-                                            "now using response_directive from "
-                                            "the set_field result. Do not call "
-                                            "interview tools again this turn.)"
-                                        ),
-                                    }
-                                )
-                            else:
-                                prep_obs_before = len(observations)
-                                new_directive = await refresh_locked_skill_prep(
-                                    active_skill_doc,
-                                    loop_actions,
-                                    visitor,
-                                    observations,
-                                )
-                                if new_directive:
-                                    locked_pending_directive = new_directive
-                                    skills_section = locked_skills_section_text(
-                                        active_skill_doc,
-                                        pending_directive=locked_pending_directive,
-                                    )
-                                await self._emit_server_prep_tool_thoughts(
-                                    visitor, observations, since_index=prep_obs_before
-                                )
                     # Gearing: count substantive (non-meta, non-egress) tool calls
                     # toward escalation to the heavy model.
                     if tool is not None and tool_name not in _NON_SUBSTANTIVE_TOOLS:

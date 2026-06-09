@@ -122,6 +122,8 @@ The tool surface is assembled in [`orchestrator/orchestrator_interact_action.py`
 
 Rationale and consequences: [`adr/0012-skill-executive-architecture.md`](adr/0012-skill-executive-architecture.md) (supersedes [`adr/0010-executive-centers-architecture.md`](adr/0010-executive-centers-architecture.md)). Milestones: [`.planning/archive/EXECUTIVE-ROADMAP.md`](archive/EXECUTIVE-ROADMAP.md).
 
+Harness design contract (thin server, thick SOP): [`docs/thin-harness.md`](../docs/thin-harness.md). Interview profile: [`jvagent/action/interview_action/docs/thin-harness.md`](../jvagent/action/interview_action/docs/thin-harness.md).
+
 ---
 
 ## 4. Action contract

@@ -84,7 +84,8 @@ async def test_set_field_rejects_model_override_of_invalid_utterance(signup_acti
     assert result["ok"] is False
     assert result["stored"] is False
     assert result["status"] == "validation_failed"
-    assert result["validated_from"] == "utterance"
+    assert result["validated_from"] == "rejected_ungrounded"
+    assert "latest message" in (result.get("error") or "").lower()
     assert "available_times" not in session.fields
 
 

@@ -506,33 +506,6 @@ def locked_skills_section_text(
     return f"{header}PROCEDURE:\n{skill_doc.body}"
 
 
-_STALE_PREP_OBSERVATION_TOOLS = frozenset(
-    {
-        "interview__message_evaluation",
-        "interview__next_question",
-    }
-)
-
-
-def drop_stale_locked_skill_prep_observations(
-    observations: List[Dict[str, Any]],
-) -> None:
-    """Remove server-injected prep the model must not re-follow after a store."""
-    observations[:] = [
-        o for o in observations if o.get("tool") not in _STALE_PREP_OBSERVATION_TOOLS
-    ]
-
-
-def set_field_has_reply_directive(payload: Dict[str, Any]) -> bool:
-    """True when a store response already tells the model to reply to the user."""
-    if not isinstance(payload, dict) or not payload.get("ok"):
-        return False
-    if not (payload.get("stored") or payload.get("already_stored")):
-        return False
-    directive = (payload.get("response_directive") or "").strip()
-    return directive.startswith("Tell the user:")
-
-
 async def ensure_skill_tools_materialized(
     skill_doc: Any,
     actions: List[Any],
@@ -572,32 +545,6 @@ async def ensure_skill_tools_materialized(
                 missing.discard(name)
         if not missing:
             return
-
-
-async def refresh_locked_skill_prep(
-    skill_doc: Any,
-    actions: List[Any],
-    visitor: Any,
-    observations: List[Dict[str, Any]],
-) -> Optional[str]:
-    """Re-run bound-action prep after a successful interview store."""
-    bound = action_for_skill(skill_doc, actions)
-    if bound is None or not hasattr(bound, "prepare_locked_skill_turn"):
-        return None
-    drop_stale_locked_skill_prep_observations(observations)
-    try:
-        prep = await bound.prepare_locked_skill_turn(skill_doc.name, visitor)
-    except Exception as exc:
-        logger.warning(
-            "skill_tasks: refresh_locked_skill_prep failed for %s via %s: %s",
-            skill_doc.name,
-            type(bound).__name__,
-            exc,
-        )
-        return None
-    if prep.observations:
-        observations.extend(prep.observations)
-    return prep.pending_directive
 
 
 def restrict_tools_to_locked_skill(

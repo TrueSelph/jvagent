@@ -1,4 +1,4 @@
-"""Server-injected interview prep surfaces in the TOOL CALLS panel."""
+"""Server-injected prep observations (when present) surface in the TOOL CALLS panel."""
 
 from __future__ import annotations
 
@@ -36,9 +36,9 @@ async def test_emit_server_prep_tool_thoughts_pairs_call_and_result():
     ex = OrchestratorInteractAction()
     observations = [
         {
-            "tool": "interview__message_evaluation",
+            "tool": "interview__next_question",
             "args": {},
-            "observation": '{"applicable":[{"field":"user_name"}]}',
+            "observation": '{"next_questions":[{"field":"user_name"}]}',
         }
     ]
     await ex._emit_server_prep_tool_thoughts(_visitor(bus), observations)
@@ -47,4 +47,4 @@ async def test_emit_server_prep_tool_thoughts_pairs_call_and_result():
     assert call["thought_type"] == "tool_call"
     assert result["thought_type"] == "tool_result"
     assert call["segment_id"] == result["segment_id"]
-    assert call["metadata"]["tool_name"] == "interview__message_evaluation"
+    assert call["metadata"]["tool_name"] == "interview__next_question"

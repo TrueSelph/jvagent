@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
@@ -22,7 +21,6 @@ from .handlers import (
     InterviewSessionHandlersMixin,
 )
 from .runtime.hooks import clear_module_cache, load_hook_function
-from .runtime.message_evaluation import evaluate_message_for_extraction
 from .tasks import InterviewTaskMixin
 
 logger = logging.getLogger(__name__)
@@ -102,103 +100,13 @@ class InterviewAction(
             return False
         return await self._interview_ready(visitor)
 
-    async def _prep_seed_next_question(
-        self, skill_name: str, visitor: Any = None
-    ) -> Any:
-        from jvagent.action.interview_action.core.responses import (
-            tool_observation_failed,
-        )
-        from jvagent.action.orchestrator.skill_tasks import LockedSkillPrep
-
-        try:
-            next_obs = await self._handle_next_question(visitor)
-        except Exception as exc:
-            logger.warning(
-                "InterviewAction._prep_seed_next_question failed for %s: %s",
-                skill_name,
-                exc,
-            )
-            return LockedSkillPrep(
-                runtime_ready=False,
-                pending_directive=(
-                    "Interview session could not be prepared — reply to the user only."
-                ),
-            )
-        if tool_observation_failed(next_obs, error_code="NO_SESSION"):
-            return LockedSkillPrep(
-                runtime_ready=False,
-                pending_directive=(
-                    "Interview session is not open yet — reply to the user only; "
-                    "do not call interview tools this turn."
-                ),
-            )
-        return LockedSkillPrep(
-            runtime_ready=True,
-            observations=[
-                {
-                    "tool": "interview__next_question",
-                    "args": {},
-                    "observation": next_obs,
-                }
-            ],
-            pending_directive=(
-                "The next question is in the interview__next_question observation "
-                "above — reply to the user using response_directive. "
-                "Do NOT call interview__next_question again this turn."
-            ),
-        )
-
     async def prepare_locked_skill_turn(
         self, skill_name: str, visitor: Any = None
     ) -> Any:
-        from jvagent.action.orchestrator.skill_tasks import (
-            LockedSkillPrep,
-            visitor_utterance,
-        )
+        from jvagent.action.orchestrator.skill_tasks import LockedSkillPrep
 
-        if not await self.skill_runtime_ready(skill_name, visitor):
-            return LockedSkillPrep(
-                runtime_ready=False,
-                pending_directive=(
-                    "Interview session is not open yet — reply to the user only; "
-                    "do not call interview tools this turn."
-                ),
-            )
-
-        session, spec = await self._get_session_and_contract(visitor)
-        if not session or not spec:
-            return await self._prep_seed_next_question(skill_name, visitor)
-
-        utterance = visitor_utterance(visitor).strip()
-        if not utterance:
-            return await self._prep_seed_next_question(skill_name, visitor)
-
-        evaluation = await evaluate_message_for_extraction(
-            self, session, spec, utterance, visitor
-        )
-        if evaluation.applicable:
-            first_field = evaluation.first_applicable_field or ""
-            return LockedSkillPrep(
-                runtime_ready=True,
-                observations=[
-                    {
-                        "tool": "interview__message_evaluation",
-                        "args": {},
-                        "observation": json.dumps(evaluation.to_dict()),
-                    }
-                ],
-                pending_directive=(
-                    "Message evaluation found applicable entities in the user's "
-                    "latest message. For the first missing applicable field "
-                    f"({first_field or 'see applicable'}), pick a candidate from "
-                    "the evaluation observation and call "
-                    "interview__set_field(field=..., value=...). On ok:true, reply "
-                    "using response_directive only — do not call "
-                    "interview__next_question."
-                ),
-            )
-
-        return await self._prep_seed_next_question(skill_name, visitor)
+        runtime_ready = await self.skill_runtime_ready(skill_name, visitor)
+        return LockedSkillPrep(runtime_ready=runtime_ready)
 
     async def prune_turn_tools(
         self, tools: Dict[str, Any], visible: set, visitor: Any = None
@@ -246,15 +154,24 @@ class InterviewAction(
                 f"Available interview types: {available or '(none)'}. "
                 "Do not call interview tools until the session is active."
             )
+        import json
+
         raw = await self._handle_start(
             skill_name, visitor, user_message=(user_message or "").strip()
         )
         try:
             parsed = json.loads(raw) if isinstance(raw, str) else {}
         except (json.JSONDecodeError, TypeError):
-            return f"Interview session ready ({skill_name}). Call interview__next_question next."
+            return (
+                f"Interview session ready ({skill_name}). "
+                "Follow the interview SKILL procedure — call interview__next_question "
+                "or interview__set_fields as appropriate."
+            )
         if not isinstance(parsed, dict):
-            return f"Interview session ready ({skill_name}). Call interview__next_question next."
+            return (
+                f"Interview session ready ({skill_name}). "
+                "Follow the interview SKILL procedure."
+            )
         if parsed.get("status") == "error" or parsed.get("ok") is False:
             return (
                 parsed.get("response_directive")
@@ -262,24 +179,22 @@ class InterviewAction(
                 or f"Could not start interview session for {skill_name}."
             )
         interview_type = parsed.get("interview_type", skill_name)
+        missing_required = parsed.get("missing_required") or []
         parts = [
             f"Interview session ready ({interview_type}).",
             f"fields={parsed.get('fields', {})}",
-            f"missing_required={parsed.get('missing_required', [])}",
+            f"missing_required={missing_required}",
+            "Follow the interview SKILL procedure for the user's message.",
         ]
+        if missing_required:
+            parts.append(
+                "New session: call interview__next_question before asking the user "
+                "any field question via reply."
+            )
         if parsed.get("post_tools_results"):
             parts.append(f"post_tools_results={parsed['post_tools_results']}")
         if parsed.get("skip_to_review"):
             parts.append("skip_to_review=true. Call interview__review next.")
-        elif parsed.get("fresh_session"):
-            parts.append(
-                "Turn prep runs message evaluation on the triggering utterance — "
-                "follow the prepare_locked_skill_turn observation and directive."
-            )
-        else:
-            parts.append(
-                "Turn prep runs message evaluation on the user's latest message."
-            )
         return " ".join(parts)
 
     async def resolve_locked_skill(

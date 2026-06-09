@@ -6,7 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Interview base session gate (`use_skill` before field collection).** Base [`interview_action/SKILL.md`](jvagent/action/interview_action/SKILL.md) adds **Activation (session gate)**: mandatory `use_skill` before asking interview questions, activation-turn chaining, late-activation grounding, and **Start interview** intent routing. Thin runtime envelopes: stronger `no_session_directive`, `on_skill_activate` hint when `missing_required` is non-empty, session requirement on `interview__set_fields` / `interview__next_question` tool descriptions. Docs: interview thin-harness invariant #9, multi-turn anti-pattern, troubleshooting entry. Covered by `test_interview_procedure.py`, `test_interview_responses.py`, `test_interview_skill_activate.py`.
+
+- **Interview `interview:` frontmatter schema (breaking).** Renamed keys: `questions`→`fields`, `name`/`question`/`description`→`key`/`prompt`/`guidance`, `pre_tools`/`post_tools`→`pre_processor`/`post_processor`, top-level `review`/`completion`/`reset`/`cancel`→`handlers.*` (function name strings), `tools`→`skill_tools`, `description`→`summary`. Validators are flat `validator` + `validator_args` (no nested `{ function: … }`). Removed `extractors` — model extracts via `interview__set_fields`. Added `confirm: manual|auto` for review→complete chaining without user yes. Legacy keys fail at parse. See [`jvagent/action/interview_action/docs/frontmatter-schema.md`](jvagent/action/interview_action/docs/frontmatter-schema.md). In-repo skills migrated; external skills (e.g. zoon-ai) must update separately.
+
+- **Interview harness strip-down (raw tools + SOP).** Removed server-side turn steering: `message_evaluation` prep, auto-injected `interview__next_question` observations, `merge_auto_next_question` / `merge_auto_review` inlining, and orchestrator post-store tool-call guards. `prepare_locked_skill_turn` is now a runtime-ready gate only. Base `SKILL.md` rewritten as intent-first procedure with first-class **Correct / update** via `interview__set_fields`. New batch primitives: `interview__set_fields`, `interview__get_fields`; `interview__reset` replaces `interview__reset_interview` (`interview__set_field` / `interview__get_field` remain deprecated aliases). Model chains `next_question` / `review` per SOP. Covered by `test_set_fields.py`, updated `test_prepare_locked_skill_turn.py`, `test_use_skill_locked_prep.py`.
+
 ### Fixed
+
+- **`interview__set_fields` utterance grounding.** When the visitor carries the user's latest message, values must be extractable from that turn (or match a `pre_processor` `suggested_value` stored in session) — ungrounded model-supplied values from older chat history are rejected (`validated_from: rejected_ungrounded`). Suggestions are persisted on `interview__next_question` via `session.context.field_suggestion`.
 
 - **Skill lifecycle binding vs `requires-actions` gate.** `action_for_skill()` previously bound lifecycle hooks (`on_skill_activate`, `prepare_locked_skill_turn`, `resolve_locked_skill`, etc.) to the first enabled Action whose class name appeared in `requires-actions`, using **`agent.yaml` action list order**. Multi-action skills (e.g. interview + API dependency) could bind to the wrong Action, skip interview bootstrap, strip `interview__*` tools, and hide tool-call SSE in jvchat. Binding now resolves: (1) `extends: action:<namespace>/<action>` ref, (2) sole lifecycle-protocol implementor among required actions, (3) `requires-actions` declaration order. The hard gate (`_enforce_required_actions`) is unchanged — all declared actions must still be enabled.
 
@@ -25,6 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **jvchat tool-call panel for server prep.** Server-injected prep observations (`interview__message_evaluation`, `interview__next_question`) now emit `tool_call` / `tool_result` thoughts so the TOOL CALLS section appears alongside Reasoning.
 
 ### Added
+
+- **Thin harness documentation (jvagent-wide).** Platform principle at [`docs/thin-harness.md`](docs/thin-harness.md) — thin Orchestrator/Action harness, thick SOP + skill extensions. Interview-specific profile at [`jvagent/action/interview_action/docs/thin-harness.md`](jvagent/action/interview_action/docs/thin-harness.md). Cross-linked from root `CLAUDE.md`, `docs/ORCHESTRATOR.md`, `.planning/GLOSSARY.md`, `action-authoring.md`, `jvagent/action/CLAUDE.md`, `jvagent/skills/README.md`, and interview docs.
 
 - **Proactive Task Monitor (ADR-0022).** Unified proactive execution: `ProactiveTaskSpec` (`spec_version: 2`) on `TaskStore`, eligibility engine (`task_eligibility.py`), `TaskMonitor` action (replaces `TaskDispatcher`) dispatching one eligible `PROACTIVE` task per conversation through the full Orchestrator; `TaskTriggerInteractAction` event bridge; `queue_task` orchestrator tool; `Agent.enqueue_proactive_task()` and `embed.enqueue_proactive_task()`. Covered by `tests/memory/test_task_proactive.py`, `test_task_eligibility.py`, `test_task_store_proactive.py`, `tests/action/task_monitor/`, and updated task creation/trigger tests.
 

@@ -1,4 +1,4 @@
-"""prepare_locked_skill_turn — message evaluation observations on every turn."""
+"""prepare_locked_skill_turn — minimal runtime gate (no server steering)."""
 
 from __future__ import annotations
 
@@ -10,11 +10,7 @@ import pytest
 from jvagent.action.interview_action.core.interview_loader import (
     load_interview_spec_from_skill,
 )
-from jvagent.action.interview_action.core.session import (
-    CTX_QUESTION_PRESENTED,
-    InterviewSession,
-    save_session,
-)
+from jvagent.action.interview_action.core.session import InterviewSession, save_session
 from jvagent.action.interview_action.interview_action import InterviewAction
 from tests.action.interview_action.conftest import (
     ORCHESTRATOR_AGENT_DIR,
@@ -31,7 +27,7 @@ def interview_action():
 
 
 @pytest.mark.asyncio
-async def test_prepare_injects_evaluation_for_inline_name(interview_action):
+async def test_prepare_runtime_ready_when_session_active(interview_action):
     action, _spec = interview_action
     session = InterviewSession(interview_type="signup_interview")
     conv = MagicMock()
@@ -42,76 +38,27 @@ async def test_prepare_injects_evaluation_for_inline_name(interview_action):
         utterance="Hello my name is Eldon Marks. I'm here to sign up",
     )
     await save_session(conv, session)
-    action._save_session = AsyncMock()
 
     prep = await action.prepare_locked_skill_turn("signup_interview", visitor)
 
     assert prep.runtime_ready is True
-    assert len(prep.observations) == 1
-    assert prep.observations[0]["tool"] == "interview__message_evaluation"
-    assert "user_name" in prep.observations[0]["observation"]
-    assert "interview__set_field" in (prep.pending_directive or "")
+    assert not prep.observations
+    assert not prep.pending_directive
 
 
 @pytest.mark.asyncio
-async def test_prepare_seeds_next_question_for_intent_only(interview_action):
+async def test_prepare_runtime_not_ready_without_session(interview_action):
     action, _spec = interview_action
-    session = InterviewSession(interview_type="signup_interview")
-    conv = MagicMock()
-    conv.context = {}
-    conv.save = AsyncMock()
-    visitor = SimpleNamespace(
-        conversation=conv,
-        utterance="Sign me up for training",
-    )
-    await save_session(conv, session)
-    action._save_session = AsyncMock()
+    visitor = SimpleNamespace(conversation=None, utterance="Sign me up")
 
     prep = await action.prepare_locked_skill_turn("signup_interview", visitor)
 
-    assert prep.runtime_ready is True
-    assert len(prep.observations) == 1
-    assert prep.observations[0]["tool"] == "interview__next_question"
-    assert "full name" in prep.observations[0]["observation"].lower()
+    assert prep.runtime_ready is False
+    assert not prep.observations
 
 
 @pytest.mark.asyncio
-async def test_prepare_seeds_next_question_when_utterance_empty(interview_action):
-    action, _spec = interview_action
-    session = InterviewSession(interview_type="signup_interview")
-    conv = MagicMock()
-    conv.context = {}
-    conv.save = AsyncMock()
-    visitor = SimpleNamespace(conversation=conv, utterance="")
-    await save_session(conv, session)
-    action._save_session = AsyncMock()
-
-    prep = await action.prepare_locked_skill_turn("signup_interview", visitor)
-
-    assert prep.runtime_ready is True
-    assert prep.observations[0]["tool"] == "interview__next_question"
-
-
-@pytest.mark.asyncio
-async def test_prepare_injects_evaluation_for_direct_answer(interview_action):
-    action, _spec = interview_action
-    session = InterviewSession(interview_type="signup_interview")
-    session.context[CTX_QUESTION_PRESENTED] = "user_name"
-    conv = MagicMock()
-    conv.context = {}
-    conv.save = AsyncMock()
-    visitor = SimpleNamespace(conversation=conv, utterance="Jane Doe")
-    await save_session(conv, session)
-
-    prep = await action.prepare_locked_skill_turn("signup_interview", visitor)
-
-    assert prep.observations[0]["tool"] == "interview__message_evaluation"
-    assert "Jane Doe" in prep.observations[0]["observation"]
-
-
-@pytest.mark.asyncio
-async def test_prepare_cancel_uses_model_intent_routing(interview_action):
-    """Cancel is not server-detected — prep runs evaluation then next_question."""
+async def test_prepare_no_steering_for_cancel_utterance(interview_action):
     action, _spec = interview_action
     session = InterviewSession(interview_type="signup_interview")
     conv = MagicMock()
@@ -123,23 +70,4 @@ async def test_prepare_cancel_uses_model_intent_routing(interview_action):
     prep = await action.prepare_locked_skill_turn("signup_interview", visitor)
 
     assert prep.runtime_ready is True
-    assert len(prep.observations) == 1
-    assert prep.observations[0]["tool"] == "interview__next_question"
-    assert all(o.get("tool") != "interview__control_intent" for o in prep.observations)
-
-
-@pytest.mark.asyncio
-async def test_prepare_start_over_uses_model_intent_routing(interview_action):
-    """Start-over is not server-detected — prep runs evaluation then next_question."""
-    action, _spec = interview_action
-    session = InterviewSession(interview_type="signup_interview")
-    conv = MagicMock()
-    conv.context = {}
-    conv.save = AsyncMock()
-    visitor = SimpleNamespace(conversation=conv, utterance="start over")
-    await save_session(conv, session)
-
-    prep = await action.prepare_locked_skill_turn("signup_interview", visitor)
-
-    assert prep.observations[0]["tool"] == "interview__next_question"
-    assert all(o.get("tool") != "interview__control_intent" for o in prep.observations)
+    assert not prep.observations

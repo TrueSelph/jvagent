@@ -108,6 +108,8 @@ SESSION_KEY = "interview"
 
 # Scratch keys in InterviewSession.context — runtime flow state, not domain data.
 CTX_QUESTION_PRESENTED = "question_presented"
+# {"field": <key>, "value": <str>} — pre_processor suggestion the user may confirm.
+CTX_FIELD_SUGGESTION = "field_suggestion"
 
 # Conversation.context keys owned by the platform (not interview runtime).
 CONVERSATION_CONTEXT_PLATFORM_KEYS: FrozenSet[str] = frozenset({"new_user"})

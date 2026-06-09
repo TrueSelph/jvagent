@@ -42,6 +42,8 @@ Base procedure for an action (interview tool loop, etc.)?
 
 **Interview skills** (`interview:` frontmatter, `scripts/custom_tools.py`) follow the same default: `agents/.../skills/<name>/` plus `extends: action:jvagent/interview_action`. Do not place them under `agents/.../actions/jvagent/interview_action/skills/` unless you are distributing a **custom fork** of `InterviewAction` with its own bundled skills.
 
+All skills and actions must obey the **[thin harness principle](../../docs/thin-harness.md)** — thick SOP + skill extensions, thin server harness. Interview skills also follow the **[interview profile](../action/interview_action/docs/thin-harness.md)**. AI agents must not add extractors, prep observations, or foundation-side intent logic when extending interviews.
+
 `jvagent skill add <agent_ref> <name>` scaffolds into `agents/.../skills/<name>/` by design.
 
 ### Layout example
@@ -236,7 +238,9 @@ create `agents/.../skills/<name>/`. Use `spec: jv`, reference tools in
 `allowed-tools`, write the SOP. Declare `requires-actions` when the skill
 hard-gates on specific actions. Add `scripts/custom_tools.py` for interview
 hooks or other action-coordinated logic. Set `extends: action:<namespace>/<action>`
-when composing a base action SOP.
+when composing a base action SOP. Read [`docs/thin-harness.md`](../../docs/thin-harness.md)
+before changing orchestrator or action harness code; for interview skills also
+[`interview_action/docs/thin-harness.md`](../action/interview_action/docs/thin-harness.md).
 
 **Library skill:** `jvagent/skills/<name>/` for framework-shipped reusables only.
 
