@@ -67,7 +67,8 @@ Turn prep runs **message evaluation** on the user's **latest message** — inclu
 2. On `ok:true`, the response includes `next_questions` and a `Tell the user:` `response_directive` — **reply only**; do not call `interview__next_question` (the server already advanced).
 3. When `applicable` is empty, use the `interview__next_question` observation — reply using its `response_directive`; do not call `set_field` with the full utterance.
 4. Intent-only messages (e.g. "sign me up" without extractable entities) have empty `applicable` — present the scripted next question from the observation.
-5. Multiple inline entities in one message: extract the **first missing applicable field** this turn; call `set_field` again only if evaluation still lists another applicable field after a successful store.
+5. Cancel/stop or start-over/restart messages have empty `applicable` — classify intent yourself (see Intent routing) and call `interview__cancel` or `interview__reset_interview`; do not treat them as field answers.
+6. Multiple inline entities in one message: extract the **first missing applicable field** this turn; call `set_field` again only if evaluation still lists another applicable field after a successful store.
 
 ## Intent routing
 

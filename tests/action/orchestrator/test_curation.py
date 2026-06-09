@@ -4,7 +4,7 @@ non-routable actions are kept."""
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -47,6 +47,35 @@ async def test_routable_ia_dropped_from_walk_path(
     assert intro in kept  # always_execute IA
     assert retrieval in kept  # non-routable IA stays in the chain
     assert signup not in kept  # routable/tool IA omitted from the walk path
+
+
+async def test_plain_actions_excluded_from_walk_path_curation(
+    make_orchestrator, make_visitor, flow_stub_cls
+):
+    """Non-InteractAction plugins (InterviewAction, LM, MCP, …) are not walk-path members."""
+
+    class IntroIA(flow_stub_cls):
+        always_execute = True
+        anchors = []
+
+        async def execute(self, visitor):
+            pass
+
+    intro = IntroIA()
+    plain = MagicMock(name="InterviewAction")
+    plain.get_tools = AsyncMock(return_value=[])
+    ex = make_orchestrator(actions=[intro, plain])
+
+    v = make_visitor(utterance="hello")
+    captured = {}
+    v.curate_walk_path = AsyncMock(side_effect=lambda keep: captured.update(keep=keep))
+
+    await ex._curate_walk_path(v)
+
+    kept = captured["keep"]
+    assert ex in kept
+    assert intro in kept
+    assert plain not in kept
 
 
 async def test_curate_noops_without_curate_api(make_orchestrator, make_visitor):

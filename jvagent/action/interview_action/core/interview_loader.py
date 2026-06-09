@@ -76,6 +76,14 @@ class ResetDef:
 
 
 @dataclass
+class ExtractorDef:
+    """Maps a validator function name to a custom_tools.py candidate extractor."""
+
+    validator: str
+    function: str = ""
+
+
+@dataclass
 class InterviewSpec:
     name: str
     title: str = ""
@@ -87,6 +95,7 @@ class InterviewSpec:
     review: Optional[ReviewDef] = None
     reset: Optional[ResetDef] = None
     cancel: Optional[CompletionDef] = None
+    extractors: List[ExtractorDef] = field(default_factory=list)
     source_dir: str = ""
 
     def get_required_fields(self) -> List[str]:
@@ -108,6 +117,12 @@ class InterviewSpec:
         for t in self.tools:
             if t.name == name:
                 return t
+        return None
+
+    def get_extractor(self, validator_name: str) -> Optional[ExtractorDef]:
+        for ext in self.extractors:
+            if ext.validator == validator_name:
+                return ext
         return None
 
     def question_names(self) -> List[str]:
@@ -245,6 +260,15 @@ def _parse_reset(data: Dict[str, Any]) -> ResetDef:
     )
 
 
+def _parse_extractor(data: Dict[str, Any]) -> ExtractorDef:
+    if isinstance(data, str):
+        return ExtractorDef(validator=data, function=data)
+    return ExtractorDef(
+        validator=str(data.get("validator") or data.get("name") or "").strip(),
+        function=str(data.get("function") or "").strip(),
+    )
+
+
 def parse_interview_spec(
     data: Dict[str, Any],
     *,
@@ -278,6 +302,9 @@ def parse_interview_spec(
     review = _parse_review(data.get("review", {})) if data.get("review") else None
     reset = _parse_reset(data.get("reset", {})) if data.get("reset") else None
     cancel = _parse_completion(data.get("cancel", {})) if data.get("cancel") else None
+    extractors = [
+        _parse_extractor(item) for item in (data.get("extractors", []) or []) if item
+    ]
 
     return InterviewSpec(
         name=name,
@@ -290,6 +317,7 @@ def parse_interview_spec(
         review=review,
         reset=reset,
         cancel=cancel,
+        extractors=extractors,
         source_dir=source_dir,
     )
 

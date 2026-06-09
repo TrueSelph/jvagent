@@ -66,6 +66,11 @@ interview:
     description: >-
       Post-review handler called by interview__complete. Records signup and
       returns a confirmation message.
+  extractors:
+    - validator: validate_full_name
+      function: extract_full_name_candidates
+    - validator: validate_available_times
+      function: extract_available_times_candidates
 tags: [signup, training, interview, onboarding]
 ---
 

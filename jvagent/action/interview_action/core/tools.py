@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List
 
 if TYPE_CHECKING:
     from ..interview_action import InterviewAction
@@ -11,19 +11,8 @@ if TYPE_CHECKING:
 from jvagent.tooling.tool import Tool
 
 from .interview_loader import InterviewSpec, ToolDef
-from .session import InterviewSession, InterviewStatus, load_session
 
 logger = logging.getLogger(__name__)
-
-_TASK_OWNER_ACTION = "InterviewAction"
-
-
-def _task_interview_type(handle: Any) -> Optional[str]:
-    task_data = getattr(handle, "data", None) or {}
-    if isinstance(task_data, dict):
-        raw = task_data.get("interview_type")
-        return str(raw) if raw else None
-    return None
 
 
 def skill_tool_name(spec: InterviewSpec, tool_name: str) -> str:

@@ -62,6 +62,34 @@ async def _get_user_pre_alerts(visitor: Any) -> Dict[str, Any]:
     return {}
 
 
+# ─── Message evaluation extractors ───────────────────────────────────
+
+
+def extract_tracking_number_candidates(user_message: str, **kwargs: Any) -> list:
+    msg = user_message or ""
+    min_len = int(kwargs.get("min_length", 10))
+    candidates: list = []
+    for match in re.finditer(r"\d{%d,}" % min_len, msg):
+        candidates.append(match.group())
+    all_digits = "".join(c for c in msg if c.isdigit())
+    if len(all_digits) >= min_len:
+        candidates.append(all_digits)
+    return candidates
+
+
+def extract_invoice_value_candidates(user_message: str, **kwargs: Any) -> list:
+    candidates: list = []
+    for match in re.finditer(r"[\d,.]+", user_message or ""):
+        cleaned = re.sub(r"[$,\s]", "", match.group())
+        if cleaned and any(c.isdigit() for c in cleaned):
+            candidates.append(cleaned)
+    return candidates
+
+
+def extract_alternative_tracking_candidates(user_message: str, **kwargs: Any) -> list:
+    return extract_tracking_number_candidates(user_message, **kwargs)
+
+
 # ─── Validators ──────────────────────────────────────────────────────
 
 

@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **Skill lifecycle binding vs `requires-actions` gate.** `action_for_skill()` previously bound lifecycle hooks (`on_skill_activate`, `prepare_locked_skill_turn`, `resolve_locked_skill`, etc.) to the first enabled Action whose class name appeared in `requires-actions`, using **`agent.yaml` action list order**. Multi-action skills (e.g. interview + API dependency) could bind to the wrong Action, skip interview bootstrap, strip `interview__*` tools, and hide tool-call SSE in jvchat. Binding now resolves: (1) `extends: action:<namespace>/<action>` ref, (2) sole lifecycle-protocol implementor among required actions, (3) `requires-actions` declaration order. The hard gate (`_enforce_required_actions`) is unchanged — all declared actions must still be enabled.
+
+- **Locked-skill skill-name-as-tool loop.** During turn-lock, `use_skill` is removed from the callable surface; the model often still emits the skill name as a tool (e.g. `onboarding_interview`), wasting ticks on `(no such tool)`. The orchestrator now steers back to declared interview tools or `reply`/`respond` instead.
+
+- **Duplicate interview prep after `Tell the user:` store.** When `interview__set_field` returns a `Tell the user:` `response_directive` (post-tool auto-advance already inlined the next question), the orchestrator no longer re-runs `refresh_locked_skill_prep` — which re-injected conflicting `interview__next_question` observations and encouraged extra tool calls before `reply`.
+
+- **Tool-call visibility during streaming.** Internal progress lines (`Using interview__set_field…`) no longer duplicate substantive tool activity in the Reasoning panel when structured `tool_call`/`tool_result` thoughts are emitted for the TOOL CALLS section. jvchat auto-expands the tool group while the turn is running.
+
 - **Locked-skill turn prep after mid-loop `use_skill`.** When the model activates a `locked-in` skill via `use_skill` on tick 1 (not new-user auto-start), the orchestrator now runs `apply_locked_skill_turn` immediately so `interview__message_evaluation` / `interview__next_question` prep reaches the same turn. Fixes signup activation with inline name (`"Hello my name is Eldon Marks…"`) skipping extraction and re-asking for full name. Covered by `tests/action/orchestrator/test_use_skill_locked_prep.py`.
 
 - **Interview tools after mid-loop `use_skill`.** `InterviewAction.prune_turn_tools` could remove `interview__*` tools before the session was ready; mid-loop activation then left the model with `(no such tool: interview__set_field)`. `ensure_skill_tools_materialized` re-adds bound-action tools when turn-lock applies with a ready runtime.
@@ -21,6 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Proactive Task Monitor (ADR-0022).** Unified proactive execution: `ProactiveTaskSpec` (`spec_version: 2`) on `TaskStore`, eligibility engine (`task_eligibility.py`), `TaskMonitor` action (replaces `TaskDispatcher`) dispatching one eligible `PROACTIVE` task per conversation through the full Orchestrator; `TaskTriggerInteractAction` event bridge; `queue_task` orchestrator tool; `Agent.enqueue_proactive_task()` and `embed.enqueue_proactive_task()`. Covered by `tests/memory/test_task_proactive.py`, `test_task_eligibility.py`, `test_task_store_proactive.py`, `tests/action/task_monitor/`, and updated task creation/trigger tests.
 
 ### Removed
+
+- **Interview server-side control-intent regex.** Deleted `runtime/control_intent.py` and the `interview__control_intent` prep observation. Cancel/stop and start-over/restart intent is classified by the model via base `SKILL.md` Intent routing — turn prep always runs message evaluation or seeds `interview__next_question` like any other utterance.
 
 - **`jvagent/task_dispatcher`.** Replaced by `jvagent/task_monitor` (forward-only; no migration shims).
 

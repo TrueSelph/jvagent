@@ -14,6 +14,7 @@ from jvagent.action.orchestrator.skill_tasks import (
     pending_auto_start_skills,
     resolve_active_locked_skill,
     resolve_onboard_locked_skill_doc,
+    set_field_has_reply_directive,
 )
 from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.memory.task_store import TaskStore
@@ -110,7 +111,91 @@ def test_action_for_skill_requires_actions():
         def get_class_name(self):
             return "Other"
 
-    assert action_for_skill(doc, [Other(), InterviewAction()]) is not None
+    bound = action_for_skill(doc, [Other(), InterviewAction()])
+    assert bound is not None
+    assert bound.get_class_name() == "InterviewAction"
+
+
+def test_action_for_skill_binds_extends_target_over_agent_order():
+    doc = SkillDoc(
+        name="onboarding_interview",
+        description="d",
+        body="b",
+        requires_actions=("ZoonAPIAction", "InterviewAction"),
+        extends="action:jvagent/interview_action",
+    )
+
+    class ZoonAPIAction:
+        enabled = True
+
+        def get_class_name(self):
+            return "ZoonAPIAction"
+
+        def get_action_ref(self):
+            return "zoon/zoon_api_action"
+
+    class InterviewAction:
+        enabled = True
+
+        def get_class_name(self):
+            return "InterviewAction"
+
+        def get_action_ref(self):
+            return "jvagent/interview_action"
+
+    bound = action_for_skill(doc, [ZoonAPIAction(), InterviewAction()])
+    assert bound.get_class_name() == "InterviewAction"
+
+
+def test_action_for_skill_prefers_lifecycle_protocol():
+    doc = SkillDoc(
+        name="onboarding_interview",
+        description="d",
+        body="b",
+        requires_actions=("ZoonAPIAction", "InterviewAction"),
+    )
+
+    class ZoonAPIAction:
+        enabled = True
+
+        def get_class_name(self):
+            return "ZoonAPIAction"
+
+    class InterviewAction:
+        enabled = True
+
+        def get_class_name(self):
+            return "InterviewAction"
+
+        async def prepare_locked_skill_turn(self, skill_name, visitor=None):
+            return None
+
+    bound = action_for_skill(doc, [ZoonAPIAction(), InterviewAction()])
+    assert bound.get_class_name() == "InterviewAction"
+
+
+def test_action_for_skill_uses_requires_order_not_agent_order():
+    doc = SkillDoc(
+        name="S",
+        description="d",
+        body="b",
+        requires_actions=("ActionA", "ActionB"),
+    )
+
+    class ActionA:
+        enabled = True
+
+        def get_class_name(self):
+            return "ActionA"
+
+    class ActionB:
+        enabled = True
+
+        def get_class_name(self):
+            return "ActionB"
+
+    bound = action_for_skill(doc, [ActionB(), ActionA()])
+    assert bound.get_class_name() == "ActionA"
 
 
 @pytest.mark.asyncio
@@ -201,3 +286,21 @@ async def test_ensure_locked_skill_session_rebootstraps_when_missing():
     )
     assert note == "session ready"
     InterviewActionStub.on_skill_activate.assert_awaited_once()
+
+
+def test_set_field_has_reply_directive():
+    assert set_field_has_reply_directive(
+        {
+            "ok": True,
+            "stored": True,
+            "response_directive": "Tell the user: What is your email?",
+        }
+    )
+    assert not set_field_has_reply_directive(
+        {
+            "ok": True,
+            "stored": True,
+            "response_directive": "Call interview__next_question",
+        }
+    )
+    assert not set_field_has_reply_directive({"ok": False, "stored": True})

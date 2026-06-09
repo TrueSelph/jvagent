@@ -65,6 +65,13 @@ interview:
     function: pre_alert_complete
     description: Creates the pre-alert via Zoon API after user confirms at review.
       Updates user_pre_alerts in conversation context on success.
+  extractors:
+    - validator: validate_tracking_number
+      function: extract_tracking_number_candidates
+    - validator: validate_invoice_value
+      function: extract_invoice_value_candidates
+    - validator: validate_alternative_tracking_number
+      function: extract_alternative_tracking_candidates
 ---
 
 ## Custom instructions
@@ -72,7 +79,7 @@ interview:
 ### When to use
 
 - ANY request involving a tracking number, package tracking, shipment status, or pre-alert creation.
-- Call `use_skill` with `pre_alert_interview` — may seed a tracking number from the user's latest message.
+- Call `use_skill` with `pre_alert_interview` — message evaluation may surface a tracking number from the user's latest message.
 
 ### Session overrides
 

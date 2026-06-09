@@ -730,6 +730,85 @@ def _handle_skill_add_command(args: List[str], app_root: str = None) -> None:
     print(f"Wrote {skill_path}")
 
 
+def _handle_skill_create_interview_command(
+    args: List[str], app_root: str = None
+) -> None:
+    """Scaffold an InterviewAction skill from the example_interview template."""
+    import shutil
+
+    if app_root is None:
+        app_root = os.getcwd()
+
+    parser = argparse.ArgumentParser(prog="jvagent skill create-interview")
+    parser.add_argument("agent_ref", help="namespace/agent_id")
+    parser.add_argument("skill_name", help="Skill folder/name under agents/.../skills/")
+    parser.add_argument(
+        "--title",
+        default="",
+        help="Interview title in frontmatter (defaults to skill_name title case)",
+    )
+    parser.add_argument("--force", action="store_true")
+    ns = parser.parse_args(args)
+
+    if "/" not in ns.agent_ref:
+        parser.error("agent_ref must be in format namespace/agent_id")
+
+    namespace, agent_name = ns.agent_ref.split("/", 1)
+    agent_dir = Path(app_root).resolve() / "agents" / namespace / agent_name
+    if not agent_dir.is_dir():
+        parser.error(f"agent directory not found: {agent_dir}")
+
+    template_dir = (
+        Path(__file__).resolve().parent.parent
+        / "action"
+        / "interview_action"
+        / "examples"
+        / "example_interview"
+    )
+    if not template_dir.is_dir():
+        parser.error(f"example_interview template not found: {template_dir}")
+
+    dest = agent_dir / "skills" / ns.skill_name
+    if dest.exists() and not ns.force:
+        parser.error(f"{dest} already exists (use --force to overwrite)")
+
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(template_dir, dest)
+
+    title = ns.title or ns.skill_name.replace("_", " ").title()
+    skill_md = dest / "SKILL.md"
+    text = skill_md.read_text(encoding="utf-8")
+    text = text.replace("name: example_interview", f"name: {ns.skill_name}", 1)
+    text = text.replace("example_interview__", f"{ns.skill_name}__")
+    text = text.replace("title: Product Feedback", f"title: {title}", 1)
+    skill_md.write_text(text, encoding="utf-8")
+
+    custom_tools = dest / "scripts" / "custom_tools.py"
+    ct = custom_tools.read_text(encoding="utf-8")
+    ct = ct.replace(
+        '_SKILL_NAME = "example_interview"', f'_SKILL_NAME = "{ns.skill_name}"'
+    )
+    custom_tools.write_text(ct, encoding="utf-8")
+
+    from jvagent.action.interview_action._validate_contract import (
+        validate_interview_skill_dir,
+    )
+
+    ok, issues = validate_interview_skill_dir(dest)
+    print(f"Created interview skill at {dest}")
+    if ok:
+        print("Contract validation: PASSED")
+    else:
+        print("Contract validation: FAILED")
+        for issue in issues:
+            print(f"  - {issue}")
+    print(
+        "Next: register the skill in agent.yaml orchestrator skills: "
+        "and enable jvagent/interview_action in actions."
+    )
+
+
 def _resolve_skills_for_cli(
     *,
     app_root: str,
@@ -1036,7 +1115,7 @@ def _handle_skill_validate_command(args: List[str], app_root: str = None) -> Non
         print("FAILED: Could not parse SKILL.md")
         return
 
-    print("PASSED")
+    print("PASSED (bundle parse)")
     print(f"  name:            {bundle['name']}")
     print(f"  description:     {bundle.get('description', '')[:80]}")
     print(f"  tools:           {len(bundle.get('tool_files', []))}")
@@ -1045,6 +1124,22 @@ def _handle_skill_validate_command(args: List[str], app_root: str = None) -> Non
     print(f"  imports:         {bundle.get('imports', [])}")
     print(f"  allowed_tools:   {bundle.get('allowed_tools', [])}")
 
+    from jvagent.action.interview_action._validate_contract import (
+        validate_interview_skill_dir,
+    )
+    from jvagent.action.interview_action.core.interview_loader import (
+        load_interview_spec_from_skill,
+    )
+
+    if load_interview_spec_from_skill(target.parent) is not None:
+        ok, issues = validate_interview_skill_dir(target.parent)
+        if ok:
+            print("PASSED (interview contract)")
+        else:
+            print("FAILED (interview contract)")
+            for issue in issues:
+                print(f"  - {issue}")
+
 
 def handle_skill_command(args: List[str], app_root: str = None) -> None:
     """Handle skill bundle commands."""
@@ -1052,12 +1147,15 @@ def handle_skill_command(args: List[str], app_root: str = None) -> None:
         app_root = os.getcwd()
 
     if not args:
-        print("Usage: jvagent skill <add|list|show|validate> ...")
+        print("Usage: jvagent skill <add|create-interview|list|show|validate> ...")
         return
 
     command = args[0]
     if command == "add":
         _handle_skill_add_command(args[1:], app_root=app_root)
+        return
+    if command == "create-interview":
+        _handle_skill_create_interview_command(args[1:], app_root=app_root)
         return
     if command == "list":
         _handle_skill_list_command(args[1:], app_root=app_root)
@@ -1070,7 +1168,7 @@ def handle_skill_command(args: List[str], app_root: str = None) -> None:
         return
 
     print(f"Unknown skill command: {command}")
-    print("Available commands: add, list, show, validate")
+    print("Available commands: add, create-interview, list, show, validate")
 
 
 def handle_action_command(args: List[str], app_root: str = None) -> None:

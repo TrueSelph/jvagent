@@ -88,27 +88,127 @@ def enabled_actions(actions: List[Any]) -> List[Any]:
     return [a for a in actions if getattr(a, "enabled", True)]
 
 
-def action_for_skill(doc: Any, actions: List[Any]) -> Optional[Any]:
-    """First enabled action whose class name appears in ``doc.requires_actions``."""
-    wanted = {
+_SKILL_LIFECYCLE_METHODS = frozenset(
+    {
+        "on_skill_activate",
+        "prepare_locked_skill_turn",
+        "skill_runtime_ready",
+        "needs_session_rebootstrap",
+        "resolve_locked_skill",
+    }
+)
+
+
+def _action_class_name(action: Any) -> str:
+    if hasattr(action, "get_class_name"):
+        try:
+            name = action.get_class_name()
+            if name:
+                return name
+        except Exception:
+            pass
+    return type(action).__name__
+
+
+def _action_ref(action: Any) -> Optional[str]:
+    ref_fn = getattr(action, "get_action_ref", None)
+    if not callable(ref_fn):
+        return None
+    try:
+        return ref_fn()
+    except Exception:
+        return None
+
+
+def _requires_action_names(doc: Any) -> Tuple[str, ...]:
+    return tuple(
         str(r).strip()
         for r in (getattr(doc, "requires_actions", ()) or ())
         if str(r).strip()
-    }
+    )
+
+
+def _enabled_matching_actions(doc: Any, actions: List[Any]) -> List[Any]:
+    wanted = set(_requires_action_names(doc))
     if not wanted:
+        return []
+    return [
+        action
+        for action in enabled_actions(actions)
+        if _action_class_name(action) in wanted
+    ]
+
+
+def _bind_by_extends(doc: Any, actions: List[Any]) -> Optional[Any]:
+    extends = getattr(doc, "extends", None)
+    if not extends or not str(extends).startswith("action:"):
+        return None
+    target_ref = str(extends)[len("action:") :].strip()
+    if not target_ref:
         return None
     for action in enabled_actions(actions):
-        class_name = None
-        if hasattr(action, "get_class_name"):
-            try:
-                class_name = action.get_class_name()
-            except Exception:
-                class_name = None
-        if not class_name:
-            class_name = type(action).__name__
-        if class_name in wanted:
+        ref = _action_ref(action)
+        if ref and ref == target_ref:
             return action
     return None
+
+
+def _implements_lifecycle(action: Any) -> bool:
+    return any(
+        callable(getattr(action, name, None)) for name in _SKILL_LIFECYCLE_METHODS
+    )
+
+
+def _bind_by_protocol(doc: Any, actions: List[Any]) -> Optional[Any]:
+    matches = [
+        action
+        for action in _enabled_matching_actions(doc, actions)
+        if _implements_lifecycle(action)
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        logger.warning(
+            "skill_tasks: skill %r has ambiguous lifecycle binding among %s; "
+            "add extends: action:… or reduce requires-actions",
+            getattr(doc, "name", "?"),
+            [_action_class_name(action) for action in matches],
+        )
+    return None
+
+
+def _bind_by_requires_order(doc: Any, actions: List[Any]) -> Optional[Any]:
+    by_class = {
+        _action_class_name(action): action
+        for action in _enabled_matching_actions(doc, actions)
+    }
+    for req_name in _requires_action_names(doc):
+        action = by_class.get(req_name)
+        if action is not None:
+            return action
+    return None
+
+
+def action_for_skill(doc: Any, actions: List[Any]) -> Optional[Any]:
+    """Resolve the Action that owns skill lifecycle hooks for ``doc``.
+
+    ``requires-actions`` is a hard dependency gate (all must be enabled);
+    binding picks which Action runs ``on_skill_activate``,
+    ``prepare_locked_skill_turn``, etc. Resolution order:
+
+    1. ``extends: action:<namespace>/<action>`` ref match
+    2. Sole lifecycle-protocol implementor among required actions
+    3. First match in ``requires-actions`` declaration order
+    """
+    if not _requires_action_names(doc):
+        return None
+    bound = _bind_by_extends(doc, actions)
+    if bound is not None:
+        return bound
+    bound = _bind_by_protocol(doc, actions)
+    if bound is not None:
+        return bound
+    return _bind_by_requires_order(doc, actions)
 
 
 def resolver_actions_for_locked_skills(
@@ -407,7 +507,10 @@ def locked_skills_section_text(
 
 
 _STALE_PREP_OBSERVATION_TOOLS = frozenset(
-    {"interview__message_evaluation", "interview__next_question"}
+    {
+        "interview__message_evaluation",
+        "interview__next_question",
+    }
 )
 
 
@@ -418,6 +521,16 @@ def drop_stale_locked_skill_prep_observations(
     observations[:] = [
         o for o in observations if o.get("tool") not in _STALE_PREP_OBSERVATION_TOOLS
     ]
+
+
+def set_field_has_reply_directive(payload: Dict[str, Any]) -> bool:
+    """True when a store response already tells the model to reply to the user."""
+    if not isinstance(payload, dict) or not payload.get("ok"):
+        return False
+    if not (payload.get("stored") or payload.get("already_stored")):
+        return False
+    directive = (payload.get("response_directive") or "").strip()
+    return directive.startswith("Tell the user:")
 
 
 async def ensure_skill_tools_materialized(

@@ -1,36 +1,9 @@
-"""Structured JSON envelopes for interview tools and session intent classification."""
+"""Structured JSON envelopes for interview tools."""
 
 from __future__ import annotations
 
 import json
-import re
-from typing import Any, Dict, List, Literal, Optional
-
-SessionIntent = Literal["continue", "fresh", "unclear"]
-
-_CONTINUE_PATTERNS = (
-    r"\bcontinue\b",
-    r"\blet'?s continue\b",
-    r"\bgo on\b",
-    r"\bresume\b",
-    r"\bpick up where\b",
-    r"\bsame interview\b",
-    r"\byes,? continue\b",
-    r"\bcarry on\b",
-)
-
-_FRESH_PATTERNS = (
-    r"\bnew\b",
-    r"\banother\b",
-    r"\bdifferent\b",
-    r"\bstart over\b",
-    r"\bfrom scratch\b",
-    r"\bcreate a\b",
-    r"\bstart a new\b",
-    r"\bnew pre-?alert\b",
-    r"\bnew package\b",
-    r"\bdifferent tracking\b",
-)
+from typing import Any, Dict, List, Optional
 
 # Keys allowed in post_tools_results entries exposed to the LLM.
 POST_TOOL_RESULT_KEYS = (
@@ -94,8 +67,8 @@ def review_confirmation_directive(
         f"Tell the user: {preamble}{summary_block} "
         "Ask whether everything looks correct and they want to confirm. "
         "If they want changes, ask what to update. "
-        "This is a confirmation step only — registration is NOT complete yet. "
-        "Do NOT say they are signed up, registered, or that registration is complete. "
+        "This is a confirmation step only — the process is NOT complete yet. "
+        "Do NOT say the process is complete or that any account or record has been created. "
         "Do NOT call interview__complete until they explicitly confirm. "
         "Do NOT call interview__review again."
     )
@@ -140,45 +113,6 @@ def tool_observation_failed(obs: str, *, error_code: Optional[str] = None) -> bo
     return False
 
 
-def directive_for_missing_fields(
-    next_questions: Optional[List[Dict[str, Any]]],
-    missing_required: List[str],
-) -> tuple[str, Optional[str]]:
-    """Pick one directive after a field is stored or skipped."""
-    if next_questions:
-        question = next_questions[0].get("question", "")
-        if question:
-            return tell_user_directive(question), None
-    if not missing_required:
-        return call_tool_directive("interview__review"), "interview__review"
-    return call_tool_directive("interview__review"), "interview__review"
-
-
-def directive_after_store(missing_required: List[str]) -> tuple[str, Optional[str]]:
-    """Mechanistic next step after a successful set_field or skip_field."""
-    if not missing_required:
-        return call_tool_directive("interview__review"), "interview__review"
-    return call_tool_directive("interview__next_question"), "interview__next_question"
-
-
-def classify_user_session_intent(user_message: str) -> SessionIntent:
-    """Classify latest user message as continue, fresh, or unclear."""
-    text = (user_message or "").strip().lower()
-    if not text:
-        return "unclear"
-
-    continue_hit = any(re.search(p, text) for p in _CONTINUE_PATTERNS)
-    fresh_hit = any(re.search(p, text) for p in _FRESH_PATTERNS)
-
-    if continue_hit and not fresh_hit:
-        return "continue"
-    if fresh_hit and not continue_hit:
-        return "fresh"
-    if continue_hit and fresh_hit:
-        return "unclear"
-    return "unclear"
-
-
 def slim_post_tool_entry(tool: str, parsed: Dict[str, Any]) -> Dict[str, Any]:
     """Build a slim post_tools_results entry for LLM consumption."""
     entry: Dict[str, Any] = {"tool": tool, "ok": parsed.get("ok", True)}
@@ -211,7 +145,6 @@ def interview_tool_response(
     value: Optional[Any] = None,
     valid: Optional[bool] = None,
     fresh_session: Optional[bool] = None,
-    seeded_fields: Optional[List[str]] = None,
     post_tools_results: Optional[List[Dict[str, Any]]] = None,
     pre_tools_results: Optional[List[Dict[str, Any]]] = None,
     questions: Optional[List[Dict[str, Any]]] = None,
@@ -224,6 +157,11 @@ def interview_tool_response(
     summary: Optional[str] = None,
     review_ready: Optional[bool] = None,
     completion_result: Optional[Dict[str, Any]] = None,
+    stored: Optional[bool] = None,
+    already_stored: Optional[bool] = None,
+    validator: Optional[str] = None,
+    validated_from: Optional[str] = None,
+    **extra: Any,
 ) -> str:
     """Build a consistent JSON tool response string.
 
@@ -253,7 +191,6 @@ def interview_tool_response(
         "value": value,
         "valid": valid,
         "fresh_session": fresh_session,
-        "seeded_fields": seeded_fields,
         "post_tools_results": post_tools_results,
         "pre_tools_results": pre_tools_results,
         "questions": questions,
@@ -266,13 +203,23 @@ def interview_tool_response(
         "summary": summary,
         "review_ready": review_ready,
         "completion_result": completion_result,
+        "stored": stored,
+        "already_stored": already_stored,
+        "validator": validator,
+        "validated_from": validated_from,
     }
     for key, val in optional_fields.items():
+        if val is not None:
+            payload[key] = val
+    for key, val in extra.items():
         if val is not None:
             payload[key] = val
     return json.dumps(payload)
 
 
-def interview_step_response(*, ok: bool, status: str, **fields: Any) -> str:
-    """Build a step response; delegates to interview_tool_response."""
-    return interview_tool_response(ok=ok, status=status, **fields)
+def interview_tool_response_from_payload(payload: Dict[str, Any]) -> str:
+    """Serialize a pipeline/handler payload dict through interview_tool_response."""
+    data = dict(payload)
+    ok = data.pop("ok", None)
+    status = data.pop("status")
+    return interview_tool_response(ok=ok, status=status, **data)

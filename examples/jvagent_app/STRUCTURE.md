@@ -1,5 +1,7 @@
 # Project Structure
 
+> **Interview skills:** New structured interviews use [`jvagent/interview_action`](../../jvagent/action/interview_action/README.md) + app-local skills under `agents/.../skills/`. See `agents/jvagent/orchestrator_agent/skills/signup_interview/` for the reference implementation. Legacy v1 [`InterviewInteractAction`](../../jvagent/action/interview/README.md) packages (e.g. `signup_interview_interact_action`) are archived.
+
 This document describes the complete structure of the jvagent demo app boilerplate.
 
 ```
@@ -16,7 +18,8 @@ jvagent_app/
 ├── agents/                   # Custom agent packages (namespace / agent_id)
 │   ├── jvagent/
 │   │   ├── example_agent/    # Main demo agent
-│   │   │   ├── actions/jvagent/signup_interview_interact_action/
+│   │   │   ├── actions/jvagent/signup_interview_interact_action/  # ARCHIVED (v1 walker)
+│   │   │   ├── orchestrator_agent/skills/signup_interview/  # Current signup interview (skills-v2)
 │   │   │   ├── agent.yaml
 │   │   │   └── README.md
 │   │   └── skills_agent/     # Optional skills + Ollama agent (enable in app.yaml if needed)

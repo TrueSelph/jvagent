@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -83,3 +83,42 @@ async def test_interview_ready_false_when_session_without_spec(tmp_path):
     visitor.conversation = conversation
 
     assert await action._interview_ready(visitor) is False
+
+
+@pytest.mark.asyncio
+async def test_ensure_specs_loaded_skips_when_registry_populated(tmp_path):
+    skill_dir = (
+        tmp_path / "agents" / "zoon" / "zoon_ai" / "skills" / "onboarding_interview"
+    )
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: onboarding_interview
+description: Onboarding
+interview:
+  title: Onboarding
+  questions:
+    - name: phone_number
+      question: What is your phone number?
+      required: true
+---
+""",
+        encoding="utf-8",
+    )
+
+    action = InterviewAction()
+    action.metadata = {
+        "agent_namespace": "zoon",
+        "agent_name": "zoon_ai",
+        "agent_dir": str(tmp_path / "agents" / "zoon" / "zoon_ai"),
+    }
+    await action._discover_specs()
+
+    with patch.object(
+        action, "_discover_specs", new_callable=AsyncMock
+    ) as mock_discover:
+        await action._ensure_specs_loaded()
+        await action._ensure_specs_loaded()
+        await action._interview_ready(MagicMock())
+
+    mock_discover.assert_not_called()

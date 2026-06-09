@@ -93,6 +93,7 @@ def _collect_candidates(
     spec: InterviewSpec,
     field_name: str,
     utterance: str,
+    load_fn: Optional[Callable[[str], Any]] = None,
 ) -> List[str]:
     q = spec.get_question(field_name)
     if not q:
@@ -104,7 +105,15 @@ def _collect_candidates(
         return []
 
     kwargs = resolve_validator_kwargs(q, vdef)
-    candidates = extract_candidates_for_question(q, vdef, utterance, kwargs)
+    candidates = extract_candidates_for_question(
+        q,
+        vdef,
+        utterance,
+        kwargs,
+        spec=spec,
+        load_fn=load_fn,
+        session=session,
+    )
     if _include_full_utterance_candidate(session, field_name, utterance):
         if utterance and utterance not in candidates:
             candidates.insert(0, utterance)
@@ -139,7 +148,7 @@ async def evaluate_message_for_extraction(
         q = spec.get_question(field_name)
         if not q:
             continue
-        candidates = _collect_candidates(session, spec, field_name, msg)
+        candidates = _collect_candidates(session, spec, field_name, msg, load_fn)
         if not candidates:
             continue
 

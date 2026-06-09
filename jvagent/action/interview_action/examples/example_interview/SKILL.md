@@ -9,6 +9,8 @@ locked-in: true
 requires-actions:
 - InterviewAction
 extends: action:jvagent/interview_action
+allowed-tools:
+  - example_interview__send_followup_reminder
 tags:
 - example
 - feedback
@@ -64,6 +66,18 @@ interview:
     function: example_complete
     description: Post-review completion handler called by interview__complete. Stores
       feedback in session context and returns a confirmation message.
+  reset:
+    function: reset_example_interview
+    description: Custom start-over handler — clears session and re-asks the first question.
+  tools:
+    - name: send_followup_reminder
+      function: send_followup_reminder
+      description: >-
+        Optional LLM-callable tool after follow_up_email is saved — records that a
+        follow-up reminder was queued (demo stub).
+  extractors:
+    - validator: validate_rating
+      function: extract_rating_candidates
 ---
 
 > **Note:** Reference package under `interview_action/examples/` (not auto-discovered). Copy to `agents/<ns>/<agent>/skills/<name>/` and register in `agent.yaml` to activate.

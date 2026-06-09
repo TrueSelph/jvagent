@@ -32,9 +32,49 @@ Copy [`../examples/example_interview/`](../examples/example_interview/) as the s
 | Review handler | `interview.review.function` | `custom_tools.py` | No |
 | Reset handler | `interview.reset.function` | `custom_tools.py` | No |
 | Completion handler | `interview.completion.function` | `custom_tools.py` | No |
-| Entity candidates | (implicit via validator name) | `core/field_extractors.py` | No |
+| Message extractors | `interview.extractors` | `custom_tools.py` | No |
 
-**Rule:** Only `interview.tools` entries become LLM tools. Validators and hooks are invoked by the framework when their trigger fires.
+**Rule:** Only `interview.tools` entries become LLM tools. Validators, hooks, and extractors are invoked by the framework when their trigger fires.
+
+---
+
+## Message evaluation extractors
+
+Declare skill-local candidate extractors when builtin patterns (email, phone, date, number) are not enough:
+
+```yaml
+interview:
+  extractors:
+    - validator: validate_full_name
+      function: extract_full_name_candidates
+```
+
+Implement in `custom_tools.py`:
+
+```python
+def extract_full_name_candidates(user_message: str, **kwargs) -> list[str]:
+    """Return ordered candidate substrings from the latest user message."""
+    ...
+```
+
+The framework calls the extractor when message evaluation scans missing fields whose validator matches `extractors[].validator`. Builtin extractors in [`../core/field_extractors.py`](../core/field_extractors.py) cover generic types only — domain patterns belong in the skill extension.
+
+Optional: add `extract_pattern` to a builtin validator's `kwargs` for simple regex extraction without a custom function.
+
+---
+
+## Hook return conventions
+
+All hooks (validators, pre/post tools, review, reset, completion) should return **`interview_tool_response(...)` JSON strings** when the response includes directives or control keys (`skip_to_review`, `interview_complete`, etc.).
+
+| Hook type | Preferred return | Also accepted |
+|-----------|------------------|---------------|
+| Validator | JSON string or dict with `valid`, `value`, `error` | Tuple `(ExtractionStatus, error, value)` for legacy |
+| Pre-tool | JSON string via `interview_tool_response` | Plain dict with `directive` or `response_directive` (merged by pipeline) |
+| Post-tool | JSON string via `interview_tool_response` | Plain dict with control keys |
+| Review / complete / reset | Dict with `directive` or `response_directive` | JSON string |
+
+Pre-tools may return a plain dict when the payload is small (e.g. slot list + `directive`), but post-tools and validators should use `interview_tool_response()` for consistency. See `signup_interview` and `example_interview` for reference patterns.
 
 ---
 

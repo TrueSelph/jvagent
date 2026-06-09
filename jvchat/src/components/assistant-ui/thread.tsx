@@ -314,7 +314,9 @@ const AssistantMessage: FC = () => {
                 return <ReasoningChain>{children}</ReasoningChain>;
               case "group-tool":
                 return (
-                  <ToolGroupRoot>
+                  <ToolGroupRoot
+                    defaultOpen={part.status.type === "running"}
+                  >
                     <ToolGroupTrigger
                       count={part.indices.length}
                       active={part.status.type === "running"}

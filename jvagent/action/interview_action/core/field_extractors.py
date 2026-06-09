@@ -2,103 +2,67 @@
 
 from __future__ import annotations
 
+import inspect
+import logging
 import re
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
-from .interview_loader import QuestionDef, ValidatorDef
+from .interview_loader import InterviewSpec, QuestionDef, ValidatorDef
+
+logger = logging.getLogger(__name__)
 
 _EMAIL_RE = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
 
-_NAME_INTRO_PATTERNS = (
-    re.compile(
-        r"(?:my name is|i'm|i am|call me|this is)\s+"
-        r"([A-Za-z][A-Za-z\s'\-]{1,60}?)"
-        r"(?:\s+and\b|\s*,|\s*\.|$)",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"(?:hello|hi|hey)[,.]?\s+(?:my name is|i'm|i am)\s+"
-        r"([A-Za-z][A-Za-z\s'\-]{1,60}?)"
-        r"(?:\s+and\b|\s*,|\s*\.|$)",
-        re.IGNORECASE,
-    ),
-)
-
-_DAY_NAMES = (
-    "monday",
-    "tuesday",
-    "wednesday",
-    "thursday",
-    "friday",
-    "saturday",
-    "sunday",
-)
-
 
 def _looks_like_email_validator(vdef: ValidatorDef) -> bool:
-    return "email" in (vdef.name or "").lower()
+    name = (vdef.name or "").lower()
+    return name == "email" or "email" in name
 
 
-def _extract_name_candidates(msg: str) -> List[str]:
-    candidates: List[str] = []
-    for pattern in _NAME_INTRO_PATTERNS:
-        for match in pattern.finditer(msg):
-            name = (match.group(1) or "").strip().strip(".,;")
-            if name and name not in candidates:
-                candidates.append(name)
-    return candidates
+def _call_custom_extractor(
+    func: Callable[..., Any],
+    user_message: str,
+    kwargs: Dict[str, Any],
+    *,
+    session: Any = None,
+) -> List[str]:
+    params = set(inspect.signature(func).parameters.keys())
+    call_kwargs = {k: v for k, v in kwargs.items() if k in params}
+    if "user_message" in params:
+        call_kwargs["user_message"] = user_message
+    elif "message" in params:
+        call_kwargs["message"] = user_message
+    if session is not None and "session" in params:
+        call_kwargs["session"] = session
+    try:
+        result = func(**call_kwargs)
+    except TypeError:
+        result = func(user_message)
+    if not isinstance(result, list):
+        return []
+    return [str(item).strip() for item in result if str(item).strip()]
 
 
-def _extract_training_time_candidates(msg: str) -> List[str]:
-    """Surface day/time phrases that validate_available_times may match."""
-    candidates: List[str] = []
-    lower = msg.lower()
-    for day in _DAY_NAMES:
-        if day not in lower:
-            continue
-        for match in re.finditer(
-            rf"\b{day}\b[^.;]{{0,50}}",
-            msg,
-            re.IGNORECASE,
-        ):
-            chunk = match.group().strip().strip(".,;")
-            if chunk and chunk not in candidates:
-                candidates.append(chunk)
-        # compact forms: "Monday at 9", "Monday 9am"
-        for match in re.finditer(
-            rf"\b{day}\s+(?:at\s+)?\d{{1,2}}(?::\d{{2}})?\s*(?:am|pm)?\b",
-            msg,
-            re.IGNORECASE,
-        ):
-            chunk = match.group().strip()
-            if chunk not in candidates:
-                candidates.append(chunk)
-    return candidates
-
-
-def extract_candidates_for_question(
-    question: QuestionDef,
+def _extract_builtin_candidates(
     vdef: ValidatorDef,
     user_message: str,
     kwargs: Dict[str, Any],
 ) -> List[str]:
-    """Return ordered unique candidate substrings from user_message for a question."""
     msg = (user_message or "").strip()
     if not msg:
         return []
 
     candidates: List[str] = []
+    name = vdef.name or ""
 
-    if vdef.name == "validate_full_name":
-        candidates.extend(_extract_name_candidates(msg))
+    if name == "name" or name == "text":
+        # Short direct answers handled via CTX_QUESTION_PRESENTED in message_evaluation.
+        pass
 
-    elif vdef.name == "validate_available_times":
-        candidates.extend(_extract_training_time_candidates(msg))
-
-    elif vdef.name == "email" or _looks_like_email_validator(vdef):
+    elif name == "email" or _looks_like_email_validator(vdef):
         candidates.extend(re.findall(_EMAIL_RE, msg, re.IGNORECASE))
 
-    elif vdef.name == "phone":
+    elif name == "phone":
         exact = int(kwargs.get("exact_length", kwargs.get("length", 10)))
         for match in re.finditer(r"\d{%d,}" % exact, msg):
             chunk = match.group()
@@ -111,36 +75,52 @@ def extract_candidates_for_question(
         if len(all_digits) >= exact:
             candidates.append(all_digits[-exact:])
 
-    elif vdef.name == "date_past":
+    elif name in ("date", "date_past", "date_future"):
         for match in re.finditer(r"\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b", msg):
             candidates.append(match.group().replace("/", "-"))
 
-    elif vdef.name in (
-        "validate_tracking_number",
-        "validate_alternative_tracking_number",
-    ):
-        min_len = int(kwargs.get("min_length", 10))
-        for match in re.finditer(r"\d{%d,}" % min_len, msg):
-            candidates.append(match.group())
-        all_digits = "".join(c for c in msg if c.isdigit())
-        if len(all_digits) >= min_len:
-            candidates.append(all_digits)
-
-    elif vdef.name == "validate_id_number":
-        for match in re.finditer(r"\b\d{8,9}\b", msg):
-            candidates.append(match.group())
-        all_digits = "".join(c for c in msg if c.isdigit())
-        if 8 <= len(all_digits) <= 9:
-            candidates.append(all_digits)
-        for match in re.finditer(r"\b[A-Za-z][A-Za-z0-9]{5,11}\b", msg):
+    elif name == "number":
+        for match in re.finditer(r"-?\d+(?:\.\d+)?", msg):
             candidates.append(match.group())
 
-    elif vdef.name == "validate_invoice_value":
-        for match in re.finditer(r"[\d,.]+", msg):
-            cleaned = re.sub(r"[$,\s]", "", match.group())
-            if cleaned and any(c.isdigit() for c in cleaned):
-                candidates.append(cleaned)
+    pattern = kwargs.get("extract_pattern")
+    if pattern:
+        try:
+            candidates.extend(re.findall(str(pattern), msg, re.IGNORECASE))
+        except re.error:
+            logger.warning("Invalid extract_pattern for validator %s", name)
 
+    return candidates
+
+
+def extract_candidates_for_question(
+    question: QuestionDef,
+    vdef: ValidatorDef,
+    user_message: str,
+    kwargs: Dict[str, Any],
+    *,
+    spec: Optional[InterviewSpec] = None,
+    load_fn: Optional[Callable[[str], Any]] = None,
+    session: Any = None,
+) -> List[str]:
+    """Return ordered unique candidate substrings from user_message for a question."""
+    msg = (user_message or "").strip()
+    if not msg:
+        return []
+
+    candidates: List[str] = []
+
+    if spec and load_fn:
+        edef = spec.get_extractor(vdef.name)
+        if edef and edef.function:
+            func = load_fn(edef.function)
+            if func:
+                candidates.extend(
+                    _call_custom_extractor(func, msg, kwargs, session=session)
+                )
+                return _dedupe(candidates)
+
+    candidates.extend(_extract_builtin_candidates(vdef, msg, kwargs))
     return _dedupe(candidates)
 
 

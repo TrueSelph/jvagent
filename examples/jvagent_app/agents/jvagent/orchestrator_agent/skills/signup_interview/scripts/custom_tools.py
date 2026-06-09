@@ -32,6 +32,70 @@ AVAILABLE_TRAINING_TIMES: List[str] = [
 
 _INVALID_TEST_DOMAINS = frozenset({"example.com", "test.com", "invalid.com"})
 
+_NAME_INTRO_PATTERNS = (
+    re.compile(
+        r"(?:my name is|i'm|i am|call me|this is)\s+"
+        r"([A-Za-z][A-Za-z\s'\-]{1,60}?)"
+        r"(?:\s+and\b|\s*,|\s*\.|$)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:hello|hi|hey)[,.]?\s+(?:my name is|i'm|i am)\s+"
+        r"([A-Za-z][A-Za-z\s'\-]{1,60}?)"
+        r"(?:\s+and\b|\s*,|\s*\.|$)",
+        re.IGNORECASE,
+    ),
+)
+
+
+# ─── Message evaluation extractors ───────────────────────────────────
+
+
+def extract_full_name_candidates(user_message: str, **kwargs: Any) -> List[str]:
+    """Surface intro-style name phrases from the user's latest message."""
+    msg = (user_message or "").strip()
+    candidates: List[str] = []
+    for pattern in _NAME_INTRO_PATTERNS:
+        for match in pattern.finditer(msg):
+            name = (match.group(1) or "").strip().strip(".,;")
+            if name and name not in candidates:
+                candidates.append(name)
+    return candidates
+
+
+def extract_available_times_candidates(user_message: str, **kwargs: Any) -> List[str]:
+    """Surface day/time phrases that validate_available_times may match."""
+    msg = (user_message or "").strip()
+    if not msg:
+        return []
+    candidates: List[str] = []
+    lower = msg.lower()
+    day_names = (
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+    )
+    for day in day_names:
+        if day not in lower:
+            continue
+        for match in re.finditer(rf"\b{day}\b[^.;]{{0,50}}", msg, re.IGNORECASE):
+            chunk = match.group().strip().strip(".,;")
+            if chunk and chunk not in candidates:
+                candidates.append(chunk)
+        for match in re.finditer(
+            rf"\b{day}\s+(?:at\s+)?\d{{1,2}}(?::\d{{2}})?\s*(?:am|pm)?\b",
+            msg,
+            re.IGNORECASE,
+        ):
+            chunk = match.group().strip()
+            if chunk not in candidates:
+                candidates.append(chunk)
+    return candidates
+
 
 def _validation_result(
     valid: bool,
@@ -407,12 +471,6 @@ async def signup_complete(
         user_email,
         available_times,
     )
-
-    if interview_action and visitor:
-        try:
-            await interview_action._close_task(visitor, status="completed")
-        except Exception as exc:
-            logger.debug("signup_complete: close task failed: %s", exc)
 
     times_note = (
         f"Your preferred times were: {', '.join(matched_times)}."

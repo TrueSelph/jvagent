@@ -60,6 +60,12 @@ async def _get_conversation(visitor: Any) -> Any:
 # ─── Validators ──────────────────────────────────────────────────────
 
 
+def extract_rating_candidates(user_message: str, **kwargs) -> list:
+    """Surface integer rating candidates from the user's latest message."""
+    matches = re.findall(r"\b([1-5])\b", user_message or "")
+    return list(dict.fromkeys(matches))
+
+
 async def validate_rating(value: str, **kwargs) -> str:
     """Validate product rating (integer 1–5)."""
     cleaned = re.sub(r"\D", "", str(value or "").strip())
@@ -204,6 +210,32 @@ async def check_low_rating(
     )
 
 
+async def send_followup_reminder(
+    visitor: Any = None,
+    session: Any = None,
+    **kwargs,
+) -> str:
+    """LLM-callable demo tool — records that a follow-up reminder was queued."""
+    email = (session.get_value("follow_up_email") if session else "") or ""
+    if not email:
+        return interview_tool_response(
+            ok=False,
+            status="error",
+            response_directive=tell_user_directive(
+                "I need an email on file before queuing a follow-up reminder."
+            ),
+        )
+    if session is not None and isinstance(session.context, dict):
+        session.context["followup_reminder_queued"] = True
+    return interview_tool_response(
+        ok=True,
+        status="ok",
+        response_directive=tell_user_directive(
+            f"Got it — we'll send a follow-up to {email} if needed."
+        ),
+    )
+
+
 async def reset_example_interview(
     visitor: Any = None,
     interview_action: Any = None,
@@ -214,8 +246,8 @@ async def reset_example_interview(
     """Clear interview progress and re-start from the first question.
 
     Pattern from onboarding_interview ``reset_onboarding``: clear session,
-    close task, re-init interview. Registered in contract.tools so the LLM
-    can call example_interview__reset_example_interview.
+    close task, re-init interview. Wired via ``interview.reset.function`` —
+    the model still calls ``interview__reset_interview()``.
     """
     conversation = await _get_conversation(visitor)
     if conversation is None:

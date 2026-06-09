@@ -1,6 +1,16 @@
 # Interview Action (legacy)
 
-> **Superseded by [`../interview_action/`](../interview_action/README.md).** New structured interviews use skills-v2 + `InterviewAction` (`interview__*` tools, frontmatter `interview:` contract, standard procedure composed via extends). This package (`InterviewInteractAction`) remains for existing Rails-style flows only.
+> **Superseded by [`../interview_action/`](../interview_action/README.md).** New structured interviews use skills-v2 + `InterviewAction` (`interview__*` tools, frontmatter `interview:` contract, standard procedure composed via extends). This package (`InterviewInteractAction`) remains for existing Rails-style flows only — **do not start new interviews here.**
+
+## Migration
+
+| v1 (this package) | v2 (`interview_action`) |
+|---|---|
+| `InterviewInteractAction` subclass + decorators | `SKILL.md` frontmatter `interview:` + `scripts/custom_tools.py` |
+| Action under `agents/.../actions/` | Skill under `agents/.../skills/<name>/` |
+| Walker-driven flow | Orchestrator LLM + `interview__*` tools |
+
+Reference: `examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup_interview/`
 
 A reusable, extensible interview system for gathering structured information from users through multi-turn conversations with validation, revision, and confirmation flows.
 

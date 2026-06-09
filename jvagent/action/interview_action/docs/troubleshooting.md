@@ -126,11 +126,11 @@ Common issues when building or running skills-v2 interviews with `InterviewActio
 
 ---
 
-## Field seeding wrong value
+## Message evaluation wrong candidate
 
-**Symptom:** Opening message seeds incorrect field.
+**Symptom:** Opening message surfaces an incorrect field candidate in `interview__message_evaluation`.
 
-**Fix:** Adjust regex/logic in `core/field_extractors.py` for your validator name, or disable seeding by not adding an extractor branch.
+**Fix:** Declare a skill-local extractor in frontmatter `interview.extractors` (function in `scripts/custom_tools.py`) or tighten the question validator. Builtin extractors cover email, phone, name, and date patterns only — domain-specific patterns belong in the skill extension.
 
 ---
 

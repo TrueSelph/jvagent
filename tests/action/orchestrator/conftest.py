@@ -67,7 +67,19 @@ def make_orchestrator(monkeypatch, publish_log):
         async def _enabled(self, _agent):
             return list(actions or [])
 
+        async def _enabled_interact(self, _agent):
+            from jvagent.action.interact.base import InteractAction
+
+            out: List[Any] = []
+            for a in actions or []:
+                if isinstance(a, InteractAction) or isinstance(a, FlowStub):
+                    out.append(a)
+            return out
+
         monkeypatch.setattr(OrchestratorInteractAction, "_enabled_actions", _enabled)
+        monkeypatch.setattr(
+            OrchestratorInteractAction, "_enabled_interact_actions", _enabled_interact
+        )
 
         def _no_skills(self, _agent):
             return []

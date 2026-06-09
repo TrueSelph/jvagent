@@ -93,9 +93,9 @@ metadata:
 | `description` | both | Drives discovery; third person; what it does + when to use it. |
 | `spec` | both | `jv` (default) or `claude`. Unknown values fall back to `jv`. |
 | `allowed-tools` | mostly JV | Runtime tool names the SOP uses (e.g. `gmail__send_email`, `web_fetch__fetch`, `code_execution__bash`). Surfaced into the visible set on activation. |
-| `requires-actions` | JV | Action class names that must resolve (enabled) on the agent, each with an **optional inline version constraint** (PEP 508-style — the comparison operator is the delimiter): `CodeExecutionAction`, `PageIndexAction>=2.0`, `WebFetchAction==1.4.0`, `GmailAction>=1.0,<2.0`. **Hard gate, enforced:** if any declared type is absent — or its `get_version()` doesn't satisfy the constraint — the orchestrator hides the skill entirely for that turn (not listed, found, activated, or always-active-pinned). Replaces the old `requires-action-versions` map. |
+| `requires-actions` | JV | Action class names that must resolve (enabled) on the agent, each with an **optional inline version constraint** (PEP 508-style — the comparison operator is the delimiter): `CodeExecutionAction`, `PageIndexAction>=2.0`, `WebFetchAction==1.4.0`, `GmailAction>=1.0,<2.0`. **Hard gate, enforced:** if any declared type is absent — or its `get_version()` doesn't satisfy the constraint — the orchestrator hides the skill entirely for that turn (not listed, found, activated, or always-active-pinned). Replaces the old `requires-action-versions` map. **Not lifecycle binding:** listing multiple actions (e.g. `InterviewAction` + `ZoonAPIAction`) gates on all of them; which Action runs `on_skill_activate` / `prepare_locked_skill_turn` is resolved separately (see below). |
 | `requires-jvagent` | JV | Framework version constraint, checked at preflight. |
-| `extends` | JV | SOP inheritance only (body composition). `action:<namespace>/<action>` loads `<action_dir>/SKILL.md` body; `skill:<name>` inherits another skill's composed body. Separate from `requires-actions`. |
+| `extends` | JV | SOP inheritance only (body composition). `action:<namespace>/<action>` loads `<action_dir>/SKILL.md` body; `skill:<name>` inherits another skill's composed body. Separate from `requires-actions`. When `extends: action:…` is set, that action ref is also the **preferred lifecycle binder** for skill hooks (`on_skill_activate`, `prepare_locked_skill_turn`, `resolve_locked_skill`, etc.). |
 | `license`, `metadata` | both | Claude-standard fields. `metadata.version` / `metadata.tags` for tracking + discovery cues. |
 
 (jvagent also parses chaining/dispatch extensions — `exports`, `imports`,
@@ -114,13 +114,26 @@ orchestrator's `pinned_tools` glob list.) It also lets the skill bypass the
 
 List skill names on the orchestrator (`auto_start_skills_on_new_user: [my_skill]`).
 For each **new user**, the orchestrator mechanically runs `use_skill` before the
-first model tick (activation/bootstrap is handled by the skill's `requires-actions` binding).
+first model tick (activation/bootstrap uses the skill's **lifecycle-bound** Action — see binding below).
 
 When a `locked-in: true` skill has an **active** TaskStore task (`owner_action`
 matches the skill name), the orchestrator restricts the tool surface to that skill until
-the task is **completed**. Skills that declare `requires-actions: [InterviewAction]`
-delegate session resolution to that action's `resolve_locked_skill()`. The
-`use_skill` activate hook creates a `SKILL` task when `locked-in` is set.
+the task is **completed**. Interview skills delegate session resolution to the bound
+Action's `resolve_locked_skill()` (typically `InterviewAction` via `extends: action:jvagent/interview_action`).
+The `use_skill` activate hook creates a `SKILL` task when `locked-in` is set.
+
+**Lifecycle binding** (which Action owns skill hooks) is separate from the
+`requires-actions` gate. Resolution order in `action_for_skill()`:
+
+1. `extends: action:<namespace>/<action>` — match enabled action by package ref
+2. Sole required Action implementing lifecycle hooks (`on_skill_activate`,
+   `prepare_locked_skill_turn`, `skill_runtime_ready`, `needs_session_rebootstrap`,
+   `resolve_locked_skill`)
+3. First name in the skill's `requires-actions` declaration order
+
+`agent.yaml` action list order does **not** affect binding. List API or helper
+actions in `requires-actions` when the skill depends on their tools; use
+`extends: action:…` on interview skills so `InterviewAction` keeps hook ownership.
 
 ## JV skills — coordinate existing tools
 

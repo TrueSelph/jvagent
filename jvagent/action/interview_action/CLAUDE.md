@@ -4,7 +4,7 @@
 
 ## What this is
 
-`InterviewAction` is a pure `Action` (not `InteractAction`) that registers eight fixed `interview__*` tools plus per-skill custom tools. The **orchestrator LLM** reads each skill's `SKILL.md` procedure and drives multi-turn interviews by calling tools — the action manages session state, validation, hooks, and task tracking; it does **not** classify user intent or choose the next question itself.
+`InterviewAction` is a pure `Action` (not `InteractAction`) that registers nine fixed `interview__*` tools plus per-skill custom tools. The **orchestrator LLM** reads each skill's `SKILL.md` procedure and drives multi-turn interviews by calling tools — the action manages session state, validation, hooks, and task tracking; it does **not** classify user intent or choose the next question itself.
 
 Session state lives in `conversation.context["interview"]` as a lightweight `InterviewSession` dataclass (field values, skipped fields, status, scratch `context` dict).
 
@@ -33,7 +33,11 @@ When fixing behavior for one skill (e.g. `validate_full_name`, training slot mat
 ```
 interview_action/
 ├── SKILL.md              # Base SOP (extends target)
-├── interview_action.py   # InterviewAction — session, hooks, skill activation
+├── interview_action.py   # Action shell: discovery, turn-lock hooks, skill activation
+├── tasks.py              # INTERVIEW task lifecycle mixin
+├── _constants.py         # Shared constants + response serialization helpers
+├── _validate_contract.py # Skill frontmatter ↔ custom_tools.py validation
+├── handlers/             # Tool handler mixins (session, field, flow)
 ├── info.yaml
 ├── README.md / CLAUDE.md / AGENTS.md
 ├── core/                 # Loader, session, validators, tools, responses

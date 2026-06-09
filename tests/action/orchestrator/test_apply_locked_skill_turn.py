@@ -115,3 +115,75 @@ async def test_apply_locked_skill_turn_reply_only_when_not_ready():
     assert set(out_tools) == {"reply"}
     assert "my__tool" not in out_visible
     assert "reply to the user only" in section.lower() or "not ready" in section.lower()
+
+
+async def test_apply_locked_skill_turn_binds_interview_over_api_dependency():
+    """Zoon regression: dual requires-actions + API listed first still prep via Interview."""
+    skill = SkillDoc(
+        name="onboarding_interview",
+        description="d",
+        body="SOP body",
+        requires_tools=("onboarding_interview__send_otp",),
+        requires_actions=("ZoonAPIAction", "InterviewAction"),
+        extends="action:jvagent/interview_action",
+        locked_in=True,
+    )
+
+    class ZoonAPIAction:
+        enabled = True
+
+        def get_class_name(self):
+            return "ZoonAPIAction"
+
+        def get_action_ref(self):
+            return "zoon/zoon_api_action"
+
+    class InterviewAction:
+        enabled = True
+
+        def get_class_name(self):
+            return "InterviewAction"
+
+        def get_action_ref(self):
+            return "jvagent/interview_action"
+
+        async def needs_session_rebootstrap(self, skill_name, visitor=None):
+            return False
+
+        async def skill_runtime_ready(self, skill_name, visitor=None):
+            return True
+
+        prepare_locked_skill_turn = AsyncMock(
+            return_value=LockedSkillPrep(
+                runtime_ready=True,
+                observations=[
+                    {
+                        "tool": "interview__message_evaluation",
+                        "args": {},
+                        "observation": "prep ok",
+                    }
+                ],
+            )
+        )
+
+    tools = {
+        "onboarding_interview__send_otp": MagicMock(),
+        "reply": MagicMock(),
+    }
+    visible = set(tools)
+    observations: list = []
+    interview = InterviewAction()
+
+    await apply_locked_skill_turn(
+        skill,
+        [ZoonAPIAction(), interview],
+        MagicMock(),
+        user_message="5926431531",
+        tools=tools,
+        visible=visible,
+        activated=[],
+        observations=observations,
+    )
+
+    interview.prepare_locked_skill_turn.assert_awaited_once()
+    assert any(o.get("observation") == "prep ok" for o in observations)

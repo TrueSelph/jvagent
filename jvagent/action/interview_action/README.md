@@ -47,14 +47,16 @@ Declare the machine contract under `interview:` in `SKILL.md` frontmatter (not a
 
 ## Quick start
 
-1. **Copy the reference skill** from [`examples/example_interview/`](examples/example_interview/) to `agents/<ns>/<agent>/skills/<your_skill_name>/`.
-2. **Rename consistently** — `name` in `SKILL.md` frontmatter must match the folder name (e.g. `skills/feedback_interview/` → `name: feedback_interview`).
-3. **Implement functions** in `scripts/custom_tools.py` for every `function:` name referenced in frontmatter `interview:`.
-4. **Write custom instructions** in `SKILL.md` body — when to use, session overrides, and behavioral rules. Add `extends: action:jvagent/interview_action`; do not copy the base procedure into the body.
-5. **Register the skill** in [`agent.yaml`](../../../agent.yaml) orchestrator `skills:` list.
-6. **Declare allowed tools** in `SKILL.md` frontmatter — list every `interview__*` tool plus any `{skill}__{tool}` custom tools.
-7. **(Optional)** Add entity-candidate branches in [`core/field_extractors.py`](core/field_extractors.py) keyed by validator name so message evaluation can surface candidates for model extraction.
-8. **(Optional)** Add to `auto_start_skills_on_new_user` in `agent.yaml` if the skill should activate automatically for new users.
+1. **Scaffold (optional)** — `jvagent skill create-interview <agent_ref> <skill_name>` copies [`examples/example_interview/`](examples/example_interview/) into `agents/<ns>/<agent>/skills/<skill_name>/`.
+2. **Or copy manually** from [`examples/example_interview/`](examples/example_interview/) to `agents/<ns>/<agent>/skills/<your_skill_name>/`.
+3. **Rename consistently** — `name` in `SKILL.md` frontmatter must match the folder name (e.g. `skills/feedback_interview/` → `name: feedback_interview`).
+4. **Implement functions** in `scripts/custom_tools.py` for every `function:` name referenced in frontmatter `interview:` (builtin validators like `phone` and `email` need no custom function).
+5. **Validate the contract** — `jvagent skill validate agents/<ns>/<agent>/skills/<your_skill_name>/SKILL.md` checks that frontmatter `function:` refs resolve in `custom_tools.py`.
+6. **Write custom instructions** in `SKILL.md` body — when to use, session overrides, and behavioral rules. Add `extends: action:jvagent/interview_action`; do not copy the base procedure into the body.
+7. **Register the skill** in [`agent.yaml`](../../../agent.yaml) orchestrator `skills:` list.
+8. **Declare allowed tools** in `SKILL.md` frontmatter — list every `interview__*` tool plus any `{skill}__{tool}` custom tools.
+9. **(Optional)** Declare skill-local extractors in frontmatter `interview.extractors` (functions in `custom_tools.py`) when builtin email/phone/name patterns are not enough — see [docs/extending.md](docs/extending.md).
+10. **(Optional)** Add to `auto_start_skills_on_new_user` in `agent.yaml` if the skill should activate automatically for new users.
 
 > **Important:** Reference packages live under `interview_action/examples/` (not auto-discovered). Live skills go in the app action overlay `skills/` path.
 
@@ -332,7 +334,7 @@ interview_tool_response(
 
 ## Core `interview__*` tools
 
-Eight fixed tools registered by [`core/tools.py`](core/tools.py). Sessions start via `use_skill` → `on_skill_activate` (there is no `interview__init`).
+Nine fixed tools registered by [`core/tools.py`](core/tools.py). Sessions start via `use_skill` → `on_skill_activate` (there is no `interview__init`).
 
 | Tool | Purpose |
 |------|---------|
@@ -344,6 +346,7 @@ Eight fixed tools registered by [`core/tools.py`](core/tools.py). Sessions start
 | `interview__review()` | Present summary (or custom review handler) |
 | `interview__complete()` | Finalize (or custom completion handler) |
 | `interview__cancel()` | Cancel and clear session |
+| `interview__reset_interview()` | Clear progress and restart from the first question |
 
 ### Chaining gate
 
@@ -490,7 +493,7 @@ Also sets `conversation.context["customer_id"]` and `user_is_onboarded: "complet
 
 ## Testing
 
-Existing tests under `agents/zoon-ai/tests/`:
+Existing tests under `tests/action/interview_action/`:
 
 | Test file | What it covers |
 |-----------|----------------|
@@ -500,7 +503,7 @@ Existing tests under `agents/zoon-ai/tests/`:
 | `test_interview_task_lifecycle.py` | Task isolation between interview types |
 | `test_interview_next_question.py` | Pre-tool execution, next question ordering |
 | `test_interview_tool_response_envelope.py` | Response envelope shape |
-| `test_field_extractors.py` | Field seeding from user messages |
+| `test_message_evaluation.py` | Per-message entity evaluation and skill extractors |
 | `test_check_customer_exists.py` | `verify_phone_number` stop path, field mapper helpers |
 | `test_reset_onboarding.py` | Cancel-and-exit behavior for `reset_onboarding` via `interview.reset` |
 | `test_complete_onboarding.py` | Account creation task persistence |
@@ -521,7 +524,7 @@ Existing tests under `agents/zoon-ai/tests/`:
 - [ ] Review handler returns `directive`; terminate path sets `terminate: true`
 - [ ] Completion handler returns `directive` with user-facing message
 - [ ] Skill registered in `agent.yaml` orchestrator `skills:` list
-- [ ] `requires-actions` lists all dependencies (`InterviewAction`, `ZoonAPIAction`, etc.)
+- [ ] `requires-actions` lists all dependencies (`InterviewAction`, `ZoonAPIAction`, etc.) — **gate only**; lifecycle hooks bind via `extends: action:jvagent/interview_action` (or sole lifecycle-capable required Action), not `agent.yaml` order
 
 ## Reference implementations
 

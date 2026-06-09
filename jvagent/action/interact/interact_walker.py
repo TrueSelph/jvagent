@@ -810,8 +810,12 @@ class InteractWalker(Walker):
             interact_actions_in_queue.append(item)
             queued_by_id[item_id] = item
 
+        interact_actions_requested = [
+            a for a in actions if isinstance(a, InteractAction)
+        ]
+
         actions_set: set = set()
-        for a in actions:
+        for a in interact_actions_requested:
             a_id = getattr(a, "id", None)
             if a_id:
                 actions_set.add(a_id)
@@ -826,7 +830,7 @@ class InteractWalker(Walker):
             await self.dequeue(interact_actions_in_queue)
 
         dropped_ids: List[str] = []
-        for a in actions:
+        for a in interact_actions_requested:
             a_id = getattr(a, "id", None)
             if a_id and a_id not in queued_by_id:
                 dropped_ids.append(a_id)
@@ -840,7 +844,7 @@ class InteractWalker(Walker):
             )
 
         curated_order: List["InteractAction"] = []
-        for action in actions:
+        for action in interact_actions_requested:
             action_id = getattr(action, "id", None)
             if not action_id:
                 continue

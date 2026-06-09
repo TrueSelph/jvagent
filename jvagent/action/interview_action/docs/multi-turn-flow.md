@@ -37,9 +37,10 @@ State is stored on `InterviewSession.status` inside `conversation.context["inter
 ```
 User message → Orchestrator selects use_skill("<skill_name>")
             → InterviewAction.on_skill_activate()
-            → _handle_start(): create/resume session, seed fields, run post_tools for seeds
+            → _handle_start(): create or resume session (no auto-store on activation)
             → INTERVIEW task created (owner: InterviewAction)
             → SKILL task created if locked-in: true
+            → prepare_locked_skill_turn(): message evaluation on the activation utterance
 ```
 
 On every turn (including activation), `prepare_locked_skill_turn` runs **message evaluation** on the user's latest utterance:
@@ -49,7 +50,7 @@ On every turn (including activation), `prepare_locked_skill_turn` runs **message
 
 ### Entity candidate registry
 
-[`core/field_extractors.py`](../core/field_extractors.py) surfaces validator-keyed candidates for evaluation (email, phone, names, tracking numbers, training slots, etc.). Evaluation pre-validates candidates; the model performs extraction via `set_field`.
+[`core/field_extractors.py`](../core/field_extractors.py) surfaces builtin candidates (email, phone, name, date) plus skill-declared extractors in frontmatter `interview.extractors` (functions in `scripts/custom_tools.py`). Evaluation pre-validates candidates; the model performs extraction via `set_field`.
 
 ## Turn N — Typical collection turn
 
@@ -93,7 +94,7 @@ When a skill declares `locked-in: true`, the orchestrator stays in the active sk
 | Hook | Purpose |
 |------|---------|
 | `skill_runtime_ready(skill_name, visitor)` | Session + contract loaded |
-| `prepare_locked_skill_turn(skill_name, visitor)` | Mechanical `interview__next_question` seed when no question is already presented (`CTX_QUESTION_PRESENTED`) |
+| `prepare_locked_skill_turn(skill_name, visitor)` | Runs message evaluation on the latest utterance; injects `interview__message_evaluation` or `interview__next_question` observation |
 | `prune_turn_tools(tools, visible, visitor)` | Hide interview tools when runtime not ready |
 
 This keeps multi-turn interviews on-rails without hardcoding interview logic in the orchestrator.

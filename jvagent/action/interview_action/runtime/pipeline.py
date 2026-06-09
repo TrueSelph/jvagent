@@ -33,9 +33,12 @@ from .path_resolver import (
     resolve_store_continuation,
 )
 
+if TYPE_CHECKING:
+    from ..handlers._host import InterviewHandlersHost
+
 
 async def merge_auto_next_question(
-    action: "InterviewAction",
+    action: "InterviewHandlersHost",
     visitor: Any,
     payload: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -73,7 +76,7 @@ def _should_auto_advance_next_question(payload: Dict[str, Any]) -> bool:
 
 
 async def finalize_store_continuation(
-    action: "InterviewAction",
+    action: "InterviewHandlersHost",
     visitor: Any,
     payload: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -86,7 +89,7 @@ async def finalize_store_continuation(
 
 
 async def merge_auto_review(
-    action: "InterviewAction",
+    action: "InterviewHandlersHost",
     visitor: Any,
     payload: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -114,14 +117,11 @@ async def merge_auto_review(
     return payload
 
 
-if TYPE_CHECKING:
-    from ..interview_action import InterviewAction
-
 logger = logging.getLogger(__name__)
 
 
 async def run_input_handler(
-    action: "InterviewAction",
+    action: "InterviewHandlersHost",
     spec: InterviewSpec,
     question: QuestionDef,
     raw_value: str,
@@ -171,6 +171,9 @@ def _utterance_candidates(
     question: QuestionDef,
     spec: InterviewSpec,
     utterance: str,
+    *,
+    load_fn: Optional[Any] = None,
+    session: Optional[InterviewSession] = None,
 ) -> List[str]:
     """Ordered unique values to try from the user's latest message."""
     msg = (utterance or "").strip()
@@ -181,14 +184,22 @@ def _utterance_candidates(
         return [msg]
     kwargs = resolve_validator_kwargs(question, vdef)
     candidates = [msg]
-    for extracted in extract_candidates_for_question(question, vdef, msg, kwargs):
+    for extracted in extract_candidates_for_question(
+        question,
+        vdef,
+        msg,
+        kwargs,
+        spec=spec,
+        load_fn=load_fn,
+        session=session,
+    ):
         if extracted not in candidates:
             candidates.append(extracted)
     return candidates
 
 
 async def validate_field(
-    action: "InterviewAction",
+    action: "InterviewHandlersHost",
     spec: InterviewSpec,
     field_name: str,
     value: str,
@@ -240,7 +251,7 @@ async def validate_field(
 
 
 async def resolve_and_validate_field_value(
-    action: "InterviewAction",
+    action: "InterviewHandlersHost",
     spec: InterviewSpec,
     field_name: str,
     supplied_value: str,
@@ -276,7 +287,10 @@ async def resolve_and_validate_field_value(
                 return grounded
 
         last_failure: Optional[Dict[str, Any]] = None
-        for candidate in _utterance_candidates(q, spec, utterance):
+        load_fn = action._load_fn(spec)
+        for candidate in _utterance_candidates(
+            q, spec, utterance, load_fn=load_fn, session=session
+        ):
             check = await validate_field(
                 action, spec, field_name, candidate, session, visitor
             )
@@ -337,7 +351,7 @@ def build_validation_failed_payload(
 
 
 async def run_post_tools(
-    action: "InterviewAction",
+    action: "InterviewHandlersHost",
     question_def: QuestionDef,
     session: InterviewSession,
     spec: InterviewSpec,
@@ -436,7 +450,7 @@ async def run_post_tools(
 
 
 async def run_pre_tools(
-    action: "InterviewAction",
+    action: "InterviewHandlersHost",
     session: InterviewSession,
     spec: InterviewSpec,
     question_def: QuestionDef,
@@ -507,7 +521,7 @@ async def run_pre_tools(
 
 
 async def apply_store_pipeline(
-    action: "InterviewAction",
+    action: "InterviewHandlersHost",
     session: InterviewSession,
     spec: InterviewSpec,
     field_name: str,

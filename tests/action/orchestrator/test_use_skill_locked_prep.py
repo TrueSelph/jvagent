@@ -242,7 +242,91 @@ async def test_set_field_refresh_replaces_stale_message_evaluation(
     assert set_obs, "expected first set_field observation before second attempt"
     set_payload = json.loads(set_obs[0]["observation"])
     assert set_payload.get("stored") is True, set_payload
+    assert (set_payload.get("response_directive") or "").startswith("Tell the user:")
     third_tools = [o.get("tool") for o in model_calls[2]["observations"]]
     assert "interview__message_evaluation" not in third_tools
-    assert "interview__next_question" in third_tools
-    assert "interview__next_question" in model_calls[2]["skills_section"].lower()
+    assert "interview__next_question" not in third_tools
+    assert "(guard)" in third_tools
+    assert "Do NOT call interview__set_field" in model_calls[2]["skills_section"]
+
+
+@pytest.mark.asyncio
+async def test_locked_skill_name_as_tool_gets_steer_not_dispatch(
+    make_orchestrator, make_visitor, monkeypatch
+):
+    """Model naming the locked skill as a tool should steer, not waste a tick."""
+    signup = SkillDoc(
+        name="signup_interview",
+        description="JVAgent training signup.",
+        body="SOP.",
+        requires_tools=("interview__set_field", "interview__next_question"),
+        requires_actions=("InterviewAction",),
+        locked_in=True,
+    )
+
+    interview = InterviewAction(metadata={"agent_dir": str(ORCHESTRATOR_AGENT_DIR)})
+    await interview._discover_specs()
+    reply_ia = _reply_tool()
+    ex = make_orchestrator(
+        actions=[interview, reply_ia],
+        action_registry={"InterviewAction": interview, "ReplyIA": reply_ia},
+        decisions=[],
+    )
+    ex.lock_active_flow = True
+    ex.lean_tool_threshold = 0
+
+    monkeypatch.setattr(
+        OrchestratorInteractAction,
+        "_discover_skills",
+        lambda self, _agent: [signup],
+    )
+    monkeypatch.setattr(sei, "active_flow_owner", lambda v, **kw: None)
+
+    model_calls: list = []
+    decisions = [
+        {
+            "action": "tool",
+            "tool": "use_skill",
+            "args": {"name": "signup_interview"},
+        },
+        {"action": "tool", "tool": "signup_interview", "args": {}},
+        {"action": "tool", "tool": "reply", "args": {}},
+    ]
+
+    async def _spy(
+        self,
+        visitor,
+        utterance,
+        history,
+        tools,
+        observations,
+        flow_note="",
+        skills_section="",
+        **kwargs,
+    ):
+        model_calls.append({"observations": list(observations)})
+        idx = len(model_calls) - 1
+        return (
+            decisions[idx]
+            if idx < len(decisions)
+            else {"action": "final", "answer": ""}
+        )
+
+    monkeypatch.setattr(OrchestratorInteractAction, "_run_model", _spy)
+
+    v = make_visitor(utterance="Sign me up")
+    v.new_user = False
+    v.conversation.context = {}
+    v.conversation.tasks = []
+    v.conversation.save = AsyncMock()
+    interview._get_conversation = AsyncMock(return_value=v.conversation)
+
+    await ex.execute(v)
+
+    assert len(model_calls) >= 3
+    steer_obs = [
+        o for o in model_calls[2]["observations"] if o.get("tool") == "signup_interview"
+    ]
+    assert steer_obs
+    assert "active locked skill" in steer_obs[0]["observation"].lower()
+    assert "no such tool" not in steer_obs[0]["observation"].lower()

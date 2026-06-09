@@ -13,10 +13,6 @@ def _has_branching(spec: InterviewSpec) -> bool:
     return any(q.branches or q.default_next for q in spec.questions)
 
 
-def _question_index(spec: InterviewSpec) -> Dict[str, int]:
-    return {q.name: i for i, q in enumerate(spec.questions)}
-
-
 async def resolve_next_question_name(
     session: InterviewSession,
     spec: InterviewSpec,

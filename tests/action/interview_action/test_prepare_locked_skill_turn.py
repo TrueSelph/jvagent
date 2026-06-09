@@ -107,3 +107,39 @@ async def test_prepare_injects_evaluation_for_direct_answer(interview_action):
 
     assert prep.observations[0]["tool"] == "interview__message_evaluation"
     assert "Jane Doe" in prep.observations[0]["observation"]
+
+
+@pytest.mark.asyncio
+async def test_prepare_cancel_uses_model_intent_routing(interview_action):
+    """Cancel is not server-detected — prep runs evaluation then next_question."""
+    action, _spec = interview_action
+    session = InterviewSession(interview_type="signup_interview")
+    conv = MagicMock()
+    conv.context = {}
+    conv.save = AsyncMock()
+    visitor = SimpleNamespace(conversation=conv, utterance="cancel")
+    await save_session(conv, session)
+
+    prep = await action.prepare_locked_skill_turn("signup_interview", visitor)
+
+    assert prep.runtime_ready is True
+    assert len(prep.observations) == 1
+    assert prep.observations[0]["tool"] == "interview__next_question"
+    assert all(o.get("tool") != "interview__control_intent" for o in prep.observations)
+
+
+@pytest.mark.asyncio
+async def test_prepare_start_over_uses_model_intent_routing(interview_action):
+    """Start-over is not server-detected — prep runs evaluation then next_question."""
+    action, _spec = interview_action
+    session = InterviewSession(interview_type="signup_interview")
+    conv = MagicMock()
+    conv.context = {}
+    conv.save = AsyncMock()
+    visitor = SimpleNamespace(conversation=conv, utterance="start over")
+    await save_session(conv, session)
+
+    prep = await action.prepare_locked_skill_turn("signup_interview", visitor)
+
+    assert prep.observations[0]["tool"] == "interview__next_question"
+    assert all(o.get("tool") != "interview__control_intent" for o in prep.observations)

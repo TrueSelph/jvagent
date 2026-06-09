@@ -29,6 +29,7 @@ class SkillDoc:
     spec: str = "jv"
     always_active: bool = False
     locked_in: bool = False
+    extends: Optional[str] = None
     metadata: dict = field(default_factory=dict)
 
 
@@ -124,6 +125,7 @@ def discover_skill_docs(
                 spec=str(bundle.get("spec") or "jv"),
                 always_active=bool(bundle.get("always_active", False)),
                 locked_in=bool(bundle.get("locked_in", False)),
+                extends=bundle.get("extends") or None,
                 metadata=bundle.get("metadata") or {},
             )
         )

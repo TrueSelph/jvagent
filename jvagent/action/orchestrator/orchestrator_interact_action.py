@@ -1005,7 +1005,7 @@ class OrchestratorInteractAction(InteractAction):
             return
         agent = await self._safe_agent()
         keep: List[Any] = [self]
-        for action in await self._enabled_actions(agent):
+        for action in await self._enabled_interact_actions(agent):
             if action is self or isinstance(action, OrchestratorInteractAction):
                 continue
             if getattr(action, "always_execute", False):
@@ -1017,11 +1017,9 @@ class OrchestratorInteractAction(InteractAction):
                 if callable(triggers_fn)
                 else list(getattr(action, "anchors", None) or [])
             )
-            if callable(getattr(action, "execute", None)) and triggers:
+            if triggers:
                 continue  # routable/tool IA — omit from the walk path
-            keep.append(action)  # non-routable / non-flow action — keep
-        # ``curate_walk_path`` itself filters to InteractActions actually in the
-        # remaining queue, so non-walk actions in ``keep`` are harmless.
+            keep.append(action)  # non-routable IA — keep in the weight chain
         try:
             await curate(keep)
         except Exception as exc:
@@ -1930,10 +1928,37 @@ class OrchestratorInteractAction(InteractAction):
                     continue
                 nd_streak = 0
                 action, tool_name, args = self._normalize(decision, tools, skill_names)
+                if (
+                    action == "tool"
+                    and tool_name in skill_names
+                    and tool_name not in tools
+                    and active_skill_doc is not None
+                    and tool_name == getattr(active_skill_doc, "name", None)
+                ):
+                    observations.append(
+                        {
+                            "tool": tool_name,
+                            "args": args,
+                            "observation": (
+                                f"({tool_name} is the active locked skill, not a "
+                                "callable tool. Follow the ACTIVE SKILL procedure "
+                                "and use its listed tools — e.g. "
+                                "interview__set_field — or reply/respond to the "
+                                "user. Do not invoke the skill name as a tool.)"
+                            ),
+                        }
+                    )
+                    continue
                 # Progress/reasoning line for the UI's REASONING disclosure. Fires
                 # on both gears so single-step (light) turns still show their
-                # reasoning, not just multi-step heavy ones.
-                if self.stream_internal_progress:
+                # reasoning, not just multi-step heavy ones. Skip when substantive
+                # tool thoughts will surface the same tick in TOOL CALLS.
+                will_emit_tool_thought = (
+                    action == "tool"
+                    and tool_name
+                    and tool_name not in _NON_SUBSTANTIVE_TOOLS
+                )
+                if self.stream_internal_progress and not will_emit_tool_thought:
                     await self._emit_thought(
                         visitor,
                         self._progress_line(action, tool_name, args, decision),
@@ -2054,26 +2079,58 @@ class OrchestratorInteractAction(InteractAction):
                             or store_payload.get("already_stored")
                         ):
                             from jvagent.action.orchestrator.skill_tasks import (
+                                drop_stale_locked_skill_prep_observations,
                                 locked_skills_section_text,
                                 refresh_locked_skill_prep,
+                                set_field_has_reply_directive,
                             )
 
-                            prep_obs_before = len(observations)
-                            new_directive = await refresh_locked_skill_prep(
-                                active_skill_doc,
-                                loop_actions,
-                                visitor,
-                                observations,
-                            )
-                            if new_directive:
-                                locked_pending_directive = new_directive
+                            if set_field_has_reply_directive(store_payload):
+                                drop_stale_locked_skill_prep_observations(observations)
+                                directive = (
+                                    store_payload.get("response_directive") or ""
+                                ).strip()
+                                locked_pending_directive = (
+                                    f"{directive}\n"
+                                    "Field stored successfully. Reply to the user "
+                                    "using the response_directive above. Do NOT "
+                                    "call interview__set_field, "
+                                    "interview__next_question, or use_skill again "
+                                    "this turn."
+                                )
                                 skills_section = locked_skills_section_text(
                                     active_skill_doc,
                                     pending_directive=locked_pending_directive,
                                 )
-                            await self._emit_server_prep_tool_thoughts(
-                                visitor, observations, since_index=prep_obs_before
-                            )
+                                observations.append(
+                                    {
+                                        "tool": "(guard)",
+                                        "args": {},
+                                        "observation": (
+                                            "(Field stored — reply to the user "
+                                            "now using response_directive from "
+                                            "the set_field result. Do not call "
+                                            "interview tools again this turn.)"
+                                        ),
+                                    }
+                                )
+                            else:
+                                prep_obs_before = len(observations)
+                                new_directive = await refresh_locked_skill_prep(
+                                    active_skill_doc,
+                                    loop_actions,
+                                    visitor,
+                                    observations,
+                                )
+                                if new_directive:
+                                    locked_pending_directive = new_directive
+                                    skills_section = locked_skills_section_text(
+                                        active_skill_doc,
+                                        pending_directive=locked_pending_directive,
+                                    )
+                                await self._emit_server_prep_tool_thoughts(
+                                    visitor, observations, since_index=prep_obs_before
+                                )
                     # Gearing: count substantive (non-meta, non-egress) tool calls
                     # toward escalation to the heavy model.
                     if tool is not None and tool_name not in _NON_SUBSTANTIVE_TOOLS:
@@ -2758,7 +2815,7 @@ class OrchestratorInteractAction(InteractAction):
         """Class names of routable IAs exposed as tools (flow continuation keys)."""
         agent = await self._safe_agent()
         names: Set[str] = set()
-        for action in await self._enabled_actions(agent):
+        for action in await self._enabled_interact_actions(agent):
             if action is self or isinstance(action, OrchestratorInteractAction):
                 continue
             if getattr(action, "always_execute", False):
@@ -2769,11 +2826,18 @@ class OrchestratorInteractAction(InteractAction):
                 if callable(triggers_fn)
                 else list(getattr(action, "anchors", None) or [])
             )
-            if callable(getattr(action, "execute", None)) and triggers:
+            if triggers:
                 get_name = getattr(action, "get_class_name", None)
                 if callable(get_name):
                     names.add(get_name())
         return names
+
+    async def _enabled_interact_actions(self, agent: Any) -> List[InteractAction]:
+        return [
+            action
+            for action in await self._enabled_actions(agent)
+            if isinstance(action, InteractAction)
+        ]
 
     async def _enabled_actions(self, agent: Any) -> List[Any]:
         if agent is None:

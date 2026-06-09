@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any, Callable, Dict, Optional
 
 from ..core.session import InterviewSession
+from .hooks import call_hook
 
 logger = logging.getLogger(__name__)
 
@@ -134,19 +134,12 @@ async def matches_branch_condition(
         if not func:
             logger.error("Branch function '%s' not found", function_name)
             return False
-        result = func(
-            **{
-                k: v
-                for k, v in {
-                    "session": session,
-                    "visitor": visitor,
-                    "interview_action": interview_action,
-                }.items()
-                if k in _sig_params(func)
-            }
+        result = await call_hook(
+            func,
+            session=session,
+            visitor=visitor,
+            interview_action=interview_action,
         )
-        if asyncio.iscoroutine(result):
-            result = await result
         if operator:
             try:
                 return ConditionOperator.evaluate(
@@ -162,12 +155,3 @@ async def matches_branch_condition(
         return ConditionOperator.evaluate(op, actual, condition.get("value"))
     except ValueError:
         return False
-
-
-def _sig_params(func: Callable) -> set:
-    import inspect
-
-    try:
-        return set(inspect.signature(func).parameters.keys())
-    except (ValueError, TypeError):
-        return set()

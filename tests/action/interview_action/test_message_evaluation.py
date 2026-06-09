@@ -119,6 +119,24 @@ async def test_evaluation_short_direct_answer_with_question_presented(signup_act
 
 
 @pytest.mark.asyncio
+async def test_evaluation_cancel_not_applicable(signup_action):
+    action, spec = signup_action
+    session = InterviewSession(interview_type="signup_interview")
+    session.context[CTX_QUESTION_PRESENTED] = "user_name"
+
+    result = await evaluate_message_for_extraction(
+        action,
+        session,
+        spec,
+        "cancel",
+        None,
+    )
+
+    assert result.applicable == []
+    assert result.no_match_reason == "no_valid_candidates_for_missing_fields"
+
+
+@pytest.mark.asyncio
 async def test_start_does_not_auto_store_tracking(pre_alert_action):
     action, spec = pre_alert_action
     action._save_session = AsyncMock()
