@@ -71,12 +71,12 @@ interview:
 
 ### Rules
 
-1. **After description, ask optional fields before review.** While `next_questions` lists `invoice_value` or `alternative_tracking_number`, ask them (or `interview__skip_field` when the user declines) — do not call `interview__review` until `next_questions` is empty.
+1. **After description, ask optional fields before review.** While `next_fields` lists `invoice_value` or `alternative_tracking_number`, ask them (or `interview__skip_field` when the user declines) — do not call `interview__review` until `next_fields` is empty.
 2. **Tracking status check runs automatically via `post_tools`** when `tracking_number` is stored. Read `post_tools_results`; if `skip_to_review: true`, call `interview__review()`; else continue per `next_tool` / `response_directive`. Never call a tracking-status tool manually.
 3. For tracking requests **without** a tracking number in the latest message: ask for the **tracking number** only. Never ask for email, ID, or date of birth in this skill.
 4. Do not invent extra questions (weight, dimensions, origin, destination, etc.).
-5. Call `interview__review` when **`next_questions` is empty** (optional fields set or skipped) — do not use `missing_required` alone as the signal.
+5. Call `interview__review` when **`next_fields` is empty** (optional fields set or skipped) — do not use `missing_required` alone as the signal.
 
 ### Tone
 
-Friendly and concise. Bold only the **question text** from `next_questions`. If validation fails, use `error` from the tool and re-ask from `next_questions`.
+Friendly and concise. Bold only the **question text** from `next_fields`. If validation fails, use `error` from the tool and re-ask from `next_fields`.

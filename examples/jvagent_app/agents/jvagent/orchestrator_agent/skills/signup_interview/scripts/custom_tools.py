@@ -11,7 +11,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from jvagent.action.interview_action.core.responses import (
+from jvagent.action.interview_action.responses import (
     interview_tool_response,
     tell_user_directive,
     tell_user_with_followup_directive,
@@ -105,7 +105,7 @@ def _match_training_slot(raw_input: str) -> Optional[str]:
         if hour_matches and period_matches:
             return slot
 
-    # Fuzzy partial match (legacy input_handler behaviour)
+    # Fuzzy partial match — normalize shorthand like "Saturday at 9" to a full slot
     for slot in AVAILABLE_TRAINING_TIMES:
         normalized_slot = _normalize_spaces(slot)
         day_match = any(
@@ -315,7 +315,7 @@ async def get_available_training_times(
         "ok": True,
         "available_times": AVAILABLE_TRAINING_TIMES,
         "timezone": "America/New_York",
-        "directive": tell_user_directive(
+        "response_directive": tell_user_directive(
             "What times are you available to train?",
             note=(
                 "Present these available slots (Eastern Time) and ask the user to pick one:\n"
@@ -358,7 +358,6 @@ async def append_work_email_note(
     return interview_tool_response(
         ok=True,
         status="ok",
-        present_field="phone_number",
         response_directive=tell_user_with_followup_directive(
             "Thank you for using your work email! We'll send you special updates about jvagent training.",
             phone_q,
@@ -397,7 +396,6 @@ async def signup_review(
                 result["modified_values"]["phone_number"] = "__omit__"
             elif session is not None and session.is_skipped("phone_number"):
                 result["modified_values"]["phone_number"] = "__omit__"
-                result["additional_data"]["Phone"] = "skipped"
 
     return result
 
@@ -420,7 +418,7 @@ async def signup_complete(
 
     if not user_name or not user_email or not available_times:
         return {
-            "directive": (
+            "response_directive": (
                 "Some required signup fields are missing. "
                 "Please go back and collect all required information."
             )
@@ -450,7 +448,7 @@ async def signup_complete(
         times_note = f"{times_note} Format: {training_format}."
     employer_note = f" Employer: {employer_name}." if employer_name else ""
     return {
-        "directive": (
+        "response_directive": (
             f"Thank you, {user_name}! Your signup for jvagent training is complete. "
             f"We will contact you at {user_email}.{employer_note} {times_note}"
         )

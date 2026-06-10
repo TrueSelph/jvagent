@@ -48,18 +48,18 @@ User message → Orchestrator selects use_skill("<skill_name>")
 On every turn (including activation), the model follows base `SKILL.md` intent routing:
 
 - Classify the user's message (answer, correct/update, multi-answer, cancel, etc.).
-- Call the matching tool (`interview__set_fields`, `interview__next_question`, `interview__reset`, …).
-- Chain follow-up tools per SOP (e.g. `set_fields` → `next_question` → reply).
+- Call the matching tool (`interview__set_fields`, `interview__next_field`, `interview__reset`, …).
+- Chain follow-up tools per SOP (e.g. `set_fields` → `next_field` → reply).
 
 `prepare_locked_skill_turn` only confirms the interview runtime is ready — it does **not** inject observations or directives.
 
 ### Anti-pattern: chat-only roleplay before activation
 
-If the model skips `use_skill` and asks field prompts via `reply` alone, there is no session — `prune_turn_tools` hides `interview__*` tools and answers are not stored. Late `use_skill` cannot backfill values from earlier chat turns (utterance grounding). The user may need to repeat one field once. Fix: follow base SOP **Activation (session gate)** — `use_skill` first, then `interview__next_question`, then `reply`.
+If the model skips `use_skill` and asks field prompts via `reply` alone, there is no session — `prune_turn_tools` hides `interview__*` tools and answers are not stored. Per base SOP, values from chat turns before `use_skill` are not reused; the user may need to repeat one field once. Fix: follow base SOP **Activation (session gate)** — `use_skill` first, then `interview__next_field`, then `reply`.
 
 ### Field extraction
 
-The model extracts values from utterances and passes them to `interview__set_fields`. Validators are the hard gate; [`core/field_extractors.py`](../core/field_extractors.py) supports validation-time hints.
+The model extracts values from utterances and passes them to `interview__set_fields`. Validators are the only server-side gate — there is no re-extraction path. `set_fields` stops at the first validation failure: already-stored fields stay stored, per-field `results` are included, and the top-level `response_directive` carries the failed field's validation guidance.
 
 ## Turn N — Typical collection turn
 
@@ -78,10 +78,10 @@ sequenceDiagram
         IA->>H: post_tools (if configured)
         H-->>IA: post_tools_results
         IA-->>O: ok:true, fields, post_tools_results, response_directive
-        O->>IA: interview__next_question()
+        O->>IA: interview__next_field()
         IA->>H: pre_tools (if configured)
         H-->>IA: pre_tools_results
-        IA-->>O: next_questions, response_directive
+        IA-->>O: next_fields, response_directive
         O->>U: Single reply per response_directive
     else invalid
         IA-->>O: ok:false, error
@@ -93,8 +93,8 @@ sequenceDiagram
 
 1. **One action per turn** — each tool returns one `response_directive`. Do not ask a question and call another tool in the same turn unless the directive says to call a tool only.
 2. **Read `ok` first** — if `ok: false`, handle the error; `post_tools` did not run.
-3. **Read hook results** — inspect `post_tools_results` / `pre_tools_results` before calling `next_question` or `review`.
-4. **`response_directive` wins** — when it conflicts with `next_questions`, follow the directive.
+3. **Read hook results** — inspect `post_tools_results` / `pre_tools_results` before calling `next_field` or `review`.
+4. **`response_directive` wins** — when it conflicts with `next_fields`, follow the directive.
 
 ## Turn-lock (`locked-in: true`)
 
@@ -112,8 +112,8 @@ This keeps multi-turn interviews on-rails without hardcoding interview logic in 
 
 For `required: false` questions:
 
-- User declines → `interview__skip_field(field)` then `interview__next_question()`.
-- Do not call `interview__review()` while optional fields remain in `next_questions` unless the procedure explicitly allows it.
+- User declines → `interview__skip_field(field)` then `interview__next_field()`.
+- Do not call `interview__review()` while optional fields remain in `next_fields` unless the procedure explicitly allows it.
 
 ## Branching without a state machine
 
@@ -121,7 +121,7 @@ Branching is **procedure-driven**, not graph-evaluated:
 
 | Mechanism | How branching works |
 |-----------|---------------------|
-| `post_processor` | Returns `skip_to_review: true` → LLM calls `interview__review()` |
+| `post_processor` | Returns `next_tool: interview__review` → LLM calls `interview__review()` |
 | Custom validator | Returns `interview_complete: true` → stop; post-processors skipped |
 | Review handler | Returns `terminate: true` → deliver message; no `interview__complete()` |
 | `session.context` | Post-processors set flags (e.g. `escalate`, `otp_pending`) read by later hooks or SKILL.md |
@@ -133,24 +133,24 @@ Document branches in `SKILL.md` and implement side effects in hooks.
 
 ### Collectible path vs active projection (prune)
 
-Path resolution uses two walks (`path_resolver.py`):
+Path resolution uses two walks ([`flow.py`](../flow.py)):
 
 | Walk | API | Stops when | Drives |
 |------|-----|------------|--------|
-| **Collectible** | `compute_collectible_path_names` | First field without a stored value (and not skipped) | `missing_required`, store authorization, `resolve_next_question_name`, `next_questions` |
+| **Collectible** | `compute_collectible_path_names` | First field without a stored value (and not skipped) | `missing_required`, `resolve_next_field_name`, `next_fields` |
 | **Active projection** | `compute_active_path_for_prune` | Unresolved branch point only (no linear fallback through `branches` without a match/`else`) | `prune_unreachable_fields` only |
 
 On an empty session, collectible path is typically just the first field (e.g. signup `user_name` only) — downstream branch targets are not listed in `missing_required` until the branch-determining field is answered. Unanswered branch points with no matching `else` stop the active projection at that field (e.g. onboarding `has_account` before `existing_email` is chosen).
 
-`compute_reachable_question_names` is an alias for the collectible prefix path.
+`compute_collectible_path_names` is an alias for the collectible prefix path.
 
 ### Branch path invalidation (corrections)
 
 When the user corrects a field that determines a branch (`fields[].branches`), prune recomputes the **active projection** from stored values and **removes only off-path fields** — answers on the new path that remain valid (e.g. `contact` after `user_type` premium→standard, or `phone_number` after email branch pivot) are preserved.
 
 - Pruned field names are recorded in `session.context.pruned_fields` and may appear as `pruned_fields` on `interview__set_fields` responses.
-- Prune also clears `skipped_fields` entries and stale `question_presented` / `field_suggestion` scratch keys for pruned fields.
-- `missing_required` and `resolve_next_question_name` use the **collectible** prefix; after a correction, call `interview__next_question` when `next_tool` is chained — do not assume every spec field is still collected.
+- Prune also clears `skipped_fields` entries for pruned fields.
+- `missing_required` and `resolve_next_field_name` use the **collectible** prefix; after a correction, call `interview__next_field` when `next_tool` is chained — do not assume every spec field is still collected.
 
 ## Review and completion turns
 
@@ -170,7 +170,7 @@ If the user wants to edit during review, call `interview__set_fields` for the fi
 | Path | When | Effect |
 |------|------|--------|
 | `interview__cancel()` | User explicitly cancels (default skills) | Clear session, cancel tasks |
-| `interview__reset()` | User wants to start over (default) | Clear + re-init from first question |
+| `interview__reset()` | User wants to start over (default) | Clears collected fields/skips **in place** (session stays active, task stays open); returns `next_tool: interview__next_field` |
 | `interview__reset()` + `handlers.reset` | Skill overrides reset (e.g. onboarding) | Routes to custom handler — may cancel-and-exit instead of restart |
 | New session after complete/cancel | User starts again | Call `use_skill("<name>")` again |
 

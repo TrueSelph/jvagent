@@ -5,12 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, List, Set, Tuple
 
-from .core.interview_loader import (
-    INTERVIEW_FRONTMATTER_KEY,
-    load_interview_spec_from_skill,
-)
-from .core.validators import BUILTIN_VALIDATORS
-from .runtime.hooks import load_hook_function
+from .hooks import load_hook_function
+from .spec import INTERVIEW_FRONTMATTER_KEY, load_interview_spec_from_skill
+from .validators import BUILTIN_VALIDATORS
 
 
 def _collect_function_refs(spec: Any) -> Set[str]:
@@ -18,8 +15,6 @@ def _collect_function_refs(spec: Any) -> Set[str]:
     for f in spec.fields:
         if f.validator:
             refs.add(f.validator)
-        if f.input_handler:
-            refs.add(f.input_handler)
         refs.update(f.pre_processor or [])
         refs.update(f.post_processor or [])
     for tool in spec.skill_tools or []:
@@ -54,8 +49,7 @@ def validate_interview_skill_dir(skill_dir: Path) -> Tuple[bool, List[str]]:
     for name in sorted(refs):
         if name in BUILTIN_VALIDATORS:
             continue
-        func = load_hook_function(spec, name)
-        if func is None:
+        if load_hook_function(spec, name) is None:
             issues.append(
                 f"Function '{name}' referenced in frontmatter but not in custom_tools.py"
             )

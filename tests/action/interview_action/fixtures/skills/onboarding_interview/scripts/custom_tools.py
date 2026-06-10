@@ -19,7 +19,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from jvagent.action.interview_action.core.responses import (
+from jvagent.action.interview_action.responses import (
     call_tool_directive,
     interview_tool_response,
     no_session_directive,
@@ -46,7 +46,7 @@ _RESET_CANCELLED_DIRECTIVE = tell_user_directive(
     "you'll need to complete the onboarding process first.",
     note=(
         "Deliver this message only. Do not ask for phone, email, or other onboarding fields. "
-        "Do not call interview__next_question, interview__set_field, or any other interview tools."
+        "Do not call interview__next_field, interview__set_fields, or any other interview tools."
     ),
 )
 
@@ -279,7 +279,7 @@ async def _complete_otp_success(
     phone_updated: bool = False,
 ) -> str:
     """Mark onboarding complete after OTP verification; return welcome directive."""
-    from jvagent.action.interview_action.core.session import (
+    from jvagent.action.interview_action.session import (
         InterviewStatus,
     )
 
@@ -512,13 +512,13 @@ async def get_phone_number(
     return {
         "ok": True,
         "value": digits,
-        "directive": tell_user_directive(
+        "response_directive": tell_user_directive(
             f"We have {digits} on file from WhatsApp. Would you like to use this "
             "as your contact number?",
             note=(
                 "On the user's NEXT message: if they confirm (yes/ok/sure), call "
-                "interview__set_field(field='phone_number', value=<digits>). "
-                "Read post_tools_results; if exists:false, call interview__next_question."
+                'interview__set_fields with {"fields": {"phone_number": "<digits>"}}). '
+                "Read post_tools_results; if exists:false, call interview__next_field."
             ),
         ),
     }
@@ -541,12 +541,12 @@ async def suggest_email_from_task(
     return {
         "ok": True,
         "suggested_value": suggested,
-        "directive": tell_user_directive(
+        "response_directive": tell_user_directive(
             f"We have {suggested} on file from your previous onboarding. "
             "Would you like to use this email?",
             note=(
                 "On the user's NEXT message: if they confirm (yes/ok/sure), call "
-                f"interview__set_field(field='email', value='{suggested}'). "
+                f'interview__set_fields with {{"fields": {{"email": "{suggested}"}}}}). '
                 "If they provide a different email, save that instead."
             ),
         ),
@@ -598,7 +598,7 @@ async def verify_phone_number(
                     flow_mode="onboard",
                 )
                 if session is not None:
-                    from jvagent.action.interview_action.core.session import (
+                    from jvagent.action.interview_action.session import (
                         InterviewStatus,
                     )
 
@@ -674,7 +674,7 @@ async def verify_email(
             status="error",
             error_code="MISSING_FIELD",
             system_message="Email not yet stored in session.",
-            response_directive=call_tool_directive("interview__set_field"),
+            response_directive=call_tool_directive("interview__set_fields"),
         )
 
     session_phone = _normalize_phone_digits(session.get_value("phone_number") or "")
@@ -726,7 +726,7 @@ async def verify_email(
                 "account.",
                 note=(
                     "Call onboarding_interview__send_otp now. Do not call "
-                    "interview__next_question until OTP is handled or skipped."
+                    "interview__next_field until OTP is handled or skipped."
                 ),
             ),
             next_tool="onboarding_interview__send_otp",
@@ -798,7 +798,7 @@ async def send_otp(
                 f"We found a different phone number linked to your account. A verification code has been sent to the number ending with {hint}. Please enter the code to verify your identity.",
                 note=(
                     "When the user provides the code, call "
-                    "interview__set_field(field='otp_code', value=<code>)."
+                    'interview__set_fields with {"fields": {"otp_code": "<code>"}}).'
                 ),
             ),
         }
@@ -1040,7 +1040,7 @@ async def complete_onboarding(
     result: Dict[str, Any] = {}
 
     if not extracted_values or not interview_action:
-        result["directive"] = "No extracted values to process."
+        result["response_directive"] = "No extracted values to process."
         return result
 
     account_result = None
@@ -1063,14 +1063,16 @@ async def complete_onboarding(
             account_result = await action.create_customer(**params)
     except Exception as e:
         logger.error(f"complete_onboarding: create_customer failed: {e}")
-        result["directive"] = f"Account creation failed: {e}. Please try again."
+        result["response_directive"] = (
+            f"Account creation failed: {e}. Please try again."
+        )
         return result
 
     account_created = account_result and account_result.get("status") == 200
 
     if account_created:
         account_number = account_result.get("account_number")
-        result["directive"] = (
+        result["response_directive"] = (
             f"Account created successfully! Account number: **{account_number}**. "
             f"Inform the user they can use this account number as the shipping address for their packages. "
             f"Link: http://zoonshop.com/cargo-shipping"
@@ -1082,18 +1084,20 @@ async def complete_onboarding(
             otp_sent = await _send_whatsapp_otp(interview_action, email)
 
         if otp_sent:
-            result["directive"] = (
+            result["response_directive"] = (
                 "A different WhatsApp number is already connected to an account with this ID. "
                 "A verification code was sent to the email on file. "
                 "Ask the user to enter the OTP code they received."
             )
         else:
-            result["directive"] = (
+            result["response_directive"] = (
                 "A different WhatsApp number is already connected to an account with this ID. "
                 "We could not send a verification code. Please contact support or try again later."
             )
     else:
-        result["directive"] = "Account creation failed. Please try again later."
+        result["response_directive"] = (
+            "Account creation failed. Please try again later."
+        )
 
     if visitor is None:
         try:

@@ -8,18 +8,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from jvagent.action.interview_action.core.interview_loader import (
-    load_interview_spec_from_skill,
-    parse_interview_spec,
-)
-from jvagent.action.interview_action.core.session import (
-    CTX_FIELD_SUGGESTION,
-    CTX_QUESTION_PRESENTED,
-    InterviewSession,
+from jvagent.action.interview_action.flow import (
+    resolve_next_field_name,
 )
 from jvagent.action.interview_action.interview_action import InterviewAction
-from jvagent.action.interview_action.runtime.path_resolver import (
-    resolve_next_question_name,
+from jvagent.action.interview_action.session import InterviewSession
+from jvagent.action.interview_action.spec import (
+    load_interview_spec_from_skill,
+    parse_interview_spec,
 )
 from tests.action.interview_action.conftest import (
     ORCHESTRATOR_AGENT_DIR,
@@ -91,7 +87,7 @@ async def test_pivot_preserves_shared_downstream(branching_spec):
     action._save_session = AsyncMock()
 
     result = json.loads(
-        await action._handle_set_field(field="user_type", value="standard")
+        await action._handle_set_fields(fields={"user_type": "standard"})
     )
 
     assert result["ok"] is True
@@ -113,16 +109,15 @@ async def test_signup_email_pivot_preserves_phone(signup_action):
     action._save_session = AsyncMock()
 
     result = json.loads(
-        await action._handle_set_field(
-            field="user_email",
-            value="jane@mail.com",
+        await action._handle_set_fields(
+            fields={"user_email": "jane@mail.com"},
         )
     )
 
     assert result["ok"] is True
     assert session.get_value("user_email") == "jane@mail.com"
     assert session.get_value("phone_number") == "5551234567"
-    nxt = await resolve_next_question_name(session, spec, lambda _n: None)
+    nxt = await resolve_next_field_name(session, spec, lambda _n: None)
     assert nxt == "employer_name"
 
 
@@ -139,9 +134,8 @@ async def test_signup_slot_pivot_preserves_downstream(signup_action):
     action._save_session = AsyncMock()
 
     result = json.loads(
-        await action._handle_set_field(
-            field="available_times",
-            value="Monday 9:00 AM - 11:00 AM",
+        await action._handle_set_fields(
+            fields={"available_times": "Monday 9:00 AM - 11:00 AM"},
         )
     )
 
@@ -160,17 +154,13 @@ async def test_prune_clears_skipped_for_dead_branch(branching_spec):
     session.set_value("user_type", "premium")
     session.set_value("premium_q", "orphan")
     session.skipped_fields.add("premium_q")
-    session.context[CTX_QUESTION_PRESENTED] = "premium_q"
-    session.context[CTX_FIELD_SUGGESTION] = {"field": "premium_q", "value": "x"}
     action._get_session_and_contract = AsyncMock(return_value=(session, branching_spec))
     action._save_session = AsyncMock()
 
-    await action._handle_set_field(field="user_type", value="standard")
+    await action._handle_set_fields(fields={"user_type": "standard"})
 
     assert "premium_q" not in session.fields
     assert "premium_q" not in session.skipped_fields
-    assert CTX_QUESTION_PRESENTED not in session.context
-    assert CTX_FIELD_SUGGESTION not in session.context
 
 
 @pytest.mark.asyncio
@@ -184,9 +174,8 @@ async def test_post_pivot_extraction_stores_next_field(signup_action):
     action._save_session = AsyncMock()
 
     pivot = json.loads(
-        await action._handle_set_field(
-            field="available_times",
-            value="Monday 9:00 AM - 11:00 AM",
+        await action._handle_set_fields(
+            fields={"available_times": "Monday 9:00 AM - 11:00 AM"},
         )
     )
     assert pivot["ok"] is True
@@ -203,4 +192,3 @@ async def test_post_pivot_extraction_stores_next_field(signup_action):
 
     assert result["ok"] is True
     assert session.get_value("user_email") == "jane@gmail.com"
-    assert result["validated_from"] in ("utterance", "supplied_grounded")

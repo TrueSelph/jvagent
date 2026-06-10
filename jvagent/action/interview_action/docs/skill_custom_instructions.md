@@ -11,19 +11,19 @@ Canonical base SOP: [`../SKILL.md`](../SKILL.md). Design contract: [platform thi
 | When to use (1–3 bullets) | Flow overview listing each field |
 | Domain-specific session overrides | Procedure Step 1…N per field |
 | Behavioral rules (OTP gates, exists:true stop) | Duplicated core instructions |
-| Custom tool callouts when non-obvious | Question wording (use `interview.fields[].guidance` + `next_questions`) |
+| Custom tool callouts when non-obvious | Question wording (use `interview.fields[].guidance` + `next_fields`) |
 | Strong `description` frontmatter for orchestrator routing | Activation / session-gate rules (`use_skill` before field questions) |
 | | **Answer quality gate** (base procedure) |
 | | **Model extraction** — user utterances → `interview__set_fields` per base procedure (no server prep steering) |
 | | **Intent routing** — cancel vs start over vs answer vs start interview (base procedure) |
-| | **Activation (session gate)** — `use_skill`, late activation, utterance grounding (base procedure) |
+| | **Activation (session gate)** — `use_skill`, late activation (base procedure) |
 | | Cancel/reset/`set_field` decision rules (base procedure) |
 | | Chaining rules and `Tell the user:` reply-only turns (base procedure) |
 | | Per-field "when X appears in applicable, call set_field" restatements (base covers first missing applicable field) |
 
 ## Field guidance as acceptance criteria
 
-Each `interview.fields[].guidance` is **model-facing acceptance criteria** — what counts as a substantive answer for that field. It is surfaced in `next_questions` tool observations alongside the prompt.
+Each `interview.fields[].guidance` is **model-facing acceptance criteria** — what counts as a substantive answer for that field. It is surfaced in `next_fields` tool observations alongside the prompt.
 
 Write descriptions to help the model apply the base procedure's **Answer quality gate** (see [`../SKILL.md`](../SKILL.md)):
 
@@ -79,7 +79,7 @@ disabled-tools:
 interview:
   handlers:
     reset: reset_onboarding
-    description: Cancel onboarding and stop — do not chain next_question.
+    description: Cancel onboarding and stop — do not chain next_field.
 ```
 
 ## Custom instructions body

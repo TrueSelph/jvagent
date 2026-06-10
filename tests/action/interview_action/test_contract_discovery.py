@@ -28,7 +28,7 @@ async def test_resolve_skills_dirs_uses_app_root_and_agent_metadata(tmp_path):
     }
 
     with patch("jvagent.core.app_context.get_app_root", return_value=str(tmp_path)):
-        dirs = await action._resolve_skills_dirs()
+        dirs = await action.resolve_skill_scan_dirs()
 
     assert dirs == [str(tmp_path / "agents" / "zoon" / "zoon_ai" / "skills")]
 
@@ -55,7 +55,7 @@ async def test_resolve_skills_dirs_falls_back_to_agent_node(tmp_path, monkeypatc
     )
 
     with patch("jvagent.core.app_context.get_app_root", return_value=str(tmp_path)):
-        dirs = await action._resolve_skills_dirs()
+        dirs = await action.resolve_skill_scan_dirs()
 
     assert len(dirs) == 1
     assert dirs[0].endswith("agents/zoon/zoon_ai/skills")
@@ -116,7 +116,7 @@ async def test_resolve_skills_dirs_includes_action_overlay(tmp_path):
     }
 
     with patch("jvagent.core.app_context.get_app_root", return_value=str(tmp_path)):
-        dirs = await action._resolve_skills_dirs()
+        dirs = await action.resolve_skill_scan_dirs()
 
     expected = str(
         tmp_path
@@ -200,6 +200,6 @@ async def test_does_not_walk_up_to_jvagent_skills_library(monkeypatch):
             "get_agent",
             AsyncMock(return_value=None),
         )
-        dirs = await action._resolve_skills_dirs()
+        dirs = await action.resolve_skill_scan_dirs()
 
     assert dirs == []

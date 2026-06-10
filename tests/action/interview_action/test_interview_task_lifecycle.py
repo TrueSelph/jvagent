@@ -1,4 +1,4 @@
-"""Tests for interview-type-aware task tracking in InterviewAction."""
+"""Tests for interview-type-aware task tracking."""
 
 from __future__ import annotations
 
@@ -6,9 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from jvagent.action.interview_action.interview_action import (
-    InterviewAction,
-)
+from jvagent.action.interview_action import tasks
 
 
 def _task(owner_action: str, interview_type: str | None = None, updated_at: str = ""):
@@ -37,12 +35,10 @@ def test_find_existing_active_task_matches_interview_type():
     visitor = MagicMock()
     visitor.tasks = store
 
-    found = InterviewAction._find_existing_active_task(visitor, "pre_alert_interview")
+    found = tasks._find_existing_active_task(visitor, "pre_alert_interview")
     assert found is pre_alert
 
-    found_onboard = InterviewAction._find_existing_active_task(
-        visitor, "onboarding_interview"
-    )
+    found_onboard = tasks._find_existing_active_task(visitor, "onboarding_interview")
     assert found_onboard is onboarding
 
 
@@ -61,7 +57,7 @@ def test_find_existing_active_task_finds_skill_task():
     visitor = MagicMock()
     visitor.tasks = store
 
-    found = InterviewAction._find_existing_active_task(visitor, "pre_alert_interview")
+    found = tasks._find_existing_active_task(visitor, "pre_alert_interview")
     assert found is skill_task
 
 
@@ -83,8 +79,7 @@ async def test_close_task_filters_by_spec_name():
     visitor = MagicMock()
     visitor.tasks = store
 
-    action = InterviewAction()
-    await action._close_task(
+    await tasks.close_task(
         visitor, status="cancelled", spec_name="onboarding_interview"
     )
 

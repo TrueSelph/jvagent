@@ -5,11 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from jvagent.action.interview_action.core.interview_loader import (
+from jvagent.action.interview_action.spec import (
     InterviewRegistry,
     load_interview_spec_from_skill,
 )
-from jvagent.action.interview_action.core.tools import build_tools
+from jvagent.action.interview_action.tools import build_tools
 
 _SKILLS_DIR = Path(__file__).resolve().parent / "fixtures/skills"
 
@@ -53,7 +53,7 @@ def test_core_tools_keep_interview_prefix():
     names = {t.name for t in tools}
 
     assert "interview__init" not in names
-    assert "interview__set_field" in names
-    assert "interview__next_question" in names
-    assert "interview__next_question" in names
+    assert "interview__set_fields" in names
+    assert "interview__next_field" in names
+    assert "interview__next_field" in names
     assert "interview__review" in names

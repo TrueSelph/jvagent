@@ -1,4 +1,4 @@
-"""Tests for interview__next_question."""
+"""Tests for interview__next_field."""
 
 from __future__ import annotations
 
@@ -8,12 +8,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from jvagent.action.interview_action.core.interview_loader import (
-    load_interview_spec_from_skill,
-)
-from jvagent.action.interview_action.core.session import InterviewSession
 from jvagent.action.interview_action.interview_action import (
     InterviewAction,
+)
+from jvagent.action.interview_action.session import InterviewSession
+from jvagent.action.interview_action.spec import (
+    load_interview_spec_from_skill,
 )
 
 _SKILLS_DIR = Path(__file__).resolve().parent / "fixtures/skills"
@@ -29,7 +29,7 @@ def onboarding_action():
 
 
 @pytest.mark.asyncio
-async def test_next_question_redirects_to_review_when_done(onboarding_action):
+async def test_next_field_redirects_to_review_when_done(onboarding_action):
     action, contract = onboarding_action
     session = InterviewSession(interview_type="onboarding_interview")
     session.fields = {
@@ -43,7 +43,7 @@ async def test_next_question_redirects_to_review_when_done(onboarding_action):
     session.skipped_fields.add("otp_code")
     action._get_session_and_contract = AsyncMock(return_value=(session, contract))
 
-    result = json.loads(await action._handle_next_question())
+    result = json.loads(await action._handle_next_field())
 
     assert result["ok"] is True
     assert result["next_tool"] == "interview__review"
@@ -51,11 +51,11 @@ async def test_next_question_redirects_to_review_when_done(onboarding_action):
 
 
 @pytest.mark.asyncio
-async def test_next_question_no_session_returns_ok_false(onboarding_action):
+async def test_next_field_no_session_returns_ok_false(onboarding_action):
     action, _contract = onboarding_action
     action._get_session_and_contract = AsyncMock(return_value=(None, None))
 
-    result = json.loads(await action._handle_next_question())
+    result = json.loads(await action._handle_next_field())
 
     assert result["ok"] is False
     assert result["error_code"] == "NO_SESSION"

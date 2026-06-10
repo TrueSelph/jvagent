@@ -130,7 +130,7 @@ Set `binds_tools_to_visitor = True` on `InterviewAction` so tool dispatch receiv
 
 ### Function loading
 
-`InterviewAction._load_custom_function()` resolves functions from `skills/<name>/scripts/custom_tools.py` (or `custom_tools.py` at the skill root). Functions are called with signature-filtered kwargs:
+`hooks.load_hook_function()` resolves functions from `skills/<name>/scripts/custom_tools.py`. Functions are called with signature-filtered kwargs via `hooks.call_hook()`:
 
 | Injected kwarg | When available |
 |----------------|----------------|
@@ -147,7 +147,7 @@ Custom validators receive `session` (in addition to `value`, `visitor`, `intervi
 
 Machine contract lives under the `interview:` key in `SKILL.md` frontmatter (loaded by `InterviewRegistry` via `load_interview_spec_from_skill`).
 
-**Canonical schema:** [docs/frontmatter-schema.md](docs/frontmatter-schema.md) — all keys, branching, `confirm` mode, and the legacy-key migration table.
+**Canonical schema:** [docs/frontmatter-schema.md](docs/frontmatter-schema.md) — all keys, branching, `confirm` mode, strict allowlist parsing.
 
 ### Quick shape
 
@@ -186,7 +186,7 @@ interview:
 - Validators are **strings** plus optional `validator_args` — nested `{function, kwargs}` objects are rejected.
 - Custom validators return JSON or dict with `valid`, `value`, `error`; may set `interview_complete`, `response_directive`, `retain_context_keys` on success.
 - Reset: model calls `interview__reset()`; foundation routes to `handlers.reset` when set.
-- Utterance extraction is **model-owned** via `interview__set_fields`; builtin hints in [`core/field_extractors.py`](core/field_extractors.py) are validation-time only (no frontmatter extractors).
+- Utterance extraction is **model-owned** via `interview__set_fields`; the server has no extraction path — validators are the only gate (no frontmatter extractors).
 
 ## `SKILL.md` reference
 
@@ -239,13 +239,13 @@ At discovery, `discover_skill_docs` prepends the framework [standard procedure](
 3. **Session overrides** — cancel/reset tools.
 4. **Custom tool callouts** — when non-obvious.
 
-Do **not** list fields as Procedure steps or Flow overview — field order and prompts come from frontmatter `interview.fields` and runtime `next_questions`. See [docs/skill_custom_instructions.md](docs/skill_custom_instructions.md).
+Do **not** list fields as Procedure steps or Flow overview — field order and prompts come from frontmatter `interview.fields` and runtime `next_fields`. See [docs/skill_custom_instructions.md](docs/skill_custom_instructions.md).
 
 ### Reply rules (enforce in every skill)
 
 - Each tool returns **one** `response_directive` — do **one** thing per turn.
-- **`response_directive` beats `next_questions`** when they conflict.
-- Use `interview__set_field(field=..., value=...)` — parameter is `field`, **not** `name`.
+- **`response_directive` beats `next_fields`** when they conflict.
+- Use `interview__set_fields` with args `{"fields": {"field_key": "value", ...}}` — never put field keys at the top level.
 - Always call `interview__review()` before `interview__complete()` (unless review sets `terminate: true`).
 - Never reuse field values from older chat turns.
 
@@ -259,18 +259,18 @@ Organize the file into labeled sections (see [example](examples/example_intervie
 | Pre-processor | `fields[].pre_processor` | Dict or `interview_tool_response` JSON | No |
 | Post-processor | `fields[].post_processor` | `interview_tool_response` JSON | No |
 | Skill tool | `interview.skill_tools` | `interview_tool_response` JSON (preferred) or `dict` | Yes (`{skill}__{name}`) |
-| Review handler | `handlers.review` | `Dict` with `directive` | No |
+| Review handler | `handlers.review` | `Dict` with `response_directive` | No |
 | Reset handler | `handlers.reset` | `interview_tool_response` or dict with `response_directive` | No |
-| Completion handler | `handlers.complete` | `Dict` with `directive`, optional `retain_context_keys` | No |
+| Completion handler | `handlers.complete` | `Dict` with `response_directive`, optional `retain_context_keys` | No |
 
 LLM-facing custom tools should use `interview_tool_response()` for a consistent envelope (`ok`, `status`, `system_message`, `response_directive`). The framework also accepts plain `dict` returns via `_finalize_tool_response`.
 
 ### Response helpers
 
-Use helpers from [`core/responses.py`](core/responses.py) — do not invent ad-hoc directive formats:
+Use helpers from [`responses.py`](responses.py) — do not invent ad-hoc directive formats:
 
 ```python
-from jvagent.action.interview_action.core.responses import (
+from jvagent.action.interview_action.responses import (
     call_tool_directive,
     interview_tool_response,
     tell_user_directive,
@@ -287,35 +287,32 @@ call_tool_directive("interview__review")
 interview_tool_response(
     ok=True,
     status="ok",
-    skip_to_review=True,
+    next_tool="interview__review",
     response_directive=call_tool_directive("interview__review"),
 )
 ```
 
 ## Core `interview__*` tools
 
-Primary tools registered by [`core/tools.py`](core/tools.py). Sessions start via `use_skill` → `on_skill_activate` (there is no `interview__init`).
+Primary tools registered by [`tools.py`](tools.py). Sessions start via `use_skill` → `on_skill_activate` (there is no `interview__init`).
 
 | Tool | Purpose |
 |------|---------|
 | `interview__set_fields(fields)` | Validate and store one or more fields; runs `post_processor` hooks per field on success |
-| `interview__get_fields(fields?)` | Read stored values (omit for all collected) |
 | `interview__skip_field(field)` | Skip an optional field |
-| `interview__next_question()` | Get next unanswered question; runs `pre_processor` hooks |
-| `interview__get_status()` | Full session dump |
+| `interview__next_field()` | Resolve next unanswered field; runs `pre_processor` hooks |
+| `interview__get_status()` | Session metadata: `fields`, `missing_required`, `skipped_fields`, `confirm`, `status` (no embedded next field) |
 | `interview__review()` | Present summary (or custom review handler) |
 | `interview__complete()` | Finalize (or custom completion handler) |
 | `interview__cancel()` | Cancel and clear session |
-| `interview__reset()` | Clear progress and restart from the first question (or custom `handlers.reset`) |
-
-Deprecated aliases: `interview__set_field`, `interview__get_field`.
+| `interview__reset()` | Clear progress and restart; returns `next_tool: interview__next_field` hint (model chains explicitly) |
 
 ### Chaining gate
 
 Always read `ok` from tool responses before advancing:
 
 - `ok: false` → handle the error; post-processors do **not** run.
-- `ok: true` → read `post_tools_results` / `pre_tools_results` before calling `next_question`.
+- `ok: true` → read `post_tools_results` / `pre_tools_results` before calling `next_field`.
 
 ## Response envelope
 
@@ -327,29 +324,29 @@ All tools return JSON with these key fields:
 | `status` | Machine-readable status (`ok`, `error`, `validation_failed`, etc.) |
 | `fields` | All collected field values |
 | `missing_required` | Required fields not yet collected |
-| `next_questions` | Questions the LLM should ask next |
+| `next_fields` | Questions the LLM should ask next |
 | `response_directive` | Single next action for the LLM |
 | `pre_tools_results` | Outcomes from pre_tool hooks |
 | `post_tools_results` | Outcomes from post_tool hooks |
 
-### Post-tool result keys
+### Hook result keys
 
-Exposed to the LLM via `POST_TOOL_RESULT_KEYS` in [`core/responses.py`](core/responses.py):
+Pre/post processor results are slimmed via `HOOK_RESULT_KEYS` in [`responses.py`](responses.py) before reaching the LLM:
 
 | Key | Meaning |
 |-----|---------|
-| `skip_to_review` | Jump to `interview__review()` — skip remaining questions |
-| `interview_complete` | Interview is done server-side — stop |
-| `exists` | Entity already exists (e.g. registered customer) — stop |
-| `otp_pending` | OTP required — LLM must call `{skill}__send_otp` before asking for `otp_code` |
-| `next_tool` | Suggested next tool to call |
-| `response_directive` | Override directive for this hook result |
+| `ok` / `status` | Hook outcome |
+| `value` / `error` / `error_code` | Result detail |
+| `system_message` | Context for the model about what happened (not a user reply) |
+| `response_directive` | Override directive for this hook result — wins over the default chain hint |
+| `next_tool` | Suggested next tool to call (e.g. `interview__review`) |
+| `interview_complete` | Interview is done server-side — session cleared, task closed |
 
-`interview_complete` may also appear on the top-level `interview__set_fields` response when a custom validator sets it (post_tools are skipped for that field).
+Skill-specific signals (e.g. an "already registered" stop or an OTP gate) are expressed through `response_directive` / `next_tool` / `system_message` — there are no special-cased keys in the foundation. `interview_complete` may also appear on the top-level `interview__set_fields` response when a custom validator sets it (post_processors are skipped for that field).
 
 ## Builtin validators
 
-Defined in [`core/validators.py`](core/validators.py):
+Defined in [`validators.py`](validators.py):
 
 | Name | Purpose | Common kwargs |
 |------|---------|---------------|
@@ -370,20 +367,18 @@ Custom validators go in `scripts/custom_tools.py` and are referenced by function
 
 ## Intent routing (model extracts)
 
-The model classifies each user message per base `SKILL.md` (answer, correct/update, multi-answer, cancel, etc.) and calls the appropriate tool. The server validates and stores via `interview__set_fields`; it does **not** auto-inject `next_question` or scan utterances at prep time.
+The model classifies each user message per base `SKILL.md` (answer, correct/update, multi-answer, cancel, etc.) and calls the appropriate tool. The server validates and stores via `interview__set_fields`; it does **not** auto-inject `next_field` or scan utterances at prep time.
 
-After successful stores, the model chains `interview__next_question` or `interview__review` per SOP — no server-side `merge_auto_*` inlining.
+After successful stores, the model chains `interview__next_field` or `interview__review` per SOP — no server-side `merge_auto_*` inlining.
 
 Corrections to previously stored fields use `interview__set_fields` at any time (mid-interview or at review).
-
-[`core/field_extractors.py`](core/field_extractors.py) supports validation-time candidate hints (validator-keyed).
 
 ## Patterns from live skills
 
 | Pattern | Onboarding | Pre-alert | Example |
 |---------|------------|-----------|---------|
 | Pre-tool suggestion | `get_phone_number`, `suggest_email_from_task` | — | `suggest_email` |
-| Post-tool branch | `verify_phone_number` (stop if exists), `verify_email` (OTP branch) | `check_tracking_status` (skip_to_review) | `check_low_rating` (skip_to_review) |
+| Post-tool branch | `verify_phone_number` (stop if exists), `verify_email` (OTP branch) | `check_tracking_status` (`next_tool: interview__review`) | `check_low_rating` (`next_tool: interview__review`) |
 | Validator completes flow | `validate_otp_code` (`interview_complete`) | — | — |
 | LLM custom tools | `send_otp`, `process_id_card` | none | — |
 | Custom reset | `handlers.reset` → `reset_onboarding` (cancel-and-exit) | base `interview__reset` | base default |
@@ -414,7 +409,7 @@ Corrections to previously stored fields use `interview__set_fields` at any time 
 
 **Cancel / reset (`reset_onboarding` via `handlers.reset`):**
 
-Onboarding disables `interview__cancel` and routes cancel/start-over through `interview__reset()` → `reset_onboarding` handler. Clears session, cancels SKILL + INTERVIEW tasks, informs the user onboarding was cancelled and is required to chat, then **stops** — no `interview__next_question`. User re-initiates via `use_skill`.
+Onboarding disables `interview__cancel` and routes cancel/start-over through `interview__reset()` → `reset_onboarding` handler. Clears session, cancels SKILL + INTERVIEW tasks, informs the user onboarding was cancelled and is required to chat, then **stops** — no `interview__next_field`. User re-initiates via `use_skill`.
 
 ### SKILL task data persistence
 
@@ -465,7 +460,7 @@ Existing tests under `tests/action/interview_action/`:
 | `test_interview_set_field_validation.py` | Validator accept/reject, OTP flow, `interview_complete` from validator |
 | `test_interview_skill_activate.py` | Contract loading, skill activation |
 | `test_interview_task_lifecycle.py` | Task isolation between interview types |
-| `test_interview_next_question.py` | Pre-tool execution, next question ordering |
+| `test_interview_next_field.py` | Pre-tool execution, next question ordering |
 | `test_interview_tool_response_envelope.py` | Response envelope shape |
 | `test_set_fields.py` | Batch store, mid-interview corrections, review corrections |
 | `test_check_customer_exists.py` | `verify_phone_number` stop path, field mapper helpers |
@@ -485,8 +480,8 @@ Existing tests under `tests/action/interview_action/`:
 - [ ] Post-tools return `interview_tool_response` with `response_directive`
 - [ ] LLM custom tools return `interview_tool_response` with clear `response_directive` (especially stop/cancel paths)
 - [ ] If persisting to SKILL task data, normalize fields and call `_persist_skill_task_data` before `handle.complete()` / `_close_task`
-- [ ] Review handler returns `directive`; terminate path sets `terminate: true`
-- [ ] Completion handler returns `directive` with user-facing message
+- [ ] Review handler returns `response_directive`; terminate path sets `terminate: true`
+- [ ] Completion handler returns `response_directive` with user-facing message
 - [ ] Skill registered in `agent.yaml` orchestrator `skills:` list
 - [ ] `requires-actions` lists all dependencies (`InterviewAction`, `ZoonAPIAction`, etc.) — **gate only**; lifecycle hooks bind via `extends: action:jvagent/interview_action` (or sole lifecycle-capable required Action), not `agent.yaml` order
 

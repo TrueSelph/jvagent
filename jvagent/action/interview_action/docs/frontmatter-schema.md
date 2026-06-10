@@ -1,6 +1,6 @@
 # Interview frontmatter schema (`interview:`)
 
-Canonical shape for the `interview:` block in skill `SKILL.md` frontmatter. Legacy keys are rejected at parse time.
+Canonical shape for the `interview:` block in skill `SKILL.md` frontmatter. Only keys listed below are accepted — unknown keys fail at parse time.
 
 Schema choices follow the **[thin harness principle](../../../../docs/thin-harness.md)** and [interview profile](thin-harness.md): no `extractors` (model extracts via `interview__set_fields`); processors and handlers are automatic triggers, not LLM tools (`skill_tools` only).
 
@@ -47,7 +47,6 @@ Each value is a **string** (function name), not a nested `{ function: … }` obj
 | `validator_args` | No | Kwargs passed to the validator |
 | `pre_processor` | No | Function name or list — runs before asking |
 | `post_processor` | No | Function name or list — runs after successful store |
-| `input_handler` | No | Normalizes raw input before validation |
 | `branches` | No | Conditional routing — see below |
 | `else` | No | Default next field when no branch matches |
 
@@ -94,17 +93,6 @@ interview:
     complete: signup_complete
 ```
 
-## Removed (breaking)
+## Strict parsing
 
-| Old key | Replacement |
-|---------|---------------|
-| `description` (top-level) | `summary` |
-| `questions` | `fields` |
-| `name` / `question` / `description` (per-field) | `key` / `prompt` / `guidance` |
-| `pre_tools` / `post_tools` | `pre_processor` / `post_processor` |
-| `validator: { function, kwargs }` | `validator` + `validator_args` |
-| `review` / `completion` / `reset` / `cancel` (top-level) | `handlers.*` |
-| `tools` | `skill_tools` |
-| `extractors` | *(removed — model extracts via `set_fields`)* |
-| `default_next` | `else` |
-| `branches[].condition` / `target` | `when` / `goto` |
+The parser accepts only the keys documented in this file. Typos and obsolete key names (e.g. `questions`, `pre_tools`, `tools`) raise `Unknown frontmatter key '…'`. Validators must be function-name strings plus optional `validator_args` — not nested mappings.

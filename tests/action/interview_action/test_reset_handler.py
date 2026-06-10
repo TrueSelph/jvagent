@@ -9,11 +9,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from jvagent.action.interview_action.core.interview_loader import (
+from jvagent.action.interview_action.interview_action import InterviewAction
+from jvagent.action.interview_action.session import InterviewSession, save_session
+from jvagent.action.interview_action.spec import (
     load_interview_spec_from_skill,
 )
-from jvagent.action.interview_action.core.session import InterviewSession, save_session
-from jvagent.action.interview_action.interview_action import InterviewAction
 
 _ONBOARDING = Path(__file__).resolve().parent / "fixtures/skills/onboarding_interview"
 

@@ -8,7 +8,7 @@ import pytest
 
 import jvagent.core.app_context as app_context
 import jvagent.scaffold.skill_resolve as skill_resolve
-from jvagent.action.interview_action.core.procedure import (
+from jvagent.action.interview_action.procedure import (
     compose_interview_skill_body,
     get_standard_interview_procedure,
 )
@@ -27,8 +27,8 @@ def _reset_cache():
 def test_get_standard_interview_procedure():
     body = get_standard_interview_procedure()
     assert "Standard Interview Procedure" in body
-    assert "Intent routing" in body
-    assert "Corrections" in body
+    assert "Intent → tool" in body
+    assert "Correct / update" in body
     assert "interview__cancel" in body
     assert "interview__set_fields" in body
     assert "interview__reset" in body
@@ -36,11 +36,10 @@ def test_get_standard_interview_procedure():
 
 def test_standard_procedure_includes_session_gate():
     body = get_standard_interview_procedure()
-    assert "Activation (session gate)" in body
-    assert "**Start interview**" in body
+    assert "Session gate" in body
     assert "use_skill" in body
-    assert "no interview questions via `reply` alone" in body.lower()
-    assert "Late activation" in body
+    assert "No session → no field prompts in `reply`" in body
+    assert "Activation:" in body
 
 
 def test_compose_interview_skill_body_without_custom():
@@ -81,9 +80,9 @@ async def test_discover_skill_docs_uses_precomposed_body(monkeypatch):
                 },
                 "allowed_tools": [
                     "interview__set_fields",
-                    "interview__get_fields",
+                    "interview__get_status",
                     "interview__skip_field",
-                    "interview__next_question",
+                    "interview__next_field",
                     "interview__get_status",
                     "interview__review",
                     "interview__complete",
@@ -114,8 +113,8 @@ async def test_discover_skill_docs_uses_precomposed_body(monkeypatch):
     }
 
     assert "Standard Interview Procedure" in docs["signup_interview"].body
-    assert "Intent routing" in docs["signup_interview"].body
-    assert "Corrections" in docs["signup_interview"].body
+    assert "Intent → tool" in docs["signup_interview"].body
+    assert "Branching" in docs["signup_interview"].body
     assert "interview__reset" in docs["signup_interview"].requires_tools
     assert "interview__set_fields" in docs["signup_interview"].requires_tools
     assert "## Custom instructions" in docs["signup_interview"].body
@@ -131,7 +130,10 @@ def test_signup_skill_custom_instructions_model_owned_flow():
 
     assert "interview__set_fields" in composed
     assert "interview__reset" in composed
-    assert "Corrections" in composed
+    assert "Correct / update" in composed
     assert "interview__message_evaluation" not in composed
-    assert "Turn flow" in composed
-    assert "Activation" in composed
+    assert "Chaining" in composed
+    assert "Session gate" in composed
+    assert "Branching" in composed
+    assert "available_times" in composed
+    assert "jvagent training" in composed.lower()

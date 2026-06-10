@@ -134,20 +134,20 @@ async def test_use_skill_reactivates_interview_session_when_missing():
         description="Onboarding.",
         body="SOP: ask phone.",
         requires_actions=("InterviewAction",),
-        requires_tools=("interview__next_question",),
+        requires_tools=("interview__next_field",),
     )
     activated: list = []
 
     async def _activate(skill_doc):
         assert skill_doc.name == "onboarding_interview"
-        return "Interview session ready (onboarding_interview). Call interview__next_question next."
+        return "Interview session ready (onboarding_interview). Call interview__next_field next."
 
     async def _reactivate(skill_doc):
         return skill_doc.name == "onboarding_interview"
 
     tools = build_skill_meta_tools(
         [doc],
-        {"interview__next_question"},
+        {"interview__next_field"},
         activated,
         activate_hook=_activate,
         reactivate_hook=_reactivate,
@@ -157,7 +157,7 @@ async def test_use_skill_reactivates_interview_session_when_missing():
 
     assert "already active" in out
     assert "Interview session ready" in out
-    assert "interview__next_question" in out
+    assert "interview__next_field" in out
 
 
 async def test_render_skills_section():

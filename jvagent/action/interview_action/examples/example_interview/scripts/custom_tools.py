@@ -22,7 +22,7 @@ import logging
 import re
 from typing import Any, Dict, Optional
 
-from jvagent.action.interview_action.core.responses import (
+from jvagent.action.interview_action.responses import (
     call_tool_directive,
     interview_tool_response,
     no_session_directive,
@@ -130,11 +130,11 @@ async def suggest_email(
     return {
         "ok": True,
         "suggested_value": suggested,
-        "directive": tell_user_directive(
+        "response_directive": tell_user_directive(
             f"We have {suggested} on file. Would you like to use this for follow-up?",
             note=(
                 "On the user's NEXT message: if they confirm (yes/ok/sure), call "
-                f"interview__set_field(field='follow_up_email', value='{suggested}'). "
+                f'interview__set_fields with {{"fields": {{"follow_up_email": "{suggested}"}}}}). '
                 "If they provide a different email, save that instead."
             ),
         ),
@@ -152,8 +152,8 @@ async def check_low_rating(
 ) -> str:
     """Post-tool after product_rating — escalate low ratings to review.
 
-    Pattern from pre_alert_interview ``check_tracking_status``: set session
-    context and return skip_to_review so the LLM jumps to review.
+    Set session context and return ``next_tool: interview__review`` so the
+    response queues a jump to review.
     """
     if session is None:
         return interview_tool_response(
@@ -161,7 +161,6 @@ async def check_low_rating(
             status="error",
             error_code="NO_SESSION",
             system_message="No active interview session for rating check.",
-            skip_to_review=False,
             response_directive=no_session_directive(),
         )
 
@@ -174,8 +173,7 @@ async def check_low_rating(
             status="error",
             error_code="INVALID_RATING",
             system_message="Product rating not yet stored in session.",
-            skip_to_review=False,
-            response_directive=call_tool_directive("interview__set_field"),
+            response_directive=call_tool_directive("interview__set_fields"),
         )
 
     if rating <= _LOW_RATING_THRESHOLD:
@@ -190,7 +188,6 @@ async def check_low_rating(
         return interview_tool_response(
             ok=True,
             status="escalation",
-            skip_to_review=True,
             system_message=f"Rating {rating} triggers escalation — skip remaining questions.",
             next_tool="interview__review",
             response_directive=call_tool_directive("interview__review"),
@@ -199,7 +196,6 @@ async def check_low_rating(
     return interview_tool_response(
         ok=True,
         status="ok",
-        skip_to_review=False,
         system_message="Rating accepted — continue collecting feedback.",
     )
 
@@ -274,11 +270,11 @@ async def reset_example_interview(
                 visitor,
                 user_message="",
             )
-            next_obs = await interview_action._handle_next_question(visitor)
+            next_obs = await interview_action._handle_next_field(visitor)
             first_question = "What is your name?"
             try:
                 parsed = json.loads(next_obs)
-                next_qs = parsed.get("next_questions") or []
+                next_qs = parsed.get("next_field") or []
                 if next_qs and next_qs[0].get("question"):
                     first_question = str(next_qs[0]["question"])
             except (json.JSONDecodeError, TypeError, IndexError, KeyError):
@@ -333,7 +329,7 @@ async def example_review(
     )
 
     if escalate:
-        result["directive"] = _ESCALATION_MESSAGE
+        result["response_directive"] = _ESCALATION_MESSAGE
         result["modified_values"]["__terminate__"] = "true"
         result["terminate"] = True
         return result
@@ -363,7 +359,7 @@ async def example_complete(
     This example avoids external API dependencies.
     """
     if not extracted_values:
-        return {"directive": "No feedback data to save."}
+        return {"response_directive": "No feedback data to save."}
 
     customer_name = (extracted_values.get("customer_name") or "").strip()
     product_rating = (extracted_values.get("product_rating") or "").strip()
@@ -372,7 +368,7 @@ async def example_complete(
 
     if not customer_name or not product_rating or not follow_up_email:
         return {
-            "directive": (
+            "response_directive": (
                 "Some required feedback fields are missing. "
                 "Please go back and collect all required information."
             )
@@ -406,7 +402,7 @@ async def example_complete(
             logger.debug("example_complete: close interview task failed: %s", exc)
 
     return {
-        "directive": (
+        "response_directive": (
             f"Thank you, {customer_name}! Your rating of {product_rating}/5 "
             "has been recorded. We appreciate your feedback."
         )

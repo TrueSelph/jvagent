@@ -171,20 +171,20 @@ class TestConditionalBranching:
         assert matches is False
 
     @pytest.mark.asyncio
-    async def test_get_next_questions_with_branches(self, test_session_with_branches):
+    async def test_get_next_fields_with_branches(self, test_session_with_branches):
         """Test getting next questions based on branch conditions."""
         session = test_session_with_branches
 
         # Set premium response
         session.set_response("user_type", "premium")
 
-        next_questions = await session.get_next_questions("user_type")
-        assert "premium_features" in next_questions
+        next_fields = await session.get_next_fields("user_type")
+        assert "premium_features" in next_fields
 
         # Set standard response
         session.set_response("user_type", "standard")
-        next_questions = await session.get_next_questions("user_type")
-        assert "standard_setup" in next_questions
+        next_fields = await session.get_next_fields("user_type")
+        assert "standard_setup" in next_fields
 
     @pytest.mark.asyncio
     async def test_get_reachable_unanswered_questions_with_branches(self, test_db):

@@ -798,7 +798,7 @@ async def test_apply_locked_skill_rebootstraps_missing_session_into_observations
         name="OnboardingSkill",
         description="Customer onboarding interview.",
         body="SOP: ask for phone.",
-        requires_tools=("interview__next_question",),
+        requires_tools=("interview__next_field",),
         requires_actions=("InterviewAction",),
         locked_in=True,
     )
@@ -826,11 +826,11 @@ async def test_apply_locked_skill_rebootstraps_missing_session_into_observations
                     "fields": {},
                     "skipped_fields": [],
                 }
-            return f"Interview session ready ({skill_name}). Call interview__next_question next."
+            return f"Interview session ready ({skill_name}). Call interview__next_field next."
 
-        async def _handle_next_question(self, visitor=None):
+        async def _handle_next_field(self, visitor=None):
             return (
-                '{"ok":true,"status":"active","next_questions":'
+                '{"ok":true,"status":"active","next_field":'
                 '[{"name":"phone","question":"What is your best phone number?"}]}'
             )
 
@@ -838,7 +838,7 @@ async def test_apply_locked_skill_rebootstraps_missing_session_into_observations
             conv = await self._get_conversation(visitor)
             if conv is None:
                 return False
-            from jvagent.action.interview_action.core.session import has_active_session
+            from jvagent.action.interview_action.session import has_active_session
 
             return has_active_session(conv)
 
@@ -850,12 +850,12 @@ async def test_apply_locked_skill_rebootstraps_missing_session_into_observations
 
             if not await self.skill_runtime_ready(skill_name, visitor):
                 return LockedSkillPrep(runtime_ready=False)
-            next_obs = await self._handle_next_question(visitor)
+            next_obs = await self._handle_next_field(visitor)
             return LockedSkillPrep(
                 runtime_ready=True,
                 observations=[
                     {
-                        "tool": "interview__next_question",
+                        "tool": "interview__next_field",
                         "args": {},
                         "observation": next_obs,
                     }
@@ -865,7 +865,7 @@ async def test_apply_locked_skill_rebootstraps_missing_session_into_observations
         async def get_tools(self):
             return [
                 Tool(
-                    name="interview__next_question",
+                    name="interview__next_field",
                     description="Next question.",
                     parameters_schema={"type": "object", "properties": {}},
                     execute=lambda *args, **kw: None,
@@ -938,9 +938,7 @@ async def test_apply_locked_skill_rebootstraps_missing_session_into_observations
     assert len(session_obs) == 1
     assert "Interview session ready (OnboardingSkill)" in session_obs[0]["observation"]
     assert "Turn-lock is ON" in spied_skills_section[0]
-    next_q_obs = [
-        o for o in spied_obs[0] if o.get("tool") == "interview__next_question"
-    ]
+    next_q_obs = [o for o in spied_obs[0] if o.get("tool") == "interview__next_field"]
     assert len(next_q_obs) == 1
     assert "phone number" in next_q_obs[0]["observation"].lower()
     ev = _activation(v)
@@ -960,7 +958,7 @@ async def test_auto_start_applies_session_ensure_after_use_skill(
         name="OnboardingSkill",
         description="Onboarding.",
         body="SOP: phone first.",
-        requires_tools=("interview__next_question",),
+        requires_tools=("interview__next_field",),
         requires_actions=("InterviewAction",),
         locked_in=True,
     )
@@ -993,9 +991,9 @@ async def test_auto_start_applies_session_ensure_after_use_skill(
                 }
             return f"Session bootstrapped for {skill_name}."
 
-        async def _handle_next_question(self, visitor=None):
+        async def _handle_next_field(self, visitor=None):
             return (
-                '{"ok":true,"status":"active","next_questions":'
+                '{"ok":true,"status":"active","next_field":'
                 '[{"name":"phone","question":"What is your phone?"}]}'
             )
 
@@ -1003,7 +1001,7 @@ async def test_auto_start_applies_session_ensure_after_use_skill(
             conv = await self._get_conversation(visitor)
             if conv is None:
                 return False
-            from jvagent.action.interview_action.core.session import has_active_session
+            from jvagent.action.interview_action.session import has_active_session
 
             return has_active_session(conv)
 
@@ -1015,12 +1013,12 @@ async def test_auto_start_applies_session_ensure_after_use_skill(
 
             if not await self.skill_runtime_ready(skill_name, visitor):
                 return LockedSkillPrep(runtime_ready=False)
-            next_obs = await self._handle_next_question(visitor)
+            next_obs = await self._handle_next_field(visitor)
             return LockedSkillPrep(
                 runtime_ready=True,
                 observations=[
                     {
-                        "tool": "interview__next_question",
+                        "tool": "interview__next_field",
                         "args": {},
                         "observation": next_obs,
                     }
@@ -1030,7 +1028,7 @@ async def test_auto_start_applies_session_ensure_after_use_skill(
         async def get_tools(self):
             return [
                 Tool(
-                    name="interview__next_question",
+                    name="interview__next_field",
                     description="Next.",
                     parameters_schema={"type": "object", "properties": {}},
                     execute=lambda *args, **kw: None,
@@ -1089,7 +1087,7 @@ async def test_auto_start_applies_session_ensure_after_use_skill(
 
     assert activate_calls["n"] >= 1
     assert len(spied) == 1
-    assert set(spied[0]["tools"]) == {"interview__next_question", "reply"}
+    assert set(spied[0]["tools"]) == {"interview__next_field", "reply"}
     assert "ACTIVE SKILL IN PROGRESS: OnboardingSkill" in spied[0]["skills_section"]
     session_obs = [
         o for o in spied[0]["observations"] if o.get("tool") == "(skill-session)"
@@ -1097,8 +1095,6 @@ async def test_auto_start_applies_session_ensure_after_use_skill(
     assert len(session_obs) == 1
     assert "Session bootstrapped" in session_obs[0]["observation"]
     next_q_obs = [
-        o
-        for o in spied[0]["observations"]
-        if o.get("tool") == "interview__next_question"
+        o for o in spied[0]["observations"] if o.get("tool") == "interview__next_field"
     ]
     assert len(next_q_obs) == 1

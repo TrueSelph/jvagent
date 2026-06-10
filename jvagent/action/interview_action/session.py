@@ -1,14 +1,12 @@
 """Interview session — lightweight field-value store persisted in conversation.context.
 
-Unlike the v1 SkillInterviewSession which tracks extraction status per field,
-branch evaluation state, and a current_question pointer, InterviewSession is minimal:
-the LLM decides what to ask next and which tools to call.  The session only
-stores the collected values and the interview status.
+The LLM decides what to ask next and which tools to call; the session only
+stores collected values, skipped fields, status, and a scratch ``context`` dict
+for skill hooks.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -51,9 +49,8 @@ class InterviewSession:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "InterviewSession":
-        status_val = data.get("status", "active")
         try:
-            status = InterviewStatus(status_val)
+            status = InterviewStatus(data.get("status", "active"))
         except ValueError:
             status = InterviewStatus.ACTIVE
 
@@ -88,14 +85,11 @@ class InterviewSession:
         return field_name in self.fields and bool(self.fields[field_name])
 
     def missing_required(self, required_fields: List[str]) -> List[str]:
-        missing = []
-        for f in required_fields:
-            if not self.has_field(f) and not self.is_skipped(f):
-                missing.append(f)
-        return missing
-
-    def all_required_collected(self, required_fields: List[str]) -> bool:
-        return len(self.missing_required(required_fields)) == 0
+        return [
+            f
+            for f in required_fields
+            if not self.has_field(f) and not self.is_skipped(f)
+        ]
 
     def get_collected_summary(self) -> Dict[str, str]:
         return dict(self.fields)
@@ -105,11 +99,6 @@ class InterviewSession:
 
 
 SESSION_KEY = "interview"
-
-# Scratch keys in InterviewSession.context — runtime flow state, not domain data.
-CTX_QUESTION_PRESENTED = "question_presented"
-# {"field": <key>, "value": <str>} — pre_processor suggestion the user may confirm.
-CTX_FIELD_SUGGESTION = "field_suggestion"
 
 # Conversation.context keys owned by the platform (not interview runtime).
 CONVERSATION_CONTEXT_PLATFORM_KEYS: FrozenSet[str] = frozenset({"new_user"})
@@ -141,8 +130,7 @@ def clear_interview_context(
     ctx = getattr(conversation, "context", None)
     if not isinstance(ctx, dict):
         return
-    extra = frozenset(retain_keys or ())
-    retain = CONVERSATION_CONTEXT_PLATFORM_KEYS | extra
+    retain = CONVERSATION_CONTEXT_PLATFORM_KEYS | frozenset(retain_keys or ())
     preserved = {k: ctx[k] for k in retain if k in ctx}
     ctx.clear()
     ctx.update(preserved)
@@ -152,8 +140,7 @@ def has_active_session(conversation) -> bool:
     data = conversation.context.get(SESSION_KEY)
     if not data or not isinstance(data, dict):
         return False
-    status = data.get("status", "")
-    return status in (
+    return data.get("status", "") in (
         InterviewStatus.ACTIVE.value,
         InterviewStatus.REVIEW.value,
     )

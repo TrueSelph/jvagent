@@ -1444,7 +1444,7 @@ class OrchestratorInteractAction(InteractAction):
 
         Pre-loop ``apply_locked_skill_turn`` covers auto-start and resumed tasks;
         model-driven ``use_skill`` on tick 1 skipped that path, so message
-        evaluation / next_question prep never ran on the activation turn.
+        evaluation / next_field prep never ran on the activation turn.
         """
         if not (activation_obs or "").startswith("Activated skill"):
             return None, tools, visible, ""

@@ -175,7 +175,7 @@ class SignupInterviewInteractAction(InterviewInteractAction):
         description="List of question configurations defining the interview graph. Can be overridden in agent.yaml. "
                     "Supports conditional branching via 'branches' and 'default_next'. "
                     "Enhanced condition operators are supported (==, !=, >, >=, <, <=, in, contains, exists, matches). "
-                    "Example: {\"condition\": {\"question\": \"age\", \"operator\": \">=\", \"value\": 18}, \"target\": \"next_question\"} "
+                    "Example: {\"condition\": {\"question\": \"age\", \"operator\": \">=\", \"value\": 18}, \"target\": \"next_field\"} "
                     "Handlers, validators, and directive overrides can be registered via decorators "
                     "(@input_handler, @input_validator, @input_directive_override) or specified as string "
                     "references in constraints (input_handler, input_validator)."

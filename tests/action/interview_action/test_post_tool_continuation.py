@@ -8,14 +8,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from jvagent.action.interview_action.core.interview_loader import (
+from jvagent.action.interview_action.interview_action import InterviewAction
+from jvagent.action.interview_action.session import InterviewSession
+from jvagent.action.interview_action.spec import (
     load_interview_spec_from_skill,
 )
-from jvagent.action.interview_action.core.session import (
-    CTX_QUESTION_PRESENTED,
-    InterviewSession,
-)
-from jvagent.action.interview_action.interview_action import InterviewAction
 from tests.action.interview_action.conftest import (
     ORCHESTRATOR_AGENT_DIR,
     SIGNUP_INTERVIEW_SKILL_DIR,
@@ -40,12 +37,12 @@ async def test_email_store_chains_to_optional_phone(signup_action):
     action._save_session = AsyncMock()
 
     result = json.loads(
-        await action._handle_set_field(field="user_email", value="jane@gmail.com")
+        await action._handle_set_fields(fields={"user_email": "jane@gmail.com"})
     )
 
     assert result["ok"] is True
-    assert result.get("next_tool") == "interview__next_question"
-    assert "Call interview__next_question" in (result.get("response_directive") or "")
+    assert result.get("next_tool") == "interview__next_field"
+    assert "Call interview__next_field" in (result.get("response_directive") or "")
 
 
 @pytest.mark.asyncio
@@ -58,11 +55,10 @@ async def test_work_email_post_tool_delivers_phone_followup(signup_action):
     action._save_session = AsyncMock()
 
     result = json.loads(
-        await action._handle_set_field(field="user_email", value="eldon@mail.com")
+        await action._handle_set_fields(fields={"user_email": "eldon@mail.com"})
     )
 
     assert result["ok"] is True
     directive = result.get("response_directive") or ""
     assert "work email" in directive.lower()
     assert "phone" in directive.lower()
-    assert session.context.get(CTX_QUESTION_PRESENTED) == "phone_number"

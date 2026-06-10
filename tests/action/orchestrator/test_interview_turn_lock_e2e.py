@@ -33,7 +33,7 @@ def _reply_tool():
     return ReplyIA()
 
 
-async def test_new_user_auto_start_opens_session_and_seeds_next_question(
+async def test_new_user_auto_start_opens_session_and_seeds_next_field(
     make_orchestrator, make_visitor, tmp_path, monkeypatch
 ):
     skill_dir = (
@@ -58,7 +58,7 @@ interview:
         name="onboarding_interview",
         description="Onboarding.",
         body="SOP: collect phone.",
-        requires_tools=("interview__next_question", "interview__set_fields"),
+        requires_tools=("interview__next_field", "interview__set_fields"),
         requires_actions=("InterviewAction",),
         locked_in=True,
     )
@@ -119,9 +119,9 @@ interview:
 
     assert v.conversation.context.get("interview", {}).get("status") == "active"
     assert len(captured) == 1
-    assert "interview__next_question" in captured[0]["tools"]
+    assert "interview__next_field" in captured[0]["tools"]
     assert "interview__set_fields" in captured[0]["tools"]
     tool_names = [o.get("tool") for o in captured[0]["observations"]]
     assert "use_skill" in tool_names
-    # Prep no longer auto-injects next_question; model calls it per SOP.
-    assert "interview__next_question" not in tool_names
+    # Prep no longer auto-injects next_field; model calls it per SOP.
+    assert "interview__next_field" not in tool_names

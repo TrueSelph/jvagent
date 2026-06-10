@@ -33,7 +33,7 @@ If a fix would add server-side turn steering (prep observations, auto-store, ext
 **Symptom:** Branching logic in post-tool ignored.
 
 **Causes:**
-- `interview__set_field` returned `ok: false` (validation failed).
+- `interview__set_fields` returned `ok: false` (validation failed).
 - Validator returned `interview_complete: true` (post-processors skipped by design).
 - LLM called hook function manually instead of `set_field`.
 
@@ -47,10 +47,10 @@ If a fix would add server-side turn steering (prep observations, auto-store, ext
 
 **Causes:**
 - Model paraphrased `fields[].prompt` or skill `description` without opening a session.
-- `use_skill` delayed until a later turn; utterance grounding rejects pre-activation values.
+- `use_skill` delayed until a later turn; per base SOP, values from pre-activation chat turns are not reused.
 - Per-skill body duplicated activation rules weakly or inconsistently instead of relying on composed base SOP.
 
-**Fix:** Base **Activation (session gate)** in [`SKILL.md`](../SKILL.md): `use_skill` → `interview__next_question` (or activation `set_fields`) before field questions. Strengthen skill `description` for orchestrator routing; keep domain rules only in custom instructions. On `NO_SESSION`, follow `response_directive` — do not compensate with chat-only questions.
+**Fix:** Base **Activation (session gate)** in [`SKILL.md`](../SKILL.md): `use_skill` → `interview__next_field` (or activation `set_fields`) before field questions. Strengthen skill `description` for orchestrator routing; keep domain rules only in custom instructions. On `NO_SESSION`, follow `response_directive` — do not compensate with chat-only questions.
 
 ---
 
@@ -59,7 +59,7 @@ If a fix would add server-side turn steering (prep observations, auto-store, ext
 **Symptom:** Questions out of order or optional fields skipped silently.
 
 **Causes:**
-- LLM ignored `next_questions` or followed stale `next_questions` from a prior turn.
+- LLM ignored `next_fields` or followed stale `next_fields` from a prior turn.
 - `response_directive` conflict not resolved (directive wins).
 - Procedure in `SKILL.md` unclear about optional field handling.
 
@@ -71,7 +71,7 @@ If a fix would add server-side turn steering (prep observations, auto-store, ext
 
 **Symptom:** Email/phone stored without user confirming.
 
-**Cause:** LLM replied with the suggested value instead of calling `interview__set_field`.
+**Cause:** LLM replied with the suggested value instead of calling `interview__set_fields`.
 
 **Fix:** In `SKILL.md`, state explicitly: "When pre_processor suggests a value, ask user to confirm, then call `interview__set_fields` on their next message."
 
@@ -94,9 +94,9 @@ If a fix would add server-side turn steering (prep observations, auto-store, ext
 
 **Symptom:** Summary shown before optional fields handled.
 
-**Cause:** LLM called `interview__review()` while `next_questions` still had items.
+**Cause:** LLM called `interview__review()` while `next_fields` still had items.
 
-**Fix:** Procedure should require empty `next_questions` (or explicit `skip_field` for optional items) before review.
+**Fix:** Procedure should require empty `next_fields` (or explicit `skip_field` for optional items) before review.
 
 ---
 
@@ -117,17 +117,17 @@ If a fix would add server-side turn steering (prep observations, auto-store, ext
 - Skill wrote interview scratch to `conversation.context` without `retain_context_keys`.
 - Custom reset tool did not call `_clear_interview_session`.
 
-**Fix:** After complete/cancel, require `use_skill` to start fresh. Persist only platform/profile keys via `retain_context_keys` on completion handlers or `interview_complete` validators. For custom reset behavior, set `handlers.reset` in frontmatter (see `_handle_custom_reset` in `interview_action.py`). Most skills use the built-in default via `interview__reset()` with no `handlers.reset`.
+**Fix:** After complete/cancel, require `use_skill` to start fresh. Persist only platform/profile keys via `retain_context_keys` on completion handlers or `interview_complete` validators. For custom reset behavior, set `handlers.reset` in frontmatter (routed by `handle_reset` in `engine.py`). Most skills use the built-in default via `interview__reset()` with no `handlers.reset`.
 
 ---
 
-## Triple `interview__next_question` on activation
+## Duplicate `interview__next_field` calls
 
-**Symptom:** First turn calls `next_question` multiple times; user sees duplicate asks.
+**Symptom:** Turn calls `next_field` multiple times; user sees duplicate asks.
 
-**Cause:** LLM calls `interview__next_question` after turn prep already seeded the first question.
+**Cause:** LLM chains `interview__next_field` again after already receiving the question directive this turn.
 
-**Fix:** The standard procedure (composed via extends) covers turn-prep — reply from activation `response_directive`; do not call `next_question` again until after `set_field` returns `ok:true`.
+**Fix:** The standard procedure (composed via extends) covers chaining — one `next_field` per turn; do not call it again until after `set_fields` returns `ok:true`.
 
 ---
 
@@ -145,7 +145,7 @@ If a fix would add server-side turn steering (prep observations, auto-store, ext
 
 **Symptom:** `interview__set_fields` stores an incorrect substring from the user message.
 
-**Fix:** Tighten `fields[].guidance` and custom validators. Builtin hints in `field_extractors.py` cover email, phone, and date patterns only — the model owns utterance extraction via `interview__set_fields`; there is no frontmatter `extractors` block.
+**Fix:** Tighten `fields[].guidance` and custom validators — the model owns utterance extraction via `interview__set_fields`; validators are the only server-side gate and there is no frontmatter `extractors` block.
 
 ---
 
@@ -166,5 +166,5 @@ pytest tests/action/interview_action/ -v
 Key test files:
 - `test_interview_set_field_validation.py` — validators
 - `test_skill_tool_names.py` — hook vs tool exposure
-- `test_interview_next_question.py` — pre-tools
+- `test_interview_next_field.py` — pre-tools
 - `test_interview_skill_activate.py` — contract loading

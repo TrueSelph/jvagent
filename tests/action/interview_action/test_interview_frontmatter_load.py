@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from jvagent.action.interview_action.core.interview_loader import (
+from jvagent.action.interview_action.spec import (
     InterviewRegistry,
     load_interview_spec_from_skill,
     parse_interview_spec,

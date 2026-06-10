@@ -36,7 +36,7 @@ These are **regression boundaries**. Breaking them reintroduces a “fat harness
 
 8. **Foundation stays domain-agnostic** — no per-app field names, business phrases, or skill-specific validators in generic orchestrator or shared action pipeline code. Domain fixes belong in skill `custom_tools.py`, action-local handlers, or skill frontmatter.
 
-9. **Utterance grounding where applicable** — when a tool accepts user-supplied values and `visitor_utterance` is present, accept only values grounded in that turn (extractable from the message, explicitly confirmed, or server-suggested by an active hook in the same turn). Do not silently accept values the model recalled from older chat history.
+9. **Model owns extraction; validators are the gate** — the server does not re-extract values from the user's message or compare model-supplied values against the utterance. Freshness rules ("use only the latest message") live in the SOP; acceptance rules live in declared validators. A harness that second-guesses model extraction is a fat harness.
 
 ## Invariant rules (skill and action authors)
 
@@ -68,7 +68,7 @@ Concrete rules for specific subsystems extend this document — they must not co
 
 | Subsystem | Profile |
 |-----------|---------|
-| **InterviewAction** | [`jvagent/action/interview_action/docs/thin-harness.md`](../jvagent/action/interview_action/docs/thin-harness.md) — `interview__*` tools, frontmatter schema, utterance grounding on `set_fields` |
+| **InterviewAction** | [`jvagent/action/interview_action/docs/thin-harness.md`](../jvagent/action/interview_action/docs/thin-harness.md) — `interview__*` tools, frontmatter schema, validators as the only store gate |
 
 When adding a new locked-in or skill-backed subsystem, add a profile doc that links here and lists subsystem-specific invariants and tests.
 

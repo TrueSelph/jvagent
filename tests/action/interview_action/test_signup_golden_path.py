@@ -8,11 +8,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from jvagent.action.interview_action.core.interview_loader import (
+from jvagent.action.interview_action.interview_action import InterviewAction
+from jvagent.action.interview_action.session import load_session
+from jvagent.action.interview_action.spec import (
     load_interview_spec_from_skill,
 )
-from jvagent.action.interview_action.core.session import load_session
-from jvagent.action.interview_action.interview_action import InterviewAction
 from tests.action.interview_action.conftest import (
     ORCHESTRATOR_AGENT_DIR,
     SIGNUP_INTERVIEW_SKILL_DIR,
@@ -51,30 +51,24 @@ async def test_signup_golden_path_activation_to_complete(signup_action):
     assert session.interview_type == "signup_interview"
 
     name_result = json.loads(
-        await action._handle_set_field(
-            field="user_name",
-            value="Jane Doe",
-            visitor=visitor,
+        await action._handle_set_fields(
+            fields={"user_name": "Jane Doe"}, visitor=visitor
         )
     )
     assert name_result["ok"] is True
 
     visitor.utterance = "Monday at 9"
     times_result = json.loads(
-        await action._handle_set_field(
-            field="available_times",
-            value="Monday at 9",
-            visitor=visitor,
+        await action._handle_set_fields(
+            fields={"available_times": "Monday at 9"}, visitor=visitor
         )
     )
     assert times_result["ok"] is True
 
     visitor.utterance = "jane@gmail.com"
     email_result = json.loads(
-        await action._handle_set_field(
-            field="user_email",
-            value="jane@gmail.com",
-            visitor=visitor,
+        await action._handle_set_fields(
+            fields={"user_email": "jane@gmail.com"}, visitor=visitor
         )
     )
     assert email_result["ok"] is True

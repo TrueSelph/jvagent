@@ -8,13 +8,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from jvagent.action.interview_action.core.interview_loader import parse_interview_spec
-from jvagent.action.interview_action.core.session import InterviewSession
-from jvagent.action.interview_action.interview_action import InterviewAction
-from jvagent.action.interview_action.runtime.path_resolver import (
-    compute_reachable_question_names,
-    resolve_next_question_name,
+from jvagent.action.interview_action.flow import (
+    compute_collectible_path_names,
+    resolve_next_field_name,
 )
+from jvagent.action.interview_action.interview_action import InterviewAction
+from jvagent.action.interview_action.session import InterviewSession
+from jvagent.action.interview_action.spec import parse_interview_spec
 
 _FIXTURES = Path(__file__).resolve().parent / "fixtures/skills"
 
@@ -68,9 +68,9 @@ async def test_branch_premium_path(branching_spec):
     session = InterviewSession(interview_type="branch_demo")
     session.set_value("user_type", "premium")
     load_fn = lambda _: None
-    reachable = await compute_reachable_question_names(session, branching_spec, load_fn)
+    reachable = await compute_collectible_path_names(session, branching_spec, load_fn)
     assert reachable == ["user_type", "premium_q"]
-    nxt = await resolve_next_question_name(session, branching_spec, load_fn)
+    nxt = await resolve_next_field_name(session, branching_spec, load_fn)
     assert nxt == "premium_q"
 
 
@@ -80,7 +80,7 @@ async def test_branch_standard_skips_premium(branching_spec):
     session.set_value("user_type", "standard")
     session.set_value("premium_q", "should prune")
     load_fn = lambda _: None
-    reachable = await compute_reachable_question_names(session, branching_spec, load_fn)
+    reachable = await compute_collectible_path_names(session, branching_spec, load_fn)
     assert "premium_q" not in reachable
     assert "standard_q" in reachable
 
@@ -97,7 +97,7 @@ async def test_set_field_prunes_unreachable(branching_spec):
     action._save_session = AsyncMock()
 
     result = json.loads(
-        await action._handle_set_field(field="user_type", value="standard")
+        await action._handle_set_fields(fields={"user_type": "standard"})
     )
     assert result["ok"] is True
     assert session.get_value("user_type") == "standard"

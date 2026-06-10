@@ -4,7 +4,7 @@
 
 ## What this is
 
-`InterviewAction` is a pure `Action` (not `InteractAction`) that registers nine fixed `interview__*` tools plus per-skill custom tools. The **orchestrator LLM** reads each skill's `SKILL.md` procedure and drives multi-turn interviews by calling tools — the action manages session state, validation, hooks, and task tracking; it does **not** classify user intent or choose the next question itself.
+`InterviewAction` is a pure `Action` (not `InteractAction`) that registers eight fixed `interview__*` tools plus per-skill custom tools. The **orchestrator LLM** reads each skill's `SKILL.md` procedure and drives multi-turn interviews by calling tools — the action manages session state, validation, hooks, and task tracking; it does **not** classify user intent or choose the next question itself.
 
 Session state lives in `conversation.context["interview"]` as a lightweight `InterviewSession` dataclass (field values, skipped fields, status, scratch `context` dict).
 
@@ -24,7 +24,7 @@ Session state lives in `conversation.context["interview"]` as a lightweight `Int
 | **Procedure** | `skills/<name>/SKILL.md` body | Custom behavioral rules only (base composed via `extends`) |
 | **Implementation** | `skills/<name>/scripts/custom_tools.py` | Validators, pre/post tools, completion handlers, custom LLM tools |
 
-When fixing behavior for one skill (e.g. `validate_full_name`, training slot matching), change the **skill extension** — not the foundation — unless the bug is in generic plumbing (chaining, utterance-vs-model validation, hook dispatch, session keys like `CTX_QUESTION_PRESENTED`).
+When fixing behavior for one skill (e.g. `validate_full_name`, training slot matching), change the **skill extension** — not the foundation — unless the bug is in generic plumbing (chaining, validator dispatch, hook dispatch, session persistence).
 
 **Terminal cleanup:** `complete`, `cancel`, and `interview_complete` validators call `clear_interview_context()` — wipes `conversation.context` except platform keys (`new_user`) and any `retain_context_keys` returned by the completion handler or validator. Do not persist interview scratch in `conversation.context` unless opting in via `retain_context_keys`.
 
@@ -36,14 +36,19 @@ When fixing behavior for one skill (e.g. `validate_full_name`, training slot mat
 interview_action/
 ├── SKILL.md              # Base SOP (extends target)
 ├── interview_action.py   # Action shell: discovery, turn-lock hooks, skill activation
-├── tasks.py              # INTERVIEW task lifecycle mixin
-├── _constants.py         # Shared constants + response serialization helpers
+├── spec.py               # Frontmatter parsing: FieldDef / InterviewSpec / registry
+├── session.py            # InterviewSession + conversation persistence
+├── flow.py               # Branch evaluation, path walk, prune
+├── hooks.py              # custom_tools.py loader, call_hook, validator dispatch
+├── validators.py         # Built-in validators
+├── engine.py             # The 8 tool handlers + activation + skill-tool dispatch
+├── tools.py              # Tool definitions binding to engine
+├── responses.py          # Response envelope + directive strings
+├── tasks.py              # INTERVIEW task lifecycle
+├── procedure.py          # SOP composition
 ├── _validate_contract.py # Skill frontmatter ↔ custom_tools.py validation
-├── handlers/             # Tool handler mixins (session, field, flow)
 ├── info.yaml
 ├── README.md / CLAUDE.md / AGENTS.md
-├── core/                 # Loader, session, validators, tools, responses
-├── runtime/              # Pipeline, path resolution, hooks, branching
 ├── examples/             # Reference skill packages (not auto-discovered)
 └── docs/                 # How-to guides + skill_custom_instructions.md
 ```
@@ -71,7 +76,7 @@ Full tables: **[interview profile](docs/thin-harness.md)** (+ [platform](../../.
 1. **Thin harness** — no server intent classification, no prep observations, no activation auto-store, no merge-inlined next/review responses, no `extractors` in frontmatter.
 2. **Hook functions are not LLM tools** — only entries in frontmatter `interview.skill_tools` become `{skill}__{name}` tools. Reset uses `handlers.reset` (invoked via `interview__reset()`).
 3. **Model owns extraction and chaining** — `interview__set_fields` + base SOP; read `ok` before advancing; post-processors do not run when `ok: false`.
-4. **`response_directive` beats `next_questions`** when they conflict — one action per turn.
+4. **`response_directive` beats `next_fields`** when they conflict — one action per turn.
 5. **Review before complete** — always call `interview__review()` before `interview__complete()` unless review sets `terminate: true` or `confirm: auto` chains complete.
 6. **Contract discovery** — `InterviewRegistry` scans dirs from `Action.resolve_skill_scan_dirs()` (app `skills/` + action-bundled paths). Author interview skills under `agents/.../skills/<name>/` (ADR-0023). Reference packages live under `examples/` (not discovered).
 7. **Never reuse stale field values** from older chat turns unless the user repeats them in the latest message.

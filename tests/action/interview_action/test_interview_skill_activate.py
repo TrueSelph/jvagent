@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
 
-from jvagent.action.interview_action.core.interview_loader import (
-    InterviewRegistry,
-    load_interview_spec_from_skill,
-)
-from jvagent.action.interview_action.core.tools import build_tools
 from jvagent.action.interview_action.interview_action import (
     InterviewAction,
 )
+from jvagent.action.interview_action.spec import (
+    InterviewRegistry,
+    load_interview_spec_from_skill,
+)
+from jvagent.action.interview_action.tools import build_tools
 
 _SKILLS_DIR = Path(__file__).resolve().parent / "fixtures/skills"
 
@@ -48,18 +49,17 @@ async def test_on_skill_activate_returns_observation_for_interview_skill():
     )
 
     assert note is not None
-    assert "Interview session ready" in note
-    assert "onboarding_interview" in note
-    assert "missing_required" in note
-    assert "SKILL procedure" in note
-    assert "interview__next_question" in note
+    parsed = json.loads(note)
+    assert parsed["ok"] is True
+    assert parsed["interview_type"] == "onboarding_interview"
+    assert "missing_required" in parsed
     action._handle_start.assert_awaited_once_with(
         "onboarding_interview", ANY, user_message="hi"
     )
 
 
 @pytest.mark.asyncio
-async def test_on_skill_activate_omits_next_question_hint_when_complete():
+async def test_on_skill_activate_omits_next_field_hint_when_complete():
     action = _interview_action_with_contracts()
     action._handle_start = AsyncMock(
         return_value=(
@@ -71,7 +71,8 @@ async def test_on_skill_activate_omits_next_question_hint_when_complete():
     note = await action.on_skill_activate("onboarding_interview", MagicMock())
 
     assert note is not None
-    assert "New session:" not in note
+    parsed = json.loads(note)
+    assert parsed.get("missing_required") == []
 
 
 @pytest.mark.asyncio
@@ -114,12 +115,12 @@ def test_interview__init_not_registered():
     action = _interview_action_with_contracts()
     names = {t.name for t in build_tools(action)}
     assert "interview__init" not in names
-    assert "interview__next_question" in names
+    assert "interview__next_field" in names
 
 
 def test_core_interview_tools_require_active_session_in_description():
     action = _interview_action_with_contracts()
     by_name = {t.name: t for t in build_tools(action)}
-    for tool_name in ("interview__set_fields", "interview__next_question"):
+    for tool_name in ("interview__set_fields", "interview__next_field"):
         assert "use_skill" in by_name[tool_name].description.lower()
         assert "active interview session" in by_name[tool_name].description.lower()

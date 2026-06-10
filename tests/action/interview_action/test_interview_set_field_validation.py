@@ -1,4 +1,4 @@
-"""Tests for inline per-question validation in interview__set_field."""
+"""Tests for inline per-question validation in interview__set_fields."""
 
 from __future__ import annotations
 
@@ -9,17 +9,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from jvagent.action.interview_action.core.interview_loader import (
-    QuestionDef,
-    load_interview_spec_from_skill,
-    resolve_validator_def,
-    resolve_validator_kwargs,
-)
-from jvagent.action.interview_action.core.session import InterviewSession
-from jvagent.action.interview_action.core.validators import get_validator
 from jvagent.action.interview_action.interview_action import (
     InterviewAction,
 )
+from jvagent.action.interview_action.session import InterviewSession
+from jvagent.action.interview_action.spec import load_interview_spec_from_skill
+from jvagent.action.interview_action.validators import get_validator
 
 _SKILLS_DIR = Path(__file__).resolve().parent / "fixtures/skills"
 _PRE_ALERT_SKILL = _SKILLS_DIR / "pre_alert_interview"
@@ -32,7 +27,6 @@ def test_phone_number_pre_and_post_processors_parsed():
     assert f is not None
     assert f.pre_processor == ["get_phone_number"]
     assert f.post_processor == ["verify_phone_number"]
-    assert f.resolved_pre_processors() == ["get_phone_number"]
 
 
 def test_email_post_processors_and_otp_code_parsed():
@@ -65,36 +59,28 @@ def test_inline_validator_parsed_for_tracking_number():
     assert f.validator == "validate_tracking_number"
 
 
-def test_resolve_validator_def_custom_tracking():
+def test_custom_validator_and_args_parsed_for_tracking():
     contract = load_interview_spec_from_skill(_PRE_ALERT_SKILL)
     f = contract.get_field("tracking_number")
-    vdef = resolve_validator_def(f)
-    assert vdef is not None
-    assert vdef.name == "validate_tracking_number"
-    assert get_validator(vdef.name) is None
-    kwargs = resolve_validator_kwargs(f, vdef)
-    assert kwargs.get("min_length") == 10
+    assert f.validator == "validate_tracking_number"
+    assert get_validator(f.validator) is None
+    assert f.validator_args.get("min_length") == 10
 
 
-def test_resolve_validator_def_builtin_description():
+def test_builtin_validator_and_args_parsed_for_description():
     contract = load_interview_spec_from_skill(_PRE_ALERT_SKILL)
     f = contract.get_field("description")
-    vdef = resolve_validator_def(f)
-    assert vdef is not None
-    assert vdef.name == "description"
-    assert get_validator(vdef.name) is not None
-    kwargs = resolve_validator_kwargs(f, vdef)
-    assert kwargs.get("min_length") == 10
-    assert kwargs.get("max_length") == 500
+    assert f.validator == "description"
+    assert get_validator(f.validator) is not None
+    assert f.validator_args.get("min_length") == 10
+    assert f.validator_args.get("max_length") == 500
 
 
-def test_resolve_validator_def_builtin_email():
+def test_builtin_validator_parsed_for_email():
     contract = load_interview_spec_from_skill(_ONBOARDING_SKILL)
     f = contract.get_field("email")
-    vdef = resolve_validator_def(f)
-    assert vdef is not None
-    assert vdef.name == "email"
-    assert get_validator(vdef.name) is not None
+    assert f.validator == "email"
+    assert get_validator(f.validator) is not None
 
 
 def test_id_number_validator_string():
@@ -126,12 +112,11 @@ async def test_set_field_rejects_short_tracking_number(pre_alert_action):
     action._get_session_and_contract = AsyncMock(return_value=(session, contract))
 
     result = json.loads(
-        await action._handle_set_field(field="tracking_number", value="123")
+        await action._handle_set_fields(fields={"tracking_number": "123"})
     )
 
     assert result["ok"] is False
     assert result["status"] == "validation_failed"
-    assert result["valid"] is False
     assert result["error_code"] == "VALIDATION_FAILED"
     assert "tracking_number" not in session.fields
 
@@ -145,15 +130,15 @@ async def test_set_field_stores_cleaned_tracking_number(pre_alert_action):
     from unittest.mock import patch
 
     async def _passthrough_post_processors(*args, **kwargs):
-        return args[-1]
+        return [], {}
 
     with patch(
-        "jvagent.action.interview_action.runtime.pipeline.run_post_processors",
+        "jvagent.action.interview_action.engine.run_post_processors",
         side_effect=_passthrough_post_processors,
     ):
         result = json.loads(
-            await action._handle_set_field(
-                field="tracking_number", value="abc291421515335xyz"
+            await action._handle_set_fields(
+                fields={"tracking_number": "abc291421515335xyz"}
             )
         )
 
@@ -161,7 +146,7 @@ async def test_set_field_stores_cleaned_tracking_number(pre_alert_action):
     assert result["status"] == "active"
     assert session.get_value("tracking_number") == "291421515335"
     assert result["value"] == "291421515335"
-    assert result.get("next_tool") == "interview__next_question"
+    assert result.get("next_tool") == "interview__next_field"
 
 
 @pytest.mark.asyncio
@@ -204,23 +189,23 @@ async def test_init_without_extractable_data_asks_first_question(pre_alert_actio
 
 
 @pytest.mark.asyncio
-async def test_next_question_runs_pre_tools_on_whatsapp(onboarding_action):
+async def test_next_field_runs_pre_tools_on_whatsapp(onboarding_action):
     action, contract = onboarding_action
     session = InterviewSession(interview_type="onboarding_interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, contract))
     visitor = SimpleNamespace(channel="whatsapp", user_id="5912345678")
 
-    result = json.loads(await action._handle_next_question(visitor=visitor))
+    result = json.loads(await action._handle_next_field(visitor=visitor))
 
     assert result["ok"] is True
     assert result["pre_tools_results"][0]["tool"] == "get_phone_number"
     assert result["pre_tools_results"][0]["value"] == "5912345678"
     assert "5912345678" in result["response_directive"]
-    assert result["next_questions"][0]["suggested_value"] == "5912345678"
+    assert result["next_field"]["suggested_value"] == "5912345678"
 
 
 @pytest.mark.asyncio
-async def test_next_question_falls_back_to_phone_question_off_whatsapp(
+async def test_next_field_falls_back_to_phone_question_off_whatsapp(
     onboarding_action,
 ):
     action, contract = onboarding_action
@@ -228,11 +213,11 @@ async def test_next_question_falls_back_to_phone_question_off_whatsapp(
     action._get_session_and_contract = AsyncMock(return_value=(session, contract))
     visitor = SimpleNamespace(channel="web", user_id="5912345678")
 
-    result = json.loads(await action._handle_next_question(visitor=visitor))
+    result = json.loads(await action._handle_next_field(visitor=visitor))
 
     assert result["ok"] is True
     assert "What is your best phone number?" in result["response_directive"]
-    assert "suggested_value" not in result["next_questions"][0]
+    assert "suggested_value" not in result["next_field"]
 
 
 @pytest.mark.asyncio
@@ -257,11 +242,15 @@ async def test_init_does_not_auto_store_phone_from_user_message(onboarding_actio
 async def test_set_field_id_number_accepts_passport(onboarding_action):
     action, contract = onboarding_action
     session = InterviewSession(interview_type="onboarding_interview")
+    session.set_value("phone_number", "5551234567")
+    session.set_value("email", "test@example.com")
+    session.skip_field("otp_code")
+    session.skip_field("id_card")
     action._get_session_and_contract = AsyncMock(return_value=(session, contract))
     action._save_session = AsyncMock()
 
     result = json.loads(
-        await action._handle_set_field(field="id_number", value="AB1234567")
+        await action._handle_set_fields(fields={"id_number": "AB1234567"})
     )
 
     assert result["status"] == "active"
@@ -286,10 +275,8 @@ async def test_post_tools_verify_phone_number_after_set_field_not_registered(
         new=AsyncMock(return_value=api),
     ):
         result = json.loads(
-            await action._handle_set_field(
-                field="phone_number",
-                value="5926431530",
-                visitor=visitor,
+            await action._handle_set_fields(
+                fields={"phone_number": "5926431530"}, visitor=visitor
             )
         )
 
@@ -302,9 +289,8 @@ async def test_post_tools_verify_phone_number_after_set_field_not_registered(
     )
     assert "phone" not in result["post_tools_results"][0]
     assert "customer" not in result["post_tools_results"][0]
-    assert result["exists"] is False
-    assert result["status"] == "not_registered"
-    assert result.get("next_tool") == "interview__next_question"
+    assert result["status"] == "active"
+    assert result.get("next_tool") == "interview__next_field"
     api.find_customer_by_phone.assert_awaited_once_with("5926431530")
 
 
@@ -334,22 +320,20 @@ async def test_post_tools_verify_phone_number_stops_when_registered(
         new=AsyncMock(return_value=api),
     ):
         result = json.loads(
-            await action._handle_set_field(
-                field="phone_number",
-                value="5926431530",
-                visitor=visitor,
+            await action._handle_set_fields(
+                fields={"phone_number": "5926431530"}, visitor=visitor
             )
         )
 
     assert result["ok"] is True
+    assert result["interview_complete"] is True
     assert "post_tools_results" in result
     assert result["post_tools_results"][0]["system_message"] == (
         "This phone number is already registered with Zoon."
     )
     assert "phone" not in result["post_tools_results"][0]
     assert "customer" not in result["post_tools_results"][0]
-    assert result["exists"] is True
-    assert result["status"] == "customer_exists"
+    assert result["status"] == "completed"
     assert "what is your email" not in result["response_directive"].lower()
     assert "account" in result["response_directive"].lower()
 
@@ -371,10 +355,8 @@ async def test_post_tools_verify_email_no_customer(onboarding_action):
         new=AsyncMock(return_value=api),
     ):
         result = json.loads(
-            await action._handle_set_field(
-                field="email",
-                value="newuser@example.com",
-                visitor=visitor,
+            await action._handle_set_fields(
+                fields={"email": "newuser@example.com"}, visitor=visitor
             )
         )
 
@@ -411,10 +393,8 @@ async def test_post_tools_verify_email_same_phone_continues(onboarding_action):
         new=AsyncMock(return_value=api),
     ):
         result = json.loads(
-            await action._handle_set_field(
-                field="email",
-                value="sdemo@dem.com",
-                visitor=visitor,
+            await action._handle_set_fields(
+                fields={"email": "sdemo@dem.com"}, visitor=visitor
             )
         )
 
@@ -452,17 +432,14 @@ async def test_post_tools_verify_email_different_phone_sets_otp_pending(
         new=AsyncMock(return_value=api),
     ):
         result = json.loads(
-            await action._handle_set_field(
-                field="email",
-                value="sdemo@dem.com",
-                visitor=visitor,
+            await action._handle_set_fields(
+                fields={"email": "sdemo@dem.com"}, visitor=visitor
             )
         )
 
     assert result["ok"] is True
     post = result["post_tools_results"][0]
     assert post["tool"] == "verify_email"
-    assert post["otp_pending"] is True
     assert "send_otp" in post["response_directive"].lower()
     api.request_whatsapp_otp.assert_not_awaited()
     assert session.context.get("otp_pending") is True
@@ -510,10 +487,8 @@ async def test_validate_otp_code_success_completes_interview(onboarding_action):
         new=AsyncMock(return_value=api),
     ):
         result = json.loads(
-            await action._handle_set_field(
-                field="otp_code",
-                value="123456",
-                visitor=visitor,
+            await action._handle_set_fields(
+                fields={"otp_code": "123456"}, visitor=visitor
             )
         )
 
@@ -565,10 +540,8 @@ async def test_validate_otp_code_invalid_without_complete(onboarding_action):
         new=AsyncMock(return_value=api),
     ):
         result = json.loads(
-            await action._handle_set_field(
-                field="otp_code",
-                value="000000",
-                visitor=visitor,
+            await action._handle_set_fields(
+                fields={"otp_code": "000000"}, visitor=visitor
             )
         )
 
@@ -582,17 +555,15 @@ async def test_validate_otp_code_invalid_without_complete(onboarding_action):
 async def test_validate_otp_code_rejects_when_otp_not_sent(onboarding_action):
     action, contract = onboarding_action
     session = InterviewSession(interview_type="onboarding_interview")
+    session.set_value("phone_number", "5551234567")
+    session.set_value("email", "test@example.com")
     session.context = {"otp_sent": False}
     action._get_session_and_contract = AsyncMock(return_value=(session, contract))
     action._save_session = AsyncMock()
 
     visitor = MagicMock()
     result = json.loads(
-        await action._handle_set_field(
-            field="otp_code",
-            value="123456",
-            visitor=visitor,
-        )
+        await action._handle_set_fields(fields={"otp_code": "123456"}, visitor=visitor)
     )
 
     assert result["ok"] is False

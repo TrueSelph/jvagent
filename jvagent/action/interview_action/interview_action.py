@@ -2,41 +2,30 @@
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from jvagent.action.base import Action
 
-from ._constants import TASK_OWNER_ACTION
-from .core.interview_loader import (
+from . import engine, tasks
+from .hooks import clear_module_cache, load_hook_function
+from .session import InterviewSession, load_session
+from .spec import (
     INTERVIEW_FRONTMATTER_KEY,
     InterviewRegistry,
     InterviewSpec,
 )
-from .core.session import load_session
-from .core.tools import build_tools
-from .handlers import (
-    InterviewFieldHandlersMixin,
-    InterviewFlowHandlersMixin,
-    InterviewSessionHandlersMixin,
-)
-from .runtime.hooks import clear_module_cache, load_hook_function
-from .tasks import InterviewTaskMixin
+from .tools import build_tools
 
 logger = logging.getLogger(__name__)
 
 
-class InterviewAction(
-    InterviewFlowHandlersMixin,
-    InterviewFieldHandlersMixin,
-    InterviewSessionHandlersMixin,
-    InterviewTaskMixin,
-    Action,
-):
+class InterviewAction(Action):
     """Provides interview tools for LLM-driven multi-turn flows."""
 
     description: str = (
-        "Skills V2 interview action that provides granular tools for conducting "
+        "Interview action that provides granular tools for conducting "
         "interviews. The LLM decides which tools to call at each step based on "
         "the interview spec and SKILL.md procedure."
     )
@@ -46,6 +35,8 @@ class InterviewAction(
         super().__init__(**kwargs)
         self._registry = InterviewRegistry()
 
+    # -- discovery ----------------------------------------------------------
+
     async def on_register(self):
         await super().on_register()
         await self._discover_specs()
@@ -53,7 +44,7 @@ class InterviewAction(
     async def on_reload(self):
         await super().on_reload()
         clear_module_cache()
-        skills_dirs = await self._resolve_skills_dirs()
+        skills_dirs = await self.resolve_skill_scan_dirs()
         if skills_dirs:
             self._registry.reload(skills_dirs)
 
@@ -63,7 +54,7 @@ class InterviewAction(
             await self._discover_specs()
 
     async def _discover_specs(self) -> None:
-        skills_dirs = await self._resolve_skills_dirs()
+        skills_dirs = await self.resolve_skill_scan_dirs()
         logger.info("InterviewAction discovering specs from: %s", skills_dirs)
         if skills_dirs:
             specs = self._registry.discover(skills_dirs)
@@ -76,23 +67,111 @@ class InterviewAction(
             logger.warning("InterviewAction: no agent skills directory found.")
 
     async def _ensure_specs_loaded(self) -> None:
-        if self._registry.specs:
-            return
-        await self._discover_specs()
+        if not self._registry.specs:
+            await self._discover_specs()
 
-    async def _resolve_skills_dirs(self) -> List[str]:
-        return await self.resolve_skill_scan_dirs()
+    def _load_fn(self, spec: InterviewSpec) -> Callable[[str], Optional[Callable]]:
+        return lambda name: load_hook_function(spec, name)
+
+    # -- tool surface --------------------------------------------------------
 
     async def get_tools(self) -> List[Any]:
         await self._ensure_specs_loaded()
         return build_tools(self)
 
-    def _load_fn(self, spec: InterviewSpec) -> Callable[[str], Optional[Callable]]:
-        return lambda name: load_hook_function(spec, name)
+    async def _handle_set_fields(
+        self,
+        fields: Optional[Dict[str, str]] = None,
+        visitor: Any = None,
+        **kwargs: Any,
+    ) -> str:
+        return await engine.handle_set_fields(self, fields, visitor, **kwargs)
+
+    async def _handle_next_field(self, visitor: Any = None) -> str:
+        return await engine.handle_next_field(self, visitor)
+
+    async def _handle_skip_field(self, field: str, visitor: Any = None) -> str:
+        return await engine.handle_skip_field(self, field, visitor)
+
+    async def _handle_get_status(self, visitor: Any = None) -> str:
+        return await engine.handle_get_status(self, visitor)
+
+    async def _handle_review(self, visitor: Any = None) -> str:
+        return await engine.handle_review(self, visitor)
+
+    async def _handle_complete(self, visitor: Any = None) -> str:
+        return await engine.handle_complete(self, visitor)
+
+    async def _handle_cancel(self, visitor: Any = None) -> str:
+        return await engine.handle_cancel(self, visitor)
+
+    async def _handle_reset(self, visitor: Any = None) -> str:
+        return await engine.handle_reset(self, visitor)
+
+    async def _handle_start(
+        self, interview_type: str, visitor: Any = None, **kwargs: Any
+    ) -> str:
+        return await engine.handle_start(self, interview_type, visitor, **kwargs)
+
+    async def _handle_custom_tool(
+        self, tdef: Any, spec: InterviewSpec, **kwargs
+    ) -> str:
+        return await engine.handle_custom_tool(self, tdef, spec, **kwargs)
+
+    def _normalize_field_map(
+        self,
+        fields: Optional[Dict[str, str]] = None,
+        **kwargs: Any,
+    ) -> Dict[str, str]:
+        return engine._normalize_field_map(fields, **kwargs)
+
+    # -- session access (also used by skill hooks) ---------------------------
+
+    async def _get_conversation(self, visitor: Any = None):
+        return await engine.get_conversation(visitor)
+
+    async def _get_session(self, visitor: Any = None) -> Optional[InterviewSession]:
+        return await engine.get_session(visitor)
+
+    async def _get_session_and_contract(
+        self, visitor: Any = None
+    ) -> Tuple[Optional[InterviewSession], Optional[InterviewSpec]]:
+        return await engine.get_session_and_spec(self, visitor)
+
+    async def _save_session(self, session: InterviewSession, visitor: Any = None):
+        await engine.save_session_for(visitor, session)
+
+    async def _clear_interview_session(
+        self,
+        visitor: Any = None,
+        *,
+        retain_context_keys: Optional[List[str]] = None,
+    ) -> None:
+        await engine.clear_interview_session(
+            visitor, retain_context_keys=retain_context_keys
+        )
+
+    async def persist_interview_fields(
+        self,
+        session: InterviewSession,
+        visitor: Any,
+        fields: Dict[str, str],
+        *,
+        validate: bool = True,
+    ) -> Dict[str, Any]:
+        """Hook-initiated store used by custom skill tools."""
+        return await engine.persist_interview_fields(
+            self, session, visitor, fields, validate=validate
+        )
+
+    # -- orchestrator turn-lock hooks ----------------------------------------
+
+    def is_interview_skill(self, skill_name: str) -> bool:
+        return bool(self._registry.get(skill_name))
 
     async def _interview_ready(self, visitor: Any = None) -> bool:
         await self._ensure_specs_loaded()
-        session, spec = await self._get_session_and_contract(visitor)
+        session, spec = await engine.get_session_and_spec(self, visitor)
         return session is not None and spec is not None and session.is_active()
 
     async def skill_runtime_ready(self, skill_name: str, visitor: Any = None) -> bool:
@@ -120,9 +199,6 @@ class InterviewAction(
         for name in drop:
             tools.pop(name, None)
         visible -= drop
-
-    def is_interview_skill(self, skill_name: str) -> bool:
-        return bool(self._registry.get(skill_name))
 
     async def needs_session_rebootstrap(
         self, skill_name: str, visitor: Any = None
@@ -154,19 +230,13 @@ class InterviewAction(
                 f"Available interview types: {available or '(none)'}. "
                 "Do not call interview tools until the session is active."
             )
-        import json
-
         raw = await self._handle_start(
             skill_name, visitor, user_message=(user_message or "").strip()
         )
         try:
             parsed = json.loads(raw) if isinstance(raw, str) else {}
         except (json.JSONDecodeError, TypeError):
-            return (
-                f"Interview session ready ({skill_name}). "
-                "Follow the interview SKILL procedure — call interview__next_question "
-                "or interview__set_fields as appropriate."
-            )
+            parsed = None
         if not isinstance(parsed, dict):
             return (
                 f"Interview session ready ({skill_name}). "
@@ -178,26 +248,7 @@ class InterviewAction(
                 or parsed.get("error")
                 or f"Could not start interview session for {skill_name}."
             )
-        interview_type = parsed.get("interview_type", skill_name)
-        missing_required = parsed.get("missing_required") or []
-        parts = [
-            f"Interview session ready ({interview_type}).",
-            f"fields={parsed.get('fields', {})}",
-            f"missing_required={missing_required}",
-            "Follow the interview SKILL procedure for the user's message.",
-        ]
-        if missing_required:
-            parts.append(
-                "New session: if the activation message contains extractable field "
-                "values, call interview__set_fields first (this message only), then "
-                "interview__next_question when missing_required is non-empty; "
-                "otherwise call interview__next_question before asking via reply."
-            )
-        if parsed.get("post_tools_results"):
-            parts.append(f"post_tools_results={parsed['post_tools_results']}")
-        if parsed.get("skip_to_review"):
-            parts.append("skip_to_review=true. Call interview__review next.")
-        return " ".join(parts)
+        return json.dumps(parsed)
 
     async def resolve_locked_skill(
         self, visitor: Any, skill_docs: List[Any]
@@ -225,8 +276,8 @@ class InterviewAction(
             for task in store.list(status="active") or []:
                 owner = getattr(task, "owner_action", None)
                 sd = skill_by_name.get(owner) if owner else None
-                if sd is None and owner == TASK_OWNER_ACTION:
-                    it = self._task_interview_type(task)
+                if sd is None and owner == tasks.TASK_OWNER_ACTION:
+                    it = tasks.task_interview_type(task)
                     sd = skill_by_name.get(it) if it else None
                 if sd is not None and getattr(sd, "locked_in", False):
                     candidates.append((str(getattr(task, "updated_at", "") or ""), sd))

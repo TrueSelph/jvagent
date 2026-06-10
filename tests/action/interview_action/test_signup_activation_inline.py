@@ -8,11 +8,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from jvagent.action.interview_action.core.interview_loader import (
+from jvagent.action.interview_action.interview_action import InterviewAction
+from jvagent.action.interview_action.session import save_session
+from jvagent.action.interview_action.spec import (
     load_interview_spec_from_skill,
 )
-from jvagent.action.interview_action.core.session import save_session
-from jvagent.action.interview_action.interview_action import InterviewAction
 from tests.action.interview_action.conftest import (
     ORCHESTRATOR_AGENT_DIR,
     SIGNUP_INTERVIEW_SKILL_DIR,
@@ -42,11 +42,14 @@ async def test_on_skill_activate_notes_skill_procedure(signup_action):
     )
 
     assert note is not None
-    assert "SKILL procedure" in note
+    parsed = json.loads(note)
+    assert parsed["ok"] is True
+    assert parsed["interview_type"] == "signup_interview"
+    assert "missing_required" in parsed
 
 
 @pytest.mark.asyncio
-async def test_activation_set_fields_then_model_chains_next_question(signup_action):
+async def test_activation_set_fields_then_model_chains_next_field(signup_action):
     action, spec = signup_action
     conv = MagicMock()
     conv.context = {}
@@ -70,7 +73,7 @@ async def test_activation_set_fields_then_model_chains_next_question(signup_acti
     )
     assert set_result["ok"] is True
     assert set_result["fields"].get("user_name") == "Eldon Marks"
-    assert set_result.get("next_tool") == "interview__next_question"
+    assert set_result.get("next_tool") == "interview__next_field"
 
 
 @pytest.mark.asyncio
@@ -101,6 +104,5 @@ async def test_set_field_idempotent_when_field_already_stored(signup_action):
         )
     )
     assert second["ok"] is True
-    assert second["stored"] is False
-    assert second["already_stored"] is True
+    assert second["stored"] is True
     assert second["fields"]["user_name"] == "Eldon Marks"

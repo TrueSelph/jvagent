@@ -44,10 +44,10 @@ async def test_use_skill_mid_loop_minimal_prep(
     signup = SkillDoc(
         name="signup_interview",
         description="JVAgent training signup.",
-        body="SOP: set_fields, next_question, reply.",
+        body="SOP: set_fields, next_field, reply.",
         requires_tools=(
             "interview__set_fields",
-            "interview__next_question",
+            "interview__next_field",
             "interview__get_status",
         ),
         requires_actions=("InterviewAction",),
@@ -124,7 +124,7 @@ async def test_use_skill_mid_loop_minimal_prep(
     assert len(model_calls) == 2
     second_obs_tools = [o.get("tool") for o in model_calls[1]["observations"]]
     assert "interview__message_evaluation" not in second_obs_tools
-    assert "interview__next_question" not in second_obs_tools
+    assert "interview__next_field" not in second_obs_tools
     assert "Turn-lock is ON" in model_calls[1]["skills_section"]
 
 
@@ -132,14 +132,14 @@ async def test_use_skill_mid_loop_minimal_prep(
 async def test_set_field_returns_next_tool_chain_directive(
     make_orchestrator, make_visitor, monkeypatch
 ):
-    """After store, model receives next_tool — no auto-inlined next_question."""
+    """After store, model receives next_tool — no auto-inlined next_field."""
     signup = SkillDoc(
         name="signup_interview",
         description="JVAgent training signup.",
         body="SOP.",
         requires_tools=(
             "interview__set_fields",
-            "interview__next_question",
+            "interview__next_field",
             "interview__get_status",
         ),
         requires_actions=("InterviewAction",),
@@ -214,12 +214,12 @@ async def test_set_field_returns_next_tool_chain_directive(
     set_obs = [
         o
         for o in model_calls[2]["observations"]
-        if o.get("tool") in ("interview__set_fields", "interview__set_field")
+        if o.get("tool") in ("interview__set_fields", "interview__set_fields")
     ]
     assert set_obs
     set_payload = json.loads(set_obs[0]["observation"])
     assert set_payload.get("stored") is True, set_payload
-    assert set_payload.get("next_tool") == "interview__next_question"
+    assert set_payload.get("next_tool") == "interview__next_field"
 
 
 @pytest.mark.asyncio
@@ -231,7 +231,7 @@ async def test_locked_skill_name_as_tool_gets_steer_not_dispatch(
         name="signup_interview",
         description="JVAgent training signup.",
         body="SOP.",
-        requires_tools=("interview__set_fields", "interview__next_question"),
+        requires_tools=("interview__set_fields", "interview__next_field"),
         requires_actions=("InterviewAction",),
         locked_in=True,
     )

@@ -9,19 +9,17 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from jvagent.action.interview_action.core.interview_loader import (
-    load_interview_spec_from_skill,
-    parse_interview_spec,
-)
-from jvagent.action.interview_action.core.session import InterviewSession
-from jvagent.action.interview_action.interview_action import InterviewAction
-from jvagent.action.interview_action.runtime.path_resolver import (
+from jvagent.action.interview_action.flow import (
     compute_active_path_for_prune,
     compute_collectible_path_names,
-    compute_reachable_question_names,
-    compute_reachable_required,
-    missing_required_reachable,
-    resolve_next_question_name,
+    compute_missing_required,
+    resolve_next_field_name,
+)
+from jvagent.action.interview_action.interview_action import InterviewAction
+from jvagent.action.interview_action.session import InterviewSession
+from jvagent.action.interview_action.spec import (
+    load_interview_spec_from_skill,
+    parse_interview_spec,
 )
 from tests.action.interview_action.conftest import (
     ORCHESTRATOR_AGENT_DIR,
@@ -94,8 +92,8 @@ async def test_empty_signup_missing_only_first_field(signup_spec):
     collectible = await compute_collectible_path_names(session, signup_spec, load_fn)
     assert collectible == ["user_name"]
 
-    required = await compute_reachable_required(session, signup_spec, load_fn)
-    assert missing_required_reachable(session, required) == ["user_name"]
+    missing = await compute_missing_required(session, signup_spec, load_fn)
+    assert missing == ["user_name"]
 
 
 @pytest.mark.asyncio
@@ -119,7 +117,7 @@ async def test_activation_opening_extracts_user_name(signup_action):
     )
     assert set_result["ok"] is True
     assert set_result["fields"].get("user_name") == "Eldon Marks"
-    assert set_result.get("next_tool") == "interview__next_question"
+    assert set_result.get("next_tool") == "interview__next_field"
 
 
 @pytest.mark.asyncio
@@ -138,7 +136,7 @@ async def test_onboarding_unanswered_has_account_does_not_project_existing_email
 
 
 @pytest.mark.asyncio
-async def test_saturday_slot_store_chains_next_question(signup_action):
+async def test_saturday_slot_store_chains_next_field(signup_action):
     action, spec = signup_action
     session = InterviewSession(interview_type="signup_interview")
     session.set_value("user_name", "Eldon Marks")
@@ -146,16 +144,15 @@ async def test_saturday_slot_store_chains_next_question(signup_action):
     action._save_session = AsyncMock()
 
     result = json.loads(
-        await action._handle_set_field(
-            field="available_times",
-            value="Saturday 9:00 AM - 12:00 PM",
+        await action._handle_set_fields(
+            fields={"available_times": "Saturday 9:00 AM - 12:00 PM"},
         )
     )
 
     assert result["ok"] is True
-    assert result.get("next_tool") == "interview__next_question"
-    assert "Call interview__next_question" in (result.get("response_directive") or "")
-    nxt = await resolve_next_question_name(session, spec, lambda _n: None)
+    assert result.get("next_tool") == "interview__next_field"
+    assert "Call interview__next_field" in (result.get("response_directive") or "")
+    nxt = await resolve_next_field_name(session, spec, lambda _n: None)
     assert nxt == "training_format"
 
 
@@ -169,15 +166,13 @@ async def test_idempotent_store_still_returns_next_tool(signup_action):
     action._save_session = AsyncMock()
 
     result = json.loads(
-        await action._handle_set_field(
-            field="available_times",
-            value="Saturday 9:00 AM - 12:00 PM",
+        await action._handle_set_fields(
+            fields={"available_times": "Saturday 9:00 AM - 12:00 PM"},
         )
     )
 
     assert result["ok"] is True
-    assert result.get("already_stored") is True
-    assert result.get("next_tool") == "interview__next_question"
+    assert result.get("next_tool") == "interview__next_field"
 
 
 @pytest.mark.asyncio
@@ -224,7 +219,7 @@ async def test_premium_branch_active_path_includes_contact_via_else():
     session.set_value("contact", "555-0100")
     load_fn = lambda _n: None
 
-    collectible = await compute_reachable_question_names(session, spec, load_fn)
+    collectible = await compute_collectible_path_names(session, spec, load_fn)
     assert collectible == ["user_type", "premium_q"]
 
     active = await compute_active_path_for_prune(session, spec, load_fn)

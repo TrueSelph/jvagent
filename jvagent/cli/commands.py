@@ -1127,7 +1127,7 @@ def _handle_skill_validate_command(args: List[str], app_root: str = None) -> Non
     from jvagent.action.interview_action._validate_contract import (
         validate_interview_skill_dir,
     )
-    from jvagent.action.interview_action.core.interview_loader import (
+    from jvagent.action.interview_action.spec import (
         load_interview_spec_from_skill,
     )
 

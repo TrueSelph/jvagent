@@ -60,7 +60,7 @@ def _interview_init_action():
             async def _init(interview_type: str = "", **kwargs):
                 return ToolResult(
                     content=(
-                        '{"status":"active","next_questions":'
+                        '{"status":"active","next_field":'
                         '[{"question":"What is your best phone number?"}]}'
                     )
                 )

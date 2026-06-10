@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from jvagent.action.interview_action.core.interview_loader import parse_interview_spec
-from jvagent.action.interview_action.core.session import InterviewSession
 from jvagent.action.interview_action.interview_action import InterviewAction
+from jvagent.action.interview_action.session import InterviewSession
+from jvagent.action.interview_action.spec import parse_interview_spec
 
 
 @pytest.mark.asyncio

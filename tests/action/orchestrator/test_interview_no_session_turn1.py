@@ -1,4 +1,4 @@
-"""Turn-1 regression: model must not loop on interview__next_question with NO_SESSION."""
+"""Turn-1 regression: model must not loop on interview__next_field with NO_SESSION."""
 
 from __future__ import annotations
 
@@ -46,8 +46,8 @@ async def test_new_user_without_session_prunes_interview_tools_from_surface(
     skill = SkillDoc(
         name="onboarding_interview",
         description="Onboarding.",
-        body="SOP: call interview__next_question after use_skill.",
-        requires_tools=("interview__next_question", "interview__set_field"),
+        body="SOP: call interview__next_field after use_skill.",
+        requires_tools=("interview__next_field", "interview__set_fields"),
         requires_actions=("InterviewAction",),
         locked_in=True,
     )
@@ -101,7 +101,7 @@ async def test_new_user_without_session_prunes_interview_tools_from_surface(
     await ex.execute(v)
 
     assert len(captured) == 1
-    assert "interview__next_question" not in captured[0]["tools"]
+    assert "interview__next_field" not in captured[0]["tools"]
     assert "reply" in captured[0]["tools"]
 
 
@@ -131,7 +131,7 @@ interview:
         name="onboarding_interview",
         description="Onboarding.",
         body="SOP.",
-        requires_tools=("interview__next_question",),
+        requires_tools=("interview__next_field",),
         requires_actions=("InterviewAction",),
         locked_in=True,
     )
@@ -191,6 +191,6 @@ interview:
     await ex.execute(v)
 
     assert v.conversation.context.get("interview", {}).get("status") == "active"
-    assert "interview__next_question" in captured[0]["tools"]
+    assert "interview__next_field" in captured[0]["tools"]
     tool_names = [o.get("tool") for o in captured[0]["observations"]]
     assert "use_skill" in tool_names

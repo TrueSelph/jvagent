@@ -18,7 +18,7 @@ import logging
 import re
 from typing import Any, Dict, Optional
 
-from jvagent.action.interview_action.core.responses import (
+from jvagent.action.interview_action.responses import (
     call_tool_directive,
     interview_tool_response,
     no_session_directive,
@@ -174,7 +174,7 @@ async def check_tracking_status(
             error_code="MISSING_FIELD",
             system_message="Tracking number not yet stored in session.",
             skip_to_review=False,
-            response_directive=call_tool_directive("interview__set_field"),
+            response_directive=call_tool_directive("interview__set_fields"),
         )
 
     user_pre_alerts = await _get_user_pre_alerts(visitor)
@@ -264,7 +264,7 @@ async def pre_alert_review(
         except Exception as e:
             logger.error("pre_alert_review: LLM status failed: %s", e)
 
-        result["directive"] = status_msg
+        result["response_directive"] = status_msg
         result["modified_values"]["__terminate__"] = "true"
         result["terminate"] = True
         return result
@@ -289,7 +289,7 @@ async def pre_alert_complete(
 ) -> Dict[str, Any]:
     """Create pre-alert via Zoon API and update user_pre_alerts in context."""
     if not extracted_values or not interview_action:
-        return {"directive": "No extracted values to process."}
+        return {"response_directive": "No extracted values to process."}
 
     tracking_number = (extracted_values.get("tracking_number") or "").strip()
     description = (extracted_values.get("description") or "").strip()
@@ -299,7 +299,9 @@ async def pre_alert_complete(
     ).strip()
 
     if not tracking_number:
-        return {"directive": "No tracking number provided. Cannot create pre-alert."}
+        return {
+            "response_directive": "No tracking number provided. Cannot create pre-alert."
+        }
 
     invoice_value = None
     if invoice_value_str:
@@ -316,7 +318,7 @@ async def pre_alert_complete(
 
     if not api:
         return {
-            "directive": (
+            "response_directive": (
                 "Sorry, I couldn't create your pre-alert at the moment. "
                 "Please try again in a few minutes."
             )
@@ -336,7 +338,7 @@ async def pre_alert_complete(
 
     if not customer_id:
         return {
-            "directive": (
+            "response_directive": (
                 "I couldn't find your account. Please ensure your WhatsApp number "
                 "is registered with Zoon, then try again."
             )
@@ -353,7 +355,7 @@ async def pre_alert_complete(
     except Exception as e:
         logger.error("pre_alert_complete: create_pre_alert failed: %s", e)
         return {
-            "directive": (
+            "response_directive": (
                 "Sorry, I couldn't create your pre-alert at the moment. "
                 "Please try again in a few minutes."
             )
@@ -369,13 +371,13 @@ async def pre_alert_complete(
             else:
                 error_message = "Validation error"
             return {
-                "directive": (
+                "response_directive": (
                     f"There was an issue creating your pre-alert: {error_message}. "
                     "Please try again."
                 )
             }
         return {
-            "directive": (
+            "response_directive": (
                 "Sorry, I couldn't create your pre-alert at the moment. "
                 "Please try again in a few minutes."
             )
@@ -412,7 +414,7 @@ async def pre_alert_complete(
             logger.error("pre_alert_complete: save context failed: %s", e)
 
     return {
-        "directive": (
+        "response_directive": (
             f"Your pre-alert has been created successfully! Your tracking number is "
             f"**{tracking_number}**. You'll be notified when your package status changes."
         )

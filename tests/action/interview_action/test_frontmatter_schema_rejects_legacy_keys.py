@@ -1,10 +1,10 @@
-"""Legacy interview frontmatter keys must fail at parse time."""
+"""Unknown interview frontmatter keys must fail at parse time."""
 
 from __future__ import annotations
 
 import pytest
 
-from jvagent.action.interview_action.core.interview_loader import parse_interview_spec
+from jvagent.action.interview_action.spec import parse_interview_spec
 
 
 @pytest.mark.parametrize(
@@ -36,11 +36,11 @@ from jvagent.action.interview_action.core.interview_loader import parse_intervie
                     }
                 ]
             },
-            "Nested validator",
+            "must be a function name string",
         ),
     ],
 )
-def test_parse_interview_spec_rejects_legacy_keys(data, match):
+def test_parse_interview_spec_rejects_unknown_keys(data, match):
     with pytest.raises(ValueError, match=match):
         parse_interview_spec(data, source_dir="/tmp/skill")
 

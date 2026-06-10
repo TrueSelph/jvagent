@@ -42,8 +42,8 @@ intro_interact_action runs BEFORE the executive (always_execute sidecar)
 | `what is 19 x 23?` | Loop → web search or skill → `reply` |
 | `what do our internal docs say about X?` | `answer` skill → `pageindex__search` (internal KB) first, web fallback, cited synthesis → `respond` |
 | `sign up for jvagent training` | Model activates `signup_interview` skill → InterviewAction session starts, turn-lock via TaskStore |
-| `Hello my name is Jane Doe` (activation) | Model calls `interview__set_fields`, chains `interview__next_question`, then replies — no server prep steering |
-| your answers on following turns | Model classifies intent per SKILL SOP; `interview__set_fields` → `interview__next_question` → reply |
+| `Hello my name is Jane Doe` (activation) | Model calls `interview__set_fields`, chains `interview__next_field`, then replies — no server prep steering |
+| your answers on following turns | Model classifies intent per SKILL SOP; `interview__set_fields` → `interview__next_field` → reply |
 | `change my email to X` mid-interview | `interview__set_fields` correction — works on any stored field, not only the active question |
 | `stop` / `cancel` mid-interview | `interview__cancel` |
 | `start over` mid-interview | `interview__reset` |

@@ -1,4 +1,4 @@
-"""Interview spec loader — discovers structured interview config from skill directories.
+"""Interview spec — frontmatter schema parsing, dataclasses, and registry.
 
 Canonical source: ``interview:`` block in ``SKILL.md`` frontmatter.
 """
@@ -17,33 +17,38 @@ INTERVIEW_FRONTMATTER_KEY = "interview"
 
 ConfirmMode = Literal["manual", "auto"]
 
-_LEGACY_INTERVIEW_KEYS = frozenset(
-    {
-        "questions",
-        "description",
-        "tools",
-        "extractors",
-        "validators",
-        "review",
-        "completion",
-        "reset",
-        "cancel",
-    }
-)
-
-_LEGACY_FIELD_KEYS = frozenset(
+_INTERVIEW_KEYS = frozenset(
     {
         "name",
-        "question",
-        "description",
-        "pre_tools",
-        "post_tools",
-        "default_next",
-        "validator_kwargs",
+        "title",
+        "summary",
+        "confirm",
+        "fields",
+        "handlers",
+        "skill_tools",
     }
 )
 
-_LEGACY_BRANCH_KEYS = frozenset({"condition", "target"})
+_FIELD_KEYS = frozenset(
+    {
+        "key",
+        "prompt",
+        "guidance",
+        "required",
+        "validator",
+        "validator_args",
+        "pre_processor",
+        "post_processor",
+        "branches",
+        "else",
+    }
+)
+
+_BRANCH_KEYS = frozenset({"when", "goto"})
+
+_HANDLER_KEYS = frozenset({"review", "complete", "reset", "cancel"})
+
+_SKILL_TOOL_KEYS = frozenset({"name", "description", "function", "parameters"})
 
 
 @dataclass
@@ -60,14 +65,10 @@ class FieldDef:
     required: bool = True
     validator: str = ""
     validator_args: Dict[str, Any] = field(default_factory=dict)
-    input_handler: Optional[str] = None
     pre_processor: List[str] = field(default_factory=list)
     post_processor: List[str] = field(default_factory=list)
     branches: List[BranchDef] = field(default_factory=list)
     else_field: Optional[str] = None
-
-    def resolved_pre_processors(self) -> List[str]:
-        return list(self.pre_processor)
 
 
 @dataclass
@@ -116,21 +117,34 @@ class InterviewSpec:
         return [f.key for f in self.fields]
 
 
-def _reject_legacy_keys(data: Dict[str, Any], legacy: frozenset, *, path: str) -> None:
-    for key in legacy:
-        if key in data:
-            raise ValueError(
-                f"Legacy frontmatter key '{key}' at {path} is no longer supported"
-            )
+def field_def_to_dict(f: FieldDef) -> Dict[str, Any]:
+    """Serialize a FieldDef for tool responses (field_definitions)."""
+    result: Dict[str, Any] = {
+        "key": f.key,
+        "prompt": f.prompt,
+        "guidance": f.guidance,
+        "required": f.required,
+        "validator": f.validator,
+    }
+    if f.validator_args:
+        result["validator_args"] = f.validator_args
+    if f.pre_processor:
+        result["pre_processor"] = f.pre_processor
+    if f.post_processor:
+        result["post_processor"] = f.post_processor
+    if f.branches:
+        result["branches"] = [{"when": b.when, "goto": b.goto} for b in f.branches]
+    if f.else_field:
+        result["else"] = f.else_field
+    return result
 
 
-def _reject_legacy_validator(field_data: Dict[str, Any], path: str) -> None:
-    validator = field_data.get("validator")
-    if isinstance(validator, dict):
-        raise ValueError(
-            f"Nested validator object at {path} is no longer supported; "
-            "use validator: <function_name> and validator_args:"
-        )
+def _reject_unknown_keys(
+    data: Dict[str, Any], allowed: frozenset[str], *, path: str
+) -> None:
+    for key in data:
+        if key not in allowed:
+            raise ValueError(f"Unknown frontmatter key '{key}' at {path}")
 
 
 def _parse_string_list(raw: Any) -> List[str]:
@@ -144,7 +158,9 @@ def _parse_string_list(raw: Any) -> List[str]:
 
 
 def _parse_branch(data: Dict[str, Any], *, path: str) -> BranchDef:
-    _reject_legacy_keys(data, _LEGACY_BRANCH_KEYS, path=path)
+    if not isinstance(data, dict):
+        raise ValueError(f"Branch at {path} must be a mapping")
+    _reject_unknown_keys(data, _BRANCH_KEYS, path=path)
     return BranchDef(
         when=data.get("when", {}) or {},
         goto=data.get("goto", "") or "",
@@ -153,17 +169,20 @@ def _parse_branch(data: Dict[str, Any], *, path: str) -> BranchDef:
 
 def _parse_field(data: Dict[str, Any], *, index: int) -> FieldDef:
     path = f"fields[{index}]"
-    _reject_legacy_keys(data, _LEGACY_FIELD_KEYS, path=path)
-    _reject_legacy_validator(data, path)
+    if not isinstance(data, dict):
+        raise ValueError(f"Field at {path} must be a mapping")
+    _reject_unknown_keys(data, _FIELD_KEYS, path=path)
+    validator = data.get("validator", "")
+    if validator is not None and not isinstance(validator, str):
+        raise ValueError(
+            f"validator at {path} must be a function name string; "
+            "use validator_args for parameters"
+        )
 
     branches = [
         _parse_branch(b, path=f"{path}.branches[{i}]")
         for i, b in enumerate(data.get("branches", []) or [])
     ]
-    validator = data.get("validator", "")
-    if validator is not None and not isinstance(validator, str):
-        raise ValueError(f"validator at {path} must be a function name string")
-
     return FieldDef(
         key=str(data.get("key", "") or "").strip(),
         prompt=str(data.get("prompt", "") or ""),
@@ -171,7 +190,6 @@ def _parse_field(data: Dict[str, Any], *, index: int) -> FieldDef:
         required=bool(data.get("required", True)),
         validator=str(validator or "").strip(),
         validator_args=dict(data.get("validator_args") or {}),
-        input_handler=data.get("input_handler"),
         pre_processor=_parse_string_list(data.get("pre_processor")),
         post_processor=_parse_string_list(data.get("post_processor")),
         branches=branches,
@@ -184,6 +202,7 @@ def _parse_handlers(data: Any) -> HandlersDef:
         return HandlersDef()
     if not isinstance(data, dict):
         raise ValueError("handlers must be a mapping of handler name to function name")
+    _reject_unknown_keys(data, _HANDLER_KEYS, path="interview.handlers")
     for key in ("review", "complete", "reset", "cancel"):
         val = data.get(key)
         if val is not None and not isinstance(val, str):
@@ -193,15 +212,6 @@ def _parse_handlers(data: Any) -> HandlersDef:
         complete=data.get("complete"),
         reset=data.get("reset"),
         cancel=data.get("cancel"),
-    )
-
-
-def _parse_skill_tool(data: Dict[str, Any]) -> SkillToolDef:
-    return SkillToolDef(
-        name=data.get("name", ""),
-        description=data.get("description", ""),
-        function=data.get("function", ""),
-        parameters=data.get("parameters", {}) or {},
     )
 
 
@@ -224,7 +234,7 @@ def parse_interview_spec(
     if not isinstance(data, dict):
         raise ValueError("Interview spec must be a YAML mapping")
 
-    _reject_legacy_keys(data, _LEGACY_INTERVIEW_KEYS, path="interview")
+    _reject_unknown_keys(data, _INTERVIEW_KEYS, path="interview")
 
     name = str(data.get("name") or default_name or "").strip()
     if default_name and data.get("name"):
@@ -241,9 +251,21 @@ def parse_interview_spec(
     fields = [
         _parse_field(q, index=i) for i, q in enumerate(data.get("fields", []) or [])
     ]
-    skill_tools = [
-        _parse_skill_tool(t) for t in (data.get("skill_tools", []) or []) if t
-    ]
+    skill_tools: List[SkillToolDef] = []
+    for i, t in enumerate(data.get("skill_tools", []) or []):
+        if not t:
+            continue
+        if not isinstance(t, dict):
+            raise ValueError(f"skill_tools[{i}] must be a mapping")
+        _reject_unknown_keys(t, _SKILL_TOOL_KEYS, path=f"interview.skill_tools[{i}]")
+        skill_tools.append(
+            SkillToolDef(
+                name=t.get("name", ""),
+                description=t.get("description", ""),
+                function=t.get("function", ""),
+                parameters=t.get("parameters", {}) or {},
+            )
+        )
 
     return InterviewSpec(
         name=name,
@@ -255,41 +277,6 @@ def parse_interview_spec(
         confirm=_parse_confirm(data.get("confirm")),
         source_dir=source_dir,
     )
-
-
-@dataclass
-class ValidatorDef:
-    """Resolved validator metadata for a field at runtime."""
-
-    name: str
-    kwargs: Dict[str, Any] = field(default_factory=dict)
-
-
-def resolve_validator_def(field: FieldDef) -> Optional[ValidatorDef]:
-    if not field.validator:
-        return None
-    return ValidatorDef(name=field.validator, kwargs=dict(field.validator_args))
-
-
-def field_has_validator(field: FieldDef) -> bool:
-    return bool((field.validator or "").strip())
-
-
-def resolve_validator_kwargs(
-    field: FieldDef,
-    vdef: Optional[ValidatorDef],
-) -> Dict[str, Any]:
-    kwargs: Dict[str, Any] = {}
-    if vdef and vdef.kwargs:
-        kwargs.update(vdef.kwargs)
-    if field.validator_args:
-        kwargs.update(field.validator_args)
-    return kwargs
-
-
-# Back-compat aliases for internal migration (remove after full sweep)
-QuestionDef = FieldDef
-ToolDef = SkillToolDef
 
 
 def load_interview_spec_from_skill(
@@ -321,20 +308,6 @@ def load_interview_spec_from_skill(
     )
 
 
-def _load_spec_from_skill_dir(skill_dir: Path) -> Optional[InterviewSpec]:
-    if not (skill_dir / SKILL_MD).is_file():
-        return None
-    try:
-        return load_interview_spec_from_skill(skill_dir)
-    except Exception as exc:
-        logger.error(
-            "Failed to load interview spec from %s frontmatter: %s",
-            skill_dir / SKILL_MD,
-            exc,
-        )
-        return None
-
-
 class InterviewRegistry:
     """Discovers, loads, and caches interview specs from skill directories."""
 
@@ -347,25 +320,19 @@ class InterviewRegistry:
             if not skills_path.is_dir():
                 continue
             for skill_dir in skills_path.iterdir():
-                if not skill_dir.is_dir():
+                if not skill_dir.is_dir() or not (skill_dir / SKILL_MD).is_file():
                     continue
                 try:
-                    spec = _load_spec_from_skill_dir(skill_dir)
+                    spec = load_interview_spec_from_skill(skill_dir)
                 except Exception as e:
                     logger.error(
-                        "Failed to load interview spec from %s: %s",
-                        skill_dir,
-                        e,
+                        "Failed to load interview spec from %s: %s", skill_dir, e
                     )
                     continue
                 if spec is None or not spec.name:
                     continue
                 self._specs[spec.name] = spec
-                logger.info(
-                    "Loaded interview spec: %s from %s",
-                    spec.name,
-                    skill_dir,
-                )
+                logger.info("Loaded interview spec: %s from %s", spec.name, skill_dir)
         return self._specs
 
     def get(self, name: str) -> Optional[InterviewSpec]:

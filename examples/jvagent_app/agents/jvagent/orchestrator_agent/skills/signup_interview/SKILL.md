@@ -85,62 +85,23 @@ tags: [signup, training, interview, onboarding]
 
 - User wants to **sign up**, **register**, **enroll**, or **join jvagent training**.
 
-### Turn flow
-
-**Activation (first turn after `use_skill`)**
-
-- If the user's message includes extractable signup fields (e.g. "Hello my name is Jane Doe"), call `interview__set_fields` with every field you can extract, then `interview__next_question` when `missing_required` is non-empty, then reply.
-- Otherwise call `interview__next_question` first, then reply using `next_questions` / `response_directive`.
-
-**Each collection turn**
-
-1. Classify intent (answer, correction, skip optional phone, cancel, start over).
-2. Call the matching tool — usually `interview__set_fields` for answers and corrections.
-3. Read `ok`, `results`, and `response_directive`. When `missing_required` is non-empty or the directive says `Call interview__next_question`, chain `interview__next_question` before replying.
-4. One primary reply per turn unless the directive chains another tool.
-
-**Corrections**
-
-- Name, email, or training slot may be updated at any time via `interview__set_fields` — mid-interview or at review.
-- Use `interview__get_fields` or `interview__get_status` if you need current values before updating.
-- At **review**: after correcting, call `interview__review()` again, then ask for confirmation before `interview__complete()`.
-
 ### Branching
 
-The graph branches on stored field values — unreachable fields are pruned when the user changes an upstream answer.
+| After field | Condition | Next | Off-path |
+| ----------- | --------- | ---- | -------- |
+| `available_times` | contains **Saturday** | `training_format` → `user_email` | — |
+| `available_times` | weekday (`else`) | `user_email` | `training_format` |
+| `user_email` | contains **@mail.com** | `employer_name` → `phone_number` | — |
+| `user_email` | other (`else`) | `phone_number` | `employer_name` |
 
-| After field | Condition | Next field | Skipped |
-| ----------- | --------- | ---------- | ------- |
-| `available_times` | slot contains **Saturday** | `training_format` → then `user_email` | — |
-| `available_times` | weekday slot (default `else`) | `user_email` | `training_format` |
-| `user_email` | contains **@mail.com** | `employer_name` → then `phone_number` | — |
-| `user_email` | other domains (default `else`) | `phone_number` | `employer_name` |
+On activation, email is behind the slot branch — do not store `user_email` until `available_times` is saved (and `training_format` when Saturday).
 
-Use `interview__get_status` / `missing_required` / `next_questions` — do not assume every field in the spec is still on the active path.
+### Field notes
 
-### Field-specific rules
-
-- **user_name** — first and last name only; never store acknowledgements or filler ("ok", "sure").
-- **available_times** — `interview__next_question` runs `get_available_training_times` pre_processor; present slots in Eastern Time. Partial phrases like "Monday at 9" validate when they match a listed slot.
-- **training_format** — only on the Saturday branch; store normalized **In person** or **Virtual**.
-- **user_email** — for `@mail.com` addresses, read `post_tools_results` and `response_directive` after store; the work-email thank-you may chain `employer_name` before phone. Follow the directive, then `interview__next_question` when needed.
-- **employer_name** — only on the @mail.com branch; company or org name, not a job title alone.
-- **phone_number** — optional; `interview__skip_field("phone_number")` when the user declines.
-
-### Rules
-
-- Do not say the user is signed up until after `interview__complete()` succeeds.
-- Cancel → `interview__cancel`. Start over → `interview__reset`.
-- Do not invent questions — use `interview__next_question` for the active question text.
-
-### Session overrides
-
-| Situation | Action |
-| --------- | ------ |
-| Optional phone declined | `interview__skip_field("phone_number")`, then `interview__next_question` if needed |
-| User corrects a stored field | `interview__set_fields` for that field; at review, re-run `interview__review` |
-| After **complete** or **cancel** | Session cleared — call `use_skill` with `signup_interview` to start again |
+- **available_times** — `get_available_training_times` pre_processor lists Eastern Time slots; partial phrases like "Monday at 9" validate when they match a listed slot.
+- **user_email** — after store on `@mail.com`, read `post_tools_results`; work-email note may chain `employer_name` before phone.
+- **phone_number** — optional; `interview__skip_field` with `{"field_key": "phone_number"}` when declined.
 
 ### Tone
 
-Friendly and concise. Bold only the question text from `next_questions`. On validation failure, use `error` from the tool and re-ask.
+Friendly and concise. Bold only the question text from `next_fields`.

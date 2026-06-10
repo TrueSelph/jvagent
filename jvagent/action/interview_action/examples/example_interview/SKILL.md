@@ -81,15 +81,15 @@ interview:
 | Situation                                             | Action                                                                                                      |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | After **complete**                                    | Session cleared — call `use_skill` with `example_interview` to start again                                  |
-| `post_tools_results` shows `skip_to_review: true`     | Call `interview__review()` — do not ask remaining questions                                                 |
+| `post_tools_results` shows `next_tool: interview__review` | Call `interview__review()` — do not ask remaining questions                                             |
 | Review sets `terminate: true`                         | Deliver escalation message — do **not** call `interview__complete()`                                        |
 
 ### Rules
 
 1. **Low-rating check runs automatically via `post_processor`** after `product_rating` is saved. Read `post_tools_results` — never call `check_low_rating` manually.
-2. **Email suggestion is not a reply-only turn.** When pre_processor suggests an email and the user confirms, call `interview__set_field(field="follow_up_email", value=<email>)`.
+2. **Email suggestion is not a reply-only turn.** When pre_processor suggests an email and the user confirms, call `interview__set_fields` with `{"fields": {"follow_up_email": "<email>"}}`.
 3. Call `interview__review` when `missing_required` is empty, then `interview__complete` after user confirms.
 
 ### Tone
 
-Friendly and concise. Bold only the **question text** from `next_questions`.
+Friendly and concise. Bold only the **question text** from `next_fields`.

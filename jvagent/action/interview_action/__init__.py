@@ -9,12 +9,12 @@ package has no ``skills/`` subdir. Reference templates are under ``examples/``
 Documentation: ``README.md``, ``CLAUDE.md``, ``docs/``.
 """
 
-from .core.procedure import (
+from .interview_action import InterviewAction
+from .procedure import (
     compose_interview_skill_body,
     compose_interview_skill_body_from_bundle,
     get_standard_interview_procedure,
 )
-from .interview_action import InterviewAction
 
 __all__ = [
     "InterviewAction",
