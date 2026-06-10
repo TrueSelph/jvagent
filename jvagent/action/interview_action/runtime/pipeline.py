@@ -32,7 +32,7 @@ from ..core.validators import ExtractionStatus
 from .hooks import call_hook, load_hook_function
 from .path_resolver import (
     build_next_questions,
-    compute_reachable_question_names,
+    compute_active_path_for_prune,
     compute_reachable_required,
     missing_required_reachable,
     prune_unreachable_fields,
@@ -525,6 +525,9 @@ async def apply_store_pipeline(
         existing = (session.get_value(field_name) or "").strip()
         incoming = (raw_value or "").strip()
         if existing and existing == incoming:
+            directive, next_tool = await resolve_store_continuation(
+                session, spec, load_fn, visitor, action
+            )
             payload: Dict[str, Any] = {
                 "ok": True,
                 "stored": False,
@@ -535,6 +538,8 @@ async def apply_store_pipeline(
                 "fields": session.get_collected_summary(),
                 "skipped_fields": sorted(session.skipped_fields),
                 "missing_required": missing_required_reachable(session, required),
+                "response_directive": directive,
+                "next_tool": next_tool,
             }
             return await finalize_store_continuation(action, visitor, payload)
 
@@ -587,7 +592,7 @@ async def apply_store_pipeline(
         session.context.pop(CTX_QUESTION_PRESENTED, None)
         _clear_field_suggestion(session, field_name)
 
-    reachable = await compute_reachable_question_names(
+    reachable = await compute_active_path_for_prune(
         session,
         spec,
         load_fn,

@@ -31,7 +31,7 @@ from ..core.validators import ExtractionStatus, get_validator
 from ..runtime.hooks import call_hook, load_hook_function
 from ..runtime.path_resolver import (
     build_next_questions,
-    compute_reachable_question_names,
+    compute_active_path_for_prune,
     compute_reachable_required,
     missing_required_reachable,
     prune_unreachable_fields,
@@ -147,7 +147,7 @@ class InterviewFlowHandlersMixin(InterviewHandlersHost):
             )
 
         session.skip_field(field)
-        reachable = await compute_reachable_question_names(
+        reachable = await compute_active_path_for_prune(
             session, spec, self._load_fn(spec), visitor, self
         )
         prune_unreachable_fields(session, reachable)
@@ -526,7 +526,7 @@ class InterviewFlowHandlersMixin(InterviewHandlersHost):
             stored.append(name)
             stored_values[name] = value
         if stored:
-            reachable = await compute_reachable_question_names(
+            reachable = await compute_active_path_for_prune(
                 session, spec, self._load_fn(spec), visitor, self
             )
             prune_unreachable_fields(session, reachable)

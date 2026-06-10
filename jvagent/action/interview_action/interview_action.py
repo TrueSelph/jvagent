@@ -188,8 +188,10 @@ class InterviewAction(
         ]
         if missing_required:
             parts.append(
-                "New session: call interview__next_question before asking the user "
-                "any field question via reply."
+                "New session: if the activation message contains extractable field "
+                "values, call interview__set_fields first (this message only), then "
+                "interview__next_question when missing_required is non-empty; "
+                "otherwise call interview__next_question before asking via reply."
             )
         if parsed.get("post_tools_results"):
             parts.append(f"post_tools_results={parsed['post_tools_results']}")

@@ -131,13 +131,26 @@ Branching is **procedure-driven**, not graph-evaluated:
 
 Document branches in `SKILL.md` and implement side effects in hooks.
 
+### Collectible path vs active projection (prune)
+
+Path resolution uses two walks (`path_resolver.py`):
+
+| Walk | API | Stops when | Drives |
+|------|-----|------------|--------|
+| **Collectible** | `compute_collectible_path_names` | First field without a stored value (and not skipped) | `missing_required`, store authorization, `resolve_next_question_name`, `next_questions` |
+| **Active projection** | `compute_active_path_for_prune` | Unresolved branch point only (no linear fallback through `branches` without a match/`else`) | `prune_unreachable_fields` only |
+
+On an empty session, collectible path is typically just the first field (e.g. signup `user_name` only) — downstream branch targets are not listed in `missing_required` until the branch-determining field is answered. Unanswered branch points with no matching `else` stop the active projection at that field (e.g. onboarding `has_account` before `existing_email` is chosen).
+
+`compute_reachable_question_names` is an alias for the collectible prefix path.
+
 ### Branch path invalidation (corrections)
 
-When the user corrects a field that determines a branch (`fields[].branches`), the runtime recomputes the **full active path** (start → terminal field) from stored values and **prunes only off-path fields** — answers on the new path that remain valid (e.g. `contact` after `user_type` premium→standard, or `phone_number` after email branch pivot) are preserved.
+When the user corrects a field that determines a branch (`fields[].branches`), prune recomputes the **active projection** from stored values and **removes only off-path fields** — answers on the new path that remain valid (e.g. `contact` after `user_type` premium→standard, or `phone_number` after email branch pivot) are preserved.
 
 - Pruned field names are recorded in `session.context.pruned_fields` and may appear as `pruned_fields` on `interview__set_fields` responses.
 - Prune also clears `skipped_fields` entries and stale `question_presented` / `field_suggestion` scratch keys for pruned fields.
-- `resolve_next_question_name` still returns the first unanswered field on the active path; use `missing_required` / `next_questions` after a correction — do not assume every spec field is still collected.
+- `missing_required` and `resolve_next_question_name` use the **collectible** prefix; after a correction, call `interview__next_question` when `next_tool` is chained — do not assume every spec field is still collected.
 
 ## Review and completion turns
 
