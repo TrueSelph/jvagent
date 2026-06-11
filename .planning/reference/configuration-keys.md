@@ -175,6 +175,7 @@ See [`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) for the full pattern. H
 | `model_action_type` | `OpenAILanguageModelAction` | LM action binding for `model` |
 | `activation_budget` | 24 | max think-act-observe iterations per turn |
 | `history_limit` | 4 | prior turns fed into the loop prompt (working context). The rolling memory window is the agent-level `interaction_limit` |
+| `include_history_events` | `true` | include prior interaction `[EVENT]` lines in loop history; set `false` to omit |
 | `lock_active_flow` | `true` | deterministic turn-lock to an active flow's IA; `false` = model-mediated continuation (ADR-0013) |
 | `planning` | `false` | surface the `update_plan` tool so the model records a multi-step plan that persists across turns (`AGENTIC_LOOP` task on the `TaskStore`) and resumes an interrupted turn; off = zero cost (ADR-0019) |
 | `proactive_tasks_enabled` | `true` | surface the `queue_task` tool for enqueueing `PROACTIVE` tasks (ADR-0022) |

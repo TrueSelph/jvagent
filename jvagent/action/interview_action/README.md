@@ -294,7 +294,7 @@ interview_tool_response(
 
 ## Core `interview__*` tools
 
-Primary tools registered by [`tools.py`](tools.py). Sessions start via `use_skill` → `on_skill_activate` (there is no `interview__init`).
+Primary tools registered by [`tools.py`](tools.py). Sessions start via `use_skill` → `on_skill_activate`.
 
 | Tool | Purpose |
 |------|---------|
@@ -323,8 +323,11 @@ All tools return JSON with these key fields:
 | `ok` | Chaining gate — must be `true` to advance |
 | `status` | Machine-readable status (`ok`, `error`, `validation_failed`, etc.) |
 | `fields` | All collected field values |
-| `missing_required` | Required fields not yet collected |
-| `next_fields` | Questions the LLM should ask next |
+| `missing_required` | Required field keys on the collectible path not yet collected |
+| `awaiting_fields` | Unanswered collectible-path fields (`key`, `prompt`, `guidance`, `required`) — use for `set_fields` key mapping |
+| `field_awareness` | Human-readable line: awaiting field key + question prompt; tool handlers upsert one `[EVENT]` snapshot per interaction (latest field wins) |
+| `next_field` | Next question object from `interview__next_field` |
+| `field_definitions` | Full spec catalog on `interview__get_status` only (not on activation) |
 | `response_directive` | Single next action for the LLM |
 | `pre_tools_results` | Outcomes from pre_tool hooks |
 | `post_tools_results` | Outcomes from post_tool hooks |

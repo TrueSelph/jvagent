@@ -137,7 +137,7 @@ Path resolution uses two walks ([`flow.py`](../flow.py)):
 
 | Walk | API | Stops when | Drives |
 |------|-----|------------|--------|
-| **Collectible** | `compute_collectible_path_names` | First field without a stored value (and not skipped) | `missing_required`, `resolve_next_field_name`, `next_fields` |
+| **Collectible** | `compute_collectible_path_names` | First field without a stored value (and not skipped) | `missing_required`, `awaiting_fields`, `resolve_next_field_name`, `next_field` |
 | **Active projection** | `compute_active_path_for_prune` | Unresolved branch point only (no linear fallback through `branches` without a match/`else`) | `prune_unreachable_fields` only |
 
 On an empty session, collectible path is typically just the first field (e.g. signup `user_name` only) — downstream branch targets are not listed in `missing_required` until the branch-determining field is answered. Unanswered branch points with no matching `else` stop the active projection at that field (e.g. onboarding `has_account` before `existing_email` is chosen).
@@ -150,7 +150,8 @@ When the user corrects a field that determines a branch (`fields[].branches`), p
 
 - Pruned field names are recorded in `session.context.pruned_fields` and may appear as `pruned_fields` on `interview__set_fields` responses.
 - Prune also clears `skipped_fields` entries for pruned fields.
-- `missing_required` and `resolve_next_field_name` use the **collectible** prefix; after a correction, call `interview__next_field` when `next_tool` is chained — do not assume every spec field is still collected.
+- `missing_required`, `awaiting_fields`, and `resolve_next_field_name` use the **collectible** prefix; after a correction, call `interview__next_field` when `next_tool` is chained — do not assume every spec field is still collected.
+- Activation (`use_skill`) returns `awaiting_fields` + `field_awareness` (branch-aware) — not the full `field_definitions` catalog. `field_awareness` is surfaced in the locked-skill header via `pending_directive` on each loop tick. Tool handlers upsert one `[EVENT]` snapshot per interaction (latest awaiting field wins) so prior-turn history does not accumulate stale field lines. Use `interview__get_status` when you need the complete schema.
 
 ## Review and completion turns
 

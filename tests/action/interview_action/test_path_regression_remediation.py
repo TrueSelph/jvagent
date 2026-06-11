@@ -97,6 +97,25 @@ async def test_empty_signup_missing_only_first_field(signup_spec):
 
 
 @pytest.mark.asyncio
+async def test_activation_awaiting_fields_only_first_field(signup_action):
+    action, _spec = signup_action
+    conv = MagicMock()
+    conv.context = {}
+    conv.save = AsyncMock()
+    visitor = SimpleNamespace(conversation=conv)
+
+    action._save_session = AsyncMock()
+    action._ensure_active_task = AsyncMock()
+
+    result = json.loads(
+        await action._handle_start("signup_interview", visitor, user_message=_OPENING)
+    )
+
+    assert [f["key"] for f in result["awaiting_fields"]] == ["user_name"]
+    assert "field_definitions" not in result
+
+
+@pytest.mark.asyncio
 async def test_activation_opening_extracts_user_name(signup_action):
     action, _spec = signup_action
     conv = MagicMock()

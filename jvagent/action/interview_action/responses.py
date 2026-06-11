@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 # Keys forwarded from pre/post processor hook results to the LLM.
 HOOK_RESULT_KEYS = (
@@ -125,6 +125,30 @@ def no_session_directive() -> str:
         "interview__next_field. Do not ask interview field questions via "
         "reply until the session is active."
     )
+
+
+def build_field_awareness_message(awaiting_fields: List[Dict[str, Any]]) -> str:
+    """Human-readable line for events, pending_directive, and field_awareness envelopes."""
+    if not awaiting_fields:
+        return ""
+    primary = awaiting_fields[0]
+    key = str(primary.get("key", "")).strip()
+    if not key:
+        return ""
+    prompt = str(primary.get("prompt", "")).strip()
+    message = f"Awaiting user input for '{key}' field."
+    if prompt:
+        message += f" Question: {prompt}"
+    if len(awaiting_fields) > 1:
+        extras = [
+            str(entry.get("key", "")).strip()
+            for entry in awaiting_fields[1:]
+            if entry.get("key")
+        ]
+        if extras:
+            also = ", ".join(f"'{name}'" for name in extras)
+            message += f" Also awaiting: {also}."
+    return message
 
 
 def restart_session_directive(interview_type: str) -> str:

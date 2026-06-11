@@ -20,7 +20,7 @@ These extend [platform invariants](../../../../docs/thin-harness.md#platform-inv
 
 1. **No server-side intent classification** — cancel, reset, correct/update, and multi-answer routing are defined in the composed SOP; the foundation must not use regex, keyword lists, or `control_intent` prep to choose tools for the model.
 
-2. **No turn-prep steering** — `prepare_locked_skill_turn` returns only `runtime_ready` (session + contract loaded). It must **not** inject `interview__message_evaluation`, auto-seed `interview__next_field`, or attach `pending_directive` observations.
+2. **No turn-prep steering** — `prepare_locked_skill_turn` loads session + contract and may set `pending_directive` to the current `field_awareness` line (field key + question — reference metadata only, in-turn header only). It must **not** persist interaction events, inject `interview__message_evaluation`, auto-seed `interview__next_field`, or attach `pending_directive` / observations that replace explicit tool calls (e.g. “call interview__next_field now”). Persisted `[EVENT]` snapshots come from tool handlers only and upsert to one line per interaction.
 
 3. **No activation auto-store** — `_handle_start` / `on_skill_activate` must not parse the user message and pre-fill `session.fields`. Extraction is model-owned via `interview__set_fields`.
 

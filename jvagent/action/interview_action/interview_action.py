@@ -182,10 +182,22 @@ class InterviewAction(Action):
     async def prepare_locked_skill_turn(
         self, skill_name: str, visitor: Any = None
     ) -> Any:
+        from jvagent.action.interview_action import engine as interview_engine
         from jvagent.action.orchestrator.skill_tasks import LockedSkillPrep
 
         runtime_ready = await self.skill_runtime_ready(skill_name, visitor)
-        return LockedSkillPrep(runtime_ready=runtime_ready)
+        pending_directive: Optional[str] = None
+        if runtime_ready:
+            session, spec = await self._get_session_and_contract(visitor)
+            if session and spec:
+                ctx = await interview_engine._session_field_context(
+                    self, session, spec, visitor
+                )
+                pending_directive = ctx.get("field_awareness") or None
+        return LockedSkillPrep(
+            runtime_ready=runtime_ready,
+            pending_directive=pending_directive,
+        )
 
     async def prune_turn_tools(
         self, tools: Dict[str, Any], visible: set, visitor: Any = None
@@ -248,7 +260,11 @@ class InterviewAction(Action):
                 or parsed.get("error")
                 or f"Could not start interview session for {skill_name}."
             )
-        return json.dumps(parsed)
+        awareness = (parsed.get("field_awareness") or "").strip()
+        body = json.dumps(parsed)
+        if awareness:
+            return f"{awareness}\n\n{body}"
+        return body
 
     async def resolve_locked_skill(
         self, visitor: Any, skill_docs: List[Any]

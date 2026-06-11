@@ -70,6 +70,8 @@ def _build_core_tools(action: "InterviewAction") -> List[Tool]:
                 "fields, or batch extraction from the user's latest message. "
                 'Args shape is always {"fields": {"field_key": "value", ...}} — '
                 "never pass field keys at the top level of args. "
+                "Use keys from awaiting_fields[].key in the latest activation, "
+                "next_field, get_status, or set_fields observation — never invent keys. "
                 "Validators run per field inside this tool — never call validator "
                 "functions directly. ok:false means a field was not stored. On ok:true, "
                 "runs post_processor hooks when configured. Chain interview__next_field "

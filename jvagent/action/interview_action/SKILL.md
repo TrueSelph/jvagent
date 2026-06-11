@@ -16,14 +16,14 @@ allowed-tools:
 
 # Standard Interview Procedure
 
-Conduct interviews by calling `interview__*` tools. Each response includes `ok`, `fields`, `missing_required`, `results`, hook outputs (`pre_tools_results`, `post_tools_results`), `next_tool`, and `response_directive`. The server does not steer turns — you classify intent, extract values, and chain tools ([thin harness](docs/thin-harness.md)).
+Conduct interviews by calling `interview__*` tools. Each response includes `ok`, `fields`, `missing_required`, `awaiting_fields`, `field_awareness`, `results`, hook outputs (`pre_tools_results`, `post_tools_results`), `next_tool`, and `response_directive`. Prior turns may also include `[EVENT]` lines with the same `field_awareness` text. The server does not steer turns — you classify intent, extract values, and chain tools ([thin harness](docs/thin-harness.md)).
 
 ## Session gate
 
-There is no `interview__init`. Sessions open only via `use_skill(<skill_name>)`.
+Sessions open only via `use_skill(<skill_name>)`.
 
 1. **No session → no field prompts in `reply`.** Prompts come from `interview__next_field` after activation.
-2. **Activation:** If the latest message has extractable field values → `interview__set_fields` with all matching keys → `interview__next_field` when `missing_required` is non-empty → `reply`. Otherwise → `interview__next_field` first → `reply` from tool output (not from memory).
+2. **Activation:** Read `field_awareness` and `awaiting_fields` from the activation observation — map extractions to the quoted `field_key` only; never invent keys (e.g. `full_name` when the key is `user_name`). If the latest message has extractable values → `interview__set_fields` → `interview__next_field` when `missing_required` is non-empty → `reply`. Otherwise → `interview__next_field` first → `reply` from tool output (not from memory).
 3. Only the activation message counts — values from earlier chat turns are not stored.
 4. After **cancel** or **complete**, call `use_skill` again to start fresh.
 5. Never reuse field values from older turns unless the user repeats them in the **latest** message.
@@ -53,7 +53,7 @@ Use `interview__get_status` for progress. On `NO_SESSION`, activate then `interv
 
 ## Branching
 
-Fields may branch on stored values. Changing an upstream answer prunes off-path stored fields. Use `missing_required` and `next_field` — do not assume every field in the spec is still on the active path.
+Fields may branch on stored values. Changing an upstream answer prunes off-path stored fields. Use `awaiting_fields`, `missing_required`, and `next_field` — do not assume every field in the spec is still on the active path.
 
 When a correction pivots branches: store the pivot field first; batch co-mentioned downstream branch fields in one `set_fields` when the user supplies them together.
 
@@ -75,5 +75,7 @@ Review handlers with `terminate: true` end without `complete`.
 - One primary action per turn.
 - Ask questions only from `next_field` / `response_directive` supplied **this turn**.
 - Do not store filler or acknowledgements as answers — validators are the gate; re-ask using `error` from failed `set_fields`.
+- Map user answers to the `field_key` in `field_awareness` / `awaiting_fields` from the latest tool observation — never invent field keys.
 - `set_fields` args: `{"fields": {"field_key": "value"}}` — never put field keys at the top level.
 - `skip_field` args: `{"field_key": "field_name"}`.
+- Full schema catalog: `interview__get_status` (`field_definitions`); activation returns `awaiting_fields` only.

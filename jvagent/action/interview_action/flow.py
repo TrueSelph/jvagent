@@ -323,6 +323,39 @@ async def compute_missing_required(
     return session.missing_required([n for n in reachable if n in required])
 
 
+def _slim_field_entry(fdef: FieldDef) -> Dict[str, Any]:
+    """Model-facing field metadata for awaiting_fields / next_field."""
+    entry: Dict[str, Any] = {
+        "key": fdef.key,
+        "prompt": fdef.prompt,
+        "required": fdef.required,
+    }
+    if fdef.guidance:
+        entry["guidance"] = fdef.guidance
+    return entry
+
+
+async def build_awaiting_fields(
+    session: InterviewSession,
+    spec: InterviewSpec,
+    load_function: LoadFn,
+    visitor: Any = None,
+    interview_action: Any = None,
+) -> List[Dict[str, Any]]:
+    """Collectible-path fields not yet stored or skipped."""
+    collectible = await compute_collectible_path_names(
+        session, spec, load_function, visitor, interview_action
+    )
+    awaiting: List[Dict[str, Any]] = []
+    for key in collectible:
+        if session.has_field(key) or session.is_skipped(key):
+            continue
+        fdef = spec.get_field(key)
+        if fdef:
+            awaiting.append(_slim_field_entry(fdef))
+    return awaiting
+
+
 async def build_next_field(
     session: InterviewSession,
     spec: InterviewSpec,
@@ -337,14 +370,9 @@ async def build_next_field(
     fdef = spec.get_field(nxt) if nxt else None
     if not fdef:
         return None
-    entry: Dict[str, Any] = {
-        "key": fdef.key,
-        "prompt": fdef.prompt,
-        "required": fdef.required,
-        "validator": fdef.validator,
-    }
-    if fdef.guidance:
-        entry["guidance"] = fdef.guidance
+    entry = _slim_field_entry(fdef)
+    if fdef.validator:
+        entry["validator"] = fdef.validator
     return entry
 
 

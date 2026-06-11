@@ -42,10 +42,14 @@ async def test_on_skill_activate_notes_skill_procedure(signup_action):
     )
 
     assert note is not None
-    parsed = json.loads(note)
+    assert note.startswith("Awaiting user input for 'user_name' field.")
+    _awareness, json_body = note.split("\n\n", 1)
+    parsed = json.loads(json_body)
     assert parsed["ok"] is True
     assert parsed["interview_type"] == "signup_interview"
     assert "missing_required" in parsed
+    assert parsed["awaiting_fields"][0]["key"] == "user_name"
+    assert "field_definitions" not in parsed
 
 
 @pytest.mark.asyncio

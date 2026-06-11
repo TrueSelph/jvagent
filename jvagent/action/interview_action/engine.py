@@ -15,6 +15,7 @@ from jvagent.tooling.tool_executor import get_dispatch_visitor
 
 from . import tasks
 from .flow import (
+    build_awaiting_fields,
     build_next_field,
     compute_active_path_for_prune,
     compute_missing_required,
@@ -25,6 +26,7 @@ from .flow import (
 from .hooks import call_hook, coerce_hook_result, load_hook_function, run_validator
 from .responses import (
     auto_confirm_directive,
+    build_field_awareness_message,
     call_tool_directive,
     interview_tool_response,
     no_session_directive,
@@ -112,6 +114,101 @@ def _no_session_response() -> str:
         error="No active interview session.",
         response_directive=no_session_directive(),
     )
+
+
+_FIELD_AWARENESS_ACTION = "InterviewAction"
+_FIELD_AWARENESS_PREFIX = "Awaiting user input for "
+
+
+async def record_field_awareness(visitor: Any, message: str) -> None:
+    """Persist the latest field-awareness snapshot on the current interaction.
+
+    Upserts a single InterviewAction field-awareness event per interaction so
+    prior-turn history does not accumulate stale awaiting-field lines from
+    multiple tool calls or turn-prep snapshots.
+    """
+    text = (message or "").strip()
+    if not text:
+        return
+    interaction = getattr(visitor, "interaction", None) if visitor else None
+    if interaction is None:
+        return
+    events = getattr(interaction, "events", None)
+    if events is None:
+        interaction.events = []
+        events = interaction.events
+
+    for idx in range(len(events) - 1, -1, -1):
+        event = events[idx]
+        if not isinstance(event, dict):
+            continue
+        if event.get("action_name") != _FIELD_AWARENESS_ACTION:
+            continue
+        content = str(event.get("content", ""))
+        if not content.startswith(_FIELD_AWARENESS_PREFIX):
+            continue
+        if content == text:
+            return
+        events[idx] = {"action_name": _FIELD_AWARENESS_ACTION, "content": text}
+        try:
+            await interaction.save()
+        except Exception as exc:
+            logger.debug("record_field_awareness: save failed: %s", exc)
+        return
+
+    if not interaction.add_event(text, _FIELD_AWARENESS_ACTION):
+        return
+    try:
+        await interaction.save()
+    except Exception as exc:
+        logger.debug("record_field_awareness: save failed: %s", exc)
+
+
+async def _session_field_context(
+    action: Any,
+    session: InterviewSession,
+    spec: InterviewSpec,
+    visitor: Any = None,
+) -> Dict[str, Any]:
+    """Branch-aware missing required keys and unanswered collectible fields."""
+    load_fn = action._load_fn(spec)
+    missing = await compute_missing_required(session, spec, load_fn, visitor, action)
+    awaiting = await build_awaiting_fields(session, spec, load_fn, visitor, action)
+    awareness = build_field_awareness_message(awaiting)
+    return {
+        "missing_required": missing,
+        "awaiting_fields": awaiting,
+        "field_awareness": awareness or None,
+    }
+
+
+async def _session_field_context_and_record(
+    action: Any,
+    session: InterviewSession,
+    spec: InterviewSpec,
+    visitor: Any = None,
+    *,
+    record: bool = True,
+) -> Dict[str, Any]:
+    ctx = await _session_field_context(action, session, spec, visitor)
+    if record:
+        await record_field_awareness(visitor, ctx.get("field_awareness") or "")
+    return ctx
+
+
+def _unknown_field_error(
+    fname: str, awaiting_fields: List[Dict[str, Any]]
+) -> Tuple[str, Optional[str]]:
+    """Build UNKNOWN_FIELD message and optional system_message."""
+    awaiting_keys = [str(f.get("key", "")) for f in awaiting_fields if f.get("key")]
+    err = f"Unknown field '{fname}'. Awaiting keys: {awaiting_keys}"
+    system_message: Optional[str] = None
+    if len(awaiting_keys) == 1:
+        system_message = (
+            f'Use set_fields key "{awaiting_keys[0]}" (see awaiting_fields), '
+            f'not "{fname}".'
+        )
+    return err, system_message
 
 
 # ---------------------------------------------------------------------------
@@ -260,11 +357,15 @@ async def handle_set_fields(
 
     field_map = _normalize_field_map(fields, **kwargs)
     if not field_map:
+        field_ctx = await _session_field_context_and_record(
+            action, session, spec, visitor
+        )
         return interview_tool_response(
             ok=False,
             status="error",
             error_code="NO_FIELDS",
             error="No fields provided.",
+            **field_ctx,
             response_directive=tell_user_directive(
                 "Call interview__set_fields with a single `fields` map — e.g. "
                 f"{SET_FIELDS_ARGS_EXAMPLE}. Do not put field keys at the top "
@@ -294,8 +395,20 @@ async def handle_set_fields(
     for fname, fvalue in ordered:
         fdef = spec.get_field(fname)
         if not fdef:
-            err = f"Unknown field '{fname}'. Valid: {sorted(spec.field_keys())}"
-            failure = {"field": fname, "error": err, "error_code": "UNKNOWN_FIELD"}
+            field_ctx = await _session_field_context_and_record(
+                action, session, spec, visitor
+            )
+            awaiting_fields = field_ctx["awaiting_fields"]
+            err, unknown_system = _unknown_field_error(fname, awaiting_fields)
+            failure = {
+                "field": fname,
+                "error": err,
+                "error_code": "UNKNOWN_FIELD",
+                "awaiting_fields": awaiting_fields,
+                "field_awareness": field_ctx.get("field_awareness"),
+            }
+            if unknown_system:
+                failure["system_message"] = unknown_system
             results.append({"field": fname, "ok": False, "stored": False, "error": err})
             break
 
@@ -381,14 +494,21 @@ async def handle_set_fields(
             system_message=complete_check.get("system_message"),
         )
 
-    missing = await compute_missing_required(session, spec, load_fn, visitor, action)
+    if failure is None:
+        field_ctx = await _session_field_context_and_record(
+            action, session, spec, visitor
+        )
+    else:
+        field_ctx = await _session_field_context(action, session, spec, visitor)
+        if failure.get("error_code") == "UNKNOWN_FIELD":
+            field_ctx["field_awareness"] = failure.get("field_awareness")
     payload: Dict[str, Any] = {
         "ok": failure is None,
         "status": session.status.value,
         "results": results,
         "fields": session.get_collected_summary(),
         "skipped_fields": sorted(session.skipped_fields),
-        "missing_required": missing,
+        **field_ctx,
     }
     if pruned_all:
         payload["pruned_fields"] = pruned_all
@@ -413,6 +533,8 @@ async def handle_set_fields(
             payload["validator"] = failure["validator"]
         if failure.get("response_directive"):
             payload["response_directive"] = failure["response_directive"]
+        if failure.get("system_message"):
+            payload["system_message"] = failure["system_message"]
     else:
         directive, next_tool = await _chain_hint(action, session, spec, visitor)
         payload["response_directive"] = post_outcome.get(
@@ -493,7 +615,7 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
         return _no_session_response()
 
     load_fn = action._load_fn(spec)
-    missing = await compute_missing_required(session, spec, load_fn, visitor, action)
+    field_ctx = await _session_field_context_and_record(action, session, spec, visitor)
     next_field = await build_next_field(session, spec, load_fn, visitor, action)
 
     if not next_field:
@@ -502,7 +624,7 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
             status=session.status.value,
             fields=session.get_collected_summary(),
             skipped_fields=sorted(session.skipped_fields),
-            missing_required=missing,
+            **field_ctx,
             next_tool="interview__review",
             response_directive=call_tool_directive("interview__review"),
         )
@@ -516,7 +638,7 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
             status="error",
             error="One or more pre_processor hooks failed.",
             fields=session.get_collected_summary(),
-            missing_required=missing,
+            **field_ctx,
             next_field=next_field,
             pre_tools_results=pre_tools_results,
         )
@@ -533,7 +655,7 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
         status=session.status.value,
         fields=session.get_collected_summary(),
         skipped_fields=sorted(session.skipped_fields),
-        missing_required=missing,
+        **field_ctx,
         next_field=next_field,
         pre_tools_results=pre_tools_results or None,
         response_directive=directive,
@@ -574,7 +696,7 @@ async def handle_skip_field(action: Any, field: str, visitor: Any = None) -> str
     prune_unreachable_fields(session, reachable)
     await action._save_session(session, visitor)
 
-    missing = await compute_missing_required(session, spec, load_fn, visitor, action)
+    field_ctx = await _session_field_context_and_record(action, session, spec, visitor)
     directive, next_tool = await _chain_hint(action, session, spec, visitor)
     return interview_tool_response(
         ok=True,
@@ -582,7 +704,7 @@ async def handle_skip_field(action: Any, field: str, visitor: Any = None) -> str
         field=field,
         fields=session.get_collected_summary(),
         skipped_fields=sorted(session.skipped_fields),
-        missing_required=missing,
+        **field_ctx,
         response_directive=directive,
         next_tool=next_tool,
     )
@@ -632,6 +754,7 @@ def _review_response(
     *,
     preamble: str = "",
     custom_message: str = "",
+    field_ctx: Optional[Dict[str, Any]] = None,
 ) -> str:
     auto = spec.confirm == "auto"
     if auto:
@@ -651,6 +774,8 @@ def _review_response(
         "confirm": spec.confirm,
         "custom_message": custom_message or None,
     }
+    if field_ctx:
+        payload.update(field_ctx)
     if auto:
         payload["next_tool"] = "interview__complete"
         payload["system_message"] = (
@@ -678,13 +803,16 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
     review_fn = spec.handlers.review
     func = load_hook_function(spec, review_fn) if review_fn else None
 
+    field_ctx = await _session_field_context(action, session, spec, visitor)
     if not func:
         summary = build_review_summary(
             session, spec, collected, visible_keys=visible_keys
         )
         session.status = InterviewStatus.REVIEW
         await action._save_session(session, visitor)
-        return _review_response(session, spec, review_fields, summary)
+        return _review_response(
+            session, spec, review_fields, summary, field_ctx=field_ctx
+        )
 
     try:
         result = await call_hook(
@@ -755,6 +883,7 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
         summary,
         preamble=custom_message or directive,
         custom_message=custom_message,
+        field_ctx=field_ctx,
     )
 
 
@@ -920,12 +1049,14 @@ async def handle_reset(action: Any, visitor: Any = None) -> str:
     session.status = InterviewStatus.ACTIVE
     await action._save_session(session, visitor)
 
+    field_ctx = await _session_field_context_and_record(action, session, spec, visitor)
     return interview_tool_response(
         ok=True,
         status="restarted",
         response_directive=tell_user_directive("No problem — let's start over."),
         next_tool="interview__next_field",
         system_message=call_tool_directive("interview__next_field"),
+        **field_ctx,
     )
 
 
@@ -968,12 +1099,8 @@ async def handle_get_status(action: Any, visitor: Any = None) -> str:
             ),
         )
 
-    missing = (
-        await compute_missing_required(
-            session, spec, action._load_fn(spec), visitor, action
-        )
-        if spec
-        else []
+    field_ctx = (
+        await _session_field_context(action, session, spec, visitor) if spec else {}
     )
     return interview_tool_response(
         ok=True,
@@ -981,8 +1108,8 @@ async def handle_get_status(action: Any, visitor: Any = None) -> str:
         interview_type=session.interview_type,
         fields=session.get_collected_summary(),
         skipped_fields=sorted(session.skipped_fields),
-        missing_required=missing,
         started_at=session.started_at,
+        **field_ctx,
         field_definitions=(
             [field_def_to_dict(f) for f in spec.fields] if spec else None
         ),
@@ -1016,31 +1143,26 @@ async def handle_start(
     conversation = await action._get_conversation(visitor)
     existing = load_session(conversation) if conversation else None
 
-    def _session_envelope(
-        session: InterviewSession, missing: List[str], **extra: Any
-    ) -> str:
+    async def _session_envelope(session: InterviewSession, **extra: Any) -> str:
+        field_ctx = await _session_field_context_and_record(
+            action, session, spec, visitor
+        )
         return interview_tool_response(
             ok=True,
             status=session.status.value,
             interview_type=session.interview_type,
             fields=session.get_collected_summary(),
             skipped_fields=sorted(session.skipped_fields),
-            missing_required=missing,
-            field_definitions=[field_def_to_dict(f) for f in spec.fields],
+            **field_ctx,
             confirm=spec.confirm,
             custom_tools=[f"{spec.name}__{t.name}" for t in spec.skill_tools],
             **extra,
         )
 
-    load_fn = action._load_fn(spec)
-
     if existing and existing.is_active() and existing.interview_type == interview_type:
         if visitor:
             await tasks.ensure_active_task(visitor, spec, action.description)
-        missing = await compute_missing_required(
-            existing, spec, load_fn, visitor, action
-        )
-        return _session_envelope(existing, missing)
+        return await _session_envelope(existing)
 
     fresh_session = existing is None
     if conversation and existing:
@@ -1057,8 +1179,7 @@ async def handle_start(
     if visitor:
         await tasks.ensure_active_task(visitor, spec, action.description)
 
-    missing = await compute_missing_required(session, spec, load_fn, visitor, action)
-    return _session_envelope(session, missing, fresh_session=fresh_session)
+    return await _session_envelope(session, fresh_session=fresh_session)
 
 
 # ---------------------------------------------------------------------------

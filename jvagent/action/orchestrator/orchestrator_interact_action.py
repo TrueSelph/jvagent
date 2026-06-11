@@ -361,6 +361,10 @@ class OrchestratorInteractAction(InteractAction):
         "instruction; None disables.",
     )
     history_limit: int = attribute(default=4)
+    include_history_events: bool = attribute(
+        default=True,
+        description="Include interaction [EVENT] lines in loop history.",
+    )
     clarify_text: str = attribute(
         default="Sorry, I didn't quite catch that — could you rephrase?",
     )
@@ -2891,6 +2895,7 @@ class OrchestratorInteractAction(InteractAction):
                     limit=int(self.history_limit),
                     excluded=getattr(interaction, "id", None),
                     formatted=True,
+                    with_event=bool(self.include_history_events),
                 )
                 or []
             )

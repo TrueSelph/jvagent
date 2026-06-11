@@ -43,7 +43,8 @@ async def test_prepare_runtime_ready_when_session_active(interview_action):
 
     assert prep.runtime_ready is True
     assert not prep.observations
-    assert not prep.pending_directive
+    assert prep.pending_directive is not None
+    assert "user_name" in prep.pending_directive
 
 
 @pytest.mark.asyncio
