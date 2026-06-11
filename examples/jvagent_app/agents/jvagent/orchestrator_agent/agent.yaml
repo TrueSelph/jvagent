@@ -267,7 +267,7 @@ actions:
       model_temperature: 0.3
 
   # Interview tool bundle — skills-v2 signup flow uses signup_interview skill.
-  - action: jvagent/interview_action
+  - action: jvagent/interview
     context:
       enabled: true
       description: Interview action — granular interview__* tools for skill-driven flows

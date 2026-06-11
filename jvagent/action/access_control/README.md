@@ -36,7 +36,7 @@ actions:
       default_deny: false
       action_aliases:
         persona: PersonaAction
-        report: ReportInterviewInteractAction
+        report: ReportInterviewSkill
       permissions:
         default:
           any:
@@ -67,7 +67,7 @@ channel -> action_label -> allow/deny -> rules
 ```
 
 - **Channel**: "default" (web), "whatsapp", etc.
-- **Action label**: InteractAction class name (e.g. "PersonaAction", "ReportInterviewInteractAction") or "any"
+- **Action label**: InteractAction class name (e.g. "PersonaAction", "ReportInterviewSkill") or "any"
 - **Allow/Deny**: Deny rules checked first; allow rules grant access
 - **Rules**: `{ user: "user_id" }` or `{ group: "group_name" }`; `group: "all"` matches everyone. Groups resolve per action label with `default` fallback.
 
@@ -138,11 +138,11 @@ Resolves AccessControlAction from `agent_id` (no start_node). Request body:
   "permissions": {
     "default": {
       "any": { "deny": [], "allow": [{ "group": "all", "enabled": true }] },
-      "ReportInterviewInteractAction": { "deny": [{ "group": "all" }], "allow": [] }
+      "ReportInterviewSkill": { "deny": [{ "group": "all" }], "allow": [] }
     },
     "whatsapp": {
       "any": { "deny": [], "allow": [{ "group": "all", "enabled": true }] },
-      "ReportInterviewInteractAction": { "deny": [], "allow": [{ "group": "all", "enabled": true }] }
+      "ReportInterviewSkill": { "deny": [], "allow": [{ "group": "all", "enabled": true }] }
     }
   }
 }
@@ -162,7 +162,7 @@ user_groups:
     support_team: [user_ghi789]
   PersonaAction:              # Action-specific scope
     reviewers: [user_xyz]
-  ReportInterviewInteractAction:
+  ReportInterviewSkill:
     analysts: [user_abc123]
 ```
 

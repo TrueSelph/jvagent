@@ -1,9 +1,9 @@
 """Active-flow awareness for the Orchestrator (ADR-0012).
 
-Turn-spanning flows (e.g. the signup interview) record an active control-task on
+Turn-spanning flows (e.g. a locked-in skill) record an active control-task on
 the conversation ``TaskStore`` while running. The Orchestrator does **not**
 force every turn back into the flow when ``lock_active_flow`` is off — that
-would shove off-topic utterances into an active interview. Instead it surfaces
+would shove off-topic utterances into an active locked flow. Instead it surfaces
 the active flow to the model as routable context: the flow's tool is made
 visible and a short note tells the model to continue it when the user is
 engaging, or handle the request normally otherwise.

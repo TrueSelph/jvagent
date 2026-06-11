@@ -33,7 +33,7 @@ class TestInteractionMergedParameters:
             },
         ]
 
-        interaction.add_parameters(interview_params, "SignupInterviewInteractAction")
+        interaction.add_parameters(interview_params, "SignupInterviewSkill")
         interaction.add_parameters(persona_params, "PersonaAction")
 
         unexecuted = interaction.get_unexecuted_parameters()

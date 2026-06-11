@@ -19,9 +19,9 @@ def setup_function() -> None:
 
 
 def test_parse_extends_ref_action():
-    assert parse_extends_ref("action:jvagent/interview_action") == (
+    assert parse_extends_ref("action:jvagent/interview") == (
         "action",
-        "jvagent/interview_action",
+        "jvagent/interview",
     )
 
 
@@ -30,12 +30,12 @@ def test_parse_extends_ref_skill():
 
 
 def test_parse_extends_ref_invalid():
-    assert parse_extends_ref("jvagent/interview_action") is None
+    assert parse_extends_ref("jvagent/interview") is None
     assert parse_extends_ref("") is None
 
 
 def test_load_action_base_sop_body_interview():
-    body = load_action_base_sop_body("jvagent/interview_action")
+    body = load_action_base_sop_body("jvagent/interview")
     assert "Standard Interview Procedure" in body
     assert "interview__set_fields" in body
 
@@ -52,7 +52,7 @@ def test_compose_extended_sop_bodies_action_extends():
         "child": {
             "name": "child",
             "content": "## Custom\n\nRules.",
-            "extends": "action:jvagent/interview_action",
+            "extends": "action:jvagent/interview",
         }
     }
     out = compose_extended_sop_bodies(bundles)
@@ -66,7 +66,7 @@ def test_compose_extended_sop_bodies_skill_chain():
         "base": {
             "name": "base",
             "content": "Base custom.",
-            "extends": "action:jvagent/interview_action",
+            "extends": "action:jvagent/interview",
         },
         "child": {
             "name": "child",
@@ -107,7 +107,7 @@ def test_merge_extends_allowed_tools_from_action_base():
         "signup_interview": {
             "name": "signup_interview",
             "content": "Custom.",
-            "extends": "action:jvagent/interview_action",
+            "extends": "action:jvagent/interview",
             "allowed_tools_add": [],
             "disabled_tools": [],
         }
@@ -124,7 +124,7 @@ def test_merge_extends_allowed_tools_additive_and_disabled():
         "child": {
             "name": "child",
             "content": "Custom.",
-            "extends": "action:jvagent/interview_action",
+            "extends": "action:jvagent/interview",
             "allowed_tools_add": ["child__custom_tool"],
             "disabled_tools": ["interview__reset"],
         }

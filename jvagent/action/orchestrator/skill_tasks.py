@@ -682,38 +682,3 @@ async def prune_turn_tools_for_actions(
                 type(action).__name__,
                 exc,
             )
-
-
-# Back-compat aliases (tests / callers migrating from onboard.py)
-has_active_onboard_task = has_active_skill_task
-is_onboard_skill_done = is_skill_task_done
-pending_onboard_skills = pending_auto_start_skills
-
-
-def resolve_onboard_locked_skill_doc(
-    visitor: Any,
-    skill_docs: List[Any],
-    onboard_skill_names: List[str],
-    *,
-    lock_active_flow: bool,
-) -> Optional[Any]:
-    return (
-        _locked_skill_from_auto_start(visitor, skill_docs, onboard_skill_names)
-        if lock_active_flow
-        else None
-    )
-
-
-def first_pending_locked_onboard_doc(
-    skill_docs: List[Any],
-    onboard_skill_names: List[str],
-    store: Any,
-) -> Optional["SkillDoc"]:
-    skill_by_name = {d.name: d for d in skill_docs if getattr(d, "name", None)}
-    for name in onboard_skill_names:
-        doc = skill_by_name.get(name)
-        if doc is None or not getattr(doc, "locked_in", False):
-            continue
-        if not is_skill_task_done(store, name):
-            return doc
-    return None

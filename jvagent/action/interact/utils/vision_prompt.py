@@ -119,9 +119,7 @@ async def generate_image_interpretation(
     if not normalized:
         return ""
 
-    prompt = model_action.create_multimodal_content(
-        text=prompt, images=normalized
-    )
+    prompt = model_action.create_multimodal_content(text=prompt, images=normalized)
     extra: dict = {}
     if model is not None:
         extra["model"] = model

@@ -15,10 +15,10 @@ Each entry in `tasks` uses this normalized shape:
 
 ```json
 {
-  "id": "SignupInterviewInteractAction:907b4a8af2e5",
+  "id": "SignupInterviewSkill:907b4a8af2e5",
   "type": "INTERVIEW",
   "description": "Signup interview in progress",
-  "owner_action": "SignupInterviewInteractAction",
+  "owner_action": "SignupInterviewSkill",
   "status": "active",
   "data": {
     "trigger_at": null,

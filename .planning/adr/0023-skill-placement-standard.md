@@ -34,13 +34,13 @@ Examples: `web_lookup`, `signup_interview`, `onboarding_interview`, `docx`, `faq
 | **Action base SOP** | `<action_dir>/SKILL.md` | **No** — `extends: action:…` composition source only |
 | **Skill shipped with a core/custom action package** | `<action_dir>/skills/<name>/` or `agents/.../actions/<ns>/<action>/skills/<name>/` | Yes — only when the skill is **part of the action distribution**, not a general agent SOP |
 
-**Action-bundled** means: the skill is versioned and released together with the action implementation (framework plugin or app-local custom action under `agents/.../actions/`). Interview hooks in `scripts/custom_tools.py` do **not** by themselves justify an action overlay — copy the skill package to `agents/.../skills/` and declare `extends: action:jvagent/interview_action`.
+**Action-bundled** means: the skill is versioned and released together with the action implementation (framework plugin or app-local custom action under `agents/.../actions/`). Interview hooks in `scripts/custom_tools.py` do **not** by themselves justify an action overlay — copy the skill package to `agents/.../skills/` and declare `extends: action:jvagent/interview`.
 
-**Base action SOP** means: one `SKILL.md` at the action package root (e.g. `jvagent/action/interview_action/SKILL.md`) that child skills inherit via `extends`. It is never listed in the orchestrator skill index.
+**Base action SOP** means: one `SKILL.md` at the action package root (e.g. `jvagent/action/interview/SKILL.md`) that child skills inherit via `extends`. It is never listed in the orchestrator skill index.
 
 ### 2.3 What is discouraged
 
-Placing general agent skills under `agents/.../actions/jvagent/<installed_action>/skills/` when that action is only a **dependency** on the agent (e.g. `jvagent/interview_action`, `jvagent/serper_web_search`). Use the agent `skills/` folder instead.
+Placing general agent skills under `agents/.../actions/jvagent/<installed_action>/skills/` when that action is only a **dependency** on the agent (e.g. `jvagent/interview`, `jvagent/serper_web_search`). Use the agent `skills/` folder instead.
 
 Discovery still scans overlay paths for backward compatibility and for true action bundles; new work should follow §2.1.
 

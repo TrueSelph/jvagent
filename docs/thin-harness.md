@@ -68,7 +68,7 @@ Concrete rules for specific subsystems extend this document — they must not co
 
 | Subsystem | Profile |
 |-----------|---------|
-| **InterviewAction** | [`jvagent/action/interview_action/docs/thin-harness.md`](../jvagent/action/interview_action/docs/thin-harness.md) — `interview__*` tools, frontmatter schema, validators as the only store gate |
+| **InterviewAction** | [`jvagent/action/interview/docs/thin-harness.md`](../jvagent/action/interview/docs/thin-harness.md) — `interview__*` tools, frontmatter schema, validators as the only store gate |
 
 When adding a new locked-in or skill-backed subsystem, add a profile doc that links here and lists subsystem-specific invariants and tests.
 

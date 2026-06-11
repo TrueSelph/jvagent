@@ -29,7 +29,7 @@ Skills in `agents/.../skills/` that declare `requires-actions` log a **deprecati
 ### 2.2 `extends` frontmatter (SOP inheritance)
 
 ```yaml
-extends: action:jvagent/interview_action   # base SOP from action-root SKILL.md
+extends: action:jvagent/interview   # base SOP from action-root SKILL.md
 extends: skill:base_skill                  # transitive skill inheritance
 ```
 
@@ -52,9 +52,9 @@ extends: skill:base_skill                  # transitive skill inheritance
 
 ### 2.4 Interview migration
 
-- Base procedure: `jvagent/action/interview_action/SKILL.md`
-- Reference package: `interview_action/examples/example_interview/` (copy to app `skills/` overlay to activate)
-- Implicit interview injection in `discover_skill_docs` **removed**; skills declare `extends: action:jvagent/interview_action` explicitly.
+- Base procedure: `jvagent/action/interview/SKILL.md`
+- Reference package: `interview/examples/example_interview/` (copy to app `skills/` overlay to activate)
+- Implicit interview injection in `discover_skill_docs` **removed**; skills declare `extends: action:jvagent/interview` explicitly.
 
 ## 3. Consequences
 
@@ -67,4 +67,4 @@ extends: skill:base_skill                  # transitive skill inheritance
 - [`jvagent/scaffold/sop_extend.py`](../../jvagent/scaffold/sop_extend.py)
 - [`jvagent/scaffold/skill_resolve.py`](../../jvagent/scaffold/skill_resolve.py)
 - [`jvagent/skills/README.md`](../../jvagent/skills/README.md)
-- [`jvagent/action/interview_action/README.md`](../../jvagent/action/interview_action/README.md)
+- [`jvagent/action/interview/README.md`](../../jvagent/action/interview/README.md)

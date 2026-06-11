@@ -62,7 +62,7 @@ async def test_describe_no_images_is_inert(monkeypatch):
 async def test_interpret_images_tool(monkeypatch):
     va = VisionAction()
 
-    async def _desc(self, visitor=None, images=None):
+    async def _desc(self, visitor=None, images=None, **kwargs):
         return "desc" if image_urls_from_visitor(visitor) else ""
 
     monkeypatch.setattr(VisionAction, "describe", _desc)

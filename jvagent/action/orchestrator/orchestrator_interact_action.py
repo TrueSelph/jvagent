@@ -12,7 +12,7 @@ Runs the whole turn inside one ``execute()`` call:
    callable surface is restricted to that IA's tool and it is dispatched
    immediately (mechanistic turn-lock); otherwise the active flow is surfaced as
    routable context the model may continue or leave for an off-topic request.
-3. **Directive finalize** — emit any directives a rails IA-tool left unrendered.
+3. **Directive finalize** — emit any directives a locked IA-tool left unrendered.
 
 Routing is tool selection; turn-lock is deterministic (``lock_active_flow``) or
 an emergent flow property.
@@ -641,7 +641,7 @@ class OrchestratorInteractAction(InteractAction):
         """True if a dispatched IA produced user-facing output this turn.
 
         An IA emits either by setting ``interaction.response`` OR by queuing a
-        directive (the rails/interview pattern, rendered by
+        directive (the directive-based publishing pattern, rendered by
         ``_finalize_directives`` after the loop). The locked path uses this so it
         doesn't mistake directive-based publishing for silence and echo the
         IA-as-tool status sentinel.
@@ -679,8 +679,8 @@ class OrchestratorInteractAction(InteractAction):
             return
         # The directive already carries any divergence / stay-on-script guidance:
         # the interview injects its own ``active_task_description`` into the
-        # question directive on a diverged turn (see InterviewInteractAction /
-        # QuestionNode), so the host just renders whatever was queued. No
+        # question directive on a diverged turn (see InterviewAction /
+        # interview/engine), so the host just renders whatever was queued. No
         # host-side active-task injection here.
         #
         # The executive's response params are already on interaction.parameters
@@ -1677,7 +1677,7 @@ class OrchestratorInteractAction(InteractAction):
             locked_result = (await tools[flow_owner].run({})) or ""
             interaction = getattr(visitor, "interaction", None)
             # The locked IA "emits" either by setting a response OR by queuing a
-            # directive (the rails/interview pattern — `_finalize_directives`
+            # directive (the directive-based publishing pattern — `_finalize_directives`
             # renders it after the loop). Checking only `interaction.response`
             # missed the directive path, so the orchestrator mistook a publishing
             # IA for a silent one and echoed the IA-as-tool status sentinel

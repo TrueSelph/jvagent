@@ -2,7 +2,7 @@
 
 The clause was added in May 2026 after live-smoke showed
 ``"Help me prepare for an interview"`` mis-routed to a
-``signup_interview_interact_action`` whose anchors described training
+``signup_interview`` skill whose anchors described training
 enrollment. The router LLM (gpt-4o-mini) latched onto the shared noun
 "interview" rather than the verb-object intent, DELEGATEd the turn, and
 the turn-locked signup IA then took ownership of every subsequent reply.

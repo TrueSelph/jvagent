@@ -51,7 +51,9 @@ class VisionAction(Action):
     model_max_tokens: Optional[int] = attribute(default=None)
 
     async def describe(
-        self, visitor: Any = None, images: Optional[List[Any]] = None,
+        self,
+        visitor: Any = None,
+        images: Optional[List[Any]] = None,
         prompt: Optional[str] = None,
     ) -> str:
         """Return an extensive interpretation of the images, or "" when none."""
@@ -102,7 +104,9 @@ class VisionAction(Action):
             )
         ]
 
-    async def _tool_interpret(self, visitor: Any = None, prompt: Optional[str] = None, **_: Any) -> Any:
+    async def _tool_interpret(
+        self, visitor: Any = None, prompt: Optional[str] = None, **_: Any
+    ) -> Any:
         from jvagent.tooling.tool_result import ToolResult
 
         text = await self.describe(visitor=visitor, prompt=prompt)

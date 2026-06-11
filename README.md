@@ -1144,7 +1144,7 @@ OpenAI actions read credentials from environment (`OPENAI_API_KEY`).
 - [InteractRouter](jvagent/action/router/README.md) - Standalone intent-based routing (Rails pattern)
 - [RetrievalInteractAction](jvagent/action/retrieval/README.md) - Vector store retrieval with simplified API
 - [IntroInteractAction](jvagent/action/intro/README.md) - First-time user welcome messages
-- [InterviewInteractAction](jvagent/action/interview/README.md) - Reusable interview system for stepwise information collection with validation
+- [InterviewAction](jvagent/action/interview/README.md) - LLM-driven interview tool bundle for structured multi-turn data collection
 - [PageIndex](jvagent/action/pageindex/README.md) - Document ingestion and retrieval (pip deps in action `info.yaml`)
 - [MCPAction](jvagent/action/mcp/README.md) - Gateway for fulfilling natural language commands via an MCP server
 - [Model Actions](jvagent/action/model/README.md) - Language and embedding model integrations
@@ -2121,7 +2121,7 @@ Agent-targeted reference docs live under [`.planning/`](.planning/). Start here 
 - [InteractRouter](jvagent/action/router/README.md)
 - [RetrievalInteractAction](jvagent/action/retrieval/README.md)
 - [IntroInteractAction](jvagent/action/intro/README.md)
-- [InterviewInteractAction](jvagent/action/interview/README.md)
+- [InterviewAction](jvagent/action/interview/README.md)
 - [PersonaAction](jvagent/action/persona/README.md)
 - [MCPAction](jvagent/action/mcp/README.md)
 - [Model Actions](jvagent/action/model/README.md)

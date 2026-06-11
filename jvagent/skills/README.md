@@ -40,22 +40,22 @@ Base procedure for an action (interview tool loop, etc.)?
   └─ YES → <action_dir>/SKILL.md  (not a skill folder)
 ```
 
-**Interview skills** (`interview:` frontmatter, `scripts/custom_tools.py`) follow the same default: `agents/.../skills/<name>/` plus `extends: action:jvagent/interview_action`. Do not place them under `agents/.../actions/jvagent/interview_action/skills/` unless you are distributing a **custom fork** of `InterviewAction` with its own bundled skills.
+**Interview skills** (`interview:` frontmatter, `scripts/custom_tools.py`) follow the same default: `agents/.../skills/<name>/` plus `extends: action:jvagent/interview`. Do not place them under `agents/.../actions/jvagent/interview/skills/` unless you are distributing a **custom fork** of `InterviewAction` with its own bundled skills.
 
-All skills and actions must obey the **[thin harness principle](../../docs/thin-harness.md)** — thick SOP + skill extensions, thin server harness. Interview skills also follow the **[interview profile](../action/interview_action/docs/thin-harness.md)**. AI agents must not add extractors, prep observations, or foundation-side intent logic when extending interviews.
+All skills and actions must obey the **[thin harness principle](../../docs/thin-harness.md)** — thick SOP + skill extensions, thin server harness. Interview skills also follow the **[interview profile](../action/interview/docs/thin-harness.md)**. AI agents must not add extractors, prep observations, or foundation-side intent logic when extending interviews.
 
 `jvagent skill add <agent_ref> <name>` scaffolds into `agents/.../skills/<name>/` by design.
 
 ### Layout example
 
 ```
-jvagent/action/interview_action/
+jvagent/action/interview/
 ├── SKILL.md                    # base SOP (extends target — not discovered)
 ├── interview_action.py
 └── examples/example_interview/ # copy template (not auto-discovered)
 
 agents/acme/bot/skills/         # ← all agent skills live here
-├── signup_interview/           # extends action:jvagent/interview_action
+├── signup_interview/           # extends action:jvagent/interview
 ├── web_lookup/
 └── docx/                       # spec: claude
 ```
@@ -121,7 +121,7 @@ first model tick (activation/bootstrap uses the skill's **lifecycle-bound** Acti
 When a `locked-in: true` skill has an **active** TaskStore task (`owner_action`
 matches the skill name), the orchestrator restricts the tool surface to that skill until
 the task is **completed**. Interview skills delegate session resolution to the bound
-Action's `resolve_locked_skill()` (typically `InterviewAction` via `extends: action:jvagent/interview_action`).
+Action's `resolve_locked_skill()` (typically `InterviewAction` via `extends: action:jvagent/interview`).
 The `use_skill` activate hook creates a `SKILL` task when `locked-in` is set.
 
 **Lifecycle binding** (which Action owns skill hooks) is separate from the
@@ -240,7 +240,7 @@ hard-gates on specific actions. Add `scripts/custom_tools.py` for interview
 hooks or other action-coordinated logic. Set `extends: action:<namespace>/<action>`
 when composing a base action SOP. Read [`docs/thin-harness.md`](../../docs/thin-harness.md)
 before changing orchestrator or action harness code; for interview skills also
-[`interview_action/docs/thin-harness.md`](../action/interview_action/docs/thin-harness.md).
+[`interview/docs/thin-harness.md`](../action/interview/docs/thin-harness.md).
 
 **Library skill:** `jvagent/skills/<name>/` for framework-shipped reusables only.
 

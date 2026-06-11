@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 import jvagent.action.orchestrator.orchestrator_interact_action as sei
-from jvagent.action.interview_action.interview_action import InterviewAction
+from jvagent.action.interview.interview_action import InterviewAction
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )

@@ -23,8 +23,8 @@ def _reset_cache():
 
 
 def test_resolve_core_action_skills_skips_examples_dir():
-    """Reference packages under interview_action/examples/ are not discovered."""
-    refs = ["jvagent/interview_action", "jvagent/orchestrator"]
+    """Reference packages under interview/examples/ are not discovered."""
+    refs = ["jvagent/interview", "jvagent/orchestrator"]
     found = resolve_core_action_skills(refs)
     assert "example_interview" not in found
 
@@ -42,7 +42,7 @@ def test_resolve_agent_action_skills_signup_overlay(tmp_path: Path):
         / "orchestrator_agent"
         / "actions"
         / "jvagent"
-        / "interview_action"
+        / "interview"
         / "skills"
         / "signup_interview"
     )
@@ -50,14 +50,14 @@ def test_resolve_agent_action_skills_signup_overlay(tmp_path: Path):
     (skill_dir / "SKILL.md").write_text(
         "---\nname: signup_interview\ndescription: signup test\n"
         "requires-actions:\n  - InterviewAction\n"
-        "extends: action:jvagent/interview_action\n---\n\nCustom.",
+        "extends: action:jvagent/interview\n---\n\nCustom.",
         encoding="utf-8",
     )
     found = resolve_agent_action_skills(
         str(tmp_path),
         "jvagent",
         "orchestrator_agent",
-        action_refs=["jvagent/interview_action"],
+        action_refs=["jvagent/interview"],
     )
     assert "signup_interview" in found
     assert found["signup_interview"]["source"] == "app"
@@ -71,7 +71,7 @@ def test_merged_bundles_includes_action_skill_with_extends(tmp_path: Path):
         / "orchestrator_agent"
         / "actions"
         / "jvagent"
-        / "interview_action"
+        / "interview"
         / "skills"
         / "signup_interview"
     )
@@ -79,13 +79,13 @@ def test_merged_bundles_includes_action_skill_with_extends(tmp_path: Path):
     (skill_dir / "SKILL.md").write_text(
         "---\nname: signup_interview\ndescription: signup\n"
         "requires-actions:\n  - InterviewAction\n"
-        "extends: action:jvagent/interview_action\n---\n\nBe friendly.",
+        "extends: action:jvagent/interview\n---\n\nBe friendly.",
         encoding="utf-8",
     )
     agent_yaml = tmp_path / "agents/jvagent/orchestrator_agent/agent.yaml"
     agent_yaml.parent.mkdir(parents=True, exist_ok=True)
     agent_yaml.write_text(
-        "actions:\n  - action: jvagent/interview_action\n",
+        "actions:\n  - action: jvagent/interview\n",
         encoding="utf-8",
     )
     merged = resolve_merged_skill_bundles(

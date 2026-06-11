@@ -218,7 +218,6 @@ module = [
     "jvagent.action.stt_action.*",
     "jvagent.action.tts_action.*",
     "jvagent.action.pageindex.*",
-    "jvagent.action.interview.*",
     "jvagent.action.response.*",
     "jvagent.action.router.*",
     "jvagent.action.vectorstore.*",

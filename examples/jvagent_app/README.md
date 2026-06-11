@@ -4,7 +4,7 @@ This is a boilerplate project for creating a jvagent application. It provides a 
 
 To **generate a new app** from the command line (with optional `profiles/`, deploy stubs, and built-in action profiles), use **`jvagent app create`** — see the jvagent repo’s [docs/scaffolding.md](../../docs/scaffolding.md).
 
-> **Current interview path:** The orchestrator agent uses the skills-v2 **`signup_interview`** skill under `agents/jvagent/orchestrator_agent/skills/signup_interview/` with [`jvagent/interview_action`](../../jvagent/action/interview_action/README.md). The legacy **`signup_interview_interact_action`** package under `example_agent/actions/` (v1 `InterviewInteractAction` walker) is archived — do not copy it for new work.
+> **Current interview path:** The orchestrator agent uses the skills-v2 **`signup_interview`** skill under `agents/jvagent/orchestrator_agent/skills/signup_interview/` with [`jvagent/interview`](../../jvagent/action/interview/README.md).
 
 ## Project Structure
 
@@ -16,8 +16,7 @@ jvagent_app/
 │   │   ├── orchestrator_agent/  # Orchestrator agent
 │   │   │   ├── agent.yaml
 │   │   │   └── README.md
-│   │   ├── example_agent/   # Main demo agent (core + PageIndex; legacy signup action archived)
-│   │   │   ├── actions/jvagent/signup_interview_interact_action/  # ARCHIVED — use orchestrator signup_interview skill
+│   │   ├── example_agent/   # Main demo agent (core + PageIndex)
 │   │   │   ├── agent.yaml
 │   │   │   └── README.md
 │   │   ├── unified_agent/   # AgentInteractAction (unified routing + skill loop)
@@ -235,7 +234,6 @@ agents/
   - `jvagent/pageindex_action` — PageIndex RAG (install `jvagent[pageindex]`)
   - `jvagent/persona` — Persona
   - `jvagent/converse_interact_action` — Smalltalk fallback
-- **Local action**: `jvagent/signup_interview_interact_action` (under `agents/jvagent/example_agent/actions/`)
 
 **`resolv/resolv_demo`**: custom `resolv/*` interview and API actions plus `jvagent/access_control_action` and `jvagent/whatsapp_action`; configure `RESOLV_TEST_*` in `.env` for `resolv/resolv_api_action`.
 

@@ -125,7 +125,7 @@ async def test_apply_locked_skill_turn_binds_interview_over_api_dependency():
         body="SOP body",
         requires_tools=("onboarding_interview__send_otp",),
         requires_actions=("ZoonAPIAction", "InterviewAction"),
-        extends="action:jvagent/interview_action",
+        extends="action:jvagent/interview",
         locked_in=True,
     )
 
@@ -145,7 +145,7 @@ async def test_apply_locked_skill_turn_binds_interview_over_api_dependency():
             return "InterviewAction"
 
         def get_action_ref(self):
-            return "jvagent/interview_action"
+            return "jvagent/interview"
 
         async def needs_session_rebootstrap(self, skill_name, visitor=None):
             return False

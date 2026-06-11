@@ -60,11 +60,11 @@ def test_digest_slots_into_system_prompt():
 
 
 def test_interview_action_advertises_itself():
-    from jvagent.action.interview.interview_interact_action import (
-        InterviewInteractAction,
+    from jvagent.action.interview.interview_action import (
+        InterviewAction,
     )
 
-    a = InterviewInteractAction()
+    a = InterviewAction()
     a.description = "Training signup interview"
     assert a.get_capabilities() == ["Training signup interview"]
 

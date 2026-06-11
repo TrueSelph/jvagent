@@ -23,15 +23,15 @@ async def test_task_store_create_and_start_persists_task(test_db):
     try:
         store = TaskStore(conv)
         handle = await store.create(
-            title="SignupInterviewInteractAction",
-            description="SignupInterviewInteractAction",
-            owner_action="SignupInterviewInteractAction",
+            title="SignupInterviewSkill",
+            description="SignupInterviewSkill",
+            owner_action="SignupInterviewSkill",
         )
         await handle.start()
         assert len(conv.tasks) == 1
         t = conv.tasks[0]
-        assert t["description"] == "SignupInterviewInteractAction"
-        assert t["owner_action"] == "SignupInterviewInteractAction"
+        assert t["description"] == "SignupInterviewSkill"
+        assert t["owner_action"] == "SignupInterviewSkill"
         assert t["status"] == "active"
         assert t["id"].startswith("task_")
         assert len(t["id"]) == 17
@@ -54,7 +54,7 @@ async def test_cancel_transitions_task_and_preserves_history(test_db):
         handle = await store.create(
             title="Signup interview",
             description="Signup interview",
-            owner_action="SignupInterviewInteractAction",
+            owner_action="SignupInterviewSkill",
         )
         await handle.start()
         assert conv.tasks[0]["status"] == "active"
@@ -80,7 +80,7 @@ async def test_complete_marks_task_completed(test_db):
         handle = await store.create(
             title="Signup interview",
             description="Signup interview",
-            owner_action="SignupInterviewInteractAction",
+            owner_action="SignupInterviewSkill",
         )
         await handle.start()
         await handle.complete()
@@ -292,15 +292,15 @@ def test_get_task_by_owner_action_and_status_returns_task():
     conv.tasks = [
         {
             "id": "1",
-            "title": "SignupInterviewInteractAction",
-            "description": "Guide user to complete SignupInterviewInteractAction",
-            "owner_action": "SignupInterviewInteractAction",
+            "title": "SignupInterviewSkill",
+            "description": "Guide user to complete SignupInterviewSkill",
+            "owner_action": "SignupInterviewSkill",
             "status": "active",
         },
     ]
-    t = conv.get_task(owner_action="SignupInterviewInteractAction", status="active")
+    t = conv.get_task(owner_action="SignupInterviewSkill", status="active")
     assert t is not None
-    assert t.get("owner_action") == "SignupInterviewInteractAction"
+    assert t.get("owner_action") == "SignupInterviewSkill"
 
 
 def test_get_task_returns_none_when_no_matching_owner_action():
@@ -315,7 +315,7 @@ def test_get_task_returns_none_when_no_matching_owner_action():
             "status": "active",
         },
     ]
-    t = conv.get_task(owner_action="SignupInterviewInteractAction", status="active")
+    t = conv.get_task(owner_action="SignupInterviewSkill", status="active")
     assert t is None
 
 
@@ -325,11 +325,11 @@ def test_get_task_returns_none_when_task_completed():
     conv.tasks = [
         {
             "id": "1",
-            "title": "SignupInterviewInteractAction",
-            "description": "Guide user to complete SignupInterviewInteractAction",
-            "owner_action": "SignupInterviewInteractAction",
+            "title": "SignupInterviewSkill",
+            "description": "Guide user to complete SignupInterviewSkill",
+            "owner_action": "SignupInterviewSkill",
             "status": "completed",
         },
     ]
-    t = conv.get_task(owner_action="SignupInterviewInteractAction", status="active")
+    t = conv.get_task(owner_action="SignupInterviewSkill", status="active")
     assert t is None

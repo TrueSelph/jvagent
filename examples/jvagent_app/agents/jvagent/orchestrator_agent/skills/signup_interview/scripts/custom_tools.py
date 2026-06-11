@@ -1,6 +1,6 @@
 """Custom tools for the signup_interview skill (jvagent training registration).
 
-Ported from SignupInterviewInteractAction — validators, training-slot matching,
+Ported from the v1 interview action — validators, training-slot matching,
 review display, and completion handling for the skills-v2 InterviewAction path.
 """
 
@@ -11,10 +11,10 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from jvagent.action.interview_action.responses import (
+from jvagent.action.interview.responses import (
     interview_tool_response,
-    tell_user_directive,
-    tell_user_with_followup_directive,
+    tell_user,
+    tell_user_then_continue,
 )
 
 logger = logging.getLogger(__name__)
@@ -315,7 +315,7 @@ async def get_available_training_times(
         "ok": True,
         "available_times": AVAILABLE_TRAINING_TIMES,
         "timezone": "America/New_York",
-        "response_directive": tell_user_directive(
+        "response_directive": tell_user(
             "What times are you available to train?",
             note=(
                 "Present these available slots (Eastern Time) and ask the user to pick one:\n"
@@ -328,19 +328,8 @@ async def get_available_training_times(
 # ─── Post-tools ──────────────────────────────────────────────────────
 
 
-def _question_text(config: Any, field_name: str, default: str) -> str:
-    if config is None or not hasattr(config, "get_field"):
-        return default
-    fdef = config.get_field(field_name)
-    if fdef is None:
-        return default
-    return (getattr(fdef, "prompt", None) or default).strip()
-
-
 async def append_work_email_note(
     session: Any = None,
-    visitor: Any = None,
-    config: Any = None,
     **kwargs,
 ) -> str:
     email = ""
@@ -350,17 +339,11 @@ async def append_work_email_note(
     if "@mail.com" not in email:
         return interview_tool_response(ok=True, status="ok")
 
-    phone_q = _question_text(
-        config,
-        "phone_number",
-        "What is your phone number? (optional)",
-    )
     return interview_tool_response(
         ok=True,
         status="ok",
-        response_directive=tell_user_with_followup_directive(
+        response_directive=await tell_user_then_continue(
             "Thank you for using your work email! We'll send you special updates about jvagent training.",
-            phone_q,
         ),
     )
 

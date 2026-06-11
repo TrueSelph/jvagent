@@ -147,8 +147,8 @@ def build_skill_meta_tools(
                 note = f"(activation hook error: {exc})"
             if note:
                 staged = f"\n\n{note}"
-        # Surface declared tools only after activation hooks run (e.g. interview
-        # session bootstrap) so the model cannot call interview tools with
+        # Surface declared tools only after activation hooks run (e.g. skill
+        # session bootstrap) so the model cannot call skill tools with
         # NO_SESSION on the same turn.
         if visible is not None and present:
             visible.update(present)

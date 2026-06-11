@@ -761,7 +761,7 @@ def _handle_skill_create_interview_command(
     template_dir = (
         Path(__file__).resolve().parent.parent
         / "action"
-        / "interview_action"
+        / "interview"
         / "examples"
         / "example_interview"
     )
@@ -791,7 +791,7 @@ def _handle_skill_create_interview_command(
     )
     custom_tools.write_text(ct, encoding="utf-8")
 
-    from jvagent.action.interview_action._validate_contract import (
+    from jvagent.action.interview._validate_contract import (
         validate_interview_skill_dir,
     )
 
@@ -805,7 +805,7 @@ def _handle_skill_create_interview_command(
             print(f"  - {issue}")
     print(
         "Next: register the skill in agent.yaml orchestrator skills: "
-        "and enable jvagent/interview_action in actions."
+        "and enable jvagent/interview in actions."
     )
 
 
@@ -1124,10 +1124,10 @@ def _handle_skill_validate_command(args: List[str], app_root: str = None) -> Non
     print(f"  imports:         {bundle.get('imports', [])}")
     print(f"  allowed_tools:   {bundle.get('allowed_tools', [])}")
 
-    from jvagent.action.interview_action._validate_contract import (
+    from jvagent.action.interview._validate_contract import (
         validate_interview_skill_dir,
     )
-    from jvagent.action.interview_action.spec import (
+    from jvagent.action.interview.spec import (
         load_interview_spec_from_skill,
     )
 

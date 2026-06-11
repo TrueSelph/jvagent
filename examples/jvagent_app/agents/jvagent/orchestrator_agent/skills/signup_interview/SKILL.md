@@ -9,7 +9,7 @@ spec: jv
 locked-in: true
 requires-actions:
   - InterviewAction
-extends: action:jvagent/interview_action
+extends: action:jvagent/interview
 interview:
   title: JVAgent Training Signup
   summary: >-

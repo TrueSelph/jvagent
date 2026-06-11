@@ -154,12 +154,12 @@ async def test_graph_disabled_allows(mock_save, access_control_action):
 @pytest.mark.asyncio
 @patch(f"{_ACTION_MODULE}.AccessControlAction.save", new_callable=AsyncMock)
 async def test_report_denied_on_default_channel(mock_save):
-    """ReportInterviewInteractAction denied on default when permissions specify deny all."""
+    """ReportInterviewSkill denied on default when permissions specify deny all."""
     action = AccessControlAction(
         permissions={
             "default": {
                 "any": {"deny": [], "allow": [{"group": "all", "enabled": True}]},
-                "ReportInterviewInteractAction": {
+                "ReportInterviewSkill": {
                     "deny": [{"group": "all"}],
                     "allow": [],
                 },
@@ -173,7 +173,7 @@ async def test_report_denied_on_default_channel(mock_save):
 
     result = await action.has_action_access(
         user_id="user_xyz",
-        action_label="ReportInterviewInteractAction",
+        action_label="ReportInterviewSkill",
         channel="default",
     )
     assert result is False

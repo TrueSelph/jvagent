@@ -35,7 +35,7 @@ Active-flow detection reads persisted state only. With `lock_active_flow=False` 
 
 The orchestrator and every action on its tool surface follow the **[thin harness principle](thin-harness.md)**: the server exposes primitives (tools, session state, validation gates, raw JSON results); the model and skill SOP own intent, routing, extraction, and multi-step chaining. The orchestrator must not classify user intent, inject prep observations that pre-select tools, auto-store extracted values on skill activation, inline multi-step tool results, or post-process one action's outputs to force follow-up calls. Turn-lock ([ADR-0013](../.planning/adr/0013-togglable-deterministic-turn-lock.md)) is a mechanical surface restriction — not semantic routing.
 
-Subsystem-specific rules (e.g. interviews) extend the platform doc as **profiles** — see [Interview profile](../jvagent/action/interview_action/docs/thin-harness.md).
+Subsystem-specific rules (e.g. interviews) extend the platform doc as **profiles** — see [Interview profile](../jvagent/action/interview/docs/thin-harness.md).
 
 ## Flow continuation (configurable: deterministic lock or model-mediated)
 

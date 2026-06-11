@@ -300,9 +300,9 @@ the conversation-scoped `TaskService` exposed as `visitor.tasks`:
 
 ```python
 handle = await visitor.tasks.start(
-    description="Guide user to complete SignupInterviewInteractAction",
+    description="Guide user to complete SignupInterviewSkill",
     task_type="INTERVIEW",
-    action_name="SignupInterviewInteractAction",
+    action_name="SignupInterviewSkill",
     metadata={"state": "ACTIVE"},
     singleton_action=True,
 )

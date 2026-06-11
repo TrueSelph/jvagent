@@ -8,12 +8,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 import jvagent.action.orchestrator.orchestrator_interact_action as sei
-from jvagent.action.interview_action.interview_action import InterviewAction
+from jvagent.action.interview.interview_action import InterviewAction
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
 from jvagent.action.orchestrator.skills import SkillDoc
-from tests.action.interview_action.conftest import ORCHESTRATOR_AGENT_DIR
+from tests.action.interview.conftest import ORCHESTRATOR_AGENT_DIR
 
 _OPENING = "Hello my name is Eldon Marks. I'm here to sign up"
 

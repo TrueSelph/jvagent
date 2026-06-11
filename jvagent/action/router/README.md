@@ -194,7 +194,7 @@ Result:
 
 ```
 Conversation:
-  [EVENT] Ongoing Activity: SignupInterviewInteractAction
+  [EVENT] Ongoing Activity: SignupInterviewSkill
   Assistant: "What is your email?"
   User: "What's the weather like?"
 
@@ -213,16 +213,16 @@ Result:
 
 ```
 Conversation:
-  [EVENT] Ongoing Activity: SignupInterviewInteractAction
+  [EVENT] Ongoing Activity: SignupInterviewSkill
   Assistant: "What is your name?"
   User: "John Doe"
 
 Analysis:
   - User is providing information (INTERACTIVE)
-  - Directly answering SignupInterviewInteractAction's question
+  - Directly answering SignupInterviewSkill's question
 
 Result:
   posture: RESPOND
   intent_type: INTERACTIVE
-  actions: ["SignupInterviewInteractAction"]
+  actions: ["SignupInterviewSkill"]
 ```

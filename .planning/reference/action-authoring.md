@@ -478,7 +478,7 @@ async def on_register(self):
 | Want to ... | Read |
 |---|---|
 | See a minimal Action | [`persona`](../../jvagent/action/persona/persona_action.py) |
-| See an InteractAction with children | [`interview`](../../jvagent/action/interview/interview_interact_action.py) |
+| See an InteractAction with children | [`interview_action`](../../jvagent/action/interview/interview_action.py) |
 | See a LanguageModelAction | [`anthropic`](../../jvagent/action/model/language/anthropic/) |
 | See a channel adapter | [`whatsapp`](../../jvagent/action/whatsapp/whatsapp_action.py) |
 | See a background InteractAction | grep `run_in_background = attribute(default=True)` |

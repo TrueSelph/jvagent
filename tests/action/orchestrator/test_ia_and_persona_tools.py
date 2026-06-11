@@ -36,20 +36,21 @@ async def _persona_tools(persona, visitor):
 
 
 async def test_interactaction_get_tools_furnishes_anchored_forwarding_tool(monkeypatch):
-    from jvagent.action.interview.interview_interact_action import (
-        InterviewInteractAction,
+    from jvagent.action.task_creation_interact_action.task_creation_interact_action import (
+        TaskCreationInteractAction,
     )
 
-    iv = InterviewInteractAction()
+    iv = TaskCreationInteractAction()
     iv.anchors = ["sign up for training", "register for training"]
     iv.description = "Signup interview."
+    iv.always_execute = False
 
     ran = {"n": 0}
 
     async def _exec(self, visitor):
         ran["n"] += 1
 
-    monkeypatch.setattr(InterviewInteractAction, "execute", _exec)
+    monkeypatch.setattr(TaskCreationInteractAction, "execute", _exec)
 
     tools = await iv.get_tools()
     assert len(tools) == 1
@@ -69,17 +70,18 @@ async def test_ia_tool_records_action_execution(monkeypatch):
     """An IA reached via its tool registers itself in the interaction's
     executed-action log (it would otherwise be missing — the walker only records
     actions it visits directly)."""
-    from jvagent.action.interview.interview_interact_action import (
-        InterviewInteractAction,
+    from jvagent.action.task_creation_interact_action.task_creation_interact_action import (
+        TaskCreationInteractAction,
     )
 
-    iv = InterviewInteractAction()
+    iv = TaskCreationInteractAction()
     iv.anchors = ["sign up for training"]
+    iv.always_execute = False
 
     async def _exec(self, visitor):
         pass
 
-    monkeypatch.setattr(InterviewInteractAction, "execute", _exec)
+    monkeypatch.setattr(TaskCreationInteractAction, "execute", _exec)
 
     v = _visitor()
     v.record_action_execution = AsyncMock()
@@ -93,18 +95,18 @@ async def test_get_tools_routes_on_manifest_not_bloated_anchors(monkeypatch):
     """Issue #1: routing metadata is the manifest (purpose + activates_on), not
     the runtime-merged anchor catalog — so continuation intents (cancel/confirm/
     update/skip/decline) don't bloat the description or over-match routing."""
-    from jvagent.action.interview.interview_interact_action import (
-        InterviewInteractAction,
+    from jvagent.action.task_creation_interact_action.task_creation_interact_action import (
+        TaskCreationInteractAction,
     )
 
-    iv = InterviewInteractAction()
-    # Simulate the runtime-merged (bloated) anchor catalog on the instance.
+    iv = TaskCreationInteractAction()
     iv.anchors = [
         "sign up for training",
         "IF entry is listed under ACTIVE TASKS AND the user requests to cancel",
         "User confirms the interview",
         "User skips a question",
     ]
+    iv.always_execute = False
     # Manifest furnishes the clean entry triggers + purpose.
     iv.metadata = {
         "manifest": {
@@ -116,7 +118,7 @@ async def test_get_tools_routes_on_manifest_not_bloated_anchors(monkeypatch):
     async def _exec(self, visitor):
         pass
 
-    monkeypatch.setattr(InterviewInteractAction, "execute", _exec)
+    monkeypatch.setattr(TaskCreationInteractAction, "execute", _exec)
 
     assert iv.routing_triggers() == ["user wants to sign up or register for training"]
 
@@ -131,17 +133,17 @@ async def test_get_tools_routes_on_manifest_not_bloated_anchors(monkeypatch):
 
 
 async def test_interactaction_get_tools_empty_without_anchors(monkeypatch):
-    from jvagent.action.interview.interview_interact_action import (
-        InterviewInteractAction,
+    from jvagent.action.task_creation_interact_action.task_creation_interact_action import (
+        TaskCreationInteractAction,
     )
 
-    iv = InterviewInteractAction()
+    iv = TaskCreationInteractAction()
     iv.anchors = []
 
     async def _no_dynamic(self, conversation=None):
         return None
 
-    monkeypatch.setattr(InterviewInteractAction, "get_anchors", _no_dynamic)
+    monkeypatch.setattr(TaskCreationInteractAction, "get_anchors", _no_dynamic)
     assert await iv.get_tools() == []  # not model-routable without anchors
 
 

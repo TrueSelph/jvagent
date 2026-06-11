@@ -14,7 +14,7 @@ import json
 import logging
 import random
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 
@@ -158,17 +158,13 @@ class InteractRouter(InteractAction):
         description="List of InteractAction entity names that must always execute",
     )
 
-    pass_through_task_types: Sequence[str] = attribute(
-        default=("INTERVIEW",),
-        description="Task types that skip router LLM when active; proceed as RESPOND",
-    )
     pass_through_when_media: bool = attribute(
         default=True,
         description="Skip router LLM when user has attached media (images, documents)",
     )
     bypass_canned_response: str = attribute(
         default="One moment",
-        description="Instant canned response for bypass paths (interview/media)",
+        description="Instant canned response for bypass paths (media)",
     )
     media_bypass_actions: List[str] = attribute(
         default_factory=list,
@@ -219,37 +215,6 @@ class InteractRouter(InteractAction):
 
             dynamic_exceptions = await self._get_dynamic_exceptions(agent)
             combined_exceptions = list(set(self.exceptions + dynamic_exceptions))
-
-            # Bypass: interview active -> 0 LLM, route to active task (before model_action)
-            if self.pass_through_task_types and conversation:
-                active_tasks = conversation.get_tasks(status="active")
-                for t in active_tasks:
-                    if t.get("task_type") in self.pass_through_task_types:
-                        action_name = t.get("owner_action", "")
-                        logger.debug(
-                            f"InteractRouter: Bypass (active {t.get('task_type')}: {action_name})"
-                        )
-                        result = RoutingResult(
-                            posture=POSTURE_RESPOND,
-                            interpretation="Bypass: active task",
-                            intent_type="INTERACTIVE",
-                            actions=[action_name] if action_name else [],
-                            confidence=1.0,
-                            canned_response=self.bypass_canned_response,
-                        )
-                        interaction.response_posture = POSTURE_RESPOND
-                        await interaction.save()
-                        await self._handle_respond(visitor, interaction, conversation)
-                        await self._publish_canned_response(visitor, result)
-                        await self._finalize_routing(
-                            visitor,
-                            interaction,
-                            agent,
-                            result,
-                            combined_exceptions,
-                            conversation=conversation,
-                        )
-                        return
 
             # Bypass: media attached + media_bypass_actions configured
             if self.pass_through_when_media and self.media_bypass_actions:
@@ -872,29 +837,6 @@ class InteractRouter(InteractAction):
         # Combine with exceptions
         all_allowed = list(set(routed_actions + combined_exceptions))
 
-        # When an interview is active, filter out other interview actions (safety net)
-        if conversation:
-            active_task = conversation.get_task(task_type="INTERVIEW", status="active")
-            active_interview_name = (
-                active_task.get("owner_action") if active_task else None
-            )
-            if active_interview_name:
-                actions_manager = await agent.get_actions_manager()
-                if actions_manager:
-                    all_interact_actions = await actions_manager.get_actions(
-                        enabled_only=True, entity=InteractAction
-                    )
-                    interview_names = {
-                        a.get_class_name()
-                        for a in all_interact_actions
-                        if getattr(a, "task_type", None) == "INTERVIEW"
-                    }
-                    all_allowed = [
-                        name
-                        for name in all_allowed
-                        if name not in interview_names or name == active_interview_name
-                    ]
-
         # Store routing results on interaction
         await self._store_routing_result(
             interaction,
@@ -1020,14 +962,6 @@ class InteractRouter(InteractAction):
         # Exclude this router
         interact_actions = [a for a in all_interact_actions if a.id != self.id]
 
-        # When an interview is active, only allow that interview's anchors
-        active_interview_name: Optional[str] = None
-        if conversation:
-            active_task = conversation.get_task(task_type="INTERVIEW", status="active")
-            active_interview_name = (
-                active_task.get("owner_action") if active_task else None
-            )
-
         logger.debug(f"InteractRouter: Found {len(interact_actions)} InteractActions")
 
         anchors_dict: Dict[str, List[str]] = {}
@@ -1043,16 +977,6 @@ class InteractRouter(InteractAction):
                     f"InteractRouter: Skipping {entity_name} (always_execute or exception)"
                 )
                 continue
-
-            # When an interview is active, exclude other interview actions
-            if active_interview_name:
-                if getattr(action, "task_type", None) == "INTERVIEW":
-                    if entity_name != active_interview_name:
-                        logger.debug(
-                            f"InteractRouter: Skipping {entity_name} "
-                            f"(interview routing: active is {active_interview_name})"
-                        )
-                        continue
 
             # Get anchors: prefer dynamic (get_anchors hook) over static self.anchors
             dynamic_anchors = None

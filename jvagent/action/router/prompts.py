@@ -11,8 +11,8 @@ intelligent conversational state analysis and routing.
 # Reduces false-positive routing caused by keyword-only overlap between the
 # user's utterance and an action's anchor list. Canonical failure mode (live
 # smoke, May 2026): "Help me prepare for an interview" was routed to a
-# ``signup_interview_interact_action`` whose anchors described training
-# enrollment — the LLM latched onto the shared noun "interview" rather than
+# ``signup_interview`` skill whose anchors described training enrollment
+# — the LLM latched onto the shared noun "interview" rather than
 # the verb-object intent ("help me prepare for…" vs "sign up / enroll").
 #
 # The clause reframes anchor matching from "do any words overlap?" to "does

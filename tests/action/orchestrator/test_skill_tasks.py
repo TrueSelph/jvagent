@@ -13,7 +13,6 @@ from jvagent.action.orchestrator.skill_tasks import (
     is_skill_task_done,
     pending_auto_start_skills,
     resolve_active_locked_skill,
-    resolve_onboard_locked_skill_doc,
 )
 from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.memory.task_store import TaskStore
@@ -60,36 +59,6 @@ def test_pending_auto_start_skills_order():
     assert pending_auto_start_skills(store, ["A", "B", "C"]) == ["A", "C"]
 
 
-def test_resolve_onboard_locked_skill_doc():
-    skill = SkillDoc(
-        name="OnboardSkill",
-        description="d",
-        body="b",
-        locked_in=True,
-    )
-    conv = MagicMock()
-    conv.tasks = [_task("OnboardSkill", "active")]
-    visitor = MagicMock()
-    visitor.conversation = conv
-    doc = resolve_onboard_locked_skill_doc(
-        visitor,
-        [skill],
-        ["OnboardSkill"],
-        lock_active_flow=True,
-    )
-    assert doc is not None
-    assert doc.name == "OnboardSkill"
-
-    conv.tasks = [_task("OnboardSkill", "completed")]
-    doc = resolve_onboard_locked_skill_doc(
-        visitor,
-        [skill],
-        ["OnboardSkill"],
-        lock_active_flow=True,
-    )
-    assert doc is None
-
-
 def test_action_for_skill_requires_actions():
     doc = SkillDoc(
         name="S",
@@ -121,7 +90,7 @@ def test_action_for_skill_binds_extends_target_over_agent_order():
         description="d",
         body="b",
         requires_actions=("ZoonAPIAction", "InterviewAction"),
-        extends="action:jvagent/interview_action",
+        extends="action:jvagent/interview",
     )
 
     class ZoonAPIAction:
@@ -140,7 +109,7 @@ def test_action_for_skill_binds_extends_target_over_agent_order():
             return "InterviewAction"
 
         def get_action_ref(self):
-            return "jvagent/interview_action"
+            return "jvagent/interview"
 
     bound = action_for_skill(doc, [ZoonAPIAction(), InterviewAction()])
     assert bound.get_class_name() == "InterviewAction"

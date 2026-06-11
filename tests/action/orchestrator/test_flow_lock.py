@@ -709,7 +709,7 @@ async def test_locked_in_via_interview_action_task_owner(
 @pytest.mark.asyncio
 async def test_find_active_locked_skill_doc_prefers_active_session():
     """InterviewAction.resolve_locked_skill prefers active session over tasks."""
-    from jvagent.action.interview_action.interview_action import InterviewAction
+    from jvagent.action.interview.interview_action import InterviewAction
     from jvagent.action.orchestrator.skill_tasks import resolve_active_locked_skill
     from jvagent.action.orchestrator.skills import SkillDoc
 
@@ -838,7 +838,7 @@ async def test_apply_locked_skill_rebootstraps_missing_session_into_observations
             conv = await self._get_conversation(visitor)
             if conv is None:
                 return False
-            from jvagent.action.interview_action.session import has_active_session
+            from jvagent.action.interview.session import has_active_session
 
             return has_active_session(conv)
 
@@ -1001,7 +1001,7 @@ async def test_auto_start_applies_session_ensure_after_use_skill(
             conv = await self._get_conversation(visitor)
             if conv is None:
                 return False
-            from jvagent.action.interview_action.session import has_active_session
+            from jvagent.action.interview.session import has_active_session
 
             return has_active_session(conv)
 
