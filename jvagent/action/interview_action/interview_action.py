@@ -151,6 +151,14 @@ class InterviewAction(Action):
             visitor, retain_context_keys=retain_context_keys
         )
 
+    async def _close_task(
+        self,
+        visitor: Any = None,
+        status: str = "completed",
+        spec_name: Optional[str] = None,
+    ) -> None:
+        await tasks.close_task(visitor, status=status, spec_name=spec_name)
+
     async def persist_interview_fields(
         self,
         session: InterviewSession,
