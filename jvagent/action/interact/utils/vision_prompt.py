@@ -96,6 +96,7 @@ async def generate_image_interpretation(
     model: Optional[str] = None,
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
+    prompt: Optional[str] = IMAGE_INTERPRETATION_PROMPT,
 ) -> str:
     """Generate an extensive image interpretation behind the scenes.
 
@@ -119,7 +120,7 @@ async def generate_image_interpretation(
         return ""
 
     prompt = model_action.create_multimodal_content(
-        text=IMAGE_INTERPRETATION_PROMPT, images=normalized
+        text=prompt, images=normalized
     )
     extra: dict = {}
     if model is not None:

@@ -51,7 +51,8 @@ class VisionAction(Action):
     model_max_tokens: Optional[int] = attribute(default=None)
 
     async def describe(
-        self, visitor: Any = None, images: Optional[List[Any]] = None
+        self, visitor: Any = None, images: Optional[List[Any]] = None,
+        prompt: Optional[str] = None,
     ) -> str:
         """Return an extensive interpretation of the images, or "" when none."""
         urls = images if images is not None else image_urls_from_visitor(visitor)
@@ -71,6 +72,7 @@ class VisionAction(Action):
                 model=self.model or None,
                 temperature=self.model_temperature,
                 max_tokens=self.model_max_tokens,
+                prompt=prompt,
             )
         except Exception as exc:
             logger.warning("VisionAction.describe failed: %s", exc)
@@ -87,15 +89,23 @@ class VisionAction(Action):
                     "Returns an extensive text interpretation you can use to "
                     "answer the user's question about them."
                 ),
-                parameters_schema={"type": "object", "properties": {}},
+                parameters_schema={
+                    "type": "object",
+                    "properties": {
+                        "prompt": {
+                            "type": "string",
+                            "description": "Custom prompt for image interpretation. Defaults to exhaustive description.",
+                        },
+                    },
+                },
                 execute=self._tool_interpret,
             )
         ]
 
-    async def _tool_interpret(self, visitor: Any = None, **_: Any) -> Any:
+    async def _tool_interpret(self, visitor: Any = None, prompt: Optional[str] = None, **_: Any) -> Any:
         from jvagent.tooling.tool_result import ToolResult
 
-        text = await self.describe(visitor=visitor)
+        text = await self.describe(visitor=visitor, prompt=prompt)
         if not text:
             return ToolResult(content="(no images on the current message to interpret)")
         return ToolResult(content=text)

@@ -1,5 +1,5 @@
 package:
-  name: jvagent/vision
+  name: jvagent/vision_action
   author: V75 Inc.
   archetype: VisionAction
   version: 1.0.0
