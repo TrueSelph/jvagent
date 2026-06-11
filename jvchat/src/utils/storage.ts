@@ -7,6 +7,7 @@ const SELECTED_AGENT_KEY = 'jvchat_selected_agent'
 const SAVED_CREDENTIALS_KEY = 'jvchat_saved_credentials_v2'
 const DEBUG_INTERACTIONS_PAGE_SIZE_KEY = 'jvchat_debug_interactions_page_size'
 const DEBUG_INTERACTIONS_USER_FILTER_KEY = 'jvchat_debug_interactions_user_filter'
+const TOOL_JSON_EXPAND_DEPTH_KEY = 'jvchat_tool_json_expand_depth'
 
 /**
  * Attempt to write to localStorage with automatic quota management.
@@ -860,5 +861,29 @@ export function cleanupOldStorage(): void {
   localStorage.removeItem('jvchat_saved_credentials')
   localStorage.removeItem('jvchat_auth_creds')
   // Keep jvchat_saved_credentials_v2 - that's the current format
+}
+
+const DEFAULT_TOOL_JSON_EXPAND_DEPTH = 2
+
+export function getToolJsonExpandDepth(): number {
+  if (typeof window === 'undefined') return DEFAULT_TOOL_JSON_EXPAND_DEPTH
+  try {
+    const raw = localStorage.getItem(TOOL_JSON_EXPAND_DEPTH_KEY)
+    if (raw == null) return DEFAULT_TOOL_JSON_EXPAND_DEPTH
+    const n = parseInt(raw, 10)
+    if (!Number.isFinite(n) || n < 0) return DEFAULT_TOOL_JSON_EXPAND_DEPTH
+    return n
+  } catch {
+    return DEFAULT_TOOL_JSON_EXPAND_DEPTH
+  }
+}
+
+export function setToolJsonExpandDepth(depth: number): void {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(TOOL_JSON_EXPAND_DEPTH_KEY, String(depth))
+  } catch (error) {
+    console.error('Failed to save tool JSON expand depth:', error)
+  }
 }
 

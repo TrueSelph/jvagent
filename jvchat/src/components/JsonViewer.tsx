@@ -30,6 +30,10 @@ interface JsonViewerProps {
   maxHeight?: string;
   /** Optional className for the outer container. */
   className?: string;
+  /** External expand depth override (e.g. from localStorage). When provided, this replaces the internal forcedDepth state. */
+  externalExpandDepth?: number;
+  /** Callback fired when the user changes expand depth via the toolbar (Expand all / Collapse all / Reset). */
+  onExpandDepthChange?: (depth: number) => void;
 }
 
 type NodeKind = "object" | "array" | "string" | "number" | "boolean" | "null";
@@ -529,12 +533,16 @@ export function JsonViewer({
   showToolbar = true,
   maxHeight,
   className,
+  externalExpandDepth,
+  onExpandDepthChange,
 }: JsonViewerProps) {
   const [raw, setRaw] = useState(false);
   const [search, setSearch] = useState("");
   const [expandKey, setExpandKey] = useState(0);
-  const [forcedDepth, setForcedDepth] = useState(defaultExpandDepth);
+  const [internalForcedDepth, setInternalForcedDepth] = useState(defaultExpandDepth);
   const [copied, setCopied] = useState(false);
+
+  const forcedDepth = externalExpandDepth !== undefined ? externalExpandDepth : internalForcedDepth;
 
   const collapsedPaths = useMemo(
     () =>
@@ -563,16 +571,21 @@ export function JsonViewer({
   }, [rawText]);
 
   const expandAll = () => {
-    setForcedDepth(64);
+    const depth = 64;
+    setInternalForcedDepth(depth);
     setExpandKey((k) => k + 1);
+    onExpandDepthChange?.(depth);
   };
   const collapseAll = () => {
-    setForcedDepth(0);
+    const depth = 0;
+    setInternalForcedDepth(depth);
     setExpandKey((k) => k + 1);
+    onExpandDepthChange?.(depth);
   };
   const resetExpand = () => {
-    setForcedDepth(defaultExpandDepth);
+    setInternalForcedDepth(defaultExpandDepth);
     setExpandKey((k) => k + 1);
+    onExpandDepthChange?.(defaultExpandDepth);
   };
 
   const panelDark = dark;

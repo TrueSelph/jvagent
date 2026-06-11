@@ -19,6 +19,13 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { JsonViewer } from "@/components/JsonViewer";
+import { tryParseJsonDisplay } from "@/utils/tryParseJsonDisplay";
+import {
+  getToolJsonExpandDepth,
+  setToolJsonExpandDepth,
+} from "@/utils/storage";
+import { useTheme } from "@/context/ThemeContext";
 
 const ANIMATION_DURATION = 200;
 
@@ -190,7 +197,34 @@ function ToolFallbackArgs({
 }: React.ComponentProps<"div"> & {
   argsText?: string;
 }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+  const handleExpandDepthChange = useCallback((depth: number) => {
+    setToolJsonExpandDepth(depth);
+  }, []);
+
   if (!argsText) return null;
+
+  const parsed = tryParseJsonDisplay(argsText);
+
+  if (parsed !== null) {
+    return (
+      <div
+        data-slot="tool-fallback-args"
+        className={cn("aui-tool-fallback-args px-4", className)}
+        {...props}
+      >
+        <JsonViewer
+          data={parsed}
+          externalExpandDepth={getToolJsonExpandDepth()}
+          onExpandDepthChange={handleExpandDepthChange}
+          dark={isDark}
+          showToolbar
+          maxHeight="240px"
+        />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -212,7 +246,51 @@ function ToolFallbackResult({
 }: React.ComponentProps<"div"> & {
   result?: unknown;
 }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+  const handleExpandDepthChange = useCallback((depth: number) => {
+    setToolJsonExpandDepth(depth);
+  }, []);
+
   if (result === undefined) return null;
+
+  let viewerData: unknown = result;
+  if (typeof result === "string") {
+    const parsed = tryParseJsonDisplay(result);
+    if (parsed !== null) {
+      viewerData = parsed;
+    }
+  }
+
+  const isJsonObjectOrArray =
+    viewerData !== result ||
+    (typeof viewerData === "object" && viewerData !== null);
+
+  if (isJsonObjectOrArray) {
+    return (
+      <div
+        data-slot="tool-fallback-result"
+        className={cn(
+          "aui-tool-fallback-result border-t border-dashed pt-2",
+          className,
+        )}
+        {...props}
+      >
+        <p className="aui-tool-fallback-result-header font-semibold">Result:</p>
+        <JsonViewer
+          data={viewerData}
+          externalExpandDepth={getToolJsonExpandDepth()}
+          onExpandDepthChange={handleExpandDepthChange}
+          dark={isDark}
+          showToolbar
+          maxHeight="400px"
+        />
+      </div>
+    );
+  }
+
+  const resultText =
+    typeof result === "string" ? result : JSON.stringify(result, null, 2);
 
   return (
     <div
@@ -225,7 +303,7 @@ function ToolFallbackResult({
     >
       <p className="aui-tool-fallback-result-header font-semibold">Result:</p>
       <pre className="aui-tool-fallback-result-content whitespace-pre-wrap">
-        {typeof result === "string" ? result : JSON.stringify(result, null, 2)}
+        {resultText}
       </pre>
     </div>
   );
