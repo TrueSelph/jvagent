@@ -109,7 +109,6 @@ actions:
 - `weight`: Execution weight (default: -200; runs first to subsume posture classification)
 - `exceptions`: Action names that always execute
 - `enable_routing_cache`: Skip LLM for repeated context when cache hit (default: false; requires `enable_interact_router_cache` in app.yaml)
-- `pass_through_task_types`: Task types that bypass LLM when active (default: `("INTERVIEW",)`)
 - `pass_through_when_media`: Bypass LLM when user has attached media (default: true)
 - `media_bypass_actions`: When non-empty and media attached, route to these actions without LLM (default: [])
 - `bypass_canned_response`: Instant canned response for bypass paths (default: "One moment")

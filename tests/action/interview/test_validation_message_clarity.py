@@ -1,4 +1,4 @@
-"""Validation failure envelopes: per-field validator errors and first-failure stop."""
+"""Validation failure envelopes: per-field validator errors in batch mode."""
 
 from __future__ import annotations
 
@@ -37,9 +37,9 @@ async def test_invalid_name_returns_full_name_validator_error(signup_action):
     )
 
     assert result["ok"] is False
-    assert result["validator"] == "validate_full_name"
-    assert "first and last name" in (result.get("error") or "").lower()
-    assert "latest message" not in (result.get("error") or "").lower()
+    failed = [e for e in result["results"] if not e.get("stored")]
+    assert "first and last name" in (failed[0].get("error") or "").lower()
+    assert "latest message" not in (failed[0].get("error") or "").lower()
 
 
 @pytest.mark.asyncio
@@ -58,13 +58,13 @@ async def test_invalid_slot_returns_available_times_guidance(signup_action):
     )
 
     assert result["ok"] is False
-    assert result["validator"] == "validate_available_times"
-    assert "available training times" in (result.get("error") or "").lower()
-    assert "latest message" not in (result.get("error") or "").lower()
+    failed = [e for e in result["results"] if not e.get("stored")]
+    assert "available training times" in (failed[0].get("error") or "").lower()
+    assert "latest message" not in (failed[0].get("error") or "").lower()
 
 
 @pytest.mark.asyncio
-async def test_batch_stops_at_first_validation_failure(signup_action):
+async def test_batch_reports_all_validation_failures(signup_action):
     action, contract = signup_action
     session = InterviewSession(interview_type="signup_interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, contract))
@@ -85,15 +85,15 @@ async def test_batch_stops_at_first_validation_failure(signup_action):
 
     assert result["ok"] is False
     assert result["status"] == "validation_failed"
-    assert result["field"] == "user_name"
-    assert "first and last name" in (result.get("error") or "").lower()
     by_field = {r["field"]: r for r in result["results"]}
-    assert by_field["user_name"]["ok"] is False
-    # First failure stops the pipeline; later fields are not processed.
-    assert "available_times" not in by_field
+    assert by_field["user_name"]["stored"] is False
+    assert "first and last name" in (by_field["user_name"].get("error") or "").lower()
+    assert by_field["available_times"]["stored"] is False
     assert "available_times" not in session.fields
+    failed = [e for e in result["results"] if not e.get("stored")]
+    assert len(failed) == 2
     assert "response_directive" in result
-    assert "first and last name" in result["response_directive"].lower()
+    assert "corrected values" in result["response_directive"].lower()
 
 
 @pytest.mark.asyncio

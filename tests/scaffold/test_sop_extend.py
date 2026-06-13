@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from jvagent.scaffold.sop_extend import (
@@ -12,6 +14,22 @@ from jvagent.scaffold.sop_extend import (
     parse_extends_ref,
     reset_sop_extend_cache,
 )
+
+_CORE_ENV = "JVAGENT_CORE_ACTION_PATH"
+
+
+def _make_core_action_root(root: Path, marker: str) -> Path:
+    action_dir = root / "interview"
+    action_dir.mkdir(parents=True, exist_ok=True)
+    (action_dir / "info.yaml").write_text(
+        "package:\n  name: jvagent/interview\n",
+        encoding="utf-8",
+    )
+    (action_dir / "SKILL.md").write_text(
+        f"# Standard Interview Procedure\n\n{marker}\n",
+        encoding="utf-8",
+    )
+    return root
 
 
 def setup_function() -> None:
@@ -134,3 +152,27 @@ def test_merge_extends_allowed_tools_additive_and_disabled():
     assert "interview__set_fields" in tools
     assert "child__custom_tool" in tools
     assert "interview__reset" not in tools
+
+
+def test_load_action_base_sop_body_honors_env_override(monkeypatch, tmp_path):
+    root = _make_core_action_root(tmp_path / "core_actions", marker="ENV_OVERRIDE")
+    monkeypatch.setenv(_CORE_ENV, str(root))
+    reset_sop_extend_cache()
+
+    body = load_action_base_sop_body("jvagent/interview")
+
+    assert "ENV_OVERRIDE" in body
+
+
+def test_env_override_cache_refreshes_on_path_change(monkeypatch, tmp_path):
+    first = _make_core_action_root(tmp_path / "first_actions", marker="FIRST")
+    second = _make_core_action_root(tmp_path / "second_actions", marker="SECOND")
+
+    monkeypatch.setenv(_CORE_ENV, str(first))
+    reset_sop_extend_cache()
+    body_first = load_action_base_sop_body("jvagent/interview")
+    assert "FIRST" in body_first
+
+    monkeypatch.setenv(_CORE_ENV, str(second))
+    body_second = load_action_base_sop_body("jvagent/interview")
+    assert "SECOND" in body_second

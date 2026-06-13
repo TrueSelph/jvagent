@@ -20,13 +20,13 @@ These extend [platform invariants](../../../../docs/thin-harness.md#platform-inv
 
 1. **No server-side intent classification** — cancel, reset, correct/update, and multi-answer routing are defined in the composed SOP; the foundation must not use regex, keyword lists, or `control_intent` prep to choose tools for the model.
 
-2. **No turn-prep steering** — `prepare_locked_skill_turn` loads session + contract and may set `pending_directive` to the current `field_awareness` line (field key + question — reference metadata only, in-turn header only). It must **not** persist interaction events, inject `interview__message_evaluation`, auto-seed `interview__next_field`, or attach `pending_directive` / observations that replace explicit tool calls (e.g. “call interview__next_field now”). Persisted `[EVENT]` snapshots come from tool handlers only and upsert to one line per interaction.
+2. **No turn-prep steering** — interview runtime must not inject prep observations or directives that choose the model's next tool call. It must **not** persist interaction events, inject `interview__message_evaluation`, auto-seed `interview__next_field`, or attach steering hints that replace explicit tool calls (e.g. “call interview__next_field now”). Persisted `[EVENT]` snapshots come from tool handlers only and upsert to one line per interaction.
 
 3. **No activation auto-store** — `_handle_start` / `on_skill_activate` must not parse the user message and pre-fill `session.fields`. Extraction is model-owned via `interview__set_fields`.
 
 4. **No response inlining** — do not merge `next_field` or `review` payloads into `set_fields` responses inside the server (`merge_auto_next_field`, `merge_auto_review`, etc.). `next_tool` hints and `response_directive` are allowed; the model still issues separate tool calls per SOP.
 
-5. **No orchestrator interview special-casing** — the orchestrator must not post-process interview tool results to force follow-up tool calls. Turn-lock uses generic bound-action hooks only (`skill_runtime_ready`, `prepare_locked_skill_turn`, `prune_turn_tools`).
+5. **No orchestrator interview special-casing** — the orchestrator must not post-process interview tool results to force follow-up tool calls. Turn-lock is generic orchestrator behavior from skill `task-lock` + active SKILL tasks.
 
 6. **No frontmatter extractors** — utterance parsing is not declared in skill YAML and the server has no extraction path at all. The model owns extraction outright; validators are the only gate on what gets stored.
 
@@ -34,7 +34,7 @@ These extend [platform invariants](../../../../docs/thin-harness.md#platform-inv
 
 8. **Validators are the only store gate** — `interview__set_fields` runs the field's configured validator (built-in by name, else `custom_tools.py` function) and stores the returned value. The server never re-extracts from the user's message, never compares supplied values against the utterance, and never rejects a validator-passing value. If a skill needs stricter acceptance, tighten the validator or the `fields[].guidance` — do not add server-side grounding.
 
-9. **Session gate via `use_skill`** — interview tools and field prompts require an active session opened by `use_skill(<skill_name>)`. Chat-only roleplay (asking `fields[].prompt` via `reply` before activation) is an SOP violation, not a harness workaround. `prune_turn_tools` hides `interview__*` when no session; `no_session_directive` and activation observations clarify the gate without per-turn steering.
+9. **Session gate via `use_skill`** — interview tools and field prompts require an active session opened by `use_skill(<skill_name>)`. Chat-only roleplay (asking `fields[].prompt` via `reply` before activation) is an SOP violation, not a harness workaround. `no_session_directive` and activation observations clarify the gate without per-turn steering.
 
 10. **No forward-storable policing** — the harness does not compute or publish which fields the model "may" store this turn. Branch reachability is enforced structurally: values stored behind a pivoted branch are pruned, and `missing_required` / `next_field` only follow the reachable path.
 
@@ -50,7 +50,7 @@ These extend [platform invariants](../../../../docs/thin-harness.md#platform-inv
 
 5. **Acceptance criteria in `fields[].guidance`** — tell the model what counts as a substantive answer; do not add parallel `extract_*` functions for utterance parsing.
 
-6. **Chaining gate** — never advance when `ok: false`; post-processors do not run on validation failure. When `response_directive` conflicts with `next_fields`, follow the directive.
+6. **Chaining gate** — never advance when `ok: false`; post-processors do not run on validation failure. When `response_directive` conflicts with `next_field`, follow the directive.
 
 7. **Corrections are first-class** — mid-interview and at-review updates use `interview__set_fields`; do not build server-side “correction detection.”
 
@@ -74,7 +74,7 @@ Tests that guard the interview contract:
 
 | Test area | What it proves |
 |-----------|----------------|
-| `test_prepare_locked_skill_turn.py` | Prep is runtime gate only — no observations |
+| `test_signup_activation_inline.py` | Activation and collection remain model-driven without server prep steering |
 | `test_set_fields.py` | Batch store, corrections, model-driven chaining |
 | `test_frontmatter_schema_rejects_legacy_keys.py` | Unknown frontmatter keys rejected at parse time |
 | `test_skill_tool_names.py` | Hooks are not LLM tools |

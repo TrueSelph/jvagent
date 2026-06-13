@@ -12,7 +12,7 @@ from jvagent.action.orchestrator.skill_tasks import (
     has_active_skill_task,
     is_skill_task_done,
     pending_auto_start_skills,
-    resolve_active_locked_skill,
+    resolve_active_task_lock_skill,
 )
 from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.memory.task_store import TaskStore
@@ -135,7 +135,7 @@ def test_action_for_skill_prefers_lifecycle_protocol():
         def get_class_name(self):
             return "InterviewAction"
 
-        async def prepare_locked_skill_turn(self, skill_name, visitor=None):
+        async def prepare_task_lock_turn(self, skill_name, visitor=None):
             return None
 
     bound = action_for_skill(doc, [ZoonAPIAction(), InterviewAction()])
@@ -167,19 +167,19 @@ def test_action_for_skill_uses_requires_order_not_agent_order():
 
 
 @pytest.mark.asyncio
-async def test_resolve_active_locked_skill_via_action_resolver():
+async def test_resolve_active_task_lock_skill_via_action_resolver():
     skill = SkillDoc(
         name="pre_alert_interview",
         description="d",
         body="b",
-        locked_in=True,
+        task_lock=True,
         requires_actions=("InterviewAction",),
     )
     onboarding = SkillDoc(
         name="onboarding_interview",
         description="d",
         body="b",
-        locked_in=True,
+        task_lock=True,
         requires_actions=("InterviewAction",),
     )
 
@@ -189,13 +189,13 @@ async def test_resolve_active_locked_skill_via_action_resolver():
         def get_class_name(self):
             return "InterviewAction"
 
-        async def resolve_locked_skill(self, visitor, skill_docs):
+        async def resolve_task_lock_skill(self, visitor, skill_docs):
             return onboarding
 
     visitor = MagicMock()
     visitor.conversation = MagicMock()
     visitor.conversation.context = {}
-    doc = await resolve_active_locked_skill(
+    doc = await resolve_active_task_lock_skill(
         visitor,
         [onboarding, skill],
         [ResolverAction()],
@@ -228,15 +228,15 @@ async def test_compose_skill_activate_hooks_calls_bound_action():
 
 
 @pytest.mark.asyncio
-async def test_ensure_locked_skill_session_rebootstraps_when_missing():
-    from jvagent.action.orchestrator.skill_tasks import ensure_locked_skill_session
+async def test_ensure_task_lock_session_rebootstraps_when_missing():
+    from jvagent.action.orchestrator.skill_tasks import ensure_task_lock_session
 
     doc = SkillDoc(
         name="onboarding_interview",
         description="d",
         body="b",
         requires_actions=("InterviewAction",),
-        locked_in=True,
+        task_lock=True,
     )
 
     class InterviewActionStub:
@@ -245,11 +245,11 @@ async def test_ensure_locked_skill_session_rebootstraps_when_missing():
         def get_class_name(self):
             return "InterviewAction"
 
-        needs_session_rebootstrap = AsyncMock(return_value=True)
+        needs_task_lock_rebootstrap = AsyncMock(return_value=True)
         on_skill_activate = AsyncMock(return_value="session ready")
 
     visitor = MagicMock()
-    note = await ensure_locked_skill_session(
+    note = await ensure_task_lock_session(
         doc, [InterviewActionStub()], visitor, user_message="5926431531"
     )
     assert note == "session ready"

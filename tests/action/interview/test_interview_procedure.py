@@ -40,6 +40,13 @@ def test_standard_procedure_includes_session_gate():
     assert "use_skill" in body
     assert "No session → no field prompts in `reply`" in body
     assert "Activation:" in body
+    assert "field_awareness" not in body
+    assert "quoted `field_key` only" not in body
+    assert "all extracted keys" in body
+    assert "Do not invent or alias keys" in body
+    assert "available_times` not `availability" in body
+    assert "Unknown key recovery" in body
+    assert "activation returns `awaiting_fields` only" not in body
 
 
 def test_compose_interview_skill_body_without_custom():
@@ -135,5 +142,16 @@ def test_signup_skill_custom_instructions_model_owned_flow():
     assert "Chaining" in composed
     assert "Session gate" in composed
     assert "Branching" in composed
+    assert "Anti-drip rule" in composed
     assert "available_times" in composed
     assert "jvagent training" in composed.lower()
+
+
+def test_base_sop_references_field_reference():
+    from jvagent.action.interview.procedure import get_standard_interview_procedure
+
+    body = get_standard_interview_procedure()
+    assert "field_reference" in body
+    # Compound-extraction rule lives here (sole home after orchestrator removal).
+    assert "Submit one initial" in body
+    assert "every extracted key/value" in body

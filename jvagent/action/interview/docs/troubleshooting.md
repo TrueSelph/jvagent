@@ -59,7 +59,7 @@ If a fix would add server-side turn steering (prep observations, auto-store, ext
 **Symptom:** Questions out of order or optional fields skipped silently.
 
 **Causes:**
-- LLM ignored `next_fields` or followed stale `next_fields` from a prior turn.
+- LLM ignored `next_field` or followed stale `next_field` from a prior turn.
 - `response_directive` conflict not resolved (directive wins).
 - Procedure in `SKILL.md` unclear about optional field handling.
 
@@ -94,9 +94,9 @@ If a fix would add server-side turn steering (prep observations, auto-store, ext
 
 **Symptom:** Summary shown before optional fields handled.
 
-**Cause:** LLM called `interview__review()` while `next_fields` still had items.
+**Cause:** LLM called `interview__review()` while `next_field` still had items.
 
-**Fix:** Procedure should require empty `next_fields` (or explicit `skip_field` for optional items) before review.
+**Fix:** Procedure should require empty `next_field` (or explicit `skip_field` for optional items) before review.
 
 ---
 
@@ -135,9 +135,9 @@ If a fix would add server-side turn steering (prep observations, auto-store, ext
 
 **Symptom:** On locked turns, `interview__*` tools not visible.
 
-**Cause:** `prune_turn_tools` hides tools when `skill_runtime_ready` fails (session not loaded).
+**Cause:** The active task-lock skill's declared `requires_tools` does not include the interview tools needed for this turn.
 
-**Fix:** Ensure prior turn completed skill activation; check for session in `conversation.context["interview"]`.
+**Fix:** Confirm `SKILL.md` `requires_tools` includes the expected `interview__*` tools and activation ran via `use_skill` so the interview session is active.
 
 ---
 

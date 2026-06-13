@@ -257,7 +257,11 @@ async def reset_example_interview(
 
     if interview_action is not None and visitor is not None:
         try:
-            await interview_action._close_task(visitor, status="cancelled")
+            await interview_action._close_task(
+                visitor,
+                status="cancelled",
+                spec_name=_SKILL_NAME,
+            )
         except Exception as exc:
             logger.debug(
                 "reset_example_interview: close interview task failed: %s", exc
@@ -397,7 +401,11 @@ async def example_complete(
 
     if interview_action and visitor:
         try:
-            await interview_action._close_task(visitor, status="completed")
+            await interview_action._close_task(
+                visitor,
+                status="completed",
+                spec_name=_SKILL_NAME,
+            )
         except Exception as exc:
             logger.debug("example_complete: close interview task failed: %s", exc)
 

@@ -32,7 +32,7 @@ def _visitor():
 
 async def _seed_active(conversation, owner):
     h = await TaskStore(conversation).create(
-        title="flow", description=owner, task_type="INTERVIEW", owner_action=owner
+        title="flow", description=owner, task_type="SKILL", owner_action=owner
     )
     await h.start()
 
@@ -89,14 +89,14 @@ async def test_multiple_active_flows_prefers_most_recent():
     older = await TaskStore(v.conversation).create(
         title="old",
         description="OldFlow",
-        task_type="INTERVIEW",
+        task_type="SKILL",
         owner_action="OldFlowIA",
     )
     await older.start()
     newer = await TaskStore(v.conversation).create(
         title="new",
         description="NewFlow",
-        task_type="INTERVIEW",
+        task_type="SKILL",
         owner_action="NewFlowIA",
     )
     await newer.start()

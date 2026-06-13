@@ -60,7 +60,7 @@ interview:
         body="SOP: collect phone.",
         requires_tools=("interview__next_field", "interview__set_fields"),
         requires_actions=("InterviewAction",),
-        locked_in=True,
+        task_lock=True,
     )
 
     interview = InterviewAction()

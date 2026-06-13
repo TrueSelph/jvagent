@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
@@ -22,10 +23,32 @@ MAX_EXTEND_DEPTH = 12
 
 _CORE_ACTION_PATH: Optional[Path] = None
 _CORE_PACKAGE_INDEX: Optional[Dict[str, Path]] = None
+_CORE_ACTION_ENV = "JVAGENT_CORE_ACTION_PATH"
+
+
+def _env_core_action_path() -> Optional[Path]:
+    raw = str(os.environ.get(_CORE_ACTION_ENV) or "").strip()
+    if not raw:
+        return None
+    path = Path(raw).expanduser().resolve()
+    if not path.is_dir() or not info_yaml.has_info_yaml_files(path):
+        logger.warning(
+            "sop_extend: %s=%s is not a valid action root", _CORE_ACTION_ENV, path
+        )
+        return None
+    return path
 
 
 def _get_core_action_path() -> Optional[Path]:
-    global _CORE_ACTION_PATH
+    global _CORE_ACTION_PATH, _CORE_PACKAGE_INDEX
+
+    env_path = _env_core_action_path()
+    if env_path is not None:
+        if _CORE_ACTION_PATH != env_path:
+            _CORE_ACTION_PATH = env_path
+            _CORE_PACKAGE_INDEX = None
+        return env_path
+
     if _CORE_ACTION_PATH is not None and _CORE_ACTION_PATH.exists():
         if info_yaml.has_info_yaml_files(_CORE_ACTION_PATH):
             return _CORE_ACTION_PATH
@@ -321,7 +344,11 @@ def load_action_base_sop_body(
         )
         return ""
     try:
-        return _load_skill_md_body(skill_file)
+        body = _load_skill_md_body(skill_file)
+        logger.debug(
+            "sop_extend: loaded base SOP for %s from %s", action_ref, skill_file
+        )
+        return body
     except OSError as exc:
         logger.warning("sop_extend: failed to read %s: %s", skill_file, exc)
         return ""

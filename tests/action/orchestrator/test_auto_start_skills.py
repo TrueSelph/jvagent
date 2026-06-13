@@ -1,4 +1,4 @@
-"""auto_start_skills_on_new_user: use_skill seed on new_user; locked_in when active task."""
+"""auto_start_skills_on_new_user: use_skill seed on new_user; task_lock when active task."""
 
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ async def test_auto_start_new_user_seeds_use_skill_only(
         description="Customer onboarding interview.",
         body="SOP: ask for phone number first.",
         requires_tools=("interview__init",),
-        locked_in=True,
+        task_lock=True,
     )
     interview_ia = _interview_init_action()
     reply_ia = _reply_action()
@@ -177,7 +177,7 @@ async def test_auto_start_still_runs_when_skill_task_completed(
         description="Customer onboarding.",
         body="SOP",
         requires_tools=("interview__init",),
-        locked_in=True,
+        task_lock=True,
     )
     reply_ia = _reply_action()
     ex = make_orchestrator(
@@ -232,7 +232,7 @@ async def test_auto_start_skipped_when_not_new_user(
         description="Customer onboarding.",
         body="SOP",
         requires_tools=(),
-        locked_in=True,
+        task_lock=True,
     )
     reply_ia = _reply_action()
     ex = make_orchestrator(
@@ -276,7 +276,7 @@ async def test_auto_start_skipped_when_not_new_user(
     assert "use_skill" not in tool_names
 
 
-async def test_locked_in_returning_user_with_active_task(
+async def test_task_lock_returning_user_with_active_task(
     make_orchestrator, make_visitor, monkeypatch
 ):
     from jvagent.action.orchestrator.skills import SkillDoc
@@ -286,7 +286,7 @@ async def test_locked_in_returning_user_with_active_task(
         description="Onboarding.",
         body="SOP",
         requires_tools=("interview__init",),
-        locked_in=True,
+        task_lock=True,
     )
     interview_ia = _interview_init_action()
     reply_ia = _reply_action()
@@ -347,14 +347,14 @@ async def test_auto_start_two_skills_in_list_order(
         description="First.",
         body="First SOP",
         requires_tools=(),
-        locked_in=False,
+        task_lock=False,
     )
     second = SkillDoc(
         name="SecondSkill",
         description="Second.",
         body="Second SOP",
         requires_tools=(),
-        locked_in=True,
+        task_lock=True,
     )
     reply_ia = _reply_action()
     ex = make_orchestrator(
@@ -412,7 +412,7 @@ async def test_auto_start_accepts_single_string_config(
         description="Onboarding.",
         body="SOP",
         requires_tools=(),
-        locked_in=False,
+        task_lock=False,
     )
     reply_ia = _reply_action()
     ex = make_orchestrator(

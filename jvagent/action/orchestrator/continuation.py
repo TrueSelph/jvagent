@@ -1,6 +1,6 @@
 """Active-flow awareness for the Orchestrator (ADR-0012).
 
-Turn-spanning flows (e.g. a locked-in skill) record an active control-task on
+Turn-spanning flows (e.g. a task-lock skill) record an active control-task on
 the conversation ``TaskStore`` while running. The Orchestrator does **not**
 force every turn back into the flow when ``lock_active_flow`` is off — that
 would shove off-topic utterances into an active locked flow. Instead it surfaces
@@ -168,7 +168,7 @@ async def cancel_orphan_flow_tasks(
 ) -> int:
     """Cancel active flow tasks whose owner is no longer routable on the surface.
 
-    Tasks owned by a locked-in skill (``locked_skill_names``) are **exempt**
+    Tasks owned by a task-lock skill (``locked_skill_names``) are **exempt**
     from sweeping — they are not IA tools but are intentionally kept alive
     until the skill itself marks the task complete or cancelled.
     """
@@ -189,7 +189,7 @@ async def cancel_orphan_flow_tasks(
         if task_type in _NON_FLOW_TASK_TYPES:
             continue
         owner = str(getattr(th, "owner_action", "") or "")
-        # Never sweep tasks owned by a locked-in skill — they persist until
+        # Never sweep tasks owned by a task-lock skill — they persist until
         # the bound action marks them complete/cancelled.
         if owner and owner in exempt:
             continue

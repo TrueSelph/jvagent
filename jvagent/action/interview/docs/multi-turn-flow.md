@@ -40,9 +40,9 @@ State is stored on `InterviewSession.status` inside `conversation.context["inter
 User message → Orchestrator selects use_skill("<skill_name>")
             → InterviewAction.on_skill_activate()
             → _handle_start(): create or resume session (no auto-store on activation)
-            → INTERVIEW task created (owner: InterviewAction)
-            → SKILL task created if locked-in: true
-            → prepare_locked_skill_turn(): runtime-ready gate (no prep observations)
+            → SKILL task created if task-lock: true
+            → InterviewAction adopts/tags active SKILL task for interview lifecycle updates
+            → orchestrator applies generic task-lock routing from active SKILL task
 ```
 
 On every turn (including activation), the model follows base `SKILL.md` intent routing:
@@ -51,15 +51,15 @@ On every turn (including activation), the model follows base `SKILL.md` intent r
 - Call the matching tool (`interview__set_fields`, `interview__next_field`, `interview__reset`, …).
 - Chain follow-up tools per SOP (e.g. `set_fields` → `next_field` → reply).
 
-`prepare_locked_skill_turn` only confirms the interview runtime is ready — it does **not** inject observations or directives.
+Task-lock behavior is generic at orchestrator level; interview runtime does not provide task-lock prep hooks.
 
 ### Anti-pattern: chat-only roleplay before activation
 
-If the model skips `use_skill` and asks field prompts via `reply` alone, there is no session — `prune_turn_tools` hides `interview__*` tools and answers are not stored. Per base SOP, values from chat turns before `use_skill` are not reused; the user may need to repeat one field once. Fix: follow base SOP **Activation (session gate)** — `use_skill` first, then `interview__next_field`, then `reply`.
+If the model skips `use_skill` and asks field prompts via `reply` alone, there is no session and answers are not stored. Per base SOP, values from chat turns before `use_skill` are not reused; the user may need to repeat one field once. Fix: follow base SOP **Activation (session gate)** — `use_skill` first, then `interview__next_field`, then `reply`.
 
 ### Field extraction
 
-The model extracts values from utterances and passes them to `interview__set_fields`. Validators are the only server-side gate — there is no re-extraction path. `set_fields` stops at the first validation failure: already-stored fields stay stored, per-field `results` are included, and the top-level `response_directive` carries the failed field's validation guidance.
+The model extracts values from the full latest utterance and passes them as one `fields` map to `interview__set_fields`. Validators are the only server-side gate — there is no re-extraction path. `set_fields` processes every submitted field in field-definition order (`pre_processor -> validator -> store -> post_processor`) and returns per-field `results` plus `response_directive`/`next_tool` — it does not repeat field metadata (that lives in `field_reference` from activation, re-pullable via `interview__get_status`). Branch settlement is **incremental**: a field that an earlier field in the same call makes unreachable is skipped before its validator runs and reported in `ignored`; fields removed from the active path after storage are reported in `pruned`.
 
 ## Turn N — Typical collection turn
 
@@ -71,7 +71,7 @@ sequenceDiagram
     participant H as custom_tools.py
 
     U->>O: Answer to current question
-    O->>IA: interview__set_fields({field: value})
+    O->>IA: interview__set_fields({"fields": {"field_key": "value", ...}})
     IA->>H: validator (if configured)
     H-->>IA: valid / invalid
     alt valid
@@ -81,7 +81,7 @@ sequenceDiagram
         O->>IA: interview__next_field()
         IA->>H: pre_tools (if configured)
         H-->>IA: pre_tools_results
-        IA-->>O: next_fields, response_directive
+        IA-->>O: next_field, response_directive
         O->>U: Single reply per response_directive
     else invalid
         IA-->>O: ok:false, error
@@ -91,20 +91,14 @@ sequenceDiagram
 
 ### Rules per turn
 
-1. **One action per turn** — each tool returns one `response_directive`. Do not ask a question and call another tool in the same turn unless the directive says to call a tool only.
+1. **One action per turn** — each tool returns one composed `response_directive` and may include `response_directives_queue` for transparency.
 2. **Read `ok` first** — if `ok: false`, handle the error; `post_tools` did not run.
 3. **Read hook results** — inspect `post_tools_results` / `pre_tools_results` before calling `next_field` or `review`.
-4. **`response_directive` wins** — when it conflicts with `next_fields`, follow the directive.
+4. **`response_directive` wins** — when it conflicts with `next_field`, follow the directive.
 
-## Turn-lock (`locked-in: true`)
+## Turn-lock (`task-lock: true`)
 
-When a skill declares `locked-in: true`, the orchestrator stays in the active skill flow until the interview completes or cancels. Generic hooks on `InterviewAction` (not interview-specific orchestrator code):
-
-| Hook | Purpose |
-|------|---------|
-| `skill_runtime_ready(skill_name, visitor)` | Session + contract loaded |
-| `prepare_locked_skill_turn(skill_name, visitor)` | Runtime-ready gate only — no prep observations |
-| `prune_turn_tools(tools, visible, visitor)` | Hide interview tools when runtime not ready |
+When a skill declares `task-lock: true`, the orchestrator stays in the active skill flow until the interview completes or cancels. This is fully generic orchestrator behavior driven by active SKILL tasks.
 
 This keeps multi-turn interviews on-rails without hardcoding interview logic in the orchestrator.
 
@@ -113,7 +107,7 @@ This keeps multi-turn interviews on-rails without hardcoding interview logic in 
 For `required: false` questions:
 
 - User declines → `interview__skip_field(field)` then `interview__next_field()`.
-- Do not call `interview__review()` while optional fields remain in `next_fields` unless the procedure explicitly allows it.
+- Do not call `interview__review()` while optional fields remain in `next_field` unless the procedure explicitly allows it.
 
 ## Branching without a state machine
 
@@ -148,10 +142,10 @@ On an empty session, collectible path is typically just the first field (e.g. si
 
 When the user corrects a field that determines a branch (`fields[].branches`), prune recomputes the **active projection** from stored values and **removes only off-path fields** — answers on the new path that remain valid (e.g. `contact` after `user_type` premium→standard, or `phone_number` after email branch pivot) are preserved.
 
-- Pruned field names are recorded in `session.context.pruned_fields` and may appear as `pruned_fields` on `interview__set_fields` responses.
+- Pruned field names are recorded in `session.context.pruned_fields` and may appear as `pruned` on `interview__set_fields` responses (fields skipped in-call as off-path appear as `ignored`).
 - Prune also clears `skipped_fields` entries for pruned fields.
 - `missing_required`, `awaiting_fields`, and `resolve_next_field_name` use the **collectible** prefix; after a correction, call `interview__next_field` when `next_tool` is chained — do not assume every spec field is still collected.
-- Activation (`use_skill`) returns `awaiting_fields` + `field_awareness` (branch-aware) — not the full `field_definitions` catalog. `field_awareness` is surfaced in the locked-skill header via `pending_directive` on each loop tick. Tool handlers upsert one `[EVENT]` snapshot per interaction (latest awaiting field wins) so prior-turn history does not accumulate stale field lines. Use `interview__get_status` when you need the complete schema.
+- Activation (`use_skill`) returns `awaiting_fields`, `field_keys`, and `field_hints` (branch-aware) — not the full `field_definitions` catalog. Use `interview__get_status` when you need the complete schema.
 
 ## Review and completion turns
 
@@ -161,7 +155,7 @@ All required fields collected (+ optional handled)
   → built-in summary OR `handlers.review` (confirmation framing via `review_confirmation_directive` or `confirm: auto`)
   → if terminate: true → stop (escalation path)
   → else user confirms → interview__complete()
-  → completion handler → `clear_interview_context()` (honors `retain_context_keys`), INTERVIEW task closed
+  → completion handler → `clear_interview_context()` (honors `retain_context_keys`), SKILL task closed
 ```
 
 If the user wants to edit during review, call `interview__set_fields` for the field(s) and re-run `interview__review()`.
@@ -177,14 +171,13 @@ If the user wants to edit during review, call `interview__set_fields` for the fi
 
 Skills that replace cancel semantics may set `disabled-tools: [interview__cancel]` and set `handlers.reset`.
 
-## Dual task model
+## Task model
 
 | Task | Owner | Purpose |
 |------|-------|---------|
-| SKILL | Orchestrator skill runtime | Turn-lock for `locked-in: true` skills |
-| INTERVIEW | `InterviewAction` | Progress tracking for UI / task store |
+| SKILL | Orchestrator skill runtime | Turn-lock for `task-lock: true` skills |
 
-Both may be active during an interview. Custom completion handlers often close the INTERVIEW task and may persist profile data to the SKILL task before completing it.
+InterviewAction lifecycle updates operate on the same SKILL task. Custom completion handlers may persist profile data to task `data` before completing it.
 
 ## Reference procedure
 

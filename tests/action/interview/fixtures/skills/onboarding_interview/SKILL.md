@@ -5,7 +5,7 @@ description: Customer onboarding and phone-update interview for Zoon users. Onbo
   WhatsApp number via OTP. Collected fields are stored on the completed SKILL task
   for reuse (e.g. email on file for phone updates).
 spec: jv
-locked-in: true
+task-lock: true
 requires-actions:
 - InterviewAction
 - ZoonAPIAction

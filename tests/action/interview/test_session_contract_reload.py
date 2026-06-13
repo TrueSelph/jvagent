@@ -51,9 +51,8 @@ interview:
 
     # Simulate a fresh action instance / cleared in-memory registry (turn 2).
     action._registry._specs.clear()
-    # _interview_ready lazy-reloads specs before checking session.
-    assert await action._interview_ready(visitor) is True
 
+    # _get_session_and_contract lazy-reloads specs before serving the session.
     session, spec = await action._get_session_and_contract(visitor)
     assert session is not None
     assert spec is not None
@@ -61,7 +60,7 @@ interview:
 
 
 @pytest.mark.asyncio
-async def test_interview_ready_false_when_session_without_spec(tmp_path):
+async def test_get_session_and_contract_returns_no_spec_when_unavailable(tmp_path):
     action = InterviewAction()
     action.metadata = {
         "agent_namespace": "zoon",
@@ -81,7 +80,11 @@ async def test_interview_ready_false_when_session_without_spec(tmp_path):
     visitor = MagicMock()
     visitor.conversation = conversation
 
-    assert await action._interview_ready(visitor) is False
+    # Session is in context, but its spec cannot be loaded (no skill dir) — the
+    # session is returned with a None spec; handlers fall back to NO_SESSION.
+    session, spec = await action._get_session_and_contract(visitor)
+    assert session is not None
+    assert spec is None
 
 
 @pytest.mark.asyncio
@@ -118,6 +121,5 @@ interview:
     ) as mock_discover:
         await action._ensure_specs_loaded()
         await action._ensure_specs_loaded()
-        await action._interview_ready(MagicMock())
 
     mock_discover.assert_not_called()

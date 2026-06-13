@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 # Keys forwarded from pre/post processor hook results to the LLM.
 HOOK_RESULT_KEYS = (
@@ -14,6 +14,7 @@ HOOK_RESULT_KEYS = (
     "error_code",
     "system_message",
     "response_directive",
+    "note",
     "next_tool",
     "interview_complete",
 )
@@ -32,13 +33,6 @@ def interview_tool_response(
     payload: Dict[str, Any] = {"ok": ok, "status": status}
     payload.update({k: v for k, v in data.items() if v is not None})
     return json.dumps(payload)
-
-
-def interview_tool_response_from_payload(payload: Dict[str, Any]) -> str:
-    data = dict(payload)
-    ok = data.pop("ok", None)
-    status = data.pop("status")
-    return interview_tool_response(ok=ok, status=status, **data)
 
 
 def slim_hook_entry(tool: str, parsed: Dict[str, Any]) -> Dict[str, Any]:
@@ -158,51 +152,9 @@ def no_session_directive() -> str:
     )
 
 
-def build_field_awareness_message(awaiting_fields: List[Dict[str, Any]]) -> str:
-    """Human-readable line for events, pending_directive, and field_awareness envelopes."""
-    if not awaiting_fields:
-        return ""
-    primary = awaiting_fields[0]
-    key = str(primary.get("key", "")).strip()
-    if not key:
-        return ""
-    prompt = str(primary.get("prompt", "")).strip()
-    message = f"Awaiting user input for '{key}' field."
-    if prompt:
-        message += f" Question: {prompt}"
-    if len(awaiting_fields) > 1:
-        extras = [
-            str(entry.get("key", "")).strip()
-            for entry in awaiting_fields[1:]
-            if entry.get("key")
-        ]
-        if extras:
-            also = ", ".join(f"'{name}'" for name in extras)
-            message += f" Also awaiting: {also}."
-    return message
-
-
 def restart_session_directive(interview_type: str) -> str:
     """Directive after complete/cancel when a new interview is needed."""
     return (
         f"Call use_skill with name '{interview_type}' to start a new interview "
         "session, then call interview__next_field."
     )
-
-
-def tool_observation_failed(obs: str, *, error_code: Optional[str] = None) -> bool:
-    """True when a tool observation string indicates failure."""
-    if not obs:
-        return True
-    if error_code and error_code in obs:
-        return True
-    try:
-        parsed = json.loads(obs)
-        if isinstance(parsed, dict):
-            if parsed.get("ok") is False:
-                return True
-            if error_code and parsed.get("error_code") == error_code:
-                return True
-    except (json.JSONDecodeError, TypeError):
-        pass
-    return False

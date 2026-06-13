@@ -13,6 +13,7 @@ from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.action.orchestrator.tools import (
     SkillTool,
     parse_json_object,
+    render_observations_section,
     render_tools_section,
     wrap_action_tool,
 )
@@ -30,6 +31,50 @@ async def test_render_tools_section_empty_and_full():
     assert "no tools" in render_tools_section([])
     out = render_tools_section([SkillTool("t", "does t", run=None)])  # type: ignore[arg-type]
     assert "- t: does t" in out
+
+
+async def test_render_observations_section_preserves_use_skill_procedure():
+    out = render_observations_section(
+        [
+            {
+                "tool": "use_skill",
+                "args": {"name": "signup_interview"},
+                "observation": (
+                    "Activated skill 'signup_interview'.\n\n"
+                    "PROCEDURE:\n"
+                    "Line 1\nLine 2\nLine 3"
+                ),
+            }
+        ]
+    )
+    assert "PROCEDURE:\nLine 1" in out
+
+
+async def test_render_observations_section_preserves_interview_payload_shape():
+    out = render_observations_section(
+        [
+            {
+                "tool": "interview__set_fields",
+                "args": {"fields": {"user_name": "Eldon Marks"}},
+                "observation": (
+                    '{"ok": true, "status": "active", "missing_required": '
+                    '["available_times"], "awaiting_fields": '
+                    '[{"key":"available_times","prompt":"What times are you available?"}], '
+                    '"guidance_page": {"offset":0,"limit":10,"total":4,'
+                    '"keys":["user_name"],"map":{"user_name":'
+                    '{"prompt":"Name?","guidance":"First and last name"}}}, '
+                    '"field_keys": ["user_name", "available_times"], '
+                    '"active_path_keys": ["user_name", "available_times"], '
+                    '"response_directive": "Call interview__next_field."}'
+                ),
+            }
+        ]
+    )
+    assert '"awaiting_fields"' in out
+    assert '"guidance_page"' in out
+    assert '"guidance"' in out
+    assert '"field_keys"' in out
+    assert '"active_path_keys"' in out
 
 
 async def test_wrap_action_tool_surfaces_content():

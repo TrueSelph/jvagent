@@ -4,7 +4,7 @@ description: Tracking and pre-alert interview for Zoon users. Checks shipment/pr
   status or collects details to create a new pre-alert. Use for ANY request involving
   a tracking number, package tracking, shipment status, or pre-alert creation.
 spec: jv
-locked-in: true
+task-lock: true
 requires-actions:
 - InterviewAction
 - ZoonAPIAction

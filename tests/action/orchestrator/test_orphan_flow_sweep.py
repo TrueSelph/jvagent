@@ -13,7 +13,7 @@ pytestmark = pytest.mark.asyncio
 
 async def test_cancel_orphan_flow_tasks_cancels_unroutable_owner():
     handle = MagicMock()
-    handle.task_type = "INTERVIEW"
+    handle.task_type = "SKILL"
     handle.owner_action = "MissingIA"
     handle.cancel = AsyncMock()
 
@@ -37,7 +37,7 @@ async def test_cancel_orphan_flow_tasks_cancels_unroutable_owner():
 
 async def test_cancel_orphan_flow_tasks_keeps_routable_owner():
     handle = MagicMock()
-    handle.task_type = "INTERVIEW"
+    handle.task_type = "SKILL"
     handle.owner_action = "SignupIA"
     handle.cancel = AsyncMock()
 

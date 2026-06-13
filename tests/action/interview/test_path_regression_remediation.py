@@ -111,7 +111,8 @@ async def test_activation_awaiting_fields_only_first_field(signup_action):
         await action._handle_start("signup_interview", visitor, user_message=_OPENING)
     )
 
-    assert [f["key"] for f in result["awaiting_fields"]] == ["user_name"]
+    assert result["start_field"] == "user_name"
+    assert "awaiting_fields" not in result
     assert "field_definitions" not in result
 
 
@@ -135,7 +136,7 @@ async def test_activation_opening_extracts_user_name(signup_action):
         )
     )
     assert set_result["ok"] is True
-    assert set_result["fields"].get("user_name") == "Eldon Marks"
+    assert set_result["results"][0]["value"] == "Eldon Marks"
     assert set_result.get("next_tool") == "interview__next_field"
 
 

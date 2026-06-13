@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Optional
 from jvagent.action.interview.responses import (
     interview_tool_response,
     tell_user,
-    tell_user_then_continue,
 )
 
 logger = logging.getLogger(__name__)
@@ -31,6 +30,7 @@ AVAILABLE_TRAINING_TIMES: List[str] = [
 ]
 
 _INVALID_TEST_DOMAINS = frozenset({"example.com", "test.com", "invalid.com"})
+
 
 def _validation_result(
     valid: bool,
@@ -339,11 +339,15 @@ async def append_work_email_note(
     if "@mail.com" not in email:
         return interview_tool_response(ok=True, status="ok")
 
+    # Return a NOTE only. The framework pairs notes with the authoritative next
+    # question computed from final settled state — a processor must not bake in a
+    # next-field question (it goes stale when later fields fill it in the same batch).
     return interview_tool_response(
         ok=True,
         status="ok",
-        response_directive=await tell_user_then_continue(
-            "Thank you for using your work email! We'll send you special updates about jvagent training.",
+        note=(
+            "Thank you for using your work email! We'll send you special updates "
+            "about jvagent training."
         ),
     )
 

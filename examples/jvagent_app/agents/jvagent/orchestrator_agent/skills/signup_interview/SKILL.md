@@ -6,7 +6,6 @@ description: >-
   registration. Use when the user wants to sign up, register, enroll, or
   join jvagent training.
 spec: jv
-locked-in: true
 requires-actions:
   - InterviewAction
 extends: action:jvagent/interview
@@ -63,7 +62,6 @@ interview:
       guidance: >-
         Only asked for @mail.com work emails. Organization or employer name —
         not a job title alone.
-      validator: name
     - key: phone_number
       prompt: "What is your phone number? (optional)"
       required: false
@@ -82,26 +80,7 @@ tags: [signup, training, interview, onboarding]
 ## Custom instructions
 
 ### When to use
-
 - User wants to **sign up**, **register**, **enroll**, or **join jvagent training**.
 
-### Branching
-
-| After field | Condition | Next | Off-path |
-| ----------- | --------- | ---- | -------- |
-| `available_times` | contains **Saturday** | `training_format` → `user_email` | — |
-| `available_times` | weekday (`else`) | `user_email` | `training_format` |
-| `user_email` | contains **@mail.com** | `employer_name` → `phone_number` | — |
-| `user_email` | other (`else`) | `phone_number` | `employer_name` |
-
-On activation, email is behind the slot branch — do not store `user_email` until `available_times` is saved (and `training_format` when Saturday).
-
-### Field notes
-
-- **available_times** — `get_available_training_times` pre_processor lists Eastern Time slots; partial phrases like "Monday at 9" validate when they match a listed slot.
-- **user_email** — after store on `@mail.com`, read `post_tools_results`; work-email note may chain `employer_name` before phone.
-- **phone_number** — optional; `interview__skip_field` with `{"field_key": "phone_number"}` when declined.
-
 ### Tone
-
-Friendly and concise. Bold only the question text from `next_fields`.
+Relay the questions and hints in a  friendly and helpful manner.

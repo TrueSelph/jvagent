@@ -256,19 +256,19 @@ async def test_orchestrator_activation_event_recorded_per_mode(
     assert ev3 is not None and ev3["data"]["continuation_mode"] == "none"
 
 
-async def test_skill_turn_lock_restricts_surface_when_locked_in_is_true(
+async def test_skill_turn_lock_restricts_surface_when_task_lock_is_true(
     make_orchestrator, make_visitor, monkeypatch
 ):
     from jvagent.action.orchestrator.skills import SkillDoc
     from jvagent.tooling.tool import Tool
 
-    # Define a skill with locked_in = True
+    # Define a skill with task_lock = True
     skill = SkillDoc(
         name="ResearchSkill",
         description="Search and summarize.",
         body="SOP: Search using web search, then reply.",
         requires_tools=("web_search__search",),
-        locked_in=True,
+        task_lock=True,
     )
 
     # We need a mock tool for web_search__search so get_tools() returns it
@@ -313,7 +313,7 @@ async def test_skill_turn_lock_restricts_surface_when_locked_in_is_true(
     class MockTask:
         def __init__(self, owner_action):
             self.owner_action = owner_action
-            self.task_type = "INTERVIEW"
+            self.task_type = "SKILL"
             self.updated_at = "2026-06-04T10:00:00Z"
 
     class MockTaskStore:
@@ -372,19 +372,19 @@ async def test_skill_turn_lock_restricts_surface_when_locked_in_is_true(
     assert "ResearchSkill" in ev["data"]["skills_used"]
 
 
-async def test_skill_lock_not_locked_when_locked_in_is_false(
+async def test_skill_lock_not_locked_when_task_lock_is_false(
     make_orchestrator, make_visitor, monkeypatch
 ):
     from jvagent.action.orchestrator.skills import SkillDoc
     from jvagent.tooling.tool import Tool
 
-    # Define a skill with locked_in = False
+    # Define a skill with task_lock = False
     skill = SkillDoc(
         name="ResearchSkill",
         description="Search and summarize.",
         body="SOP: Search using web search, then reply.",
         requires_tools=("web_search__search",),
-        locked_in=False,
+        task_lock=False,
     )
 
     class SearchIA:
@@ -425,7 +425,7 @@ async def test_skill_lock_not_locked_when_locked_in_is_false(
     class MockTask:
         def __init__(self, owner_action):
             self.owner_action = owner_action
-            self.task_type = "INTERVIEW"
+            self.task_type = "SKILL"
             self.updated_at = "2026-06-04T10:00:00Z"
 
     class MockTaskStore:
@@ -468,7 +468,7 @@ async def test_skill_lock_not_locked_when_locked_in_is_false(
     await ex.execute(v)
 
     assert len(spied_calls) == 1
-    # Since locked_in is False, we should see all tools (including find_skill, find_tool, etc.)
+    # Since task_lock is False, we should see all tools (including find_skill, find_tool, etc.)
     assert len(spied_calls[0]["tools"]) > 2
     assert "find_skill" in spied_calls[0]["tools"]
     # Skills section should NOT contain the procedure but rather the standard description list
@@ -494,7 +494,7 @@ def _interview_tool_action(calls: dict):
         def get_class_name(self):
             return "InterviewAction"
 
-        async def resolve_locked_skill(self, visitor, skill_docs):
+        async def resolve_task_lock_skill(self, visitor, skill_docs):
             skill_by_name = {d.name: d for d in skill_docs if getattr(d, "name", None)}
             return skill_by_name.get("OnboardingSkill")
 
@@ -563,10 +563,10 @@ def _reply_action():
     return ReplyIA()
 
 
-async def test_locked_in_pins_visible_so_blocked_tools_dispatch(
+async def test_task_lock_pins_visible_so_blocked_tools_dispatch(
     make_orchestrator, make_visitor, monkeypatch
 ):
-    """locked_in must pin allowed-tools into visible; lean + block_raw must not stub."""
+    """task_lock must pin allowed-tools into visible; lean + block_raw must not stub."""
     from jvagent.action.orchestrator.skills import SkillDoc
 
     calls = {"n": 0}
@@ -575,7 +575,7 @@ async def test_locked_in_pins_visible_so_blocked_tools_dispatch(
         description="Customer onboarding interview.",
         body="SOP: validate phone with interview__validate_phone.",
         requires_tools=("interview__validate_phone",),
-        locked_in=True,
+        task_lock=True,
     )
     interview_ia = _interview_tool_action(calls)
     filler_ia = _filler_tools_action(20)
@@ -609,7 +609,7 @@ async def test_locked_in_pins_visible_so_blocked_tools_dispatch(
     class MockTask:
         def __init__(self, owner_action, data=None):
             self.owner_action = owner_action
-            self.task_type = "INTERVIEW"
+            self.task_type = "SKILL"
             self.data = data or {}
             self.updated_at = "2026-06-04T10:00:00Z"
 
@@ -632,85 +632,11 @@ async def test_locked_in_pins_visible_so_blocked_tools_dispatch(
     assert ev["data"]["flow_owner"] == "OnboardingSkill"
 
 
-async def test_locked_in_via_interview_action_task_owner(
-    make_orchestrator, make_visitor, monkeypatch
-):
-    """InterviewAction tasks with interview_type adopt the matching locked_in skill."""
-    from jvagent.action.orchestrator.skills import SkillDoc
-
-    calls = {"n": 0}
-    skill = SkillDoc(
-        name="OnboardingSkill",
-        description="Customer onboarding interview.",
-        body="SOP: validate phone.",
-        requires_tools=("interview__validate_phone",),
-        requires_actions=("InterviewAction",),
-        locked_in=True,
-    )
-    interview_ia = _interview_tool_action(calls)
-    filler_ia = _filler_tools_action(20)
-    reply_ia = _reply_action()
-    ex = make_orchestrator(
-        actions=[interview_ia, filler_ia, reply_ia],
-        action_registry={
-            "InterviewAction": interview_ia,
-            "FillerAction": filler_ia,
-            "ReplyIA": reply_ia,
-        },
-        decisions=[
-            {
-                "action": "tool",
-                "tool": "interview__validate_phone",
-                "args": {"value": "5926431531"},
-            },
-            {"action": "final", "answer": "done"},
-        ],
-    )
-    ex.block_raw_tool_invocation = True
-    ex.lean_tool_threshold = 1
-    ex.lock_active_flow = True
-
-    monkeypatch.setattr(
-        OrchestratorInteractAction, "_discover_skills", lambda self, agent: [skill]
-    )
-    monkeypatch.setattr(sei, "active_flow_owner", lambda v, **kw: None)
-
-    class MockTask:
-        def __init__(self, owner_action, data=None):
-            self.owner_action = owner_action
-            self.task_type = "INTERVIEW"
-            self.data = data or {}
-            self.updated_at = "2026-06-04T10:00:00Z"
-
-    class MockTaskStore:
-        def __init__(self, conversation):
-            pass
-
-        def list(self, status="active"):
-            return [
-                MockTask(
-                    "InterviewAction",
-                    data={"interview_type": "OnboardingSkill", "state": "active"},
-                )
-            ]
-
-    monkeypatch.setattr("jvagent.memory.task_store.TaskStore", MockTaskStore)
-
-    v = _capture_visitor(make_visitor, utterance="5926431531")
-    await ex.execute(v)
-
-    assert calls["n"] == 1
-    ev = _activation(v)
-    assert ev is not None
-    assert ev["data"]["continuation_mode"] == "locked"
-    assert ev["data"]["flow_owner"] == "OnboardingSkill"
-
-
 @pytest.mark.asyncio
-async def test_find_active_locked_skill_doc_prefers_active_session():
-    """InterviewAction.resolve_locked_skill prefers active session over tasks."""
+async def test_find_active_task_lock_skill_doc_prefers_active_session():
+    """InterviewAction.resolve_task_lock_skill prefers active session over tasks."""
     from jvagent.action.interview.interview_action import InterviewAction
-    from jvagent.action.orchestrator.skill_tasks import resolve_active_locked_skill
+    from jvagent.action.orchestrator.skill_tasks import resolve_active_task_lock_skill
     from jvagent.action.orchestrator.skills import SkillDoc
 
     onboarding = SkillDoc(
@@ -718,7 +644,7 @@ async def test_find_active_locked_skill_doc_prefers_active_session():
         description="Onboarding",
         body="SOP",
         requires_tools=("interview__init",),
-        locked_in=True,
+        task_lock=True,
         requires_actions=("InterviewAction",),
     )
     pre_alert = SkillDoc(
@@ -726,7 +652,7 @@ async def test_find_active_locked_skill_doc_prefers_active_session():
         description="Pre-alert",
         body="SOP",
         requires_tools=("interview__init",),
-        locked_in=True,
+        task_lock=True,
         requires_actions=("InterviewAction",),
     )
 
@@ -745,11 +671,6 @@ async def test_find_active_locked_skill_doc_prefers_active_session():
                 MockTask(
                     "onboarding_interview",
                     updated_at="2026-06-04T12:00:00Z",
-                ),
-                MockTask(
-                    "InterviewAction",
-                    data={"interview_type": "onboarding_interview"},
-                    updated_at="2026-06-04T11:00:00Z",
                 ),
             ]
 
@@ -777,7 +698,7 @@ async def test_find_active_locked_skill_doc_prefers_active_session():
     action = InterviewAction()
     action._get_conversation = AsyncMock(return_value=visitor.conversation)
 
-    doc = await resolve_active_locked_skill(
+    doc = await resolve_active_task_lock_skill(
         visitor,
         [onboarding, pre_alert],
         [action],
@@ -800,7 +721,7 @@ async def test_apply_locked_skill_rebootstraps_missing_session_into_observations
         body="SOP: ask for phone.",
         requires_tools=("interview__next_field",),
         requires_actions=("InterviewAction",),
-        locked_in=True,
+        task_lock=True,
     )
 
     class InterviewActionStub:
@@ -814,7 +735,7 @@ async def test_apply_locked_skill_rebootstraps_missing_session_into_observations
                 return getattr(visitor, "conversation", None)
             return None
 
-        async def needs_session_rebootstrap(self, skill_name, visitor=None):
+        async def needs_task_lock_rebootstrap(self, skill_name, visitor=None):
             return skill_name == "OnboardingSkill"
 
         async def on_skill_activate(self, skill_name, visitor=None, *, user_message=""):
@@ -842,16 +763,16 @@ async def test_apply_locked_skill_rebootstraps_missing_session_into_observations
 
             return has_active_session(conv)
 
-        async def skill_runtime_ready(self, skill_name, visitor=None):
+        async def task_lock_runtime_ready(self, skill_name, visitor=None):
             return await self._interview_ready(visitor)
 
-        async def prepare_locked_skill_turn(self, skill_name, visitor=None):
-            from jvagent.action.orchestrator.skill_tasks import LockedSkillPrep
+        async def prepare_task_lock_turn(self, skill_name, visitor=None):
+            from jvagent.action.orchestrator.skill_tasks import TaskLockPrep
 
-            if not await self.skill_runtime_ready(skill_name, visitor):
-                return LockedSkillPrep(runtime_ready=False)
+            if not await self.task_lock_runtime_ready(skill_name, visitor):
+                return TaskLockPrep(runtime_ready=False)
             next_obs = await self._handle_next_field(visitor)
-            return LockedSkillPrep(
+            return TaskLockPrep(
                 runtime_ready=True,
                 observations=[
                     {
@@ -950,7 +871,7 @@ async def test_apply_locked_skill_rebootstraps_missing_session_into_observations
 async def test_auto_start_applies_session_ensure_after_use_skill(
     make_orchestrator, make_visitor, monkeypatch
 ):
-    """Auto-start path must run _apply_active_locked_skill (session + restrict)."""
+    """Auto-start path must run _apply_active_task_lock_skill (session + restrict)."""
     from jvagent.action.orchestrator.skills import SkillDoc
     from jvagent.tooling.tool import Tool
 
@@ -960,7 +881,7 @@ async def test_auto_start_applies_session_ensure_after_use_skill(
         body="SOP: phone first.",
         requires_tools=("interview__next_field",),
         requires_actions=("InterviewAction",),
-        locked_in=True,
+        task_lock=True,
     )
 
     activate_calls = {"n": 0}
@@ -976,7 +897,7 @@ async def test_auto_start_applies_session_ensure_after_use_skill(
                 return getattr(visitor, "conversation", None)
             return None
 
-        async def needs_session_rebootstrap(self, skill_name, visitor=None):
+        async def needs_task_lock_rebootstrap(self, skill_name, visitor=None):
             return True
 
         async def on_skill_activate(self, skill_name, visitor=None, *, user_message=""):
@@ -1005,16 +926,16 @@ async def test_auto_start_applies_session_ensure_after_use_skill(
 
             return has_active_session(conv)
 
-        async def skill_runtime_ready(self, skill_name, visitor=None):
+        async def task_lock_runtime_ready(self, skill_name, visitor=None):
             return await self._interview_ready(visitor)
 
-        async def prepare_locked_skill_turn(self, skill_name, visitor=None):
-            from jvagent.action.orchestrator.skill_tasks import LockedSkillPrep
+        async def prepare_task_lock_turn(self, skill_name, visitor=None):
+            from jvagent.action.orchestrator.skill_tasks import TaskLockPrep
 
-            if not await self.skill_runtime_ready(skill_name, visitor):
-                return LockedSkillPrep(runtime_ready=False)
+            if not await self.task_lock_runtime_ready(skill_name, visitor):
+                return TaskLockPrep(runtime_ready=False)
             next_obs = await self._handle_next_field(visitor)
-            return LockedSkillPrep(
+            return TaskLockPrep(
                 runtime_ready=True,
                 observations=[
                     {

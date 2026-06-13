@@ -37,9 +37,9 @@ async def test_set_field_rejects_monday_at_7(signup_action):
     )
 
     assert result["ok"] is False
-    assert result["stored"] is False
+    assert result["results"][0]["stored"] is False
     assert result["status"] == "validation_failed"
-    assert result["validator"] == "validate_available_times"
+    assert result["results"][0].get("error")
     assert "available_times" not in session.fields
 
 
@@ -57,7 +57,7 @@ async def test_set_field_rejects_invalid_slot_even_with_stale_context(signup_act
     )
 
     assert result["ok"] is False
-    assert result["stored"] is False
+    assert result["results"][0]["stored"] is False
     assert result["status"] == "validation_failed"
     assert "available_times" not in session.fields
     assert "matched_training_times" not in session.context
@@ -79,5 +79,5 @@ async def test_set_field_accepts_monday_at_9_autocorrect(signup_action):
     )
 
     assert result["ok"] is True
-    assert result["stored"] is True
+    assert result["results"][0]["stored"] is True
     assert session.get_value("available_times") == "Monday 9:00 AM - 11:00 AM"

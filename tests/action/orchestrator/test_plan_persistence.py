@@ -128,7 +128,7 @@ async def test_active_plan_finds_only_agentic_loop() -> None:
     store = TaskStore(conv)
     # An interview control-task must NOT be seen as an orchestrator plan.
     iv = await store.create(
-        title="iv", description="iv", task_type="INTERVIEW", owner_action="Iv"
+        title="iv", description="iv", task_type="SKILL", owner_action="Iv"
     )
     await iv.start()
     assert active_plan(_visitor(conv), owner="OrchestratorInteractAction") is None

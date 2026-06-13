@@ -82,4 +82,4 @@ async def test_validation_failure_no_next_field_embedded(signup_action):
     assert result["status"] == "validation_failed"
     assert "next_field" not in result
     assert "next_questions" not in result
-    assert result["error"]
+    assert [e for e in result["results"] if not e.get("stored")][0]["error"]

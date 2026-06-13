@@ -117,26 +117,21 @@ class InterviewSpec:
         return [f.key for f in self.fields]
 
 
-def field_def_to_dict(f: FieldDef) -> Dict[str, Any]:
-    """Serialize a FieldDef for tool responses (field_definitions)."""
-    result: Dict[str, Any] = {
-        "key": f.key,
-        "prompt": f.prompt,
-        "guidance": f.guidance,
-        "required": f.required,
-        "validator": f.validator,
-    }
-    if f.validator_args:
-        result["validator_args"] = f.validator_args
-    if f.pre_processor:
-        result["pre_processor"] = f.pre_processor
-    if f.post_processor:
-        result["post_processor"] = f.post_processor
-    if f.branches:
-        result["branches"] = [{"when": b.when, "goto": b.goto} for b in f.branches]
-    if f.else_field:
-        result["else"] = f.else_field
-    return result
+def fields_reference(spec: InterviewSpec) -> List[Dict[str, Any]]:
+    """Model-facing field catalog: key, prompt, guidance, required only.
+
+    Server internals (validator, pre/post processors, branches) are executed
+    programmatically and are deliberately excluded — the model never needs them.
+    """
+    return [
+        {
+            "key": f.key,
+            "prompt": f.prompt,
+            "guidance": f.guidance,
+            "required": f.required,
+        }
+        for f in spec.fields
+    ]
 
 
 def _reject_unknown_keys(
@@ -280,7 +275,7 @@ def parse_interview_spec(
 
 
 def load_interview_spec_from_skill(
-    skill_dir: Union[str, Path]
+    skill_dir: Union[str, Path],
 ) -> Optional[InterviewSpec]:
     """Load interview spec from ``SKILL.md`` frontmatter ``interview:`` block."""
     skill_dir = Path(skill_dir)

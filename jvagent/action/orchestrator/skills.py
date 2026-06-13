@@ -28,7 +28,7 @@ class SkillDoc:
     directory: str = ""
     spec: str = "jv"
     always_active: bool = False
-    locked_in: bool = False
+    task_lock: bool = False
     extends: Optional[str] = None
     metadata: dict = field(default_factory=dict)
 
@@ -56,6 +56,7 @@ def discover_skill_docs(
             apply_skill_selector,
             resolve_merged_skill_bundles,
         )
+        from jvagent.scaffold.sop_extend import reset_sop_extend_cache
     except Exception as exc:  # pragma: no cover - import wiring
         logger.debug("orchestrator.skills: resolver import failed: %s", exc)
         return []
@@ -86,6 +87,7 @@ def discover_skill_docs(
 
     include_builtin = source in ("both", "library")
     try:
+        reset_sop_extend_cache()
         bundles = resolve_merged_skill_bundles(
             str(app_root), namespace, name, include_builtin=include_builtin
         )
@@ -124,7 +126,7 @@ def discover_skill_docs(
                 directory=str(bundle.get("dir") or ""),
                 spec=str(bundle.get("spec") or "jv"),
                 always_active=bool(bundle.get("always_active", False)),
-                locked_in=bool(bundle.get("locked_in", False)),
+                task_lock=bool(bundle.get("task_lock", False)),
                 extends=bundle.get("extends") or None,
                 metadata=bundle.get("metadata") or {},
             )

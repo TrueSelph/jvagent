@@ -86,31 +86,6 @@ async def test_on_skill_activate_returns_guidance_for_non_interview_skill():
     )
 
 
-@pytest.mark.asyncio
-async def test_needs_session_rebootstrap_when_no_conversation():
-    action = _interview_action_with_contracts()
-    assert await action.needs_session_rebootstrap("onboarding_interview", MagicMock())
-
-
-@pytest.mark.asyncio
-async def test_needs_session_rebootstrap_false_when_session_active():
-    action = _interview_action_with_contracts()
-    conversation = MagicMock()
-    conversation.context = {
-        "interview": {
-            "interview_type": "onboarding_interview",
-            "status": "active",
-            "fields": {},
-            "skipped_fields": [],
-        }
-    }
-    action._get_conversation = AsyncMock(return_value=conversation)
-
-    assert not await action.needs_session_rebootstrap(
-        "onboarding_interview", MagicMock()
-    )
-
-
 def test_interview__init_not_registered():
     action = _interview_action_with_contracts()
     names = {t.name for t in build_tools(action)}
@@ -124,3 +99,18 @@ def test_core_interview_tools_require_active_session_in_description():
     for tool_name in ("interview__set_fields", "interview__next_field"):
         assert "use_skill" in by_name[tool_name].description.lower()
         assert "active interview session" in by_name[tool_name].description.lower()
+
+
+@pytest.mark.asyncio
+async def test_activation_includes_full_field_reference():
+    action = _interview_action_with_contracts()
+    result = json.loads(
+        await action._handle_start("onboarding_interview", visitor=None)
+    )
+
+    spec = action._registry._specs["onboarding_interview"]
+    ref = result["field_reference"]
+    assert [f["key"] for f in ref] == spec.field_keys()
+    assert all("prompt" in entry for entry in ref)
+    assert result["start_field"] == ref[0]["key"]
+    assert "usage_note" in result

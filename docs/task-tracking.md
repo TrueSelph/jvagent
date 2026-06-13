@@ -16,8 +16,8 @@ Each entry in `tasks` uses this normalized shape:
 ```json
 {
   "id": "SignupInterviewSkill:907b4a8af2e5",
-  "type": "INTERVIEW",
-  "description": "Signup interview in progress",
+  "type": "SKILL",
+  "description": "Signup interview skill in progress",
   "owner_action": "SignupInterviewSkill",
   "status": "active",
   "data": {

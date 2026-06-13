@@ -42,10 +42,18 @@ async def test_activation_includes_awaiting_fields_not_field_definitions(signup_
     )
 
     assert result["ok"] is True
-    assert "awaiting_fields" in result
-    assert result["awaiting_fields"][0]["key"] == "user_name"
-    assert "user_name" in result["field_awareness"]
-    assert "field_definitions" not in result
+    # Single field catalog; no redundant context duplicating it.
+    assert result["field_reference"][0]["key"] == "user_name"
+    assert result["start_field"] == "user_name"
+    for gone in (
+        "awaiting_fields",
+        "field_keys",
+        "required_keys",
+        "active_path_keys",
+        "guidance_page",
+        "field_definitions",
+    ):
+        assert gone not in result
 
 
 @pytest.mark.asyncio
@@ -56,13 +64,12 @@ async def test_on_skill_activate_includes_awaiting_fields(signup_action):
     action._get_conversation = AsyncMock(return_value=None)
 
     note = await action.on_skill_activate("signup_interview", user_message="sign up")
-    assert note.startswith("Awaiting user input for 'user_name' field.")
-    _awareness, json_body = note.split("\n\n", 1)
-    parsed = json.loads(json_body)
+    parsed = json.loads(note)
 
-    assert parsed["awaiting_fields"][0]["key"] == "user_name"
-    assert "user_name" in parsed["field_awareness"]
-    assert "field_definitions" not in parsed
+    assert parsed["field_reference"][0]["key"] == "user_name"
+    assert parsed["start_field"] == "user_name"
+    for gone in ("awaiting_fields", "field_keys", "guidance_page", "field_definitions"):
+        assert gone not in parsed
 
 
 @pytest.mark.asyncio
@@ -79,19 +86,18 @@ async def test_unknown_field_references_awaiting_keys_only(signup_action):
     )
 
     assert result["ok"] is False
-    assert result["error_code"] == "UNKNOWN_FIELD"
-    assert "user_name" in result["error"]
-    assert "employer_name" not in result["error"]
-    assert "training_format" not in result["error"]
-    assert result["awaiting_fields"][0]["key"] == "user_name"
-    assert "user_name" in result["field_awareness"]
+    failed = [e for e in result["results"] if not e.get("stored")]
+    assert "user_name" in failed[0]["error"]
+    assert "employer_name" not in failed[0]["error"]
+    assert "training_format" not in failed[0]["error"]
+    assert "awaiting_fields" not in result
     assert "next_field" not in result
     assert "system_message" in result
     assert "user_name" in result["system_message"]
 
 
 @pytest.mark.asyncio
-async def test_set_fields_success_includes_awaiting_fields(signup_action):
+async def test_set_fields_success_is_compact(signup_action):
     action, spec = signup_action
     session = InterviewSession(interview_type="signup_interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
@@ -105,7 +111,9 @@ async def test_set_fields_success_includes_awaiting_fields(signup_action):
     )
 
     assert result["ok"] is True
-    assert result["awaiting_fields"][0]["key"] == "available_times"
+    assert "awaiting_fields" not in result
+    assert "guidance_page" not in result
+    assert result.get("next_tool") == "interview__next_field"
 
 
 @pytest.mark.asyncio
@@ -124,13 +132,28 @@ async def test_saturday_branch_awaiting_includes_training_format(signup_action):
 
 
 @pytest.mark.asyncio
-async def test_get_status_has_field_definitions_and_awaiting_fields(signup_action):
+async def test_get_status_has_awaiting_fields_without_full_definitions(signup_action):
     action, spec = signup_action
     session = InterviewSession(interview_type="signup_interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
 
     result = json.loads(await action._handle_get_status(visitor=SimpleNamespace()))
 
-    assert result["awaiting_fields"][0]["key"] == "user_name"
-    assert "field_definitions" in result
-    assert len(result["field_definitions"]) == len(spec.fields)
+    assert [f["key"] for f in result["field_reference"]] == spec.field_keys()
+    assert result["next_field_key"] == "user_name"
+    assert "awaiting_fields" not in result
+    assert "field_definitions" not in result
+
+
+@pytest.mark.asyncio
+async def test_get_status_field_reference_excludes_server_internals(signup_action):
+    action, spec = signup_action
+    session = InterviewSession(interview_type="signup_interview")
+    action._get_session_and_contract = AsyncMock(return_value=(session, spec))
+
+    result = json.loads(await action._handle_get_status(visitor=SimpleNamespace()))
+
+    for f in result["field_reference"]:
+        assert set(f.keys()) == {"key", "prompt", "guidance", "required"}
+    assert "field_definitions" not in result
+    assert "guidance_page" not in result

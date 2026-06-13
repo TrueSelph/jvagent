@@ -50,7 +50,7 @@ async def test_review_email_update_from_correction_utterance(signup_action):
     )
 
     assert result["ok"] is True
-    assert result["stored"] is True
+    assert result["results"][0]["stored"] is True
     assert session.get_value("user_email") == "eldon@mail.com"
 
 
@@ -78,9 +78,9 @@ async def test_review_slot_correction_accepts_validated_correction_without_utter
     )
 
     assert result["ok"] is True
-    assert result["stored"] is True
+    assert result["results"][0]["stored"] is True
     assert session.get_value("available_times") == "Saturday 9:00 AM - 12:00 PM"
-    assert "training_format" in result.get("missing_required", [])
+    assert result.get("next_tool") == "interview__next_field"
 
 
 @pytest.mark.asyncio
@@ -107,4 +107,4 @@ async def test_review_pivot_stores_training_format_from_followup_utterance(
 
     assert result["ok"] is True
     assert session.get_value("training_format") == "Virtual"
-    assert result.get("missing_required") == []
+    assert result.get("next_tool") == "interview__review"

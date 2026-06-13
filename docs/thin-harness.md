@@ -24,13 +24,13 @@ These are **regression boundaries**. Breaking them reintroduces a “fat harness
 
 2. **No server-side intent classification** — cancel, reset, correction, multi-answer routing, and off-topic handling belong in the composed SOP. The foundation must not use regex, keyword lists, or prep observations to choose tools for the model.
 
-3. **No turn-prep steering** — locked-skill prep (`prepare_locked_skill_turn`, `skill_runtime_ready`, etc.) may load session and contract only. It must **not** inject observations that tell the model which tool to call next, auto-seed field values, or attach `pending_directive` hints that replace explicit tool calls.
+3. **No turn-prep steering** — task-lock prep (`prepare_task_lock_turn`, `task_lock_runtime_ready`, etc.) may load session and contract only. It must **not** inject observations that tell the model which tool to call next, auto-seed field values, or attach `pending_directive` hints that replace explicit tool calls.
 
 4. **No activation auto-store** — skill or action activation must not parse the user message and pre-fill session state. Extraction is model-owned via explicit tool calls.
 
 5. **No response inlining** — do not merge downstream tool payloads into upstream tool responses inside the server (e.g. auto-inlining “next step” content into a store response). `next_tool` hints and `response_directive` are allowed; the model still issues separate tool calls per SOP.
 
-6. **No orchestrator action special-casing** — the orchestrator must not post-process one action's tool results to force follow-up tool calls for that action. Turn-lock uses generic bound-action hooks only (`skill_runtime_ready`, `prepare_locked_skill_turn`, `prune_turn_tools`).
+6. **No orchestrator action special-casing** — the orchestrator must not post-process one action's tool results to force follow-up tool calls for that action. Turn-lock uses generic bound-action hooks only (`task_lock_runtime_ready`, `prepare_task_lock_turn`, `prune_task_lock_tools`).
 
 7. **Lean tool surfacing** — list tools and skills; let the model discover details via `find_tool` / `load_tool` and `find_skill` / `use_skill` ([ADR-0018](../.planning/adr/0018-lean-tool-surfacing.md)). Do not duplicate full SOPs in tool descriptions.
 
@@ -44,7 +44,7 @@ These are **regression boundaries**. Breaking them reintroduces a “fat harness
 
 2. **Judgment in skills** — JV skills coordinate existing tools via SOP; Claude skills run bundled scripts in the sandbox. Put routing and acceptance criteria in the skill body or frontmatter, not in orchestrator code.
 
-3. **Locked-in flows expose one IA tool** — multi-turn flows record a control-task, expose `get_tools()` → `execute(visitor)`, and clear the task from their own session logic. They gain no orchestrator-specific resume API.
+3. **Task-lock flows expose one IA tool** — multi-turn flows record a control-task, expose `get_tools()` → `execute(visitor)`, and clear the task from their own session logic. They gain no orchestrator-specific resume API.
 
 4. **Model chains explicit tools** — read tool `ok`, `response_directive`, and envelopes; call the next primitive per SOP — not because the server auto-called it.
 
@@ -70,7 +70,7 @@ Concrete rules for specific subsystems extend this document — they must not co
 |-----------|---------|
 | **InterviewAction** | [`jvagent/action/interview/docs/thin-harness.md`](../jvagent/action/interview/docs/thin-harness.md) — `interview__*` tools, frontmatter schema, validators as the only store gate |
 
-When adding a new locked-in or skill-backed subsystem, add a profile doc that links here and lists subsystem-specific invariants and tests.
+When adding a new task-lock or skill-backed subsystem, add a profile doc that links here and lists subsystem-specific invariants and tests.
 
 ## Relationship to architecture
 

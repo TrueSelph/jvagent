@@ -49,7 +49,7 @@ async def test_new_user_without_session_prunes_interview_tools_from_surface(
         body="SOP: call interview__next_field after use_skill.",
         requires_tools=("interview__next_field", "interview__set_fields"),
         requires_actions=("InterviewAction",),
-        locked_in=True,
+        task_lock=True,
     )
 
     interview = InterviewAction()
@@ -133,7 +133,7 @@ interview:
         body="SOP.",
         requires_tools=("interview__next_field",),
         requires_actions=("InterviewAction",),
-        locked_in=True,
+        task_lock=True,
     )
 
     interview = InterviewAction()

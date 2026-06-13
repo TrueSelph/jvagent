@@ -117,7 +117,8 @@ async def test_set_field_rejects_short_tracking_number(pre_alert_action):
 
     assert result["ok"] is False
     assert result["status"] == "validation_failed"
-    assert result["error_code"] == "VALIDATION_FAILED"
+    failed = [e for e in result["results"] if not e.get("stored")]
+    assert failed[0].get("error")
     assert "tracking_number" not in session.fields
 
 
@@ -145,7 +146,8 @@ async def test_set_field_stores_cleaned_tracking_number(pre_alert_action):
     assert result["ok"] is True
     assert result["status"] == "active"
     assert session.get_value("tracking_number") == "291421515335"
-    assert result["value"] == "291421515335"
+    # results echoes the original submitted value; the cleaned value is in session.
+    assert result["results"][0]["value"] == "abc291421515335xyz"
     assert result.get("next_tool") == "interview__next_field"
 
 
@@ -281,14 +283,9 @@ async def test_post_tools_verify_phone_number_after_set_field_not_registered(
         )
 
     assert result["ok"] is True
-    assert "post_tools_results" in result
-    assert result["post_tools_results"][0]["tool"] == "verify_phone_number"
-    assert result["post_tools_results"][0]["ok"] is True
-    assert result["post_tools_results"][0]["system_message"] == (
-        "No existing customer found with this phone number. Proceed with onboarding."
-    )
-    assert "phone" not in result["post_tools_results"][0]
-    assert "customer" not in result["post_tools_results"][0]
+    assert "results" in result
+    assert result["results"][0]["field"] == "phone_number"
+    assert result["results"][0]["stored"] is True
     assert result["status"] == "active"
     assert result.get("next_tool") == "interview__next_field"
     api.find_customer_by_phone.assert_awaited_once_with("5926431530")
@@ -327,12 +324,7 @@ async def test_post_tools_verify_phone_number_stops_when_registered(
 
     assert result["ok"] is True
     assert result["interview_complete"] is True
-    assert "post_tools_results" in result
-    assert result["post_tools_results"][0]["system_message"] == (
-        "This phone number is already registered with Zoon."
-    )
-    assert "phone" not in result["post_tools_results"][0]
-    assert "customer" not in result["post_tools_results"][0]
+    assert "results" in result
     assert result["status"] == "completed"
     assert "what is your email" not in result["response_directive"].lower()
     assert "account" in result["response_directive"].lower()
@@ -361,9 +353,8 @@ async def test_post_tools_verify_email_no_customer(onboarding_action):
         )
 
     assert result["ok"] is True
-    assert result["post_tools_results"][0]["tool"] == "verify_email"
-    assert result["post_tools_results"][0]["ok"] is True
-    assert "otp_pending" not in result["post_tools_results"][0]
+    assert result["results"][0]["field"] == "email"
+    assert result["results"][0]["stored"] is True
     api.find_customer_by_email.assert_awaited_once_with("newuser@example.com")
 
 
@@ -399,8 +390,7 @@ async def test_post_tools_verify_email_same_phone_continues(onboarding_action):
         )
 
     assert result["ok"] is True
-    assert result["post_tools_results"][0]["tool"] == "verify_email"
-    assert "otp_pending" not in result["post_tools_results"][0]
+    assert result["results"][0]["field"] == "email"
     api.request_whatsapp_otp.assert_not_awaited()
 
 
@@ -438,9 +428,8 @@ async def test_post_tools_verify_email_different_phone_sets_otp_pending(
         )
 
     assert result["ok"] is True
-    post = result["post_tools_results"][0]
-    assert post["tool"] == "verify_email"
-    assert "send_otp" in post["response_directive"].lower()
+    assert result["results"][0]["field"] == "email"
+    assert "send_otp" in result["response_directive"].lower()
     api.request_whatsapp_otp.assert_not_awaited()
     assert session.context.get("otp_pending") is True
 
@@ -546,7 +535,8 @@ async def test_validate_otp_code_invalid_without_complete(onboarding_action):
         )
 
     assert result["ok"] is False
-    assert "invalid" in result["error"].lower()
+    failed = [e for e in result["results"] if not e.get("stored")]
+    assert "invalid" in failed[0]["error"].lower()
     assert "resend" in result["response_directive"].lower()
     action._clear_interview_session.assert_not_awaited()
 

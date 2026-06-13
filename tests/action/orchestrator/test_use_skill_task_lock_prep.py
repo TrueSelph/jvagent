@@ -51,7 +51,7 @@ async def test_use_skill_mid_loop_minimal_prep(
             "interview__get_status",
         ),
         requires_actions=("InterviewAction",),
-        locked_in=True,
+        task_lock=True,
     )
 
     interview = InterviewAction(metadata={"agent_dir": str(ORCHESTRATOR_AGENT_DIR)})
@@ -143,7 +143,7 @@ async def test_set_field_returns_next_tool_chain_directive(
             "interview__get_status",
         ),
         requires_actions=("InterviewAction",),
-        locked_in=True,
+        task_lock=True,
     )
 
     interview = InterviewAction(metadata={"agent_dir": str(ORCHESTRATOR_AGENT_DIR)})
@@ -218,7 +218,7 @@ async def test_set_field_returns_next_tool_chain_directive(
     ]
     assert set_obs
     set_payload = json.loads(set_obs[0]["observation"])
-    assert set_payload.get("stored") is True, set_payload
+    assert set_payload["results"][0]["stored"] is True, set_payload
     assert set_payload.get("next_tool") == "interview__next_field"
 
 
@@ -233,7 +233,7 @@ async def test_locked_skill_name_as_tool_gets_steer_not_dispatch(
         body="SOP.",
         requires_tools=("interview__set_fields", "interview__next_field"),
         requires_actions=("InterviewAction",),
-        locked_in=True,
+        task_lock=True,
     )
 
     interview = InterviewAction(metadata={"agent_dir": str(ORCHESTRATOR_AGENT_DIR)})

@@ -61,3 +61,27 @@ async def test_next_field_no_session_returns_ok_false(onboarding_action):
     assert result["error_code"] == "NO_SESSION"
     assert "use_skill" in result["response_directive"]
     assert "reply" in result["response_directive"].lower()
+
+
+@pytest.mark.asyncio
+async def test_next_field_return_is_slim(onboarding_action):
+    action, contract = onboarding_action
+    session = InterviewSession(interview_type="onboarding_interview")
+    action._get_session_and_contract = AsyncMock(return_value=(session, contract))
+    action._save_session = AsyncMock()
+
+    result = json.loads(await action._handle_next_field())
+
+    nf = result["next_field"]
+    assert "key" in nf and "prompt" in nf
+    assert nf["required"] is True  # surfaced so the model can offer skip
+    assert "guidance" not in nf  # guidance stays in field_reference only
+    for gone in (
+        "awaiting_fields",
+        "field_keys",
+        "guidance_page",
+        "active_path_keys",
+        "fields",
+    ):
+        assert gone not in result
+    assert "response_directive" in result

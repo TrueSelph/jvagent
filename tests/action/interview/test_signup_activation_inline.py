@@ -42,13 +42,11 @@ async def test_on_skill_activate_notes_skill_procedure(signup_action):
     )
 
     assert note is not None
-    assert note.startswith("Awaiting user input for 'user_name' field.")
-    _awareness, json_body = note.split("\n\n", 1)
-    parsed = json.loads(json_body)
+    parsed = json.loads(note)
     assert parsed["ok"] is True
     assert parsed["interview_type"] == "signup_interview"
-    assert "missing_required" in parsed
-    assert parsed["awaiting_fields"][0]["key"] == "user_name"
+    assert parsed["start_field"] == "user_name"
+    assert parsed["field_reference"][0]["key"] == "user_name"
     assert "field_definitions" not in parsed
 
 
@@ -65,10 +63,6 @@ async def test_activation_set_fields_then_model_chains_next_field(signup_action)
 
     await action._handle_start("signup_interview", visitor, user_message=_OPENING)
 
-    prep = await action.prepare_locked_skill_turn("signup_interview", visitor)
-    assert prep.runtime_ready is True
-    assert not prep.observations
-
     set_result = json.loads(
         await action._handle_set_fields(
             fields={"user_name": "Eldon Marks"},
@@ -76,7 +70,7 @@ async def test_activation_set_fields_then_model_chains_next_field(signup_action)
         )
     )
     assert set_result["ok"] is True
-    assert set_result["fields"].get("user_name") == "Eldon Marks"
+    assert set_result["results"][0]["value"] == "Eldon Marks"
     assert set_result.get("next_tool") == "interview__next_field"
 
 
@@ -99,7 +93,7 @@ async def test_set_field_idempotent_when_field_already_stored(signup_action):
             visitor=visitor,
         )
     )
-    assert first["stored"] is True
+    assert first["results"][0]["stored"] is True
 
     second = json.loads(
         await action._handle_set_fields(
@@ -108,5 +102,5 @@ async def test_set_field_idempotent_when_field_already_stored(signup_action):
         )
     )
     assert second["ok"] is True
-    assert second["stored"] is True
-    assert second["fields"]["user_name"] == "Eldon Marks"
+    assert second["results"][0]["stored"] is True
+    assert second["results"][0]["value"] == "Eldon Marks"

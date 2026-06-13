@@ -1,4 +1,4 @@
-"""INTERVIEW task lifecycle — turn-lock task tracking on the conversation TaskStore."""
+"""Interview SKILL-task lifecycle helpers."""
 
 from __future__ import annotations
 
@@ -9,24 +9,7 @@ from .spec import InterviewSpec
 
 logger = logging.getLogger(__name__)
 
-TASK_OWNER_ACTION = "InterviewAction"
-TASK_TYPE = "INTERVIEW"
-
-ACTIVE_TASK_DESCRIPTION_TEMPLATE = (
-    "The user has engaged the {action_title} (Action Description: {action_description}). "
-    "If their latest message is off-topic or unrelated to it, answer that in at most one "
-    "short sentence, then steer back and continue the interview — always "
-    "ending your reply with the current pending question. Do not abandon the {action_title} until it is "
-    "complete or the user explicitly cancels."
-)
-
-
-def task_interview_type(handle: Any) -> Optional[str]:
-    task_data = getattr(handle, "data", None) or {}
-    if isinstance(task_data, dict):
-        raw = task_data.get("interview_type")
-        return str(raw) if raw else None
-    return None
+TASK_TYPE = "SKILL"
 
 
 async def _apply_task_status(handle: Any, status: str) -> None:
@@ -48,35 +31,60 @@ def _find_existing_active_task(visitor: Any, spec_name: str) -> Optional[Any]:
         if skill_tasks:
             return skill_tasks[0]
     except Exception:
-        pass
-    try:
-        for handle in store.list(status="active", owner_action=TASK_OWNER_ACTION) or []:
-            if task_interview_type(handle) == spec_name:
-                return handle
-    except Exception:
-        pass
+        return None
     return None
+
+
+async def _mark_interview_managed(handle: Any, spec_name: str) -> None:
+    """Tag a SKILL task so bulk-close only touches interview-managed tasks."""
+    task_data = getattr(handle, "data", None) or {}
+    current_type = (
+        str(task_data.get("interview_type"))
+        if isinstance(task_data, dict) and task_data.get("interview_type")
+        else None
+    )
+    managed = (
+        bool(task_data.get("interview_managed"))
+        if isinstance(task_data, dict)
+        else False
+    )
+    if current_type == spec_name and managed:
+        return
+    update = {
+        "interview_type": spec_name,
+        "interview_managed": True,
+        "state": "active",
+    }
+    try:
+        await handle.update(**update)
+    except Exception:
+        # Some mocked handles in tests may not implement update().
+        if isinstance(task_data, dict):
+            task_data.update(update)
 
 
 async def ensure_active_task(
     visitor: Any, spec: InterviewSpec, default_description: str = ""
 ) -> None:
-    """Create the INTERVIEW task for this spec if missing; close mismatched ones."""
+    """Create or tag the active SKILL task for this interview spec."""
     try:
-        if _find_existing_active_task(visitor, spec.name) is not None:
+        existing = _find_existing_active_task(visitor, spec.name)
+        if existing is not None:
+            await _mark_interview_managed(existing, spec.name)
             return
         await close_task(visitor, status="cancelled", exclude_spec_name=spec.name)
         title = spec.title or spec.name.replace("_", " ").title()
-        description = ACTIVE_TASK_DESCRIPTION_TEMPLATE.format(
-            action_title=title,
-            action_description=spec.summary or default_description or "",
-        )
+        description = spec.summary or default_description or title
         handle = await visitor.tasks.create(
             title=title,
             description=description,
-            owner_action=TASK_OWNER_ACTION,
+            owner_action=spec.name,
             task_type=TASK_TYPE,
-            data={"interview_type": spec.name, "state": "active"},
+            data={
+                "interview_type": spec.name,
+                "interview_managed": True,
+                "state": "active",
+            },
         )
         await handle.start()
     except Exception as exc:
@@ -90,36 +98,36 @@ async def close_task(
     *,
     exclude_spec_name: Optional[str] = None,
 ) -> None:
-    """Close active INTERVIEW tasks.
+    """Close interview-managed active SKILL tasks.
 
     With ``spec_name``, only that interview's tasks close. With
     ``exclude_spec_name``, every interview task except that one closes.
     """
     try:
         store = visitor.tasks
-        handles = store.list(status="active", owner_action=TASK_OWNER_ACTION) or []
+        handles = store.list(status="active") or []
     except Exception:
         return
     for handle in handles:
-        it = task_interview_type(handle)
-        if spec_name and it != spec_name:
+        owner = str(getattr(handle, "owner_action", "") or "")
+        if not owner:
             continue
-        if exclude_spec_name and it == exclude_spec_name:
+        task_type = str(getattr(handle, "task_type", "") or "").upper()
+        if task_type != TASK_TYPE:
             continue
+        if spec_name:
+            if owner != spec_name:
+                continue
+        else:
+            task_data = getattr(handle, "data", None) or {}
+            managed = isinstance(task_data, dict) and bool(
+                task_data.get("interview_managed") or task_data.get("interview_type")
+            )
+            if not managed:
+                continue
+            if exclude_spec_name and owner == exclude_spec_name:
+                continue
         try:
             await _apply_task_status(handle, status)
-            try:
-                await store.delete(handle.id)
-            except Exception:
-                pass
         except Exception as exc:
             logger.debug("close_task: %s", exc)
-    if spec_name:
-        try:
-            for handle in store.list(status="active", owner_action=spec_name) or []:
-                try:
-                    await _apply_task_status(handle, status)
-                except Exception:
-                    pass
-        except Exception:
-            pass

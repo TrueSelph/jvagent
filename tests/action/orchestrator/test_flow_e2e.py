@@ -69,7 +69,7 @@ async def test_lock_with_live_taskstore_zero_model_calls(
     h = await TaskStore(v.conversation).create(
         title="signup",
         description="SignupIA",
-        task_type="INTERVIEW",
+        task_type="SKILL",
         owner_action="SignupIA",
     )
     await h.start()
@@ -112,7 +112,7 @@ async def test_second_turn_lock_continues_without_model(
             h = await TaskStore(conversation).create(
                 title="signup",
                 description="SignupIA",
-                task_type="INTERVIEW",
+                task_type="SKILL",
                 owner_action="SignupIA",
             )
             await h.start()

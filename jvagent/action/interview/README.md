@@ -2,7 +2,7 @@
 
 LLM-driven interview framework for structured data collection. The orchestrator LLM reads the composed interview procedure (`SkillDoc.body` = standard tool loop + per-skill custom rules) and calls granular tools to conduct interviews. `InterviewAction` manages session state, validation, hook orchestration, and tool registration — it does not drive the conversation itself.
 
-**Custom interview skills** are two-file packages under `agents/<ns>/<agent>/skills/<name>/` ([ADR-0023 placement standard](../../.planning/adr/0023-skill-placement-standard.md)). Copy [`examples/example_interview/`](examples/example_interview/) as a template, set `extends: action:jvagent/interview`, `requires-actions: [InterviewAction]`, and `locked-in: true` for turn-lock.
+**Custom interview skills** are two-file packages under `agents/<ns>/<agent>/skills/<name>/` ([ADR-0023 placement standard](../../.planning/adr/0023-skill-placement-standard.md)). Copy [`examples/example_interview/`](examples/example_interview/) as a template, set `extends: action:jvagent/interview`, `requires-actions: [InterviewAction]`, and `task-lock: true` for turn-lock.
 
 **Agent entry point:** [CLAUDE.md](CLAUDE.md)
 
@@ -114,19 +114,15 @@ flowchart TB
 1. Orchestrator calls `use_skill("<skill_name>")`.
 2. `InterviewAction.on_skill_activate()` runs `_handle_start()`:
    - Creates or resumes an `InterviewSession` in `conversation.context["interview"]`.
-   - Creates an `INTERVIEW` task owned by `InterviewAction`.
-3. On turn-lock turns, the orchestrator calls generic bound-action hooks on `InterviewAction` (via `skill_tasks.apply_locked_skill_turn` — **not** interview-specific orchestrator code):
-   - `skill_runtime_ready(skill_name, visitor)` — session + contract loaded
-   - `prepare_locked_skill_turn(skill_name, visitor)` — runtime-ready gate only (no prep observations or directives)
-   - `prune_turn_tools(tools, visible, visitor)` — drop interview tools when runtime not ready
+   - Ensures a `SKILL` task exists for the active interview skill (`owner_action=<skill_name>`).
+3. On turn-lock turns, the orchestrator enforces task-lock generically from active SKILL tasks (`task-lock: true`) via orchestrator skill lifecycle helpers — no interview-specific turn-lock hooks.
 4. The LLM reads observations and drives the flow until `interview__complete()` or cancel.
 
 Set `binds_tools_to_visitor = True` on `InterviewAction` so tool dispatch receives the live visitor.
 
-### Dual task model
+### Task model
 
-- **SKILL task** — created when `locked-in: true` in `SKILL.md`; keeps the orchestrator in the active flow. On completion, skills may persist collected profile data to `task.data` (see [SKILL task data persistence](#skill-task-data-persistence)).
-- **INTERVIEW task** — owned by `InterviewAction`; tracks interview progress for UI/task store.
+- **SKILL task** — single source of task tracking for interviews. Created when `task-lock: true` in `SKILL.md`; keeps the orchestrator in the active flow. InterviewAction also adopts/tags this task for interview lifecycle status updates. On completion, skills may persist collected profile data to `task.data` (see [SKILL task data persistence](#skill-task-data-persistence)).
 
 ### Function loading
 
@@ -197,7 +193,7 @@ interview:
 name: my_interview
 description: When to use this skill...
 spec: jv
-locked-in: true
+task-lock: true
 requires-actions:
   - InterviewAction
 extends: action:jvagent/interview
@@ -228,7 +224,7 @@ tags: [tag1, tag2]
 | `requires-actions` | Runtime dependencies — orchestrator verifies these are enabled |
 | `allowed-tools` | **Additive** custom LLM tools merged onto inherited base tools |
 | `disabled-tools` | Base tools to remove from the merged set (e.g. `interview__cancel` when reset handler replaces cancel) |
-| `locked-in` | When `true`, creates a SKILL task that locks the active flow |
+| `task-lock` | When `true`, creates a SKILL task that locks the active flow |
 
 ### Body (custom instructions only)
 
@@ -239,12 +235,12 @@ At discovery, `discover_skill_docs` prepends the framework [standard procedure](
 3. **Session overrides** — cancel/reset tools.
 4. **Custom tool callouts** — when non-obvious.
 
-Do **not** list fields as Procedure steps or Flow overview — field order and prompts come from frontmatter `interview.fields` and runtime `next_fields`. See [docs/skill_custom_instructions.md](docs/skill_custom_instructions.md).
+Do **not** list fields as Procedure steps or Flow overview — field order and prompts come from frontmatter `interview.fields` and runtime `next_field`. See [docs/skill_custom_instructions.md](docs/skill_custom_instructions.md).
 
 ### Reply rules (enforce in every skill)
 
 - Each tool returns **one** `response_directive` — do **one** thing per turn.
-- **`response_directive` beats `next_fields`** when they conflict.
+- **`response_directive` beats `next_field`** when they conflict.
 - Use `interview__set_fields` with args `{"fields": {"field_key": "value", ...}}` — never put field keys at the top level.
 - Always call `interview__review()` before `interview__complete()` (unless review sets `terminate: true`).
 - Never reuse field values from older chat turns.
@@ -301,7 +297,7 @@ Primary tools registered by [`tools.py`](tools.py). Sessions start via `use_skil
 | `interview__set_fields(fields)` | Validate and store one or more fields; runs `post_processor` hooks per field on success |
 | `interview__skip_field(field)` | Skip an optional field |
 | `interview__next_field()` | Resolve next unanswered field; runs `pre_processor` hooks |
-| `interview__get_status()` | Session metadata: `fields`, `missing_required`, `skipped_fields`, `confirm`, `status` (no embedded next field) |
+| `interview__get_status()` | Session metadata: `fields`, `missing_required`, `skipped_fields`, `confirm`, `status` (no embedded next field). Use `include_field_definitions` only when needed. |
 | `interview__review()` | Present summary (or custom review handler) |
 | `interview__complete()` | Finalize (or custom completion handler) |
 | `interview__cancel()` | Cancel and clear session |
@@ -325,10 +321,14 @@ All tools return JSON with these key fields:
 | `fields` | All collected field values |
 | `missing_required` | Required field keys on the collectible path not yet collected |
 | `awaiting_fields` | Unanswered collectible-path fields (`key`, `prompt`, `guidance`, `required`) — use for `set_fields` key mapping |
-| `field_awareness` | Human-readable line: awaiting field key + question prompt; tool handlers upsert one `[EVENT]` snapshot per interaction (latest field wins) |
+| `field_keys` | Canonical field key catalog for this interview |
+| `active_path_keys` | Reachable keys on the current branch path |
+| `field_hints` | Compact key/prompt/guidance hints for extraction (capped) |
 | `next_field` | Next question object from `interview__next_field` |
-| `field_definitions` | Full spec catalog on `interview__get_status` only (not on activation) |
+| `field_definitions` | Optional paged full spec catalog on `interview__get_status` when `include_field_definitions=true` |
 | `response_directive` | Single next action for the LLM |
+| `response_directives_queue` | Ordered directives gathered during per-field pre/validator/post processing (filtered after prune) |
+| `system_messages_queue` | Ordered non-user messages gathered during batch processing |
 | `pre_tools_results` | Outcomes from pre_tool hooks |
 | `post_tools_results` | Outcomes from post_tool hooks |
 
@@ -412,11 +412,11 @@ Corrections to previously stored fields use `interview__set_fields` at any time 
 
 **Cancel / reset (`reset_onboarding` via `handlers.reset`):**
 
-Onboarding disables `interview__cancel` and routes cancel/start-over through `interview__reset()` → `reset_onboarding` handler. Clears session, cancels SKILL + INTERVIEW tasks, informs the user onboarding was cancelled and is required to chat, then **stops** — no `interview__next_field`. User re-initiates via `use_skill`.
+Onboarding disables `interview__cancel` and routes cancel/start-over through `interview__reset()` → `reset_onboarding` handler. Clears session, cancels the active SKILL task, informs the user onboarding was cancelled and is required to chat, then **stops** — no `interview__next_field`. User re-initiates via `use_skill`.
 
 ### SKILL task data persistence
 
-Skills with `locked-in: true` can write profile data to the active SKILL task before completion via `TaskHandle.update()`. Onboarding uses helpers in `custom_tools.py`:
+Skills with `task-lock: true` can write profile data to the active SKILL task before completion via `TaskHandle.update()`. Onboarding uses helpers in `custom_tools.py`:
 
 | Helper | Purpose |
 |--------|---------|

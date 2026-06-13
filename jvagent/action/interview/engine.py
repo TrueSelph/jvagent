@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from jvagent.tooling.tool_executor import get_dispatch_visitor
@@ -26,7 +27,6 @@ from .flow import (
 from .hooks import call_hook, coerce_hook_result, load_hook_function, run_validator
 from .responses import (
     auto_confirm_directive,
-    build_field_awareness_message,
     call_tool_directive,
     interview_tool_response,
     no_session_directive,
@@ -34,6 +34,8 @@ from .responses import (
     review_confirmation_directive,
     slim_hook_entry,
     tell_user,
+    tell_user_then_call_tool,
+    tell_user_with_followup,
     validation_guidance_directive,
 )
 from .session import (
@@ -44,13 +46,22 @@ from .session import (
     load_session,
     save_session,
 )
-from .spec import FieldDef, InterviewSpec, SkillToolDef, field_def_to_dict
+from .spec import (
+    FieldDef,
+    InterviewSpec,
+    SkillToolDef,
+    fields_reference,
+)
 
 logger = logging.getLogger(__name__)
 
 SET_FIELDS_ARGS_EXAMPLE = (
     '{"fields": {"user_name": "Jane Doe", "available_times": "Monday at 9"}}'
 )
+_WORD_RE = re.compile(r"\b[a-z0-9_]{3,}\b", re.IGNORECASE)
+_LABEL_RE = re.compile(r"\b[a-z][a-z0-9_\-\s]{1,40}\s*(?:is|:|=)", re.IGNORECASE)
+_TIME_RE = re.compile(r"\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b", re.IGNORECASE)
+_EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 
 # ---------------------------------------------------------------------------
 # Session plumbing
@@ -116,86 +127,6 @@ def _no_session_response() -> str:
     )
 
 
-_FIELD_AWARENESS_ACTION = "InterviewAction"
-_FIELD_AWARENESS_PREFIX = "Awaiting user input for "
-
-
-async def record_field_awareness(visitor: Any, message: str) -> None:
-    """Persist the latest field-awareness snapshot on the current interaction.
-
-    Upserts a single InterviewAction field-awareness event per interaction so
-    prior-turn history does not accumulate stale awaiting-field lines from
-    multiple tool calls or turn-prep snapshots.
-    """
-    text = (message or "").strip()
-    if not text:
-        return
-    interaction = getattr(visitor, "interaction", None) if visitor else None
-    if interaction is None:
-        return
-    events = getattr(interaction, "events", None)
-    if events is None:
-        interaction.events = []
-        events = interaction.events
-
-    for idx in range(len(events) - 1, -1, -1):
-        event = events[idx]
-        if not isinstance(event, dict):
-            continue
-        if event.get("action_name") != _FIELD_AWARENESS_ACTION:
-            continue
-        content = str(event.get("content", ""))
-        if not content.startswith(_FIELD_AWARENESS_PREFIX):
-            continue
-        if content == text:
-            return
-        events[idx] = {"action_name": _FIELD_AWARENESS_ACTION, "content": text}
-        try:
-            await interaction.save()
-        except Exception as exc:
-            logger.debug("record_field_awareness: save failed: %s", exc)
-        return
-
-    if not interaction.add_event(text, _FIELD_AWARENESS_ACTION):
-        return
-    try:
-        await interaction.save()
-    except Exception as exc:
-        logger.debug("record_field_awareness: save failed: %s", exc)
-
-
-async def _session_field_context(
-    action: Any,
-    session: InterviewSession,
-    spec: InterviewSpec,
-    visitor: Any = None,
-) -> Dict[str, Any]:
-    """Branch-aware missing required keys and unanswered collectible fields."""
-    load_fn = action._load_fn(spec)
-    missing = await compute_missing_required(session, spec, load_fn, visitor, action)
-    awaiting = await build_awaiting_fields(session, spec, load_fn, visitor, action)
-    awareness = build_field_awareness_message(awaiting)
-    return {
-        "missing_required": missing,
-        "awaiting_fields": awaiting,
-        "field_awareness": awareness or None,
-    }
-
-
-async def _session_field_context_and_record(
-    action: Any,
-    session: InterviewSession,
-    spec: InterviewSpec,
-    visitor: Any = None,
-    *,
-    record: bool = True,
-) -> Dict[str, Any]:
-    ctx = await _session_field_context(action, session, spec, visitor)
-    if record:
-        await record_field_awareness(visitor, ctx.get("field_awareness") or "")
-    return ctx
-
-
 def _unknown_field_error(
     fname: str, awaiting_fields: List[Dict[str, Any]]
 ) -> Tuple[str, Optional[str]]:
@@ -209,6 +140,170 @@ def _unknown_field_error(
             f'not "{fname}".'
         )
     return err, system_message
+
+
+def _batch_failure_status(failures: List[Dict[str, Any]], *, stored_any: bool) -> str:
+    if stored_any:
+        return "partial_success"
+    if failures and all(
+        failure.get("error_code") == "VALIDATION_FAILED" for failure in failures
+    ):
+        return "validation_failed"
+    return "error"
+
+
+def _batch_failure_directive(failures: List[Dict[str, Any]]) -> str:
+    if not failures:
+        return tell_user("Please share the missing information for this interview.")
+    if len(failures) == 1:
+        direct = str(failures[0].get("response_directive") or "").strip()
+        if direct:
+            return direct
+    names = [str(entry.get("field") or "").strip() for entry in failures]
+    names = [name for name in names if name]
+    fields_text = ", ".join(names) if names else "one or more fields"
+    first_error = str(failures[0].get("error") or "").strip()
+    message = (
+        f"I saved what I could, but I still need corrected values for: {fields_text}."
+    )
+    if first_error:
+        message = f"{message} {first_error}"
+    return tell_user(message)
+
+
+def _append_directive_event(
+    queue: List[Dict[str, Any]],
+    *,
+    field: Optional[str],
+    stage: str,
+    source: str,
+    directive: Optional[str],
+) -> None:
+    text = str(directive or "").strip()
+    if not text:
+        return
+    queue.append(
+        {
+            "field": field,
+            "stage": stage,
+            "source": source,
+            "directive": text,
+        }
+    )
+
+
+def _append_system_event(
+    queue: List[Dict[str, Any]],
+    *,
+    field: Optional[str],
+    stage: str,
+    source: str,
+    system_message: Optional[str],
+) -> None:
+    text = str(system_message or "").strip()
+    if not text:
+        return
+    queue.append(
+        {
+            "field": field,
+            "stage": stage,
+            "source": source,
+            "system_message": text,
+        }
+    )
+
+
+def _normalize_user_directive_text(directive: str) -> str:
+    text = str(directive or "").strip()
+    lowered = text.lower()
+    if lowered.startswith("tell the user:"):
+        return text[len("Tell the user:") :].strip()
+    if lowered.startswith("ask:"):
+        return text[len("Ask:") :].strip()
+    return text
+
+
+def _compose_directives(
+    queue: List[Dict[str, Any]],
+    *,
+    fallback: str,
+) -> str:
+    if not queue:
+        return fallback
+
+    user_parts: List[str] = []
+    call_parts: List[str] = []
+    for item in queue:
+        directive = str(item.get("directive") or "").strip()
+        if not directive:
+            continue
+        lowered = directive.lower()
+        if lowered.startswith("call "):
+            call_parts.append(directive)
+            continue
+        user_parts.append(_normalize_user_directive_text(directive))
+
+    merged_user: List[str] = []
+    for part in user_parts:
+        text = part.strip()
+        if not text or text in merged_user:
+            continue
+        merged_user.append(text)
+
+    merged_calls: List[str] = []
+    for call in call_parts:
+        text = call.strip()
+        if not text or text in merged_calls:
+            continue
+        merged_calls.append(text)
+
+    if not merged_user and not merged_calls:
+        return fallback
+
+    if merged_user:
+        base = f"Tell the user: {' '.join(merged_user)}"
+    else:
+        base = merged_calls.pop(0)
+
+    for call in merged_calls:
+        if call.lower().startswith("call "):
+            base = f"{base} Then {call[0].lower() + call[1:]}"
+        else:
+            base = f"{base} Then {call}"
+    return base
+
+
+def _compose_system_message(
+    queue: List[Dict[str, Any]],
+    *,
+    fallback: str = "",
+) -> Optional[str]:
+    parts: List[str] = []
+    for item in queue:
+        text = str(item.get("system_message") or "").strip()
+        if not text or text in parts:
+            continue
+        parts.append(text)
+    if not parts:
+        return fallback or None
+    return " ".join(parts)
+
+
+def _compact_field_updates(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    updates: List[Dict[str, Any]] = []
+    for item in results:
+        entry: Dict[str, Any] = {
+            "field": item.get("field"),
+            "stored": bool(item.get("stored", False)),
+        }
+        if "value" in item:
+            entry["value"] = item.get("value")
+        if item.get("ignored"):
+            entry["ignored"] = True
+        if item.get("error"):
+            entry["error"] = item.get("error")
+        updates.append(entry)
+    return updates
 
 
 # ---------------------------------------------------------------------------
@@ -262,6 +357,55 @@ async def run_pre_processors(
     return directive or tell_user(fdef.prompt), extras
 
 
+async def run_pre_processors_for_store(
+    action: Any,
+    session: InterviewSession,
+    spec: InterviewSpec,
+    fdef: FieldDef,
+    visitor: Any = None,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Run pre_processor hooks before validator/store inside set_fields."""
+    entries: List[Dict[str, Any]] = []
+    merged: Dict[str, Any] = {}
+    for tool_name in fdef.pre_processor:
+        func = load_hook_function(spec, tool_name)
+        if not func:
+            continue
+        try:
+            parsed = coerce_hook_result(
+                await call_hook(
+                    func,
+                    session=session,
+                    spec=spec,
+                    visitor=visitor,
+                    interview_action=action,
+                )
+            )
+        except Exception as e:
+            logger.error(
+                "pre_processor '%s' failed for field '%s': %s", tool_name, fdef.key, e
+            )
+            entries.append({"tool": tool_name, "ok": False, "error": str(e)})
+            continue
+        if not parsed:
+            entries.append(
+                {"tool": tool_name, "ok": False, "error": "Empty tool response"}
+            )
+            continue
+        entries.append(slim_hook_entry(tool_name, parsed))
+        for key in (
+            "response_directive",
+            "note",
+            "next_tool",
+            "interview_complete",
+            "retain_context_keys",
+            "system_message",
+        ):
+            if key in parsed:
+                merged[key] = parsed[key]
+    return entries, merged
+
+
 async def run_post_processors(
     action: Any,
     session: InterviewSession,
@@ -306,6 +450,7 @@ async def run_post_processors(
         entries.append(slim_hook_entry(tool_name, parsed))
         for key in (
             "response_directive",
+            "note",
             "next_tool",
             "interview_complete",
             "retain_context_keys",
@@ -329,6 +474,65 @@ def _normalize_field_map(
     if not fields or not isinstance(fields, dict):
         return {}
     return {str(k): str(v) for k, v in fields.items() if v is not None}
+
+
+def _latest_user_text(visitor: Any = None) -> str:
+    utterance = getattr(visitor, "utterance", None)
+    if isinstance(utterance, str):
+        return utterance.strip()
+    interaction = getattr(visitor, "interaction", None) if visitor else None
+    request = getattr(interaction, "request", None) if interaction else None
+    text = getattr(request, "text", None) if request else None
+    if isinstance(text, str):
+        return text.strip()
+    return ""
+
+
+def _field_text_tokens(fdef: FieldDef) -> List[str]:
+    source = " ".join(
+        [fdef.key.replace("_", " "), fdef.prompt or "", fdef.guidance or ""]
+    ).lower()
+    return [token for token in _WORD_RE.findall(source) if len(token) >= 4]
+
+
+def _under_extracted_candidate_keys(
+    spec: InterviewSpec,
+    field_map: Dict[str, str],
+    visitor: Any = None,
+) -> List[str]:
+    """Detect likely under-extraction when a compound utterance yields one key."""
+    if len(field_map) != 1:
+        return []
+    text = _latest_user_text(visitor)
+    if not text:
+        return []
+
+    lower = text.lower()
+    compound_signals = 0
+    if " and " in lower:
+        compound_signals += 1
+    if "," in text or ";" in text:
+        compound_signals += 1
+    if len(_LABEL_RE.findall(text)) >= 2:
+        compound_signals += 1
+    if _EMAIL_RE.search(text):
+        compound_signals += 1
+    if _TIME_RE.search(text):
+        compound_signals += 1
+    if compound_signals < 2:
+        return []
+
+    submitted = set(field_map.keys())
+    candidates: List[str] = []
+    for fdef in spec.fields:
+        if fdef.key in submitted:
+            continue
+        tokens = _field_text_tokens(fdef)
+        if not tokens:
+            continue
+        if any(re.search(rf"\b{re.escape(token)}\b", lower) for token in tokens):
+            candidates.append(fdef.key)
+    return candidates
 
 
 async def _chain_hint(
@@ -357,15 +561,11 @@ async def handle_set_fields(
 
     field_map = _normalize_field_map(fields, **kwargs)
     if not field_map:
-        field_ctx = await _session_field_context_and_record(
-            action, session, spec, visitor
-        )
         return interview_tool_response(
             ok=False,
             status="error",
             error_code="NO_FIELDS",
             error="No fields provided.",
-            **field_ctx,
             response_directive=tell_user(
                 "Call interview__set_fields with a single `fields` map — e.g. "
                 f"{SET_FIELDS_ARGS_EXAMPLE}. Do not put field keys at the top "
@@ -379,6 +579,25 @@ async def handle_set_fields(
             response_directive=restart_session_directive(session.interview_type),
         )
 
+    under_extracted_keys = _under_extracted_candidate_keys(spec, field_map, visitor)
+    if under_extracted_keys:
+        return interview_tool_response(
+            ok=False,
+            status="error",
+            error_code="UNDER_EXTRACTED",
+            error=(
+                "Likely compound utterance detected, but set_fields payload contains "
+                "only one key."
+            ),
+            submitted_fields=sorted(field_map.keys()),
+            suggested_additional_keys=under_extracted_keys,
+            response_directive=tell_user(
+                "Extract all confident values from the latest user utterance and "
+                "retry interview__set_fields with one complete fields map using "
+                "known keys from field_keys/guidance_page/awaiting_fields."
+            ),
+        )
+
     load_fn = action._load_fn(spec)
     order = {key: idx for idx, key in enumerate(spec.field_keys())}
     ordered = sorted(
@@ -387,30 +606,95 @@ async def handle_set_fields(
 
     results: List[Dict[str, Any]] = []
     stored_any = False
-    failure: Optional[Dict[str, Any]] = None
-    post_outcome: Dict[str, Any] = {}
-    complete_check: Optional[Dict[str, Any]] = None
+    failures: List[Dict[str, Any]] = []
+    post_outcomes: List[Dict[str, Any]] = []
+    completion_candidates: List[Dict[str, Any]] = []
+    directive_queue: List[Dict[str, Any]] = []
+    system_queue: List[Dict[str, Any]] = []
     pruned_all: List[str] = []
+    gate_ignored: List[str] = []
+    note_queue: List[str] = []
 
     for fname, fvalue in ordered:
         fdef = spec.get_field(fname)
         if not fdef:
-            field_ctx = await _session_field_context_and_record(
-                action, session, spec, visitor
+            awaiting_fields = await build_awaiting_fields(
+                session, spec, load_fn, visitor, action
             )
-            awaiting_fields = field_ctx["awaiting_fields"]
             err, unknown_system = _unknown_field_error(fname, awaiting_fields)
             failure = {
                 "field": fname,
                 "error": err,
                 "error_code": "UNKNOWN_FIELD",
-                "awaiting_fields": awaiting_fields,
-                "field_awareness": field_ctx.get("field_awareness"),
             }
             if unknown_system:
                 failure["system_message"] = unknown_system
-            results.append({"field": fname, "ok": False, "stored": False, "error": err})
-            break
+            failures.append(failure)
+            _append_system_event(
+                system_queue,
+                field=fname,
+                stage="set",
+                source="unknown_field",
+                system_message=unknown_system,
+            )
+            results.append(
+                {
+                    "field": fname,
+                    "stored": False,
+                    "value": fvalue,
+                    "error": err,
+                }
+            )
+            continue
+
+        # Incremental branch settlement: an earlier field in this same call may
+        # have routed onto a branch that excludes this field. Skip it before
+        # running its validator/post_processor so no off-path side effects fire.
+        reachable_now = await compute_active_path_for_prune(
+            session, spec, load_fn, visitor, action
+        )
+        if reachable_now and fname not in set(reachable_now):
+            results.append(
+                {
+                    "field": fname,
+                    "stored": False,
+                    "value": fvalue,
+                    "ignored": True,
+                }
+            )
+            gate_ignored.append(fname)
+            continue
+
+        entry: Dict[str, Any] = {
+            "field": fname,
+            "stored": False,
+            "value": fvalue,
+        }
+
+        if fdef.pre_processor:
+            pre_entries, pre_merged = await run_pre_processors_for_store(
+                action, session, spec, fdef, visitor
+            )
+            if pre_entries:
+                for hook_entry in pre_entries:
+                    _append_directive_event(
+                        directive_queue,
+                        field=fname,
+                        stage="pre",
+                        source=str(hook_entry.get("tool") or "pre_processor"),
+                        directive=hook_entry.get("response_directive"),
+                    )
+                    _append_system_event(
+                        system_queue,
+                        field=fname,
+                        stage="pre",
+                        source=str(hook_entry.get("tool") or "pre_processor"),
+                        system_message=hook_entry.get("system_message"),
+                    )
+            if pre_merged.get("note"):
+                note_queue.append(str(pre_merged["note"]))
+            if pre_merged.get("interview_complete"):
+                completion_candidates.append({"field": fname, **pre_merged})
 
         check = await run_validator(action, spec, fdef, fvalue, session, visitor)
         if not check.get("valid"):
@@ -423,52 +707,124 @@ async def handle_set_fields(
                 "response_directive": check.get("response_directive")
                 or validation_guidance_directive(err, question_text=fdef.prompt),
             }
-            results.append(
-                {
-                    "field": fname,
-                    "ok": False,
-                    "stored": False,
-                    "error": err,
-                    "validator": check.get("validator"),
-                }
+            failures.append(failure)
+            _append_directive_event(
+                directive_queue,
+                field=fname,
+                stage="validator",
+                source=str(check.get("validator") or "validator"),
+                directive=failure["response_directive"],
             )
-            break
+            entry["error"] = err
+            results.append(entry)
+            continue
 
         stored_value = str(check.get("value", fvalue))
         session.set_value(fname, stored_value)
         stored_any = True
-        entry: Dict[str, Any] = {
-            "field": fname,
-            "ok": True,
-            "stored": True,
-            "value": stored_value,
-        }
-        if check.get("validator"):
-            entry["validator"] = check["validator"]
-        results.append(entry)
-
-        reachable = await compute_active_path_for_prune(
-            session, spec, load_fn, visitor, action
-        )
-        pruned = prune_unreachable_fields(session, reachable)
-        if pruned:
-            entry["pruned_fields"] = pruned
-            pruned_all.extend(pruned)
-
+        entry["stored"] = True
+        if check.get("response_directive"):
+            _append_directive_event(
+                directive_queue,
+                field=fname,
+                stage="validator",
+                source=str(check.get("validator") or "validator"),
+                directive=check.get("response_directive"),
+            )
+        if check.get("system_message"):
+            _append_system_event(
+                system_queue,
+                field=fname,
+                stage="validator",
+                source=str(check.get("validator") or "validator"),
+                system_message=check.get("system_message"),
+            )
         if check.get("interview_complete"):
-            complete_check = check
-            break
+            completion_candidates.append({"field": fname, **check})
 
         if fdef.post_processor:
             hook_entries, merged = await run_post_processors(
                 action, session, spec, fdef, visitor
             )
             if hook_entries:
-                entry["post_tools_results"] = hook_entries
-            post_outcome.update(merged)
+                for hook_entry in hook_entries:
+                    _append_directive_event(
+                        directive_queue,
+                        field=fname,
+                        stage="post",
+                        source=str(hook_entry.get("tool") or "post_processor"),
+                        directive=hook_entry.get("response_directive"),
+                    )
+                    _append_system_event(
+                        system_queue,
+                        field=fname,
+                        stage="post",
+                        source=str(hook_entry.get("tool") or "post_processor"),
+                        system_message=hook_entry.get("system_message"),
+                    )
+            if merged:
+                post_outcomes.append({"field": fname, **merged})
+            if merged.get("note"):
+                note_queue.append(str(merged["note"]))
             if merged.get("interview_complete"):
-                complete_check = merged
-                break
+                completion_candidates.append({"field": fname, **merged})
+
+        results.append(entry)
+
+    reachable = await compute_active_path_for_prune(
+        session, spec, load_fn, visitor, action
+    )
+    if stored_any:
+        pruned_all = prune_unreachable_fields(session, reachable)
+    active_key_set = set(reachable)
+    spec_keys = set(spec.field_keys())
+    ignored_fields = {
+        str(failure.get("field") or "")
+        for failure in failures
+        if str(failure.get("field") or "") in spec_keys
+        and str(failure.get("field") or "") not in active_key_set
+    }
+    ignored_fields.update(name for name in gate_ignored if name in spec_keys)
+    if ignored_fields:
+        failures = [
+            failure
+            for failure in failures
+            if str(failure.get("field") or "") not in ignored_fields
+        ]
+        for entry in results:
+            field_name = str(entry.get("field") or "")
+            if field_name in ignored_fields and not entry.get("stored"):
+                entry["ok"] = True
+                entry["ignored"] = True
+                entry["error"] = None
+                entry["validator"] = None
+    pruned_set = set(pruned_all)
+
+    if pruned_set or ignored_fields:
+        filtered_fields = pruned_set | ignored_fields
+        directive_queue = [
+            item
+            for item in directive_queue
+            if not item.get("field") or item.get("field") not in filtered_fields
+        ]
+        system_queue = [
+            item
+            for item in system_queue
+            if not item.get("field") or item.get("field") not in filtered_fields
+        ]
+        completion_candidates = [
+            item
+            for item in completion_candidates
+            if not item.get("field") or item.get("field") not in filtered_fields
+        ]
+
+    filtered_fields = pruned_set | ignored_fields
+    post_outcome: Dict[str, Any] = {}
+    for item in post_outcomes:
+        field_name = str(item.get("field") or "")
+        if field_name and field_name in filtered_fields:
+            continue
+        post_outcome = item
 
     # A correction at review may reopen a gap on a different branch.
     if session.status == InterviewStatus.REVIEW:
@@ -478,71 +834,93 @@ async def handle_set_fields(
     if stored_any:
         await action._save_session(session, visitor)
 
-    if complete_check is not None:
+    complete_check = completion_candidates[-1] if completion_candidates else None
+    if complete_check is not None and not failures:
         retain = complete_check.get("retain_context_keys") or []
-        fields_summary = session.get_collected_summary()
         await action._clear_interview_session(visitor, retain_context_keys=retain)
-        last_post = results[-1].get("post_tools_results") if results else None
+        fallback_directive = str(complete_check.get("response_directive") or "").strip()
+        directive = _compose_directives(
+            directive_queue,
+            fallback=fallback_directive or "Interview completed.",
+        )
+        system_message = _compose_system_message(
+            system_queue,
+            fallback=str(complete_check.get("system_message") or "").strip(),
+        )
         return interview_tool_response(
             ok=True,
             status="completed",
             interview_complete=True,
-            results=results,
-            post_tools_results=last_post,
-            fields=fields_summary,
-            response_directive=complete_check.get("response_directive"),
-            system_message=complete_check.get("system_message"),
+            results=_compact_field_updates(results),
+            pruned=pruned_all or None,
+            response_directive=directive,
+            system_message=system_message,
         )
 
-    if failure is None:
-        field_ctx = await _session_field_context_and_record(
-            action, session, spec, visitor
-        )
-    else:
-        field_ctx = await _session_field_context(action, session, spec, visitor)
-        if failure.get("error_code") == "UNKNOWN_FIELD":
-            field_ctx["field_awareness"] = failure.get("field_awareness")
+    updates = _compact_field_updates(results)
+
     payload: Dict[str, Any] = {
-        "ok": failure is None,
+        "ok": not failures,
         "status": session.status.value,
-        "results": results,
-        "fields": session.get_collected_summary(),
-        "skipped_fields": sorted(session.skipped_fields),
-        **field_ctx,
+        "results": updates,
     }
     if pruned_all:
-        payload["pruned_fields"] = pruned_all
-    if len(results) == 1:
-        payload["field"] = results[0]["field"]
-        payload["stored"] = results[0]["stored"]
-        if "value" in results[0]:
-            payload["value"] = results[0]["value"]
-        if "post_tools_results" in results[0]:
-            payload["post_tools_results"] = results[0]["post_tools_results"]
+        payload["pruned"] = pruned_all
+    if ignored_fields:
+        payload["ignored"] = sorted(ignored_fields)
+    if session.skipped_fields:
+        payload["skipped_fields"] = sorted(session.skipped_fields)
 
-    if failure:
-        payload["status"] = (
-            "validation_failed"
-            if failure["error_code"] == "VALIDATION_FAILED"
-            else "error"
+    if failures:
+        first_failure = failures[0]
+        payload["status"] = _batch_failure_status(failures, stored_any=stored_any)
+        # One clean directive from the failure set; per-field errors are in results[].
+        payload["response_directive"] = _batch_failure_directive(failures)
+        system_message = _compose_system_message(
+            system_queue,
+            fallback=str(first_failure.get("system_message") or "").strip(),
         )
-        payload["field"] = failure["field"]
-        payload["error"] = failure["error"]
-        payload["error_code"] = failure["error_code"]
-        if failure.get("validator"):
-            payload["validator"] = failure["validator"]
-        if failure.get("response_directive"):
-            payload["response_directive"] = failure["response_directive"]
-        if failure.get("system_message"):
-            payload["system_message"] = failure["system_message"]
+        if system_message:
+            payload["system_message"] = system_message
     else:
-        directive, next_tool = await _chain_hint(action, session, spec, visitor)
-        payload["response_directive"] = post_outcome.get(
-            "response_directive", directive
+        # The next step is decided ONCE, from the FINAL settled state — not from
+        # the per-field directives queued mid-batch (a later field in the same call
+        # may have filled the field an earlier processor pointed at). Processor
+        # notes are preserved and paired with that authoritative next step.
+        next_field = await build_next_field(session, spec, load_fn, visitor, action)
+        next_tool = post_outcome.get(
+            "next_tool",
+            "interview__next_field" if next_field else "interview__review",
         )
-        payload["next_tool"] = post_outcome.get("next_tool", next_tool)
-        if post_outcome.get("system_message"):
-            payload["system_message"] = post_outcome["system_message"]
+        notes_text = " ".join(n for n in note_queue if n).strip()
+        if notes_text and next_field:
+            # Inlining the next question bypasses interview__next_field, so carry
+            # what that tool would have provided: the canonical key (next_field_key
+            # below) and, for optional fields, the skip path.
+            directive = tell_user_with_followup(notes_text, next_field["prompt"])
+            next_fdef = spec.get_field(next_field["key"])
+            if next_fdef is not None and not next_fdef.required:
+                directive += (
+                    " If the user declines or has nothing to add, call "
+                    f'interview__skip_field with {{"field_key": '
+                    f'"{next_field["key"]}"}}.'
+                )
+            payload["response_directive"] = directive
+        elif notes_text:
+            payload["response_directive"] = tell_user_then_call_tool(
+                notes_text, next_tool
+            )
+        else:
+            payload["response_directive"] = call_tool_directive(next_tool)
+        if next_field:
+            payload["next_field_key"] = next_field["key"]
+        payload["next_tool"] = next_tool
+        system_message = _compose_system_message(
+            system_queue,
+            fallback=str(post_outcome.get("system_message") or "").strip(),
+        )
+        if system_message:
+            payload["system_message"] = system_message
 
     ok = payload.pop("ok")
     status = payload.pop("status")
@@ -615,16 +993,13 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
         return _no_session_response()
 
     load_fn = action._load_fn(spec)
-    field_ctx = await _session_field_context_and_record(action, session, spec, visitor)
     next_field = await build_next_field(session, spec, load_fn, visitor, action)
 
     if not next_field:
         return interview_tool_response(
             ok=True,
             status=session.status.value,
-            fields=session.get_collected_summary(),
-            skipped_fields=sorted(session.skipped_fields),
-            **field_ctx,
+            skipped_fields=sorted(session.skipped_fields) or None,
             next_tool="interview__review",
             response_directive=call_tool_directive("interview__review"),
         )
@@ -637,14 +1012,25 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
             ok=False,
             status="error",
             error="One or more pre_processor hooks failed.",
-            fields=session.get_collected_summary(),
-            **field_ctx,
-            next_field=next_field,
+            next_field={"key": next_field["key"], "prompt": next_field.get("prompt")},
             pre_tools_results=pre_tools_results,
         )
+
+    slim_next = {
+        "key": next_field["key"],
+        "prompt": next_field.get("prompt"),
+        "required": bool(fdef.required),
+    }
     if extras.get("suggested_value") is not None:
-        next_field = dict(next_field)
-        next_field["suggested_value"] = extras["suggested_value"]
+        slim_next["suggested_value"] = extras["suggested_value"]
+
+    # Optional fields are skippable — tell the model the skip path so a decline
+    # routes to interview__skip_field instead of stalling.
+    if not fdef.required:
+        directive = (
+            f"{directive} If the user declines or has nothing to add, call "
+            f'interview__skip_field with {{"field_key": "{fdef.key}"}}.'
+        )
 
     # Persist any session.context mutations made by pre_processor hooks.
     if pre_tools_results:
@@ -653,10 +1039,8 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
     return interview_tool_response(
         ok=True,
         status=session.status.value,
-        fields=session.get_collected_summary(),
-        skipped_fields=sorted(session.skipped_fields),
-        **field_ctx,
-        next_field=next_field,
+        next_field=slim_next,
+        skipped_fields=sorted(session.skipped_fields) or None,
         pre_tools_results=pre_tools_results or None,
         response_directive=directive,
     )
@@ -667,15 +1051,20 @@ async def handle_skip_field(action: Any, field: str, visitor: Any = None) -> str
     if not session or not spec:
         return _no_session_response()
 
-    if not (field or "").strip():
+    field = (field or "").strip()
+    if not field:
+        # No field_key given — "skip" targets the current pending field. Resolve it
+        # from the settled path so the model can skip with a bare call.
+        load_fn = action._load_fn(spec)
+        nxt = await build_next_field(session, spec, load_fn, visitor, action)
+        field = str((nxt or {}).get("key") or "")
+
+    if not field:
         return interview_tool_response(
             ok=False,
             status=session.status.value,
-            error="field_key is required.",
-            response_directive=tell_user(
-                "Call interview__skip_field with "
-                '{"field_key": "field_name"} for the optional field to skip.'
-            ),
+            error="No field to skip — there is no pending field.",
+            response_directive=call_tool_directive("interview__review"),
         )
 
     fdef = spec.get_field(field)
@@ -696,15 +1085,12 @@ async def handle_skip_field(action: Any, field: str, visitor: Any = None) -> str
     prune_unreachable_fields(session, reachable)
     await action._save_session(session, visitor)
 
-    field_ctx = await _session_field_context_and_record(action, session, spec, visitor)
     directive, next_tool = await _chain_hint(action, session, spec, visitor)
     return interview_tool_response(
         ok=True,
         status=session.status.value,
         field=field,
-        fields=session.get_collected_summary(),
         skipped_fields=sorted(session.skipped_fields),
-        **field_ctx,
         response_directive=directive,
         next_tool=next_tool,
     )
@@ -754,7 +1140,6 @@ def _review_response(
     *,
     preamble: str = "",
     custom_message: str = "",
-    field_ctx: Optional[Dict[str, Any]] = None,
 ) -> str:
     auto = spec.confirm == "auto"
     if auto:
@@ -774,8 +1159,6 @@ def _review_response(
         "confirm": spec.confirm,
         "custom_message": custom_message or None,
     }
-    if field_ctx:
-        payload.update(field_ctx)
     if auto:
         payload["next_tool"] = "interview__complete"
         payload["system_message"] = (
@@ -803,16 +1186,13 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
     review_fn = spec.handlers.review
     func = load_hook_function(spec, review_fn) if review_fn else None
 
-    field_ctx = await _session_field_context(action, session, spec, visitor)
     if not func:
         summary = build_review_summary(
             session, spec, collected, visible_keys=visible_keys
         )
         session.status = InterviewStatus.REVIEW
         await action._save_session(session, visitor)
-        return _review_response(
-            session, spec, review_fields, summary, field_ctx=field_ctx
-        )
+        return _review_response(session, spec, review_fields, summary)
 
     try:
         result = await call_hook(
@@ -883,7 +1263,6 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
         summary,
         preamble=custom_message or directive,
         custom_message=custom_message,
-        field_ctx=field_ctx,
     )
 
 
@@ -1049,14 +1428,12 @@ async def handle_reset(action: Any, visitor: Any = None) -> str:
     session.status = InterviewStatus.ACTIVE
     await action._save_session(session, visitor)
 
-    field_ctx = await _session_field_context_and_record(action, session, spec, visitor)
     return interview_tool_response(
         ok=True,
         status="restarted",
         response_directive=tell_user("No problem — let's start over."),
         next_tool="interview__next_field",
         system_message=call_tool_directive("interview__next_field"),
-        **field_ctx,
     )
 
 
@@ -1099,20 +1476,20 @@ async def handle_get_status(action: Any, visitor: Any = None) -> str:
             ),
         )
 
-    field_ctx = (
-        await _session_field_context(action, session, spec, visitor) if spec else {}
-    )
+    next_field = None
+    if spec:
+        load_fn = action._load_fn(spec)
+        next_field = await build_next_field(session, spec, load_fn, visitor, action)
+
     return interview_tool_response(
         ok=True,
         status=session.status.value,
         interview_type=session.interview_type,
         fields=session.get_collected_summary(),
-        skipped_fields=sorted(session.skipped_fields),
+        skipped_fields=sorted(session.skipped_fields) or None,
         started_at=session.started_at,
-        **field_ctx,
-        field_definitions=(
-            [field_def_to_dict(f) for f in spec.fields] if spec else None
-        ),
+        field_reference=fields_reference(spec) if spec else None,
+        next_field_key=(next_field["key"] if next_field else None),
         confirm=spec.confirm if spec else None,
         custom_tools=(
             [f"{spec.name}__{t.name}" for t in spec.skill_tools] if spec else None
@@ -1144,18 +1521,24 @@ async def handle_start(
     existing = load_session(conversation) if conversation else None
 
     async def _session_envelope(session: InterviewSession, **extra: Any) -> str:
-        field_ctx = await _session_field_context_and_record(
-            action, session, spec, visitor
-        )
+        load_fn = action._load_fn(spec)
+        next_field = await build_next_field(session, spec, load_fn, visitor, action)
+        custom_tools = [f"{spec.name}__{t.name}" for t in spec.skill_tools]
         return interview_tool_response(
             ok=True,
             status=session.status.value,
             interview_type=session.interview_type,
             fields=session.get_collected_summary(),
-            skipped_fields=sorted(session.skipped_fields),
-            **field_ctx,
+            skipped_fields=sorted(session.skipped_fields) or None,
+            field_reference=fields_reference(spec),
+            start_field=(next_field["key"] if next_field else None),
+            usage_note=(
+                "field_reference is the full field catalog (key, prompt, guidance, "
+                "required). It is sent once here; later tool results carry only "
+                "outcomes and directives. Re-pull via interview__get_status if lost."
+            ),
             confirm=spec.confirm,
-            custom_tools=[f"{spec.name}__{t.name}" for t in spec.skill_tools],
+            custom_tools=custom_tools or None,
             **extra,
         )
 

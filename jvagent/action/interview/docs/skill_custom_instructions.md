@@ -11,7 +11,7 @@ Canonical base SOP: [`../SKILL.md`](../SKILL.md). Design contract: [platform thi
 | When to use (1–3 bullets) | Flow overview listing each field |
 | Domain-specific session overrides | Procedure Step 1…N per field |
 | Behavioral rules (OTP gates, exists:true stop) | Duplicated core instructions |
-| Custom tool callouts when non-obvious | Question wording (use `interview.fields[].guidance` + `next_fields`) |
+| Custom tool callouts when non-obvious | Question wording (use `interview.fields[].guidance` + `next_field`) |
 | Strong `description` frontmatter for orchestrator routing | Activation / session-gate rules (`use_skill` before field questions) |
 | | **Answer quality gate** (base procedure) |
 | | **Model extraction** — user utterances → `interview__set_fields` per base procedure (no server prep steering) |
@@ -23,7 +23,7 @@ Canonical base SOP: [`../SKILL.md`](../SKILL.md). Design contract: [platform thi
 
 ## Field guidance as acceptance criteria
 
-Each `interview.fields[].guidance` is **model-facing acceptance criteria** — what counts as a substantive answer for that field. It is surfaced in `next_fields` tool observations alongside the prompt.
+Each `interview.fields[].guidance` is **model-facing acceptance criteria** — what counts as a substantive answer for that field. It is surfaced in `next_field` tool observations alongside the prompt.
 
 Write descriptions to help the model apply the base procedure's **Answer quality gate** (see [`../SKILL.md`](../SKILL.md)):
 

@@ -44,7 +44,7 @@ interview/
 ├── engine.py             # The 8 tool handlers + activation + skill-tool dispatch
 ├── tools.py              # Tool definitions binding to engine
 ├── responses.py          # Response envelope + directive strings
-├── tasks.py              # INTERVIEW task lifecycle
+├── tasks.py              # interview SKILL-task lifecycle
 ├── procedure.py          # SOP composition
 ├── _validate_contract.py # Skill frontmatter ↔ custom_tools.py validation
 ├── info.yaml
@@ -76,7 +76,7 @@ Full tables: **[interview profile](docs/thin-harness.md)** (+ [platform](../../.
 1. **Thin harness** — no server intent classification, no prep observations, no activation auto-store, no merge-inlined next/review responses, no `extractors` in frontmatter.
 2. **Hook functions are not LLM tools** — only entries in frontmatter `interview.skill_tools` become `{skill}__{name}` tools. Reset uses `handlers.reset` (invoked via `interview__reset()`).
 3. **Model owns extraction and chaining** — `interview__set_fields` + base SOP; read `ok` before advancing; post-processors do not run when `ok: false`.
-4. **`response_directive` beats `next_fields`** when they conflict — one action per turn.
+4. **`response_directive` beats `next_field`** when they conflict — one action per turn.
 5. **Review before complete** — always call `interview__review()` before `interview__complete()` unless review sets `terminate: true` or `confirm: auto` chains complete.
 6. **Contract discovery** — `InterviewRegistry` scans dirs from `Action.resolve_skill_scan_dirs()` (app `skills/` + action-bundled paths). Author interview skills under `agents/.../skills/<name>/` (ADR-0023). Reference packages live under `examples/` (not discovered).
 7. **Never reuse stale field values** from older chat turns unless the user repeats them in the latest message.

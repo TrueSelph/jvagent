@@ -132,7 +132,7 @@ async def test_active_flow_continued_when_model_selects_its_tool(
     h = await TaskStore(v.conversation).create(
         title="signup",
         description="SignupIA",
-        task_type="INTERVIEW",
+        task_type="SKILL",
         owner_action="SignupIA",
     )
     await h.start()
@@ -179,7 +179,7 @@ async def test_active_flow_offtopic_routed_elsewhere_not_into_flow(
     h = await TaskStore(v.conversation).create(
         title="signup",
         description="SignupIA",
-        task_type="INTERVIEW",
+        task_type="SKILL",
         owner_action="SignupIA",
     )
     await h.start()

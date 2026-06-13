@@ -45,7 +45,7 @@ def _build_core_tools(action: "InterviewAction") -> List[Tool]:
     async def _next_field(visitor: Any = None) -> str:
         return await action._handle_next_field(visitor)
 
-    async def _get_status(visitor: Any = None) -> str:
+    async def _get_status(visitor: Any = None, **_: Any) -> str:
         return await action._handle_get_status(visitor)
 
     async def _review(visitor: Any = None) -> str:
@@ -64,18 +64,13 @@ def _build_core_tools(action: "InterviewAction") -> List[Tool]:
         Tool(
             name="interview__set_fields",
             description=(
-                "Requires an active interview session (open with use_skill on the "
-                "matching skill first). Validate and store one or more interview "
-                "field values. Use for new answers, corrections to previously stored "
-                "fields, or batch extraction from the user's latest message. "
-                'Args shape is always {"fields": {"field_key": "value", ...}} — '
-                "never pass field keys at the top level of args. "
-                "Use keys from awaiting_fields[].key in the latest activation, "
-                "next_field, get_status, or set_fields observation — never invent keys. "
-                "Validators run per field inside this tool — never call validator "
-                "functions directly. ok:false means a field was not stored. On ok:true, "
-                "runs post_processor hooks when configured. Chain interview__next_field "
-                "or interview__review per the SKILL procedure."
+                "Validate and store interview field values. Requires an active "
+                "interview session — open it with use_skill on the matching skill "
+                'first. Args: {"fields": {"field_key": "value", ...}} — keys from '
+                "field_reference[].key, never nested at the top level. Submit every "
+                "confident value from the latest message in one call. Returns per-field "
+                "results (stored / value / error); processing continues past failures, "
+                "ok:false if any field was not stored."
             ),
             parameters_schema={
                 "type": "object",
@@ -98,7 +93,8 @@ def _build_core_tools(action: "InterviewAction") -> List[Tool]:
             name="interview__skip_field",
             description=(
                 "Mark an optional field as skipped. Args: "
-                '{"field_key": "field_name"}. Follow response_directive; '
+                '{"field_key": "field_name"} — optional; if omitted, the current '
+                "pending field is skipped. Follow response_directive; "
                 "call interview__next_field when the response chains mechanically."
             ),
             parameters_schema={
@@ -107,12 +103,11 @@ def _build_core_tools(action: "InterviewAction") -> List[Tool]:
                     "field_key": {
                         "type": "string",
                         "description": (
-                            "Required. Interview field key to skip "
-                            '(e.g. "phone_number").'
+                            'Interview field key to skip (e.g. "phone_number"). '
+                            "Optional — defaults to the current pending field."
                         ),
                     },
                 },
-                "required": ["field_key"],
                 "additionalProperties": False,
             },
             execute=_skip_field,
@@ -120,10 +115,11 @@ def _build_core_tools(action: "InterviewAction") -> List[Tool]:
         Tool(
             name="interview__next_field",
             description=(
-                "Requires an active interview session (open with use_skill on the "
+                "Requires an active interview session (open it with use_skill on the "
                 "matching skill first). Get the next field to present. Runs "
-                "pre_processor hooks for context. Returns next_field, "
-                "missing_required, and response_directive."
+                "pre_processor hooks for context. Returns next_field "
+                "{key, prompt, required}, skipped_fields, and response_directive; for "
+                "optional fields the directive includes the interview__skip_field path."
             ),
             parameters_schema=no_args,
             execute=_next_field,
@@ -131,8 +127,11 @@ def _build_core_tools(action: "InterviewAction") -> List[Tool]:
         Tool(
             name="interview__get_status",
             description=(
-                "Read surface for the active interview: fields, missing_required, "
-                "skipped_fields, confirm, and session status."
+                "Read surface for the active interview: collected fields, "
+                "skipped_fields, next_field_key, confirm mode, status, and the full "
+                "field_reference catalog (key/prompt/guidance/required for every "
+                "field). Use to re-pull field_reference when earlier context thins. "
+                "No arguments."
             ),
             parameters_schema=no_args,
             execute=_get_status,

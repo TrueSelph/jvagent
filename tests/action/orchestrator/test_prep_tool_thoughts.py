@@ -39,6 +39,7 @@ async def test_emit_server_prep_tool_thoughts_pairs_call_and_result():
             "tool": "interview__next_field",
             "args": {},
             "observation": '{"next_field":[{"field":"user_name"}]}',
+            "kind": "server_prep",
         }
     ]
     await ex._emit_server_prep_tool_thoughts(_visitor(bus), observations)

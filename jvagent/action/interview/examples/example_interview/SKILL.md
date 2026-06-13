@@ -5,7 +5,7 @@ description: 'Reference product feedback interview. Collects customer name, prod
   patterns: validators, pre_processor, post_processor, custom tools, review, and completion.
   Copy to <action>/skills/<your_skill_name>/ to create a live skill.'
 spec: jv
-locked-in: true
+task-lock: true
 requires-actions:
 - InterviewAction
 extends: action:jvagent/interview
@@ -92,4 +92,4 @@ interview:
 
 ### Tone
 
-Friendly and concise. Bold only the **question text** from `next_fields`.
+Friendly and concise. Bold only the **question text** from `next_field`.

@@ -304,29 +304,37 @@ Document acceptance criteria in `fields[].guidance`. Validators are the only ser
 Use [`../responses.py`](../responses.py) — do not invent ad-hoc directive formats:
 
 ```python
-from jvagent.action.interview.hooks import hook_execution_context
 from jvagent.action.interview.responses import (
     call_tool_directive,
     interview_tool_response,
     tell_user,
-    tell_user_then_continue,
     tell_user_with_followup,
-    no_session_directive,
 )
 
 tell_user("What is your name?")
 tell_user_with_followup("Thanks.", "What is your phone number?")
 call_tool_directive("interview__review")
 interview_tool_response(ok=True, status="ok", next_tool="interview__review", ...)
-
-# Post-processors: sidebar + branch-aware next question (context from call_hook).
-# When no collectible fields remain, chains interview__review automatically.
-response_directive = await tell_user_then_continue(
-    "Thank you for using your work email!",
-)
-
-# Unit tests outside call_hook: wrap with hook_execution_context(session=..., spec=...)
 ```
+
+### Post-processor notes (preferred)
+
+A post_processor must **not** bake in the next question — `set_fields` may store
+several fields in one call, and a next-question computed mid-batch goes stale once a
+later field fills it. Return a **`note`** instead; the framework pairs your note with
+the authoritative next question computed from the *final* settled state:
+
+```python
+# Good: emit a note only. Framework appends the real next question.
+return interview_tool_response(
+    ok=True,
+    status="ok",
+    note="Thank you for using your work email! We'll send you training updates.",
+)
+```
+
+`tell_user_then_continue(...)` (which bakes a branch-aware next question) is retained
+for legacy single-field flows but is **discouraged** — prefer `note`.
 
 ---
 

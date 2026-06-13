@@ -296,16 +296,17 @@ When `image_urls` is populated, PersonaAction uses `build_prompt_for_vision()` (
 ## Task Tracking
 
 Actions that manage multi-turn flows requiring user input (e.g., interviews) use
-the conversation-scoped `TaskService` exposed as `visitor.tasks`:
+the conversation-scoped `TaskStore` exposed as `visitor.tasks`:
 
 ```python
-handle = await visitor.tasks.start(
-    description="Guide user to complete SignupInterviewSkill",
-    task_type="INTERVIEW",
-    action_name="SignupInterviewSkill",
-    metadata={"state": "ACTIVE"},
-    singleton_action=True,
+handle = await visitor.tasks.create(
+    title="signup_interview",
+    description="Guide user to complete signup interview",
+    task_type="SKILL",
+    owner_action="signup_interview",
+    data={"state": "active"},
 )
+await handle.start()
 
 await handle.complete()
 

@@ -94,7 +94,7 @@ async def test_pivot_preserves_shared_downstream(branching_spec):
     assert session.get_value("user_type") == "standard"
     assert session.get_value("contact") == "555-0100"
     assert "premium_q" not in session.fields
-    assert "premium_q" in result.get("pruned_fields", [])
+    assert "premium_q" in result.get("pruned", [])
 
 
 @pytest.mark.asyncio
@@ -143,7 +143,7 @@ async def test_signup_slot_pivot_preserves_downstream(signup_action):
     assert "training_format" not in session.fields
     assert session.get_value("user_email") == "jane@gmail.com"
     assert session.get_value("phone_number") == "5551234567"
-    assert "training_format" in result.get("pruned_fields", [])
+    assert "training_format" in result.get("pruned", [])
 
 
 @pytest.mark.asyncio
@@ -192,3 +192,33 @@ async def test_post_pivot_extraction_stores_next_field(signup_action):
 
     assert result["ok"] is True
     assert session.get_value("user_email") == "jane@gmail.com"
+
+
+@pytest.mark.asyncio
+async def test_off_path_validation_failure_is_ignored_post_settlement(signup_action):
+    action, spec = signup_action
+    session = InterviewSession(interview_type="signup_interview")
+    session.set_value("user_name", "Jane Doe")
+    action._get_session_and_contract = AsyncMock(return_value=(session, spec))
+    action._save_session = AsyncMock()
+
+    result = json.loads(
+        await action._handle_set_fields(
+            fields={
+                "available_times": "Monday 9:00 AM - 11:00 AM",
+                "training_format": "not-a-format",
+            }
+        )
+    )
+
+    assert result["ok"] is True
+    assert "training_format" in result.get("ignored", [])
+    by_field = {entry["field"]: entry for entry in result["results"]}
+    assert by_field["training_format"]["ignored"] is True
+    # Incremental settlement: the off-path field is skipped before its validator
+    # runs, so it carries no validation error/validator and never stores.
+    assert "error" not in by_field["training_format"]
+    assert "validator" not in by_field["training_format"]
+    assert by_field["training_format"]["stored"] is False
+    assert session.get_value("available_times") == "Monday 9:00 AM - 11:00 AM"
+    assert "training_format" not in session.fields

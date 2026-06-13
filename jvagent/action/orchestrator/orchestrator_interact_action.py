@@ -455,7 +455,7 @@ class OrchestratorInteractAction(InteractAction):
         default_factory=list,
         description=(
             "Skill names to activate via use_skill when visitor.new_user is true. "
-            "A list or single string. Order matters; the first locked_in skill in "
+            "A list or single string. Order matters; the first task-lock skill in "
             "the list that activates becomes the locked surface for that turn. "
             "Empty disables. Mechanical use_skill only; bootstrap runs via requires-actions binding."
         ),
@@ -1371,13 +1371,15 @@ class OrchestratorInteractAction(InteractAction):
         ctx = getattr(conversation, "context", None) or {}
         return bool(ctx.get("new_user"))
 
-    async def _find_active_locked_skill_doc(
+    async def _find_active_task_lock_skill_doc(
         self, visitor: Any, skill_docs: List[Any], actions: List[Any]
     ) -> Optional[Any]:
-        """Return the SkillDoc for an active locked_in task, if any."""
-        from jvagent.action.orchestrator.skill_tasks import resolve_active_locked_skill
+        """Return the SkillDoc for an active task-lock task, if any."""
+        from jvagent.action.orchestrator.skill_tasks import (
+            resolve_active_task_lock_skill,
+        )
 
-        return await resolve_active_locked_skill(
+        return await resolve_active_task_lock_skill(
             visitor,
             skill_docs,
             actions,
@@ -1405,7 +1407,7 @@ class OrchestratorInteractAction(InteractAction):
         skill_by_name = {d.name: d for d in skill_docs if getattr(d, "name", None)}
         return any(n in skill_by_name for n in names)
 
-    async def _apply_active_locked_skill(
+    async def _apply_active_task_lock_skill(
         self,
         skill_doc: Any,
         loop_actions: List[Any],
@@ -1417,9 +1419,9 @@ class OrchestratorInteractAction(InteractAction):
         observations: List[Dict[str, Any]],
     ) -> Tuple[Dict[str, Any], Set[str], str]:
         """Turn-lock surface prep — delegated to generic skill_tasks helpers."""
-        from jvagent.action.orchestrator.skill_tasks import apply_locked_skill_turn
+        from jvagent.action.orchestrator.skill_tasks import apply_task_lock_turn
 
-        return await apply_locked_skill_turn(
+        return await apply_task_lock_turn(
             skill_doc,
             loop_actions,
             visitor,
@@ -1430,7 +1432,7 @@ class OrchestratorInteractAction(InteractAction):
             observations=observations,
         )
 
-    async def _apply_locked_skill_after_use_skill(
+    async def _apply_task_lock_after_use_skill(
         self,
         *,
         skill_name: str,
@@ -1446,7 +1448,7 @@ class OrchestratorInteractAction(InteractAction):
     ) -> Tuple[Optional[Any], Dict[str, Any], Set[str], str]:
         """Run turn-lock prep when use_skill first-activates a locked skill mid-loop.
 
-        Pre-loop ``apply_locked_skill_turn`` covers auto-start and resumed tasks;
+        Pre-loop ``apply_task_lock_turn`` covers auto-start and resumed tasks;
         model-driven ``use_skill`` on tick 1 skipped that path, so message
         evaluation / next_field prep never ran on the activation turn.
         """
@@ -1456,9 +1458,9 @@ class OrchestratorInteractAction(InteractAction):
             (d for d in skill_docs if getattr(d, "name", None) == skill_name),
             None,
         )
-        if doc is None or not getattr(doc, "locked_in", False):
+        if doc is None or not getattr(doc, "task_lock", False):
             return None, tools, visible, ""
-        tools, visible, skills_section = await self._apply_active_locked_skill(
+        tools, visible, skills_section = await self._apply_active_task_lock_skill(
             doc,
             loop_actions,
             visitor,
@@ -1468,9 +1470,11 @@ class OrchestratorInteractAction(InteractAction):
             activated,
             observations,
         )
-        from jvagent.action.orchestrator.skill_tasks import prune_turn_tools_for_actions
+        from jvagent.action.orchestrator.skill_tasks import (
+            prune_task_lock_tools_for_actions,
+        )
 
-        await prune_turn_tools_for_actions(loop_actions, visitor, tools, visible)
+        await prune_task_lock_tools_for_actions(loop_actions, visitor, tools, visible)
         return doc, tools, visible, skills_section
 
     async def _run_tool_observation(
@@ -1512,7 +1516,7 @@ class OrchestratorInteractAction(InteractAction):
         observations: List[Dict[str, Any]],
     ) -> Optional[Any]:
         """Mechanically use_skill for each configured new-user skill.
-        Returns the first locked_in skill doc in config order, if any."""
+        Returns the first task-lock skill doc in config order, if any."""
         names = self._normalized_auto_start_skill_names()
         skill_by_name = {d.name: d for d in skill_docs if getattr(d, "name", None)}
         activated_names: List[str] = []
@@ -1528,7 +1532,7 @@ class OrchestratorInteractAction(InteractAction):
                 observations,
             )
             activated_names.append(name)
-            if first_locked is None and getattr(doc, "locked_in", False):
+            if first_locked is None and getattr(doc, "task_lock", False):
                 first_locked = doc
         if activated_names:
             observations.append(
@@ -1726,7 +1730,7 @@ class OrchestratorInteractAction(InteractAction):
             _locked_skill_names: Set[str] = {
                 d.name
                 for d in skill_docs
-                if getattr(d, "locked_in", False) and getattr(d, "name", None)
+                if getattr(d, "task_lock", False) and getattr(d, "name", None)
             }
             await cancel_orphan_flow_tasks(
                 visitor,
@@ -1794,7 +1798,7 @@ class OrchestratorInteractAction(InteractAction):
 
         await self._seed_proactive_dispatch(visitor, skill_docs, tools, observations)
 
-        active_skill_doc = await self._find_active_locked_skill_doc(
+        active_skill_doc = await self._find_active_task_lock_skill_doc(
             visitor, skill_docs, loop_actions
         )
 
@@ -1811,14 +1815,14 @@ class OrchestratorInteractAction(InteractAction):
                 active_skill_doc = first_locked
             elif activated:
                 for doc in skill_docs:
-                    if getattr(doc, "locked_in", False) and doc.name in activated:
+                    if getattr(doc, "task_lock", False) and doc.name in activated:
                         active_skill_doc = doc
                         break
 
         locked_pending_directive: Optional[str] = None
         if active_skill_doc is not None:
             prep_obs_before = len(observations)
-            tools, visible, skills_section = await self._apply_active_locked_skill(
+            tools, visible, skills_section = await self._apply_active_task_lock_skill(
                 active_skill_doc,
                 loop_actions,
                 visitor,
@@ -1832,9 +1836,11 @@ class OrchestratorInteractAction(InteractAction):
                 visitor, observations, since_index=prep_obs_before
             )
 
-        from jvagent.action.orchestrator.skill_tasks import prune_turn_tools_for_actions
+        from jvagent.action.orchestrator.skill_tasks import (
+            prune_task_lock_tools_for_actions,
+        )
 
-        await prune_turn_tools_for_actions(loop_actions, visitor, tools, visible)
+        await prune_task_lock_tools_for_actions(loop_actions, visitor, tools, visible)
 
         budget = max(1, int(self.activation_budget))
         history = await self._history(visitor)
@@ -1946,8 +1952,7 @@ class OrchestratorInteractAction(InteractAction):
                             "observation": (
                                 f"({tool_name} is the active locked skill, not a "
                                 "callable tool. Follow the ACTIVE SKILL procedure "
-                                "and use its listed tools — e.g. "
-                                "interview__set_fields — or reply/respond to the "
+                                "and use its listed tools, or reply/respond to the "
                                 "user. Do not invoke the skill name as a tool.)"
                             ),
                         }
@@ -2044,7 +2049,7 @@ class OrchestratorInteractAction(InteractAction):
                         skill_name = ((args or {}).get("name") or "").strip()
                         prep_obs_before = len(observations)
                         locked_doc, tools, visible, new_section = (
-                            await self._apply_locked_skill_after_use_skill(
+                            await self._apply_task_lock_after_use_skill(
                                 skill_name=skill_name,
                                 activation_obs=obs if isinstance(obs, str) else "",
                                 skill_docs=skill_docs,
@@ -2396,11 +2401,11 @@ class OrchestratorInteractAction(InteractAction):
         *,
         since_index: int = 0,
     ) -> None:
-        """Surface server-injected interview prep in the TOOL CALLS panel."""
+        """Surface server-injected skill prep in the TOOL CALLS panel."""
         for entry in observations[since_index:]:
-            tool = str(entry.get("tool") or "")
-            if not tool.startswith("interview__"):
+            if entry.get("kind") != "server_prep":
                 continue
+            tool = str(entry.get("tool") or "(skill-prep)")
             seg = f"prep-{uuid.uuid4().hex[:10]}"
             await self._emit_tool_thought(
                 visitor,
