@@ -144,6 +144,9 @@ version = {attr = "jvagent.version.__version__"}
     "scaffold/static/*.txt",
     "scaffold/**/*.yaml",
     "scaffold/**/*.txt",
+    # Bundled jvchat UI (built by scripts/build_jvchat.py; served by
+    # `jvagent chat`). Ship every asset type, not just the globs above.
+    "webui/dist/**",
 ]
 
 [tool.pytest.ini_options]

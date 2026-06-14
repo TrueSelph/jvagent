@@ -257,6 +257,9 @@ jvagent - Agentive Platform
                                   Discovers action dependencies from info.yaml files
                                   App root can be specified before or after 'bundle' command
                                   Defaults to current working directory if not specified
+    jvagent chat [--url URL] [--port N] [--host HOST] [--no-browser]
+                                  Serve the bundled jvchat web UI on its own port (default 3000)
+                                  --url injects the agent server URL the UI talks to (no rebuild)
     jvagent [<app_root>] agent create [SPEC] [--profile NAME] [--action ID]... [--force]
                                   Scaffold agents/<ns>/<id>/ and register in app.yaml
                                   SPEC: namespace/agent or namespace/agent@profile

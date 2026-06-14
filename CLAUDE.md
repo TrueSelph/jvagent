@@ -107,6 +107,10 @@ jvagent path/to/app status           # diagnostic snapshot
 jvagent path/to/app validate         # validate app.yaml + agents
 jvagent bundle path/to/app           # generate Dockerfile
 
+# Chat UI (bundled jvchat, served on its own port — see docs/jvchat.md)
+jvagent chat                         # serve the bundled UI at http://127.0.0.1:3000
+jvagent chat --url https://my-agent  # point the UI at a remote agent
+
 # Scaffolding
 jvagent app create --yes --dir ./my_app --app-id my_app --title "My App" \
     --author "You" --agent jvagent/main_bot@minimal --profile minimal
@@ -190,7 +194,7 @@ Full CLI reference in [`jvagent/cli/CLAUDE.md`](jvagent/cli/CLAUDE.md) and [`doc
 - Database adapter internals → jvspatial.
 - Auth / JWT / HTTP wire format → jvspatial.
 - Model-provider API quirks → individual `LanguageModelAction` subclasses, not the core.
-- Frontend chat UI → `jvchat/` reference client only.
+- Frontend chat UI internals → `jvchat/` reference client (built bundle is served by `jvagent chat`; the Python side is just a static server — see [`docs/jvchat.md`](docs/jvchat.md)).
 
 ---
 

@@ -49,6 +49,7 @@ DISPATCH = frozenset(
         "bundle",
         "app",
         "validate",
+        "chat",
         "stress-seed",
         "stress_seed",
     }
@@ -219,6 +220,10 @@ def main() -> None:
             handle_bundle_command(args[1:], app_root=app_root)
         elif args[0] == "validate":
             sys.exit(run_validate(app_root))
+        elif args[0] == "chat":
+            from jvagent.cli.chat import handle_chat_command
+
+            handle_chat_command(args[1:])
         elif args[0] in ("stress-seed", "stress_seed"):
             from jvagent.stress_seed_graph import main as stress_seed_main
 
