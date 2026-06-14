@@ -111,6 +111,7 @@ def compose_directive(content: str) -> str:
     it legitimately steers how the model renders the user-facing reply."""
     return str(content or "").replace(DIRECTIVE_GUIDANCE_MARKER, " ").strip()
 
+
 # Channel formatting (the "format" axis), keyed by normalized channel name. The
 # default channel (web) is deliberately absent → no directive → slim prompt;
 # only channels that genuinely need different markup carry one. Operators extend

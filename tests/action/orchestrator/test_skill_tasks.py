@@ -321,8 +321,12 @@ def test_restrict_surface_includes_companions():
     visible = set(tools)
     comp_skills, comp_globs = resolve_lock_companions(locked, [locked, faq])
     restricted, restricted_visible, section = restrict_tools_to_task_lock_skill(
-        locked, tools, visible, [],
-        companion_skills=comp_skills, companion_tool_globs=comp_globs,
+        locked,
+        tools,
+        visible,
+        [],
+        companion_skills=comp_skills,
+        companion_tool_globs=comp_globs,
     )
     # locked tools + companion skill tool + glob tool + use_skill + egress
     assert "interview__set_fields" in restricted
@@ -343,9 +347,17 @@ def test_restrict_surface_no_companions_unchanged():
     )
 
     locked = _skill("x", requires_tools=("x__do",), task_lock=True)
-    tools = {"x__do": object(), "reply": object(), "respond": object(), "other": object()}
+    tools = {
+        "x__do": object(),
+        "reply": object(),
+        "respond": object(),
+        "other": object(),
+    }
     restricted, _, section = restrict_tools_to_task_lock_skill(
-        locked, tools, set(tools), [],
+        locked,
+        tools,
+        set(tools),
+        [],
     )
     assert set(restricted) == {"x__do", "reply", "respond"}
     assert "companion" not in section.lower()

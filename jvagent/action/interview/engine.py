@@ -165,7 +165,8 @@ def _batch_failure_directive(failures: List[Dict[str, Any]]) -> str:
     names = [
         str(f.get("field") or "").strip().replace("_", " ")
         for f in failures
-        if f.get("error_code") == "VALIDATION_FAILED" and str(f.get("field") or "").strip()
+        if f.get("error_code") == "VALIDATION_FAILED"
+        and str(f.get("field") or "").strip()
     ]
     fields_text = ", ".join(name for name in names if name)
     # Surface only user-authored validation messages. Raw engine errors

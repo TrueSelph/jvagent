@@ -1905,9 +1905,7 @@ class OrchestratorInteractAction(InteractAction):
                 resolve_lock_companions,
             )
 
-            _companion_skills, _ = resolve_lock_companions(
-                active_skill_doc, skill_docs
-            )
+            _companion_skills, _ = resolve_lock_companions(active_skill_doc, skill_docs)
             locked_companion_skill_names = {
                 d.name for d in _companion_skills if getattr(d, "name", None)
             }
@@ -2124,7 +2122,9 @@ class OrchestratorInteractAction(InteractAction):
                         and (args or {}).get("name") != active_skill_doc.name
                         and (args or {}).get("name") not in locked_companion_skill_names
                     ):
-                        allowed = ", ".join(sorted(locked_companion_skill_names)) or "none"
+                        allowed = (
+                            ", ".join(sorted(locked_companion_skill_names)) or "none"
+                        )
                         observations.append(
                             {
                                 "tool": tool_name,
