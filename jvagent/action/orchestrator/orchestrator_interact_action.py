@@ -1530,6 +1530,42 @@ class OrchestratorInteractAction(InteractAction):
         await prune_task_lock_tools_for_actions(loop_actions, visitor, tools, visible)
         return doc, tools, visible, skills_section
 
+    async def _reground_parent_lock(
+        self,
+        parent_doc: Any,
+        loop_actions: List[Any],
+        visitor: Any,
+        observations: List[Dict[str, Any]],
+    ) -> None:
+        """Re-surface a locked parent task right after a companion finishes, so the
+        model resumes it in the same turn instead of waiting for next-turn
+        re-grounding. Appends the parent's pending-step status (via its bound
+        action's ``prepare_task_lock_turn``) and an explicit return directive."""
+        from jvagent.action.orchestrator.skill_tasks import action_for_skill
+
+        bound = action_for_skill(parent_doc, loop_actions)
+        if bound is not None and hasattr(bound, "prepare_task_lock_turn"):
+            try:
+                prep = await bound.prepare_task_lock_turn(parent_doc.name, visitor)
+                for ob in getattr(prep, "observations", None) or []:
+                    if isinstance(ob, dict):
+                        ob.setdefault("kind", "server_prep")
+                        observations.append(ob)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("orchestrator: parent re-ground failed: %s", exc)
+        observations.append(
+            {
+                "tool": "(task-lock)",
+                "args": {},
+                "observation": (
+                    f"(Side request handled. Return to {parent_doc.name} now and "
+                    "continue its current step — include that step in your reply. "
+                    "Do not start anything else.)"
+                ),
+                "kind": "server_prep",
+            }
+        )
+
     async def _run_tool_observation(
         self,
         tools: Dict[str, Any],
@@ -1896,19 +1932,27 @@ class OrchestratorInteractAction(InteractAction):
 
         await prune_task_lock_tools_for_actions(loop_actions, visitor, tools, visible)
 
-        # Companion skills the active lock permits as use_skill targets. Used to
-        # gate use_skill during lock so a side-skill (FAQ) is allowed but the
-        # model cannot silently switch to an unrelated skill and abandon the task.
+        # Companion capabilities the active lock permits. Skill names gate
+        # use_skill (a side-skill like FAQ is allowed; switching to an unrelated
+        # skill is not). Tool names mark a companion detour so the parent task can
+        # be re-grounded the moment the side request is handled.
         locked_companion_skill_names: Set[str] = set()
+        locked_companion_tools: Set[str] = set()
         if active_skill_doc is not None:
             from jvagent.action.orchestrator.skill_tasks import (
+                _companion_surface,
                 resolve_lock_companions,
             )
 
-            _companion_skills, _ = resolve_lock_companions(active_skill_doc, skill_docs)
+            _companion_skills, _companion_globs = resolve_lock_companions(
+                active_skill_doc, skill_docs
+            )
             locked_companion_skill_names = {
                 d.name for d in _companion_skills if getattr(d, "name", None)
             }
+            _allowed, _ = _companion_surface(_companion_skills, _companion_globs, tools)
+            # Tool names only — use_skill is handled by the skill-name branch.
+            locked_companion_tools = {t for t in _allowed if t != "use_skill"}
 
         budget = max(1, int(self.activation_budget))
         history = await self._history(visitor)
@@ -2210,6 +2254,26 @@ class OrchestratorInteractAction(InteractAction):
                                 skills_section = new_section
                             await self._emit_server_prep_tool_thoughts(
                                 visitor, observations, since_index=prep_obs_before
+                            )
+                    # Companion detour: a companion capability (tool or skill) was
+                    # used while a parent skill holds the turn-lock. Re-ground the
+                    # parent in place so the model returns to it as soon as the side
+                    # request is handled — same turn, not next.
+                    if active_skill_doc is not None and (
+                        tool_name in locked_companion_tools
+                        or (
+                            tool_name == "use_skill"
+                            and ((args or {}).get("name") or "").strip()
+                            in locked_companion_skill_names
+                        )
+                    ):
+                        rg_before = len(observations)
+                        await self._reground_parent_lock(
+                            active_skill_doc, loop_actions, visitor, observations
+                        )
+                        if len(observations) > rg_before:
+                            await self._emit_server_prep_tool_thoughts(
+                                visitor, observations, since_index=rg_before
                             )
                     # Directive contract (see loop-state init): a tool result may
                     # carry the authoritative next step. A pending ``next_tool`` is a

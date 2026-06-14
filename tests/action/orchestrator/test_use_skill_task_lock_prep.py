@@ -305,3 +305,43 @@ async def test_locked_skill_name_as_tool_gets_steer_not_dispatch(
     assert steer_obs
     assert "active locked skill" in steer_obs[0]["observation"].lower()
     assert "no such tool" not in steer_obs[0]["observation"].lower()
+
+
+@pytest.mark.asyncio
+async def test_reground_parent_lock_returns_to_parent(monkeypatch):
+    """After a companion finishes, _reground_parent_lock re-surfaces the parent's
+    pending step + an explicit return directive so the model resumes it same-turn."""
+    from unittest.mock import MagicMock
+
+    from jvagent.action.orchestrator import skill_tasks
+    from jvagent.action.orchestrator.skill_tasks import TaskLockPrep
+
+    ex = OrchestratorInteractAction()
+    parent = SkillDoc(name="signup_interview", description="", body="PROC", task_lock=True)
+    bound = MagicMock()
+    bound.prepare_task_lock_turn = AsyncMock(
+        return_value=TaskLockPrep(
+            observations=[
+                {
+                    "tool": "interview__get_status",
+                    "args": {},
+                    "observation": '{"next_field": {"key": "user_name"}}',
+                }
+            ]
+        )
+    )
+    monkeypatch.setattr(skill_tasks, "action_for_skill", lambda doc, actions: bound)
+
+    obs: list = []
+    await ex._reground_parent_lock(parent, [], None, obs)
+
+    # parent pending-step status re-injected
+    assert any(o.get("tool") == "interview__get_status" for o in obs)
+    # explicit return directive naming the parent
+    ret = [o for o in obs if o.get("tool") == "(task-lock)"]
+    assert ret, "expected a return-to-parent directive"
+    text = ret[0]["observation"].lower()
+    assert "signup_interview" in ret[0]["observation"]
+    assert "return to" in text and "continue" in text
+    # all server-prep so they render as system context, not user-visible
+    assert all(o.get("kind") == "server_prep" for o in obs)
