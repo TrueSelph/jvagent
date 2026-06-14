@@ -254,3 +254,98 @@ async def test_ensure_task_lock_session_rebootstraps_when_missing():
     )
     assert note == "session ready"
     InterviewActionStub.on_skill_activate.assert_awaited_once()
+
+
+# --- Companion capabilities during task-lock -------------------------------
+
+
+def _skill(name, *, requires_tools=(), task_lock=False, lock_companions=()):
+    return SkillDoc(
+        name=name,
+        description="",
+        body="PROC",
+        requires_tools=tuple(requires_tools),
+        task_lock=task_lock,
+        lock_companions=tuple(lock_companions),
+    )
+
+
+def test_resolve_lock_companions_splits_skills_and_globs():
+    from jvagent.action.orchestrator.skill_tasks import resolve_lock_companions
+
+    locked = _skill(
+        "pre_alert_interview",
+        requires_tools=("interview__set_fields",),
+        task_lock=True,
+        lock_companions=("faq", "find_tool"),
+    )
+    faq = _skill("faq", requires_tools=("faq__search",))
+    skills, globs = resolve_lock_companions(locked, [locked, faq])
+    assert [s.name for s in skills] == ["faq"]
+    assert globs == ["find_tool"]
+
+
+def test_resolve_lock_companions_rejects_task_lock_companion():
+    from jvagent.action.orchestrator.skill_tasks import resolve_lock_companions
+
+    locked = _skill("a", task_lock=True, lock_companions=("b",))
+    other = _skill("b", task_lock=True)  # would seize the lock
+    skills, globs = resolve_lock_companions(locked, [locked, other])
+    assert skills == []
+    assert globs == []  # task_lock companion dropped, not treated as a glob
+
+
+def test_restrict_surface_includes_companions():
+    from jvagent.action.orchestrator.skill_tasks import (
+        resolve_lock_companions,
+        restrict_tools_to_task_lock_skill,
+    )
+
+    locked = _skill(
+        "pre_alert_interview",
+        requires_tools=("interview__set_fields", "interview__next_field"),
+        task_lock=True,
+        lock_companions=("faq", "find_tool"),
+    )
+    faq = _skill("faq", requires_tools=("faq__search",))
+    tools = {
+        "interview__set_fields": object(),
+        "interview__next_field": object(),
+        "faq__search": object(),
+        "find_tool": object(),
+        "use_skill": object(),
+        "reply": object(),
+        "respond": object(),
+        "unrelated_tool": object(),
+    }
+    visible = set(tools)
+    comp_skills, comp_globs = resolve_lock_companions(locked, [locked, faq])
+    restricted, restricted_visible, section = restrict_tools_to_task_lock_skill(
+        locked, tools, visible, [],
+        companion_skills=comp_skills, companion_tool_globs=comp_globs,
+    )
+    # locked tools + companion skill tool + glob tool + use_skill + egress
+    assert "interview__set_fields" in restricted
+    assert "faq__search" in restricted
+    assert "find_tool" in restricted
+    assert "use_skill" in restricted
+    assert "reply" in restricted
+    # not whitelisted -> blocked
+    assert "unrelated_tool" not in restricted
+    # section advertises companions + return-to-task
+    assert "faq" in section
+    assert "return to this skill" in section.lower()
+
+
+def test_restrict_surface_no_companions_unchanged():
+    from jvagent.action.orchestrator.skill_tasks import (
+        restrict_tools_to_task_lock_skill,
+    )
+
+    locked = _skill("x", requires_tools=("x__do",), task_lock=True)
+    tools = {"x__do": object(), "reply": object(), "respond": object(), "other": object()}
+    restricted, _, section = restrict_tools_to_task_lock_skill(
+        locked, tools, set(tools), [],
+    )
+    assert set(restricted) == {"x__do", "reply", "respond"}
+    assert "companion" not in section.lower()

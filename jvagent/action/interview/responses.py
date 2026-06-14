@@ -5,6 +5,13 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Optional
 
+from jvagent.action.reply.reply_action import DIRECTIVE_GUIDANCE_MARKER
+
+# Model-only composition guidance lives after this marker in a directive. The
+# compose model reads it (it steers rendering); ReplyAction's literal-relay fast
+# path drops it so interview internals never reach the user.
+_G = DIRECTIVE_GUIDANCE_MARKER
+
 # Keys forwarded from pre/post processor hook results to the LLM.
 HOOK_RESULT_KEYS = (
     "ok",
@@ -45,31 +52,37 @@ def slim_hook_entry(tool: str, parsed: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def tell_user(question: str, *, note: str = "") -> str:
-    """Single-action directive: model should reply with one question."""
-    text = (
-        f"Tell the user: {question} "
+    """Single-action directive: the model replies with one question.
+
+    ``note`` is MODEL-FACING guidance for handling the next step (e.g. "ask for
+    the code only; do not resend"). It is placed AFTER the guidance marker so it
+    steers the compose model but is never relayed to the user verbatim — callers
+    routinely pass tool-call hints and "do not …" rules through it. Anything the
+    user must actually read belongs in ``question``.
+    """
+    guidance = (
         "You may paraphrase slightly but keep the same intent. "
         "Do not ask for other information in this reply."
     )
     if note:
-        text += f" {note}"
-    return text
+        guidance = f"{guidance} {note}"
+    return f"Tell the user: {question}{_G}{guidance}"
 
 
 def tell_user_with_followup(message: str, follow_up_question: str) -> str:
     """Sidebar note plus the next interview question in one user-facing reply."""
     return (
-        f"Tell the user: {message} "
-        f"Then ask: {follow_up_question} "
-        "You may paraphrase slightly but include both the note and the follow-up question."
+        f"Tell the user: {message}\n\n{follow_up_question}"
+        f"{_G}The text above is a note followed by the next question — deliver both, "
+        "in that order. You may paraphrase but keep both the note and the question."
     )
 
 
 def tell_user_then_call_tool(message: str, next_tool: str) -> str:
     """Sidebar note when no further questions remain; chain a tool in the same turn."""
     return (
-        f"Tell the user: {message} "
-        "You may paraphrase slightly but keep the same intent. "
+        f"Tell the user: {message}"
+        f"{_G}You may paraphrase slightly but keep the same intent. "
         f"Then call {next_tool}."
     )
 
@@ -116,10 +129,10 @@ def review_confirmation_directive(
     """Confirmation-step directive — not completion."""
     summary_block = f"\n\n{summary}" if summary else ""
     return (
-        f"Tell the user: {preamble}{summary_block} "
-        "Ask whether everything looks correct and they want to confirm. "
-        "If they want changes, ask what to update. "
-        "This is a confirmation step only — the process is NOT complete yet. "
+        f"Tell the user: {preamble}{summary_block}\n\n"
+        "Ask whether everything looks correct and whether they want to confirm, "
+        "and if they want changes, ask what to update."
+        f"{_G}This is a confirmation step only — the process is NOT complete yet. "
         "Do NOT say the process is complete or that any account or record has been created. "
         "Do NOT call interview__complete until they explicitly confirm. "
         "Do NOT call interview__review again."
@@ -131,8 +144,8 @@ def auto_confirm_directive(summary: str, *, preamble: str = "") -> str:
     summary_block = f"\n\n{summary}" if summary else ""
     intro = (preamble or "Here is a summary of what was collected.").strip()
     return (
-        f"Tell the user: {intro}{summary_block} "
-        "Do not ask whether everything looks correct. "
+        f"Tell the user: {intro}{summary_block}"
+        f"{_G}Do not ask whether everything looks correct. "
         "Call interview__complete now in this same turn. "
         "Do NOT call interview__review again."
     )

@@ -223,6 +223,11 @@ def parse_skill_bundle(
     verbatim_final = bool(frontmatter.get("verbatim-final"))
     always_active = bool(frontmatter.get("always-active"))
     task_lock = bool(frontmatter.get("task-lock") or frontmatter.get("task_lock"))
+    lock_companions = _normalize_string_list(
+        frontmatter.get("lock-companions") or frontmatter.get("lock_companions"),
+        skill_file,
+        key="lock-companions",
+    )
     # Skill spec: ``jv`` (default — an SOP that references action/IA tools) or
     # ``claude`` (a standard Anthropic Agent Skills folder whose bundled scripts
     # the model runs via the code-execution substrate). Unknown values fall back
@@ -297,6 +302,7 @@ def parse_skill_bundle(
         "verbatim_final": verbatim_final,
         "always_active": always_active,
         "task_lock": task_lock,
+        "lock_companions": lock_companions,
         "spec": spec,
         "dispatch": dispatch,
         "exports": exports,

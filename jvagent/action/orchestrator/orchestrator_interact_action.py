@@ -1467,6 +1467,7 @@ class OrchestratorInteractAction(InteractAction):
         visible: Set[str],
         activated: List[str],
         observations: List[Dict[str, Any]],
+        skill_docs: Optional[List[Any]] = None,
     ) -> Tuple[Dict[str, Any], Set[str], str]:
         """Turn-lock surface prep — delegated to generic skill_tasks helpers."""
         from jvagent.action.orchestrator.skill_tasks import apply_task_lock_turn
@@ -1480,6 +1481,7 @@ class OrchestratorInteractAction(InteractAction):
             visible=visible,
             activated=activated,
             observations=observations,
+            skill_docs=skill_docs,
         )
 
     async def _apply_task_lock_after_use_skill(
@@ -1519,6 +1521,7 @@ class OrchestratorInteractAction(InteractAction):
             visible,
             activated,
             observations,
+            skill_docs=skill_docs,
         )
         from jvagent.action.orchestrator.skill_tasks import (
             prune_task_lock_tools_for_actions,
@@ -1881,6 +1884,7 @@ class OrchestratorInteractAction(InteractAction):
                 visible,
                 activated,
                 observations,
+                skill_docs=skill_docs,
             )
             await self._emit_server_prep_tool_thoughts(
                 visitor, observations, since_index=prep_obs_before
@@ -1891,6 +1895,22 @@ class OrchestratorInteractAction(InteractAction):
         )
 
         await prune_task_lock_tools_for_actions(loop_actions, visitor, tools, visible)
+
+        # Companion skills the active lock permits as use_skill targets. Used to
+        # gate use_skill during lock so a side-skill (FAQ) is allowed but the
+        # model cannot silently switch to an unrelated skill and abandon the task.
+        locked_companion_skill_names: Set[str] = set()
+        if active_skill_doc is not None:
+            from jvagent.action.orchestrator.skill_tasks import (
+                resolve_lock_companions,
+            )
+
+            _companion_skills, _ = resolve_lock_companions(
+                active_skill_doc, skill_docs
+            )
+            locked_companion_skill_names = {
+                d.name for d in _companion_skills if getattr(d, "name", None)
+            }
 
         budget = max(1, int(self.activation_budget))
         history = await self._history(visitor)
@@ -2089,6 +2109,31 @@ class OrchestratorInteractAction(InteractAction):
                                     f"(The task is not finished — call "
                                     f"{pending_chain} now, not reply/respond. Do NOT "
                                     "tell the user the process is complete until it has run.)"
+                                ),
+                            }
+                        )
+                        continue
+                    # Companion gate: while a skill holds the turn-lock, use_skill
+                    # may only (re)activate the locked skill itself or a declared
+                    # companion. Switching to an unrelated skill would abandon the
+                    # active task — block it and steer back.
+                    if (
+                        active_skill_doc is not None
+                        and tool_name == "use_skill"
+                        and (args or {}).get("name")
+                        and (args or {}).get("name") != active_skill_doc.name
+                        and (args or {}).get("name") not in locked_companion_skill_names
+                    ):
+                        allowed = ", ".join(sorted(locked_companion_skill_names)) or "none"
+                        observations.append(
+                            {
+                                "tool": tool_name,
+                                "args": args,
+                                "observation": (
+                                    f"({(args or {}).get('name')} cannot be started "
+                                    f"while {active_skill_doc.name} is in progress. "
+                                    f"Permitted companions: {allowed}. Finish or "
+                                    "cancel the active task first, then switch.)"
                                 ),
                             }
                         )

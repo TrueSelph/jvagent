@@ -154,19 +154,38 @@ def _batch_failure_status(failures: List[Dict[str, Any]], *, stored_any: bool) -
 def _batch_failure_directive(failures: List[Dict[str, Any]]) -> str:
     if not failures:
         return tell_user("Please share the missing information for this interview.")
+    # A handler/validator-authored directive is written for the user — prefer it.
     if len(failures) == 1:
         direct = str(failures[0].get("response_directive") or "").strip()
         if direct:
             return direct
-    names = [str(entry.get("field") or "").strip() for entry in failures]
-    names = [name for name in names if name]
-    fields_text = ", ".join(names) if names else "one or more fields"
-    first_error = str(failures[0].get("error") or "").strip()
-    message = (
-        f"I saved what I could, but I still need corrected values for: {fields_text}."
+    # Name only genuinely-pending fields that failed validation. Unknown/guessed
+    # keys are model errors (the model invented a field) and mean nothing to the
+    # user. Field keys are humanized so the raw snake_case never shows.
+    names = [
+        str(f.get("field") or "").strip().replace("_", " ")
+        for f in failures
+        if f.get("error_code") == "VALIDATION_FAILED" and str(f.get("field") or "").strip()
+    ]
+    fields_text = ", ".join(name for name in names if name)
+    # Surface only user-authored validation messages. Raw engine errors
+    # (UNKNOWN_FIELD keys, "Awaiting keys: [...]") are model-facing context and
+    # MUST NOT reach the user — they travel in system_message instead.
+    user_error = next(
+        (
+            str(f.get("error") or "").strip()
+            for f in failures
+            if f.get("error_code") == "VALIDATION_FAILED"
+            and str(f.get("error") or "").strip()
+        ),
+        "",
     )
-    if first_error:
-        message = f"{message} {first_error}"
+    if fields_text:
+        message = f"I still need valid values for: {fields_text}."
+    else:
+        message = "I still need a bit more information to continue."
+    if user_error:
+        message = f"{message} {user_error}"
     return tell_user(message)
 
 
@@ -567,7 +586,9 @@ async def handle_set_fields(
             status="error",
             error_code="NO_FIELDS",
             error="No fields provided.",
-            response_directive=tell_user(
+            # Model-facing self-correction — how to re-call the tool. NOT a user
+            # reply: this travels in system_message so it can never be relayed.
+            system_message=(
                 "Call interview__set_fields with a single `fields` map — e.g. "
                 f"{SET_FIELDS_ARGS_EXAMPLE}. Do not put field keys at the top "
                 "level of args."
@@ -592,7 +613,9 @@ async def handle_set_fields(
             ),
             submitted_fields=sorted(field_map.keys()),
             suggested_additional_keys=under_extracted_keys,
-            response_directive=tell_user(
+            # Model-facing self-correction — re-extract and retry. NOT a user
+            # reply: travels in system_message so it can never be relayed.
+            system_message=(
                 "Extract all confident values from the latest user utterance and "
                 "retry interview__set_fields with one complete fields map using "
                 "known keys from field_keys/guidance_page/awaiting_fields."
@@ -1589,6 +1612,37 @@ async def handle_get_status(action: Any, visitor: Any = None) -> str:
         custom_tools=(
             [f"{spec.name}__{t.name}" for t in spec.skill_tools] if spec else None
         ),
+    )
+
+
+async def interview_turn_status(action: Any, visitor: Any = None) -> Optional[str]:
+    """Compact per-turn re-grounding for a locked interview.
+
+    Activation sends the full ``field_reference`` once; on a resumed locked turn
+    that observation may have aged out of history, so the model loses the valid
+    keys and guesses (``full_name`` vs ``user_name``). This re-asserts just what
+    key selection needs — valid keys, the pending field, and progress — without
+    re-sending the whole catalog (guidance pages) every turn. ``get_status``
+    remains the on-demand path for the full reference.
+    """
+    session, spec = await action._get_session_and_contract(visitor)
+    if not session or not spec:
+        return None
+    load_fn = action._load_fn(spec)
+    next_field = await build_next_field(session, spec, load_fn, visitor, action)
+    return interview_tool_response(
+        ok=True,
+        status=session.status.value,
+        interview_type=session.interview_type,
+        field_keys=spec.field_keys(),
+        next_field=(
+            {"key": next_field["key"], "prompt": next_field.get("prompt")}
+            if next_field
+            else None
+        ),
+        fields=session.get_collected_summary() or None,
+        skipped_fields=sorted(session.skipped_fields) or None,
+        confirm=spec.confirm,
     )
 
 

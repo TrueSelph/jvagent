@@ -6,6 +6,7 @@ and auto-start pending resolution — no domain-specific interview logic here.
 
 from __future__ import annotations
 
+import fnmatch
 import inspect
 import logging
 from dataclasses import dataclass, field
@@ -486,17 +487,82 @@ class TaskLockPrep:
 
 
 def task_lock_section_text(
-    skill_doc: Any, *, pending_directive: Optional[str] = None
+    skill_doc: Any,
+    *,
+    pending_directive: Optional[str] = None,
+    companion_names: Tuple[str, ...] = (),
 ) -> str:
     """Build the turn-lock PROCEDURE block surfaced to the model each tick."""
-    header = (
-        f"ACTIVE SKILL IN PROGRESS: {skill_doc.name}\n"
-        "Turn-lock is ON — complete this skill before routing to any other "
-        "capability. Use only the tools listed below plus reply/respond.\n"
-    )
+    if companion_names:
+        comp = ", ".join(companion_names)
+        lock_line = (
+            "Turn-lock is ON. Stay on this skill. You MAY use these companion "
+            f"capabilities to handle a side question: {comp}. After handling it, "
+            "return to this skill and continue from its current step. Use only "
+            "this skill's tools, the companions just listed, and reply/respond.\n"
+        )
+    else:
+        lock_line = (
+            "Turn-lock is ON — complete this skill before routing to any other "
+            "capability. Use only the tools listed below plus reply/respond.\n"
+        )
+    header = f"ACTIVE SKILL IN PROGRESS: {skill_doc.name}\n{lock_line}"
     if pending_directive:
         header += f"{pending_directive}\n"
     return f"{header}PROCEDURE:\n{skill_doc.body}"
+
+
+def resolve_lock_companions(
+    skill_doc: Any, skill_docs: List[Any]
+) -> Tuple[List[Any], List[str]]:
+    """Split a locked skill's ``lock_companions`` into (companion SkillDocs, tool
+    globs). A companion that is itself ``task_lock`` is rejected — it would seize
+    the turn-lock from the active skill instead of returning control to it."""
+    by_name = {d.name: d for d in skill_docs if getattr(d, "name", None)}
+    skills: List[Any] = []
+    globs: List[str] = []
+    for entry in getattr(skill_doc, "lock_companions", ()) or ():
+        name = str(entry).strip()
+        if not name:
+            continue
+        doc = by_name.get(name)
+        if doc is not None:
+            if getattr(doc, "task_lock", False):
+                logger.warning(
+                    "skill_tasks: companion %r of %r is task_lock; ignoring "
+                    "(a companion must not seize the turn-lock)",
+                    name,
+                    getattr(skill_doc, "name", "?"),
+                )
+                continue
+            skills.append(doc)
+        else:
+            globs.append(name)
+    return skills, globs
+
+
+def _companion_surface(
+    companion_skills: List[Any],
+    companion_tool_globs: List[str],
+    tools: Dict[str, Any],
+) -> Tuple[Set[str], List[str]]:
+    """Resolve companions to (allowed tool names, human display names).
+
+    Companion skills contribute their ``requires_tools`` plus ``use_skill`` (so
+    the model can activate them mid-lock); tool globs match the live surface.
+    """
+    allowed: Set[str] = set()
+    display: List[str] = []
+    for doc in companion_skills:
+        allowed.update(getattr(doc, "requires_tools", ()) or ())
+        display.append(doc.name)
+    if companion_skills:
+        allowed.add("use_skill")
+    for glob in companion_tool_globs:
+        matched = [t for t in tools if fnmatch.fnmatch(t, glob)]
+        allowed.update(matched)
+        display.extend(matched or [glob])
+    return allowed, display
 
 
 async def ensure_skill_tools_materialized(
@@ -547,17 +613,27 @@ def restrict_tools_to_task_lock_skill(
     activated: List[str],
     *,
     pending_directive: Optional[str] = None,
+    companion_skills: Optional[List[Any]] = None,
+    companion_tool_globs: Optional[List[str]] = None,
 ) -> Tuple[Dict[str, Any], Set[str], str]:
-    """Restrict the callable surface to a task-lock skill's tools + egress."""
+    """Restrict the callable surface to a task-lock skill's tools + egress, plus
+    any whitelisted companion capabilities (so a locked skill can field a side
+    question and return to its step)."""
     if skill_doc.name not in activated:
         activated.append(skill_doc.name)
     allowed_names = set(getattr(skill_doc, "requires_tools", ()) or ())
     allowed_names.update({"reply", "respond"})
+    companion_allowed, companion_display = _companion_surface(
+        companion_skills or [], companion_tool_globs or [], tools
+    )
+    allowed_names.update(companion_allowed)
     restricted_tools = {k: v for k, v in tools.items() if k in allowed_names}
     restricted_visible = {k for k in visible if k in allowed_names}
     restricted_visible.update(k for k in allowed_names if k in restricted_tools)
     skills_section = task_lock_section_text(
-        skill_doc, pending_directive=pending_directive
+        skill_doc,
+        pending_directive=pending_directive,
+        companion_names=tuple(dict.fromkeys(companion_display)),
     )
     return restricted_tools, restricted_visible, skills_section
 
@@ -602,6 +678,7 @@ async def apply_task_lock_turn(
     visible: Set[str],
     activated: List[str],
     observations: List[Dict[str, Any]],
+    skill_docs: Optional[List[Any]] = None,
 ) -> Tuple[Dict[str, Any], Set[str], str]:
     """Session bootstrap + bound-action prep + turn-lock tool restriction."""
     note = await ensure_task_lock_session(
@@ -660,8 +737,17 @@ async def apply_task_lock_turn(
 
     await ensure_skill_tools_materialized(skill_doc, actions, visitor, tools, visible)
 
+    companion_skills, companion_tool_globs = resolve_lock_companions(
+        skill_doc, skill_docs or []
+    )
     return restrict_tools_to_task_lock_skill(
-        skill_doc, tools, visible, activated, pending_directive=pending_directive
+        skill_doc,
+        tools,
+        visible,
+        activated,
+        pending_directive=pending_directive,
+        companion_skills=companion_skills,
+        companion_tool_globs=companion_tool_globs,
     )
 
 

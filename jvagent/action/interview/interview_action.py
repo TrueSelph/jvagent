@@ -222,6 +222,39 @@ class InterviewAction(Action):
         """
         return await self._has_ready_session(skill_name, visitor)
 
+    async def prepare_task_lock_turn(self, skill_name: str, visitor: Any = None):
+        """Task-lock hook: re-ground the model each locked turn.
+
+        Activation surfaces ``field_reference`` once; on a resumed turn the lock
+        restricts the surface and the activation observation may have aged out of
+        history, so the model loses the field catalog and guesses keys (e.g.
+        ``full_name`` instead of ``user_name``) — failed extractions and
+        reprompting. Re-injecting the current status (catalog + pending field +
+        collected/skipped) as a server-prep observation keeps key selection
+        grounded without re-running ``use_skill``.
+        """
+        from jvagent.action.orchestrator.skill_tasks import TaskLockPrep
+
+        if not await self._has_ready_session(skill_name, visitor):
+            return TaskLockPrep()
+        try:
+            status = await engine.interview_turn_status(self, visitor)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("InterviewAction.prepare_task_lock_turn failed: %s", exc)
+            return TaskLockPrep()
+        if not status:
+            return TaskLockPrep()
+        return TaskLockPrep(
+            observations=[
+                {
+                    "tool": "interview__get_status",
+                    "args": {},
+                    "observation": status,
+                    "kind": "server_prep",
+                }
+            ]
+        )
+
     async def on_skill_activate(
         self,
         skill_name: str,

@@ -9,6 +9,8 @@ import pytest
 from jvagent.scaffold.sop_extend import (
     compose_extended_sop_bodies,
     compose_skill_body,
+    inherit_extends_lock_companions,
+    inherit_extends_task_lock,
     load_action_base_sop_body,
     merge_extends_allowed_tools,
     parse_extends_ref,
@@ -152,6 +154,82 @@ def test_merge_extends_allowed_tools_additive_and_disabled():
     assert "interview__set_fields" in tools
     assert "child__custom_tool" in tools
     assert "interview__reset" not in tools
+
+
+def test_inherit_extends_task_lock_from_action_base():
+    """A skill that extends the interview action inherits its task-lock so the
+    orchestrator's turn-lock resolver can bind it each turn (regression: lock was
+    silently dropped because task_lock didn't propagate through extends)."""
+    bundles = {
+        "signup_interview": {
+            "name": "signup_interview",
+            "content": "Custom.",
+            "extends": "action:jvagent/interview",
+            "task_lock": False,
+        }
+    }
+    out = inherit_extends_task_lock(bundles)
+    assert out["signup_interview"]["task_lock"] is True
+
+
+def test_inherit_extends_task_lock_skill_chain():
+    bundles = {
+        "base_skill": {"name": "base_skill", "content": "b", "task_lock": True},
+        "child": {
+            "name": "child",
+            "content": "c",
+            "extends": "skill:base_skill",
+            "task_lock": False,
+        },
+    }
+    out = inherit_extends_task_lock(bundles)
+    assert out["child"]["task_lock"] is True
+
+
+def test_inherit_extends_task_lock_no_extends_unchanged():
+    bundles = {"plain": {"name": "plain", "content": "p", "task_lock": False}}
+    out = inherit_extends_task_lock(bundles)
+    assert out["plain"]["task_lock"] is False
+
+
+def test_compose_extended_sop_bodies_propagates_task_lock():
+    """End-to-end: compose_extended_sop_bodies applies task-lock inheritance."""
+    bundles = {
+        "signup_interview": {
+            "name": "signup_interview",
+            "content": "Custom.",
+            "extends": "action:jvagent/interview",
+            "allowed_tools_add": [],
+            "disabled_tools": [],
+            "task_lock": False,
+        }
+    }
+    out = compose_extended_sop_bodies(bundles)
+    assert out["signup_interview"]["task_lock"] is True
+
+
+def test_inherit_lock_companions_union_along_skill_chain():
+    bundles = {
+        "base_skill": {
+            "name": "base_skill",
+            "content": "b",
+            "lock_companions": ["faq"],
+        },
+        "child": {
+            "name": "child",
+            "content": "c",
+            "extends": "skill:base_skill",
+            "lock_companions": ["find_tool"],
+        },
+    }
+    out = inherit_extends_lock_companions(bundles)
+    assert out["child"]["lock_companions"] == ["faq", "find_tool"]
+
+
+def test_inherit_lock_companions_no_extends_unchanged():
+    bundles = {"plain": {"name": "plain", "content": "p", "lock_companions": ["faq"]}}
+    out = inherit_extends_lock_companions(bundles)
+    assert out["plain"]["lock_companions"] == ["faq"]
 
 
 def test_load_action_base_sop_body_honors_env_override(monkeypatch, tmp_path):

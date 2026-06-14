@@ -89,6 +89,28 @@ PARAMETERS_SECTION = (
 # the compose model deliver it faithfully in the agent's identity.
 RELAY_PREFIX = "Tell the user: "
 
+# A directive may carry model-only composition guidance after this marker: how to
+# render the user-facing part ("you may paraphrase"), or producer chaining notes
+# ("Do NOT call …", "Then call …"). The compose model sees it (it steers
+# rendering); the literal-relay fast path MUST drop it so it never reaches the
+# user. An invisible separator char, so it's inert even if a raw directive ever
+# slips through unscrubbed.
+DIRECTIVE_GUIDANCE_MARKER = "\u2063"  # invisible separator
+
+
+def user_facing_directive(content: str) -> str:
+    """The user-facing portion of a directive: everything before the first
+    :data:`DIRECTIVE_GUIDANCE_MARKER`. Model-only guidance after it is dropped so
+    it can never be relayed to the user."""
+    return str(content or "").split(DIRECTIVE_GUIDANCE_MARKER, 1)[0].strip()
+
+
+def compose_directive(content: str) -> str:
+    """A directive rendered for the compose model: the bare marker token is
+    removed (so it never appears literally) but the guidance after it is kept —
+    it legitimately steers how the model renders the user-facing reply."""
+    return str(content or "").replace(DIRECTIVE_GUIDANCE_MARKER, " ").strip()
+
 # Channel formatting (the "format" axis), keyed by normalized channel name. The
 # default channel (web) is deliberately absent → no directive → slim prompt;
 # only channels that genuinely need different markup carry one. Operators extend
@@ -244,7 +266,7 @@ class ReplyAction(Action):
             # (e.g. a note followed by a blank line then a question) stays clearly
             # bound to its own directive and never bleeds into the next.
             blocks = [
-                f"--- Directive {i + 1} ---\n{str(c).strip()}"
+                f"--- Directive {i + 1} ---\n{compose_directive(c)}"
                 for i, c in enumerate(items)
             ]
             directive_list = "\n".join(blocks) + "\n--- end of directives ---"
@@ -392,7 +414,10 @@ class ReplyAction(Action):
         ).strip()
         is_relay = content.lower().startswith("tell the user:")
         if len(directive_items) == 1 and is_relay and not has_params and not has_format:
-            literal = content[len("tell the user:") :].strip()
+            # Drop any model-only guidance: the literal relay skips the compose
+            # model, so guidance ("you may paraphrase", "Do NOT call …") would
+            # otherwise reach the user verbatim.
+            literal = user_facing_directive(content[len("tell the user:") :])
             if interaction is not None:
                 try:
                     interaction.set_to_executed(directives=[first], parameters=[])

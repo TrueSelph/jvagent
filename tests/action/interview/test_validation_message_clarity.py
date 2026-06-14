@@ -93,7 +93,12 @@ async def test_batch_reports_all_validation_failures(signup_action):
     failed = [e for e in result["results"] if not e.get("stored")]
     assert len(failed) == 2
     assert "response_directive" in result
-    assert "corrected values" in result["response_directive"].lower()
+    # User-facing re-ask names the humanized fields and surfaces the validator
+    # message — without raw keys or engine internals.
+    directive = result["response_directive"].lower()
+    assert "valid values" in directive
+    assert "user name" in directive and "available times" in directive
+    assert "user_name" not in directive  # raw snake_case key must not leak
 
 
 @pytest.mark.asyncio

@@ -147,6 +147,54 @@ SOP content.
     assert data["requires_actions"] == ["GoogleCalendarAction", "EmailAction"]
 
 
+def test_parse_skill_bundle_extracts_lock_companions(tmp_path: Path) -> None:
+    """lock-companions frontmatter is parsed into bundle metadata."""
+    from jvagent.scaffold.skill_resolve import parse_skill_bundle
+
+    skill_dir = tmp_path / "iv_skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """\
+---
+name: iv_skill
+description: Interview with a side FAQ allowed
+task-lock: true
+lock-companions:
+  - faq
+  - find_tool
+---
+
+SOP content.
+""",
+        encoding="utf-8",
+    )
+    data = parse_skill_bundle(skill_dir, source="builtin")
+    assert data is not None
+    assert data["task_lock"] is True
+    assert data["lock_companions"] == ["faq", "find_tool"]
+
+
+def test_parse_skill_bundle_lock_companions_defaults_empty(tmp_path: Path) -> None:
+    from jvagent.scaffold.skill_resolve import parse_skill_bundle
+
+    skill_dir = tmp_path / "plain_iv"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """\
+---
+name: plain_iv
+description: No companions
+---
+
+SOP content.
+""",
+        encoding="utf-8",
+    )
+    data = parse_skill_bundle(skill_dir, source="builtin")
+    assert data is not None
+    assert data["lock_companions"] == []
+
+
 def test_parse_skill_bundle_requires_actions_defaults_empty(tmp_path: Path) -> None:
     """Bundles without requires-actions get an empty list (backward compat)."""
     from jvagent.scaffold.skill_resolve import parse_skill_bundle

@@ -280,6 +280,199 @@ def merge_extends_allowed_tools(
     return out
 
 
+def _task_lock_from_extends_chain(
+    bundle: Mapping[str, Any],
+    bundles: Mapping[str, Mapping[str, Any]],
+    *,
+    stack: List[str],
+    app_root: Optional[str],
+    agent_namespace: Optional[str],
+    agent_name: Optional[str],
+) -> bool:
+    """True if any ancestor in this bundle's ``extends`` chain declares task-lock.
+
+    The chain may end at an action SKILL.md (``extends: action:…``) or another
+    skill bundle (``extends: skill:…``). A skill that extends a task-lock
+    action/skill is itself task-locked — that is how interview skills inherit the
+    base interview procedure's turn-lock without each restating it.
+    """
+    extends_raw = bundle.get("extends")
+    if not extends_raw:
+        return False
+    chain_key = str(extends_raw)
+    if chain_key in stack:
+        return False
+    parsed = parse_extends_ref(extends_raw)
+    if parsed is None:
+        return False
+    kind, target = parsed
+    new_stack = stack + [chain_key]
+    if kind == "action":
+        fm = load_action_frontmatter(
+            target,
+            app_root=app_root,
+            agent_namespace=agent_namespace,
+            agent_name=agent_name,
+        )
+        if bool(fm.get("task-lock") or fm.get("task_lock")):
+            return True
+        # An action SKILL.md may itself extend another action/skill.
+        return _task_lock_from_extends_chain(
+            fm,
+            bundles,
+            stack=new_stack,
+            app_root=app_root,
+            agent_namespace=agent_namespace,
+            agent_name=agent_name,
+        )
+    parent = bundles.get(target)
+    if parent is None:
+        return False
+    if bool(parent.get("task_lock")):
+        return True
+    return _task_lock_from_extends_chain(
+        parent,
+        bundles,
+        stack=new_stack,
+        app_root=app_root,
+        agent_namespace=agent_namespace,
+        agent_name=agent_name,
+    )
+
+
+def inherit_extends_task_lock(
+    bundles: Dict[str, Dict[str, Any]],
+    *,
+    app_root: Optional[str] = None,
+    agent_namespace: Optional[str] = None,
+    agent_name: Optional[str] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Propagate ``task-lock`` along ``extends`` chains.
+
+    Without this, a skill that ``extends: action:jvagent/interview`` (whose base
+    SKILL.md sets ``task-lock: true``) loads with ``task_lock=False`` — the
+    orchestrator's turn-lock resolver then can't bind the active skill each turn,
+    so the lock is silently dropped after the first turn.
+    """
+    out = dict(bundles)
+    for name, bundle in bundles.items():
+        if bool(bundle.get("task_lock")) or not bundle.get("extends"):
+            continue
+        try:
+            inherited = _task_lock_from_extends_chain(
+                bundle,
+                bundles,
+                stack=[],
+                app_root=app_root,
+                agent_namespace=agent_namespace,
+                agent_name=agent_name,
+            )
+        except Exception as exc:
+            logger.warning("sop_extend: task-lock inherit failed for %s: %s", name, exc)
+            continue
+        if inherited:
+            updated = dict(out.get(name, bundle))
+            updated["task_lock"] = True
+            out[name] = updated
+    return out
+
+
+def _norm_companion_list(raw: Any) -> List[str]:
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        raw = [raw]
+    return [str(c).strip() for c in raw if str(c).strip()]
+
+
+def _lock_companions_from_chain(
+    bundle: Mapping[str, Any],
+    bundles: Mapping[str, Mapping[str, Any]],
+    *,
+    stack: List[str],
+    app_root: Optional[str],
+    agent_namespace: Optional[str],
+    agent_name: Optional[str],
+) -> List[str]:
+    """Union of ``lock-companions`` along this bundle's ``extends`` chain."""
+    own = _norm_companion_list(bundle.get("lock_companions"))
+    base: List[str] = []
+    extends_raw = bundle.get("extends")
+    if extends_raw and str(extends_raw) not in stack:
+        parsed = parse_extends_ref(extends_raw)
+        if parsed is not None:
+            kind, target = parsed
+            new_stack = stack + [str(extends_raw)]
+            if kind == "action":
+                fm = load_action_frontmatter(
+                    target,
+                    app_root=app_root,
+                    agent_namespace=agent_namespace,
+                    agent_name=agent_name,
+                )
+                base = _norm_companion_list(
+                    fm.get("lock-companions") or fm.get("lock_companions")
+                ) + _lock_companions_from_chain(
+                    fm,
+                    bundles,
+                    stack=new_stack,
+                    app_root=app_root,
+                    agent_namespace=agent_namespace,
+                    agent_name=agent_name,
+                )
+            else:
+                parent = bundles.get(target)
+                if parent is not None:
+                    base = _lock_companions_from_chain(
+                        parent,
+                        bundles,
+                        stack=new_stack,
+                        app_root=app_root,
+                        agent_namespace=agent_namespace,
+                        agent_name=agent_name,
+                    )
+    out: List[str] = []
+    seen: set = set()
+    for c in base + own:
+        if c not in seen:
+            out.append(c)
+            seen.add(c)
+    return out
+
+
+def inherit_extends_lock_companions(
+    bundles: Dict[str, Dict[str, Any]],
+    *,
+    app_root: Optional[str] = None,
+    agent_namespace: Optional[str] = None,
+    agent_name: Optional[str] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Merge ``lock-companions`` (additively) along ``extends`` chains."""
+    out = dict(bundles)
+    for name, bundle in bundles.items():
+        if not bundle.get("extends"):
+            continue
+        try:
+            merged = _lock_companions_from_chain(
+                bundle,
+                bundles,
+                stack=[],
+                app_root=app_root,
+                agent_namespace=agent_namespace,
+                agent_name=agent_name,
+            )
+        except Exception as exc:
+            logger.warning(
+                "sop_extend: lock-companions inherit failed for %s: %s", name, exc
+            )
+            continue
+        if merged != _norm_companion_list(bundle.get("lock_companions")):
+            updated = dict(out.get(name, bundle))
+            updated["lock_companions"] = merged
+            out[name] = updated
+    return out
+
+
 def _load_skill_md_body(skill_file: Path) -> str:
     raw = skill_file.read_text(encoding="utf-8")
     if raw.strip().startswith("---"):
@@ -469,8 +662,20 @@ def compose_extended_sop_bodies(
         updated["content"] = compose_skill_body(base, raw_content.get(name, ""))
         out[name] = updated
 
-    return merge_extends_allowed_tools(
+    merged = merge_extends_allowed_tools(
         out,
+        app_root=app_root,
+        agent_namespace=agent_namespace,
+        agent_name=agent_name,
+    )
+    with_lock = inherit_extends_task_lock(
+        merged,
+        app_root=app_root,
+        agent_namespace=agent_namespace,
+        agent_name=agent_name,
+    )
+    return inherit_extends_lock_companions(
+        with_lock,
         app_root=app_root,
         agent_namespace=agent_namespace,
         agent_name=agent_name,
@@ -487,6 +692,8 @@ def reset_sop_extend_cache() -> None:
 __all__ = [
     "MAX_EXTEND_DEPTH",
     "compose_extended_sop_bodies",
+    "inherit_extends_task_lock",
+    "inherit_extends_lock_companions",
     "compose_skill_body",
     "load_action_base_sop_body",
     "load_action_frontmatter",

@@ -468,6 +468,39 @@ async def test_fast_path_strips_invitation_closer():
     assert v.interaction.response == "Classes begin Monday at 9 AM."
 
 
+async def test_n1_relay_drops_model_only_guidance():
+    """The N=1 literal-relay fast path must NOT leak a directive's model-only
+    guidance (after DIRECTIVE_GUIDANCE_MARKER) to the user — regression for the
+    interview ``tell_user`` directive leaking 'You may paraphrase … Do not ask …'
+    when a single directive is relayed without a compose call."""
+    from jvagent.action.interview.responses import tell_user
+
+    ra = ReplyAction()
+    v = _visitor_with(
+        directives=[{"content": tell_user("What is your tracking number?")}]
+    )
+    assert await ra.gather(v) is True
+    resp = v.interaction.response
+    assert resp == "What is your tracking number?"
+    assert "paraphrase" not in resp.lower()
+    assert "do not ask" not in resp.lower()
+
+
+def test_directive_guidance_marker_split():
+    """user_facing_directive drops guidance; compose_directive keeps it sans token."""
+    from jvagent.action.reply.reply_action import (
+        DIRECTIVE_GUIDANCE_MARKER,
+        compose_directive,
+        user_facing_directive,
+    )
+
+    content = f"Tell the user: Hello.{DIRECTIVE_GUIDANCE_MARKER}Do NOT call x."
+    assert user_facing_directive(content) == "Tell the user: Hello."
+    composed = compose_directive(content)
+    assert DIRECTIVE_GUIDANCE_MARKER not in composed
+    assert "Do NOT call x." in composed and "Hello." in composed
+
+
 async def test_compose_reinforces_directives_persona_style(monkeypatch):
     """With directives queued, the compose prompt carries the peak reminder and
     the system prompt ends with the compliance check (PersonaAction's layers)."""

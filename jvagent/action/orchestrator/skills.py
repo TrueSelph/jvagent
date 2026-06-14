@@ -29,6 +29,10 @@ class SkillDoc:
     spec: str = "jv"
     always_active: bool = False
     task_lock: bool = False
+    # Secondary capabilities permitted WHILE this skill holds the turn-lock:
+    # tool-name globs and/or non-locking skill names (e.g. an FAQ). Lets a locked
+    # interview field a side question, then return to its pending step.
+    lock_companions: Tuple[str, ...] = ()
     extends: Optional[str] = None
     metadata: dict = field(default_factory=dict)
 
@@ -127,6 +131,7 @@ def discover_skill_docs(
                 spec=str(bundle.get("spec") or "jv"),
                 always_active=bool(bundle.get("always_active", False)),
                 task_lock=bool(bundle.get("task_lock", False)),
+                lock_companions=tuple(bundle.get("lock_companions") or ()),
                 extends=bundle.get("extends") or None,
                 metadata=bundle.get("metadata") or {},
             )
