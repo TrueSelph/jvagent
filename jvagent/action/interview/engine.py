@@ -300,6 +300,8 @@ def _compact_field_updates(results: List[Dict[str, Any]]) -> List[Dict[str, Any]
             entry["value"] = item.get("value")
         if item.get("ignored"):
             entry["ignored"] = True
+        if item.get("idempotent"):
+            entry["idempotent"] = True
         if item.get("error"):
             entry["error"] = item.get("error")
         updates.append(entry)
@@ -663,6 +665,23 @@ async def handle_set_fields(
                 }
             )
             gate_ignored.append(fname)
+            continue
+
+        # Idempotency guard: a re-submitted field whose value exactly matches the
+        # already-stored value is a no-op. Skip the pre_processor, validator, and
+        # post_processor so their side effects (e.g. API lookups in post_processors)
+        # do not re-fire when the model redundantly re-submits a collected field.
+        # A genuine change (different value) falls through to normal processing,
+        # so review corrections are unaffected.
+        if session.has_field(fname) and str(fvalue) == str(session.get_value(fname)):
+            results.append(
+                {
+                    "field": fname,
+                    "stored": True,
+                    "idempotent": True,
+                    "value": session.get_value(fname),
+                }
+            )
             continue
 
         entry: Dict[str, Any] = {
@@ -1060,15 +1079,61 @@ async def handle_skip_field(action: Any, field: str, visitor: Any = None) -> str
         field = str((nxt or {}).get("key") or "")
 
     if not field:
+        # Nothing pending — the queue is already empty. This is not an error:
+        # route cleanly to review so the terminal sequence (review → confirm →
+        # complete) proceeds instead of looping on a skip/next_field thrash.
         return interview_tool_response(
-            ok=False,
+            ok=True,
             status=session.status.value,
-            error="No field to skip — there is no pending field.",
+            next_tool="interview__review",
             response_directive=call_tool_directive("interview__review"),
         )
 
     fdef = spec.get_field(field)
-    if fdef and fdef.required:
+    if fdef is None:
+        # Unknown field key — the model guessed a key from the prompt text
+        # instead of using a real field_reference[].key (e.g. skipping
+        # "training_availability_slot" when the field is "available_times").
+        # Do NOT record a phantom skip: re-anchor on the actual pending field so
+        # skipped_fields can never accumulate keys the spec doesn't define.
+        load_fn = action._load_fn(spec)
+        nxt = await build_next_field(session, spec, load_fn, visitor, action)
+        if not nxt:
+            return interview_tool_response(
+                ok=False,
+                status=session.status.value,
+                error_code="UNKNOWN_FIELD",
+                error=f"Unknown field '{field}'. No field is pending.",
+                next_tool="interview__review",
+                response_directive=call_tool_directive("interview__review"),
+            )
+        pending = spec.get_field(nxt["key"])
+        prompt = nxt.get("prompt") or (
+            f"Please provide your {nxt['key'].replace('_', ' ')}."
+        )
+        directive = tell_user(prompt)
+        if pending is not None and not pending.required:
+            directive += (
+                " If the user declines or has nothing to add, call "
+                f'interview__skip_field with {{"field_key": "{nxt["key"]}"}}.'
+            )
+        return interview_tool_response(
+            ok=False,
+            status=session.status.value,
+            error_code="UNKNOWN_FIELD",
+            error=(
+                f"Unknown field '{field}'. Use the field_reference key — the "
+                f"pending field is '{nxt['key']}'."
+            ),
+            next_field={
+                "key": nxt["key"],
+                "prompt": nxt.get("prompt"),
+                "required": bool(pending.required) if pending else None,
+            },
+            response_directive=directive,
+        )
+
+    if fdef.required:
         question = fdef.prompt or f"Please provide your {field.replace('_', ' ')}."
         return interview_tool_response(
             ok=False,
@@ -1270,6 +1335,21 @@ async def handle_complete(action: Any, visitor: Any = None) -> str:
     session, spec = await action._get_session_and_contract(visitor)
     if not session or not spec:
         return _no_session_response()
+
+    # Review gate (invariant #5): under manual confirmation the review step MUST
+    # run before completion. Without this backstop a model that jumps straight to
+    # interview__complete skips the confirmation summary AND closes the task —
+    # the "skips review / drops the lock" failure. handle_review sets REVIEW, so
+    # the legitimate review → confirm → complete path is unaffected. Auto-confirm
+    # chains review→complete in one turn and is intentionally exempt.
+    if spec.confirm != "auto" and session.status != InterviewStatus.REVIEW:
+        return interview_tool_response(
+            ok=False,
+            status=session.status.value,
+            error="Review required before completion.",
+            next_tool="interview__review",
+            response_directive=call_tool_directive("interview__review"),
+        )
 
     fields_summary = session.get_collected_summary()
     complete_fn = spec.handlers.complete

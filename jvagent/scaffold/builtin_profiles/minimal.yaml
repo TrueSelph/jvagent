@@ -1,4 +1,4 @@
-# Minimal runnable agent: router + OpenAI LM + persona + converse fallback
+# Minimal runnable agent: router + OpenAI LM + reply (egress) + converse fallback
 actions:
   - action: jvagent/interact_router
     context:
@@ -18,14 +18,13 @@ actions:
       max_tokens: 4096
       timeout: 60
 
-  - action: jvagent/persona
+  # ReplyAction — jvagent's single egress voice (ADR-0024/0025). Identity comes
+  # from the Agent node (alias + role); it voices queued directives/parameters
+  # into one reply. Replaces PersonaAction as the responder.
+  - action: jvagent/reply
     context:
       enabled: true
-      description: Agent persona and prompts
-      persona_name: __JVAGENT_SCAFFOLD_AGENT_TITLE__
-      persona_description: __JVAGENT_SCAFFOLD_AGENT_DESCRIPTION__
-      persona_capabilities:
-        - Answer user questions helpfully and concisely
+      description: Egress voice — furnishes the reply/respond tools and voices replies
       model_action_type: OpenAILanguageModelAction
       model: gpt-4o-mini
       model_temperature: 0.1

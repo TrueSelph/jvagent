@@ -429,9 +429,9 @@ class InteractAction(Action, ABC):
     ) -> Optional[str]:
         """Generate a response via the agent's egress responder (ADR-0014).
 
-        Resolves ``ReplyAction`` (preferred) or ``PersonaAction`` (fallback) via
-        :meth:`get_responder`, then voices directives/parameters through that
-        responder. The response is set on the interaction and persisted.
+        Resolves ``ReplyAction`` via :meth:`get_responder`, then renders
+        directives/parameters through that responder. The response is set on the
+        interaction and persisted.
 
         When the visitor has a response bus and session, the generated response is
         piped to the response bus; InteractActions can rely on calling respond() and
@@ -530,31 +530,15 @@ class InteractAction(Action, ABC):
                 )
                 return None
 
-            from jvagent.action.persona.persona_action import PersonaAction
-            from jvagent.action.reply.reply_action import ReplyAction
-
-            if isinstance(responder, PersonaAction):
-                response = await respond_fn(
-                    interaction,
-                    visitor=visitor,
-                    use_history=use_history,
-                    history_limit=history_limit,
-                    with_utterance=with_utterance,
-                    with_interpretation=with_interpretation,
-                    with_event=with_event,
-                    with_response=with_response,
-                    max_statement_length=max_statement_length,
-                    transient=transient,
-                )
-            elif isinstance(responder, ReplyAction):
-                response = await respond_fn(
-                    interaction,
-                    visitor=visitor,
-                    transient=transient,
-                )
-            else:
-                response = await respond_fn(interaction, visitor=visitor)
-
+            # ReplyAction is jvagent's single responder (ADR-0024/0025). It gathers
+            # the interaction's queued directives + parameters, sources conversation
+            # history itself, and renders one unified reply in the Agent identity.
+            # The legacy history-shaping flags are no longer plumbed per-call.
+            response = await respond_fn(
+                interaction,
+                visitor=visitor,
+                transient=transient,
+            )
             return response
         except ValidationError:
             raise

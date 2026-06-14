@@ -170,6 +170,25 @@ class Interaction(DeferredSaveMixin, Node):
     closed: bool = attribute(
         default=False, description="Whether the interaction is closed"
     )
+    emitted: bool = attribute(
+        default=False,
+        description=(
+            "Per-turn egress latch: True once a user-facing message has been "
+            "delivered this turn. Gates all re-emission paths so each turn sends "
+            "exactly one reply per channel."
+        ),
+    )
+
+    def has_emitted(self) -> bool:
+        """True if a user-facing message has already been delivered this turn."""
+        return bool(self.emitted)
+
+    def mark_emitted(self) -> bool:
+        """Latch the egress flag. Returns True if it changed (first emission)."""
+        if self.emitted:
+            return False
+        self.emitted = True
+        return True
 
     def add_directive(self, directive: str, action_name: str) -> bool:
         """Add a directive to the interaction.

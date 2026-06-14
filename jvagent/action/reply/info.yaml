@@ -7,7 +7,7 @@ package:
   meta:
     title: Reply Action
     description: >-
-      Orchestrator-native egress voice: reply (thin publish), respond (voice
+      Orchestrator-native single egress: reply (thin publish), respond (render
       text in the agent's identity), and publish. Identity lives on the Agent
       node (alias + role). Optional shaping applied only when a caller passes it.
     group: jvagent

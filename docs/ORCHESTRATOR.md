@@ -64,7 +64,7 @@ Everything the agent can do is reachable as a tool, so there is no separate rout
 
 | Tool family | Source | Notes |
 |---|---|---|
-| **Egress reply / respond** | the responder's `get_tools()` — `ReplyAction` (ADR-0014), or `PersonaAction` fallback | `reply` is the send path — slim thin-publish, or applies pending directives/parameters when present; `respond` voices text in the agent's identity. Resolved via `Action.get_responder()`. |
+| **Egress reply / respond** | the responder's `get_tools()` — `ReplyAction` (ADR-0014), or `PersonaAction` fallback | `reply` is the send path — slim thin-publish, or applies pending directives/parameters when present; `respond` renders text in the agent's identity. Resolved via `Action.get_responder()`. |
 | **IA-as-tools** | an `InteractAction`'s own `get_tools()` | Forwards to `execute(visitor)` with the `visitor` passed through from the Orchestrator. The tool *description* is built from the IA's manifest (`purpose` + `activates_on`, via `routing_triggers()`) so the model routes on intent. |
 | **Plain action tools** | each enabled `Action.get_tools()` | Ordinary capability tools. |
 | **Core tools** | [`core_tools.py`](../jvagent/action/orchestrator/core_tools.py) | Built-in orchestrator services. |
@@ -96,9 +96,9 @@ Two further knobs/notes:
 
 ## Identity and egress (ADR-0014)
 
-Identity and voicing are split along two axes:
+Identity and egress are split along two axes:
 
-- **Identity lives on the Agent node** — `alias` (display name) + `role` (purpose). The Orchestrator injects *"You are {alias}, {role}."* at the head of its system prompt (`render_identity_section`), so the model reasons and writes **as the agent** from the first token. The same fields are read by the egress voice — one source, no duplication.
+- **Identity lives on the Agent node** — `alias` (display name) + `role` (purpose). The Orchestrator injects *"You are {alias}, {role}."* at the head of its system prompt (`render_identity_section`), so the model reasons and writes **as the agent** from the first token. The same fields are read by the egress responder — one source, no duplication.
 - **Egress is a `ReplyAction`** (`jvagent/reply`) — the agent's *mouth* and the Orchestrator's send path. `reply` delivers the user's message: **slim** (a thin literal publish, no model call) by default, but when there's shaping to apply it composes via `respond` — pending **directives** (mandatory instructions), **parameters** (conditional rules), and channel **formatting**. Channel formats live in `CHANNEL_FORMATS` (overridable per channel via the `channel_formats` attribute); the default/web channel carries none, so ordinary turns stay slim for token efficiency, while voice/SMS/social channels get plain-text or channel-specific markup. `publish` is the egress primitive.
 - **Resolution is `Action.get_responder()`** — prefers `ReplyAction`, falls back to `PersonaAction`. The Orchestrator resolves the responder for its `reply`/`respond` tools and for `_finalize_directives` (which hands rails directive text to `respond`). `PersonaAction` is unchanged and remains the egress for Rails agents.
 
@@ -117,7 +117,7 @@ Behavioural rules — hardening (don't self-identify as an AI/model/provider, do
 
 **Accumulate, then inject by scope.** Each turn the Orchestrator's `_accumulate_parameters()` pools *every enabled action's* scoped params onto `interaction.parameters` — queued like directives, deduped, persisted, and **observable** (they show up under `interaction.parameters` in the Debug view, alongside `directives`). Then each injection site renders only its scope:
 
-1. **Orchestration loop** — the `{parameters_section}` slot of `ORCHESTRATOR_SYSTEM_PROMPT` (replacing the old prose "Boundaries") renders `orchestration_parameters(pool)` **plus the core response params** (`reply_core_parameters()`). The response core is applied here too as a safeguard because the executive can author a user-facing reply directly — the fast `reply` path applies no compose-time shaping, so without it a self-authored reply could reveal tools or break voice (the scrub can't catch an open-ended tools-reveal).
+1. **Orchestration loop** — the `{parameters_section}` slot of `ORCHESTRATOR_SYSTEM_PROMPT` (replacing the old prose "Boundaries") renders `orchestration_parameters(pool)` **plus the core response params** (`reply_core_parameters()`). The response core is applied here too as a safeguard because the executive can author a user-facing reply directly — the fast `reply` path applies no compose-time shaping, so without it a self-authored reply could reveal tools or break identity (the scrub can't catch an open-ended tools-reveal).
 2. **Response prompt** — `ReplyAction._compose_parameters_text()` renders the `response`-scoped pool merged with its own native core, deduped, into the compose system prompt.
 
 Core params carry an internal `ambient` flag (standing policy, not per-turn shaping), so pooling them onto the interaction does **not** trip the reply's slim-vs-compose gate — the fast literal path stays fast.
@@ -164,7 +164,7 @@ actions:
       skills_source: both        # both | app | library
   - action: jvagent/openai_lm
     context: { enabled: true }
-  - action: jvagent/reply            # egress voice (ADR-0014); identity from the Agent
+  - action: jvagent/reply            # single egress (ADR-0014); identity from the Agent
     context: { enabled: true }
   - action: jvagent/intro
     context: { enabled: true }

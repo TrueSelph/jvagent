@@ -31,7 +31,7 @@ The HTTP-facing interaction pipeline:
 | `base.py:147-191` | `execute(visitor)` — abstract contract |
 | `base.py:193-274` | `publish()` — direct write to response bus |
 | `base.py:276-305` | `publish_thought()` — thought-category emit |
-| `base.py:307-444` | `respond()` — generate via agent egress responder (ReplyAction / PersonaAction) |
+| `base.py:307-444` | `respond()` — generate via the agent egress responder (ReplyAction) |
 | `interact_walker.py:38-48` | `InteractionInitResult` dataclass |
 | `interact_walker.py:50-150` | `InteractWalker` core (state + properties) |
 | `interact_walker.py:231` | `enforce_interact_action_access()` — access control |
@@ -60,13 +60,14 @@ The HTTP-facing interaction pipeline:
 
 ```
 Generated text from a model?
-└─ Use respond() — goes through PersonaAction (polishes, applies parameters, persists)
+└─ Use respond() — goes through ReplyAction (the single responder: gathers queued
+   directives + parameters, sources history, renders one reply in the Agent identity)
 
 Pre-built string (canned, system message, summary)?
 ├─ Visible to user → publish(content, stream=False)
 └─ Internal trace (reasoning, plan)? → publish_thought(content, thought_type="reasoning")
 
-Need direct write without persona polish or history?
+Need direct write without compose or history?
 └─ publish() with explicit channel/metadata
 ```
 
@@ -120,7 +121,7 @@ pytest tests/action/interact/ tests/action/gating/ -v
 | Setting `run_in_background=True` on an action that emits the user response | Response never reaches the client. Background = post-response only. |
 | Long sleeps in `execute()` | Blocks the walker; latency spike. Use background or enqueue via `TaskMonitor` / `queue_task`. |
 | Reading `visitor.interaction` in a background action | It's closed/saved by then — read-only, don't mutate. |
-| Forgetting to call `await visitor.add_directives(...)` before `respond()` | Directives won't reach PersonaAction. |
+| Forgetting to call `await visitor.add_directives(...)` before `respond()` | Directives won't reach ReplyAction. |
 
 ---
 

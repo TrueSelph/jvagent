@@ -8,7 +8,7 @@ actions:
   - action: jvagent/web_search_retrieval_interact_action
     context:
       enabled: true
-      description: Injects web search results for the persona
+      description: Injects web search results for the agent
       weight: -75
       web_search_action_type: SerperWebSearchAction
       anchors:

@@ -321,6 +321,8 @@ class ResponseBus:
                 and full_content
                 and not deliver_transient
             ):
+                if hasattr(interaction, "mark_emitted"):
+                    interaction.mark_emitted()
                 await self._append_to_interaction_response_impl(
                     interaction=interaction,
                     message_type="adhoc",
@@ -397,6 +399,14 @@ class ResponseBus:
             )
             for chunk in chunk_text_by_lm_tokens(content):
                 acc.chunks.append(chunk)
+                if (
+                    message_category == "user"
+                    and not transient
+                    and interaction is not None
+                    and chunk
+                    and hasattr(interaction, "mark_emitted")
+                ):
+                    interaction.mark_emitted()
                 chunk_message = ResponseMessage(
                     id=acc.message_id,
                     session_id=session_id,

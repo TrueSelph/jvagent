@@ -162,10 +162,10 @@ async def test_reply_routes_shaping_to_respond(monkeypatch):
     assert captured["text"] == "Report saved."  # message passed to respond
 
 
-async def test_respond_enqueues_message_as_directive(monkeypatch):
-    """respond() with an explicit message + a queued directive enqueues the
-    message as a real directive on the interaction (so it lands in
-    interaction.directives) and MANDATORYs the whole queue."""
+async def test_respond_does_not_persist_its_own_message_as_directive(monkeypatch):
+    """respond() composes its message together with queued IA directives, but does
+    NOT persist its own message onto interaction.directives. The directive queue
+    holds only genuine upstream directives — never ReplyAction's rendered output."""
     ra = ReplyAction()
     _patch_agent(monkeypatch)
     model = MagicMock()
@@ -177,11 +177,11 @@ async def test_respond_enqueues_message_as_directive(monkeypatch):
     monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
     v = _visitor_with(directives=[{"content": "Introduce yourself."}])
     await ra.respond(v.interaction, visitor=v, text="Everest is tallest; 169.")
-    # The message is now a real queued directive (framed "Tell the user: ...")
-    # alongside the intro.
+    # Only the genuine IA directive is queued — not ReplyAction's own message.
     contents = [d["content"] for d in v.interaction.directives]
-    assert "Tell the user: Everest is tallest; 169." in contents
+    assert "Tell the user: Everest is tallest; 169." not in contents
     assert "Introduce yourself." in contents
+    # But the message IS composed (MANDATORY) into the reply.
     sysprompt = model.generate.call_args.kwargs["system"]
     assert "MANDATORY" in sysprompt and "Everest" in sysprompt
 
@@ -209,7 +209,8 @@ async def test_respond_relays_message_with_no_shaping(monkeypatch):
     assert "Tell the user: Five plus five equals ten." in sysprompt
     # The bare answer is NOT handed to the model as a user prompt to react to.
     assert model.generate.call_args.kwargs["prompt"] != "Five plus five equals ten."
-    assert "Tell the user: Five plus five equals ten." in [
+    # The relay is a transient compose input — not persisted onto directives.
+    assert "Tell the user: Five plus five equals ten." not in [
         d["content"] for d in v.interaction.directives
     ]
 
@@ -227,15 +228,14 @@ async def test_respond_does_not_double_prefix(monkeypatch):
     monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
     v = _visitor_with()
     await ra.respond(v.interaction, visitor=v, text="Tell the user the order shipped.")
-    contents = [d["content"] for d in v.interaction.directives]
-    assert "Tell the user the order shipped." in contents
-    assert (
-        "Tell the user: Tell the user" not in model.generate.call_args.kwargs["system"]
-    )
+    sysprompt = model.generate.call_args.kwargs["system"]
+    assert "Tell the user the order shipped." in sysprompt
+    assert "Tell the user: Tell the user" not in sysprompt
 
 
-async def test_respond_enqueues_message_with_params_only(monkeypatch):
-    """Queued parameters (no directives) also enqueue the message as a directive."""
+async def test_respond_composes_message_with_params_only(monkeypatch):
+    """Queued parameters (no directives) still compose the message into the reply,
+    but the message is not persisted onto interaction.directives."""
     ra = ReplyAction()
     _patch_agent(monkeypatch)
     model = MagicMock()
@@ -247,7 +247,10 @@ async def test_respond_enqueues_message_with_params_only(monkeypatch):
     monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
     v = _visitor_with(parameters=[{"condition": "asked price", "response": "$9"}])
     await ra.respond(v.interaction, visitor=v, text="Sure.")
-    assert "Tell the user: Sure." in [d["content"] for d in v.interaction.directives]
+    assert "Tell the user: Sure." in model.generate.call_args.kwargs["system"]
+    assert "Tell the user: Sure." not in [
+        d["content"] for d in v.interaction.directives
+    ]
 
 
 async def test_tool_reply_accepts_text_aliases(monkeypatch):
@@ -605,3 +608,23 @@ async def test_respond_respects_explicit_history(monkeypatch):
     explicit = [{"role": "user", "content": "explicit"}]
     await ra.respond(v.interaction, visitor=v, history=explicit)
     assert model.generate.call_args.kwargs["history"] == explicit
+
+
+async def test_respond_is_a_conduit_never_answers_utterance(monkeypatch):
+    """ReplyAction is a conduit: with no passed text and no queued
+    directives/parameters it emits nothing — it never answers the user's
+    utterance on its own, even when one is present the model could answer."""
+    ra = ReplyAction()
+    _patch_agent(monkeypatch)
+    model = MagicMock()
+    model.generate = AsyncMock(return_value="Paris.")
+
+    async def _ma(self, required=False):
+        return model
+
+    monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
+    v = _visitor_with()  # no directives, no parameters
+    v.interaction.utterance = "What is the capital of France?"
+    out = await ra.respond(v.interaction, visitor=v)
+    assert out == ""
+    model.generate.assert_not_awaited()

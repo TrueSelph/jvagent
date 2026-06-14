@@ -69,7 +69,6 @@ actions:
 
   # ReplyAction — Orchestrator-native egress voice (ADR-0014). Identity comes
   # from the Agent (alias + role); set `role` in the agent context to shape the
-  # voice. PersonaAction remains the fallback responder for Rails agents.
   - action: jvagent/reply
     context:
       enabled: true

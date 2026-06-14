@@ -46,6 +46,8 @@ Three structural causes:
 | 3 | Output layers | **Unify on `interaction.directives`.** Subsystem/orchestrator output converges into one directive stream rendered once by ReplyAction; drop the parallel relay-then-reply duplication. |
 | 4 | Scope | **Full streamline in one spec** (latch + single egress authority + unified stream + bus-only delivery + ADR). |
 | 5 | `response_directive` | **Kept as the model's in-loop guidance.** Subsystems (interview/skills) are unchanged; the *emission* is unified — the model's resulting reply is the single output, not `response_directive` + reply both emitting. |
+| 6 | Streaming latch trigger | **First delivered chunk.** ≥1 chunk ⇒ emitted (suppress fallback); 0 chunks ⇒ latch off (fallback recovers). |
+| 7 | `interaction.response` in JSON body | **Kept** in the non-streaming `/interact` response body as the turn result — no first-party client consumes both the bus and the JSON body, so it is the single delivery for direct API callers, not a duplicate. |
 
 ## 4. Target architecture — the four "ones"
 
@@ -62,8 +64,8 @@ Add a persisted boolean `Interaction.emitted` (default `False`) + helper `mark_e
 
 Set `True` at the **delivery choke points** for `user`-category, non-transient content:
 - `ReplyAction._pipe_response` — no-bus persist branch and non-streaming bus-publish branch ([reply_action.py:287-316](../../../jvagent/action/reply/reply_action.py)).
-- The **streaming** emission path (where the model streams tokens via the bus) — set `emitted` before/at stream start so a streamed reply counts.
-- `response_bus.publish` for `category == "user"` and `not transient` — the single delivery choke point that already calls `_append_to_interaction_response_impl`; set `emitted` there too so adapter/SSE delivery always latches, regardless of caller.
+- The **streaming** emission path — set `emitted` on the **first delivered chunk** (decision). If any token reached the user the turn counts as emitted (fallback suppressed); a stream that delivered **zero** chunks leaves the latch off so the fallback can recover. Do **not** wait for `streaming_complete` (an incomplete stream would otherwise let the fallback double-send on top of partial output) and do **not** latch at stream start (an early failure with nothing delivered would otherwise yield a silent turn).
+- `response_bus.publish` for `category == "user"` and `not transient` — the single delivery choke point that already calls `_append_to_interaction_response_impl`; set `emitted` there too (on the delivered chunk / non-stream message) so adapter/SSE delivery always latches, regardless of caller.
 
 The orchestrator's re-emission paths gate on `interaction.emitted` instead of `interaction.response`-emptiness:
 - `execute()` post-loop ([:635-637](../../../jvagent/action/orchestrator/orchestrator_interact_action.py)) — fallback only if `not interaction.emitted`.
@@ -96,9 +98,9 @@ ReplyAction already composes directives + text in one `respond` call ([reply_act
 ### 5.4 `interaction.response` = persistence only
 
 Audit every site that **delivers** `interaction.response` (vs. returns it as data):
-- `interact/endpoints.py` non-streaming return ([:226](../../../jvagent/action/interact/endpoints.py)) — returns it as the JSON `response` field (data/history) — **OK** (not a second send; it is the turn result for non-channel callers).
+- `interact/endpoints.py` non-streaming return ([:226](../../../jvagent/action/interact/endpoints.py)) — **keep** returning it as the JSON `response` field (decision: no first-party client consumes both the bus and the JSON body for a turn, so this is the *single* delivery for a direct non-streaming API caller, not a duplicate). Streaming clients use SSE only; non-streaming/API callers use the JSON body only.
 - Channel webhooks (`whatsapp`, `facebook_action`, `email_action`) — confirm none re-send `interaction.response` after the walk (WhatsApp already does not). Any that do switch to bus-only delivery.
-- Document the contract: **delivery is the bus; `interaction.response` is read-only history.**
+- Document the contract: **channel delivery is the bus; `interaction.response` is read-only history (also returned verbatim in the non-streaming JSON body for direct API callers).**
 
 ### 5.5 Egress contract (new ADR)
 
@@ -141,7 +143,7 @@ channel shows ONE message; no fallback/finalize re-emits (latch set)
 
 ## 9. Risks / guardrails
 
-- **Streaming latch timing:** must set `emitted` when a stream *starts* (not only on completion) so a mid-stream failure still suppresses a fallback double-send; but ensure a fully-failed stream (nothing delivered) still allows the fallback. Define: latch on first delivered chunk / on `streaming_complete`, with the fallback gated on "nothing delivered."
+- **Streaming latch timing (resolved):** latch on the **first delivered chunk**. A stream that delivered ≥1 chunk suppresses the fallback (never double); a stream that delivered zero chunks leaves the latch off so the fallback recovers (never silent). Not stream-start, not stream-complete.
 - **Non-channel callers** (the JSON `/interact` API) still need `interaction.response` in the body — keep returning it as data; only stop treating it as a *send*.
 - **`_maybe_emit_final` exact-text guard** must remain for the product-skill "distinct closing line" case (a non-terminal publish mid-turn followed by a distinct final answer).
 - **Transient/thought content** must not set the `user` latch (only `category == "user"`, `not transient`).

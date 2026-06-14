@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from jvagent.action.interview.interview_action import InterviewAction
-from jvagent.action.interview.session import load_session
+from jvagent.action.interview.session import load_session, save_session
 from jvagent.action.interview.spec import (
     load_interview_spec_from_skill,
 )
@@ -38,7 +38,13 @@ async def test_signup_golden_path_activation_to_complete(signup_action):
         tasks=SimpleNamespace(),
         utterance="Hello my name is Jane Doe",
     )
-    action._save_session = AsyncMock()
+    # Persist for real so status transitions (e.g. ACTIVE → REVIEW) survive the
+    # reload inside each handler — the review-before-complete gate depends on it.
+
+    async def _persist(session, _visitor=None):
+        await save_session(conversation, session)
+
+    action._save_session = _persist
     action._ensure_active_task = AsyncMock()
 
     await action.on_skill_activate(

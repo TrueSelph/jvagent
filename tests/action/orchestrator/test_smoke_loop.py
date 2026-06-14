@@ -23,17 +23,17 @@ async def test_trivial_turn_uses_reply_tool(
     make_orchestrator, make_visitor, publish_log, monkeypatch
 ):
     """A greeting → the model calls the persona ``reply`` tool → one reply."""
-    from jvagent.action.persona.persona_action import PersonaAction
+    from jvagent.action.reply.reply_action import ReplyAction
 
-    persona = PersonaAction()
+    reply = ReplyAction()
 
     async def _pipe(self, text, interaction, visitor, streaming=False, transient=False):
         visitor.interaction.response = (visitor.interaction.response or "") + text
 
-    monkeypatch.setattr(PersonaAction, "_pipe_response", _pipe)
+    monkeypatch.setattr(ReplyAction, "_pipe_response", _pipe)
 
     ex = make_orchestrator(
-        actions=[persona],
+        actions=[reply],
         decisions=[
             {"action": "tool", "tool": "reply", "args": {"text": "Hey there!"}},
             {"action": "final", "answer": ""},
@@ -50,18 +50,18 @@ async def test_reply_with_answer_key_is_salvaged(
     """Regression: model emits {"action":"reply","answer":"..."} (text in
     'answer', not 'args.text'). The normalizer must salvage it, voice once, and
     end the turn — not loop until the budget exhausts (live-smoke 2026-05-30)."""
-    from jvagent.action.persona.persona_action import PersonaAction
+    from jvagent.action.reply.reply_action import ReplyAction
 
-    persona = PersonaAction()
+    reply = ReplyAction()
 
     async def _pipe(self, text, interaction, visitor, streaming=False, transient=False):
         visitor.interaction.response = (visitor.interaction.response or "") + text
 
-    monkeypatch.setattr(PersonaAction, "_pipe_response", _pipe)
+    monkeypatch.setattr(ReplyAction, "_pipe_response", _pipe)
 
     # If the loop didn't end after the reply, this same decision would repeat.
     ex = make_orchestrator(
-        actions=[persona],
+        actions=[reply],
         decisions=[{"action": "reply", "answer": "Hello! How can I help?"}] * 20,
     )
     v = make_visitor(utterance="Hello there")
@@ -149,14 +149,14 @@ async def test_active_flow_offtopic_routed_elsewhere_not_into_flow(
     False): the model routes elsewhere (reply/search) and the interview is NOT
     run — the 'Who is Eldon Marks' escape. (With the default hard lock the turn
     routes into the IA; that path is covered by test_flow_lock.py.)"""
-    from jvagent.action.persona.persona_action import PersonaAction
+    from jvagent.action.reply.reply_action import ReplyAction
 
-    persona = PersonaAction()
+    reply = ReplyAction()
 
     async def _pipe(self, text, interaction, visitor, streaming=False, transient=False):
         visitor.interaction.response = (visitor.interaction.response or "") + text
 
-    monkeypatch.setattr(PersonaAction, "_pipe_response", _pipe)
+    monkeypatch.setattr(ReplyAction, "_pipe_response", _pipe)
 
     class SignupIA(flow_stub_cls):
         anchors = ["sign up for training"]
@@ -168,8 +168,8 @@ async def test_active_flow_offtopic_routed_elsewhere_not_into_flow(
 
     ia = SignupIA()
     ex = make_orchestrator(
-        actions=[persona, ia],
-        action_registry={"SignupIA": ia, "PersonaAction": persona},
+        actions=[reply, ia],
+        action_registry={"SignupIA": ia, "ReplyAction": reply},
         decisions=[
             {"action": "tool", "tool": "reply", "args": {"text": "Eldon Marks is ..."}},
         ],
@@ -194,15 +194,15 @@ async def test_terminal_ia_tool_directives_rendered(
 ):
     """A terminal IA-tool that emits via directives (not response) has them
     rendered through the persona after the turn ends."""
-    from jvagent.action.persona.persona_action import PersonaAction
+    from jvagent.action.reply.reply_action import ReplyAction
 
-    persona = PersonaAction()
+    reply = ReplyAction()
 
     async def _respond(self, interaction, visitor=None, **kw):
         visitor.interaction.response = "What's your full name?"
         return visitor.interaction.response
 
-    monkeypatch.setattr(PersonaAction, "respond", _respond)
+    monkeypatch.setattr(ReplyAction, "respond", _respond)
 
     class SignupIA(flow_stub_cls):
         anchors = ["sign up for training"]
@@ -213,8 +213,8 @@ async def test_terminal_ia_tool_directives_rendered(
 
     ia = SignupIA()
     ex = make_orchestrator(
-        actions=[persona, ia],
-        action_registry={"SignupIA": ia, "PersonaAction": persona},
+        actions=[reply, ia],
+        action_registry={"SignupIA": ia, "ReplyAction": reply},
         decisions=[{"action": "tool", "tool": "SignupIA", "args": {}}],
     )
     v = make_visitor(utterance="I'd like to sign up for training")

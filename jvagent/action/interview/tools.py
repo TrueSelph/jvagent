@@ -94,8 +94,10 @@ def _build_core_tools(action: "InterviewAction") -> List[Tool]:
             description=(
                 "Mark an optional field as skipped. Args: "
                 '{"field_key": "field_name"} — optional; if omitted, the current '
-                "pending field is skipped. Follow response_directive; "
-                "call interview__next_field when the response chains mechanically."
+                "pending field is skipped. Then follow the returned "
+                "response_directive for the next step — it routes to "
+                "interview__next_field while fields remain, or interview__review "
+                "once the last field is collected or skipped."
             ),
             parameters_schema={
                 "type": "object",

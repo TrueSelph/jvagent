@@ -3,7 +3,7 @@
 # The reference agent for the single-orchestrator Orchestrator pattern. An
 # OrchestratorInteractAction at weight -200 owns the whole turn: it resumes an
 # active flow if one owns the turn (deterministic continuation), otherwise runs
-# a think-act-observe loop over the agent's unified tool surface — the persona's
+# a think-act-observe loop over the agent's unified tool surface — the reply/respond egress
 # reply/respond tools, anchored interact-actions exposed as tools, plain action
 # tools (web search), core tools, and native SOP skills. Routing is tool
 # selection. Turn-lock: with `lock_active_flow: true` (the default set below) an
@@ -258,7 +258,6 @@ actions:
 
   # ReplyAction — the Orchestrator-native egress voice (ADR-0014). Identity
   # comes from the Agent (alias + role above); ReplyAction just voices output.
-  # PersonaAction stays available as the fallback responder for Rails agents.
   - action: jvagent/reply
     context:
       enabled: true

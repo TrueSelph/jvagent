@@ -98,8 +98,8 @@ class Action(Node):
         Actions can retrieve other actions as tools using the get_action() method:
 
         # Get action by class type
-        from jvagent.action.persona.persona_action import PersonaAction
-        persona = await self.get_action(PersonaAction)
+        from jvagent.action.reply.reply_action import ReplyAction
+        responder = await self.get_action(ReplyAction)
 
         # Get action by class name string
         llm = await self.get_action("OpenAILanguageModelAction")
@@ -230,28 +230,19 @@ class Action(Node):
         return []
 
     async def get_responder(self) -> Optional["Action"]:
-        """Resolve the agent's egress voice (ADR-0014).
+        """Resolve the agent's egress voice (ADR-0024/0025).
 
-        Prefers ``ReplyAction`` (the Orchestrator-native voice) when one is
-        enabled on the agent, else falls back to ``PersonaAction`` (Rails). Both
-        expose ``reply``/``respond``/``get_tools`` so callers can voice output
-        congruently regardless of which is installed. Returns ``None`` when
-        neither is present.
+        ``ReplyAction`` is jvagent's single output contract — the one entity that
+        gathers queued directives/parameters and voices one unified reply. It
+        exposes ``reply``/``respond``/``publish``/``get_tools``. Returns ``None``
+        when no ReplyAction is enabled (agents must enable one).
         """
         try:
             from jvagent.action.reply.reply_action import ReplyAction
 
-            reply = await self.get_action(ReplyAction)
-            if reply is not None:
-                return reply
+            return await self.get_action(ReplyAction)
         except Exception as exc:
             logger.debug("get_responder: ReplyAction resolution failed: %s", exc)
-        try:
-            from jvagent.action.persona.persona_action import PersonaAction
-
-            return await self.get_action(PersonaAction)
-        except Exception as exc:
-            logger.debug("get_responder: PersonaAction resolution failed: %s", exc)
             return None
 
     def get_manifest(self) -> "Manifest":

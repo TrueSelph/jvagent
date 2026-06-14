@@ -234,7 +234,9 @@ async def test_orchestrator_activation_event_recorded_per_mode(
     assert ev is not None
     assert ev["data"]["continuation_mode"] == "locked"
     assert ev["data"]["flow_owner"] == "SignupIA"
-    assert ev["data"]["ended_via"] == "locked"
+    # This stub IA emits nothing, so the locked turn ends silent (the realistic
+    # directive queue distinguishes this from an emitting locked turn).
+    assert ev["data"]["ended_via"] == "locked_silent"
     assert ev["data"]["tools_invoked"] == ["SignupIA"]
 
     # model-mediated: flow active but lock off

@@ -606,7 +606,6 @@ class OrchestratorInteractAction(InteractAction):
         interaction = getattr(visitor, "interaction", None)
         if interaction is None:
             return
-        before = getattr(interaction, "response", "") or ""
 
         # Curate the remaining walk path: routable IAs (exposed as tools) must
         # NOT also self-execute as weight-chain members — they are reached only
@@ -626,15 +625,12 @@ class OrchestratorInteractAction(InteractAction):
 
         await self._finalize_proactive_task(visitor)
 
-        # A rails IA invoked as a tool emits via interaction.directives rather
-        # than publishing — render any it left through the responder.
-        await self._finalize_directives(visitor)
-
-        # Light egress fallback: nothing emitted this turn → one default reply,
-        # routed through the responder (channel formatting + no-bus safe).
-        after = getattr(interaction, "response", "") or ""
-        if after == before:
-            await self._emit_reply(visitor, self.clarify_text)
+        # Single post-loop egress authority — renders any queued rails-IA
+        # directives once, else falls back to clarify_text. Gated by the per-turn
+        # emitted latch (set at every delivery choke point) so the turn never
+        # double-sends. The loop's terminal reply/respond/final paths emit
+        # directly and latch, so this no-ops when they already delivered.
+        await self._egress(visitor)
 
     @staticmethod
     def _ia_emitted(interaction: Any) -> bool:
@@ -655,6 +651,23 @@ class OrchestratorInteractAction(InteractAction):
         except Exception:
             return False
 
+    async def _egress(self, visitor: "InteractWalker") -> None:
+        """The single post-loop egress authority.
+
+        Runs only when nothing was delivered during the loop (terminal
+        reply/respond/final paths emit directly and latch ``interaction.emitted``).
+        Renders any queued rails-IA directives once, then falls back to
+        ``clarify_text`` — all gated by the emitted latch so the turn never
+        double-sends.
+        """
+        interaction = getattr(visitor, "interaction", None)
+        if interaction is None or interaction.has_emitted():
+            return
+        # Gather any directives a rails IA queued this turn (no model text to add).
+        await self._send_reply(visitor)
+        if not interaction.has_emitted():
+            await self._send_reply(visitor, self.clarify_text)
+
     async def _finalize_directives(self, visitor: "InteractWalker") -> None:
         """Render any unrendered ``interaction.directives`` through the responder.
 
@@ -666,8 +679,8 @@ class OrchestratorInteractAction(InteractAction):
         interaction = getattr(visitor, "interaction", None)
         if interaction is None:
             return
-        if getattr(interaction, "response", "") or "":
-            return  # already emitted
+        if interaction.has_emitted():
+            return  # already delivered this turn
         try:
             unexecuted = interaction.get_unexecuted_directives()
         except Exception:
@@ -1091,7 +1104,6 @@ class OrchestratorInteractAction(InteractAction):
                 visible.add(t.name)
 
         actions = await self._enabled_actions(agent)
-        from jvagent.action.persona.persona_action import PersonaAction
         from jvagent.action.reply.reply_action import ReplyAction
 
         mcp_cls = self._mcp_action_class()
@@ -1099,7 +1111,7 @@ class OrchestratorInteractAction(InteractAction):
         for action in actions:
             if action is self or isinstance(action, OrchestratorInteractAction):
                 continue
-            if isinstance(action, (ReplyAction, PersonaAction)):
+            if isinstance(action, ReplyAction):
                 continue
             # MCP gateways are surfaced by the dedicated, tool_servers-gated
             # block below — skip here so the gate is authoritative.
@@ -1161,27 +1173,65 @@ class OrchestratorInteractAction(InteractAction):
                     tools[name] = wrap_action_tool(tool, visitor=wrap_visitor)
                     longtail.add(name)
 
-        # Egress reply/respond from the responder (ReplyAction preferred, PersonaAction
-        # fallback; ADR-0014). Always visible; visitor-bound at dispatch.
+        # Egress reply/respond tools are ORCHESTRATOR-owned (ADR-0025): the model
+        # calls reply/respond → the orchestrator (the AUTHOR) queues the text as an
+        # interaction.directive → the responder (ReplyAction) gathers the whole
+        # queue and sends ONE reply. ReplyAction never adds directives itself, so
+        # it stays a pure conduit and interaction.directives reflects the turn's
+        # authored output (including model-authored / skill turns).
         responder = await self.get_responder()
         if responder is not None:
-            get_responder_tools = getattr(responder, "get_tools", None)
-            responder_tools: List[Any] = []
-            if callable(get_responder_tools):
-                try:
-                    result = get_responder_tools()
-                    if inspect.isawaitable(result):
-                        result = await result  # ReplyAction.get_tools is async
-                    responder_tools = result or []
-                except Exception as exc:
-                    logger.debug("orchestrator: responder get_tools failed: %s", exc)
-                    responder_tools = []
-            for tool in responder_tools:
-                name = getattr(tool, "name", None)
-                if not name:
-                    continue
-                tools[name] = wrap_action_tool(tool, visitor=visitor)
-                visible.add(name)
+            from jvagent.tooling.tool import Tool
+            from jvagent.tooling.tool_result import ToolResult
+
+            _egress_text_schema = {
+                "type": "object",
+                "properties": {"text": {"type": "string", "description": "The text."}},
+                "required": ["text"],
+            }
+
+            async def _egress_exec(
+                visitor: Any = None, text: str = "", **kwargs: Any
+            ) -> Any:
+                txt = text
+                if not (txt or "").strip():
+                    for k in (
+                        "message",
+                        "content",
+                        "answer",
+                        "reply",
+                        "response",
+                        "body",
+                    ):
+                        v = kwargs.get(k)
+                        if isinstance(v, str) and v.strip():
+                            txt = v
+                            break
+                await self._send_reply(visitor, txt)
+                return ToolResult(content="(replied to user)")
+
+            _reply_tool = Tool(
+                name="reply",
+                description=(
+                    "Send your reply to the user. Pass your final text; any pending "
+                    "directives/parameters are applied automatically."
+                ),
+                parameters_schema=_egress_text_schema,
+                execute=_egress_exec,
+            )
+            _respond_tool = Tool(
+                name="respond",
+                description=(
+                    "Reply to the user in the agent's identity (styled, "
+                    "identity-consistent)."
+                ),
+                parameters_schema=_egress_text_schema,
+                execute=_egress_exec,
+            )
+            tools["reply"] = wrap_action_tool(_reply_tool, visitor=visitor)
+            tools["respond"] = wrap_action_tool(_respond_tool, visitor=visitor)
+            visible.add("reply")
+            visible.add("respond")
 
         # MCP tool servers (via jvagent/mcp MCPAction; ADR-0015). Tools surface
         # as ``mcp_{server}__{tool}`` and self-route per user via the dispatch
@@ -2244,22 +2294,46 @@ class OrchestratorInteractAction(InteractAction):
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("orchestrator: activation record failed: %s", exc)
 
-    async def _emit_reply(self, visitor: "InteractWalker", text: str) -> None:
-        """Emit user-facing ``text`` through the responder (ReplyAction → channel
-        formatting, identity rules, directive composition, and graceful no-bus
-        handling; ADR-0014), falling back to a raw publish only if no responder
-        is available or its reply fails."""
-        if not (text or "").strip():
-            return
-        responder = await self.get_responder()
-        reply = getattr(responder, "reply", None) if responder is not None else None
-        if callable(reply):
+    async def _send_reply(self, visitor: "InteractWalker", text: str = "") -> None:
+        """Producer egress (ADR-0025). The orchestrator is the AUTHOR: it queues
+        the model's reply as an ``interaction.directive`` (attributed to itself),
+        then the responder (ReplyAction) GATHERS the whole queue and sends ONE
+        reply. ReplyAction never adds directives — producers queue them.
+
+        With no ``text`` this just flushes whatever directives are already queued
+        (e.g. a rails IA's). ``interaction.directives`` therefore reflects the
+        turn's authored output, including model-authored/skill turns.
+        """
+        interaction = getattr(visitor, "interaction", None)
+        text = (text or "").strip()
+        if interaction is not None and text:
+            framed = (
+                text
+                if text.lower().startswith("tell the user")
+                else f"Tell the user: {text}"
+            )
             try:
-                await reply(text, visitor)
+                interaction.add_directive(framed, self.get_class_name())
+            except Exception:
+                pass
+        responder = await self.get_responder()
+        gather = getattr(responder, "gather", None) if responder is not None else None
+        if callable(gather):
+            try:
+                await gather(visitor)
                 return
             except Exception as exc:
-                logger.warning("orchestrator: responder.reply failed: %s", exc)
-        await self.publish(visitor=visitor, content=text)
+                logger.warning("orchestrator: responder.gather failed: %s", exc)
+        # No responder/gather — best-effort raw publish so the turn isn't silent.
+        if text:
+            await self.publish(visitor=visitor, content=text)
+
+    async def _emit_reply(self, visitor: "InteractWalker", text: str) -> None:
+        """Emit user-facing ``text`` — routes through :meth:`_send_reply` so the
+        reply is queued as an interaction.directive and gathered by the responder."""
+        if not (text or "").strip():
+            return
+        await self._send_reply(visitor, text)
 
     async def _maybe_emit_final(self, visitor: "InteractWalker", answer: str) -> None:
         """Emit the loop's ``final`` answer unless that exact text was already

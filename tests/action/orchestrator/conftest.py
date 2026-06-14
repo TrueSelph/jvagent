@@ -72,7 +72,7 @@ def make_orchestrator(monkeypatch, publish_log):
 
             out: List[Any] = []
             for a in actions or []:
-                if isinstance(a, InteractAction) or isinstance(a, FlowStub):
+                if isinstance(a, (InteractAction, FlowStub)):
                     out.append(a)
             return out
 
@@ -181,6 +181,38 @@ def make_visitor():
         interaction.id = "int_1"
         interaction.utterance = utterance
         interaction.response = ""
+        # These unit tests don't exercise the real bus/no-bus emitted latch; they
+        # simulate emission by setting interaction.response. Derive the egress
+        # latch from response presence so the orchestrator's emitted-gating reads
+        # correctly here (production sets the latch at the delivery choke points).
+        interaction.has_emitted = lambda: bool((interaction.response or "").strip())
+        # Model the directive queue realistically so the producer-queues /
+        # responder-gathers egress (ADR-0025) works in these unit tests.
+        _dirs: list = []
+        _params: list = []
+        interaction.directives = _dirs
+        interaction.parameters = _params
+
+        def _add_directive(content, action_name="ReplyAction"):
+            _dirs.append(
+                {"action_name": action_name, "content": content, "executed": False}
+            )
+            return True
+
+        def _set_to_executed(directives=None, parameters=None):
+            for d in directives or []:
+                for dd in _dirs:
+                    if dd.get("content") == d.get("content"):
+                        dd["executed"] = True
+
+        interaction.add_directive = _add_directive
+        interaction.get_unexecuted_directives = lambda: [
+            d for d in _dirs if not d.get("executed")
+        ]
+        interaction.get_unexecuted_parameters = lambda: [
+            p for p in _params if not p.get("executed")
+        ]
+        interaction.set_to_executed = _set_to_executed
         conversation = MagicMock()
         conversation.context = {}
         conversation.tasks = []

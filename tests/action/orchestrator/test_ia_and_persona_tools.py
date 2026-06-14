@@ -191,19 +191,22 @@ async def test_wrap_ia_tool_access_denied():
     assert out == "(access denied)" and ran["n"] == 0
 
 
-async def test_persona_tools_reply_publishes_thin():
-    from jvagent.action.persona.persona_action import PersonaAction
+async def test_responder_tools_reply_publishes_thin(monkeypatch):
+    from jvagent.action.reply.reply_action import ReplyAction
 
-    persona = PersonaAction()
+    reply = ReplyAction()
     piped = []
 
-    async def _pipe(text, interaction, visitor, streaming=False, transient=False):
-        piped.append(text)
+    async def _pipe(
+        self, content, interaction, visitor, streaming=False, transient=False
+    ):
+        piped.append(content)
+        return True
 
-    persona._pipe_response = _pipe  # type: ignore[assignment]
+    monkeypatch.setattr(ReplyAction, "_pipe_response", _pipe)
 
     v = _visitor()
-    tools = await _persona_tools(persona, v)
+    tools = await _persona_tools(reply, v)
     assert set(tools) == {"reply", "respond"}
 
     out = await tools["reply"].run({"text": "hi there"})
@@ -211,24 +214,23 @@ async def test_persona_tools_reply_publishes_thin():
     assert "replied" in out
 
 
-async def test_persona_tools_respond_frames_via_respond(monkeypatch):
-    from jvagent.action.persona.persona_action import PersonaAction
+async def test_responder_tools_respond_frames_via_respond(monkeypatch):
+    from jvagent.action.reply.reply_action import ReplyAction
 
-    persona = PersonaAction()
+    reply = ReplyAction()
     captured = {}
 
     async def _respond(self, interaction, visitor=None, **kw):
         captured["called"] = True
         return "styled reply"
 
-    monkeypatch.setattr(PersonaAction, "respond", _respond)
+    monkeypatch.setattr(ReplyAction, "respond", _respond)
 
     v = _visitor()
     v.add_directives = AsyncMock()
-    tools = await _persona_tools(persona, v)
+    tools = await _persona_tools(reply, v)
 
     out = await tools["respond"].run({"text": "the order shipped"})
-    v.add_directives.assert_awaited_once()
     assert captured.get("called") is True
     assert "responded" in out
 
@@ -236,13 +238,11 @@ async def test_persona_tools_respond_frames_via_respond(monkeypatch):
 # --- get_responder() resolution + SE egress wiring (ADR-0014) ---
 
 
-async def test_get_responder_prefers_reply_action(monkeypatch):
-    from jvagent.action.persona.persona_action import PersonaAction
+async def test_get_responder_returns_reply_action_or_none(monkeypatch):
     from jvagent.action.reply.reply_action import ReplyAction
 
     reply = ReplyAction()
-    persona = PersonaAction()
-    reg = {"ReplyAction": reply, "PersonaAction": persona}
+    reg = {"ReplyAction": reply}
 
     async def _ga(self, name):
         key = name if isinstance(name, str) else getattr(name, "__name__", str(name))
@@ -251,9 +251,9 @@ async def test_get_responder_prefers_reply_action(monkeypatch):
     monkeypatch.setattr(OrchestratorInteractAction, "get_action", _ga)
     ex = OrchestratorInteractAction()
 
-    assert (await ex.get_responder()) is reply  # ReplyAction preferred
+    assert (await ex.get_responder()) is reply  # ReplyAction is the sole responder
     reg.pop("ReplyAction")
-    assert (await ex.get_responder()) is persona  # falls back to PersonaAction
+    assert (await ex.get_responder()) is None  # no PersonaAction fallback
 
 
 async def test_orchestrator_emits_through_reply_action(

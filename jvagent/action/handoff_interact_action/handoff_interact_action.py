@@ -9,7 +9,7 @@ from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
-from jvagent.action.persona.persona_action import PersonaAction
+from jvagent.action.reply.reply_action import ReplyAction
 from jvagent.action.whatsapp.whatsapp_action import WhatsAppAction
 from jvagent.memory import Interaction
 
@@ -257,16 +257,10 @@ class HandoffInteractAction(InteractAction):
 
         conversation_history = None
         if use_history:
-            persona_action = await self.get_action(PersonaAction)
-            if persona_action:
-                conversation_history = await persona_action._get_conversation_history(
-                    interaction,
-                    history_limit,
-                    with_utterance=with_utterance,
-                    with_response=with_response,
-                    with_interpretation=with_interpretation,
-                    with_event=with_event,
-                    max_statement_length=max_statement_length,
+            responder = await self.get_action(ReplyAction)
+            if responder:
+                conversation_history = await responder._conversation_history(
+                    None, interaction
                 )
 
                 # for reply coherence

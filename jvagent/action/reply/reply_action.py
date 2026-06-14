@@ -1,4 +1,4 @@
-"""ReplyAction — the agent's egress voice (ADR-0014).
+"""ReplyAction — the agent's single egress (ADR-0014).
 
 A lean, Orchestrator-native replacement for ``PersonaAction``'s egress role:
 
@@ -6,7 +6,7 @@ A lean, Orchestrator-native replacement for ``PersonaAction``'s egress role:
   publish, no model call); when there is shaping to apply — pending
   **directives**, **parameters**, or a channel that needs **formatting** — it
   composes via ``respond`` instead.
-- ``respond(...)`` — voice text in the agent's identity (single model call),
+- ``respond(...)`` — render text in the agent's identity (single model call),
   applying directives (as instructions), parameters (as conditional rules), and
   channel formatting when present.
 - ``publish(content)`` — the egress primitive (persist + response-bus publish).
@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 DIRECTIVES_SECTION = (
     "MANDATORY — execute ALL {count} of the following in your reply (your "
     "response is non-compliant if any is missing). The directives define WHAT "
-    "to convey; your identity and voice define HOW. Deliver each faithfully — "
+    "to convey; your identity and style define HOW. Deliver each faithfully — "
     "do not deny or disclaim a capability; if one is genuinely impossible, say "
     "briefly why instead:\n{directive_list}"
 )
@@ -65,7 +65,7 @@ DIRECTIVE_COMPLIANCE_CHECK = (
 # most, not only in the system preamble.
 DIRECTIVE_REMINDER = (
     "[Deliver every MANDATORY directive from the system prompt, in the agent's "
-    "voice, ending on the substance with no sign-off closer.]"
+    "identity, ending on the substance with no sign-off closer.]"
 )
 # Behavioural rules section. The response-scoped core hardening (no model/AI
 # disclosure, no cutoff, no internal-architecture reveal, no closers) is folded
@@ -78,11 +78,11 @@ PARAMETERS_SECTION = (
 )
 
 # Prefix that frames the Orchestrator's message as something to RELAY, not react
-# to. ``respond`` voices via a model call; passing the bare answer as the prompt
+# to. ``respond`` renders via a model call; passing the bare answer as the prompt
 # makes the model treat it as a user utterance to answer (so
 # ``respond("Five plus five equals ten.")`` came back as "That's correct. Five
 # plus five equals ten."). Enqueuing it as a "Tell the user: ..." directive makes
-# the compose model deliver it faithfully in the agent's voice.
+# the compose model deliver it faithfully in the agent's identity.
 RELAY_PREFIX = "Tell the user: "
 
 # Channel formatting (the "format" axis), keyed by normalized channel name. The
@@ -108,7 +108,7 @@ CHANNEL_FORMATS: Dict[str, str] = {
 
 
 class ReplyAction(Action):
-    """The agent's egress voice (ADR-0014): ``reply`` / ``respond`` / ``publish``."""
+    """The agent's single egress (ADR-0014): ``reply`` / ``respond`` / ``publish``."""
 
     model_action_type: str = attribute(default="OpenAILanguageModelAction")
     model: str = attribute(default="gpt-4o-mini")
@@ -127,7 +127,7 @@ class ReplyAction(Action):
             "merged + deduped with the interaction's pooled response params."
         ),
     )
-    apply_voice_rules: bool = attribute(
+    apply_reply_rules: bool = attribute(
         default=True,
         description=(
             "Apply this action's native response-hardening parameters as the "
@@ -292,6 +292,8 @@ class ReplyAction(Action):
                 changed = interaction.set_response(f"{current}\n\n{content}")
             else:
                 changed = interaction.set_response(content)
+            if hasattr(interaction, "mark_emitted"):
+                interaction.mark_emitted()
             if changed:
                 await interaction.save()
             return True
@@ -325,7 +327,7 @@ class ReplyAction(Action):
         )
 
     # ------------------------------------------------------------------
-    # Voice
+    # Egress
     # ------------------------------------------------------------------
 
     async def reply(self, text: str, visitor: Optional[Any] = None) -> bool:
@@ -354,6 +356,40 @@ class ReplyAction(Action):
             return False
         return await self.publish(text, visitor)
 
+    async def gather(self, visitor: Optional[Any] = None) -> bool:
+        """Conduit egress — emit the interaction's queued directives as ONE reply.
+
+        Producers (the orchestrator, rails IAs) queue directives; ReplyAction only
+        gathers them, never adds. A single relay directive (``Tell the user: …``)
+        with no other shaping is slim-published literally (the N=1 fast path, no
+        model call); anything else — an instruction directive, multiple
+        directives, or queued parameters/channel format — composes into one
+        identity-shaped reply.
+        """
+        interaction = getattr(visitor, "interaction", None)
+        directive_items = self._directive_items(interaction)
+        if not directive_items:
+            return False
+        channel = getattr(visitor, "channel", "default") or "default"
+        has_params = bool(self._collect_parameters(None, interaction))
+        has_format = self.apply_channel_format and bool(
+            self.get_channel_format(channel)
+        )
+        first = directive_items[0]
+        content = (
+            (first.get("content") if isinstance(first, dict) else str(first)) or ""
+        ).strip()
+        is_relay = content.lower().startswith("tell the user:")
+        if len(directive_items) == 1 and is_relay and not has_params and not has_format:
+            literal = content[len("tell the user:") :].strip()
+            if interaction is not None:
+                try:
+                    interaction.set_to_executed(directives=[first], parameters=[])
+                except Exception:
+                    pass
+            return await self.publish(literal or content, visitor)
+        return bool(await self.respond(interaction, visitor=visitor))
+
     async def respond(
         self,
         interaction: Any = None,
@@ -366,14 +402,14 @@ class ReplyAction(Action):
         parameters: Optional[List[Any]] = None,
         transient: bool = False,
     ) -> str:
-        """Voice text in the agent's identity (one model call), then publish.
+        """Render text in the agent's identity (one model call), then publish.
 
         The prompt is the explicit ``text`` (else the user's utterance for
         context). **Directives** and **parameters** (from the args or the
         interaction) shape the *system* prompt: parameters as conditional rules,
         directives as MANDATORY instructions — the whole directive queue, so a
         multi-directive set is fully addressed and none is dropped. With neither
-        present it's just identity + voice rules. Applied directives/parameters
+        present it's just identity + reply rules. Applied directives/parameters
         are marked executed. Falls back to a thin publish if no model action.
 
         Note: when called with an explicit ``text`` while the interaction already
@@ -386,7 +422,7 @@ class ReplyAction(Action):
         base = original_text
         # The explicit message text is what to RELAY to the user, not a prompt to
         # react to. Frame it as a "Tell the user: ..." directive so the compose
-        # model voices it faithfully in the agent's identity instead of treating
+        # model renders it faithfully in the agent's identity instead of treating
         # it as a user utterance to answer (the bug: respond("Five plus five
         # equals ten.") came back "That's correct. Five plus five equals ten.").
         # Enqueue it onto interaction.directives so it composes together with any
@@ -400,17 +436,14 @@ class ReplyAction(Action):
                 if base.lower().startswith("tell the user")
                 else f"{RELAY_PREFIX}{base}"
             )
-            if interaction is not None:
-                # Persist it onto interaction.directives so it composes with any
-                # queued directives/parameters and is marked executed afterwards.
-                try:
-                    interaction.add_directive(relayed_directive, self.get_class_name())
-                except Exception:
-                    pass
+            # The relayed message is a TRANSIENT compose input — it is composed
+            # alongside the queued directives below but is NOT persisted onto
+            # interaction.directives. The directive queue holds only genuine
+            # upstream IA directives; ReplyAction never stores its own rendered
+            # output there (that lives in interaction.response).
             base = ""
         directive_contents = self._directive_contents(directives, interaction)
-        # Guarantee the relayed message is represented exactly once, whether or
-        # not the interaction's unexecuted-directives view reflects the enqueue.
+        # Represent the relayed message exactly once in the in-memory compose set.
         if relayed_directive and relayed_directive not in directive_contents:
             directive_contents.append(relayed_directive)
         parameters_text = self._compose_parameters_text(parameters, interaction)
@@ -418,11 +451,14 @@ class ReplyAction(Action):
         # Directives are reply *instructions* and always go through the numbered
         # MANDATORY framing, so a multi-directive queue (e.g. the answer + an
         # intro) is fully addressed and never reduced to one. The prompt carries
-        # context: explicit base text, else the user's utterance.
+        # only the explicit relayed text (if any). ReplyAction is a CONDUIT — it
+        # NEVER answers the user's utterance on its own; with nothing passed or
+        # queued, it emits nothing.
         content = base
-        if not content and interaction is not None:
-            content = (getattr(interaction, "utterance", "") or "").strip()
-        if not content and not directive_contents and not parameters_text:
+        # Nothing to relay → emit nothing. Parameters shape HOW to phrase, not WHAT
+        # to say, so they do not by themselves justify a compose: with no passed
+        # text and no queued directive content, ReplyAction stays silent.
+        if not content and not directive_contents:
             return ""
         # Peak-attention layer: when there are directives, append a terse
         # reminder to the compose prompt itself so the obligation sits in the
@@ -484,7 +520,7 @@ class ReplyAction(Action):
             )
         except Exception as exc:
             logger.warning("ReplyAction.respond: generate failed: %s", exc)
-            # Slim fallback: the identity-voiced compose failed, but the user
+            # Slim fallback: the identity-shaped compose failed, but the user
             # still needs a reply — deliver the best plain text we have rather
             # than going silent. Prefer the original message (now framed as a
             # relay directive, so `content` may be the user's utterance), then
@@ -509,7 +545,7 @@ class ReplyAction(Action):
                 try:
                     interaction.record_action_execution(self.get_class_name())
                     # Mark the applied directives/parameters executed so they
-                    # aren't re-voiced later this turn (e.g. directive finalize).
+                    # aren't re-rendered later this turn (e.g. directive finalize).
                     interaction.set_to_executed(
                         directives=interaction.get_unexecuted_directives(),
                         parameters=interaction.get_unexecuted_parameters(),
@@ -595,7 +631,7 @@ class ReplyAction(Action):
         loop prompt.
         """
         merged: List[Any] = []
-        if self.apply_voice_rules:
+        if self.apply_reply_rules:
             merged.extend(self.parameters or [])
         if parameters:
             merged.extend(parameters)
@@ -631,7 +667,7 @@ class ReplyAction(Action):
             Tool(
                 name="respond",
                 description=(
-                    "Reply to the user in the agent's voice. Use when a styled, "
+                    "Reply to the user in the agent's identity. Use when a styled, "
                     "identity-consistent response is wanted."
                 ),
                 parameters_schema=text_schema,
