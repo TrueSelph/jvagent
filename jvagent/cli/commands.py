@@ -551,6 +551,13 @@ async def bootstrap_only(
     load_app_env(app_root=app_root)
     _set_db_env_from_config(app_root)
 
+    # Instantiate (but do not run) the Server so it registers in jvspatial's
+    # context. jvspatial >=0.0.9 resolves the auth service from the current
+    # Server (get_auth_service()), which ensure_admin_user() relies on; the
+    # serve path gets this for free, so the standalone bootstrap path must do
+    # the same or admin creation fails with "requires a Server in context".
+    create_server_from_config(app_root=app_root)
+
     # Install log counter to track warnings and errors during bootstrap
     log_counter = StartupLogCounter()
     root_logger = logging.getLogger()
