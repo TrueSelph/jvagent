@@ -75,11 +75,14 @@ def _get_core_action_path() -> Optional[Path]:
 def _build_core_package_index() -> Dict[str, Path]:
     """Map ``jvagent/<action_name>`` → action package directory."""
     global _CORE_PACKAGE_INDEX
+    # Resolve core path first: this invalidates _CORE_PACKAGE_INDEX when the
+    # env-override path changes. Checking the cache before this would return a
+    # stale index for the previous path.
+    core_path = _get_core_action_path()
     if _CORE_PACKAGE_INDEX is not None:
         return _CORE_PACKAGE_INDEX
 
     index: Dict[str, Path] = {}
-    core_path = _get_core_action_path()
     if core_path:
         for info_file in core_path.rglob("info.yaml"):
             if "__pycache__" in info_file.parts or any(
