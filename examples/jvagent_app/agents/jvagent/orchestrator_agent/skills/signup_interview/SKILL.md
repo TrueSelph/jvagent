@@ -9,6 +9,10 @@ spec: jv
 requires-actions:
   - InterviewAction
 extends: action:jvagent/interview
+# Permit a web-search side question mid-signup without dropping the turn-lock:
+# the agent answers, then returns to the active interview step.
+lock-companions:
+  - web_search__search
 interview:
   title: JVAgent Training Signup
   summary: >-
