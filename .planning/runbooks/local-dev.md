@@ -72,6 +72,16 @@ Expected:
 - Swagger UI at `http://127.0.0.1:8000/docs`
 - Bootstrap log lines for `App`, `Agents`, `Memory`, each `Action`
 
+Prefer a UI over curl? In a second terminal, run the bundled chat client on its
+own port (no Node needed when installed from a built wheel):
+
+```bash
+jvagent chat --url http://127.0.0.1:8000     # opens http://127.0.0.1:3000
+```
+
+In a source checkout, build the UI once first: `python scripts/build_jvchat.py`.
+See [`docs/jvchat.md`](../../docs/jvchat.md).
+
 ---
 
 ## 5. Authenticate
