@@ -53,12 +53,14 @@ Use `interview__get_status` for progress. On `NO_SESSION`, activate then `interv
 - Do not invent, alias, prefix, pluralize, or rename keys. Copy the exact key string from `field_reference[].key` — submit it verbatim as it appears there (e.g. if the catalog key is `email`, send `email`, not `user_email` or `email_address`; if it is `available_times`, do not shorten to `availability`). Never assume a key from another skill.
 - Submit one initial `interview__set_fields` call containing every extracted key/value from that utterance.
 - Treat the active/pending field as an anchor only; do not treat it as an exclusive key whitelist.
+- **Declines count as input too.** If the utterance also says the user lacks or declines an **optional** field (e.g. "I don't have a phone", "no employer", "skip the invoice value"), call `interview__skip_field` for that field this turn — alongside the `set_fields` call for the values they did give. Never ask an optional field the user has already declined or said they don't have.
 - If validation fails, retry with corrected keys/values from the same utterance or the next user clarification.
 
 ## Chaining
 
 - `ok:false` → handle the error; post-processors did not run for failed fields.
 - **Forward answer:** `set_fields` → `next_field` when `missing_required` non-empty → `reply`.
+- **Skip declined optionals BEFORE asking (same turn).** Immediately after `set_fields`, scan the latest message for any **optional** field the user lacks or declines ("I do not have a phone", "no second tracking number", "skip the invoice value") and call `interview__skip_field` for each one **now** — then call `next_field`. A declined optional is resolved, not pending: never surface its question. So a message giving the required values and declining an optional ends as `set_fields` → `skip_field` → (`review`/`complete` if nothing else remains), with no optional question asked.
 - **Anti-drip rule:** For one user utterance, make one initial `set_fields` call with all extracted keys; do not split the same message into one-field calls unless retrying after validation failures.
 - **Correction:** `set_fields` → `next_field` if more required fields remain, else `review` when at review stage. After review corrections, call `review` again before asking for summary confirmation.
 - **`response_directive` beats `next_tool`.** When it starts with `Tell the user:`, reply unless it explicitly says `Call interview__…`.

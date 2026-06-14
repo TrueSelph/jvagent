@@ -361,8 +361,10 @@ async def test_directives_framed_numbered_and_mandatory(monkeypatch):
         directive_items=["Tell the user the report is saved.", "Introduce yourself."]
     )
     assert "MANDATORY — execute ALL 2" in sp
-    assert "1. Tell the user the report is saved." in sp
-    assert "2. Introduce yourself." in sp
+    # Each directive is fenced so multi-line content cannot bleed across directives.
+    assert "--- Directive 1 ---\nTell the user the report is saved." in sp
+    assert "--- Directive 2 ---\nIntroduce yourself." in sp
+    assert "--- end of directives ---" in sp
     assert "do not deny or disclaim a capability" in sp.lower()
 
 

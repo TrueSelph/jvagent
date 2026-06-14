@@ -177,7 +177,10 @@ async def test_set_field_returns_next_tool_chain_directive(
             "tool": "interview__set_fields",
             "args": {"fields": {"user_name": "Eldon Marks"}},
         },
-        {"action": "tool", "tool": "reply", "args": {}},
+        # set_fields left required fields, so its result chains to next_field.
+        # The orchestrator now enforces that chain (the model can't reply past a
+        # pending next_tool), and next_field's terminal directive ends the turn.
+        {"action": "tool", "tool": "interview__next_field", "args": {}},
     ]
 
     async def _spy(

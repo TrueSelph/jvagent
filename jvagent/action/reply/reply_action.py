@@ -43,29 +43,33 @@ logger = logging.getLogger(__name__)
 # queued directive — including the message itself — as a must-do item, so it
 # never drops the real reply in favour of a styling directive (e.g. an intro).
 DIRECTIVES_SECTION = (
-    "MANDATORY — execute ALL {count} of the following in your reply (your "
-    "response is non-compliant if any is missing). The directives define WHAT "
-    "to convey; your identity and style define HOW. Deliver each faithfully — "
-    "do not deny or disclaim a capability; if one is genuinely impossible, say "
-    "briefly why instead:\n{directive_list}"
+    "MANDATORY — execute ALL {count} of the following directives in this single "
+    "reply, in the order listed. Deliver each one IN FULL: if a directive has "
+    "several parts (e.g. a statement and a question), convey every part; if it "
+    "asks the user for something, your reply includes that ask. Directives are "
+    "WHAT to say; your identity and style are only HOW. Do not deny or disclaim "
+    "a capability — if one is genuinely impossible, say briefly why. Your reply "
+    "is non-compliant if any directive, or any part of one, is missing.\n\n"
+    "DIRECTIVES (deliver all, in order):\n{directive_list}"
 )
 # Recency reinforcement (PersonaAction's COMPLIANCE CHECK): appended at the very
 # END of the system prompt when directives are present, so the last thing the
 # model reads is the obligation to verify it executed them all and to drop any
 # generic sign-off.
 DIRECTIVE_COMPLIANCE_CHECK = (
-    "COMPLIANCE CHECK (do this before you answer): confirm your reply executes "
-    "EVERY directive above and obeys every RESPONSE RULE. End on the substantive "
-    "content — no invitation closers ('let me know', 'feel free to ask', "
-    "'anything else?', 'happy to help'). If a directive is missing, revise before "
-    "sending."
+    "COMPLIANCE CHECK (before sending): confirm your reply delivers every numbered "
+    "directive in full and in order — including any question or request a directive "
+    "makes — and obeys every RESPONSE RULE. End on the substantive content; no "
+    "filler closers ('let me know', 'feel free to ask', 'anything else?', 'happy "
+    "to help'). If anything is missing, revise before sending."
 )
 # Peak-attention reinforcement: a terse reminder injected into the compose
 # *prompt* (the user-turn slot) so the obligation sits where the model attends
 # most, not only in the system preamble.
 DIRECTIVE_REMINDER = (
-    "[Deliver every MANDATORY directive from the system prompt, in the agent's "
-    "identity, ending on the substance with no sign-off closer.]"
+    "[Deliver every MANDATORY directive from the system prompt in full and in "
+    "order, in the agent's identity — include any question a directive makes and "
+    "end on substance, no sign-off closer.]"
 )
 # Behavioural rules section. The response-scoped core hardening (no model/AI
 # disclosure, no cutoff, no internal-architecture reveal, no closers) is folded
@@ -236,7 +240,14 @@ class ReplyAction(Action):
             parts.append(PARAMETERS_SECTION.format(parameter_list=parameters_text))
         items = [c for c in (directive_items or []) if c]
         if items:
-            directive_list = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(items))
+            # Demarcate each directive with explicit fences so multi-line content
+            # (e.g. a note followed by a blank line then a question) stays clearly
+            # bound to its own directive and never bleeds into the next.
+            blocks = [
+                f"--- Directive {i + 1} ---\n{str(c).strip()}"
+                for i, c in enumerate(items)
+            ]
+            directive_list = "\n".join(blocks) + "\n--- end of directives ---"
             parts.append(
                 DIRECTIVES_SECTION.format(
                     count=len(items), directive_list=directive_list

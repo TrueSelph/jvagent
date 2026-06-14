@@ -40,12 +40,12 @@ actions:
       # -- Model gearing (ADR-0016): a LIGHT completion model handles single-
       # dimensional turns (reply / one tool); the HEAVY model above takes over
       # once the turn is multi-step. Empty light_model = single-model.
-      light_model: gpt-4.1-mini
-      light_model_action_type: OpenAILanguageModelAction
-      light_model_temperature: 0.2
-      light_model_max_tokens: 1024
-      escalate_after_tool_calls: 2       # heavy after this many substantive tool calls
-      escalate_on_skill: true            # activating a skill escalates immediately
+      # light_model: gpt-4.1-mini
+      # light_model_action_type: OpenAILanguageModelAction
+      # light_model_temperature: 0.2
+      # light_model_max_tokens: 1024
+      # escalate_after_tool_calls: 2       # heavy after this many substantive tool calls
+      # escalate_on_skill: true            # activating a skill escalates immediately
 
       # HEAVY profile — the reasoning model, used once a turn proves multi-step.
       model: gpt-4.1

@@ -34,7 +34,6 @@ from .responses import (
     review_confirmation_directive,
     slim_hook_entry,
     tell_user,
-    tell_user_then_call_tool,
     tell_user_with_followup,
     validation_guidance_directive,
 )
@@ -912,7 +911,8 @@ async def handle_set_fields(
             "interview__next_field" if next_field else "interview__review",
         )
         notes_text = " ".join(n for n in note_queue if n).strip()
-        if notes_text and next_field:
+        inline_question = bool(notes_text and next_field)
+        if inline_question:
             # Inlining the next question bypasses interview__next_field, so carry
             # what that tool would have provided: the canonical key (next_field_key
             # below) and, for optional fields, the skip path.
@@ -925,19 +925,34 @@ async def handle_set_fields(
                     f'"{next_field["key"]}"}}.'
                 )
             payload["response_directive"] = directive
-        elif notes_text:
-            payload["response_directive"] = tell_user_then_call_tool(
-                notes_text, next_tool
-            )
         else:
+            # No further questions — chain straight to review/complete with a
+            # single, unambiguous tool call. A "Tell the user … then call" reply
+            # is unreliable here: models tend to deliver the note and stop,
+            # skipping the chained review (notably alongside a competing reply
+            # directive such as a first-turn intro). Any pending note is carried
+            # as system_message below so it survives without blocking the chain.
             payload["response_directive"] = call_tool_directive(next_tool)
         if next_field:
             payload["next_field_key"] = next_field["key"]
-        payload["next_tool"] = next_tool
+        if not inline_question:
+            # next_tool signals a CHAIN: the model MUST call it before finalizing.
+            # The inline-question branch above is a terminal reply (the question is
+            # already in the directive), so it carries no next_tool — the directive
+            # is delivered and the turn ends, preserving the note.
+            payload["next_tool"] = next_tool
         system_message = _compose_system_message(
             system_queue,
             fallback=str(post_outcome.get("system_message") or "").strip(),
         )
+        if notes_text and not next_field:
+            # The note had no follow-up question to attach to; surface it as
+            # context so the model can relay it when it presents the review.
+            system_message = (
+                f"{notes_text} {system_message}".strip()
+                if system_message
+                else notes_text
+            )
         if system_message:
             payload["system_message"] = system_message
 

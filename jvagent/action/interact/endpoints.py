@@ -84,6 +84,38 @@ async def _run_background_actions(walker: "InteractWalker") -> None:
     if not walker.background_actions:
         return
 
+    # Background InteractActions may make model calls (e.g. long-memory
+    # assimilation in UserLongMemoryAction). They run AFTER the turn cleared the
+    # interaction from context (``set_interaction(None)`` in the interact/stream
+    # handlers), so without re-binding it here ``track_usage`` sees no
+    # interaction and silently drops their ``model_call`` events from
+    # ``observability_metrics`` — that's why jvchat's Debug view never showed
+    # background calls. Re-bind the (now closed) interaction so those calls are
+    # still attributed to this turn, then clear it in ``finally``.
+    from jvagent.action.model.context import set_interaction
+
+    bg_interaction = getattr(walker, "interaction", None)
+    set_interaction(bg_interaction)
+    try:
+        await _run_background_actions_inner(walker)
+    finally:
+        set_interaction(None)
+        # Recompute usage so the persisted interaction reflects the model calls
+        # background actions just emitted (the turn response was already built,
+        # but the stored interaction node is what later debug reads see).
+        if bg_interaction is not None:
+            try:
+                await _finalize_usage(bg_interaction)
+            except Exception as e:  # pragma: no cover - defensive
+                logger.warning(
+                    "Failed to finalize usage after background actions: %s", e
+                )
+
+
+async def _run_background_actions_inner(walker: "InteractWalker") -> None:
+    """Run each queued background action in isolation (shared by the public
+    wrapper which manages observability context).
+    """
     for action in walker.background_actions:
         action_name = (
             action.get_class_name()
@@ -135,6 +167,44 @@ async def _run_background_actions(walker: "InteractWalker") -> None:
         finally:
             walker._current_action = None
             walker._skip_current_action_record = False
+
+
+async def _emit_interaction_log(
+    walker: "InteractWalker", interaction: Any, agent_id: Optional[str]
+) -> None:
+    """Emit the INTERACTION-level log entry for a completed turn.
+
+    Called AFTER ``_run_background_actions`` so the logged
+    ``interaction_data.observability_metrics`` include model calls those
+    background actions made (e.g. long-memory assimilation). jvchat's Debug view
+    reads this exact log field, so logging before background ran is why those
+    calls never appeared. Best-effort — never fails the request.
+    """
+    try:
+        from jvagent.action.interact.response_builder import (
+            _consolidated_tasks_for_interaction,
+        )
+        from jvagent.core.app import App
+
+        app = await App.get()
+        app_id = app.id if app else ""
+        tasks: List[Dict[str, Any]] = []
+        if walker.conversation:
+            active = walker.conversation.get_tasks(status="active")
+            tasks = _consolidated_tasks_for_interaction(
+                interaction, walker.conversation, active
+            )
+        log_data, message = _build_interaction_log_data(
+            interaction,
+            app_id,
+            agent_id,
+            tasks=tasks,
+            visitor_data=walker.data,
+        )
+        logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
+    except Exception as e:
+        # Log error but don't fail the request
+        logger.warning(f"Failed to log interaction: {e}")
 
 
 from jvagent.core.profiling import profile_enabled, profiled_request
@@ -815,33 +885,6 @@ async def interact_endpoint(
                 # Compute usage after flush so all model_call events are present
                 await _finalize_usage(interaction)
 
-                # Log interaction using INTERACTION level
-                try:
-                    from jvagent.action.interact.response_builder import (
-                        _consolidated_tasks_for_interaction,
-                    )
-                    from jvagent.core.app import App
-
-                    app = await App.get()
-                    app_id = app.id if app else ""
-                    tasks: List[Dict[str, Any]] = []
-                    if walker.conversation:
-                        active = walker.conversation.get_tasks(status="active")
-                        tasks = _consolidated_tasks_for_interaction(
-                            interaction, walker.conversation, active
-                        )
-                    log_data, message = _build_interaction_log_data(
-                        interaction,
-                        app_id,
-                        agent_id,
-                        tasks=tasks,
-                        visitor_data=walker.data,
-                    )
-                    logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
-                except Exception as e:
-                    # Log error but don't fail the request
-                    logger.warning(f"Failed to log interaction: {e}")
-
                 # Build response with environment-based filtering
                 async with profile.measure("build_response"):
                     result = await build_interact_response(
@@ -862,6 +905,10 @@ async def interact_endpoint(
                 # Fire background actions (await in Lambda to ensure it finishes before the execution freezes)
                 if walker.background_actions:
                     await _run_background_actions(walker)
+
+                # Log interaction using INTERACTION level AFTER background actions
+                # so model calls they made are present in observability_metrics.
+                await _emit_interaction_log(walker, interaction, agent_id)
 
                 return result
 
@@ -1105,36 +1152,6 @@ async def _stream_interaction(
             # Compute usage after flush so all model_call events are present
             await _finalize_usage(interaction)
 
-            # Log interaction using INTERACTION level
-            try:
-                from jvagent.action.interact.response_builder import (
-                    _consolidated_tasks_for_interaction,
-                )
-                from jvagent.core.app import App
-
-                app = await App.get()
-                app_id = app.id if app else ""
-                tasks: List[Dict[str, Any]] = []
-                if walker.conversation:
-                    active = walker.conversation.get_tasks(status="active")
-                    tasks = _consolidated_tasks_for_interaction(
-                        interaction, walker.conversation, active
-                    )
-                agent_id_for_logging = (
-                    walker.agent_id if hasattr(walker, "agent_id") else agent.id
-                )
-                log_data, message = _build_interaction_log_data(
-                    interaction,
-                    app_id,
-                    agent_id_for_logging,
-                    tasks=tasks,
-                    visitor_data=walker.data,
-                )
-                logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
-            except Exception as e:
-                # Log error but don't fail the request
-                logger.warning(f"Failed to log interaction: {e}")
-
             # Send final consolidated response (filtered for production)
             report_start = time.time()
             report = await walker.get_report()
@@ -1158,6 +1175,13 @@ async def _stream_interaction(
             # Run background actions after final chunk is yielded (await for Lambda)
             if walker.background_actions:
                 await _run_background_actions(walker)
+
+            # Log interaction using INTERACTION level AFTER background actions so
+            # model calls they made are present in observability_metrics.
+            agent_id_for_logging = (
+                walker.agent_id if hasattr(walker, "agent_id") else agent.id
+            )
+            await _emit_interaction_log(walker, interaction, agent_id_for_logging)
 
             # Log profile summary
             await finalize_profile(profile.request_id, log=True)
@@ -1183,36 +1207,6 @@ async def _stream_interaction(
             # Compute usage after flush so all model_call events are present
             await _finalize_usage(interaction)
 
-            # Log interaction using INTERACTION level
-            try:
-                from jvagent.action.interact.response_builder import (
-                    _consolidated_tasks_for_interaction,
-                )
-                from jvagent.core.app import App
-
-                app = await App.get()
-                app_id = app.id if app else ""
-                tasks: List[Dict[str, Any]] = []
-                if walker.conversation:
-                    active = walker.conversation.get_tasks(status="active")
-                    tasks = _consolidated_tasks_for_interaction(
-                        interaction, walker.conversation, active
-                    )
-                agent_id_from_walker = (
-                    walker.agent_id if hasattr(walker, "agent_id") else None
-                )
-                log_data, message = _build_interaction_log_data(
-                    interaction,
-                    app_id,
-                    agent_id_from_walker,
-                    tasks=tasks,
-                    visitor_data=walker.data,
-                )
-                logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
-            except Exception as e:
-                # Log error but don't fail the request
-                logger.warning(f"Failed to log interaction: {e}")
-
             report_start = time.time()
             report = await walker.get_report()
             final_response = await build_interact_response(
@@ -1235,6 +1229,13 @@ async def _stream_interaction(
             # Run background actions after final chunk is yielded (await for Lambda)
             if walker.background_actions:
                 await _run_background_actions(walker)
+
+            # Log interaction using INTERACTION level AFTER background actions so
+            # model calls they made are present in observability_metrics.
+            agent_id_from_walker = (
+                walker.agent_id if hasattr(walker, "agent_id") else None
+            )
+            await _emit_interaction_log(walker, interaction, agent_id_from_walker)
 
             # Log profile summary
             await finalize_profile(profile.request_id, log=True)

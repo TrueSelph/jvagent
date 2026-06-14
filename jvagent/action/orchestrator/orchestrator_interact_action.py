@@ -1898,6 +1898,15 @@ class OrchestratorInteractAction(InteractAction):
         ended_via = "budget"
         last_sig: Optional[tuple] = None
         repeats = 0
+        # Directive contract: a tool result carries the authoritative next step.
+        # ``pending_chain`` holds a tool the model MUST call before it can finalize
+        # (so it can't fabricate "you're all set" without running it); a terminal
+        # "Tell the user:" directive with no chain is the turn's reply and is
+        # delivered directly in the loop body (so the model can't re-decide and
+        # re-run the same tool). Both are enforced below — generically, no tool
+        # is named in code.
+        pending_chain: Optional[str] = None
+        chain_deflections = 0
         # Named-tool steering guard (block_raw_tool_invocation): tools the user
         # named literally this turn, deflected once each so the model re-plans
         # from intent rather than obeying the named tool.
@@ -2018,6 +2027,24 @@ class OrchestratorInteractAction(InteractAction):
                         self._progress_line(action, tool_name, args, decision),
                     )
                 if action == "final":
+                    if pending_chain and chain_deflections < 2:
+                        # A tool result told the model to call ``pending_chain``
+                        # next. Don't let it finalize (or claim completion) until
+                        # that step has run.
+                        chain_deflections += 1
+                        observations.append(
+                            {
+                                "tool": "(guard)",
+                                "args": {},
+                                "observation": (
+                                    f"(The task is not finished — call "
+                                    f"{pending_chain} now to continue. Do NOT give a "
+                                    "final answer or claim the process is "
+                                    "complete until it has run.)"
+                                ),
+                            }
+                        )
+                        continue
                     answer = _text_candidate(decision)
                     if answer:
                         await self._maybe_emit_final(visitor, answer)
@@ -2042,6 +2069,26 @@ class OrchestratorInteractAction(InteractAction):
                                     "responsibility — work out the user's "
                                     "underlying goal and choose the right "
                                     "tool(s) yourself, or answer directly.)"
+                                ),
+                            }
+                        )
+                        continue
+                    if (
+                        pending_chain
+                        and tool_name in ("reply", "respond")
+                        and chain_deflections < 2
+                    ):
+                        # A chained step is pending — don't let the model reply
+                        # (e.g. announce completion) before it runs.
+                        chain_deflections += 1
+                        observations.append(
+                            {
+                                "tool": "(guard)",
+                                "args": {},
+                                "observation": (
+                                    f"(The task is not finished — call "
+                                    f"{pending_chain} now, not reply/respond. Do NOT "
+                                    "tell the user the process is complete until it has run.)"
                                 ),
                             }
                         )
@@ -2119,6 +2166,32 @@ class OrchestratorInteractAction(InteractAction):
                             await self._emit_server_prep_tool_thoughts(
                                 visitor, observations, since_index=prep_obs_before
                             )
+                    # Directive contract (see loop-state init): a tool result may
+                    # carry the authoritative next step. A pending ``next_tool`` is a
+                    # chain the model MUST take before it can finalize; a bare
+                    # "Tell the user:" directive with no chain is the turn's reply,
+                    # delivered directly so the model cannot re-decide (e.g. re-call
+                    # the same tool). Generic — no tool is named in code.
+                    if isinstance(obs, str):
+                        nt, rd = self._result_next(obs)
+                        if nt:
+                            # The result chains to another tool the model MUST call.
+                            pending_chain = nt
+                            chain_deflections = 0
+                        elif rd.strip().lower().startswith("tell the user:"):
+                            # Terminal reply directive with no chain — deliver it
+                            # and end so the model cannot re-decide (e.g. re-run a
+                            # tool it already ran). Compose (not literal relay): the
+                            # directive may carry model-facing guidance that must be
+                            # rendered into the agent's voice, not leaked verbatim.
+                            await self._send_reply(visitor, rd, compose=True)
+                            ended_via = "directive_reply"
+                            return
+                        elif pending_chain and tool_name == pending_chain:
+                            # The pending chain just ran and produced no further
+                            # chain — it's satisfied; let the model finalize.
+                            pending_chain = None
+                            chain_deflections = 0
                     # Gearing: count substantive (non-meta, non-egress) tool calls
                     # toward escalation to the heavy model.
                     if tool is not None and tool_name not in _NON_SUBSTANTIVE_TOOLS:
@@ -2294,7 +2367,30 @@ class OrchestratorInteractAction(InteractAction):
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("orchestrator: activation record failed: %s", exc)
 
-    async def _send_reply(self, visitor: "InteractWalker", text: str = "") -> None:
+    @staticmethod
+    def _result_next(obs: str) -> Tuple[Optional[str], str]:
+        """Parse ``(next_tool, response_directive)`` from a tool result.
+
+        A tool result's JSON may carry the authoritative next step; the
+        orchestrator honors it generically (chain enforcement + terminal-reply
+        delivery). Returns ``(None, "")`` for non-JSON or malformed results.
+        """
+        try:
+            data = json.loads(obs)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return None, ""
+        if not isinstance(data, dict):
+            return None, ""
+        nt = data.get("next_tool")
+        rd = data.get("response_directive")
+        return (
+            nt if isinstance(nt, str) else None,
+            rd if isinstance(rd, str) else "",
+        )
+
+    async def _send_reply(
+        self, visitor: "InteractWalker", text: str = "", *, compose: bool = False
+    ) -> None:
         """Producer egress (ADR-0025). The orchestrator is the AUTHOR: it queues
         the model's reply as an ``interaction.directive`` (attributed to itself),
         then the responder (ReplyAction) GATHERS the whole queue and sends ONE
@@ -2303,6 +2399,15 @@ class OrchestratorInteractAction(InteractAction):
         With no ``text`` this just flushes whatever directives are already queued
         (e.g. a rails IA's). ``interaction.directives`` therefore reflects the
         turn's authored output, including model-authored/skill turns.
+
+        ``compose=True`` forces an identity compose (``respond``) instead of the
+        responder's N=1 literal relay fast path. Use it when ``text`` is an
+        authored directive that still carries model-facing guidance (e.g. an
+        interview engine directive: "Tell the user: <prompt> You may paraphrase …
+        call <tool> …"). Relaying that literally would leak the guidance to the
+        user; composing renders the user-facing intent in the agent's voice. The
+        compose step replaces the per-turn reasoning the model used to do before
+        it called reply itself.
         """
         interaction = getattr(visitor, "interaction", None)
         text = (text or "").strip()
@@ -2317,6 +2422,14 @@ class OrchestratorInteractAction(InteractAction):
             except Exception:
                 pass
         responder = await self.get_responder()
+        if compose and responder is not None:
+            respond = getattr(responder, "respond", None)
+            if callable(respond):
+                try:
+                    await respond(interaction, visitor=visitor)
+                    return
+                except Exception as exc:
+                    logger.warning("orchestrator: responder.respond failed: %s", exc)
         gather = getattr(responder, "gather", None) if responder is not None else None
         if callable(gather):
             try:
