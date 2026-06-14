@@ -65,3 +65,46 @@ async def test_pre_startup_bootstrap_admin_and_health(tmp_path, monkeypatch):
     finally:
         App.clear_cache()
         clear_app_root()
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_only_creates_admin_without_preexisting_server(
+    tmp_path, monkeypatch
+):
+    """Regression: the standalone ``jvagent bootstrap`` path must instantiate
+    the Server itself.
+
+    jvspatial >=0.0.9 resolves the auth service from the Server in context
+    (``get_auth_service()``). Unlike the serve path, ``bootstrap_only`` has no
+    Server unless it creates one — previously it raised "get_auth_service()
+    requires a Server to be set in context" and never created the admin user.
+    """
+    from jvspatial.api import get_auth_service
+
+    from jvagent.cli.commands import bootstrap_only
+    from jvagent.core.app import App
+    from jvagent.core.app_context import clear_app_root, set_app_root
+
+    monkeypatch.setenv("JVAGENT_ADMIN_PASSWORD", "secret123456")
+    monkeypatch.setenv(
+        "JVSPATIAL_JWT_SECRET_KEY", "test-jwt-secret-key-for-integration-tests"
+    )
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", "false")
+
+    app_root = str(tmp_path)
+    (tmp_path / "app.yaml").write_text(MINIMAL_APP_YAML.strip(), encoding="utf-8")
+
+    set_app_root(app_root)
+    try:
+        # Must not raise; instantiates the Server internally before
+        # ensure_admin_user().
+        await bootstrap_only(app_root=app_root)
+
+        auth = get_auth_service()
+        if hasattr(auth, "count_users"):
+            assert await auth.count_users() >= 1
+        else:
+            assert await auth._user_count() >= 1  # type: ignore[attr-defined]
+    finally:
+        App.clear_cache()
+        clear_app_root()
