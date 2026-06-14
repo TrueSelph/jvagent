@@ -101,8 +101,9 @@ metadata:
 | `license`, `metadata` | both | Claude-standard fields. `metadata.version` / `metadata.tags` for tracking + discovery cues. |
 
 (jvagent also parses chaining/dispatch extensions — `exports`, `imports`,
-`coactivate-with`, `dispatch`, `verbatim-final`, `always-active` — for the JV
-orchestration features the Claude standard doesn't cover.)
+`coactivate-with`, `dispatch`, `verbatim-final`, `always-active`, `task-lock`,
+`lock-companions` — for the JV orchestration features the Claude standard
+doesn't cover.)
 
 **`always-active: true`** keeps a skill's `allowed-tools` **pinned into the
 visible tool set every turn** under the orchestrator — even when lean surfacing
@@ -123,6 +124,29 @@ matches the skill name), the orchestrator restricts the tool surface to that ski
 the task is **completed**. Interview skills delegate session resolution to the bound
 Action's `resolve_task_lock_skill()` (typically `InterviewAction` via `extends: action:jvagent/interview`).
 The `use_skill` activate hook creates a `SKILL` task when `task-lock` is set.
+`task-lock` is **inherited along `extends` chains** — a skill that `extends:
+action:jvagent/interview` is task-locked because the base interview SKILL.md
+declares it; it need not restate `task-lock: true`.
+
+**`lock-companions:`** — secondary capabilities a `task-lock` skill tolerates
+**without releasing the lock**. A list of tool-name globs (`faq__*`, `find_tool`)
+and/or **non-locking** skill names. While locked, the callable surface is the
+locked skill's tools + `reply`/`respond` **plus** the companions' tools — and
+`use_skill` (gated to the companion skills) when any companion skills are listed.
+The turn-lock procedure block advertises the companions and instructs the model
+to handle the side request, then return to the active step; the bound Action's
+`prepare_task_lock_turn` re-grounds the pending step each turn so the interview
+resumes automatically. Guards: a companion that is itself `task-lock` is rejected
+(it must not seize the lock), and during a lock `use_skill` may only target a
+companion or the locked skill itself — switching to an unrelated skill is
+blocked. Inherited **additively** along `extends` chains. Example:
+
+```yaml
+task-lock: true            # (or inherited via extends: action:jvagent/interview)
+lock-companions:
+  - faq                    # a non-locking skill (use_skill allowed during the lock)
+  - find_tool              # a tool-name glob
+```
 
 **Lifecycle binding** (which Action owns skill hooks) is separate from the
 `requires-actions` gate. Resolution order in `action_for_skill()`:
