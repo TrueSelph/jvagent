@@ -96,10 +96,11 @@ pageindex = [
 jvagent = "jvagent.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/trueselph/jvagent"
-Repository = "https://github.com/trueselph/jvagent"
-Issues = "https://github.com/trueselph/jvagent/issues"
-Documentation = "https://github.com/trueselph/jvagent/blob/main/README.md"
+Homepage = "https://github.com/TrueSelph/jvagent"
+Repository = "https://github.com/TrueSelph/jvagent"
+Issues = "https://github.com/TrueSelph/jvagent/issues"
+Changelog = "https://github.com/TrueSelph/jvagent/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/TrueSelph/jvagent/blob/main/README.md"
 
 [tool.setuptools]
 # Mirror MANIFEST.in entries that fall inside packages into the wheel.
