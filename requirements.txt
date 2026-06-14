@@ -1,6 +1,6 @@
 # Core runtime. Test-only deps (incl. Docling for PageIndex): pyproject.toml
 # [project.optional-dependencies] test — install with: pip install -e ".[test]"
-jvspatial>=0.0.6
+jvspatial>=0.0.9
 python-dotenv>=1.0.0
 pyyaml>=6.0.0
 httpx>=0.27.0

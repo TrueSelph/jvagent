@@ -8,12 +8,23 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Changed
+
+- **`jvagent/vision` made self-contained + configurable prompt.** All vision prompts and model operations moved out of `interact/utils/vision_prompt.py` into the action's own package: prompt constants in `jvagent/action/vision/prompts.py` (`IMAGE_INTERPRETATION_PROMPT`, now multiline) and the builders/model call in `jvagent/action/vision/multimodal.py` (`build_prompt_for_vision`, `generate_image_interpretation`). `VisionAction` gains an **`interpretation_prompt`** attribute (default = `IMAGE_INTERPRETATION_PROMPT`) overridable in `agent.yaml`; precedence is per-call prompt → `interpretation_prompt` → constant. Fixes a latent bug where `describe()` passed `prompt=None`, clobbering the default and sending a `{"type":"text","text":null}` part to the model. The old `interact/utils/vision_prompt.py` and its `interact/utils/__init__` re-exports are removed (no other callers). Example `orchestrator_agent` and `zoon` agent configs document the model + `interpretation_prompt` knobs (and note that a non-vision model returns HTTP 400 `image_url is only supported by certain models`). Covered by `tests/action/test_vision_action.py`, `tests/action/test_vision_multimodal.py`.
+
 ## [0.1.0rc1] - 2026-06-14
 
 First public release candidate. Consolidates the `dev-executive` line: the
 Orchestrator turn model, the thin-harness interview v2, single-egress
 `ReplyAction`, and the skills-v2 surface. See the entries below for the full
 set of changes rolled into this candidate.
+
+### Dependencies
+
+- **Require `jvspatial>=0.0.9`.** The test/runtime surface now depends on
+  `jvspatial.core.context._default_context_var` (added upstream), so the floor
+  is raised across `pyproject.toml`, `requirements.txt`, and
+  `requirements-all.txt` (previously an inconsistent `0.0.6` / `0.0.7`).
 
 ### Removed
 
