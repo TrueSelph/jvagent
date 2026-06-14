@@ -7,12 +7,15 @@
 [![GitHub pull requests](https://img.shields.io/github/issues-pr/TrueSelph/jvagent)](https://github.com/TrueSelph/jvagent/pulls)
 [![GitHub](https://img.shields.io/github/license/TrueSelph/jvagent)](https://github.com/TrueSelph/jvagent/blob/main/LICENSE)
 
-A modular, production-shaped platform for building AI agents on a graph. Declare your app in YAML, and jvagent gives each agent a persistent memory graph, a load-on-demand plugin system, and a single-loop **Orchestrator** that turns every incoming message into tool calls — routing, turn-locking, and replying without a hand-written state machine.
+**A modular AI-agent harness for your application.** Declare **multi-tenant, multi-agent, Claude-style agents** in YAML and serve them over HTTP — with persistent per-user memory, a load-on-demand plugin system, drop-in [Anthropic Agent Skills](https://www.anthropic.com/news/skills), built-in messaging-channel delivery, and a single-loop **Orchestrator** that turns every incoming message into tool calls. No hand-written state machine, no glue code to ship an agent.
+
+> The model is the pilot. Tools are the controls. Skills are the flight plan. jvagent is the airframe — the production harness that holds it together.
 
 ## Table of Contents
 
 - [Overview](#overview)
 - [Why jvagent](#why-jvagent)
+- [How jvagent compares](#how-jvagent-compares)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Core Concepts](#core-concepts)
@@ -29,11 +32,20 @@ jvagent is built on [jvspatial](https://github.com/TrueSelph/jvspatial)'s object
 
 An **app** declares one or more **agents** in `app.yaml` / `agent.yaml`. Each agent owns a graph of **actions** (namespaced plugins, loaded on demand) plus a per-user memory subgraph (`User → Conversation → Interaction`). Traffic at `POST /agents/{id}/interact` becomes an `Interaction`; the **Orchestrator** runs the whole turn in one `execute()` — a deterministic continuation check (resume an in-flight flow) followed by a bounded think-act-observe loop over a unified tool surface. **Routing is tool selection. Turn-lock is an active flow that hasn't returned `COMPLETE`.**
 
-The result is a runtime that favors real deployments — channel adapters, rolling-window memory, distributed locks, a separate logs database, serverless-friendly warm starts — rather than a notebook demo.
+Most agent frameworks hand you a Python library and leave the production concerns — tenancy, persistence, auth, channels, deployment — as an exercise. jvagent ships them. It is the **harness** you wrap around the model: many agents per app, isolated state per user, the same agent voiced to WhatsApp / Messenger / email / web, and [Anthropic Agent Skills](https://www.anthropic.com/news/skills) dropped into a per-user sandbox without writing Python.
 
-**Use cases:** turn-based chatbots, channel adapters (WhatsApp / Messenger / email / web), document-grounded assistants, and long-running autonomous agents.
+**Use cases:** multi-tenant SaaS assistants, customer-support and sales bots across messaging channels, document-grounded copilots, and long-running autonomous agents — embedded in *your* application, not a hosted black box.
 
 ## Why jvagent
+
+### 🏢 Multi-tenant by construction
+Every user's entire history is a connected subgraph (`User → Conversation → Interaction`), so isolation is a property of the data model, not a `WHERE user_id =` you have to remember. Claude/Anthropic skills run in a **per-user code-execution sandbox** ([ADR-0017](https://github.com/TrueSelph/jvagent/blob/main/.planning/adr/0017-two-skill-specs-code-execution-substrate.md)); deleting a tenant is one edge-walk.
+
+### 👥 Many agents, one app
+Declare any number of agents in `app.yaml` / `agent.yaml`, each with its own actions, identity, memory, and tool surface — one deployment, many distinct bots. Namespaced plugins (`jvagent/`, `contrib/`, `custom/`) keep third-party actions from colliding.
+
+### 🧩 Drop-in Anthropic Agent Skills
+A standard [Anthropic Agent Skill](https://www.anthropic.com/news/skills) folder (`SKILL.md` + `scripts/`, agentskills.io-compatible) activates as a tool: the Orchestrator stages it into the caller's sandbox and the model runs its scripts. Bring Claude's skill ecosystem into your own app — no rewrite. See [`docs/ORCHESTRATOR.md`](https://github.com/TrueSelph/jvagent/blob/main/docs/ORCHESTRATOR.md).
 
 ### 🧠 One-loop Orchestrator, not a state machine
 A single action (weight `-200`) runs each turn in one `execute()`: resume an active flow if one is locked, otherwise let the model think-act-observe over every available tool. Adding a capability means adding a tool — there is no separate router, intent classifier, or capability registry to maintain. See [`docs/ORCHESTRATOR.md`](https://github.com/TrueSelph/jvagent/blob/main/docs/ORCHESTRATOR.md).
@@ -55,6 +67,27 @@ A response bus with channel adapters delivers replies to WhatsApp, Messenger, em
 
 ### 🛠️ Production-shaped
 Distributed conversation locks (Redis / DynamoDB), per-event-loop locking for serverless warm starts, model HTTP retries with backoff, MCP tool gateway, and light/heavy model gearing — all configurable from YAML.
+
+## How jvagent compares
+
+Most agent frameworks are **libraries** that orchestrate model calls; you bring the server, the tenancy, the persistence, and the channels. jvagent is a **harness** — it ships those. The table below maps each project against its *primary, native* design as of mid-2026 (most gaps are bridgeable with extra code; this is about what you get out of the box).
+
+| | **jvagent** | [LangGraph](https://www.langchain.com/langgraph) | [CrewAI](https://www.crewai.com/) | [AutoGen / AG2](https://microsoft.github.io/autogen/) | [Letta](https://www.letta.com/) | [Agno / AgentOS](https://www.agno.com/) |
+|---|---|---|---|---|---|---|
+| **Primary form** | Harness + HTTP server | Orchestration library | Orchestration library | Conversation library | Memory-agent runtime | Framework + runtime |
+| **Define an agent in** | YAML (declarative) | Python | Python (+ some YAML) | Python | Python / API | Python |
+| **Many agents per deploy** | ✅ first-class | ➖ you compose | ✅ crews | ✅ teams | ✅ | ✅ teams |
+| **Per-tenant / per-user isolation** | ✅ by data model | ➖ DIY | ➖ DIY | ➖ DIY | ✅ memory-scoped | ✅ per-session |
+| **Persistent memory model** | ✅ graph (`User→Conv→Interaction`) + pruning | ✅ checkpoints | ➖ task passing | ➖ in-context | ✅ OS-tiered memory | ✅ sessions + knowledge |
+| **Built-in messaging channels** | ✅ WhatsApp / Messenger / email / web / SSE | ❌ | ❌ | ❌ | ❌ (API) | ➖ Slack / AG-UI |
+| **Drop-in Anthropic Agent Skills** | ✅ `SKILL.md` → per-user sandbox | ❌ | ❌ | ❌ | ❌ | ➖ via Claude Agent SDK |
+| **HTTP API + auth out of the box** | ✅ | ➖ via Platform | ❌ | ❌ | ✅ server | ✅ FastAPI |
+| **Routing** | model picks tools (no router) | explicit graph edges | role/process | conversation | agent loop | model + teams |
+| **License** | MIT | MIT | MIT | (Apache/MIT) | Apache-2.0 | MPL-2.0 |
+
+✅ native · ➖ partial / with setup · ❌ not built in. Where to reach for each: **LangGraph** when you want to hand-draw a control graph with checkpoints; **CrewAI/AutoGen** for quick multi-agent prototypes; **Letta** when self-managing long-term memory is the whole point; **Agno** for a polished Python-first production runtime. Reach for **jvagent** when you want to *embed* multi-tenant, multi-agent, Claude-skill-capable agents into your own application and have the harness — memory, channels, auth, deployment — already solved.
+
+> Comparisons reflect each project's primary documented design and are not exhaustive; all of these are capable frameworks. Corrections welcome via [issue](https://github.com/TrueSelph/jvagent/issues) or PR.
 
 ## Installation
 
