@@ -317,7 +317,9 @@ async def test_reground_parent_lock_returns_to_parent(monkeypatch):
     from jvagent.action.orchestrator.skill_tasks import TaskLockPrep
 
     ex = OrchestratorInteractAction()
-    parent = SkillDoc(name="signup_interview", description="", body="PROC", task_lock=True)
+    parent = SkillDoc(
+        name="signup_interview", description="", body="PROC", task_lock=True
+    )
     bound = MagicMock()
     bound.prepare_task_lock_turn = AsyncMock(
         return_value=TaskLockPrep(

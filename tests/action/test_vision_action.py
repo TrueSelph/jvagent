@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from jvagent.action.vision.vision_action import (
+    IMAGE_INTERPRETATION_PROMPT,
     VisionAction,
     image_urls_from_visitor,
 )
@@ -44,6 +45,37 @@ async def test_describe_runs_dedicated_model(monkeypatch):
     out = await va.describe(_visitor({"image_urls": ["http://x/img.png"]}))
     assert out == "a red car"
     assert model.create_multimodal_content.called
+
+
+async def test_describe_prompt_precedence(monkeypatch):
+    """Per-call prompt > interpretation_prompt attr > IMAGE_INTERPRETATION_PROMPT."""
+    model = MagicMock()
+    model.create_multimodal_content = MagicMock(return_value=[{"type": "text"}])
+    model.generate = AsyncMock(return_value="ok")
+
+    async def _ma(self, required=False):
+        return model
+
+    monkeypatch.setattr(VisionAction, "get_model_action", _ma)
+    visitor = _visitor({"image_urls": ["http://x/img.png"]})
+
+    # Default: the canonical constant.
+    va = VisionAction()
+    await va.describe(visitor)
+    assert model.create_multimodal_content.call_args.kwargs["text"] == (
+        IMAGE_INTERPRETATION_PROMPT
+    )
+
+    # agent.yaml override via the attribute.
+    va.interpretation_prompt = "Only read the text."
+    await va.describe(visitor)
+    assert model.create_multimodal_content.call_args.kwargs["text"] == (
+        "Only read the text."
+    )
+
+    # Per-call prompt wins over the attribute.
+    await va.describe(visitor, prompt="Just colors.")
+    assert model.create_multimodal_content.call_args.kwargs["text"] == "Just colors."
 
 
 async def test_describe_no_images_is_inert(monkeypatch):

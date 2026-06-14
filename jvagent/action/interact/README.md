@@ -284,9 +284,9 @@ response = await self.respond(
 - A list of URL strings
 - A list of dicts: `{"url": "..."}` or `{"base64": "..."}` (with optional `detail` for vision models)
 
-When `image_urls` is populated, PersonaAction uses `build_prompt_for_vision()` (from `jvagent.action.interact.utils.vision_prompt`) to build multimodal prompts for vision-capable LLMs. The helper accepts `image_data_keys` (default: `("image_urls",)`) so channels can use a single standard key.
+When `image_urls` is populated, the vision helpers in `jvagent.action.vision.multimodal` build multimodal prompts for vision-capable LLMs. `build_prompt_for_vision()` accepts `image_data_keys` (default: `("image_urls",)`) so channels can use a single standard key.
 
-**Image interpretation memory**: `generate_image_interpretation()` produces an extensive image description behind the scenes. PersonaAction stores it on `interaction.image_interpretation` and injects it into the system prompt for follow-up questions when the current request has no images. Call only when `visitor.data.get("image_interpretation")` is not `False`.
+**Image interpretation memory**: `generate_image_interpretation()` (also in `jvagent.action.vision.multimodal`) produces an extensive image description behind the scenes. The orchestrator's vision reflex runs it via `jvagent/vision` `VisionAction` and stores the result as a conversation **artifact** (ADR-0021) for follow-up questions when the current request has no images. Call only when `visitor.data.get("image_interpretation")` is not `False`.
 
 **Suppression**: Set `visitor.data["image_interpretation"] = False` to skip vision (e.g. when images are document uploads for an interview). The interview action sets this automatically when media is submitted via `data_input_field`. When suppressed: no images are passed to the model, no interpretation is generated, and no interpretation is stored.
 
@@ -428,7 +428,7 @@ await self.respond(visitor, parameters=[self.parameters])  # ❌ Creates nested 
 
 ## See Also
 
-- `jvagent.action.interact.utils.vision_prompt` - `build_prompt_for_vision()` for multimodal prompts from `visitor.data["image_urls"]`
+- `jvagent.action.vision.multimodal` - `build_prompt_for_vision()` / `generate_image_interpretation()` for multimodal prompts from `visitor.data["image_urls"]`; prompt constants in `jvagent.action.vision.prompts`
 - [WhatsApp Action](../whatsapp/README.md) - Image flow, quoted image reply support
 - [InteractAction Base Class](base.py)
 - [InteractWalker](interact_walker.py)

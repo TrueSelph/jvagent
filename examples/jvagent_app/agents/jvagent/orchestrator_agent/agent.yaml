@@ -196,6 +196,11 @@ actions:
     context:
       model_action_type: OpenAILanguageModelAction
       model: gpt-4o
+      # Default instruction for the vision pass. Defaults to an exhaustive
+      # description; override here to tune what gets extracted. A per-call
+      # prompt (e.g. the interpret_images tool) still takes precedence.
+      # interpretation_prompt: >-
+      #   Describe this image, focusing on any visible text and tables.
 
   # ── Code execution substrate (ADR-0017) — the runtime CLAUDE skills assume ──
   # Exposes code_execution__bash, whose cwd is the caller's OWN per-user slice

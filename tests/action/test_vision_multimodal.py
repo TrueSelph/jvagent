@@ -1,10 +1,10 @@
-"""Unit tests for generate_image_interpretation in vision_prompt.py."""
+"""Unit tests for generate_image_interpretation in multimodal.py."""
 
 from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 
-from jvagent.action.interact.utils.vision_prompt import generate_image_interpretation
+from jvagent.action.vision.multimodal import generate_image_interpretation
 
 
 def _make_model_action(response_text: str = "a detailed description") -> MagicMock:

@@ -1,30 +1,31 @@
-"""Vision prompt builder for multimodal LLM input.
+"""Multimodal prompt builders + interpretation call (self-contained, ADR-0021).
 
-Channel-agnostic helper that any InteractAction can use to build
-multimodal prompts from visitor.data when image URLs are present.
+Channel-agnostic helpers owned by the vision action. Any action may import
+them, but they live here so the vision action carries its own prompts and
+model operations with no dependency on the interact subsystem.
 
-Standard key: visitor.data["image_urls"] is the canonical key for image URLs
-across channels (WhatsApp, Interact API, etc.). Media sources should populate
-this key with a list of URL strings, ``{url, detail?}`` dicts, or ``{base64, mime_type?}``
-dicts (inline images; preferred when remote URLs are not fetchable by the model provider).
+Standard key: ``visitor.data["image_urls"]`` is the canonical key for image
+URLs across channels (WhatsApp, Interact API, email, etc.). Media sources
+populate it with a list of URL strings, ``{url, detail?}`` dicts, or
+``{base64, mime_type?}`` dicts (inline images; preferred when remote URLs are
+not fetchable by the model provider).
 
-- build_prompt_for_vision(): Builds multimodal content for the main response.
-- generate_image_interpretation(): Produces an extensive image description behind
-  the scenes. The orchestrator's VisionAction stores the result as a conversation
-  artifact (ADR-0021) for follow-up reference. Call only when
-  visitor.data.get("image_interpretation") is not False.
+- ``build_prompt_for_vision()``: builds multimodal content for a main response.
+- ``generate_image_interpretation()``: produces an extensive image description
+  behind the scenes. ``VisionAction`` stores the result as a conversation
+  artifact (ADR-0021) for follow-up reference.
 
-Suppression: Set visitor.data["image_interpretation"] = False to skip vision
+Suppression: set ``visitor.data["image_interpretation"] = False`` to skip vision
 (e.g. when images are document uploads for an interview, not for interpretation).
 """
 
 from typing import TYPE_CHECKING, Any, List, Optional, Sequence, Union
 
+from jvagent.action.vision.prompts import IMAGE_INTERPRETATION_PROMPT
+
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
     from jvagent.action.model.language.base import LanguageModelAction
-
-IMAGE_INTERPRETATION_PROMPT = """Describe this image in exhaustive detail. Capture every visible element: objects, colors, text, layout, people, setting, background, foreground, any writing or labels, spatial relationships, and any other relevant details. Be thorough so follow-up questions can be answered from this description alone. Output only the description, no preamble."""
 
 
 def _normalize_image_urls(raw: Any) -> List[Any]:
@@ -76,12 +77,7 @@ def build_prompt_for_vision(
         raw = data.get(key)
         if not raw:
             continue
-        if isinstance(raw, list):
-            for item in raw:
-                if isinstance(item, str):
-                    image_urls.append({"url": item})
-                elif isinstance(item, dict) and ("url" in item or "base64" in item):
-                    image_urls.append(item)
+        image_urls = _normalize_image_urls(raw)
         break  # Use first key that has data
 
     if not image_urls:
@@ -111,6 +107,8 @@ async def generate_image_interpretation(
             own default is used (preserving existing behavior).
         temperature: Optional temperature override. When None the provider default is used.
         max_tokens: Optional max-tokens override. When None the provider default is used.
+        prompt: Instruction sent alongside the image(s). ``None``/empty falls back to
+            ``IMAGE_INTERPRETATION_PROMPT`` so the model never receives a null text part.
 
     Returns:
         Raw interpretation string, or empty string if no valid images
@@ -119,7 +117,8 @@ async def generate_image_interpretation(
     if not normalized:
         return ""
 
-    prompt = model_action.create_multimodal_content(text=prompt, images=normalized)
+    prompt = prompt or IMAGE_INTERPRETATION_PROMPT
+    content = model_action.create_multimodal_content(text=prompt, images=normalized)
     extra: dict = {}
     if model is not None:
         extra["model"] = model
@@ -129,10 +128,10 @@ async def generate_image_interpretation(
         extra["max_tokens"] = max_tokens
 
     result = await model_action.generate(
-        prompt=prompt,
+        prompt=content,
         stream=False,
         history=None,
-        calling_action_name="PersonaAction",
+        calling_action_name="VisionAction",
         transient=True,
         **extra,
     )

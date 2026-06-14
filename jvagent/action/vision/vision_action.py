@@ -9,8 +9,10 @@ text interpretation. Two consumers:
   (``source:"vision"``) for the current turn's reply and future back-reference.
 - The **``interpret_images`` tool** lets the model (re)interpret on demand.
 
-The reusable helpers in ``interact/utils/vision_prompt`` do the actual model
-call; this action just owns the model config and the tool surface. Suppression:
+The reusable helpers in the sibling ``multimodal`` module do the actual model
+call; this action just owns the model config and the tool surface. Everything
+vision needs — prompts and model operations — lives under this folder so the
+action is self-contained. Suppression:
 ``visitor.data["image_interpretation"] = False`` skips vision (interview opt-out).
 """
 
@@ -22,7 +24,8 @@ from typing import Any, List, Optional
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
-from jvagent.action.interact.utils.vision_prompt import generate_image_interpretation
+from jvagent.action.vision.multimodal import generate_image_interpretation
+from jvagent.action.vision.prompts import IMAGE_INTERPRETATION_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +52,14 @@ class VisionAction(Action):
     )
     model_temperature: Optional[float] = attribute(default=None)
     model_max_tokens: Optional[int] = attribute(default=None)
+    interpretation_prompt: str = attribute(
+        default=IMAGE_INTERPRETATION_PROMPT,
+        description=(
+            "Default instruction sent with the image(s). Override via agent.yaml "
+            "to tune what the vision pass extracts. A per-call prompt (e.g. the "
+            "interpret_images tool) still takes precedence."
+        ),
+    )
 
     async def describe(
         self,
@@ -60,6 +71,7 @@ class VisionAction(Action):
         urls = images if images is not None else image_urls_from_visitor(visitor)
         if not urls:
             return ""
+        prompt = prompt or self.interpretation_prompt or IMAGE_INTERPRETATION_PROMPT
         model_action = await self.get_model_action(required=False)
         if model_action is None:
             logger.warning(

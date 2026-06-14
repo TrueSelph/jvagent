@@ -11,7 +11,9 @@
 The orchestrator has **no vision path** (`orchestrator_interact_action.py` never
 reads images), so an image upload is silently dropped. The reusable machinery
 survives the PersonaAction removal — `interact/utils/vision_prompt.py`
-(`build_prompt_for_vision`, `generate_image_interpretation`), the canonical
+(`build_prompt_for_vision`, `generate_image_interpretation`; later moved to the
+self-contained `jvagent/action/vision/` package — constants in `prompts.py`,
+builders in `multimodal.py`), the canonical
 ingress `visitor.data["image_urls"]` (`interact/README.md:282` → `endpoints.py:609`
 → walker), and the suppression key `visitor.data["image_interpretation"] = False`
 (set by the interview classifier, `classification_handler.py:242` — a **data
@@ -134,6 +136,10 @@ This runs inside the existing pruning path (`conversation.py`), gated by a
   gone); update/remove `tests/action/test_persona_vision_model.py`.
 - The reusable `vision_prompt.py` helpers **stay** (VisionAction reuses them);
   `generate_image_interpretation`'s `calling_action_name` label updated.
+  *(Post-acceptance: these helpers moved into `jvagent/action/vision/` —
+  `prompts.py` (constants) + `multimodal.py` (builders) — so the action is
+  fully self-contained; `VisionAction` also gained an `interpretation_prompt`
+  config attribute, overridable in `agent.yaml`.)*
 - The suppression **data key** (`visitor.data["image_interpretation"]=False`)
   **stays** — it's the interview's vision opt-out, unrelated to the deleted field.
 - **Flag (separate cleanup):** PersonaAction itself appears fully unwired; full
@@ -161,7 +167,8 @@ pruning ─ interaction_limit reaps interaction X ─▶ drop PRODUCED edges ─
    pruning path (`prune_artifacts_with_interaction`, default True), respecting
    `pinned`. **Remove** `Interaction.image_interpretation` + `Interaction.artifacts`.
 2. `jvagent/vision/vision_action.py`: `VisionAction` (own model), `describe()`,
-   `get_tools()→interpret_images`; reuses `vision_prompt`.
+   `get_tools()→interpret_images`; reuses the sibling `multimodal` module
+   (prompt constants in `prompts.py`).
 3. Orchestrator: gated pre-loop vision hook (detect → describe → add_artifact →
    seed note); artifact-index surfacing in context; `vision` attribute.
 4. Core tools: `list_artifacts` / `get_artifact` (model back-reference).
