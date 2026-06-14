@@ -1,0 +1,17 @@
+package:
+  name: jvagent/microsoft_outlook_calendar_action
+  author: jvagent
+  archetype: MicrosoftOutlookCalendarAction
+  version: 0.0.1
+  meta:
+    title: Microsoft Outlook Calendar Action
+    description: |
+      List, create, and delete calendar events via Microsoft Graph.
+    group: jvagent
+    type: action
+  config:
+    singleton: false
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - httpx>=0.24.0

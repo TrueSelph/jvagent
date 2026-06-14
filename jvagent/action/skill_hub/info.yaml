@@ -1,0 +1,22 @@
+package:
+  name: jvagent/skill_hub
+  author: V75 Inc.
+  archetype: SkillHubAction
+  version: 1.0.0
+  meta:
+    title: Skill Hub Action
+    description: >-
+      Manage skill bundles for an agent: search the skills.sh ecosystem,
+      install a skill bundle from a GitHub source, list installed skills,
+      and remove an installed skill bundle. Installation and removal of
+      bundles with executable code are gated behind explicit user
+      confirmation.
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - "PyYAML"

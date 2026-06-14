@@ -1,0 +1,14 @@
+package:
+  name: jvagent/avatar_action
+  author: V75 Inc.
+  archetype: AvatarAction
+  version: 1.0.0
+  meta:
+    title: AvatarAction
+    description: Allows an avatar image to be added to the agent.
+    group: jvagent
+    type: action
+  config:
+    singleton: true
+  dependencies:
+    jvagent: ~0.0.1

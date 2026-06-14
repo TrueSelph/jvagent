@@ -1,0 +1,6 @@
+extends: minimal
+actions:
+  - action: jvagent/intro_interact_action
+    context:
+      enabled: true
+      description: Introductory flow for first-time users

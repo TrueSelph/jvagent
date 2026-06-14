@@ -1,0 +1,37 @@
+package:
+  name: jvagent/handoff_interact_action
+  author: Tharick Jairam
+  archetype: HandoffInteractAction
+  version: 1.0.0
+  meta:
+    title: Handoff Interact Action
+    description: >-
+      Routes human-support intent with a language model into three modes —
+      direct contact details for the user, immediate escalation with an internal
+      summary to operations (WhatsApp), or a scheduled callback — including
+      extraction of phone and email from the conversation when relevant.
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  # Pattern-agnostic manifest (ADR-0010). Consumed
+  # by pattern orchestrators and schedulers for routing hints; ignored by patterns that
+  # don't read it.
+  manifest:
+    purpose: >-
+      Route the user to a human operator via direct contact details,
+      WhatsApp escalation, or scheduled callback.
+    activates_on:
+      - "user explicitly asks to speak to a person / human / agent"
+      - "user requests escalation, callback, or live support"
+    terminates_when:
+      - "contact details delivered to user"
+      - "escalation message dispatched"
+      - "callback scheduled"
+    latency_class: quick
+    expected_duration_seconds: 3.0
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []
+    pip: []

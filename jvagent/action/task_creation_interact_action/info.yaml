@@ -1,0 +1,17 @@
+# Task Creation Action Package Descriptor
+package:
+  name: jvagent/task_creation_interact_action
+  author: jvagent
+  archetype: TaskCreationInteractAction
+  version: 0.0.1
+  meta:
+    title: Task Creation
+    description: Analyzes finished interactions to schedule future follow-up tasks.
+    group: jvagent
+    type: interact_action
+  config:
+    order:
+      weight: 200
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []

@@ -1,0 +1,19 @@
+# PDF engine — at least one of these must be present in the execution sandbox.
+# The bundled render script (scripts/render_pdf.py) auto-selects the first
+# available, in this order:
+#
+#   1. pandoc + a LaTeX engine (xelatex / pdflatex / lualatex / tectonic)  [best]
+#   2. pandoc + wkhtmltopdf
+#   3. weasyprint + markdown   (pure-Python HTML route)
+#
+# The code-execution sandbox has NO network, so these must be installed into the
+# host/image ahead of time (not pip-installed at runtime).
+#
+# System packages:
+#   pandoc
+#   texlive-xetex       (or another LaTeX distribution, or `tectonic`)
+#   wkhtmltopdf         (optional — enables the pandoc HTML route)
+#
+# Python packages (only for the WeasyPrint route):
+weasyprint>=60
+markdown>=3.4

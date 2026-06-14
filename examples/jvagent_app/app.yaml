@@ -1,0 +1,78 @@
+# jvagent Application Descriptor
+# This file defines app metadata, safe defaults, and the agent install list.
+# Agents listed in the 'agents' section are automatically installed when you run jvagent or bootstrap.
+#
+# Recommended split:
+# - app.yaml: app structure + non-secret convenience defaults
+# - env vars (.env/deploy): secrets, system-level config, deploy/runtime overrides
+
+# Application reference
+app: jvagent_demo_app
+
+# Descriptor metadata
+version: 1.0.0
+author: Your Name/Organization
+
+# jvagent version requirement (optional)
+jvagent: ~0.0.1
+
+# Application context: Properties that configure the App node
+context:
+  name: jvagent Demo App
+  description: A demo application showcasing jvagent capabilities
+  timezone: America/New_York
+
+# Application metadata (not stored in App node)
+license: MIT
+homepage: https://github.com/your-org/jvagent_demo_app
+tags:
+  - demo
+  - example
+  - boilerplate
+
+# Application-level convenience defaults.
+# Env vars still override: env > app.yaml > code default.
+# Keep secrets/system-level config in environment variables.
+config:
+  # Server metadata (host/port should be env-driven)
+  server:
+    title: jvagent Demo App API
+    description: API for jvagent Demo App
+    version: 0.0.1
+
+  # Authentication policy defaults (secret stays in env: JVSPATIAL_JWT_SECRET_KEY)
+  auth:
+    enabled: true
+    jwt_expire_minutes: 60
+    exempt_paths:
+      - /health
+      - /docs
+      - /openapi.json
+
+  # Interact endpoint defaults
+  interact:
+    rate_limit_per_minute: 60
+    max_utterance_length: 100000
+
+  # CORS defaults (deploy-specific values may override via env)
+  cors:
+    enabled: true
+    origins: http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000,http://localhost:5173,http://127.0.0.1:5173
+
+  # Performance defaults (all env-overridable)
+  performance:
+    enable_profiling: false
+    enable_agent_cache: true
+    agent_cache_ttl: 300
+    enable_action_cache: true
+    action_cache_ttl: 60
+    enable_deferred_saves: true
+    cache_cleanup_probability: 0.1
+    enable_interact_router_cache: true
+    interact_router_cache_ttl: 45
+
+# Agents
+# Agents are discovered from agents/{namespace}/{agent_name}/ and installed from this list.
+agents:
+  # Orchestrator reference agent (ADR-0012). See agents/jvagent/orchestrator_agent/README.md.
+  - jvagent/orchestrator_agent

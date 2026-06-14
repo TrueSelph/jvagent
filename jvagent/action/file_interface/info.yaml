@@ -1,0 +1,19 @@
+package:
+  name: jvagent/file_interface
+  author: V75 Inc.
+  archetype: FileInterfaceAction
+  version: 1.0.0
+  meta:
+    title: File Interface Action
+    description: >-
+      Sandboxed per-user file I/O over the jvspatial file interface (local or
+      S3). Exposes read/write/list/create/delete tools scoped to the current
+      agent's user workspace; every path is validated so tools cannot escape
+      the sandbox.
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1

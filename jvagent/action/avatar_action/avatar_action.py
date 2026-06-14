@@ -1,0 +1,228 @@
+"""Avatar action for managing agent profile images.
+
+Provides storage and retrieval of base64 encoded avatar images.
+"""
+
+import base64
+import logging
+from typing import Any, Dict, Optional, Union
+
+import aiohttp
+from jvspatial.core.annotations import attribute
+
+from jvagent.action.base import Action
+
+logger = logging.getLogger(__name__)
+
+# AUDIT-actions XC-16: cap base64-encoded avatar payloads. 5 MB raw is
+# already large for an avatar; bigger inputs are almost certainly
+# accidental or hostile.
+AVATAR_MAX_BYTES = 5 * 1024 * 1024
+ALLOWED_AVATAR_MIME_TYPES = frozenset(
+    {"image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"}
+)
+
+
+class AvatarAction(Action):
+    """Action for managing agent avatar images.
+
+    Stores a base64 encoded image and its mimetype.
+    """
+
+    image_data: str = attribute(default="", description="Base64 encoded image data")
+    mimetype: str = attribute(
+        default="", description="MIME type of the image (e.g. image/png, image/jpeg)"
+    )
+
+    async def pull_avatar_from_whatsapp(self, phone: Optional[str] = None) -> bool:
+        """Pull avatar from whatsapp and save it locally."""
+        whatsapp_action: Any = await self.get_action("WhatsAppAction")
+        if not whatsapp_action:
+            raise Exception("WhatsApp action not found")
+
+        wa = await whatsapp_action.api()
+        if not phone:
+            # Try to get own device number
+            device_info = await wa.get_host_device()
+            if device_info.get("ok", True):
+                # Try various common response formats for WPPConnect/WWebJS
+                phone = (
+                    device_info.get("sessionInfo", {}).get("me", {}).get("user")
+                    or device_info.get("wid", {}).get("user")
+                    or device_info.get("id", {}).get("user")
+                )
+
+            if not phone:
+                raise Exception(
+                    "Phone number not provided and couldn't be determined from session"
+                )
+
+        result = await wa.get_profile_picture(phone=phone)
+        if isinstance(result, dict) and not result.get("ok", True):
+            raise Exception(
+                f"Failed to get profile picture: {result.get('error', 'Unknown error')}"
+            )
+
+        # Extract URL from various possible response formats
+        url = None
+        if isinstance(result, str):
+            url = result
+        elif isinstance(result, dict):
+            url = (
+                result.get("profile_picture")
+                or result.get("url")
+                or result.get("response")
+            )
+
+        if not url or not isinstance(url, str) or not url.startswith("http"):
+            raise Exception(
+                f"Could not find a valid profile picture URL in response: {result}"
+            )
+
+        # Download image with size cap + content-type allowlist.
+        # AUDIT-actions XC-16: previously read the entire body unchecked,
+        # which let a hostile URL push tens of MB of base64 into the
+        # action node and bloat the graph DB.
+        max_bytes = AVATAR_MAX_BYTES
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status != 200:
+                    raise Exception(
+                        f"Failed to download profile picture: HTTP {response.status}"
+                    )
+                resolved_mime = (response.content_type or "image/jpeg").lower()
+                if resolved_mime not in ALLOWED_AVATAR_MIME_TYPES:
+                    raise Exception(
+                        f"Avatar MIME type {resolved_mime!r} is not allowed; "
+                        f"expected one of {sorted(ALLOWED_AVATAR_MIME_TYPES)}"
+                    )
+                # Stream-read with a cap so a server advertising a tiny
+                # Content-Length but actually sending a huge body cannot
+                # exhaust memory.
+                chunks: list = []
+                total = 0
+                async for chunk in response.content.iter_chunked(64 * 1024):
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise Exception(
+                            f"Avatar payload exceeds {max_bytes // 1024} KB cap"
+                        )
+                    chunks.append(chunk)
+                content = b"".join(chunks)
+                self.image_data = base64.b64encode(content).decode("utf-8")
+                self.mimetype = resolved_mime
+                await self.save()
+                logger.info(f"Successfully pulled avatar for {phone}")
+                return True
+
+    async def set_whatsapp_avatar(self) -> bool:
+        """Set WhatsApp profile picture using the current local avatar."""
+        whatsapp_action: Any = await self.get_action("WhatsAppAction")
+        if not whatsapp_action:
+            raise Exception("WhatsApp action not found")
+
+        if not self.image_data:
+            raise Exception("No avatar image set in AvatarAction")
+
+        # Convert base64 data back to bytes for the API
+        file_data = base64.b64decode(self.image_data)
+
+        wa = await whatsapp_action.api()
+        result = await wa.set_profile_pic(file_data=file_data)
+        if not result.get("ok", True):
+            raise Exception(
+                f"Failed to set profile picture: {result.get('error', 'Unknown error')}"
+            )
+
+        logger.info("Successfully set WhatsApp profile picture from current avatar")
+        return True
+
+    async def set_avatar(self, image_data: str, mimetype: str) -> bool:
+        """Set the avatar image data and mimetype.
+
+        AUDIT-actions XC-16: rejects payloads larger than
+        ``AVATAR_MAX_BYTES`` and MIME types outside
+        ``ALLOWED_AVATAR_MIME_TYPES``. Base64 input length is converted
+        to bytes via the 4/3 ratio so we don't have to fully decode.
+
+        Args:
+            image_data: Base64 encoded image string (without data: prefix)
+            mimetype: MIME type of the image
+
+        Returns:
+            True if successfully updated, False otherwise
+        """
+        # MIME allowlist
+        mime_norm = (mimetype or "").strip().lower()
+        if mime_norm not in ALLOWED_AVATAR_MIME_TYPES:
+            logger.warning(
+                "set_avatar: rejected mimetype %r (allowed=%s)",
+                mimetype,
+                sorted(ALLOWED_AVATAR_MIME_TYPES),
+            )
+            return False
+        # Size cap (base64 bytes → raw bytes ≈ len * 3/4).
+        raw_bytes_estimate = (len(image_data or "") * 3) // 4
+        if raw_bytes_estimate > AVATAR_MAX_BYTES:
+            logger.warning(
+                "set_avatar: payload ~%d bytes exceeds %d cap",
+                raw_bytes_estimate,
+                AVATAR_MAX_BYTES,
+            )
+            return False
+
+        self.image_data = image_data
+        self.mimetype = mime_norm
+
+        try:
+            await self.save()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save avatar for agent {self.agent_id}: {e}")
+            return False
+
+    def get_avatar(self, with_prefix: bool = True) -> Optional[str]:
+        """Get the base64 encoded avatar image.
+
+        Args:
+            with_prefix: If True, returns data URI (data:mimetype;base64,data)
+
+        Returns:
+            Avatar string or None if not set
+        """
+        if not self.image_data:
+            return None
+
+        if with_prefix:
+            return f"data:{self.mimetype};base64,{self.image_data}"
+        return self.image_data
+
+    async def delete_avatar(self) -> bool:
+        """Clear the avatar image data.
+
+        Returns:
+            True if successfully cleared, False otherwise
+        """
+        self.image_data = ""
+        self.mimetype = ""
+
+        try:
+            await self.save()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete avatar for agent {self.agent_id}: {e}")
+            return False
+
+    async def healthcheck(self) -> Union[bool, Dict[str, Any]]:
+        """Perform health check for the Avatar action.
+
+        Returns:
+            True if healthy (avatar set), False or warning dict otherwise
+        """
+        if not self.image_data:
+            return {
+                "status": "warning",
+                "message": "Avatar image is not set.",
+                "healthy": False,
+            }
+        return True

@@ -1,0 +1,37 @@
+# Minimal runnable agent: router + OpenAI LM + reply (egress) + converse fallback
+actions:
+  - action: jvagent/interact_router
+    context:
+      enabled: true
+      description: Intent-based routing to InteractActions
+      model_action_type: OpenAILanguageModelAction
+      history_limit: 3
+      enable_routing_cache: true
+
+  - action: jvagent/openai_lm
+    context:
+      enabled: true
+      description: OpenAI language model (OPENAI_API_KEY in .env)
+      api_endpoint: https://api.openai.com/v1
+      model: gpt-4o-mini
+      temperature: 0.2
+      max_tokens: 4096
+      timeout: 60
+
+  # ReplyAction — jvagent's single egress voice (ADR-0024/0025). Identity comes
+  # from the Agent node (alias + role); it voices queued directives/parameters
+  # into one reply. Replaces PersonaAction as the responder.
+  - action: jvagent/reply
+    context:
+      enabled: true
+      description: Egress voice — furnishes the reply/respond tools and voices replies
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      model_temperature: 0.1
+      model_max_tokens: 8192
+
+  - action: jvagent/converse_interact_action
+    context:
+      enabled: true
+      description: Fallback for smalltalk and casual conversation
+      weight: 100

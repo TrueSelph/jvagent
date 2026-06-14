@@ -1,0 +1,22 @@
+# Google Sheets Action Package Descriptor
+# Exposes Google Sheets operations via Sheets API with OAuth2.
+
+package:
+  name: jvagent/google_sheets_action
+  author: jvagent
+  archetype: GoogleSheetsAction
+  version: 0.0.1
+  meta:
+    title: Google Sheets Action
+    description: |
+      Read from and write to Google Sheets using the Google Sheets API.
+    group: jvagent
+    type: action
+  config:
+    singleton: false
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - google-api-python-client>=2.192.0
+      - google-auth-httplib2>=0.2.0
+      - google-auth-oauthlib>=1.2.0

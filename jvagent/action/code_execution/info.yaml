@@ -1,0 +1,20 @@
+package:
+  name: jvagent/code_execution
+  author: V75 Inc.
+  archetype: CodeExecutionAction
+  version: 1.0.0
+  meta:
+    title: Code Execution Action
+    description: >-
+      Multitenant sandboxed code execution: a bash tool whose working directory
+      is the caller's own per-user filesystem slice. The runtime substrate that
+      lets Claude-standard skills run their bundled scripts. Disabled by default;
+      enable per agent. Pluggable executor (subprocess default; swap in a
+      container/jail backend for untrusted skills).
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1

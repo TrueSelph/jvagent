@@ -1,0 +1,22 @@
+# Google Calendar Action Package Descriptor
+# Exposes Google Calendar operations via Calendar API with OAuth2.
+
+package:
+  name: jvagent/google_calendar_action
+  author: jvagent
+  archetype: GoogleCalendarAction
+  version: 0.0.1
+  meta:
+    title: Google Calendar Action
+    description: |
+      Manage calendar events using the Google Calendar API.
+    group: jvagent
+    type: action
+  config:
+    singleton: false
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - google-api-python-client>=2.192.0
+      - google-auth-httplib2>=0.2.0
+      - google-auth-oauthlib>=1.2.0

@@ -1,0 +1,34 @@
+# HuggingFace Embedding Model Action Package Descriptor
+
+package:
+  # Action name in namespace/action_name format
+  name: jvagent/huggingface_embedding
+
+  # Package author
+  author: jvagent
+
+  # Archetype: The main Action class name
+  archetype: HuggingFaceEmbeddingModelAction
+
+  # Package version
+  version: 0.0.1
+
+  # Package metadata
+  meta:
+    title: HuggingFace Embedding Model Action
+    description: Embedding model integration for HuggingFace Inference API
+    group: jvagent
+    type: embedding_model_action
+
+  # Package configuration
+  config:
+    order:
+      weight: 0
+
+  # Package dependencies
+  dependencies:
+    jvagent: ~0.0.1
+    # Pip dependencies (installed automatically before action loading)
+    pip:
+      - httpx>=0.24.0
+

@@ -1,0 +1,17 @@
+package:
+  name: jvagent/postiz_action
+  author: V75 Inc.
+  archetype: PostizAction
+  version: 1.0.0
+  meta:
+    title: Postiz Action
+    description: Core action for Postiz social media management
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - httpx>=0.24.0

@@ -1,0 +1,23 @@
+package:
+  name: jvagent/vision
+  author: V75 Inc.
+  archetype: VisionAction
+  version: 1.0.0
+  meta:
+    title: Vision Action
+    description: >-
+      Multimodal image interpretation (ADR-0021). Runs a configurable vision
+      model (model_action_type/model — must be vision-capable) over images in
+      visitor.data["image_urls"] to produce a text interpretation, using a
+      configurable default prompt (interpretation_prompt). Used as a
+      deterministic pre-loop reflex by the orchestrator (stored as a conversation
+      artifact) and as an on-demand interpret_images tool. Self-contained:
+      prompts in prompts.py, builders/model call in multimodal.py. Off by
+      default; enable via the orchestrator's `vision` gate.
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1

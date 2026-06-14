@@ -1,0 +1,20 @@
+include README.md
+include LICENSE
+include pyproject.toml
+include .env.example
+recursive-include jvagent *.py
+
+# Action + skill data — every action package ships an `info.yaml` (the
+# action loader walks these to discover core actions at runtime), every
+# skill bundle ships a `SKILL.md`, and some packages ship per-package
+# READMEs or pinned `requirements.txt` files. Without these, non-editable
+# wheel installs cannot discover any core action and emit
+# "Action jvagent/<x> not found locally or in core library" warnings.
+recursive-include jvagent *.yaml
+recursive-include jvagent *.yml
+recursive-include jvagent *.md
+recursive-include jvagent *.json
+recursive-include jvagent requirements.txt
+recursive-include jvagent/scaffold/static *.txt
+
+recursive-include docs *.md

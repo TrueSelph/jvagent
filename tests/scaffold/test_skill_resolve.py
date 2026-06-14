@@ -1,0 +1,240 @@
+"""Tests for reusable skill bundle resolution."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from jvagent.scaffold.skill_resolve import (
+    apply_skill_selector,
+    resolve_agent_skills,
+    resolve_builtin_skills,
+    resolve_merged_skill_bundles,
+)
+
+
+def test_resolve_builtin_skills_contains_catalog_entries() -> None:
+    skills = resolve_builtin_skills()
+    assert "answer" in skills
+    assert "research" in skills
+    assert "triage" in skills
+
+
+def test_resolve_agent_skills_reads_app_local_bundle(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "agents" / "acme" / "bot" / "skills" / "my_skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: my_skill
+description: My app-local skill
+---
+
+Local SOP.
+""",
+        encoding="utf-8",
+    )
+    skills = resolve_agent_skills(str(tmp_path), "acme", "bot")
+    assert "my_skill" in skills
+    assert skills["my_skill"]["source"] == "app"
+    assert "Local SOP." in skills["my_skill"]["content"]
+
+
+def test_resolve_merged_prefers_agent_skill_over_builtin(tmp_path: Path) -> None:
+    # ``research`` is a built-in skill; an app-local one of the same name must win.
+    skill_dir = tmp_path / "agents" / "acme" / "bot" / "skills" / "research"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: research
+description: App override for built-in
+---
+
+App override content.
+""",
+        encoding="utf-8",
+    )
+    merged = resolve_merged_skill_bundles(
+        app_root=str(tmp_path), namespace="acme", agent_name="bot"
+    )
+    assert "research" in merged
+    assert merged["research"]["source"] == "app"
+    assert merged["research"]["description"] == "App override for built-in"
+
+
+def test_resolve_agent_skills_skips_malformed_frontmatter(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "agents" / "acme" / "bot" / "skills" / "broken"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: broken
+description: [bad
+---
+
+Broken content.
+""",
+        encoding="utf-8",
+    )
+    skills = resolve_agent_skills(str(tmp_path), "acme", "bot")
+    assert "broken" not in skills
+
+
+def test_apply_skill_selector_all_returns_all() -> None:
+    bundles = {
+        "answer": {"name": "answer"},
+        "research": {"name": "research"},
+    }
+    selected = apply_skill_selector(bundles, selector="-all")
+    assert set(selected.keys()) == {"answer", "research"}
+
+
+def test_apply_skill_selector_list_and_glob() -> None:
+    bundles = {
+        "answer": {"name": "answer"},
+        "research": {"name": "research"},
+        "triage": {"name": "triage"},
+    }
+    selected = apply_skill_selector(bundles, selector=["ans*", "research"])
+    assert set(selected.keys()) == {"answer", "research"}
+
+
+def test_apply_skill_selector_empty_selector_returns_none_exposed() -> None:
+    bundles = {
+        "answer": {"name": "answer"},
+    }
+    assert apply_skill_selector(bundles, selector=None) == {}
+    assert apply_skill_selector(bundles, selector=[]) == {}
+    assert apply_skill_selector(bundles, selector="") == {}
+
+
+def test_apply_skill_selector_denied_filter_removes_matches() -> None:
+    bundles = {
+        "answer": {"name": "answer"},
+        "research": {"name": "research"},
+        "triage": {"name": "triage"},
+    }
+    selected = apply_skill_selector(
+        bundles,
+        selector="-all",
+        denied=["tri*", "research"],
+    )
+    assert set(selected.keys()) == {"answer"}
+
+
+# ── requires-actions parsing ──────────────────────────────────────────
+
+
+def test_parse_skill_bundle_extracts_requires_actions(tmp_path: Path) -> None:
+    """requires-actions frontmatter key is parsed into bundle metadata."""
+    from jvagent.scaffold.skill_resolve import parse_skill_bundle
+
+    skill_dir = tmp_path / "my_skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """\
+---
+name: my_skill
+description: Needs an action
+requires-actions:
+  - GoogleCalendarAction
+  - EmailAction
+---
+
+SOP content.
+""",
+        encoding="utf-8",
+    )
+    data = parse_skill_bundle(skill_dir, source="builtin")
+    assert data is not None
+    assert data["requires_actions"] == ["GoogleCalendarAction", "EmailAction"]
+
+
+def test_parse_skill_bundle_extracts_lock_companions(tmp_path: Path) -> None:
+    """lock-companions frontmatter is parsed into bundle metadata."""
+    from jvagent.scaffold.skill_resolve import parse_skill_bundle
+
+    skill_dir = tmp_path / "iv_skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """\
+---
+name: iv_skill
+description: Interview with a side FAQ allowed
+task-lock: true
+lock-companions:
+  - faq
+  - find_tool
+---
+
+SOP content.
+""",
+        encoding="utf-8",
+    )
+    data = parse_skill_bundle(skill_dir, source="builtin")
+    assert data is not None
+    assert data["task_lock"] is True
+    assert data["lock_companions"] == ["faq", "find_tool"]
+
+
+def test_parse_skill_bundle_lock_companions_defaults_empty(tmp_path: Path) -> None:
+    from jvagent.scaffold.skill_resolve import parse_skill_bundle
+
+    skill_dir = tmp_path / "plain_iv"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """\
+---
+name: plain_iv
+description: No companions
+---
+
+SOP content.
+""",
+        encoding="utf-8",
+    )
+    data = parse_skill_bundle(skill_dir, source="builtin")
+    assert data is not None
+    assert data["lock_companions"] == []
+
+
+def test_parse_skill_bundle_requires_actions_defaults_empty(tmp_path: Path) -> None:
+    """Bundles without requires-actions get an empty list (backward compat)."""
+    from jvagent.scaffold.skill_resolve import parse_skill_bundle
+
+    skill_dir = tmp_path / "plain_skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """\
+---
+name: plain_skill
+description: No action deps
+---
+
+SOP content.
+""",
+        encoding="utf-8",
+    )
+    data = parse_skill_bundle(skill_dir, source="builtin")
+    assert data is not None
+    assert data["requires_actions"] == []
+
+
+def test_parse_skill_bundle_requires_actions_string_form(tmp_path: Path) -> None:
+    """Single-string requires-actions is normalized to a one-item list."""
+    from jvagent.scaffold.skill_resolve import parse_skill_bundle
+
+    skill_dir = tmp_path / "single_action"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """\
+---
+name: single_action
+description: One action
+requires-actions: GoogleCalendarAction
+---
+
+SOP content.
+""",
+        encoding="utf-8",
+    )
+    data = parse_skill_bundle(skill_dir, source="builtin")
+    assert data is not None
+    assert data["requires_actions"] == ["GoogleCalendarAction"]

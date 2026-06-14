@@ -1,0 +1,37 @@
+# Groq Language Model Action Package Descriptor
+
+package:
+  # Action name in namespace/action_name format
+  name: jvagent/groq_lm
+
+  # Package author
+  author: jvagent
+
+  # Archetype: The main Action class name
+  archetype: GroqLanguageModelAction
+
+  # Package version
+  version: 0.0.1
+
+  # Package metadata
+  meta:
+    title: Groq Language Model Action
+    description: >-
+      LLM integration for Groq's OpenAI-compatible inference API. Optimised
+      for ultra-low-latency completion (sub-200ms p50 on small Llama models)
+      — the typical provider for a fast first-response classifier where
+      first-response latency matters.
+    group: jvagent
+    type: language_model_action
+
+  # Package configuration
+  config:
+    order:
+      weight: 0
+
+  # Package dependencies
+  dependencies:
+    jvagent: ~0.0.1
+    # Pip dependencies (installed automatically before action loading)
+    pip:
+      - httpx>=0.24.0

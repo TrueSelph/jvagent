@@ -1,0 +1,17 @@
+package:
+  name: jvagent/microsoft_outlook_mail_action
+  author: jvagent
+  archetype: MicrosoftOutlookMailAction
+  version: 0.0.1
+  meta:
+    title: Microsoft Outlook Mail Action
+    description: |
+      Send and list mail via Microsoft Graph (Outlook).
+    group: jvagent
+    type: action
+  config:
+    singleton: false
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - httpx>=0.24.0

@@ -1,0 +1,17 @@
+package:
+  name: jvagent/deepgram_stt
+  author: V75 Inc.
+  archetype: DeepgramSTTAction
+  version: 1.0.0
+  meta:
+    title: Deepgram Speech-to-Text
+    description: Speech-to-text using the Deepgram API
+    group: jvagent
+    type: stt_action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - deepgram-sdk>=6.0.0

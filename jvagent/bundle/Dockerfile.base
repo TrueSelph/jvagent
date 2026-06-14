@@ -1,0 +1,6 @@
+FROM registry.v75inc.dev/jvagent/jvagent-base:latest
+
+WORKDIR /var/task
+COPY . /var/task/
+
+# {{ACTION_DEPENDENCIES}}

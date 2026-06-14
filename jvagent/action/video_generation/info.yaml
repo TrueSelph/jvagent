@@ -1,0 +1,17 @@
+package:
+  name: jvagent/heygen_video_action
+  author: V75 Inc.
+  archetype: HeygenVideoAction
+  version: 1.0.0
+  meta:
+    title: HeyGen Video Action
+    description: Create a video from a script using the HeyGen API.
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - httpx>=0.24.0

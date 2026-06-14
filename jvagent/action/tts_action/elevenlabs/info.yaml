@@ -1,0 +1,17 @@
+package:
+  name: jvagent/elevenlabs_tts
+  author: V75 Inc.
+  archetype: ElevenLabsTTSAction
+  version: 1.0.0
+  meta:
+    title: ElevenLabs Text-to-Speech
+    description: Text-to-speech using the ElevenLabs API
+    group: jvagent
+    type: tts_action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - elevenlabs>=1.13.0

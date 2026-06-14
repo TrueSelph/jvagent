@@ -1,0 +1,24 @@
+# Google Drive Action Package Descriptor
+# Exposes Google Drive operations (upload, list, share, delete) via Drive API with OAuth 2.0.
+
+package:
+  name: jvagent/google_drive_action
+  author: jvagent
+  archetype: GoogleDriveAction
+  version: 0.0.1
+  meta:
+    title: Google Drive Action
+    description: |
+      Manage Google Drive files and folders using OAuth 2.0 authentication.
+      Supports uploading, listing, sharing, and deleting files with recursive folder traversal.
+    group: jvagent
+    type: action
+  config:
+    singleton: false
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - google-api-python-client>=2.192.0
+      - google-auth-httplib2>=0.2.0
+      - google-auth-oauthlib>=1.2.0
+      - httpx>=0.24.0

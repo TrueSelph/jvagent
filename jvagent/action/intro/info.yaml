@@ -1,0 +1,26 @@
+package:
+  name: jvagent/intro_interact_action
+  author: jvagent
+  archetype: IntroInteractAction
+  version: 0.0.1
+  meta:
+    title: Introductory Interact Action
+    description: Dispatches an introductory prompt directive to persona action if user is a first-time user.
+    group: core
+    type: interact_action
+  config:
+    singleton: true
+    order:
+      weight: -300
+  # Pattern-agnostic manifest (ADR-0010). Consumed
+  # by pattern orchestrators and schedulers for routing hints; ignored by patterns that
+  # don't read it. Safe to add to any action's info.yaml.
+  manifest:
+    purpose: "Greet first-time users with a brief intro and capability summary."
+    activates_on:
+      - "first user interaction in a conversation"
+      - "user has no prior turns in this session"
+    terminates_when:
+      - "intro directive published"
+    latency_class: quick
+    expected_duration_seconds: 1.5
