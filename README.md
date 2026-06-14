@@ -79,7 +79,7 @@ pip install jvagent
    pip install -e ".[dev]"
    ```
 
-   PageIndex (document ingestion/retrieval) lists its Python packages under `package.dependencies.pip` in [`jvagent/action/pageindex/info.yaml`](jvagent/action/pageindex/info.yaml). They are installed automatically when that action loads unless `JVAGENT_DISABLE_RUNTIME_PIP_INSTALL=true` (for air-gapped or pre-baked images, install those pip lines yourself).
+   PageIndex (document ingestion/retrieval) lists its Python packages under `package.dependencies.pip` in [`jvagent/action/pageindex/pageindex_action/info.yaml`](jvagent/action/pageindex/pageindex_action/info.yaml). They are installed automatically when that action loads unless `JVAGENT_DISABLE_RUNTIME_PIP_INSTALL=true` (for air-gapped or pre-baked images, install those pip lines yourself).
 
    PDF fallback (**WeasyPrint** for `pdf_generation__pandoc_fallback`): declare `weasyprint` under `package.dependencies.pip` on your `ReasoningHelm` action. **LaTeX** is not a pip package—install a system TeX distribution for `pdf_generation__latex_compile`.
 
@@ -92,11 +92,9 @@ pip install dist/jvagent-*.whl
 
 ## Examples
 
-A complete example application is provided in the `examples/jvagent_app/` directory. This includes:
+A complete example application is provided in the `examples/jvagent_app/` directory. It ships:
 
-- **Example Agent** (`jvagent/example_agent`): Demonstrates agent configuration and action setup
-- **Example Action** (`jvagent/example_action`): Shows action structure, lifecycle hooks, and API endpoints
-- **Model Action** (`jvagent/model_openai`): Demonstrates LLM integration with OpenAI
+- **Orchestrator Agent** (`agents/jvagent/orchestrator_agent/`): a working agent on the Orchestrator pattern — `agent.yaml` wiring plus a `skills/` bundle (Markdown-first procedures with optional Python tool scripts). See its [README](examples/jvagent_app/README.md) and [STRUCTURE](examples/jvagent_app/STRUCTURE.md).
 
 ### Running the Bundled Example
 
@@ -1146,7 +1144,8 @@ OpenAI actions read credentials from environment (`OPENAI_API_KEY`).
 
 **Available Core Actions:**
 - **Orchestrator (Orchestrator pattern)**: `jvagent/orchestrator` (single `-200` orchestrator) + `jvagent/reply` (ReplyAction egress: `reply`/`respond`/`publish`)
-- **Interact Actions**: `jvagent/interact_router`, `jvagent/retrieval_interact_action`, `jvagent/intro_interact_action`, `jvagent/interview_interact_action`, `jvagent/converse_interact_action`, `jvagent/pageindex_retrieval_interact_action` (requires `jvagent/pageindex_action` on the same agent; pip deps in `jvagent/action/pageindex/pageindex_action/info.yaml` and `pageindex_retrieval_interact_action/info.yaml`, auto-installed at action load by default)
+- **Interact Actions**: `jvagent/interact_router`, `jvagent/retrieval_interact_action`, `jvagent/intro_interact_action`, `jvagent/converse_interact_action`, `jvagent/pageindex_retrieval_interact_action` (requires `jvagent/pageindex_action` on the same agent; pip deps in `jvagent/action/pageindex/pageindex_action/info.yaml` and `pageindex_retrieval_interact_action/info.yaml`, auto-installed at action load by default)
+- **Interview**: `jvagent/interview` (`InterviewAction` — a plain `Action`, not an InteractAction; drives skills-v2 interviews via `interview:` frontmatter and the `interview__*` tools)
 - **Language Models**: `jvagent/openai_lm`, `jvagent/openrouter_lm`
 - **Embedding Models**: `jvagent/openai_embedding`, `jvagent/openrouter_embedding`, `jvagent/huggingface_embedding`, `jvagent/generic_embedding`
 - **Vector Stores**: `jvagent/typesense_vectorstore`
@@ -2122,8 +2121,6 @@ Agent-targeted reference docs live under [`.planning/`](.planning/). Start here 
 
 - [Configuration reference](docs/configuration.md) — `app.yaml` ↔ env mapping, prefix rules, jvspatial alignment
 - [Skill Bundles Standard Guide](jvagent/skills/README.md) - Claude-compatible skill structure, tooling contracts, and integration patterns
-- [app.yaml migration playbook](docs/app-yaml-migration-playbook.md) - AI-agent-ready retrofit guide from legacy descriptors
-- [agent.yaml migration playbook](docs/agent-yaml-migration-playbook.md) - AI-agent-ready structural migration guide with custom-action-safe rules
 - [Integration environment variables](docs/integrations-environment.md) — Vendor and action env inventory
 - [App scaffolding CLI](docs/scaffolding.md) - `jvagent app create`, `agent create`, `app profile new`, action profiles
 - [Memory System](jvagent/memory/README.md) - Conversation, Interaction, User, and Memory APIs
@@ -2162,7 +2159,7 @@ Agent-targeted reference docs live under [`.planning/`](.planning/). Start here 
 
 - [jvagent_app](examples/jvagent_app/README.md)
 - [App Structure](examples/jvagent_app/STRUCTURE.md)
-- [Resolv Demo](examples/jvagent_app/agents/resolv/resolv_demo/README.md)
+- [Orchestrator Agent](examples/jvagent_app/agents/jvagent/orchestrator_agent/README.md)
 
 ## Authors & maintainers
 

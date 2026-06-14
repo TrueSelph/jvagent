@@ -52,6 +52,14 @@ Use this split for new app descriptors:
 - `JVAGENT_PAGEINDEX_DB_TABLE_NAME` - PageIndex DynamoDB table.
 - `JVAGENT_PAGEINDEX_DB_REGION` - PageIndex DynamoDB region.
 
+### jvforge (PageIndex delegated ingest)
+- `JVAGENT_JVFORGE_BASE_URL` - jvforge service origin; when set, PageIndex ingest is delegated to jvforge.
+- `JVAGENT_JVFORGE_API_KEY` / `JVFORGE_API_KEY` - Optional API key for jvforge inbound requests (sent as `X-API-Key`).
+- `JVAGENT_JVFORGE_ASYNC` - Toggle async (webhook-callback) ingest vs synchronous.
+- `JVAGENT_JVFORGE_ASYNC_HTTP_TIMEOUT` - HTTP timeout (seconds) for async jvforge calls.
+
+See [Integration environment variables](integrations-environment.md#jvforge-pageindex) for the full jvforge flow.
+
 ### Proactive task lifecycle webhooks
 - `JVAGENT_TASK_CREATED_WEBHOOK_URL` - Outbound webhook on task create.
 - `JVAGENT_TASK_UPDATED_WEBHOOK_URL` - Outbound webhook on task update.

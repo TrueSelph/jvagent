@@ -64,7 +64,7 @@ Everything the agent can do is reachable as a tool, so there is no separate rout
 
 | Tool family | Source | Notes |
 |---|---|---|
-| **Egress reply / respond** | the responder's `get_tools()` — `ReplyAction` (ADR-0014), or `PersonaAction` fallback | `reply` is the send path — slim thin-publish, or applies pending directives/parameters when present; `respond` renders text in the agent's identity. Resolved via `Action.get_responder()`. |
+| **Egress reply / respond** | the responder's `get_tools()` — `ReplyAction` (ADR-0014/0025) | `reply` is the send path — slim thin-publish, or applies pending directives/parameters when present; `respond` renders text in the agent's identity. Resolved via `Action.get_responder()`. |
 | **IA-as-tools** | an `InteractAction`'s own `get_tools()` | Forwards to `execute(visitor)` with the `visitor` passed through from the Orchestrator. The tool *description* is built from the IA's manifest (`purpose` + `activates_on`, via `routing_triggers()`) so the model routes on intent. |
 | **Plain action tools** | each enabled `Action.get_tools()` | Ordinary capability tools. |
 | **Core tools** | [`core_tools.py`](../jvagent/action/orchestrator/core_tools.py) | Built-in orchestrator services. |
@@ -100,9 +100,9 @@ Identity and egress are split along two axes:
 
 - **Identity lives on the Agent node** — `alias` (display name) + `role` (purpose). The Orchestrator injects *"You are {alias}, {role}."* at the head of its system prompt (`render_identity_section`), so the model reasons and writes **as the agent** from the first token. The same fields are read by the egress responder — one source, no duplication.
 - **Egress is a `ReplyAction`** (`jvagent/reply`) — the agent's *mouth* and the Orchestrator's send path. `reply` delivers the user's message: **slim** (a thin literal publish, no model call) by default, but when there's shaping to apply it composes via `respond` — pending **directives** (mandatory instructions), **parameters** (conditional rules), and channel **formatting**. Channel formats live in `CHANNEL_FORMATS` (overridable per channel via the `channel_formats` attribute); the default/web channel carries none, so ordinary turns stay slim for token efficiency, while voice/SMS/social channels get plain-text or channel-specific markup. `publish` is the egress primitive.
-- **Resolution is `Action.get_responder()`** — prefers `ReplyAction`, falls back to `PersonaAction`. The Orchestrator resolves the responder for its `reply`/`respond` tools and for `_finalize_directives` (which hands rails directive text to `respond`). `PersonaAction` is unchanged and remains the egress for Rails agents.
+- **Resolution is `Action.get_responder()`** — resolves `ReplyAction` only (ADR-0025); returns `None` if no `ReplyAction` is enabled, so every agent must enable one. The Orchestrator resolves the responder for its `reply`/`respond` tools and for `_finalize_directives` (which hands rails directive text to `respond`).
 
-The reference agent use `jvagent/reply`; `PersonaAction` stays installable for Rails.
+The reference agents enable `jvagent/reply`. `PersonaAction` was retired in ADR-0025; `ReplyAction` is jvagent's single output contract.
 
 ## Parameters: the common behavioural subsystem
 
@@ -145,8 +145,8 @@ All thought emissions are `transient` (they land in `interaction.agent_trace`, n
 1. **One model call per tick**; the loop is bounded by ``activation_budget`` (each tick is at most one model round-trip).
 2. **Flow continuation mode is configurable** via `lock_active_flow` ([ADR-0013](../.planning/adr/0013-togglable-deterministic-turn-lock.md)). Active-flow detection (`active_flow_owner`) is always a deterministic read of persisted `TaskStore` state (no model).
 3. **Turn-lock is deterministic when `lock_active_flow=True`** (default — the loop restricts its callable surface to the active flow's IA tool and dispatches it with no model round-trip) and **emergent/model-mediated when `False`** (the flow's tool is surfaced and the model decides whether to continue or detour). In both modes the control-task persists across turns and is cleared only by the flow's own session logic.
-4. **Routing is tool selection.** There is no separate router or capability registry; IAs, persona, core services, and skills are all tools.
-5. **Actions own their output.** Actions publish their own results; the `reply`/`respond` egress tools (from the responder — `ReplyAction` or `PersonaAction` fallback, ADR-0014) are model-discretionary. A turn that ends with no emission and no active flow gets a single fallback reply.
+4. **Routing is tool selection.** There is no separate router or capability registry; IAs, core services, and skills are all tools.
+5. **Actions own their output.** Actions publish their own results; the `reply`/`respond` egress tools (from the responder — `ReplyAction`, ADR-0014/0025) are model-discretionary. A turn that ends with no emission and no active flow gets a single fallback reply.
 6. **Access control gates tool dispatch** (`tool:*`), including IA-as-tool execution (`tool:delegate:{name}` preserved).
 
 ## Configuration

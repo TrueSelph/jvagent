@@ -48,7 +48,7 @@ Single call. The bus dispatches `content` to the channel adapter (so the user re
 
 The return value is the persisted `Interaction`, or `None` if the call was skipped (missing inputs, no memory attached, user lookup failed).
 
-Source: [`jvagent/core/agent.py:226-319`](../jvagent/core/agent.py).
+Source: [`jvagent/core/agent.py:271-358`](../jvagent/core/agent.py).
 
 ---
 

@@ -27,7 +27,8 @@ Configure trusted publishers before the first publish:
    - Environment name: `pypi`
 2. **TestPyPI** → https://test.pypi.org/manage/account/publishing/ → same, with
    Environment name: `testpypi`.
-3. In the GitHub repo, create two [environments](../../settings/environments)
+3. In the GitHub repo, create two
+   [environments](https://github.com/TrueSelph/jvagent/settings/environments)
    named `pypi` and `testpypi` (optionally add required reviewers to `pypi`).
 
 ## Cutting a release

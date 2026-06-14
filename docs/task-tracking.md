@@ -7,7 +7,7 @@ Task lifecycle management is now handled by `TaskStore`, scoped per conversation
 - **Storage**: `Conversation.tasks` is the canonical store (list of task dicts, persisted on the conversation node).
 - **Writer**: `TaskStore` is the single write path for create/update/complete/fail/cancel.
 - **Scope**: One store instance per conversation (`TaskStore(conversation)`), lazily available as `InteractWalker.tasks`.
-- **Consumers**: Orchestrator think-act-observe loop (flow continuation), interview flows, proactive task creation/dispatch/trigger, ReplyAction/PersonaAction egress context, and response payloads.
+- **Consumers**: Orchestrator think-act-observe loop (flow continuation), interview flows, proactive task creation/dispatch/trigger, ReplyAction egress context, and response payloads.
 
 ## Task Model
 
@@ -236,7 +236,7 @@ During an Orchestrator turn, the model can call the **`queue_task`** tool when `
 
 - [Proactive messages](proactive-messages.md) — canned `send_proactive_message` vs queued agentic tasks
 - [ADR-0022](../.planning/adr/0022-proactive-task-monitor.md) — design decision record
-- [Conversation](jvagent/memory/conversation.py)
-- [TaskStore](jvagent/memory/task_store.py)
-- [InteractWalker](jvagent/action/interact/interact_walker.py)
-- [Orchestrator](jvagent/action/orchestrator/orchestrator_interact_action.py)
+- [Conversation](../jvagent/memory/conversation.py)
+- [TaskStore](../jvagent/memory/task_store.py)
+- [InteractWalker](../jvagent/action/interact/interact_walker.py)
+- [Orchestrator](../jvagent/action/orchestrator/orchestrator_interact_action.py)
