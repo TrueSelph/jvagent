@@ -107,3 +107,7 @@ cockpit_smoke_last_run.json
 
 # Throwaway outputs (handoffs, scratch)
 outputs/
+
+# Vite dep-optimization cache
+.vite/
+**/.vite/

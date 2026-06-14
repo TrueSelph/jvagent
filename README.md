@@ -166,6 +166,15 @@ curl -X POST http://localhost:8000/agents/{agent_id}/interact \
   -d '{"utterance": "Hello"}'
 ```
 
+### 5. Or use the chat UI
+
+The bundled [jvchat](https://github.com/TrueSelph/jvagent/blob/main/docs/jvchat.md) web UI ships in the wheel and runs on its own port (a separate origin from the agent server, by design):
+
+```bash
+jvagent chat                                      # http://127.0.0.1:3000, opens a browser
+jvagent chat --url https://my-agent.example.com   # point at a remote agent
+```
+
 A complete worked example ships in [`examples/jvagent_app/`](https://github.com/TrueSelph/jvagent/blob/main/examples/jvagent_app/README.md) — an Orchestrator-pattern agent with a skill bundle. See its [STRUCTURE](https://github.com/TrueSelph/jvagent/blob/main/examples/jvagent_app/STRUCTURE.md) for the file-by-file tour, and the [local dev runbook](https://github.com/TrueSelph/jvagent/blob/main/.planning/runbooks/local-dev.md) to run it end-to-end.
 
 ## Core Concepts
@@ -256,7 +265,8 @@ jvagent resolves configuration by precedence (highest first):
 ### Deployment & tooling
 
 - [Dockerfile generator](https://github.com/TrueSelph/jvagent/blob/main/jvagent/bundle/README.md)
-- [jvchat](https://github.com/TrueSelph/jvagent/blob/main/jvchat/README.md) — React reference chat UI
+- [jvchat web UI](https://github.com/TrueSelph/jvagent/blob/main/docs/jvchat.md) — `jvagent chat`, runtime config, and the separate-origin security rationale
+- [jvchat source](https://github.com/TrueSelph/jvagent/blob/main/jvchat/README.md) — React reference chat UI
 - [Releasing](https://github.com/TrueSelph/jvagent/blob/main/RELEASING.md) — version bump → tag → PyPI Trusted Publishing
 
 ### Example application

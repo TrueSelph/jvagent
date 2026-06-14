@@ -17,4 +17,7 @@ recursive-include jvagent *.json
 recursive-include jvagent requirements.txt
 recursive-include jvagent/scaffold/static *.txt
 
+# Bundled jvchat UI (built by scripts/build_jvchat.py; served by `jvagent chat`).
+recursive-include jvagent/webui/dist *
+
 recursive-include docs *.md
