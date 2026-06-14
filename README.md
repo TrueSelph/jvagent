@@ -1,5 +1,11 @@
 # jvagent
 
+[![CI](https://github.com/TrueSelph/jvagent/actions/workflows/test-jvagent.yaml/badge.svg)](https://github.com/TrueSelph/jvagent/actions/workflows/test-jvagent.yaml)
+[![Lint](https://github.com/TrueSelph/jvagent/actions/workflows/pre-commit.yaml/badge.svg)](https://github.com/TrueSelph/jvagent/actions/workflows/pre-commit.yaml)
+[![PyPI version](https://img.shields.io/pypi/v/jvagent.svg)](https://pypi.org/project/jvagent/)
+[![Python versions](https://img.shields.io/pypi/pyversions/jvagent.svg)](https://pypi.org/project/jvagent/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Modular AI agent platform built on jvspatial's graph primitives. Declarative `app.yaml` and `agent.yaml` define topology; persistent state is stored as **Nodes** and **Edges**. **Actions** extend agents as load-on-demand plugins; **Memory** holds users, conversations, and a bidirectional interaction chain; **Skills** add Markdown-first procedures and optional Python tool scripts. The runtime favors real deployments: merge/source/run updates, namespace isolation for plugins, deep action lifecycle hooks, distributed conversation locking, capped work per pruning pass for predictable latency, and probabilistic cache cleanup suited to serverless-style workers, alongside a separate logging database for interaction and error trails.
 
 ## Table of Contents
@@ -41,6 +47,19 @@ Modular AI agent platform built on jvspatial's graph primitives. Declarative `ap
 
 - Python 3.8 or higher
 - pip
+
+### Install from PyPI
+
+```bash
+pip install jvagent
+```
+
+> Pre-1.0 release candidates are published to TestPyPI first. To install a
+> release candidate:
+> ```bash
+> pip install -i https://test.pypi.org/simple/ \
+>     --extra-index-url https://pypi.org/simple/ jvagent==0.1.0rc1
+> ```
 
 ### Install from Source
 
@@ -445,7 +464,7 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
 - Optionally declare `singleton: true` in `info.yaml` to enforce one instance per agent
 - Expose lifecycle hooks including `on_register`, `on_reload`, `post_register`, `on_startup`, `on_enable`, `on_disable`, `on_deregister`, and `pulse`
 - Discover peer actions via `get_action()` and related helpers (for example `get_model_action()` for language models)
-- Can contribute capability strings to the persona via `get_capabilities()`
+- Can contribute capability strings to the agent's system prompt via `get_capabilities()` (aggregated by `Agent.collect_capabilities()`)
 - Can be enabled/disabled dynamically
 - Support type-safe property configuration (Pydantic defaults merged with `agent.yaml` context)
 
@@ -455,7 +474,7 @@ If you run `jvagent` without specifying an app directory (or from a directory wi
 - Extend the `InteractAction` base class
 - Are automatically traversed by `InteractWalker` during agent interactions
 - Support a simplified API for adding directives and parameters
-- Can generate responses via PersonaAction using the `respond()` method
+- Can generate responses via `ReplyAction` using the `respond()` method
 - Support bulk operations for efficient interaction management
 
 **Key Features:**
@@ -521,7 +540,7 @@ For the full standard (folder anatomy, metadata, tool contract, and action integ
 **Task Tracking:**
 - Conversations maintain an `active_tasks` list for ongoing activities requiring user input
 - Tasks have unique IDs, descriptions, and optional `action_name` for management
-- Used by interviews (ACTIVE/REVIEW), PersonaAction (reminder when user strays), and InteractRouter (context signals)
+- Used by interviews (ACTIVE/REVIEW) and InteractRouter (context signals)
 - See [Task Tracking](docs/task-tracking.md) for details
 - See [Memory System](jvagent/memory/README.md) for full API reference
 
@@ -1132,7 +1151,7 @@ OpenAI actions read credentials from environment (`OPENAI_API_KEY`).
 - **Embedding Models**: `jvagent/openai_embedding`, `jvagent/openrouter_embedding`, `jvagent/huggingface_embedding`, `jvagent/generic_embedding`
 - **Vector Stores**: `jvagent/typesense_vectorstore`
 - **Web**: `jvagent/web_fetch` (SSRF-guarded page fetch → markdown; tool `web_fetch__fetch`), web search providers (`jvagent/serper_web_search`, etc.)
-- **Other**: `jvagent/persona` (legacy/Rails responder; can be overridden locally), `jvagent/mcp` (MCP gateway: tools surface as `mcp_<server>__<tool>`, consumed by the Orchestrator via `tool_servers`; see [jvagent/action/mcp/README.md](jvagent/action/mcp/README.md))
+- **Other**: `jvagent/reply` (`ReplyAction` — jvagent's single output contract; identity lives on the Agent node, parameters/format/history on `ReplyAction`), `jvagent/mcp` (MCP gateway: tools surface as `mcp_<server>__<tool>`, consumed by the Orchestrator via `tool_servers`; see [jvagent/action/mcp/README.md](jvagent/action/mcp/README.md))
 
 **Conditional Loading**: Core actions are only loaded if they are explicitly listed in `agent.yaml` or are required as dependencies of a loaded action. This ensures that unused actions remain unloaded and their endpoints are not accessible.
 
@@ -1382,13 +1401,13 @@ Actions have well-defined lifecycle hooks:
    - Unloading action-specific modules from memory (when safe)
    - The `on_deregister()` hook is called after cleanup, allowing for additional action-specific cleanup if needed
 
-### Contributing to Persona Capabilities
+### Contributing agent capabilities
 
-Actions can contribute capabilities to PersonaAction's system prompt by overriding `get_capabilities()`:
+Actions can contribute capabilities to the agent's system prompt by overriding `get_capabilities()`:
 
 ```python
 def get_capabilities(self) -> List[str]:
-    """Return capabilities for PersonaAction when enabled."""
+    """Return capabilities surfaced in the agent's system prompt when enabled."""
     if not self.enabled:
         return []
     return [
@@ -1397,7 +1416,7 @@ def get_capabilities(self) -> List[str]:
     ]
 ```
 
-PersonaAction aggregates capabilities from all enabled actions at runtime. When an action is enabled, its capabilities are included; when disabled or deregistered, they are excluded. See [PersonaAction README](jvagent/action/persona/README.md#capabilities-base-config-and-action-contributed) for details.
+`Agent.collect_capabilities()` aggregates these from all enabled actions at runtime. When an action is enabled, its capabilities are included; when disabled or deregistered, they are excluded.
 
 ## Property Configuration
 
@@ -2122,7 +2141,7 @@ Agent-targeted reference docs live under [`.planning/`](.planning/). Start here 
 - [RetrievalInteractAction](jvagent/action/retrieval/README.md)
 - [IntroInteractAction](jvagent/action/intro/README.md)
 - [InterviewAction](jvagent/action/interview/README.md)
-- [PersonaAction](jvagent/action/persona/README.md)
+- [ReplyAction](jvagent/action/reply/reply_action.py) — single output contract (see [Orchestrator](docs/ORCHESTRATOR.md))
 - [MCPAction](jvagent/action/mcp/README.md)
 - [Model Actions](jvagent/action/model/README.md)
 - [PageIndex](jvagent/action/pageindex/README.md)
