@@ -761,6 +761,11 @@ class PageIndexAction(Action):
             if visitor.user_id in users or visitor.session_id in users
         ]
         if not matched_groups:
+            # Default-deny: groups are configured but the visitor matches none.
+            # Force ``access=[]`` so the Mongo ``$in`` matches nothing — returning
+            # the unfiltered ``mf`` here would leak every document to an
+            # unauthorized visitor.
+            mf["access"] = []
             return mf
 
         existing = mf.get("access")
