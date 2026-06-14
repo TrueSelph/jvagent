@@ -12,7 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@assistant-ui/react": "^0.14.12",
+    "@assistant-ui/react": "^0.14.20",
     "@assistant-ui/react-markdown": "^0.14.1",
     "@assistant-ui/styles": "^0.3.7",
     "@codemirror/lang-json": "^6.0.2",
