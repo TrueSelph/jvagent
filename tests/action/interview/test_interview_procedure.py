@@ -43,8 +43,8 @@ def test_standard_procedure_includes_session_gate():
     assert "field_awareness" not in body
     assert "quoted `field_key` only" not in body
     assert "all extracted keys" in body
-    assert "Do not invent or alias keys" in body
-    assert "available_times` not `availability" in body
+    assert "Do not invent, alias, prefix" in body
+    assert "not `user_email`" in body
     assert "Unknown key recovery" in body
     assert "activation returns `awaiting_fields` only" not in body
 

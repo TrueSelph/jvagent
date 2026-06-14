@@ -50,7 +50,7 @@ Use `interview__get_status` for progress. On `NO_SESSION`, activate then `interv
 
 - Read the full latest user utterance once before building `set_fields` args.
 - Map all confident values in that utterance to canonical keys from `field_reference[].key` (matched by each field's `prompt`/`guidance`).
-- Do not invent or alias keys. Use exact canonical names only (e.g. `available_times` not `availability`, `user_email` not `email`, `employer_name` not `company`).
+- Do not invent, alias, prefix, pluralize, or rename keys. Copy the exact key string from `field_reference[].key` — submit it verbatim as it appears there (e.g. if the catalog key is `email`, send `email`, not `user_email` or `email_address`; if it is `available_times`, do not shorten to `availability`). Never assume a key from another skill.
 - Submit one initial `interview__set_fields` call containing every extracted key/value from that utterance.
 - Treat the active/pending field as an anchor only; do not treat it as an exclusive key whitelist.
 - If validation fails, retry with corrected keys/values from the same utterance or the next user clarification.
