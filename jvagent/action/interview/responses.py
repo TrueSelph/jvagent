@@ -110,15 +110,23 @@ async def tell_user_then_continue(sidebar_message: str) -> str:
 
 
 def validation_guidance_directive(error: str, *, question_text: str = "") -> str:
-    """Build a single user-facing directive from a validator error message."""
+    """Build a single user-facing re-ask from a validator error message.
+
+    A validator that returns a complete-sentence error already re-asks for the
+    value ("Please provide a phone number with at least 7 digits."); appending
+    the original question would just duplicate the ask ("… What is your WhatsApp
+    number?"). So the field question is appended ONLY for a terse error fragment
+    that can't stand on its own (e.g. the "Invalid value" fallback). A
+    ``Tell the user:`` / ``Ask:`` prefix also marks the error self-contained.
+    """
     raw = (error or "").strip()
     lower = raw.lower()
-    self_contained = lower.startswith("tell the user:") or lower.startswith("ask:")
-    err = raw.split(":", 1)[1].strip() if self_contained else raw
-    body = err
+    prefixed = lower.startswith("tell the user:") or lower.startswith("ask:")
+    err = raw.split(":", 1)[1].strip() if prefixed else raw
+    self_contained = prefixed or err.endswith((".", "!", "?"))
     if question_text and not self_contained:
-        body = f"{err} {question_text}".strip()
-    return tell_user(body)
+        return tell_user(f"{err} {question_text}".strip())
+    return tell_user(err)
 
 
 def review_confirmation_directive(
