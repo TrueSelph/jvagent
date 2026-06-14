@@ -1,10 +1,11 @@
 # jvagent
 
-[![CI](https://github.com/TrueSelph/jvagent/actions/workflows/test-jvagent.yaml/badge.svg)](https://github.com/TrueSelph/jvagent/actions/workflows/test-jvagent.yaml)
-[![Lint](https://github.com/TrueSelph/jvagent/actions/workflows/pre-commit.yaml/badge.svg)](https://github.com/TrueSelph/jvagent/actions/workflows/pre-commit.yaml)
-[![PyPI version](https://img.shields.io/pypi/v/jvagent.svg)](https://pypi.org/project/jvagent/)
-[![Python versions](https://img.shields.io/pypi/pyversions/jvagent.svg)](https://pypi.org/project/jvagent/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/TrueSelph/jvagent)](https://github.com/TrueSelph/jvagent/releases)
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/TrueSelph/jvagent/test-jvagent.yaml)](https://github.com/TrueSelph/jvagent/actions)
+[![PyPI version](https://img.shields.io/pypi/v/jvagent)](https://pypi.org/project/jvagent/)
+[![GitHub issues](https://img.shields.io/github/issues/TrueSelph/jvagent)](https://github.com/TrueSelph/jvagent/issues)
+[![GitHub pull requests](https://img.shields.io/github/issues-pr/TrueSelph/jvagent)](https://github.com/TrueSelph/jvagent/pulls)
+[![GitHub](https://img.shields.io/github/license/TrueSelph/jvagent)](https://github.com/TrueSelph/jvagent/blob/main/LICENSE)
 
 Modular AI agent platform built on jvspatial's graph primitives. Declarative `app.yaml` and `agent.yaml` define topology; persistent state is stored as **Nodes** and **Edges**. **Actions** extend agents as load-on-demand plugins; **Memory** holds users, conversations, and a bidirectional interaction chain; **Skills** add Markdown-first procedures and optional Python tool scripts. The runtime favors real deployments: merge/source/run updates, namespace isolation for plugins, deep action lifecycle hooks, distributed conversation locking, capped work per pruning pass for predictable latency, and probabilistic cache cleanup suited to serverless-style workers, alongside a separate logging database for interaction and error trails.
 
@@ -2166,6 +2167,14 @@ Agent-targeted reference docs live under [`.planning/`](.planning/). Start here 
 jvagent — an agent harness built on jvspatial — was created by **Eldon Marks** ([@eldonm](https://github.com/eldonm)), who serves as its lead maintainer.
 
 See [AUTHORS](AUTHORS) for the full list of authors and contributors. Copyright and licensing terms are set out in the [LICENSE](LICENSE) file.
+
+## Contributors
+
+<p align="center">
+    <a href="https://github.com/TrueSelph/jvagent/graphs/contributors">
+        <img src="https://contrib.rocks/image?repo=TrueSelph/jvagent" />
+    </a>
+</p>
 
 ## License
 
