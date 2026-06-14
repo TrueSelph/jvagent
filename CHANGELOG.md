@@ -8,6 +8,35 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+## [0.1.0rc3] - 2026-06-14
+
+Third release candidate (TestPyPI). Adds the bundled jvchat web UI + CLI and an
+interview re-ask fix.
+
+### Added
+
+- **`jvagent chat` — bundled jvchat web UI.** The built jvchat SPA now ships
+  inside the wheel and is served by `jvagent chat` on its own port (a separate
+  process/origin from the agent server, by design — see
+  [`docs/jvchat.md`](docs/jvchat.md) for the security rationale). `--url`
+  injects the target agent URL at runtime (`window.__JVCHAT_RUNTIME_CONFIG__`),
+  so one pre-built bundle targets any agent without a rebuild. The static server
+  adds SPA fallback, a path-traversal guard, and security headers (`no-store`
+  HTML, `immutable` assets, `nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy`). Built/staged by `scripts/build_jvchat.py` and shipped as
+  wheel package-data (the publish workflow builds the UI before
+  `python -m build`). Covered by `tests/webui/`.
+
+### Fixed
+
+- **Interview validation re-ask no longer duplicates the question.** A
+  validator returning a complete-sentence error already re-asks for the value;
+  `validation_guidance_directive` previously also appended the field question,
+  producing a doubled ask. The field question is now appended only for a terse
+  error fragment (an error is treated as self-contained when it is prefixed with
+  `Tell the user:` / `Ask:` or ends with `.`/`!`/`?`). Covered by
+  `tests/action/interview/test_validation_reask.py`.
+
 ## [0.1.0rc2] - 2026-06-14
 
 Second release candidate (TestPyPI). Fixes the standalone `jvagent bootstrap`
