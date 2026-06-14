@@ -2,9 +2,18 @@
 
 All notable changes to **jvagent** (this package) are documented here. Indexing and database-adapter behavior that lives in **jvspatial** is recorded in the [jvspatial changelog](../jvspatial/CHANGELOG.md).
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.1.0rc1] - 2026-06-14
+
+First public release candidate. Consolidates the `dev-executive` line: the
+Orchestrator turn model, the thin-harness interview v2, single-egress
+`ReplyAction`, and the skills-v2 surface. See the entries below for the full
+set of changes rolled into this candidate.
 
 ### Removed
 
