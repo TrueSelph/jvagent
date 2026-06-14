@@ -18,8 +18,16 @@ records it links into. User-facing onboarding lives in the root
   reference/        look-it-up guides (authoring, catalog, config, internals)
   runbooks/         step-by-step operator/dev procedures
   adr/              architecture decision records (immutable once accepted)
+  specs/            design specs for feature work (agent-authored)
+  plans/            task-by-task implementation plans (agent-authored)
   archive/          superseded / shipped-and-historical docs
 ```
+
+`specs/` and `plans/` hold the design + implementation artifacts produced by
+coding agents (the superpowers `subagent-driven-development` /
+`executing-plans` loop). A spec captures the **what/why** of a change; the
+paired plan tracks the **how** as checkboxed tasks. They are dated and paired
+by slug (e.g. `specs/<date>-foo-design.md` ↔ `plans/<date>-foo.md`).
 
 ## Read first
 
@@ -72,6 +80,28 @@ those records covered patterns (bridge/helm/cockpit) that were removed.
 | [0016](adr/0016-model-gearing-light-heavy.md) | Model gearing: light completion + heavy reasoning | Accepted |
 | [0017](adr/0017-two-skill-specs-code-execution-substrate.md) | Two skill specs (JV + Claude) + multitenant code-execution substrate | Accepted |
 | [0018](adr/0018-lean-tool-surfacing.md) | Lean tool surfacing (threshold-auto progressive tool disclosure) | Accepted |
+
+## specs/ — design specs
+
+Agent-authored design records (the **what/why** of a change). Dated; paired
+with a plan of the same slug.
+
+| Spec | Paired plan |
+|---|---|
+| [`specs/2026-06-13-replyaction-sole-egress-design.md`](specs/2026-06-13-replyaction-sole-egress-design.md) — ReplyAction as the single output contract (retire PersonaAction); see [ADR-0025](adr/0025-replyaction-single-output-contract.md) | — |
+| [`specs/2026-06-13-orchestrator-egress-streamline-design.md`](specs/2026-06-13-orchestrator-egress-streamline-design.md) — single egress stream | [`plans/2026-06-13-orchestrator-egress-streamline.md`](plans/2026-06-13-orchestrator-egress-streamline.md) |
+| [`specs/2026-06-13-interview-multi-response-design.md`](specs/2026-06-13-interview-multi-response-design.md) — multi-field extraction + orchestrator decoupling | [`plans/2026-06-13-interview-multi-response.md`](plans/2026-06-13-interview-multi-response.md) |
+
+## plans/ — implementation plans
+
+Agent-authored, task-by-task implementation plans (the **how**, tracked with
+`- [ ]` checkboxes). Consumed by the superpowers `executing-plans` /
+`subagent-driven-development` loop.
+
+| Plan | Spec |
+|---|---|
+| [`plans/2026-06-13-orchestrator-egress-streamline.md`](plans/2026-06-13-orchestrator-egress-streamline.md) | [design](specs/2026-06-13-orchestrator-egress-streamline-design.md) |
+| [`plans/2026-06-13-interview-multi-response.md`](plans/2026-06-13-interview-multi-response.md) | [design](specs/2026-06-13-interview-multi-response-design.md) |
 
 ## archive/ — historical
 

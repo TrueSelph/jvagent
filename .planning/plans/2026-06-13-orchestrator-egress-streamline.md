@@ -6,7 +6,7 @@
 
 **Architecture:** A persisted `Interaction.emitted` latch is set at the delivery choke points (`response_bus._deliver_flush` for `user` content, the first SSE `stream_chunk`, and `ReplyAction._pipe_response` no-bus branch). The orchestrator's post-loop re-emission paths gate on `interaction.emitted` instead of `interaction.response`-emptiness, and all four emission points route through one `_egress()` method that emits exactly once, composing the model's reply + queued `interaction.directives` in a single ReplyAction compose.
 
-**Tech Stack:** Python 3, pytest/pytest-asyncio, jvspatial Node attributes. Spec: [docs/superpowers/specs/2026-06-13-orchestrator-egress-streamline-design.md](../specs/2026-06-13-orchestrator-egress-streamline-design.md). Run tests with `.venv/bin/python -m pytest`.
+**Tech Stack:** Python 3, pytest/pytest-asyncio, jvspatial Node attributes. Spec: [.planning/specs/2026-06-13-orchestrator-egress-streamline-design.md](../specs/2026-06-13-orchestrator-egress-streamline-design.md). Run tests with `.venv/bin/python -m pytest`.
 
 ---
 
@@ -99,7 +99,7 @@ Expected: PASS
 ### Task 2: latch on bus delivery (`_deliver_flush` + first SSE chunk)
 
 **Files:**
-- Modify: `jvagent/action/response/response_bus.py` — `_deliver_flush` ([:318-328](../../../jvagent/action/response/response_bus.py)); the streaming chunk loop ([:398-415](../../../jvagent/action/response/response_bus.py))
+- Modify: `jvagent/action/response/response_bus.py` — `_deliver_flush` ([:318-328](../../jvagent/action/response/response_bus.py)); the streaming chunk loop ([:398-415](../../jvagent/action/response/response_bus.py))
 - Test: `tests/action/response/test_emitted_latch.py` (create)
 
 - [ ] **Step 1: Write the failing test**
@@ -170,7 +170,7 @@ Expected: FAIL — `assert False is True` (latch not set).
 
 - [ ] **Step 3: Implement**
 
-In `_deliver_flush` ([response_bus.py:318](../../../jvagent/action/response/response_bus.py)), the existing `user`-category append block — add the latch alongside it:
+In `_deliver_flush` ([response_bus.py:318](../../jvagent/action/response/response_bus.py)), the existing `user`-category append block — add the latch alongside it:
 
 ```python
             if (
@@ -188,7 +188,7 @@ In `_deliver_flush` ([response_bus.py:318](../../../jvagent/action/response/resp
                 )
 ```
 
-In the streaming chunk loop ([response_bus.py:398-415](../../../jvagent/action/response/response_bus.py)) — latch on the **first delivered** user chunk (honors "first delivered chunk"). Inside the `for chunk in chunk_text_by_lm_tokens(content):` loop, after `acc.chunks.append(chunk)`:
+In the streaming chunk loop ([response_bus.py:398-415](../../jvagent/action/response/response_bus.py)) — latch on the **first delivered** user chunk (honors "first delivered chunk"). Inside the `for chunk in chunk_text_by_lm_tokens(content):` loop, after `acc.chunks.append(chunk)`:
 
 ```python
                 if (
@@ -213,7 +213,7 @@ Expected: PASS
 ### Task 3: latch on the no-bus reply path
 
 **Files:**
-- Modify: `jvagent/action/reply/reply_action.py` — `_pipe_response` no-bus branch ([:287-297](../../../jvagent/action/reply/reply_action.py))
+- Modify: `jvagent/action/reply/reply_action.py` — `_pipe_response` no-bus branch ([:287-297](../../jvagent/action/reply/reply_action.py))
 - Test: `tests/action/test_reply_emitted_latch.py` (create)
 
 - [ ] **Step 1: Write the failing test**
@@ -249,7 +249,7 @@ Expected: FAIL — `assert False is True`
 
 - [ ] **Step 3: Implement**
 
-In `_pipe_response` no-bus branch ([reply_action.py:287](../../../jvagent/action/reply/reply_action.py)), after the `set_response` block sets the response, latch it:
+In `_pipe_response` no-bus branch ([reply_action.py:287](../../jvagent/action/reply/reply_action.py)), after the `set_response` block sets the response, latch it:
 
 ```python
         if not has_bus:
@@ -279,7 +279,7 @@ Expected: PASS
 ### Task 4: orchestrator gates re-emission on `emitted` (Phase 0 complete)
 
 **Files:**
-- Modify: `jvagent/action/orchestrator/orchestrator_interact_action.py` — `execute()` fallback ([:635-637](../../../jvagent/action/orchestrator/orchestrator_interact_action.py)); `_finalize_directives` ([:669](../../../jvagent/action/orchestrator/orchestrator_interact_action.py)); `_maybe_emit_final` ([:1656+](../../../jvagent/action/orchestrator/orchestrator_interact_action.py))
+- Modify: `jvagent/action/orchestrator/orchestrator_interact_action.py` — `execute()` fallback ([:635-637](../../jvagent/action/orchestrator/orchestrator_interact_action.py)); `_finalize_directives` ([:669](../../jvagent/action/orchestrator/orchestrator_interact_action.py)); `_maybe_emit_final` ([:1656+](../../jvagent/action/orchestrator/orchestrator_interact_action.py))
 - Test: `tests/action/orchestrator/test_egress_idempotent.py` (create)
 
 - [ ] **Step 1: Write the failing test**
@@ -337,14 +337,14 @@ Expected: FAIL — `test_finalize_directives_skipped_when_emitted` calls respond
 
 - [ ] **Step 3: Implement**
 
-In `_finalize_directives` ([:669](../../../jvagent/action/orchestrator/orchestrator_interact_action.py)) replace the `if getattr(interaction, "response", "") ...: return` guard with the latch:
+In `_finalize_directives` ([:669](../../jvagent/action/orchestrator/orchestrator_interact_action.py)) replace the `if getattr(interaction, "response", "") ...: return` guard with the latch:
 
 ```python
         if interaction.has_emitted():
             return  # already delivered this turn
 ```
 
-In `execute()` fallback ([:635-637](../../../jvagent/action/orchestrator/orchestrator_interact_action.py)) replace the `after == before` check:
+In `execute()` fallback ([:635-637](../../jvagent/action/orchestrator/orchestrator_interact_action.py)) replace the `after == before` check:
 
 ```python
         if not interaction.has_emitted():
@@ -352,7 +352,7 @@ In `execute()` fallback ([:635-637](../../../jvagent/action/orchestrator/orchest
 ```
 (Remove the now-unused `before`/`after` response snapshots if they have no other use; keep `before` only if referenced elsewhere — verify with grep.)
 
-In `_maybe_emit_final` ([:1656+](../../../jvagent/action/orchestrator/orchestrator_interact_action.py)) add an early return at the top, preserving the exact-text echo guard below it:
+In `_maybe_emit_final` ([:1656+](../../jvagent/action/orchestrator/orchestrator_interact_action.py)) add an early return at the top, preserving the exact-text echo guard below it:
 
 ```python
         if interaction is not None and interaction.has_emitted():

@@ -9,21 +9,21 @@
 ## 1. Context — root cause
 
 Duplicate responses are observed on **adapter-backed channels** (WhatsApp/Messenger/email). The webhook itself does not re-send (`finalize_whatsapp_interaction` only closes/saves —
-[endpoint_helpers.py:274-339](../../../jvagent/action/whatsapp/utils/endpoint_helpers.py)),
+[endpoint_helpers.py:274-339](../../jvagent/action/whatsapp/utils/endpoint_helpers.py)),
 so the duplicate is **two bus publishes within one turn**, each delivered by the channel adapter.
 
 Three structural causes:
 
 1. **The "already emitted" latch is `interaction.response`-emptiness**, which is not reliably set by every delivery path:
    - The **streaming** reply path returns early without setting it
-     ([reply_action.py:299-300](../../../jvagent/action/reply/reply_action.py)).
+     ([reply_action.py:299-300](../../jvagent/action/reply/reply_action.py)).
    - **Directive-based publishing** (an IA queues an `interaction.directive` *and* the model also authors a reply) leaves the signal ambiguous.
-   So the post-loop `_finalize_directives` ([orchestrator_interact_action.py:631](../../../jvagent/action/orchestrator/orchestrator_interact_action.py)) and `_emit_reply` fallback ([:637](../../../jvagent/action/orchestrator/orchestrator_interact_action.py)) fire a **second** publish through the same bus → adapter.
+   So the post-loop `_finalize_directives` ([orchestrator_interact_action.py:631](../../jvagent/action/orchestrator/orchestrator_interact_action.py)) and `_emit_reply` fallback ([:637](../../jvagent/action/orchestrator/orchestrator_interact_action.py)) fire a **second** publish through the same bus → adapter.
 
 2. **Four emission points** with no single authority: loop `final` → `_maybe_emit_final`; terminal `reply`/`respond` tool; `_finalize_directives`; `_emit_reply` fallback.
 
 3. **Two egress representations** kept loosely in sync: the **response bus** (delivery) and the persisted **`interaction.response`** — one `reply` writes both (`response_bus.publish` → `_append_to_interaction_response_impl` → `interaction.set_response`,
-[response_bus.py:708](../../../jvagent/action/response/response_bus.py)). Plus **three stacked output layers** (`response_directive` → `interaction.directives` → ReplyAction) let the same content travel more than one path.
+[response_bus.py:708](../../jvagent/action/response/response_bus.py)). Plus **three stacked output layers** (`response_directive` → `interaction.directives` → ReplyAction) let the same content travel more than one path.
 
 ## 2. Goals / non-goals
 
@@ -63,13 +63,13 @@ Three structural causes:
 Add a persisted boolean `Interaction.emitted` (default `False`) + helper `mark_emitted()`.
 
 Set `True` at the **delivery choke points** for `user`-category, non-transient content:
-- `ReplyAction._pipe_response` — no-bus persist branch and non-streaming bus-publish branch ([reply_action.py:287-316](../../../jvagent/action/reply/reply_action.py)).
+- `ReplyAction._pipe_response` — no-bus persist branch and non-streaming bus-publish branch ([reply_action.py:287-316](../../jvagent/action/reply/reply_action.py)).
 - The **streaming** emission path — set `emitted` on the **first delivered chunk** (decision). If any token reached the user the turn counts as emitted (fallback suppressed); a stream that delivered **zero** chunks leaves the latch off so the fallback can recover. Do **not** wait for `streaming_complete` (an incomplete stream would otherwise let the fallback double-send on top of partial output) and do **not** latch at stream start (an early failure with nothing delivered would otherwise yield a silent turn).
 - `response_bus.publish` for `category == "user"` and `not transient` — the single delivery choke point that already calls `_append_to_interaction_response_impl`; set `emitted` there too (on the delivered chunk / non-stream message) so adapter/SSE delivery always latches, regardless of caller.
 
 The orchestrator's re-emission paths gate on `interaction.emitted` instead of `interaction.response`-emptiness:
-- `execute()` post-loop ([:635-637](../../../jvagent/action/orchestrator/orchestrator_interact_action.py)) — fallback only if `not interaction.emitted`.
-- `_finalize_directives` ([:669](../../../jvagent/action/orchestrator/orchestrator_interact_action.py)) — render only if `not interaction.emitted`.
+- `execute()` post-loop ([:635-637](../../jvagent/action/orchestrator/orchestrator_interact_action.py)) — fallback only if `not interaction.emitted`.
+- `_finalize_directives` ([:669](../../jvagent/action/orchestrator/orchestrator_interact_action.py)) — render only if `not interaction.emitted`.
 - `_maybe_emit_final` — suppress if `interaction.emitted` (keep the exact-text echo guard as a secondary check).
 
 This alone makes emission idempotent (Phase 0 — kills the adapter duplicate).
@@ -93,12 +93,12 @@ Net: `execute()` ends with a single `await self._egress(visitor, ...)` call; all
 
 `response_directive` (tool-result JSON) stays the model's in-loop guidance — unchanged in interview/skills. The change is at egress: when the model authors its reply, that reply is the single emission. The **parallel** path — an IA queuing the same content as an `interaction.directive` *and* the model also replying — is collapsed: `_egress` composes the model's reply **and** any unrendered `interaction.directives` into **one** ReplyAction compose, emitted once. No directive is rendered as a separate second message.
 
-ReplyAction already composes directives + text in one `respond` call ([reply_action.py:351-352](../../../jvagent/action/reply/reply_action.py)); `_egress` always uses that single compose when directives are present, so directives never produce an independent publish.
+ReplyAction already composes directives + text in one `respond` call ([reply_action.py:351-352](../../jvagent/action/reply/reply_action.py)); `_egress` always uses that single compose when directives are present, so directives never produce an independent publish.
 
 ### 5.4 `interaction.response` = persistence only
 
 Audit every site that **delivers** `interaction.response` (vs. returns it as data):
-- `interact/endpoints.py` non-streaming return ([:226](../../../jvagent/action/interact/endpoints.py)) — **keep** returning it as the JSON `response` field (decision: no first-party client consumes both the bus and the JSON body for a turn, so this is the *single* delivery for a direct non-streaming API caller, not a duplicate). Streaming clients use SSE only; non-streaming/API callers use the JSON body only.
+- `interact/endpoints.py` non-streaming return ([:226](../../jvagent/action/interact/endpoints.py)) — **keep** returning it as the JSON `response` field (decision: no first-party client consumes both the bus and the JSON body for a turn, so this is the *single* delivery for a direct non-streaming API caller, not a duplicate). Streaming clients use SSE only; non-streaming/API callers use the JSON body only.
 - Channel webhooks (`whatsapp`, `facebook_action`, `email_action`) — confirm none re-send `interaction.response` after the walk (WhatsApp already does not). Any that do switch to bus-only delivery.
 - Document the contract: **channel delivery is the bus; `interaction.response` is read-only history (also returned verbatim in the non-streaming JSON body for direct API callers).**
 

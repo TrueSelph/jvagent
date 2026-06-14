@@ -4,9 +4,9 @@
 
 **Goal:** Let one user utterance fill multiple interview fields in a single `set_fields` call with strict per-field `pre → validator → post` discipline and incremental branch settlement, slim the tool-return payloads, deliver field metadata once at activation (re-pullable via `get_status`), and remove the two interview-specific references from the orchestrator.
 
-**Architecture:** `interview__set_fields` already iterates fields in definition order through `pre_processor → run_validator → store → post_processor` ([engine.py:702-834](../../../jvagent/action/interview/engine.py)); we tighten it with an incremental reachability gate, replace the returned key-soup with a lean `results`/`pruned`/`ignored`/`response_directive` envelope, and move full field metadata into a single `field_reference` struct delivered at activation and on demand via `interview__get_status`. The orchestrator loses its `interview__set_fields` compound-rule duplicate ([skill_tasks.py:506-512](../../../jvagent/action/orchestrator/skill_tasks.py)) and its `interview__` prep filter ([orchestrator_interact_action.py:2405-2409](../../../jvagent/action/orchestrator/orchestrator_interact_action.py)), both replaced by generic mechanisms.
+**Architecture:** `interview__set_fields` already iterates fields in definition order through `pre_processor → run_validator → store → post_processor` ([engine.py:702-834](../../jvagent/action/interview/engine.py)); we tighten it with an incremental reachability gate, replace the returned key-soup with a lean `results`/`pruned`/`ignored`/`response_directive` envelope, and move full field metadata into a single `field_reference` struct delivered at activation and on demand via `interview__get_status`. The orchestrator loses its `interview__set_fields` compound-rule duplicate ([skill_tasks.py:506-512](../../jvagent/action/orchestrator/skill_tasks.py)) and its `interview__` prep filter ([orchestrator_interact_action.py:2405-2409](../../jvagent/action/orchestrator/orchestrator_interact_action.py)), both replaced by generic mechanisms.
 
-**Tech Stack:** Python 3, pytest / pytest-asyncio, jvspatial nodes. Lint: black, isort (profile black), flake8, mypy. Spec: [docs/superpowers/specs/2026-06-13-interview-multi-response-design.md](../specs/2026-06-13-interview-multi-response-design.md).
+**Tech Stack:** Python 3, pytest / pytest-asyncio, jvspatial nodes. Lint: black, isort (profile black), flake8, mypy. Spec: [.planning/specs/2026-06-13-interview-multi-response-design.md](../specs/2026-06-13-interview-multi-response-design.md).
 
 **Status-vocabulary note:** This plan **preserves** the existing `status` values (`active`/`review`/`completed` on success; `error`/`partial_success`/`validation_failed` on failure from `_batch_failure_status`). The slimming is about removing redundant *data* keys, not redefining `status`. Per-field outcome lives in `results` + top-level `ok`.
 
@@ -30,7 +30,7 @@
 ### Task 1: `field_reference` serializer helper
 
 **Files:**
-- Modify: `jvagent/action/interview/spec.py` (add helper near `field_def_to_dict`, [spec.py:120](../../../jvagent/action/interview/spec.py))
+- Modify: `jvagent/action/interview/spec.py` (add helper near `field_def_to_dict`, [spec.py:120](../../jvagent/action/interview/spec.py))
 - Test: `tests/action/interview/test_field_reference.py` (create)
 
 - [ ] **Step 1: Write the failing test**
@@ -93,7 +93,7 @@ git commit -m "feat(interview): add fields_reference serializer for activation s
 ### Task 2: `field_reference` in the activation envelope
 
 **Files:**
-- Modify: `jvagent/action/interview/engine.py` — `_session_envelope` inside `handle_start` ([engine.py:1615-1629](../../../jvagent/action/interview/engine.py))
+- Modify: `jvagent/action/interview/engine.py` — `_session_envelope` inside `handle_start` ([engine.py:1615-1629](../../jvagent/action/interview/engine.py))
 - Test: `tests/action/interview/test_interview_skill_activate.py` (add a test)
 
 - [ ] **Step 1: Write the failing test**
@@ -126,7 +126,7 @@ In `engine.py`, import the helper (top of file with other `spec` imports):
 from .spec import fields_reference  # add to existing spec import block
 ```
 
-Edit `_session_envelope` ([engine.py:1615](../../../jvagent/action/interview/engine.py)) to add three keys:
+Edit `_session_envelope` ([engine.py:1615](../../jvagent/action/interview/engine.py)) to add three keys:
 
 ```python
     async def _session_envelope(session: InterviewSession, **extra: Any) -> str:
@@ -175,7 +175,7 @@ git commit -m "feat(interview): deliver full field_reference in activation envel
 ### Task 3: `interview__get_status` returns full `field_reference` on demand
 
 **Files:**
-- Modify: `jvagent/action/interview/engine.py` — `handle_get_status` ([engine.py:1567-1589](../../../jvagent/action/interview/engine.py))
+- Modify: `jvagent/action/interview/engine.py` — `handle_get_status` ([engine.py:1567-1589](../../jvagent/action/interview/engine.py))
 - Test: `tests/action/interview/test_interview_skill_activate.py` or a new `test_get_status_reference.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -223,7 +223,7 @@ Expected: FAIL with `KeyError: 'field_reference'`
 
 - [ ] **Step 3: Write minimal implementation**
 
-In `handle_get_status`, build the full reference unconditionally and pass it. Replace the `return interview_tool_response(...)` at [engine.py:1567](../../../jvagent/action/interview/engine.py) so it adds `field_reference=fields_reference(spec) if spec else None,` alongside the existing keys. Keep the existing paginated `field_definitions` for back-compat:
+In `handle_get_status`, build the full reference unconditionally and pass it. Replace the `return interview_tool_response(...)` at [engine.py:1567](../../jvagent/action/interview/engine.py) so it adds `field_reference=fields_reference(spec) if spec else None,` alongside the existing keys. Keep the existing paginated `field_definitions` for back-compat:
 
 ```python
     return interview_tool_response(
@@ -269,7 +269,7 @@ git commit -m "feat(interview): get_status returns full field_reference for on-d
 ### Task 4: Slim the `set_fields` success / failure return
 
 **Files:**
-- Modify: `jvagent/action/interview/engine.py` — payload assembly ([engine.py:923-985](../../../jvagent/action/interview/engine.py)); add `error_code` to the validation-failure `results` entry ([engine.py:776-778](../../../jvagent/action/interview/engine.py)); add `error_code` to `_compact_field_updates` ([engine.py:361-378](../../../jvagent/action/interview/engine.py))
+- Modify: `jvagent/action/interview/engine.py` — payload assembly ([engine.py:923-985](../../jvagent/action/interview/engine.py)); add `error_code` to the validation-failure `results` entry ([engine.py:776-778](../../jvagent/action/interview/engine.py)); add `error_code` to `_compact_field_updates` ([engine.py:361-378](../../jvagent/action/interview/engine.py))
 - Test: `tests/action/interview/test_set_fields.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -311,20 +311,20 @@ Expected: FAIL — `field_updates` present / `results` missing
 
 - [ ] **Step 3: Write minimal implementation**
 
-3a. Set `error_code` on the in-loop validation-failure entry. At [engine.py:776](../../../jvagent/action/interview/engine.py), after `entry["error"] = err`, add:
+3a. Set `error_code` on the in-loop validation-failure entry. At [engine.py:776](../../jvagent/action/interview/engine.py), after `entry["error"] = err`, add:
 
 ```python
             entry["error_code"] = "VALIDATION_FAILED"
 ```
 
-3b. Carry `error_code` through compaction. In `_compact_field_updates` ([engine.py:373](../../../jvagent/action/interview/engine.py)), after the `error` block add:
+3b. Carry `error_code` through compaction. In `_compact_field_updates` ([engine.py:373](../../jvagent/action/interview/engine.py)), after the `error` block add:
 
 ```python
         if item.get("error_code"):
             entry["error_code"] = item.get("error_code")
 ```
 
-3c. Replace the payload-assembly block ([engine.py:923-985](../../../jvagent/action/interview/engine.py), from `updates = _compact_field_updates(results)` through the final `return`) with:
+3c. Replace the payload-assembly block ([engine.py:923-985](../../jvagent/action/interview/engine.py), from `updates = _compact_field_updates(results)` through the final `return`) with:
 
 ```python
     updates = _compact_field_updates(results)
@@ -389,7 +389,7 @@ git commit -m "refactor(interview): slim set_fields return to results/pruned/ign
 ### Task 5: Slim the `set_fields` completion return
 
 **Files:**
-- Modify: `jvagent/action/interview/engine.py` — completion return ([engine.py:912-921](../../../jvagent/action/interview/engine.py))
+- Modify: `jvagent/action/interview/engine.py` — completion return ([engine.py:912-921](../../jvagent/action/interview/engine.py))
 - Test: `tests/action/interview/test_signup_complete.py` (or `test_set_fields.py`)
 
 - [ ] **Step 1: Write the failing test**
@@ -431,7 +431,7 @@ Expected: FAIL — `fields` still present / `results` missing
 
 - [ ] **Step 3: Write minimal implementation**
 
-Replace the completion `return` block ([engine.py:912-921](../../../jvagent/action/interview/engine.py)):
+Replace the completion `return` block ([engine.py:912-921](../../jvagent/action/interview/engine.py)):
 
 ```python
         return interview_tool_response(
@@ -464,10 +464,10 @@ git commit -m "refactor(interview): slim set_fields completion return"
 ### Task 6: Incremental branch settlement in the `set_fields` loop
 
 **Files:**
-- Modify: `jvagent/action/interview/engine.py` — add a reachability gate inside the batch loop, after `fdef` resolution ([engine.py:727](../../../jvagent/action/interview/engine.py), before the `entry` dict)
+- Modify: `jvagent/action/interview/engine.py` — add a reachability gate inside the batch loop, after `fdef` resolution ([engine.py:727](../../jvagent/action/interview/engine.py), before the `entry` dict)
 - Test: `tests/action/interview/test_set_fields.py`
 
-**Why:** Today reachability is computed once *after* the loop ([engine.py:836-840](../../../jvagent/action/interview/engine.py)), so a field that an earlier-in-call answer makes unreachable still runs its validator and **post_processor side effects** before being pruned. Gating per-iteration prevents that while keeping the same stored result.
+**Why:** Today reachability is computed once *after* the loop ([engine.py:836-840](../../jvagent/action/interview/engine.py)), so a field that an earlier-in-call answer makes unreachable still runs its validator and **post_processor side effects** before being pruned. Gating per-iteration prevents that while keeping the same stored result.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -503,7 +503,7 @@ Expected: FAIL — `EXCLUDED` is stored (current code stores then prunes after t
 
 - [ ] **Step 3: Write minimal implementation**
 
-Insert a reachability gate at the top of the loop body, immediately after the `if not fdef:` block closes ([engine.py:727](../../../jvagent/action/interview/engine.py), before `entry: Dict[str, Any] = {`):
+Insert a reachability gate at the top of the loop body, immediately after the `if not fdef:` block closes ([engine.py:727](../../jvagent/action/interview/engine.py), before `entry: Dict[str, Any] = {`):
 
 ```python
         reachable_now = await compute_active_path_for_prune(
@@ -516,7 +516,7 @@ Insert a reachability gate at the top of the loop body, immediately after the `i
             continue
 ```
 
-> `compute_active_path_for_prune` is already imported and used after the loop. Because fields iterate in definition order, a branch-determining field is processed (and stored) before any field it gates, so this gate sees the settled path. The after-loop prune ([engine.py:836-880](../../../jvagent/action/interview/engine.py)) remains as the backstop for fields gated by determinants answered in prior turns.
+> `compute_active_path_for_prune` is already imported and used after the loop. Because fields iterate in definition order, a branch-determining field is processed (and stored) before any field it gates, so this gate sees the settled path. The after-loop prune ([engine.py:836-880](../../jvagent/action/interview/engine.py)) remains as the backstop for fields gated by determinants answered in prior turns.
 
 - [ ] **Step 4: Run test + the branching slice**
 
@@ -535,7 +535,7 @@ git commit -m "feat(interview): incremental branch settlement skips unreachable 
 ### Task 7: Slim the `next_field` return
 
 **Files:**
-- Modify: `jvagent/action/interview/engine.py` — `handle_next_field` ([engine.py:1048-1098](../../../jvagent/action/interview/engine.py))
+- Modify: `jvagent/action/interview/engine.py` — `handle_next_field` ([engine.py:1048-1098](../../jvagent/action/interview/engine.py))
 - Test: `tests/action/interview/test_interview_next_field.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -569,7 +569,7 @@ Expected: FAIL — `awaiting_fields` present / `fields` present
 
 - [ ] **Step 3: Write minimal implementation**
 
-Rewrite `handle_next_field` to drop `field_ctx`, `fields`, `skipped_fields` and slim the `next_field` object. Replace the body from `field_ctx = ...` ([engine.py:1054](../../../jvagent/action/interview/engine.py)) through the final `return`:
+Rewrite `handle_next_field` to drop `field_ctx`, `fields`, `skipped_fields` and slim the `next_field` object. Replace the body from `field_ctx = ...` ([engine.py:1054](../../jvagent/action/interview/engine.py)) through the final `return`:
 
 ```python
     load_fn = action._load_fn(spec)
@@ -628,7 +628,7 @@ git commit -m "refactor(interview): slim next_field return to key+prompt+directi
 ### Task 8: Base SOP reads `field_reference`
 
 **Files:**
-- Modify: `jvagent/action/interview/SKILL.md` — context contract + activation steps + extraction pass ([SKILL.md:23-55](../../../jvagent/action/interview/SKILL.md))
+- Modify: `jvagent/action/interview/SKILL.md` — context contract + activation steps + extraction pass ([SKILL.md:23-55](../../jvagent/action/interview/SKILL.md))
 - Test: `tests/action/interview/test_interview_procedure.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -653,15 +653,15 @@ Expected: FAIL — `field_reference` not in body
 
 In `jvagent/action/interview/SKILL.md`:
 
-- Replace the **Context contract** paragraph ([SKILL.md:23](../../../jvagent/action/interview/SKILL.md)) with:
+- Replace the **Context contract** paragraph ([SKILL.md:23](../../jvagent/action/interview/SKILL.md)) with:
 
 ```markdown
 Context contract: activation via `use_skill` is the rich context snapshot — `field_reference` (every field's `key`, `prompt`, `guidance`, `required`, `branches`), `awaiting_fields`, `field_keys`, and `start_field`. `interview__set_fields` and `interview__next_field` responses are compact (results + directive, key + prompt); they do not repeat field metadata. Re-pull `field_reference` any time with `interview__get_status`.
 ```
 
-- In the **Activation** step (item 2, [SKILL.md:31](../../../jvagent/action/interview/SKILL.md)), change "Read `awaiting_fields`, `field_keys`, and `guidance_page`" to "Read `field_reference`, `awaiting_fields`, and `field_keys`".
+- In the **Activation** step (item 2, [SKILL.md:31](../../jvagent/action/interview/SKILL.md)), change "Read `awaiting_fields`, `field_keys`, and `guidance_page`" to "Read `field_reference`, `awaiting_fields`, and `field_keys`".
 
-- In the **Extraction pass** ([SKILL.md:48-55](../../../jvagent/action/interview/SKILL.md)), change the key-source line to: "Map all confident values to canonical keys from `field_reference[].key` (preferred), then `awaiting_fields[].key`, then `field_keys`." Remove `guidance_page` references. Keep the "Submit one initial `interview__set_fields` call containing every extracted key/value" sentence (this is now the *only* home of the compound rule).
+- In the **Extraction pass** ([SKILL.md:48-55](../../jvagent/action/interview/SKILL.md)), change the key-source line to: "Map all confident values to canonical keys from `field_reference[].key` (preferred), then `awaiting_fields[].key`, then `field_keys`." Remove `guidance_page` references. Keep the "Submit one initial `interview__set_fields` call containing every extracted key/value" sentence (this is now the *only* home of the compound rule).
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -680,7 +680,7 @@ git commit -m "docs(interview): base SOP reads field_reference; sole home of com
 ### Task 9: Orchestrator C1 — delete the compound-rule duplicate
 
 **Files:**
-- Modify: `jvagent/action/orchestrator/skill_tasks.py` — `task_lock_section_text` ([skill_tasks.py:506-512](../../../jvagent/action/orchestrator/skill_tasks.py))
+- Modify: `jvagent/action/orchestrator/skill_tasks.py` — `task_lock_section_text` ([skill_tasks.py:506-512](../../jvagent/action/orchestrator/skill_tasks.py))
 - Test: `tests/action/orchestrator/test_apply_task_lock_turn.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -709,7 +709,7 @@ Expected: FAIL — `Compound extraction rule` present
 
 - [ ] **Step 3: Delete the block**
 
-In `task_lock_section_text` ([skill_tasks.py:506-512](../../../jvagent/action/orchestrator/skill_tasks.py)) remove:
+In `task_lock_section_text` ([skill_tasks.py:506-512](../../jvagent/action/orchestrator/skill_tasks.py)) remove:
 
 ```python
     required_tools = set(getattr(skill_doc, "requires_tools", ()) or ())
@@ -740,8 +740,8 @@ git commit -m "refactor(orchestrator): drop interview__set_fields compound-rule 
 ### Task 10: Orchestrator C2 — generic `server_prep` marker for prep visualization
 
 **Files:**
-- Modify: `jvagent/action/orchestrator/orchestrator_interact_action.py` — `_emit_server_prep_tool_thoughts` ([orchestrator_interact_action.py:2405-2409](../../../jvagent/action/orchestrator/orchestrator_interact_action.py))
-- Modify: `jvagent/action/orchestrator/skill_tasks.py` — tag the session-note observation ([skill_tasks.py:616-622](../../../jvagent/action/orchestrator/skill_tasks.py)) and bound-action prep observations ([skill_tasks.py:637-638](../../../jvagent/action/orchestrator/skill_tasks.py)) with `kind: "server_prep"`
+- Modify: `jvagent/action/orchestrator/orchestrator_interact_action.py` — `_emit_server_prep_tool_thoughts` ([orchestrator_interact_action.py:2405-2409](../../jvagent/action/orchestrator/orchestrator_interact_action.py))
+- Modify: `jvagent/action/orchestrator/skill_tasks.py` — tag the session-note observation ([skill_tasks.py:616-622](../../jvagent/action/orchestrator/skill_tasks.py)) and bound-action prep observations ([skill_tasks.py:637-638](../../jvagent/action/orchestrator/skill_tasks.py)) with `kind: "server_prep"`
 - Test: `tests/action/orchestrator/test_server_prep_thoughts.py` (create)
 
 - [ ] **Step 1: Write the failing test**
@@ -780,7 +780,7 @@ Expected: FAIL — `_append_session_note` missing / `interview__` still in emitt
 
 - [ ] **Step 3: Implement marker + generic filter**
 
-3a. In `skill_tasks.py`, add a small helper and use it. Replace the session-note append ([skill_tasks.py:616-622](../../../jvagent/action/orchestrator/skill_tasks.py)):
+3a. In `skill_tasks.py`, add a small helper and use it. Replace the session-note append ([skill_tasks.py:616-622](../../jvagent/action/orchestrator/skill_tasks.py)):
 
 ```python
 def _append_session_note(observations: List[Dict[str, Any]], note: str) -> None:
@@ -801,7 +801,7 @@ and at the call site:
         _append_session_note(observations, note)
 ```
 
-3b. Tag bound-action prep observations. After `observations.extend(prep.observations)` ([skill_tasks.py:638](../../../jvagent/action/orchestrator/skill_tasks.py)) ensure each carries the marker:
+3b. Tag bound-action prep observations. After `observations.extend(prep.observations)` ([skill_tasks.py:638](../../jvagent/action/orchestrator/skill_tasks.py)) ensure each carries the marker:
 
 ```python
             if prep.observations:
@@ -810,7 +810,7 @@ and at the call site:
                 observations.extend(prep.observations)
 ```
 
-3c. Generalize the emitter ([orchestrator_interact_action.py:2405-2409](../../../jvagent/action/orchestrator/orchestrator_interact_action.py)):
+3c. Generalize the emitter ([orchestrator_interact_action.py:2405-2409](../../jvagent/action/orchestrator/orchestrator_interact_action.py)):
 
 ```python
         """Surface server-injected skill prep in the TOOL CALLS panel."""
@@ -938,7 +938,7 @@ Expected: black/isort/flake8/mypy clean. Fix reported issues.
 - [ ] **Step 3: Manual contract smoke (optional but recommended)**
 
 Run: `jvagent examples/jvagent_app validate`
-Expected: app + agents validate. Then exercise the signup interview locally per [.planning/runbooks/local-dev.md](../../../.planning/runbooks/local-dev.md) and confirm a compound utterance ("Jane Doe, jane@example.com") fills both fields in one `set_fields` call.
+Expected: app + agents validate. Then exercise the signup interview locally per [.planning/runbooks/local-dev.md](../../.planning/runbooks/local-dev.md) and confirm a compound utterance ("Jane Doe, jane@example.com") fills both fields in one `set_fields` call.
 
 - [ ] **Step 4: Commit any fixups**
 

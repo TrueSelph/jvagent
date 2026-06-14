@@ -63,10 +63,10 @@ response_bus → SSE / channel adapter   (sets interaction.emitted — ADR-0024)
 `add_directive(directive, action_name, *, standalone=False)` stores `{"action_name", "content", "executed", "standalone"}`. `get_unexecuted_directives()` unchanged; add `get_standalone_directives()` / filter helpers. Standalone directives are delivered as their own message (preserves the catalog + closing multi-message case without a second uncontrolled egress).
 
 ### 5.2 ReplyAction = sole responder (`get_responder`)
-`Action.get_responder()` ([base.py:232-254](../../../jvagent/action/base.py)) returns the enabled ReplyAction; remove the PersonaAction import + fallback. If no ReplyAction is enabled, return None (callers already null-guard) — agents must enable it.
+`Action.get_responder()` ([base.py:232-254](../../jvagent/action/base.py)) returns the enabled ReplyAction; remove the PersonaAction import + fallback. If no ReplyAction is enabled, return None (callers already null-guard) — agents must enable it.
 
 ### 5.3 ReplyAction.respond subsumes the history-aware signature
-`interact/base.py respond()` ([:514-549](../../../jvagent/action/interact/base.py)) branches on `isinstance(responder, PersonaAction)` vs `ReplyAction`. Collapse to one branch calling `ReplyAction.respond(...)`. ReplyAction.respond accepts `use_history`, `history_limit`, `with_utterance`, `with_interpretation`, `with_event`, `with_response`, `max_statement_length`, `transient` — loading conversation history for rails agents (port PersonaAction's `_get_conversation_history` into ReplyAction or a shared `reply/history.py` helper). Under the orchestrator, history is already in the loop prompt, so these default off and the call stays lean.
+`interact/base.py respond()` ([:514-549](../../jvagent/action/interact/base.py)) branches on `isinstance(responder, PersonaAction)` vs `ReplyAction`. Collapse to one branch calling `ReplyAction.respond(...)`. ReplyAction.respond accepts `use_history`, `history_limit`, `with_utterance`, `with_interpretation`, `with_event`, `with_response`, `max_statement_length`, `transient` — loading conversation history for rails agents (port PersonaAction's `_get_conversation_history` into ReplyAction or a shared `reply/history.py` helper). Under the orchestrator, history is already in the loop prompt, so these default off and the call stays lean.
 
 ### 5.4 ReplyAction gathers (not just applies passed inputs)
 Today ReplyAction applies the directives/params already on the interaction in its compose — that IS the gather. Make it explicit: at egress, ReplyAction reads ALL unexecuted user directives, marks them executed on compose, and emits once. Confirm the orchestrator's `_egress` calls ReplyAction such that every queued directive composes together (no per-directive emission).
@@ -74,7 +74,7 @@ Today ReplyAction applies the directives/params already on the interaction in it
 ### 5.5 Migrate direct PersonaAction consumers
 - `handoff_interact_action.py:260` — replace `PersonaAction._get_conversation_history` with the shared history helper from §5.3.
 - `parameters.py`, `model/context.py`, `core/agent.py`, `core/profiling.py`, `vectorstore/base.py`, channel actions — remove PersonaAction imports/branches; route through ReplyAction or the Agent identity/params subsystem.
-- `get_capabilities` docstrings ([base.py:221-224](../../../jvagent/action/base.py)) — reword "PersonaAction aggregates" → "ReplyAction/identity aggregates".
+- `get_capabilities` docstrings ([base.py:221-224](../../jvagent/action/base.py)) — reword "PersonaAction aggregates" → "ReplyAction/identity aggregates".
 
 ### 5.6 Scaffolding + examples
 `scaffold/builtin_profiles/{minimal,orchestrator,research}.yaml` and `examples/jvagent_app/.../agent.yaml` — replace PersonaAction with ReplyAction in the action set; update READMEs/architecture docs.

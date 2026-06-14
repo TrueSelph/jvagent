@@ -10,26 +10,26 @@
 
 The interview action already stores multiple fields per call: `interview__set_fields`
 accepts `{"fields": {...}}` and processes each field through `pre_processor → validator →
-store → post_processor` ([engine.py:687-835](../../../jvagent/action/interview/engine.py)).
+store → post_processor` ([engine.py:687-835](../../jvagent/action/interview/engine.py)).
 Two problems block a clean multi-response experience:
 
 1. **Fat payloads.** Every tool return re-ships field metadata — `fields`,
    `field_definitions`, `awaiting_fields`, `guidance_page`, `field_keys`,
-   `active_path_keys` ([engine.py:631-985](../../../jvagent/action/interview/engine.py)).
+   `active_path_keys` ([engine.py:631-985](../../jvagent/action/interview/engine.py)).
    The model re-reads the same prompts/guidance on every call.
 2. **Orchestrator coupling.** Two hardcoded interview references violate the goal of a
    reusable, skill-agnostic agentic loop:
    - Compound-extraction nudge keyed on the literal `"interview__set_fields"`
-     ([skill_tasks.py:507-512](../../../jvagent/action/orchestrator/skill_tasks.py)).
+     ([skill_tasks.py:507-512](../../jvagent/action/orchestrator/skill_tasks.py)).
    - Prep visualization filtered on the `interview__` namespace prefix
      (`_emit_server_prep_tool_thoughts`,
-     [orchestrator_interact_action.py:2405-2424](../../../jvagent/action/orchestrator/orchestrator_interact_action.py)).
+     [orchestrator_interact_action.py:2405-2424](../../jvagent/action/orchestrator/orchestrator_interact_action.py)).
 
 Field metadata is already serializable via `field_def_to_dict`
-([spec.py:120-139](../../../jvagent/action/interview/spec.py)), and interview activation
+([spec.py:120-139](../../jvagent/action/interview/spec.py)), and interview activation
 already flows through a generic, interview-owned hook
 (`on_skill_activate` → `_handle_start`,
-[engine.py:1592-1651](../../../jvagent/action/interview/engine.py)). This design leverages
+[engine.py:1592-1651](../../jvagent/action/interview/engine.py)). This design leverages
 both.
 
 ## 2. Goals / non-goals
@@ -86,13 +86,13 @@ verbatim — it never constructs or inspects field data.
 }
 ```
 
-- Built from `field_def_to_dict` ([spec.py:120-139](../../../jvagent/action/interview/spec.py)) — reuse, no new serializer.
+- Built from `field_def_to_dict` ([spec.py:120-139](../../jvagent/action/interview/spec.py)) — reuse, no new serializer.
 - **On-demand recovery, not per-turn push.** `field_reference` ships once in the activation
   envelope. When context thins on a long interview, the model re-pulls it by calling
   `interview__get_status` (with `include_field_definitions`-equivalent behavior), which
   already returns the full ordered field list
-  ([engine.py:1560-1565](../../../jvagent/action/interview/engine.py)). The base SOP already
-  instructs this refresh ([SKILL.md:23](../../../jvagent/action/interview/SKILL.md)). No
+  ([engine.py:1560-1565](../../jvagent/action/interview/engine.py)). The base SOP already
+  instructs this refresh ([SKILL.md:23](../../jvagent/action/interview/SKILL.md)). No
   server-pushed per-turn observation ⇒ the thin-harness "no prep observations" invariant is
   preserved, and the orchestrator needs no interview knowledge.
 
@@ -145,7 +145,7 @@ key→prompt mapping is validated in practice.
 ## 5. Per-response processing discipline
 
 Canonical contract for a single `set_fields` call carrying N submitted pairs. Formalizes
-and tightens the existing loop ([engine.py:687-835](../../../jvagent/action/interview/engine.py)).
+and tightens the existing loop ([engine.py:687-835](../../jvagent/action/interview/engine.py)).
 
 **Processing order:** field-definition order (NOT submission order), so branch-determining
 fields settle before fields that depend on them.
@@ -184,15 +184,15 @@ fields in one call, and (c) emitting the slim return.
 Both interview-specific references are removed.
 
 **C1 — compound-extraction rule.** Delete
-[skill_tasks.py:506-512](../../../jvagent/action/orchestrator/skill_tasks.py). The rule —
+[skill_tasks.py:506-512](../../jvagent/action/orchestrator/skill_tasks.py). The rule —
 "for one user utterance, submit one `set_fields` call with all confident key/value pairs" —
 **already lives in the base `SKILL.md` SOP** (`## Extraction pass`,
-[SKILL.md](../../../jvagent/action/interview/SKILL.md)), which is re-surfaced each turn as
+[SKILL.md](../../jvagent/action/interview/SKILL.md)), which is re-surfaced each turn as
 the PROCEDURE block. So C1 only removes the orchestrator's duplicate; no SOP addition
 needed beyond a wording confirm.
 
 **C2 — prep visualization.** Generalize `_emit_server_prep_tool_thoughts`
-([orchestrator_interact_action.py:2405-2424](../../../jvagent/action/orchestrator/orchestrator_interact_action.py)).
+([orchestrator_interact_action.py:2405-2424](../../jvagent/action/orchestrator/orchestrator_interact_action.py)).
 Replace the `tool.startswith("interview__")` filter with a generic observation marker
 (e.g. `entry.get("kind") == "server_prep"`). The marker is attached where prep
 observations are created (the interview action's prep/activation hook and any future
@@ -236,7 +236,7 @@ returns zero matches (outside comments/tests). Add this as a guard test.
   on demand via `interview__get_status` (decision #1), long interviews stay robust without
   any per-turn server push. The only requirement is that the base SOP keeps instructing the
   model to refresh via `get_status` when context thins — already present
-  ([SKILL.md:23](../../../jvagent/action/interview/SKILL.md)); verify it survives the SOP edits.
+  ([SKILL.md:23](../../jvagent/action/interview/SKILL.md)); verify it survives the SOP edits.
 
 ## 9. Acceptance criteria
 
