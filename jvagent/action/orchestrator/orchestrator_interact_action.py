@@ -1497,31 +1497,42 @@ class OrchestratorInteractAction(InteractAction):
         visible: Set[str],
         activated: List[str],
         observations: List[Dict[str, Any]],
-    ) -> Tuple[Optional[Any], Dict[str, Any], Set[str], str]:
+    ) -> Tuple[Optional[Any], Dict[str, Any], Set[str], str, Optional[str]]:
         """Run turn-lock prep when use_skill first-activates a locked skill mid-loop.
 
         Pre-loop ``apply_task_lock_turn`` covers auto-start and resumed tasks;
         model-driven ``use_skill`` on tick 1 skipped that path, so message
         evaluation / next_field prep never ran on the activation turn.
+
+        Returns a 5th element: a terminal *detour directive* when a prerequisite was
+        pushed this turn. The detour's first question must be asked by the server and
+        end the turn — handed to the model as a fillable observation it fabricates the
+        answer and races past the gate (ADR-0026: the detour start is
+        orchestrator-delivered, not model-mediated).
         """
         if not (activation_obs or "").startswith("Activated skill"):
-            return None, tools, visible, ""
+            return None, tools, visible, "", None
         doc = next(
             (d for d in skill_docs if getattr(d, "name", None) == skill_name),
             None,
         )
         if doc is None or not getattr(doc, "task_lock", False):
-            return None, tools, visible, ""
+            return None, tools, visible, "", None
         # Declarative gate (ADR-0026): if the activated skill has an unmet
         # precondition, push the prerequisite task and redirect the lock to it (the
         # gated skill is now blocked and resumes when the prerequisite completes).
         # Chained so a prerequisite with its own unmet precondition pushes too.
-        from jvagent.action.orchestrator.skill_tasks import push_unmet_prerequisites
+        from jvagent.action.orchestrator.skill_tasks import (
+            action_for_skill,
+            push_unmet_prerequisites,
+        )
 
+        pushed_any = False
         for _ in range(8):
             pushed = await push_unmet_prerequisites(visitor, doc, loop_actions)
             if not pushed:
                 break
+            pushed_any = True
             prereq_doc = next(
                 (d for d in skill_docs if getattr(d, "name", None) == pushed), None
             )
@@ -1544,7 +1555,20 @@ class OrchestratorInteractAction(InteractAction):
         )
 
         await prune_task_lock_tools_for_actions(loop_actions, visitor, tools, visible)
-        return doc, tools, visible, skills_section
+        # When a prerequisite was just pushed, end the turn on its first question so
+        # the model cannot answer it itself. Generic, duck-typed — any task-lock
+        # action may expose the hook; absent it, fall through to normal egress.
+        detour_directive: Optional[str] = None
+        if pushed_any:
+            bound = action_for_skill(doc, loop_actions)
+            if bound is not None and hasattr(bound, "task_lock_entry_directive"):
+                try:
+                    detour_directive = await bound.task_lock_entry_directive(
+                        doc.name, visitor
+                    )
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.debug("orchestrator: detour entry directive failed: %s", exc)
+        return doc, tools, visible, skills_section, detour_directive
 
     async def _reground_parent_lock(
         self,
@@ -2318,7 +2342,7 @@ class OrchestratorInteractAction(InteractAction):
                     if tool_name == "use_skill":
                         skill_name = ((args or {}).get("name") or "").strip()
                         prep_obs_before = len(observations)
-                        locked_doc, tools, visible, new_section = (
+                        locked_doc, tools, visible, new_section, detour_directive = (
                             await self._apply_task_lock_after_use_skill(
                                 skill_name=skill_name,
                                 activation_obs=obs if isinstance(obs, str) else "",
@@ -2339,6 +2363,15 @@ class OrchestratorInteractAction(InteractAction):
                             await self._emit_server_prep_tool_thoughts(
                                 visitor, observations, since_index=prep_obs_before
                             )
+                            # A prerequisite was pushed: deliver its first question
+                            # as the turn's terminal reply so the model cannot
+                            # fabricate the answer and skip the gate. The directive
+                            # contract below reads a JSON tool-result, so frame it as
+                            # one (no next_tool ⇒ it is treated as the terminal reply).
+                            if detour_directive:
+                                obs = json.dumps(
+                                    {"response_directive": detour_directive}
+                                )
                     # Companion detour: a companion capability (tool or skill) was
                     # used while a parent skill holds the turn-lock. Re-ground the
                     # parent in place so the model returns to it as soon as the side

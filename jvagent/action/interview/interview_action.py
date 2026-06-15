@@ -255,6 +255,31 @@ class InterviewAction(Action):
             ]
         )
 
+    async def task_lock_entry_directive(
+        self, skill_name: str, visitor: Any = None
+    ) -> Optional[str]:
+        """Task-lock hook (ADR-0026): the terminal directive to deliver when this
+        skill is *entered as a pushed prerequisite* mid-turn.
+
+        Returns its first pending field's ``Tell the user:`` prompt so the detour
+        asks the user and the orchestrator ends the turn. Without this the model is
+        handed a fillable field reference and fabricates the answer itself (racing
+        straight past the gate). Returns ``None`` if there is no ready session or no
+        pending field, in which case the orchestrator falls back to its own egress.
+        """
+        if not await self._has_ready_session(skill_name, visitor):
+            return None
+        try:
+            result = await engine.handle_next_field(self, visitor)
+            data = json.loads(result)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("task_lock_entry_directive failed for %s: %s", skill_name, exc)
+            return None
+        directive = data.get("response_directive")
+        if isinstance(directive, str) and directive.strip():
+            return directive
+        return None
+
     async def snapshot_task_state(
         self, skill_name: str, visitor: Any = None
     ) -> Dict[str, Any]:

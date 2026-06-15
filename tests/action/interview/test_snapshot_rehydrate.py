@@ -87,3 +87,28 @@ async def test_snapshot_empty_without_matching_session():
     visitor, _ = _visitor()
     assert await action.snapshot_task_state("pre_alert_interview", visitor) == {}
     assert await action.rehydrate_from_task("pre_alert_interview", {}, visitor) is False
+
+
+@pytest.mark.asyncio
+async def test_entry_directive_is_terminal_first_question():
+    """ADR-0026: when a skill is entered as a pushed prerequisite, its entry
+    directive is the first field's terminal 'Tell the user:' prompt — so the
+    orchestrator ends the turn asking the user instead of letting the model
+    fabricate the answer and race past the gate."""
+    action = _action()
+    visitor, conv = _visitor()
+    sess = InterviewSession(interview_type="pre_alert_interview")
+    await save_session(conv, sess)
+
+    directive = await action.task_lock_entry_directive("pre_alert_interview", visitor)
+    assert isinstance(directive, str) and directive.strip()
+    assert directive.strip().lower().startswith("tell the user:")
+
+
+@pytest.mark.asyncio
+async def test_entry_directive_none_without_session():
+    action = _action()
+    visitor, _ = _visitor()
+    assert (
+        await action.task_lock_entry_directive("pre_alert_interview", visitor) is None
+    )
