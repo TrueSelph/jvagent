@@ -1647,12 +1647,30 @@ class OrchestratorInteractAction(InteractAction):
             return None
         if getattr(parent, "name", None) == getattr(completed_doc, "name", None):
             return None  # same skill still owns the lock — not a resume
-        # Resume the parent in-turn: re-apply its locked surface + re-ground.
+        from jvagent.action.orchestrator.skill_tasks import (
+            _active_skill_task,
+            action_for_skill,
+            task_store_for_conversation,
+        )
+
+        # The gated task carries the original request as its seed (seed_from:
+        # [utterance]); a pushed prerequisite has none. That presence is the clean
+        # discriminator between "resume the gated service with its original request"
+        # and "enter a fresh prerequisite".
+        store = task_store_for_conversation(getattr(visitor, "conversation", None))
+        ptask = _active_skill_task(store, parent.name) if store else None
+        seed_utterance = str(
+            (getattr(ptask, "seed", None) or {}).get("utterance") or ""
+        )
+        # Re-apply the parent's locked surface. When resuming the gated service, run
+        # its activation against the *original* request so its first fields extract
+        # from it (extraction is model-owned, so this is fed as the activation input,
+        # not auto-filled) instead of re-asking for what the user already provided.
         tools, visible, skills_section = await self._apply_active_task_lock_skill(
             parent,
             loop_actions,
             visitor,
-            utterance,
+            seed_utterance or utterance,
             tools,
             visible,
             activated,
@@ -1661,12 +1679,38 @@ class OrchestratorInteractAction(InteractAction):
         )
         _, rd = self._result_next(obs)
         ack = self._directive_user_text(rd)
-        # Prefer to deliver the resumed skill's next question terminally (server-
-        # driven), prefixed with the completed step's acknowledgement. This stops the
-        # model from fabricating the resumed skill's next field the same way the
-        # detour-start does.
-        from jvagent.action.orchestrator.skill_tasks import action_for_skill
 
+        if seed_utterance:
+            # Resume the gated service: hand the model the original request to fill
+            # the pending field(s), then continue. Consume the seed so it is not
+            # re-injected on any later resume.
+            if ptask is not None:
+                try:
+                    remaining = {
+                        k: v for k, v in (ptask.seed or {}).items() if k != "utterance"
+                    }
+                    await ptask.set_seed(remaining)
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.debug("orchestrator: seed consume failed: %s", exc)
+            observations.append(
+                {
+                    "tool": "(task-resume)",
+                    "args": {},
+                    "observation": (
+                        "(A prerequisite just completed; the account/session is now "
+                        f"in place. {ack} Resume {parent.name}: the user's original "
+                        f'request was "{seed_utterance}". Fill the pending field(s) '
+                        "from it, then continue — do not re-ask for anything already "
+                        "in that request and do not start anything else.)"
+                    ),
+                    "kind": "server_prep",
+                }
+            )
+            return parent, tools, visible, skills_section, None
+
+        # Fresh prerequisite (no seed): deliver its first question terminally
+        # (server-driven), prefixed with the completed step's acknowledgement, so the
+        # model cannot fabricate the answer the way the detour-start would.
         bound = action_for_skill(parent, loop_actions)
         entry = None
         if bound is not None and hasattr(bound, "task_lock_entry_directive"):
@@ -1678,8 +1722,7 @@ class OrchestratorInteractAction(InteractAction):
             question = self._directive_user_text(entry)
             terminal = "Tell the user: " + (f"{ack} {question}".strip())
             return parent, tools, visible, skills_section, terminal
-        # No deliverable question (e.g. the resumed skill is at a non-field step) —
-        # fall back to a re-ground note and let the model continue the parent.
+        # No deliverable question — fall back to a re-ground note.
         observations.append(
             {
                 "tool": "(task-resume)",
