@@ -178,6 +178,15 @@ class Task:
         owner_action: Name of the Action that owns this task.
         data: Flexible extension bag.
         steps: Ordered list of Step objects.
+        blocked_on: Task IDs that must be ``completed`` before this task is runnable
+            (the work-stack/graph edge — ADR-0026). Empty ⇒ no prerequisites.
+        resumes: The task ID that becomes runnable when THIS task completes (the
+            back-link a prerequisite carries to its parent).
+        order: FIFO tie-break among equally-eligible sibling tasks (lower first).
+        seed: Opaque payload to (re)start the task — e.g. the originating utterance
+            and captured inputs. The harness moves it; it never inspects it.
+        snapshot: Durable runtime state for the task's owner (e.g. an interview's
+            collected fields), so the live runtime can be torn down and rehydrated.
     """
 
     id: str
@@ -191,6 +200,11 @@ class Task:
     owner_action: Optional[str] = None
     data: Dict[str, Any] = field(default_factory=dict)
     steps: List[Step] = field(default_factory=list)
+    blocked_on: List[str] = field(default_factory=list)
+    resumes: Optional[str] = None
+    order: int = 0
+    seed: Dict[str, Any] = field(default_factory=dict)
+    snapshot: Dict[str, Any] = field(default_factory=dict)
 
     def _touch(self) -> None:
         self.updated_at = _now_iso()
@@ -265,6 +279,11 @@ class Task:
             owner_action=data.get("owner_action"),
             data=dict(data.get("data") or {}),
             steps=[Step.from_dict(s) for s in raw_steps if isinstance(s, dict)],
+            blocked_on=[str(t) for t in (data.get("blocked_on") or []) if t],
+            resumes=data.get("resumes"),
+            order=int(data.get("order") or 0),
+            seed=dict(data.get("seed") or {}),
+            snapshot=dict(data.get("snapshot") or {}),
         )
 
 
@@ -400,6 +419,41 @@ class TaskHandle:
     @property
     def updated_at(self) -> str:
         return self._task.updated_at
+
+    # --- Work-graph (ADR-0026) ---
+
+    @property
+    def blocked_on(self) -> List[str]:
+        return list(self._task.blocked_on)
+
+    @property
+    def resumes(self) -> Optional[str]:
+        return self._task.resumes
+
+    @property
+    def order(self) -> int:
+        return self._task.order
+
+    @property
+    def seed(self) -> Dict[str, Any]:
+        return self._task.seed
+
+    @property
+    def snapshot(self) -> Dict[str, Any]:
+        return self._task.snapshot
+
+    async def set_snapshot(self, snapshot: Dict[str, Any]) -> None:
+        """Persist durable runtime state for the task's owner (ADR-0026)."""
+        self._task.snapshot = dict(snapshot or {})
+        self._task._touch()
+        await self._store._persist_task(self._task)
+
+    async def add_blocker(self, task_id: str) -> None:
+        """Add a prerequisite that must complete before this task is runnable."""
+        if task_id and task_id not in self._task.blocked_on:
+            self._task.blocked_on.append(str(task_id))
+            self._task._touch()
+            await self._store._persist_task(self._task)
 
     # --- Task lifecycle ---
 
@@ -704,8 +758,18 @@ class TaskStore:
         task_type: Optional[str] = None,
         data: Optional[Dict[str, Any]] = None,
         task_id: Optional[str] = None,
+        blocked_on: Optional[List[str]] = None,
+        resumes: Optional[str] = None,
+        order: int = 0,
+        seed: Optional[Dict[str, Any]] = None,
+        snapshot: Optional[Dict[str, Any]] = None,
     ) -> TaskHandle:
-        """Create a new pending task."""
+        """Create a new pending task.
+
+        ``blocked_on``/``resumes``/``seed``/``order``/``snapshot`` wire the task into
+        the work graph (ADR-0026): a prerequisite is created with ``resumes`` pointing
+        at its parent and the parent gains it as a blocker.
+        """
         task = Task(
             id=task_id or _new_id("task_"),
             title=title,
@@ -713,6 +777,11 @@ class TaskStore:
             task_type=task_type or "",
             owner_action=owner_action,
             data=dict(data or {}),
+            blocked_on=[str(t) for t in (blocked_on or []) if t],
+            resumes=resumes,
+            order=int(order or 0),
+            seed=dict(seed or {}),
+            snapshot=dict(snapshot or {}),
         )
         tasks = self._load_tasks()
         tasks.append(task)
