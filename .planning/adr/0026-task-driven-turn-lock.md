@@ -284,6 +284,10 @@ on external input — never "the model chose to stop."
 6. **Generalize.** The same push/pop/resume powers multi-step plans and sub-agent
    delegation, not just gating — validated with a second, non-zoon example skill in
    `jvagent`'s own examples app so the framework is exercised without a tenant.
+   *Done:* `jvagent/action/interview/examples/example_account_gating/`
+   (`example_booking_interview` gated on a `signed_in` precondition, pushing
+   `example_signin_interview`) + `tests/action/orchestrator/test_example_gated_skill.py`,
+   which also drains a 3-step plan through the same graph primitives unchanged.
 
 ## 6. Consequences
 
