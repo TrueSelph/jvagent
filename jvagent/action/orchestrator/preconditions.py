@@ -5,14 +5,17 @@ A consumer app registers named checks at bootstrap; a skill's declarative
 precondition *means* — only its boolean result. This is the seam that keeps the
 work-stack service framework-agnostic: no domain term lives in core.
 
-    register_precondition("account_session", lambda v: has_complete_account_context(v))
+    register_precondition("session_valid", lambda v: consumer_check(v))
 
 Then in a skill's SKILL.md frontmatter::
 
     requires-tasks:
-      - when: account_session
-        push: identity_verification_interview
+      - when: session_valid
+        push: some_prerequisite_skill
         seed_from: [utterance]
+
+The names above are placeholders chosen by the consumer; core never sees them
+spelled out — only their boolean results flow through ``evaluate_precondition``.
 """
 
 from __future__ import annotations

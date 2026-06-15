@@ -8,7 +8,7 @@ demonstrates every hook type used by live interview skills. Sections:
 3. Validators — validate_rating
 4. Input context providers — suggest_email (pre_tool; pattern from onboarding)
 5. Custom tools — check_low_rating (post_tool), reset_example_interview
-6. Review handler — example_review (pattern from pre_alert)
+6. Review handler — example_review (manual-confirm review pattern)
 7. Completion handler — example_complete
 
 Copy this folder to skills/<your_skill_name>/ and adapt function names to
@@ -111,7 +111,7 @@ async def suggest_email(
 ) -> Dict[str, Any]:
     """Pre-tool for follow_up_email — suggests email from conversation context.
 
-    Pattern from onboarding_interview ``get_phone_number``: return a
+    Input-context provider pattern: return a
     suggested_value and directive; the LLM must confirm before set_field.
     """
     conversation = await _get_conversation(visitor)
@@ -235,7 +235,7 @@ async def reset_example_interview(
 ) -> Dict[str, Any]:
     """Clear interview progress and re-start from the first question.
 
-    Pattern from onboarding_interview ``reset_onboarding``: clear session,
+    Reset-tool pattern: clear session,
     close task, re-init interview. Wired via ``interview.reset.function`` —
     the model still calls ``interview__reset()``.
     """
@@ -314,7 +314,7 @@ async def example_review(
 ) -> Dict[str, Any]:
     """Escalation terminate path or standard confirmation summary.
 
-    Pattern from pre_alert_interview ``pre_alert_review``: when escalate is
+    Review-handler pattern: when escalate is
     set in session.context, terminate without calling complete.
     """
     result: Dict[str, Any] = {
@@ -358,8 +358,8 @@ async def example_complete(
 ) -> Dict[str, Any]:
     """Mock completion — stores feedback in conversation context.
 
-    Live skills call ZoonAPIAction here (see onboarding_interview
-    ``complete_onboarding`` and pre_alert_interview ``pre_alert_complete``).
+    Live skills call a consumer API action here (e.g. a customer-
+    record lookup or a record-create call in the completion handler).
     This example avoids external API dependencies.
     """
     if not extracted_values:
