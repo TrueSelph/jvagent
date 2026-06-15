@@ -17,6 +17,7 @@ from jvagent.action.orchestrator.preconditions import (
 from jvagent.action.orchestrator.skills import SkillDoc, _parse_requires_tasks
 from jvagent.action.orchestrator.skill_tasks import (
     _active_skill_task,
+    push_followon_prerequisite,
     push_unmet_prerequisites,
 )
 
@@ -99,6 +100,49 @@ async def test_push_unmet_prerequisite_blocks_and_resumes(test_db):
     finally:
         clear_preconditions()
         await conv.delete(cascade=True)
+
+
+@pytest.mark.asyncio
+async def test_followon_prerequisite_blocks_parent_and_inherits_resume(test_db):
+    """An internal hand-off (skill A → skill B) routed through the work graph: B
+    blocks whatever A resumes (the gated parent) and inherits A's resume target, so
+    the drain enters B before resuming the parent (ADR-0026)."""
+    conv = await Conversation.create(session_id=_sid(), user_id="u", channel="default")
+    try:
+        store = TaskStore(conv)
+        # The gated parent and the active hand-off skill that resumes it.
+        parent = await store.create(
+            title="gated",
+            description="gated service",
+            owner_action="gated_service",
+            task_type="SKILL",
+        )
+        a = await store.create(
+            title="a",
+            description="skill a",
+            owner_action="skill_a",
+            task_type="SKILL",
+            resumes=parent.id,
+        )
+        await a.start()
+
+        pushed = await push_followon_prerequisite(
+            visitor_for(conv), "skill_a", "skill_b"
+        )
+        assert pushed == "skill_b"
+
+        store2 = TaskStore(conv)
+        b = _active_skill_task(store2, "skill_b")
+        parent2 = store2.get(parent.id)
+        assert b is not None
+        assert b.resumes == parent.id  # inherits A's resume target
+        assert b.id in parent2.blocked_on  # parent now waits on B
+    finally:
+        await conv.delete(cascade=True)
+
+
+def visitor_for(conv):
+    return SimpleNamespace(conversation=conv, utterance="")
 
 
 @pytest.mark.asyncio

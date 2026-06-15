@@ -1618,14 +1618,17 @@ class OrchestratorInteractAction(InteractAction):
         visible: Set[str],
         activated: List[str],
         observations: List[Dict[str, Any]],
-    ) -> Optional[Tuple[Any, Dict[str, Any], Set[str], str]]:
-        """Drain step (ADR-0026): if a task-lock skill just completed and a *parent*
+    ) -> Optional[Tuple[Any, Dict[str, Any], Set[str], str, Optional[str]]]:
+        """Drain step (ADR-0026): if a task-lock skill just completed and another
         task is now the top runnable task, resume it in the same turn.
 
-        Returns ``(parent_doc, tools, visible, skills_section)`` to keep draining, or
-        ``None`` to let the completion's terminal directive end the turn. Inert when
-        no parent task is waiting (nothing blocked) — so this is a no-op until
-        prerequisites are pushed.
+        Returns ``(resumed_doc, tools, visible, skills_section, terminal_directive)``.
+        When the resumed skill can voice its own next question (``terminal_directive``
+        set), the caller delivers it and ends the turn — the resume is
+        orchestrator-driven, not model-mediated, so the model never gets to fabricate
+        the next answer. Otherwise ``terminal_directive`` is ``None`` and the caller
+        keeps draining with a re-ground note. Returns ``None`` when nothing is waiting
+        (inert until prerequisites are pushed).
         """
         try:
             data = json.loads(obs)
@@ -1656,10 +1659,27 @@ class OrchestratorInteractAction(InteractAction):
             observations,
             skill_docs=skill_docs,
         )
-        # Carry the completed prerequisite's user-facing line forward so the model
-        # can acknowledge it as it continues the parent.
         _, rd = self._result_next(obs)
-        ack = rd.strip()
+        ack = self._directive_user_text(rd)
+        # Prefer to deliver the resumed skill's next question terminally (server-
+        # driven), prefixed with the completed step's acknowledgement. This stops the
+        # model from fabricating the resumed skill's next field the same way the
+        # detour-start does.
+        from jvagent.action.orchestrator.skill_tasks import action_for_skill
+
+        bound = action_for_skill(parent, loop_actions)
+        entry = None
+        if bound is not None and hasattr(bound, "task_lock_entry_directive"):
+            try:
+                entry = await bound.task_lock_entry_directive(parent.name, visitor)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("orchestrator: resume entry directive failed: %s", exc)
+        if entry:
+            question = self._directive_user_text(entry)
+            terminal = "Tell the user: " + (f"{ack} {question}".strip())
+            return parent, tools, visible, skills_section, terminal
+        # No deliverable question (e.g. the resumed skill is at a non-field step) —
+        # fall back to a re-ground note and let the model continue the parent.
         observations.append(
             {
                 "tool": "(task-resume)",
@@ -1672,7 +1692,20 @@ class OrchestratorInteractAction(InteractAction):
                 "kind": "server_prep",
             }
         )
-        return parent, tools, visible, skills_section
+        return parent, tools, visible, skills_section, None
+
+    @staticmethod
+    def _directive_user_text(directive: str) -> str:
+        """Strip a directive's ``Tell the user:`` prefix and any model-facing guidance
+        (separated by the invisible U+2063) down to the user-facing sentence."""
+        text = (directive or "").strip()
+        if not text:
+            return ""
+        text = text.split("\u2063", 1)[0].strip()
+        low = text.lower()
+        if low.startswith("tell the user:"):
+            text = text[len("tell the user:") :].strip()
+        return text
 
     async def _run_tool_observation(
         self,
@@ -2424,9 +2457,22 @@ class OrchestratorInteractAction(InteractAction):
                                 observations,
                             )
                             if resumed is not None:
-                                active_skill_doc, tools, visible, skills_section = (
-                                    resumed
-                                )
+                                (
+                                    active_skill_doc,
+                                    tools,
+                                    visible,
+                                    skills_section,
+                                    resume_terminal,
+                                ) = resumed
+                                if resume_terminal:
+                                    # The resumed skill voices its own next question:
+                                    # deliver it and end the turn (server-driven
+                                    # resume — the model cannot fabricate the answer).
+                                    await self._send_reply(
+                                        visitor, resume_terminal, compose=True
+                                    )
+                                    ended_via = "resume_reply"
+                                    return
                                 continue
                             # Terminal reply directive with no chain — deliver it
                             # and end so the model cannot re-decide (e.g. re-run a

@@ -496,6 +496,56 @@ async def push_unmet_prerequisites(
     return None
 
 
+async def push_followon_prerequisite(
+    visitor: Any,
+    from_skill: str,
+    to_skill: str,
+    *,
+    seed: Optional[dict] = None,
+) -> Optional[str]:
+    """Runtime push (ADR-0026): the active task-lock skill defers to a follow-on
+    skill (an internal hand-off) by routing it through the work graph instead of a
+    context flag.
+
+    Pushes ``to_skill`` as a task that BLOCKS whatever ``from_skill`` resumes (the
+    gated parent), inheriting the same resume target. After ``from_skill`` completes,
+    the orchestrator's drain therefore enters ``to_skill`` before resuming the
+    parent — a context hand-off would lose that race to the same-turn drain. Returns
+    the pushed skill name, or ``None`` if there is nothing to route.
+    """
+    conversation = getattr(visitor, "conversation", None)
+    store = task_store_for_conversation(conversation)
+    if store is None:
+        return None
+    active = _active_skill_task(store, from_skill)
+    if active is None:
+        return None
+    parent_id = active.resumes  # the gated task this hand-off chain ultimately serves
+    try:
+        prereq = await store.create(
+            title=to_skill,
+            description=f"Follow-on for {from_skill}",
+            owner_action=to_skill,
+            task_type="SKILL",
+            resumes=parent_id,
+            seed=dict(seed or {}),
+        )
+        await prereq.start()
+        if parent_id:
+            parent = store.get(parent_id)
+            if parent is not None:
+                await parent.add_blocker(prereq.id)
+    except Exception as exc:
+        logger.warning(
+            "skill_tasks: failed to push follow-on %s after %s: %s",
+            to_skill,
+            from_skill,
+            exc,
+        )
+        return None
+    return to_skill
+
+
 def compose_skill_activate_hooks(
     actions: List[Any], visitor: Any, code_exec: Optional[Any]
 ) -> Tuple[
