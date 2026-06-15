@@ -242,9 +242,19 @@ def visitor_utterance(visitor: Any) -> str:
 def _task_lock_skill_from_task_store(
     conversation: Any, skill_by_name: dict[str, Any]
 ) -> Optional[Any]:
+    """Resolve the top *runnable* task-lock skill from the store (ADR-0026).
+
+    A task whose ``blocked_on`` prerequisites are not yet complete is skipped — so a
+    parent that pushed a prerequisite stays active-but-blocked and the prerequisite
+    owns the turn; when the prerequisite completes, the parent becomes the top
+    runnable and resumes. Today (no blocked tasks) this is equivalent to the prior
+    most-recently-updated-active behavior.
+    """
     store = task_store_for_conversation(conversation)
     if store is None:
         return None
+    from jvagent.memory.task_graph import prerequisites_met
+
     try:
         active_tasks = store.list(status="active")
     except Exception as exc:
@@ -259,6 +269,8 @@ def _task_lock_skill_from_task_store(
         sd = skill_by_name[owner]
         if not getattr(sd, "task_lock", False):
             continue
+        if not prerequisites_met(store, task):
+            continue  # blocked: a prerequisite owns the turn instead
         updated_at = str(getattr(task, "updated_at", "") or "")
         candidates.append((updated_at, sd))
 
@@ -292,6 +304,25 @@ def _task_lock_skill_from_auto_start(
     return None
 
 
+def _skill_task_blocked(conversation: Any, skill_name: str) -> bool:
+    """True when ``skill_name`` has a non-terminal task with unmet prerequisites
+    (a pushed prerequisite owns the turn instead) — ADR-0026."""
+    if not skill_name:
+        return False
+    store = task_store_for_conversation(conversation)
+    if store is None:
+        return False
+    from jvagent.memory.task_graph import prerequisites_met
+
+    try:
+        for task in store.list(status=["pending", "active"], owner_action=skill_name):
+            if not prerequisites_met(store, task):
+                return True
+    except Exception as exc:
+        logger.debug("skill_tasks: blocked check failed for %s: %s", skill_name, exc)
+    return False
+
+
 async def resolve_active_task_lock_skill(
     visitor: Any,
     skill_docs: List[Any],
@@ -315,7 +346,12 @@ async def resolve_active_task_lock_skill(
             continue
         try:
             result = await resolve_fn(visitor, skill_docs)
-            if result is not None:
+            # A bound action may point at a skill whose task has since been blocked
+            # by a pushed prerequisite (ADR-0026); if so, the prerequisite owns the
+            # turn instead — fall through to the task-store resolution.
+            if result is not None and not _skill_task_blocked(
+                conversation, getattr(result, "name", "")
+            ):
                 return result
         except Exception as exc:
             logger.warning(

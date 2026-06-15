@@ -1566,6 +1566,74 @@ class OrchestratorInteractAction(InteractAction):
             }
         )
 
+    async def _maybe_resume_after_completion(
+        self,
+        obs: str,
+        completed_doc: Any,
+        skill_docs: List[Any],
+        loop_actions: List[Any],
+        visitor: Any,
+        utterance: str,
+        tools: Dict[str, Any],
+        visible: Set[str],
+        activated: List[str],
+        observations: List[Dict[str, Any]],
+    ) -> Optional[Tuple[Any, Dict[str, Any], Set[str], str]]:
+        """Drain step (ADR-0026): if a task-lock skill just completed and a *parent*
+        task is now the top runnable task, resume it in the same turn.
+
+        Returns ``(parent_doc, tools, visible, skills_section)`` to keep draining, or
+        ``None`` to let the completion's terminal directive end the turn. Inert when
+        no parent task is waiting (nothing blocked) — so this is a no-op until
+        prerequisites are pushed.
+        """
+        try:
+            data = json.loads(obs)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        if not (data.get("interview_complete") or data.get("status") == "completed"):
+            return None
+        # A skill completed → its task is closed and its session cleared. Re-resolve
+        # the top runnable task-lock skill.
+        parent = await self._find_active_task_lock_skill_doc(
+            visitor, skill_docs, loop_actions
+        )
+        if parent is None:
+            return None
+        if getattr(parent, "name", None) == getattr(completed_doc, "name", None):
+            return None  # same skill still owns the lock — not a resume
+        # Resume the parent in-turn: re-apply its locked surface + re-ground.
+        tools, visible, skills_section = await self._apply_active_task_lock_skill(
+            parent,
+            loop_actions,
+            visitor,
+            utterance,
+            tools,
+            visible,
+            activated,
+            observations,
+            skill_docs=skill_docs,
+        )
+        # Carry the completed prerequisite's user-facing line forward so the model
+        # can acknowledge it as it continues the parent.
+        _, rd = self._result_next(obs)
+        ack = rd.strip()
+        observations.append(
+            {
+                "tool": "(task-resume)",
+                "args": {},
+                "observation": (
+                    "(A prerequisite just completed; its account/session is now in "
+                    f"place. {ack} Resume {parent.name} now and continue its next "
+                    "step in your reply — do not start anything else.)"
+                ),
+                "kind": "server_prep",
+            }
+        )
+        return parent, tools, visible, skills_section
+
     async def _run_tool_observation(
         self,
         tools: Dict[str, Any],
@@ -2288,6 +2356,29 @@ class OrchestratorInteractAction(InteractAction):
                             pending_chain = nt
                             chain_deflections = 0
                         elif rd.strip().lower().startswith("tell the user:"):
+                            # Drain (ADR-0026): before ending on a completion's
+                            # terminal reply, re-resolve the task lock. If a task-lock
+                            # skill just completed and a parent task is now the top
+                            # runnable, resume it in THIS turn instead of ending — the
+                            # resumed task produces the egress. Inert until prerequisites
+                            # exist (nothing blocked ⇒ no parent to resume).
+                            resumed = await self._maybe_resume_after_completion(
+                                obs,
+                                active_skill_doc,
+                                skill_docs,
+                                loop_actions,
+                                visitor,
+                                utterance,
+                                tools,
+                                visible,
+                                activated,
+                                observations,
+                            )
+                            if resumed is not None:
+                                active_skill_doc, tools, visible, skills_section = (
+                                    resumed
+                                )
+                                continue
                             # Terminal reply directive with no chain — deliver it
                             # and end so the model cannot re-decide (e.g. re-run a
                             # tool it already ran). Compose (not literal relay): the
