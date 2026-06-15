@@ -2749,6 +2749,13 @@ class OrchestratorInteractAction(InteractAction):
         """
         interaction = getattr(visitor, "interaction", None)
         text = (text or "").strip()
+        # Drop model-only composition guidance (everything after the U+2063 marker).
+        # An orchestrator-authored reply is composed/relayed directly, not handed to
+        # the model to relay, so the guidance ("You may paraphrase…", "Do not…",
+        # tool-chain hints) is vestigial here — and a weak compose model would echo
+        # it verbatim to the user. The user-facing text is always before the marker.
+        if text:
+            text = text.split("\u2063", 1)[0].strip()
         if interaction is not None and text:
             framed = (
                 text
