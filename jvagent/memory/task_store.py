@@ -477,20 +477,28 @@ class TaskHandle:
         await self._store._emit_task_callback(self._task, "completed")
 
     async def fail(self, reason: Optional[str] = None) -> None:
-        """Transition -> failed."""
+        """Transition -> failed. Cascades: dependents blocked on this task are
+        abandoned (they can never satisfy their prerequisite)."""
         self._task.transition("failed")
         if reason is not None:
             self._task.data["failure_reason"] = reason
         await self._store._persist_task(self._task)
         await self._store._emit_task_callback(self._task, "failed")
+        await self._store._cascade_abandon_dependents(
+            self._task.id, reason=f"prerequisite {self._task.id} failed"
+        )
 
     async def cancel(self, reason: Optional[str] = None) -> None:
-        """Transition -> cancelled."""
+        """Transition -> cancelled. Cascades: dependents blocked on this task are
+        abandoned (they can never satisfy their prerequisite)."""
         self._task.transition("cancelled")
         if reason is not None:
             self._task.data["cancel_reason"] = reason
         await self._store._persist_task(self._task)
         await self._store._emit_task_callback(self._task, "cancelled")
+        await self._store._cascade_abandon_dependents(
+            self._task.id, reason=f"prerequisite {self._task.id} cancelled"
+        )
 
     async def update(self, **data: Any) -> None:
         """Merge key-value pairs into the task's data bag."""
@@ -828,6 +836,37 @@ class TaskStore:
         self._save_tasks(filtered)
         await self._persist()
         return True
+
+    async def _cascade_abandon_dependents(
+        self, task_id: str, *, reason: str
+    ) -> List[str]:
+        """A task reached a non-completed terminal state (cancelled/failed); cancel
+        every non-terminal task that is ``blocked_on`` it, transitively.
+
+        ``prerequisites_met`` only treats a ``completed`` prerequisite as satisfied,
+        so a dead (cancelled/failed) blocker would otherwise leave its dependents
+        non-terminal yet permanently unrunnable — a zombie that keeps the engagement
+        state True forever. Abandoning the chain is the correct gating semantics: if
+        the prerequisite (e.g. a verify detour) is abandoned, the gated work it was
+        a precondition for is abandoned too. Returns the ids cancelled.
+        """
+        abandoned: List[str] = []
+        seen: set = set()
+        frontier = [str(task_id)]
+        while frontier:
+            dead = frontier.pop()
+            for task in self._load_tasks():
+                if task.status in _TASK_TERMINAL or task.id in seen:
+                    continue
+                if dead in (task.blocked_on or []):
+                    task.transition("cancelled")
+                    task.data["cancel_reason"] = reason
+                    await self._persist_task(task)
+                    await self._emit_task_callback(task, "cancelled")
+                    seen.add(task.id)
+                    abandoned.append(task.id)
+                    frontier.append(task.id)
+        return abandoned
 
     # --- Utility ---
 

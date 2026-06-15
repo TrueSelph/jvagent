@@ -120,3 +120,54 @@ async def test_outstanding_work_drives_engagement(test_db):
         assert has_outstanding_work(store) is False
     finally:
         await conv.delete(cascade=True)
+
+
+@pytest.mark.asyncio
+async def test_dead_prerequisite_cascades_no_zombie(test_db):
+    """A cancelled/failed prerequisite abandons its dependents transitively, so a
+    dead blocker never leaves a non-terminal-but-unrunnable zombie (which would
+    keep the engagement state True forever)."""
+    conv, store = await _store()
+    try:
+        # Chain: gated <- mid <- prereq (gated blocked_on mid, mid blocked_on prereq).
+        gated = await store.create(title="gated", description="d", task_type="SKILL")
+        await gated.start()
+        mid = await store.create(title="mid", description="d", task_type="SKILL")
+        await mid.start()
+        prereq = await store.create(title="prereq", description="d", task_type="SKILL")
+        await prereq.start()
+        await gated.add_blocker(mid.id)
+        await mid.add_blocker(prereq.id)
+
+        # Abandon the deepest prerequisite → the whole chain is cancelled.
+        await TaskStore(conv).get(prereq.id).cancel(reason="user gave up")
+
+        store2 = TaskStore(conv)
+        assert store2.get(prereq.id).status == "cancelled"
+        assert store2.get(mid.id).status == "cancelled"  # cascaded
+        assert store2.get(gated.id).status == "cancelled"  # cascaded transitively
+        # No zombie: nothing runnable, and the store is no longer "engaged".
+        assert pick_top_runnable(store2) is None
+        assert has_outstanding_work(store2) is False
+    finally:
+        await conv.delete(cascade=True)
+
+
+@pytest.mark.asyncio
+async def test_completed_prerequisite_does_not_cascade(test_db):
+    """The cascade is only for non-completed terminal states — a normally completed
+    prerequisite unblocks its dependent, it does not abandon it."""
+    conv, store = await _store()
+    try:
+        gated = await store.create(title="gated", description="d", task_type="SKILL")
+        await gated.start()
+        prereq = await store.create(title="prereq", description="d", task_type="SKILL")
+        await prereq.start()
+        await gated.add_blocker(prereq.id)
+
+        await TaskStore(conv).get(prereq.id).complete()
+        store2 = TaskStore(conv)
+        assert store2.get(gated.id).status == "active"  # not cancelled
+        assert is_runnable(store2, store2.get(gated.id)) is True  # now runnable
+    finally:
+        await conv.delete(cascade=True)
