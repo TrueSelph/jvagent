@@ -166,25 +166,74 @@ This single mechanism subsumes every bespoke gate (activation guard, determinist
 service gate, capability gate, resume rail) for *all* consumers — gating is just
 "a skill with an unmet precondition."
 
+### 2.5 The task store as the orchestrator's work queue (insert + drain)
+
+The task store is not only resolved *from* — it is **written to**, by anyone, to
+**drive** the orchestrator. It is the orchestrator's inbox and its run state.
+
+**Producers (generic insertion).** A task may be inserted by:
+- the **model** (`use_skill` creates a skill task),
+- a **skill/action** (pushing a prerequisite, enqueuing follow-up work),
+- an **interact-action rail** (pre/post the loop),
+- an **external caller** (an API endpoint, a webhook, another agent/sub-agent),
+- a **scheduler / proactive monitor** (ADR-0022 — proactive tasks are just inserted
+  tasks; this ADR makes the orchestrator drain them by the same path).
+
+There is one generic insertion API (`TaskStore.create`/`enqueue`); the harness never
+distinguishes producers. **Inserting a task is how you instruct the orchestrator** —
+the realization of the instructable-harness goal.
+
+**Drain invariant.** The orchestrator does **not finalize its turn while runnable
+work remains.** Each turn it works the top runnable task, and on completion
+**re-resolves and continues** — draining all work that can progress *without new
+external input*, bounded only by `activation_budget`. It yields (one egress) when it
+hits a task **blocked on external input** (a user reply, an OTP, an async result) or
+the budget caps.
+
+**Engagement state (non-termination).** The conversation is **"engaged," not idle,
+while any non-terminal task exists** (`pending|active|blocked`). The orchestrator's
+work is only *fully done* when the store is **drained** — no incomplete tasks remain
+(terminal tasks may linger until swept). While engaged, the orchestrator re-enters
+and continues draining on the next signal — a user message, an async completion, or a
+scheduler tick — even with no user utterance. This is what "won't end unless the task
+store is empty" means precisely: empty = no `pending|active|blocked` task.
+
+**Reconciliation with single-egress (ADR-0024/0025).** Draining does *more internal
+work* per turn, not more talking: the loop already runs many tool calls before one
+egress; the drain extends its horizon from one active flow to all runnable tasks. At
+most one user-facing egress per turn still holds — emitted when a task must speak/ask,
+or when the drain empties the store and summarizes.
+
+**Safety.** Drain is bounded by `activation_budget`; a re-entrancy/spawn guard caps
+task-spawns-task loops (same budget accounting), and a blocked-on-input task always
+ends the turn's drain. A task that cannot become runnable (its prerequisite failed/
+cancelled) fails-closed and is not retried blindly.
+
 ## 3. Mechanism (turn loop)
 
 ```
-each turn:
-  active = resolve_top_runnable(task_graph)        # §2.2; None ⇒ free chat
-  if active and active has unmet precondition:
-      push prerequisite task (blocked_on/resumes wired); active = prerequisite
-  rehydrate(active) from its snapshot              # §2.3
-  surface(active)                                  # 0013 restriction, top-of-stack
-  model advances active
-  on completion(active):
-      active.status = completed
-      # next turn (or same-turn loop continuation) re-resolves → parent unblocked → resumes
+each turn (drain loop, bounded by activation_budget):
+  while True:
+    active = resolve_top_runnable(task_graph)       # §2.2; None ⇒ store drained
+    if active is None:
+        break                                       # nothing runnable → done/idle or yield
+    if active has unmet precondition:               # §2.4
+        push prerequisite task (blocked_on/resumes wired); continue   # re-resolve → prereq
+    rehydrate(active) from its snapshot             # §2.3, generic hook
+    surface(active)                                 # 0013 restriction, top of stack
+    advance(active)                                 # model works it (its own tool calls)
+    if active blocked on external input:            # needs user reply / OTP / async
+        break                                       # yield ONE egress; stay engaged
+    if active completed:
+        continue                                    # re-resolve → parent resumes (same turn)
+  emit one egress (the pending question, or the drain summary)   # ADR-0024/0025
 ```
 
-Same-turn vs next-turn resume is no longer a correctness question — it is whether
-the loop re-resolves within the turn after a completion. Because resolution is
-deterministic and tool-surface-driven (not a model `use_skill`), re-resolving
-in-loop after a completion yields reliable same-turn resume.
+Same-turn vs next-turn resume is no longer a correctness question — the drain
+re-resolves within the turn after each completion. Because resolution is
+deterministic and tool-surface-driven (not a model `use_skill`), the parent resumes
+in the same turn. The loop ends only when the store is drained or a task is blocked
+on external input — never "the model chose to stop."
 
 ## 4. Invariants
 
@@ -203,14 +252,26 @@ in-loop after a completion yields reliable same-turn resume.
    §2.0 seams: registered preconditions, frontmatter, and the task-lock runtime hooks.
    A grep of `jvagent/` for any consumer's domain terms must return nothing. This is
    enforced as a CI guard, not a convention.
+7. **Drain before idle; insert to drive.** The orchestrator does not finalize its
+   turn while runnable work remains, and the conversation stays *engaged* (re-entered
+   on the next signal) while any non-terminal task exists. It is *fully done* only
+   when the store is drained (no `pending|active|blocked` task). Any producer —
+   model, skill, rail, external API, scheduler — drives the orchestrator by inserting
+   a task. (§2.5)
 
 ## 5. Migration (suite green per step)
 
 1. **Graph fields + generalized picker.** Add `resumes`/`blocked_on`/`snapshot`;
    generalize `are_prerequisites_met` + next-runnable to turn-lock tasks. No behavior
    change yet (degenerate single-task case identical).
-2. **Stack resolver + pop-and-resume.** Swap the single-pick resolver; re-resolve on
-   completion. Existing single-skill flows unchanged; chained flows now resume.
+2. **Stack resolver + drain loop.** Swap the single-pick resolver; wrap the turn in
+   the §3 drain loop (re-resolve on completion, yield on blocked-on-input, bounded by
+   `activation_budget`). Existing single-skill flows unchanged (degenerate drain of
+   one task); chained flows now resume same-turn. Expose the engagement state
+   ("non-terminal task exists ⇒ engaged") so re-entry continues the drain. Confirm the
+   generic insertion path (`TaskStore.create`/`enqueue`) is reachable by rails and an
+   external endpoint, so any producer can drive the orchestrator (folds ADR-0022
+   proactive insertion into the same drain).
 3. **Snapshot/rehydrate.** Mirror fields to the task; rehydrate on activate; retire
    retain-key handling.
 4. **Declarative `requires-tasks`.** Parse it; push prerequisites at activation; bind
