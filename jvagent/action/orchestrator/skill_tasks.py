@@ -462,6 +462,43 @@ def compose_skill_activate_hooks(
     return _activate, _reactivate
 
 
+async def persist_task_snapshot(
+    conversation: Any, skill_name: str, snapshot: dict
+) -> bool:
+    """Write a runtime snapshot onto a skill's non-terminal task (ADR-0026), so the
+    flow can be torn down and rebuilt on resume. Returns True if persisted."""
+    if not skill_name:
+        return False
+    store = task_store_for_conversation(conversation)
+    if store is None:
+        return False
+    try:
+        for task in store.list(status=["pending", "active"], owner_action=skill_name):
+            await task.set_snapshot(dict(snapshot or {}))
+            return True
+    except Exception as exc:
+        logger.debug("skill_tasks: persist snapshot failed for %s: %s", skill_name, exc)
+    return False
+
+
+def task_snapshot_for_skill(conversation: Any, skill_name: str) -> dict:
+    """The durable runtime snapshot stored on a skill's non-terminal task, if any
+    (ADR-0026). Used to rehydrate a flow that was torn down for a detour."""
+    if not skill_name:
+        return {}
+    store = task_store_for_conversation(conversation)
+    if store is None:
+        return {}
+    try:
+        for task in store.list(status=["pending", "active"], owner_action=skill_name):
+            snap = getattr(task, "snapshot", None)
+            if snap:
+                return dict(snap)
+    except Exception as exc:
+        logger.debug("skill_tasks: snapshot lookup failed for %s: %s", skill_name, exc)
+    return {}
+
+
 async def ensure_task_lock_session(
     doc: Any,
     actions: List[Any],
@@ -477,6 +514,24 @@ async def ensure_task_lock_session(
         if hasattr(bound, "_ensure_specs_loaded"):
             await bound._ensure_specs_loaded()
         needs = await bound.needs_task_lock_rebootstrap(doc.name, visitor)
+        if needs and hasattr(bound, "rehydrate_from_task"):
+            # ADR-0026: rebuild the runtime from the task snapshot before starting
+            # fresh, so a flow torn down for a detour resumes with its prior state.
+            snap = task_snapshot_for_skill(
+                getattr(visitor, "conversation", None), doc.name
+            )
+            if snap:
+                try:
+                    if await bound.rehydrate_from_task(doc.name, snap, visitor):
+                        needs = await bound.needs_task_lock_rebootstrap(
+                            doc.name, visitor
+                        )
+                except Exception as exc:
+                    logger.debug(
+                        "skill_tasks: rehydrate_from_task failed for %s: %s",
+                        doc.name,
+                        exc,
+                    )
         if needs and hasattr(bound, "on_skill_activate"):
             note = await bound.on_skill_activate(
                 doc.name,

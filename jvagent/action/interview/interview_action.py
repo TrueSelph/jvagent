@@ -255,6 +255,46 @@ class InterviewAction(Action):
             ]
         )
 
+    async def snapshot_task_state(
+        self, skill_name: str, visitor: Any = None
+    ) -> Dict[str, Any]:
+        """Task-lock hook (ADR-0026): a durable snapshot of this skill's runtime, so
+        the live session may be torn down during a detour and rebuilt on resume.
+        Returns the serialized interview session for ``skill_name``, or ``{}``."""
+        session = await self._get_session(visitor)
+        if session is None or session.interview_type != skill_name:
+            return {}
+        try:
+            return session.to_dict()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("snapshot_task_state failed for %s: %s", skill_name, exc)
+            return {}
+
+    async def rehydrate_from_task(
+        self, skill_name: str, snapshot: Dict[str, Any], visitor: Any = None
+    ) -> bool:
+        """Task-lock hook (ADR-0026): rebuild the interview session from a task
+        snapshot when no live session exists, instead of starting fresh. Returns
+        True if a session was rehydrated."""
+        if not snapshot:
+            return False
+        await self._ensure_specs_loaded()
+        if self._registry.get(skill_name) is None:
+            return False
+        if await self._has_ready_session(skill_name, visitor):
+            return False  # a live session already exists — nothing to rebuild
+        try:
+            session = InterviewSession.from_dict(snapshot)
+        except Exception as exc:
+            logger.debug(
+                "rehydrate_from_task: bad snapshot for %s: %s", skill_name, exc
+            )
+            return False
+        if session.interview_type != skill_name:
+            return False
+        await self._save_session(session, visitor)
+        return True
+
     async def on_skill_activate(
         self,
         skill_name: str,
