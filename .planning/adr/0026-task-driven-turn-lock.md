@@ -59,8 +59,42 @@ Model in-conversation work as a **task graph** in the existing TaskStore, resolv
 each turn to a single active task (the deterministic turn-lock of 0013 is unchanged
 — still "restrict the surface to the active task"). Prerequisites **push**;
 completion **pops and re-resolves**; resume is the orchestrator's selection, not the
-model's. Task state is **durable** (snapshot on the task); the interview session is
-**ephemeral runtime** rehydrated on activation.
+model's. Task state is **durable** (snapshot on the task); a task-lock runtime (e.g.
+the interview session) is **ephemeral**, rehydrated on activation.
+
+### 2.0 Framework contract — domain-agnostic by construction
+
+This is a **reusable jvagent service**, not a zoon feature. The orchestrator and
+TaskStore gain a general work-stack capability that governs **any** task-lock skill
+or action, present or future. **No domain vocabulary** (`account`, `OTP`, `zoon`,
+`pre_alert`, …) appears anywhere in `jvagent/`. A consumer participates only through
+generic seams:
+
+1. **Precondition registry** — `register_precondition(name, predicate)` where
+   `predicate` is `async (visitor) -> bool`. The harness knows preconditions only by
+   opaque name; the agent/app binds names to checks. (zoon registers
+   `account_session`; another app registers `entitlement`, `kyc`, `payment_method`,
+   anything.)
+2. **Declarative `requires-tasks`** — frontmatter on *any* skill (interview or not),
+   parsed generically into the `SkillDoc`. `{when: <precondition name>, push:
+   <skill name>, seed_from: [...]}`. The orchestrator pushes prerequisites with no
+   knowledge of what they mean.
+3. **Task-lock runtime hooks** — the existing hook family on a bound action
+   (`resolve_task_lock_skill`, `task_lock_runtime_ready`, `prepare_task_lock_turn`)
+   gains `snapshot_task_state(visitor) -> dict` and
+   `rehydrate_from_task(visitor, snapshot)`. The orchestrator calls them generically;
+   `InterviewAction` is **one** implementer. Any future task-lock action (a form
+   filler, a wizard, a sub-agent) implements the same protocol and gets push/pop/
+   resume + durable state for free.
+4. **Task-runner dispatch** — a `Task.type` (`skill | action | plan | …`) selects a
+   registered runner. Skills are the first runner; the graph machinery is type-agnostic
+   so plans and sub-agent delegation reuse it unchanged.
+5. **Seed/snapshot payloads** — generic `data["seed"]` / `data["snapshot"]` bags. The
+   harness moves them; it never inspects their contents.
+
+Everything in §2.1–2.4 below is core (generic). The zoon account-gate is *one
+consumer*, isolated in §7 — it adds **zero** lines to `jvagent/` core beyond
+registering one precondition and writing frontmatter.
 
 ### 2.1 Task graph (Layer 1)
 
@@ -92,36 +126,45 @@ when it is `pending|active` and all `blocked_on` are `completed`.
 
 ### 2.3 Snapshot / rehydrate (Layer 3)
 
-- On each session mutation (`set_value`/`skip_field`/status change), mirror
-  `session.get_collected_summary()` + skipped + status into the active task's
-  snapshot (one helper, called where `_save_session` already runs).
-- `handle_start` (and the rebootstrap path) **rehydrate** a session from the task
-  snapshot when the conversation session is absent. The interview session is then
-  free to be torn down during a detour; the task is the source of truth, rebuilt
-  on activation. **All retain-key handling for resume is deleted.**
+Generic via the task-lock runtime hooks (§2.0.3) — the orchestrator never reaches
+into any runtime's internals:
 
-### 2.4 Declarative prerequisites (the gate, generalized)
+- When a task-lock action's runtime mutates, the orchestrator persists
+  `action.snapshot_task_state(visitor)` into the active task's `snapshot` (called
+  where the runtime already persists). For `InterviewAction` this is the collected/
+  skipped fields + status; another action snapshots whatever it owns.
+- On activation, the orchestrator calls `action.rehydrate_from_task(visitor,
+  snapshot)` when the live runtime is absent. The runtime is then free to be torn
+  down during a detour; **the task is the source of truth, rebuilt on activation**,
+  for any task-lock action. All retain-key handling for resume is deleted.
 
-A skill declares preconditions in frontmatter; the harness enforces them generically:
+`InterviewAction` already has `to_dict`/`from_dict` and the rebootstrap hook, so it
+is the reference implementer; the contract is what's new, not interview-specific.
+
+### 2.4 Declarative prerequisites (generic)
+
+*Any* skill declares preconditions in frontmatter; the harness enforces them
+generically with no knowledge of their meaning:
 
 ```yaml
-name: pre_alert_interview
+name: <gated_skill>
 requires-tasks:
-  - when: account_session          # a named precondition the agent registers
-    push: identity_verification_interview
-    seed_from: [utterance]         # what to carry into the resumed task
+  - when: <precondition_name>      # resolved via the precondition registry (§2.0)
+    push: <prerequisite_skill>     # any skill
+    seed_from: [utterance]         # generic payload to carry into the resumed task
 ```
 
-At activation, an unmet precondition makes the orchestrator **push** the named
-prerequisite task (with `resumes = this task`, `blocked_on += [prereq]`) and surface
-**the prerequisite**, not the gated skill. The gated skill never goes active — and
-never surfaces its tools — until its prerequisites are `completed`. This removes the
-need for activation-time guards, the deterministic service gate, the capability gate,
-and the resume rail.
+At activation, if `precondition_name` resolves to `False`, the orchestrator
+**pushes** the named prerequisite task (`resumes = this task`, `blocked_on +=
+[prereq]`) and surfaces **the prerequisite**, not the gated skill. The gated skill
+never goes active — and never surfaces its tools — until its prerequisites are
+`completed`. The harness only ever evaluates an opaque predicate and moves opaque
+seed data; the *binding* of a precondition name to a check, and the *meaning* of the
+seed, are entirely app-supplied (§2.0).
 
-A precondition is a small registered predicate (`account_session →
-has_complete_account_context`), keeping the harness domain-agnostic; the *binding*
-of a precondition name to a check is app-supplied.
+This single mechanism subsumes every bespoke gate (activation guard, deterministic
+service gate, capability gate, resume rail) for *all* consumers — gating is just
+"a skill with an unmet precondition."
 
 ## 3. Mechanism (turn loop)
 
@@ -155,6 +198,11 @@ in-loop after a completion yields reliable same-turn resume.
    runtime rehydrated from the task snapshot. Teardown during a detour is safe.
 5. **Preconditions are declarative**; the harness stays domain-agnostic (app binds
    precondition names to checks).
+6. **No domain vocabulary in core.** `jvagent/` contains no app/domain term
+   (`account`, `OTP`, `zoon`, `pre_alert`, …). Every consumer plugs in only via the
+   §2.0 seams: registered preconditions, frontmatter, and the task-lock runtime hooks.
+   A grep of `jvagent/` for any consumer's domain terms must return nothing. This is
+   enforced as a CI guard, not a convention.
 
 ## 5. Migration (suite green per step)
 
@@ -167,12 +215,14 @@ in-loop after a completion yields reliable same-turn resume.
    retain-key handling.
 4. **Declarative `requires-tasks`.** Parse it; push prerequisites at activation; bind
    `account_session` in zoon. Port gating to it.
-5. **Delete the duct tape.** Remove `pending_service_intent`, the resume rail,
-   `service_session_gate`/capability gate as bespoke mechanisms, `next_tool` resume
+5. **Delete the duct tape (consumer side).** In zoon, remove `pending_service_intent`,
+   the resume rail, `service_session_gate`/capability gate, `next_tool` resume
    forwarding, `lock-companions: [use_skill]`, utterance re-injection. Zoon gating
-   collapses to frontmatter + one registered precondition.
+   collapses to frontmatter + one registered precondition. **Land the CI guard**
+   (invariant 6): grep `jvagent/` for consumer domain terms → must be empty.
 6. **Generalize.** The same push/pop/resume powers multi-step plans and sub-agent
-   delegation, not just gating.
+   delegation, not just gating — validated with a second, non-zoon example skill in
+   `jvagent`'s own examples app so the framework is exercised without a tenant.
 
 ## 6. Consequences
 
@@ -198,3 +248,36 @@ in-loop after a completion yields reliable same-turn resume.
   prerequisites are LIFO; sibling plans are FIFO by `order`).
 - Whether `requires-tasks.when` predicates live in frontmatter as names only (chosen)
   vs inline expressions (rejected — keeps the harness domain-agnostic).
+
+## 7. Example consumer — account gating (zoon), for illustration only
+
+zoon is the *first tenant*, not the design target. Everything zoon-specific lives in
+the **app**, plugged into the §2.0 seams. The complete integration:
+
+```python
+# zoon app bootstrap — bind one precondition name to a check
+register_precondition("account_session", lambda visitor: has_complete_account_context(visitor=visitor))
+```
+
+```yaml
+# pre_alert_interview / quotation_interview SKILL.md frontmatter
+requires-tasks:
+  - when: account_session
+    push: identity_verification_interview
+    seed_from: [utterance]
+```
+
+That is the entire account gate. The detour chain is itself declarative —
+`identity_verification_interview` declares its own `requires-tasks` (push
+`onboarding_interview` when no account is found), so verify→onboard→resume is the
+graph unwinding, with no app code in the loop.
+
+What this **deletes** from zoon: `service_session_gate`, the capability gate,
+`resume_service_action`, `pending_service_intent`, `guard_account_on_activate`
+wiring, `lock-companions`, utterance re-injection, and the OTP-completion `next_tool`
+forwarding. The account-session *checks* (`has_complete_account_context`, web expiry,
+staleness) remain as app predicates — pure domain logic with no orchestration glue.
+
+A second hypothetical tenant (e.g. a billing agent) reuses the identical machinery by
+registering `payment_method` and writing `requires-tasks: [{when: payment_method,
+push: add_card_interview}]` — zero shared code with zoon, zero new core.
