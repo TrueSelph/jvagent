@@ -396,6 +396,106 @@ async def ensure_task_lock_task(visitor: Any, doc: Any) -> None:
         )
 
 
+def _active_skill_task(store: Any, skill_name: str) -> Optional[Any]:
+    try:
+        for task in store.list(status=["pending", "active"], owner_action=skill_name):
+            return task
+    except Exception:
+        return None
+    return None
+
+
+def _build_seed(visitor: Any, seed_from: List[str]) -> dict:
+    """Collect declared seed inputs to carry into a resumed task (ADR-0026)."""
+    seed: dict = {}
+    for key in seed_from or []:
+        if key == "utterance":
+            val = getattr(visitor, "utterance", None)
+            if not val:
+                interaction = getattr(visitor, "interaction", None)
+                val = getattr(interaction, "utterance", None) if interaction else None
+            if val:
+                seed["utterance"] = str(val)
+    return seed
+
+
+async def push_unmet_prerequisites(
+    visitor: Any, doc: Any, actions: List[Any]
+) -> Optional[str]:
+    """Declarative gate (ADR-0026): for a task-lock skill becoming active, push a
+    prerequisite task for the first unmet precondition in its ``requires_tasks``.
+
+    Returns the pushed prerequisite skill name (so the caller redirects the lock to
+    it), or ``None`` when all preconditions are satisfied. One-time per precondition:
+    once a prerequisite has been pushed for a given precondition it is not re-pushed,
+    preventing detour loops — after the prerequisite completes the gated skill simply
+    proceeds.
+    """
+    requires = getattr(doc, "requires_tasks", None) or ()
+    if not requires:
+        return None
+    conversation = getattr(visitor, "conversation", None)
+    store = task_store_for_conversation(conversation)
+    if store is None:
+        return None
+
+    from jvagent.action.orchestrator.preconditions import evaluate_precondition
+
+    # The gated skill needs a task so the prerequisite can resume it.
+    await ensure_task_lock_task(visitor, doc)
+    gated = _active_skill_task(store, doc.name)
+    if gated is None:
+        return None
+    already = set(gated.data.get("_pushed_preconditions") or [])
+
+    for entry in requires:
+        when = str(entry.get("when") or "").strip()
+        push = str(entry.get("push") or "").strip()
+        if not when or not push or when in already:
+            continue
+        if await evaluate_precondition(when, visitor):
+            continue  # satisfied — no detour
+        # Unmet → snapshot + clear the gated runtime (the prerequisite gets a clean
+        # session; the gated flow rehydrates on resume), capture its seed, push the
+        # prerequisite, and block the gated task on it.
+        bound = action_for_skill(doc, actions)
+        if bound is not None:
+            try:
+                if hasattr(bound, "snapshot_task_state"):
+                    snap = await bound.snapshot_task_state(doc.name, visitor)
+                    if snap:
+                        await gated.set_snapshot(snap)
+                if hasattr(bound, "_clear_interview_session"):
+                    await bound._clear_interview_session(visitor)
+            except Exception as exc:
+                logger.debug("push: snapshot/clear failed for %s: %s", doc.name, exc)
+        seed = _build_seed(visitor, entry.get("seed_from") or [])
+        if seed:
+            try:
+                await gated.set_seed({**(gated.seed or {}), **seed})
+            except Exception:
+                pass
+        try:
+            prereq = await store.create(
+                title=push,
+                description=f"Prerequisite for {doc.name}",
+                owner_action=push,
+                task_type="SKILL",
+                resumes=gated.id,
+            )
+            await prereq.start()
+            await gated.add_blocker(prereq.id)
+            already.add(when)
+            await gated.update(_pushed_preconditions=sorted(already))
+        except Exception as exc:
+            logger.warning(
+                "push: failed to push prerequisite %s for %s: %s", push, doc.name, exc
+            )
+            return None
+        return push  # one detour at a time
+    return None
+
+
 def compose_skill_activate_hooks(
     actions: List[Any], visitor: Any, code_exec: Optional[Any]
 ) -> Tuple[

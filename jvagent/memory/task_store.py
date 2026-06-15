@@ -448,6 +448,12 @@ class TaskHandle:
         self._task._touch()
         await self._store._persist_task(self._task)
 
+    async def set_seed(self, seed: Dict[str, Any]) -> None:
+        """Persist the opaque restart payload (ADR-0026)."""
+        self._task.seed = dict(seed or {})
+        self._task._touch()
+        await self._store._persist_task(self._task)
+
     async def add_blocker(self, task_id: str) -> None:
         """Add a prerequisite that must complete before this task is runnable."""
         if task_id and task_id not in self._task.blocked_on:

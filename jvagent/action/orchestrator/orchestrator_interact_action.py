@@ -1512,6 +1512,22 @@ class OrchestratorInteractAction(InteractAction):
         )
         if doc is None or not getattr(doc, "task_lock", False):
             return None, tools, visible, ""
+        # Declarative gate (ADR-0026): if the activated skill has an unmet
+        # precondition, push the prerequisite task and redirect the lock to it (the
+        # gated skill is now blocked and resumes when the prerequisite completes).
+        # Chained so a prerequisite with its own unmet precondition pushes too.
+        from jvagent.action.orchestrator.skill_tasks import push_unmet_prerequisites
+
+        for _ in range(8):
+            pushed = await push_unmet_prerequisites(visitor, doc, loop_actions)
+            if not pushed:
+                break
+            prereq_doc = next(
+                (d for d in skill_docs if getattr(d, "name", None) == pushed), None
+            )
+            if prereq_doc is None:
+                break
+            doc = prereq_doc
         tools, visible, skills_section = await self._apply_active_task_lock_skill(
             doc,
             loop_actions,
