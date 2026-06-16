@@ -22,8 +22,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
-# The type the orchestrator advances with its own loop (no registered runner needed).
+# Types the orchestrator advances with its own think-act loop — no registered
+# runner needed. SKILL is the interactive case; PROACTIVE is the scheduled case
+# (its directive is injected and the same loop works it). Both are loop-advanced, so
+# the generic runner drain leaves them to the loop and only dispatches other types.
 BUILTIN_SKILL_TYPE = "SKILL"
+BUILTIN_LOOP_ADVANCED = frozenset({"SKILL", "PROACTIVE"})
 
 
 @dataclass
@@ -74,11 +78,12 @@ def get_task_runner(task_type: str) -> Optional[TaskRunner]:
 
 
 def runnable_task_types() -> frozenset:
-    """Types the orchestrator can drain: the built-in SKILL type + registered runners.
+    """Types the orchestrator can drain: the built-in loop-advanced types
+    (SKILL, PROACTIVE) + registered runners.
 
     ``pick_top_runnable(store, task_types=runnable_task_types())`` therefore only
     surfaces work the orchestrator actually knows how to advance."""
-    return frozenset({BUILTIN_SKILL_TYPE, *_RUNNERS.keys()})
+    return frozenset({*BUILTIN_LOOP_ADVANCED, *_RUNNERS.keys()})
 
 
 def clear_task_runners() -> None:

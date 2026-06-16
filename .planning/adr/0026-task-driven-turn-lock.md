@@ -302,6 +302,20 @@ on external input — never "the model chose to stop."
      any skill turn-lock. Inert until a runner is registered, so skill-only behavior
      is unchanged. Tests: `tests/action/orchestrator/test_task_runners.py`.
 
+8. **Proactive scheduler folded into the same graph (§2.5).** The ADR-0022 scheduler
+   no longer dispatches through a private side channel — it shares the one work graph:
+   - A `PROACTIVE` task is runnable for the generic resolver **only once the scheduler
+     claims it** (pending = queued/not-due → not runnable; active = claimed/due →
+     runnable). `task_graph._status_runnable` encodes this so a queued proactive task
+     never fires on an ordinary turn, and `pick_top_runnable` / `has_outstanding_work`
+     / invariant 7 all cover a claimed one. `PROACTIVE` joins `SKILL` as a built-in
+     loop-advanced type (`runnable_task_types`).
+   - The orchestrator resolves a claimed proactive task straight from the store
+     (`_resolve_active_proactive`) as well as from the scheduler's `visitor.data` hint,
+     so proactive work is drained from the graph like any other task. The scheduler's
+     job shrinks to eligibility-gate + claim + wake. Tests:
+     `tests/memory/test_task_graph.py::test_proactive_runnable_only_when_claimed`.
+
 ## 6. Consequences
 
 **Positive**

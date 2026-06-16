@@ -171,3 +171,32 @@ async def test_completed_prerequisite_does_not_cascade(test_db):
         assert is_runnable(store2, store2.get(gated.id)) is True  # now runnable
     finally:
         await conv.delete(cascade=True)
+
+
+@pytest.mark.asyncio
+async def test_proactive_runnable_only_when_claimed(test_db):
+    """Unification (ADR-0026 + 0022): a PROACTIVE task is the scheduler's to
+    eligibility-gate. While pending (queued) it is NOT runnable for the generic
+    resolver — so a queued proactive task never fires on an ordinary turn. Once the
+    scheduler claims it (pending → active) it is a first-class runnable graph task,
+    so pick_top_runnable / has_outstanding_work / invariant 7 cover it."""
+    conv, store = await _store()
+    try:
+        p = await store.create(title="ping", description="d", task_type="PROACTIVE")
+        # Pending = queued, not due → invisible to the generic resolver.
+        assert is_runnable(store, store.get(p.id)) is False
+        assert pick_top_runnable(store, task_types=["PROACTIVE"]) is None
+        assert has_outstanding_work(store, task_types=["PROACTIVE"]) is False
+
+        # Scheduler claims it (pending → active) → now runnable/visible.
+        await store.get(p.id).start()
+        assert is_runnable(store, store.get(p.id)) is True
+        top = pick_top_runnable(store, task_types=["PROACTIVE"])
+        assert top is not None and top.id == p.id
+        assert has_outstanding_work(store, task_types=["PROACTIVE"]) is True
+
+        # A SKILL task, by contrast, is runnable while still pending (no claim gate).
+        s = await store.create(title="s", description="d", task_type="SKILL")
+        assert is_runnable(store, store.get(s.id)) is True
+    finally:
+        await conv.delete(cascade=True)

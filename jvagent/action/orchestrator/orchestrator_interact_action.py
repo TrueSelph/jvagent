@@ -1458,6 +1458,7 @@ class OrchestratorInteractAction(InteractAction):
         """
         from jvagent.action.orchestrator.skill_tasks import task_store_for_conversation
         from jvagent.action.orchestrator.task_runners import (
+            BUILTIN_LOOP_ADVANCED,
             RunContext,
             get_task_runner,
             runnable_task_types,
@@ -1475,8 +1476,8 @@ class OrchestratorInteractAction(InteractAction):
             if top is None:
                 return None  # store drained
             ttype = str(getattr(top, "task_type", "") or "").upper()
-            if ttype == "SKILL":
-                return None  # the skill path advances it; not ours to dispatch
+            if ttype in BUILTIN_LOOP_ADVANCED:
+                return None  # SKILL/PROACTIVE are advanced by the loop, not a runner
             runner = get_task_runner(ttype)
             if runner is None:  # pragma: no cover - guarded by runnable_task_types
                 return None
@@ -1923,12 +1924,36 @@ class OrchestratorInteractAction(InteractAction):
         tools: Dict[str, Any],
         observations: List[Dict[str, Any]],
     ) -> None:
-        """Pre-load proactive task context and optional skill before the loop."""
+        """Pre-load proactive task context and optional skill before the loop.
+
+        The scheduler (ADR-0022) claims an eligible proactive task (pending → active)
+        and passes it via ``visitor.data``. As a fallback the orchestrator resolves a
+        claimed proactive task straight from the work graph — so proactive work is
+        drained from the store like any other task, not only via the side channel
+        (ADR-0026 unification: scheduler eligibility-gates + claims; the drain
+        dispatches)."""
         data = getattr(visitor, "data", None) or {}
         task_id = data.get("proactive_task_id")
         directive = str(data.get("proactive_directive") or "").strip()
+        skill_hint = str(data.get("proactive_skill") or "").strip()
         if not task_id or not directive:
-            return
+            resolved = self._resolve_active_proactive(visitor)
+            if resolved is None:
+                return
+            task_id, directive, skill_hint = resolved
+            # Mirror into visitor.data so the rest of the turn (e.g.
+            # _finalize_proactive_task) treats a store-resolved task identically to a
+            # scheduler-passed one.
+            if not isinstance(getattr(visitor, "data", None), dict):
+                visitor.data = {}
+            visitor.data.update(
+                {
+                    "is_proactive": True,
+                    "proactive_task_id": task_id,
+                    "proactive_directive": directive,
+                    "proactive_skill": skill_hint,
+                }
+            )
         observations.append(
             {
                 "tool": "(proactive-task)",
@@ -1939,7 +1964,7 @@ class OrchestratorInteractAction(InteractAction):
                 ),
             }
         )
-        skill = str(data.get("proactive_skill") or "").strip()
+        skill = skill_hint
         if not skill:
             return
         skill_by_name = {d.name: d for d in skill_docs if getattr(d, "name", None)}
@@ -1951,6 +1976,36 @@ class OrchestratorInteractAction(InteractAction):
             {"name": skill},
             observations,
         )
+
+    def _resolve_active_proactive(self, visitor: Any) -> Optional[Tuple[str, str, str]]:
+        """Resolve a claimed (active) proactive task from the work graph as
+        ``(task_id, directive, skill)``, or ``None``. The graph treats a proactive
+        task as runnable only once the scheduler has claimed it (active), so this
+        never fires for a still-queued (pending) task."""
+        from jvagent.action.orchestrator.skill_tasks import task_store_for_conversation
+        from jvagent.memory.task_graph import pick_top_runnable
+        from jvagent.memory.task_proactive import (
+            PROACTIVE_TASK_TYPE,
+            ProactiveTaskSpec,
+        )
+
+        store = getattr(visitor, "tasks", None) or task_store_for_conversation(
+            getattr(visitor, "conversation", None)
+        )
+        if store is None:
+            return None
+        try:
+            top = pick_top_runnable(store, task_types=[PROACTIVE_TASK_TYPE])
+            if top is None:
+                return None
+            spec = ProactiveTaskSpec.from_task_handle(top)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("orchestrator: proactive resolve failed: %s", exc)
+            return None
+        directive = str(getattr(spec, "directive", "") or "").strip()
+        if not directive:
+            return None
+        return top.id, directive, str(getattr(spec, "skill", "") or "").strip()
 
     async def _finalize_proactive_task(self, visitor: Any) -> None:
         """Complete, requeue, or fail an in-flight proactive dispatch."""

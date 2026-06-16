@@ -20,6 +20,25 @@ if TYPE_CHECKING:
 # Non-terminal = the task still represents outstanding work.
 NON_TERMINAL_STATUSES = frozenset({"pending", "active"})
 
+# PROACTIVE tasks are eligibility-gated by the scheduler (ADR-0022): a pending
+# proactive task is *queued*, not due — schedule/event eligibility is the
+# scheduler's concern, and it claims the task (pending → active) only when due. So
+# a PROACTIVE task is runnable for the generic resolver ONLY while ``active``; every
+# other type is runnable while pending or active. This is what lets one work graph
+# hold both interactive work and scheduled work without a queued proactive task
+# firing on an ordinary turn.
+_PROACTIVE_TASK_TYPE = "PROACTIVE"
+
+
+def _status_runnable(handle: "TaskHandle") -> bool:
+    status = getattr(handle, "status", "")
+    if status not in NON_TERMINAL_STATUSES:
+        return False
+    ttype = str(getattr(handle, "task_type", "") or "").upper()
+    if ttype == _PROACTIVE_TASK_TYPE:
+        return status == "active"  # claimed/due, not merely queued
+    return True
+
 
 def prerequisites_met(store: "TaskStore", handle: "TaskHandle") -> bool:
     """True when every ``blocked_on`` prerequisite is completed (missing deps are
@@ -32,8 +51,8 @@ def prerequisites_met(store: "TaskStore", handle: "TaskHandle") -> bool:
 
 
 def is_runnable(store: "TaskStore", handle: "TaskHandle") -> bool:
-    """Non-terminal and all prerequisites met."""
-    return handle.status in NON_TERMINAL_STATUSES and prerequisites_met(store, handle)
+    """Runnable now: non-terminal (claimed, for PROACTIVE) and prerequisites met."""
+    return _status_runnable(handle) and prerequisites_met(store, handle)
 
 
 def has_outstanding_work(
@@ -46,8 +65,8 @@ def has_outstanding_work(
     """
     types = {t.upper() for t in task_types} if task_types else None
     for h in store.list():
-        if h.status not in NON_TERMINAL_STATUSES:
-            continue
+        if not _status_runnable(h):
+            continue  # terminal, or a queued (pending) proactive task
         if types and str(getattr(h, "task_type", "") or "").upper() not in types:
             continue
         return True
@@ -76,6 +95,8 @@ def pick_top_runnable(
     for h in store.list(status=["pending", "active"]):
         if types and str(getattr(h, "task_type", "") or "").upper() not in types:
             continue
+        if not _status_runnable(h):
+            continue  # e.g. a PROACTIVE task still queued (pending), not yet claimed
         if not prerequisites_met(store, h):
             continue
         candidates.append(h)

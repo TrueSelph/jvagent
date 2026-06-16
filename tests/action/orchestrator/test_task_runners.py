@@ -45,8 +45,8 @@ async def test_register_and_dispatch_a_custom_runner():
             return TaskRunResult(status="completed", directive="done")
 
         register_task_runner("action", action_runner)
-        # Case-insensitive; included in the runnable set alongside SKILL.
-        assert runnable_task_types() == frozenset({"SKILL", "ACTION"})
+        # Case-insensitive; included alongside the built-in loop-advanced types.
+        assert runnable_task_types() == frozenset({"SKILL", "PROACTIVE", "ACTION"})
         runner = get_task_runner("Action")
         assert runner is not None
         result = await runner(RunContext(orchestrator=None, visitor=None, task=None))

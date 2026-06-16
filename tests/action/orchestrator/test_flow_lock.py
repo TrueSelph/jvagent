@@ -315,6 +315,7 @@ async def test_skill_turn_lock_restricts_surface_when_task_lock_is_true(
     class MockTask:
         def __init__(self, owner_action):
             self.owner_action = owner_action
+            self.status = "active"
             self.task_type = "SKILL"
             self.updated_at = "2026-06-04T10:00:00Z"
 
@@ -427,6 +428,7 @@ async def test_skill_lock_not_locked_when_task_lock_is_false(
     class MockTask:
         def __init__(self, owner_action):
             self.owner_action = owner_action
+            self.status = "active"
             self.task_type = "SKILL"
             self.updated_at = "2026-06-04T10:00:00Z"
 
@@ -611,6 +613,7 @@ async def test_task_lock_pins_visible_so_blocked_tools_dispatch(
     class MockTask:
         def __init__(self, owner_action, data=None):
             self.owner_action = owner_action
+            self.status = "active"
             self.task_type = "SKILL"
             self.data = data or {}
             self.updated_at = "2026-06-04T10:00:00Z"
@@ -661,6 +664,7 @@ async def test_find_active_task_lock_skill_doc_prefers_active_session():
     class MockTask:
         def __init__(self, owner_action, data=None, updated_at="2026-06-04T12:00:00Z"):
             self.owner_action = owner_action
+            self.status = "active"
             self.data = data or {}
             self.updated_at = updated_at
 
@@ -815,6 +819,7 @@ async def test_apply_locked_skill_rebootstraps_missing_session_into_observations
     class MockTask:
         def __init__(self, owner_action):
             self.owner_action = owner_action
+            self.status = "active"
             self.task_type = "SKILL"
             self.updated_at = "2026-06-04T10:00:00Z"
 
