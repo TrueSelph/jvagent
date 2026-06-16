@@ -153,7 +153,7 @@ def _batch_failure_status(failures: List[Dict[str, Any]], *, stored_any: bool) -
 
 def _batch_failure_directive(failures: List[Dict[str, Any]]) -> str:
     if not failures:
-        return tell_user("Please share the missing information for this interview.")
+        return tell_user("Please share the missing information for this process.")
     # A handler/validator-authored directive is written for the user — prefer it.
     if len(failures) == 1:
         direct = str(failures[0].get("response_directive") or "").strip()
@@ -1468,12 +1468,12 @@ async def handle_cancel(action: Any, visitor: Any = None) -> str:
             ok=False,
             status="error",
             error="No active interview session to cancel.",
-            response_directive="No active interview session to cancel.",
+            response_directive="There's nothing active to cancel.",
         )
 
     cancel_message = (
         "I've cancelled this. Say what you'd like to do next, or start a new "
-        "interview when you're ready."
+        "request when you're ready."
     )
     cancel_fn = spec.handlers.cancel if spec else None
     func = load_hook_function(spec, cancel_fn) if spec and cancel_fn else None
@@ -1512,7 +1512,7 @@ async def handle_reset(action: Any, visitor: Any = None) -> str:
             status="error",
             error_code="NO_SESSION",
             error="No active interview session to reset.",
-            response_directive="No active interview session to reset.",
+            response_directive="There's nothing active to reset.",
         )
 
     reset_fn = spec.handlers.reset
@@ -1533,7 +1533,7 @@ async def handle_reset(action: Any, visitor: Any = None) -> str:
                 status="error",
                 error=f"Custom reset handler failed: {e}",
                 response_directive=tell_user(
-                    "I couldn't reset the interview. Say when you'd like to try again."
+                    "I couldn't reset the process. Say when you'd like to try again."
                 ),
             )
         coerced = _coerce_reset_hook_result(result)

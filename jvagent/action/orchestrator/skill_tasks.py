@@ -242,30 +242,34 @@ def visitor_utterance(visitor: Any) -> str:
 def _task_lock_skill_from_task_store(
     conversation: Any, skill_by_name: dict[str, Any]
 ) -> Optional[Any]:
+    """Resolve the top *runnable* task-lock skill from the store (ADR-0026).
+
+    Uses the generic graph resolver (``pick_top_runnable``): the standard "what runs
+    next" over the whole work graph, scoped to the types the orchestrator can drain
+    (``runnable_task_types`` — the built-in SKILL type plus any registered runner).
+    A task whose ``blocked_on`` prerequisites are not complete is not runnable, so a
+    parent that pushed a prerequisite stays blocked and the prerequisite owns the
+    turn; on its completion the parent becomes top-runnable and resumes.
+
+    Returns the matching SkillDoc when the top runnable task is a task-lock skill
+    this agent knows; ``None`` when the store is drained, the top task is a non-skill
+    type (its runner advances it — see the drain in the orchestrator), or the skill
+    is unknown here.
+    """
     store = task_store_for_conversation(conversation)
     if store is None:
         return None
-    try:
-        active_tasks = store.list(status="active")
-    except Exception as exc:
-        logger.debug("skill_tasks: failed to list active tasks: %s", exc)
-        return None
+    from jvagent.action.orchestrator.task_runners import runnable_task_types
+    from jvagent.memory.task_graph import pick_top_runnable
 
-    candidates: List[tuple[str, Any]] = []
-    for task in active_tasks or []:
-        owner = getattr(task, "owner_action", None)
-        if not owner or owner not in skill_by_name:
-            continue
-        sd = skill_by_name[owner]
-        if not getattr(sd, "task_lock", False):
-            continue
-        updated_at = str(getattr(task, "updated_at", "") or "")
-        candidates.append((updated_at, sd))
-
-    if not candidates:
+    top = pick_top_runnable(store, task_types=runnable_task_types())
+    if top is None:
         return None
-    candidates.sort(key=lambda item: item[0], reverse=True)
-    return candidates[0][1]
+    owner = getattr(top, "owner_action", None)
+    sd = skill_by_name.get(owner) if owner else None
+    if sd is not None and getattr(sd, "task_lock", False):
+        return sd
+    return None
 
 
 def _task_lock_skill_from_auto_start(
@@ -292,6 +296,25 @@ def _task_lock_skill_from_auto_start(
     return None
 
 
+def _skill_task_blocked(conversation: Any, skill_name: str) -> bool:
+    """True when ``skill_name`` has a non-terminal task with unmet prerequisites
+    (a pushed prerequisite owns the turn instead) — ADR-0026."""
+    if not skill_name:
+        return False
+    store = task_store_for_conversation(conversation)
+    if store is None:
+        return False
+    from jvagent.memory.task_graph import prerequisites_met
+
+    try:
+        for task in store.list(status=["pending", "active"], owner_action=skill_name):
+            if not prerequisites_met(store, task):
+                return True
+    except Exception as exc:
+        logger.debug("skill_tasks: blocked check failed for %s: %s", skill_name, exc)
+    return False
+
+
 async def resolve_active_task_lock_skill(
     visitor: Any,
     skill_docs: List[Any],
@@ -315,7 +338,12 @@ async def resolve_active_task_lock_skill(
             continue
         try:
             result = await resolve_fn(visitor, skill_docs)
-            if result is not None:
+            # A bound action may point at a skill whose task has since been blocked
+            # by a pushed prerequisite (ADR-0026); if so, the prerequisite owns the
+            # turn instead — fall through to the task-store resolution.
+            if result is not None and not _skill_task_blocked(
+                conversation, getattr(result, "name", "")
+            ):
                 return result
         except Exception as exc:
             logger.warning(
@@ -358,6 +386,156 @@ async def ensure_task_lock_task(visitor: Any, doc: Any) -> None:
             doc.name,
             exc,
         )
+
+
+def _active_skill_task(store: Any, skill_name: str) -> Optional[Any]:
+    try:
+        for task in store.list(status=["pending", "active"], owner_action=skill_name):
+            return task
+    except Exception:
+        return None
+    return None
+
+
+def _build_seed(visitor: Any, seed_from: List[str]) -> dict:
+    """Collect declared seed inputs to carry into a resumed task (ADR-0026)."""
+    seed: dict = {}
+    for key in seed_from or []:
+        if key == "utterance":
+            val = getattr(visitor, "utterance", None)
+            if not val:
+                interaction = getattr(visitor, "interaction", None)
+                val = getattr(interaction, "utterance", None) if interaction else None
+            if val:
+                seed["utterance"] = str(val)
+    return seed
+
+
+async def push_unmet_prerequisites(
+    visitor: Any, doc: Any, actions: List[Any]
+) -> Optional[str]:
+    """Declarative gate (ADR-0026): for a task-lock skill becoming active, push a
+    prerequisite task for the first unmet precondition in its ``requires_tasks``.
+
+    Returns the pushed prerequisite skill name (so the caller redirects the lock to
+    it), or ``None`` when all preconditions are satisfied. One-time per precondition:
+    once a prerequisite has been pushed for a given precondition it is not re-pushed,
+    preventing detour loops — after the prerequisite completes the gated skill simply
+    proceeds.
+    """
+    requires = getattr(doc, "requires_tasks", None) or ()
+    if not requires:
+        return None
+    conversation = getattr(visitor, "conversation", None)
+    store = task_store_for_conversation(conversation)
+    if store is None:
+        return None
+
+    from jvagent.action.orchestrator.preconditions import evaluate_precondition
+
+    # The gated skill needs a task so the prerequisite can resume it.
+    await ensure_task_lock_task(visitor, doc)
+    gated = _active_skill_task(store, doc.name)
+    if gated is None:
+        return None
+    already = set(gated.data.get("_pushed_preconditions") or [])
+
+    for entry in requires:
+        when = str(entry.get("when") or "").strip()
+        push = str(entry.get("push") or "").strip()
+        if not when or not push or when in already:
+            continue
+        if await evaluate_precondition(when, visitor):
+            continue  # satisfied — no detour
+        # Unmet → snapshot + clear the gated runtime (the prerequisite gets a clean
+        # session; the gated flow rehydrates on resume), capture its seed, push the
+        # prerequisite, and block the gated task on it.
+        bound = action_for_skill(doc, actions)
+        if bound is not None:
+            try:
+                if hasattr(bound, "snapshot_task_state"):
+                    snap = await bound.snapshot_task_state(doc.name, visitor)
+                    if snap:
+                        await gated.set_snapshot(snap)
+                if hasattr(bound, "_clear_interview_session"):
+                    await bound._clear_interview_session(visitor)
+            except Exception as exc:
+                logger.debug("push: snapshot/clear failed for %s: %s", doc.name, exc)
+        seed = _build_seed(visitor, entry.get("seed_from") or [])
+        if seed:
+            try:
+                await gated.set_seed({**(gated.seed or {}), **seed})
+            except Exception:
+                pass
+        try:
+            prereq = await store.create(
+                title=push,
+                description=f"Prerequisite for {doc.name}",
+                owner_action=push,
+                task_type="SKILL",
+                resumes=gated.id,
+            )
+            await prereq.start()
+            await gated.add_blocker(prereq.id)
+            already.add(when)
+            await gated.update(_pushed_preconditions=sorted(already))
+        except Exception as exc:
+            logger.warning(
+                "push: failed to push prerequisite %s for %s: %s", push, doc.name, exc
+            )
+            return None
+        return push  # one detour at a time
+    return None
+
+
+async def push_followon_prerequisite(
+    visitor: Any,
+    from_skill: str,
+    to_skill: str,
+    *,
+    seed: Optional[dict] = None,
+) -> Optional[str]:
+    """Runtime push (ADR-0026): the active task-lock skill defers to a follow-on
+    skill (an internal hand-off) by routing it through the work graph instead of a
+    context flag.
+
+    Pushes ``to_skill`` as a task that BLOCKS whatever ``from_skill`` resumes (the
+    gated parent), inheriting the same resume target. After ``from_skill`` completes,
+    the orchestrator's drain therefore enters ``to_skill`` before resuming the
+    parent — a context hand-off would lose that race to the same-turn drain. Returns
+    the pushed skill name, or ``None`` if there is nothing to route.
+    """
+    conversation = getattr(visitor, "conversation", None)
+    store = task_store_for_conversation(conversation)
+    if store is None:
+        return None
+    active = _active_skill_task(store, from_skill)
+    if active is None:
+        return None
+    parent_id = active.resumes  # the gated task this hand-off chain ultimately serves
+    try:
+        prereq = await store.create(
+            title=to_skill,
+            description=f"Follow-on for {from_skill}",
+            owner_action=to_skill,
+            task_type="SKILL",
+            resumes=parent_id,
+            seed=dict(seed or {}),
+        )
+        await prereq.start()
+        if parent_id:
+            parent = store.get(parent_id)
+            if parent is not None:
+                await parent.add_blocker(prereq.id)
+    except Exception as exc:
+        logger.warning(
+            "skill_tasks: failed to push follow-on %s after %s: %s",
+            to_skill,
+            from_skill,
+            exc,
+        )
+        return None
+    return to_skill
 
 
 def compose_skill_activate_hooks(
@@ -426,6 +604,43 @@ def compose_skill_activate_hooks(
     return _activate, _reactivate
 
 
+async def persist_task_snapshot(
+    conversation: Any, skill_name: str, snapshot: dict
+) -> bool:
+    """Write a runtime snapshot onto a skill's non-terminal task (ADR-0026), so the
+    flow can be torn down and rebuilt on resume. Returns True if persisted."""
+    if not skill_name:
+        return False
+    store = task_store_for_conversation(conversation)
+    if store is None:
+        return False
+    try:
+        for task in store.list(status=["pending", "active"], owner_action=skill_name):
+            await task.set_snapshot(dict(snapshot or {}))
+            return True
+    except Exception as exc:
+        logger.debug("skill_tasks: persist snapshot failed for %s: %s", skill_name, exc)
+    return False
+
+
+def task_snapshot_for_skill(conversation: Any, skill_name: str) -> dict:
+    """The durable runtime snapshot stored on a skill's non-terminal task, if any
+    (ADR-0026). Used to rehydrate a flow that was torn down for a detour."""
+    if not skill_name:
+        return {}
+    store = task_store_for_conversation(conversation)
+    if store is None:
+        return {}
+    try:
+        for task in store.list(status=["pending", "active"], owner_action=skill_name):
+            snap = getattr(task, "snapshot", None)
+            if snap:
+                return dict(snap)
+    except Exception as exc:
+        logger.debug("skill_tasks: snapshot lookup failed for %s: %s", skill_name, exc)
+    return {}
+
+
 async def ensure_task_lock_session(
     doc: Any,
     actions: List[Any],
@@ -441,6 +656,24 @@ async def ensure_task_lock_session(
         if hasattr(bound, "_ensure_specs_loaded"):
             await bound._ensure_specs_loaded()
         needs = await bound.needs_task_lock_rebootstrap(doc.name, visitor)
+        if needs and hasattr(bound, "rehydrate_from_task"):
+            # ADR-0026: rebuild the runtime from the task snapshot before starting
+            # fresh, so a flow torn down for a detour resumes with its prior state.
+            snap = task_snapshot_for_skill(
+                getattr(visitor, "conversation", None), doc.name
+            )
+            if snap:
+                try:
+                    if await bound.rehydrate_from_task(doc.name, snap, visitor):
+                        needs = await bound.needs_task_lock_rebootstrap(
+                            doc.name, visitor
+                        )
+                except Exception as exc:
+                    logger.debug(
+                        "skill_tasks: rehydrate_from_task failed for %s: %s",
+                        doc.name,
+                        exc,
+                    )
         if needs and hasattr(bound, "on_skill_activate"):
             note = await bound.on_skill_activate(
                 doc.name,
