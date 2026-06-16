@@ -8,6 +8,18 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Fixed
+
+- **Builtin `phone` validator now applies `country_code`.** `validator_args` were
+  relayed to the validator but the `country_code` arg was ignored, so a bare local
+  number was never normalized (e.g. a 7-digit number with `country_code: 592` was
+  rejected by the 10-digit check instead of becoming `592…`). The validator now
+  prepends `country_code` to a bare **local-length** number — one exactly
+  `full_length − code_length` digits (7 for `country_code: 592`, full 10) — leaving
+  full-length numbers and numbers already carrying the code untouched. Acceptance is
+  therefore strictly a local number (→ full) or an already-full number, nothing in
+  between (6/8/9/11-digit inputs are rejected). No `country_code` → unchanged.
+
 ### Added
 
 - **Field-level `hint`.** Interview fields take an optional `hint` alongside
