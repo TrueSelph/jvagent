@@ -8,6 +8,23 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+## [0.1.0rc5] - 2026-06-16
+
+Fifth release candidate (TestPyPI). Fixes a turn-lock re-grounding regression
+introduced in rc4.
+
+### Fixed
+
+- **Locked-interview re-grounding lost the field catalog (regression).** Under
+  task-driven turn-lock (ADR-0026) a skill entered as a pushed prerequisite or
+  resumed via the drain is delivered terminally, so the model never runs the
+  activation turn where the full `field_reference` is surfaced — and the per-turn
+  re-ground (`interview_turn_status`) only sent the slim key list. The model thus
+  lost the per-field guidance + catalog it needs to extract values and supplement
+  prompts. The re-ground now re-asserts the **full** `field_reference` (key,
+  prompt, guidance, required) on every locked turn. Covered by
+  `tests/action/interview/test_get_status_reference.py`.
+
 ## [0.1.0rc4] - 2026-06-16
 
 Fourth release candidate (TestPyPI). Task-driven turn-lock: the orchestrator's

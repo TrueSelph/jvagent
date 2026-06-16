@@ -1617,14 +1617,16 @@ async def handle_get_status(action: Any, visitor: Any = None) -> str:
 
 
 async def interview_turn_status(action: Any, visitor: Any = None) -> Optional[str]:
-    """Compact per-turn re-grounding for a locked interview.
+    """Per-turn re-grounding for a locked interview.
 
-    Activation sends the full ``field_reference`` once; on a resumed locked turn
-    that observation may have aged out of history, so the model loses the valid
-    keys and guesses (``full_name`` vs ``user_name``). This re-asserts just what
-    key selection needs — valid keys, the pending field, and progress — without
-    re-sending the whole catalog (guidance pages) every turn. ``get_status``
-    remains the on-demand path for the full reference.
+    Activation surfaces the full ``field_reference`` once, but that observation ages
+    out of history — and under task-driven turn-lock (ADR-0026) a skill entered as a
+    pushed prerequisite / resumed via the drain is delivered terminally, so the model
+    may never run the activation turn at all. Either way the model loses the field
+    catalog (valid keys + per-field guidance) it needs to extract values and
+    supplement prompts correctly. So this re-asserts the **full** ``field_reference``
+    (key, prompt, guidance, required) alongside the pending field and progress on
+    every locked turn. ``get_status`` remains the on-demand path for the same.
     """
     session, spec = await action._get_session_and_contract(visitor)
     if not session or not spec:
@@ -1636,6 +1638,7 @@ async def interview_turn_status(action: Any, visitor: Any = None) -> Optional[st
         status=session.status.value,
         interview_type=session.interview_type,
         field_keys=spec.field_keys(),
+        field_reference=fields_reference(spec),
         next_field=(
             {"key": next_field["key"], "prompt": next_field.get("prompt")}
             if next_field

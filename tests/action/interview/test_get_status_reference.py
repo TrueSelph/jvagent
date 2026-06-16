@@ -52,9 +52,16 @@ async def test_prepare_task_lock_turn_reinjects_field_reference():
     obs = prep.observations[0]
     assert obs["kind"] == "server_prep"
     status = json.loads(obs["observation"])
-    # Compact re-grounding: valid keys (not the full field_reference catalog).
+    # Re-grounding carries the FULL field catalog (ADR-0026): a skill entered as a
+    # pushed prerequisite / resumed via the drain is delivered terminally, so the
+    # model may never run the activation turn — the re-ground must re-assert the
+    # field_reference (keys + per-field guidance), not just the keys.
     assert status["field_keys"] == spec.field_keys()
-    assert "field_reference" not in status
+    assert "field_reference" in status
+    ref = status["field_reference"]
+    assert isinstance(ref, list) and ref
+    assert {f["key"] for f in ref} == set(spec.field_keys())
+    assert any("guidance" in f for f in ref)  # per-field guidance present
 
 
 @pytest.mark.asyncio
