@@ -8,17 +8,45 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
-### Fixed
+## [0.1.0rc5] - 2026-06-16
 
-- **Builtin `phone` validator now applies `country_code`.** `validator_args` were
-  relayed to the validator but the `country_code` arg was ignored, so a bare local
-  number was never normalized (e.g. a 7-digit number with `country_code: 592` was
-  rejected by the 10-digit check instead of becoming `592…`). The validator now
-  prepends `country_code` to a bare **local-length** number — one exactly
-  `full_length − code_length` digits (7 for `country_code: 592`, full 10) — leaving
-  full-length numbers and numbers already carrying the code untouched. Acceptance is
-  therefore strictly a local number (→ full) or an already-full number, nothing in
-  between (6/8/9/11-digit inputs are rejected). No `country_code` → unchanged.
+Fifth release candidate (TestPyPI). Headline: the interview hook authoring
+interface is now a single `ctx` object (**BREAKING for skill authors**). Also
+fixes a turn-lock re-grounding regression from rc4 and applies `country_code` in
+the builtin phone validator.
+
+### Changed
+
+- **Interview hooks take a single `ctx` (BREAKING for skill authors).** Every
+  `custom_tools` hook — validator, pre/post processor, skill tool, handler, branch
+  condition — now takes exactly one argument, `ctx` (`HookExecutionContext`), and
+  imports nothing from the interview package.
+  - **Inputs** are attributes: `ctx.value` (validators), `ctx.session`,
+    `ctx.visitor`, `ctx.interview` (the action), `ctx.config` (the spec),
+    `ctx.extracted_values`, `ctx.args` (validator_args / skill-tool args),
+    `ctx.phase`. `ctx` is always injected and never `None` (no null-guard).
+  - **Output** is methods: `ctx.say(msg | [msgs], *, continue_=False, hint="")` is
+    the single channel for user-facing text — one string is one question, a list is
+    sequential statements (statement-then-followup), `continue_` appends the
+    branch-aware next prompt, `hint` is model-only guidance. `ctx.tool_response(...)`
+    is the control envelope (status / next_tool / interview_complete / value /
+    retain_context_keys / review keys / a deferred `note`). `ctx.call_tool(tool)`,
+    `ctx.no_session()`, and `ctx.valid(...)` / `ctx.invalid(...)` (validators —
+    `invalid` auto-frames the error as the re-ask) round out the surface.
+  - `ctx.say` records onto the context; `call_hook` folds it into the result's
+    `response_directive` in one place, so it flows the existing, proven delivery
+    path (no double-emit). It is **inert outside reply-producing phases** (the
+    pre-processor store re-run, branch eval), so a prompt-builder that re-runs while
+    the answer is stored can't bleed the previous prompt onto the next turn — call
+    it unconditionally. This also resolves the rc4 regression where user-facing
+    content placed in a `tell_user` `note=` was stripped at egress.
+  - The standalone `responses.py` directive builders (`tell_user`,
+    `tell_user_with_followup`, `interview_tool_response`, `call_tool_directive`,
+    `no_session_directive`, …) and the `InterviewDirectives` sink (`directives.py`)
+    are **removed** — both modules are deleted; the framing primitives now live
+    inside `hooks.py` (internal; used by the engine and by `ctx`). The
+    `directives`/`session`/`visitor`/… back-compat kwarg injection is gone — `ctx`
+    is the only injected argument.
 
 ### Added
 
@@ -31,93 +59,26 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   Distinct from `guidance` (model-facing, judges the answer). Phrase it as what to
   tell the user and keep it non-redundant with `prompt`.
 
-### Changed
-
-- **Interview hooks take a single `ctx` (BREAKING for skill authors).** Every
-  custom_tools hook — validator, pre/post processor, skill tool, handler,
-  branch condition — now takes exactly one argument, `ctx`
-  (`HookExecutionContext`), and imports nothing from the interview package.
-  - **Inputs** are attributes: `ctx.value` (validators), `ctx.session`,
-    `ctx.visitor`, `ctx.interview` (the action), `ctx.config` (the spec),
-    `ctx.extracted_values`, `ctx.args` (validator_args / skill-tool args),
-    `ctx.phase`.
-  - **Output** is methods: `ctx.say(msg | [msgs], *, continue_=False, hint="")`
-    is the single channel for user-facing text — one string is one question, a
-    list is sequential statements (statement-then-followup), `continue_` appends
-    the branch-aware next prompt, `hint` is model-only guidance. `ctx.tool_response(...)`
-    is the control envelope (status / next_tool / interview_complete / value /
-    retain_context_keys / review keys / a deferred `note`). `ctx.call_tool(tool)`,
-    `ctx.no_session()`, and `ctx.valid(...)` / `ctx.invalid(...)` (validators)
-    round out the surface.
-  - `ctx.say` records onto the context; `call_hook` folds it into the result's
-    `response_directive` in one place, so it flows the existing, proven
-    delivery path (no double-emit). It is **inert outside reply-producing
-    phases** (the pre-processor store re-run, branch eval), so a prompt-builder
-    that re-runs while the answer is stored can't bleed the previous prompt onto
-    the next turn — call it unconditionally.
-  - The standalone `responses.py` directive builders (`tell_user`,
-    `tell_user_with_followup`, `interview_tool_response`, `call_tool_directive`,
-    `no_session_directive`, …) and the `InterviewDirectives` sink
-    (`directives.py`) are **removed from the authoring surface** — the framing
-    primitives now live inside `hooks.py` (internal; used by the engine and by
-    `ctx`). The `directives`/`session`/`visitor`/… back-compat kwarg injection is
-    gone — `ctx` is the only injected argument.
-
-## [0.1.0rc5] - 2026-06-16
-
-Fifth release candidate (TestPyPI). Fixes two egress regressions introduced in
-rc4: turn-lock re-grounding lost the field catalog, and pre/post-processor
-user-facing content was stripped at egress.
-
 ### Fixed
 
 - **Locked-interview re-grounding lost the field catalog (regression).** Under
   task-driven turn-lock (ADR-0026) a skill entered as a pushed prerequisite or
   resumed via the drain is delivered terminally, so the model never runs the
   activation turn where the full `field_reference` is surfaced — and the per-turn
-  re-ground (`interview_turn_status`) only sent the slim key list. The model thus
-  lost the per-field guidance + catalog it needs to extract values and supplement
-  prompts. The re-ground now re-asserts the **full** `field_reference` (key,
-  prompt, guidance, required) on every locked turn. Covered by
+  re-ground (`interview_turn_status`) only sent the slim key list. The re-ground
+  now re-asserts the **full** `field_reference` (key, prompt, guidance, required,
+  optional `hint`) on every locked turn. Covered by
   `tests/action/interview/test_get_status_reference.py`.
-- **Pre/post-processor user-facing content was stripped at egress (regression).**
-  Producer egress drops the model-only guidance segment (after the
-  `DIRECTIVE_GUIDANCE_MARKER`) of a directive, so a processor that stuffed content
-  the user must SEE — an options list, a table, a rendered summary — into a
-  `tell_user(question, note=…)` `note` lost that content (the `note` is
-  model-facing guidance, and the strip removed it).
-
-### Added
-
-- **`ctx` — one common interface for every interview hook.** Pre/post processors,
-  validators, and handlers may now declare a single `ctx` parameter
-  (`HookExecutionContext`) instead of the individual kwargs. It is **always
-  injected and never `None`** (no null-guard), and is the one place a hook reads
-  inputs (`ctx.session`, `ctx.value`, `ctx.visitor`, `ctx.extracted_values`,
-  `ctx.config`, `ctx.interview`, `ctx.phase`) and furnishes user output
-  (`ctx.tell_user(content)` / `ctx.directives`). The individual kwargs remain
-  injected for back-compat. The example signup interview's
-  `get_available_training_times` now takes just `ctx`.
-- **`InterviewDirectives` — first-class processor directive sink.** A hook that
-  needs to surface user-visible CONTENT beyond the single bare `response_directive`
-  question calls `ctx.tell_user(content)` (or declares a `directives` parameter
-  for the bare sink). It queues onto `interaction.directives` (ADR-0025), which
-  ReplyAction composes into the reply, so the content survives egress — unlike the
-  `tell_user` `note=` arg, which is model-only guidance stripped at egress.
-  Processors no longer reach into `visitor.interaction` themselves. The example
-  signup interview's `get_available_training_times` uses it for the slot list.
-
-  A directive belongs to the interaction of the turn that **activates** its field
-  (the prompt-building run). But pre/post processors run on more than that run —
-  the same pre_processor fires again while STORING the user's answer, and
-  validators / branch conditions / post_processors fire while advancing through
-  the field graph. Emitting from any of those would land the directive on a
-  different field's interaction, bleeding the previous prompt (e.g. the slot list)
-  ahead of the next question. So the sink is active **only on the field-activation
-  run** and inert everywhere else: `call_hook` defaults to an inert phase and only
-  `run_pre_processors` opts into `ACTIVATION_PHASE`, so any future call site is
-  bleed-safe by default. Covered by
-  `tests/action/interview/test_interview_directives.py`.
+- **Builtin `phone` validator now applies `country_code`.** `validator_args` were
+  relayed to the validator but the `country_code` arg was ignored, so a bare local
+  number was never normalized (a 7-digit number with `country_code: 592` was
+  rejected by the 10-digit check instead of becoming `592…`). It now prepends
+  `country_code` to a bare **local-length** number — exactly `full_length −
+  code_length` digits (7 for `592`, full 10) — leaving full-length numbers and
+  numbers already carrying the code untouched. Acceptance is therefore strictly a
+  local number (→ full) or an already-full number, nothing in between (6/8/9/11-digit
+  inputs are rejected). No `country_code` → unchanged. Covered by
+  `tests/action/interview/test_phone_validator_country_code.py`.
 
 ## [0.1.0rc4] - 2026-06-16
 
