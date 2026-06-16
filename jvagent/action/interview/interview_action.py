@@ -269,13 +269,28 @@ class InterviewAction(Action):
         """
         if not await self._has_ready_session(skill_name, visitor):
             return None
-        try:
-            result = await engine.handle_next_field(self, visitor)
-            data = json.loads(result)
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.debug("task_lock_entry_directive failed for %s: %s", skill_name, exc)
-            return None
-        directive = data.get("response_directive")
+        # Advance, server-side, past any field that auto-resolves to a tool-call
+        # chain — e.g. a pre_processor that fills its own field and returns
+        # ``Call interview__next_field()`` — to the first field that has a real
+        # user-facing question. Delivering the chain directive itself would leak
+        # "Call interview__next_field()" to the user; resolving it here yields the
+        # actual next prompt. Bounded so a misbehaving chain can't spin.
+        directive: Optional[str] = None
+        for _ in range(8):
+            try:
+                data = json.loads(await engine.handle_next_field(self, visitor))
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug(
+                    "task_lock_entry_directive failed for %s: %s", skill_name, exc
+                )
+                return None
+            directive = data.get("response_directive")
+            chains_to_next_field = data.get("next_tool") == "interview__next_field" or (
+                isinstance(directive, str)
+                and directive.strip().lower().startswith("call interview__next_field")
+            )
+            if not chains_to_next_field:
+                break
         if isinstance(directive, str) and directive.strip():
             return directive
         return None

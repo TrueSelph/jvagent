@@ -112,3 +112,35 @@ async def test_entry_directive_none_without_session():
     assert (
         await action.task_lock_entry_directive("pre_alert_interview", visitor) is None
     )
+
+
+@pytest.mark.asyncio
+async def test_entry_directive_advances_past_autoresolved_chain(monkeypatch):
+    """A field whose pre_processor auto-resolves it returns a tool-call chain
+    ('Call interview__next_field()'); the entry directive must advance past that to
+    the first real question, not leak the chain to the user (ADR-0026)."""
+    import json as _json
+
+    action = _action()
+    visitor, conv = _visitor()
+    sess = InterviewSession(interview_type="pre_alert_interview")
+    await save_session(conv, sess)
+
+    calls = {"n": 0}
+
+    async def fake_next_field(_action, _visitor):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _json.dumps({"response_directive": "Call interview__next_field()."})
+        return _json.dumps(
+            {"response_directive": "Tell the user: What is your tracking number?"}
+        )
+
+    monkeypatch.setattr(
+        "jvagent.action.interview.engine.handle_next_field", fake_next_field
+    )
+
+    directive = await action.task_lock_entry_directive("pre_alert_interview", visitor)
+    assert directive.strip().lower().startswith("tell the user")
+    assert "interview__next_field" not in directive
+    assert calls["n"] == 2  # advanced once past the chain
