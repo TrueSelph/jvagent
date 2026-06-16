@@ -126,20 +126,13 @@ Set `binds_tools_to_visitor = True` on `InterviewAction` so tool dispatch receiv
 
 ### Function loading
 
-`hooks.load_hook_function()` resolves functions from `skills/<name>/scripts/custom_tools.py`. Functions are called with signature-filtered kwargs via `hooks.call_hook()`:
+`hooks.load_hook_function()` resolves functions from `skills/<name>/scripts/custom_tools.py`. Every hook is called with a **single** `ctx` via `hooks.call_hook()` — hooks import nothing from the interview package:
 
-| Injected kwarg | When available |
-|----------------|----------------|
-| `ctx` | Always — the **common interface**: one always-present `HookExecutionContext` carrying inputs (`session`, `value`, `visitor`, `extracted_values`, `config`, `interview`, `phase`) and output (`ctx.tell_user(...)` / `ctx.directives`). Declare just `ctx` (no null guard) — see [extending.md](docs/extending.md#the-common-ctx-interface) |
-| `session` | Always (current `InterviewSession`) |
-| `visitor` | Always |
-| `directives` | Always — `InterviewDirectives` sink for extra user-visible content; queues only on the field-activation run |
-| `interview` | Always |
-| `config` | Handler/completion calls |
-| `extracted_values` | Review/completion handlers |
-| `review_data` | Review/completion handlers |
+| Injected arg | When available |
+|--------------|----------------|
+| `ctx` | **Always** — the single `HookExecutionContext` (never `None`). Carries inputs (`ctx.value`, `ctx.session`, `ctx.visitor`, `ctx.interview`, `ctx.config`, `ctx.extracted_values`, `ctx.args`, `ctx.phase`) and output (`ctx.say`, `ctx.tool_response`, `ctx.call_tool`, `ctx.no_session`, `ctx.valid` / `ctx.invalid`). Declare just `ctx` (no null guard) — see [extending.md](docs/extending.md#the-single-ctx-interface) |
 
-Custom validators receive `session` (in addition to `value`, `visitor`, `interview`) so they can read `session.context` and collected fields during validation.
+Validators read the raw input from `ctx.value` and `session.context` / collected fields from `ctx.session` during validation.
 
 ## `interview:` contract reference
 
@@ -157,7 +150,8 @@ interview:
   fields:
     - key: phone_number
       prompt: What is your phone number?
-      guidance: 10-digit number — not filler alone.
+      guidance: 10-digit number — not filler alone.   # model-facing: judges the answer
+      hint: Enter a mobile number with country code.   # user-facing: how to answer, woven into the prompt
       validator: phone
       validator_args:
         exact_length: 10
@@ -182,7 +176,7 @@ interview:
 
 - Only `skill_tools` entries become LLM tools (`{skill}__{name}`). Processors, validators, and `handlers.*` run automatically — never list them as tools.
 - Validators are **strings** plus optional `validator_args` — nested `{function, kwargs}` objects are rejected.
-- Custom validators return JSON or dict with `valid`, `value`, `error`; may set `interview_complete`, `response_directive`, `retain_context_keys` on success.
+- Custom validators take the single `ctx` and return `ctx.valid(...)` / `ctx.invalid(...)` (a `valid` / `value` / `error` dict); may set `interview_complete`, `response_directive`, `retain_context_keys` on success.
 - Reset: model calls `interview__reset()`; foundation routes to `handlers.reset` when set.
 - Utterance extraction is **model-owned** via `interview__set_fields`; the server has no extraction path — validators are the only gate (no frontmatter extractors).
 
@@ -251,50 +245,45 @@ Do **not** list fields as Procedure steps or Flow overview — field order and p
 
 Organize the file into labeled sections (see [example](examples/example_interview/scripts/custom_tools.py)):
 
-| Type | Referenced in | Return type | LLM-callable? |
-|------|---------------|-------------|---------------|
-| Validator | `fields[].validator` | JSON string or `dict` | No |
-| Pre-processor | `fields[].pre_processor` | Dict or `interview_tool_response` JSON | No |
-| Post-processor | `fields[].post_processor` | `interview_tool_response` JSON | No |
-| Skill tool | `interview.skill_tools` | `interview_tool_response` JSON (preferred) or `dict` | Yes (`{skill}__{name}`) |
-| Review handler | `handlers.review` | `Dict` with `response_directive` | No |
-| Reset handler | `handlers.reset` | `interview_tool_response` or dict with `response_directive` | No |
-| Completion handler | `handlers.complete` | `Dict` with `response_directive`, optional `retain_context_keys` | No |
+Every hook takes the single `ctx`. User-facing text goes through `ctx.say`; control/return data through `ctx.tool_response` (validators use `ctx.valid` / `ctx.invalid`):
 
-LLM-facing custom tools should use `interview_tool_response()` for a consistent envelope (`ok`, `status`, `system_message`, `response_directive`). The framework also accepts plain `dict` returns via `_finalize_tool_response`.
+| Type | Referenced in | User text | Control/return | LLM-callable? |
+|------|---------------|-----------|----------------|---------------|
+| Validator | `fields[].validator` | `ctx.invalid(error)` (re-ask) | `ctx.valid` / `ctx.invalid` dict | No |
+| Pre-processor | `fields[].pre_processor` | `ctx.say(...)` | `ctx.tool_response(...)` | No |
+| Post-processor | `fields[].post_processor` | deferred `note` key (not `ctx.say`) | `ctx.tool_response(...)` | No |
+| Skill tool | `interview.skill_tools` | `ctx.say(...)` | `ctx.tool_response(...)` | Yes (`{skill}__{name}`) |
+| Review handler | `handlers.review` | `ctx.say(...)` | `dict` (`modified_values`, `terminate`, …) | No |
+| Reset handler | `handlers.reset` | `ctx.say(...)` | `ctx.tool_response(...)` | No |
+| Completion handler | `handlers.complete` | `ctx.say(...)` | `ctx.tool_response(retain_context_keys=…)` | No |
 
-### Response helpers
+### `ctx` output methods
 
-Use helpers from [`responses.py`](responses.py) — do not invent ad-hoc directive formats:
+A hook either **says user text** (`ctx.say`) **or** sets a control directive
+(`ctx.call_tool`) — never both for the same content (it double-emits). For "note,
+then chain a tool", use `ctx.say("note")` plus `ctx.tool_response(next_tool=…)`.
 
 ```python
-from jvagent.action.interview.responses import (
-    call_tool_directive,
-    interview_tool_response,
-    tell_user,
-    no_session_directive,
-)
+# User-facing question (single channel for user text)
+ctx.say("What is your name?")
 
-# Tell the LLM to reply to the user
-tell_user("What is your name?")
+# Statement(s) then a question — one reply
+ctx.say(["Here are the slots:\n- Mon 9am\n- Tue 2pm", "Which works for you?"])
 
-# Tell the LLM to call a tool
-call_tool_directive("interview__review")
+# Model-only steering on a user message (never shown to the user)
+ctx.say("What is the code?", hint="ask for the code only; do not skip")
 
-# Build a full tool response
-interview_tool_response(
-    ok=True,
-    status="ok",
-    next_tool="interview__review",
-    response_directive=call_tool_directive("interview__review"),
-)
+# A control directive that chains a tool (no user text)
+ctx.tool_response(ok=True, status="ok", response_directive=ctx.call_tool("interview__review"))
+
+# A deferred user-facing sidebar paired with the next question (post_processor)
+ctx.tool_response(ok=True, status="ok", note="Thanks for using your work email!")
 ```
 
-For extra user-visible content on a field's prompt (an options list, a table, a
-rendered summary) that does not fit the single `response_directive` question, a
-hook calls `ctx.tell_user(content)` on the [common `ctx`](docs/extending.md#the-common-ctx-interface)
-— **not** the `tell_user` `note=` arg, which is model-only guidance stripped at
-egress.
+`ctx.say(..., hint=...)` is **model-only** guidance on a user message;
+`ctx.tool_response(note=...)` is a **deferred user-facing** sidebar the framework
+pairs with the next field. The full surface is in
+[extending.md](docs/extending.md#the-single-ctx-interface).
 
 ## Core `interview__*` tools
 
@@ -342,7 +331,7 @@ All tools return JSON with these key fields:
 
 ### Hook result keys
 
-Pre/post processor results are slimmed via `HOOK_RESULT_KEYS` in [`responses.py`](responses.py) before reaching the LLM:
+Pre/post processor results (built via `ctx.tool_response`) are slimmed via `HOOK_RESULT_KEYS` in [`hooks.py`](hooks.py) before reaching the LLM:
 
 | Key | Meaning |
 |-----|---------|
@@ -350,6 +339,7 @@ Pre/post processor results are slimmed via `HOOK_RESULT_KEYS` in [`responses.py`
 | `value` / `error` / `error_code` | Result detail |
 | `system_message` | Context for the model about what happened (not a user reply) |
 | `response_directive` | Override directive for this hook result — wins over the default chain hint |
+| `note` | Deferred user-facing sidebar (post_processor) the framework pairs with the next question |
 | `next_tool` | Suggested next tool to call (e.g. `interview__review`) |
 | `interview_complete` | Interview is done server-side — session cleared, task closed |
 
@@ -488,8 +478,9 @@ Existing tests under `tests/action/interview/`:
 - [ ] `SKILL.md` body is custom rules only — no per-field Procedure steps (standard procedure is composed via extends)
 - [ ] Terminal paths return `retain_context_keys` only for keys that must survive `clear_interview_context()`
 - [ ] Validators return correct shape (`valid`, `value`, `error`); use `interview_complete` + `response_directive` when validation finishes the interview
-- [ ] Post-tools return `interview_tool_response` with `response_directive`
-- [ ] LLM custom tools return `interview_tool_response` with clear `response_directive` (especially stop/cancel paths)
+- [ ] Every hook takes the single `ctx`; user text via `ctx.say`, control/return via `ctx.tool_response`
+- [ ] Post-tools return `ctx.tool_response`; user sidebars use the deferred `note` key, not `ctx.say`
+- [ ] LLM custom tools return `ctx.tool_response`; stop/cancel paths chain via `ctx.call_tool` (especially stop/cancel paths)
 - [ ] If persisting to SKILL task data, normalize fields and call `_persist_skill_task_data` before `handle.complete()` / `_close_task`
 - [ ] Review handler returns `response_directive`; terminate path sets `terminate: true`
 - [ ] Completion handler returns `response_directive` with user-facing message

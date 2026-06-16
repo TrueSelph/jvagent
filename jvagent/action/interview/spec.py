@@ -34,6 +34,7 @@ _FIELD_KEYS = frozenset(
         "key",
         "prompt",
         "guidance",
+        "hint",
         "required",
         "validator",
         "validator_args",
@@ -62,6 +63,14 @@ class FieldDef:
     key: str
     prompt: str
     guidance: str = ""
+    # Plain answer-guidance FOR THE USER — how to answer this question (e.g. "enter
+    # your first, last, and any other names"; an accepted format; that a field is
+    # optional). Woven into the prompt's user-facing text so the agent instructs the
+    # user on the intended answer, and surfaced in field_reference / next_field so
+    # the model can answer the user's clarifications. Phrase it as what to tell the
+    # user, non-redundant with ``prompt``. Distinct from ``guidance``, which is
+    # model-facing acceptance criteria for judging the answer.
+    hint: str = ""
     required: bool = True
     validator: str = ""
     validator_args: Dict[str, Any] = field(default_factory=dict)
@@ -123,15 +132,18 @@ def fields_reference(spec: InterviewSpec) -> List[Dict[str, Any]]:
     Server internals (validator, pre/post processors, branches) are executed
     programmatically and are deliberately excluded — the model never needs them.
     """
-    return [
-        {
+    out: List[Dict[str, Any]] = []
+    for f in spec.fields:
+        entry: Dict[str, Any] = {
             "key": f.key,
             "prompt": f.prompt,
             "guidance": f.guidance,
             "required": f.required,
         }
-        for f in spec.fields
-    ]
+        if f.hint:
+            entry["hint"] = f.hint
+        out.append(entry)
+    return out
 
 
 def _reject_unknown_keys(
@@ -182,6 +194,7 @@ def _parse_field(data: Dict[str, Any], *, index: int) -> FieldDef:
         key=str(data.get("key", "") or "").strip(),
         prompt=str(data.get("prompt", "") or ""),
         guidance=str(data.get("guidance", "") or ""),
+        hint=str(data.get("hint", "") or ""),
         required=bool(data.get("required", True)),
         validator=str(validator or "").strip(),
         validator_args=dict(data.get("validator_args") or {}),

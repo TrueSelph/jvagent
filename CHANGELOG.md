@@ -8,6 +8,49 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Added
+
+- **Field-level `hint`.** Interview fields take an optional `hint` alongside
+  `prompt` / `guidance` — plain **answer-guidance for the user** (how to answer the
+  question, e.g. "Enter your first, last, and any other names"; an accepted format;
+  that a field is optional). It is woven into the prompt's user-facing text so the
+  agent instructs the user on the intended answer, and surfaced in `field_reference`
+  / `next_field` so the model can answer the user's per-question clarifications.
+  Distinct from `guidance` (model-facing, judges the answer). Phrase it as what to
+  tell the user and keep it non-redundant with `prompt`.
+
+### Changed
+
+- **Interview hooks take a single `ctx` (BREAKING for skill authors).** Every
+  custom_tools hook — validator, pre/post processor, skill tool, handler,
+  branch condition — now takes exactly one argument, `ctx`
+  (`HookExecutionContext`), and imports nothing from the interview package.
+  - **Inputs** are attributes: `ctx.value` (validators), `ctx.session`,
+    `ctx.visitor`, `ctx.interview` (the action), `ctx.config` (the spec),
+    `ctx.extracted_values`, `ctx.args` (validator_args / skill-tool args),
+    `ctx.phase`.
+  - **Output** is methods: `ctx.say(msg | [msgs], *, continue_=False, hint="")`
+    is the single channel for user-facing text — one string is one question, a
+    list is sequential statements (statement-then-followup), `continue_` appends
+    the branch-aware next prompt, `hint` is model-only guidance. `ctx.tool_response(...)`
+    is the control envelope (status / next_tool / interview_complete / value /
+    retain_context_keys / review keys / a deferred `note`). `ctx.call_tool(tool)`,
+    `ctx.no_session()`, and `ctx.valid(...)` / `ctx.invalid(...)` (validators)
+    round out the surface.
+  - `ctx.say` records onto the context; `call_hook` folds it into the result's
+    `response_directive` in one place, so it flows the existing, proven
+    delivery path (no double-emit). It is **inert outside reply-producing
+    phases** (the pre-processor store re-run, branch eval), so a prompt-builder
+    that re-runs while the answer is stored can't bleed the previous prompt onto
+    the next turn — call it unconditionally.
+  - The standalone `responses.py` directive builders (`tell_user`,
+    `tell_user_with_followup`, `interview_tool_response`, `call_tool_directive`,
+    `no_session_directive`, …) and the `InterviewDirectives` sink
+    (`directives.py`) are **removed from the authoring surface** — the framing
+    primitives now live inside `hooks.py` (internal; used by the engine and by
+    `ctx`). The `directives`/`session`/`visitor`/… back-compat kwarg injection is
+    gone — `ctx` is the only injected argument.
+
 ## [0.1.0rc5] - 2026-06-16
 
 Fifth release candidate (TestPyPI). Fixes two egress regressions introduced in

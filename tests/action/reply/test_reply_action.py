@@ -471,13 +471,13 @@ async def test_fast_path_strips_invitation_closer():
 async def test_n1_relay_drops_model_only_guidance():
     """The N=1 literal-relay fast path must NOT leak a directive's model-only
     guidance (after DIRECTIVE_GUIDANCE_MARKER) to the user — regression for the
-    interview ``tell_user`` directive leaking 'You may paraphrase … Do not ask …'
+    interview ``user_directive`` directive leaking 'You may paraphrase … Do not ask …'
     when a single directive is relayed without a compose call."""
-    from jvagent.action.interview.responses import tell_user
+    from jvagent.action.interview.hooks import user_directive
 
     ra = ReplyAction()
     v = _visitor_with(
-        directives=[{"content": tell_user("What is your tracking number?")}]
+        directives=[{"content": user_directive("What is your tracking number?")}]
     )
     assert await ra.gather(v) is True
     resp = v.interaction.response

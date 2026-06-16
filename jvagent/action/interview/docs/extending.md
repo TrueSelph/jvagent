@@ -22,6 +22,8 @@ Copy [`../examples/example_interview/`](../examples/example_interview/) as the s
 
 **Answer quality:** The inherited base procedure ([`../SKILL.md`](../SKILL.md)) is the **standard ruleset for all interview skills** — Answer quality gate, Intent routing (cancel vs start over vs answer), reply/chaining rules, and reset-tool usage. Do not duplicate these in per-skill custom instructions. Write per-field `guidance` as acceptance criteria so the model can apply the gate. See [`skill_custom_instructions.md`](skill_custom_instructions.md).
 
+**`guidance` vs `hint` (per field).** `guidance` is **model-facing** — acceptance criteria for judging the answer. `hint` is **user-facing answer-guidance** — how to answer the question — woven into the prompt so the agent instructs the user on the intended answer (e.g. `hint: Enter your first, last, and any other names`), and surfaced in `field_reference`/`next_field` so the model can answer the user's clarifications. Phrase it as what to tell the user, non-redundant with `prompt`. See [`frontmatter-schema.md`](frontmatter-schema.md).
+
 Full key reference: [`frontmatter-schema.md`](frontmatter-schema.md).
 
 ## Extension point overview
@@ -41,18 +43,73 @@ Full key reference: [`frontmatter-schema.md`](frontmatter-schema.md).
 
 ---
 
-## Hook return conventions
+## The single `ctx` interface
 
-All hooks (validators, pre/post tools, review, reset, completion) should return **`interview_tool_response(...)` JSON strings** when the response includes directives or control keys (`next_tool`, `interview_complete`, etc.).
+Every hook — validator, pre_processor, post_processor, skill_tool, handler, and
+branch-condition function — takes **exactly one argument**, `ctx` (a
+`HookExecutionContext`). Hooks **import nothing** from the interview package: `ctx`
+is the one place a hook reads its inputs and furnishes its output. `ctx` is **always
+injected and never `None`** — declare it with no default and skip the null guard.
 
-| Hook type | Preferred return | Also accepted |
-|-----------|------------------|---------------|
-| Validator | JSON string or dict with `valid`, `value`, `error` | — |
-| Pre-tool | JSON string via `interview_tool_response` | Plain dict with `response_directive` |
-| Post-tool | JSON string via `interview_tool_response` | Plain dict with control keys |
-| Review / complete / reset | Dict with `response_directive` | JSON string |
+The authoritative source is the `HookExecutionContext` docstring in
+[`../hooks.py`](../hooks.py). The canonical migrated example is
+[`signup_interview/scripts/custom_tools.py`](../../../../examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup_interview/scripts/custom_tools.py)
+— mirror its style.
 
-Pre-tools may return a plain dict when the payload is small (e.g. slot list + `directive`), but post-tools and validators should use `interview_tool_response()` for consistency. See `signup_interview` and `example_interview` for reference patterns.
+### Inputs (attributes)
+
+| Attribute | Purpose |
+|-----------|---------|
+| `ctx.value` | Raw user input (validators) |
+| `ctx.session` | Read/write collected fields and `session.context` |
+| `ctx.visitor` | Conversation, tasks, interaction |
+| `ctx.interview` | The `InterviewAction` (`_save_session`, `_close_task`, …) |
+| `ctx.config` | The interview spec |
+| `ctx.extracted_values` | All collected fields (review/complete time) |
+| `ctx.args` | `validator_args` / skill-tool args |
+| `ctx.phase` | Lifecycle run name (activation vs storing vs advancing) |
+
+### Output (methods)
+
+| Method | Purpose |
+|--------|---------|
+| `ctx.say(msg \| [msgs], *, continue_=False, hint="")` | **The single channel for user-facing text.** One string is one question; a list is sequential statements (statement-then-followup question). `continue_=True` appends the branch-aware next-field prompt. `hint=` is model-only guidance — never shown to the user. |
+| `ctx.tool_response(*, ok=None, status="ok", **data)` | The control/return envelope (`status`, `next_tool`, `interview_complete`, `value`, `retain_context_keys`, review keys, deferred `note`). **NOT** for user text. |
+| `ctx.call_tool(tool)` | A control directive that chains one interview tool (no user text), e.g. `response_directive=ctx.call_tool("interview__review")`. |
+| `ctx.no_session()` | The standard envelope when a hook runs without an active session. |
+| `ctx.valid(value=None, **extra)` | Validator success result dict (`value` defaults to `ctx.value`). |
+| `ctx.invalid(error, *, value=None, **extra)` | Validator failure result dict. `error` is stated as a plain instruction — it is auto-framed and delivered as the re-ask (same as `ctx.say`; no `Tell the user:` prefix). Skipped if the validator already `say`-ed or passed an explicit `response_directive`. |
+
+### Two rules to internalize
+
+1. **Say user text OR set a control directive — never both for the same content.**
+   `ctx.say(...)` emits user text and `ctx.call_tool(...)` sets a control
+   `response_directive`; using both for the same content double-emits. For "note,
+   then chain a tool", use `ctx.say("note")` **plus**
+   `ctx.tool_response(next_tool="interview__X")`.
+
+2. **`ctx.say` is inert outside reply-producing phases.** On the pre_processor STORE
+   re-run, branch eval, and validation, `say` records nothing — so a prompt-builder
+   that re-runs while the answer is stored won't bleed its prompt onto the next turn.
+   **Call `ctx.say(...)` unconditionally**; the engine binds it to the activation
+   turn.
+
+### Two different "notes" — don't confuse them
+
+- **`ctx.say(..., hint="...")`** — `hint` is **model-only** guidance on a user
+  message (e.g. "ask for the code only; do not skip"). It steers the compose model
+  and is **never relayed to the user**.
+- **`ctx.tool_response(ok=True, status="ok", note="...")`** — a **deferred,
+  user-facing sidebar**. The framework pairs it with the authoritative next question
+  computed from the *final* settled state (batch-safe — see
+  [post-processors](#post-processors-after-save)). This is the only user-facing text
+  a post_processor should emit, because `ctx.say` is immediate and would go stale
+  when later batch fields fill in the next question.
+
+> **Removed surface.** The old standalone directive/envelope builders and the
+> directive-sink object are gone from the authoring surface: hooks import nothing
+> from the interview package and never build directive strings themselves. The
+> framing primitives are now internal to the engine. Use the `ctx` methods above.
 
 ---
 
@@ -76,36 +133,30 @@ interview:
 
 ### Implementation (`custom_tools.py`)
 
-Return a **JSON string** or **dict** with this shape:
+Read the raw value from `ctx.value`; return `ctx.valid(...)` / `ctx.invalid(...)`:
 
 ```python
-# Success
-{"valid": True, "value": "<normalized>", "validator": "validate_rating"}
-
-# Failure
-{"valid": False, "error": "Please provide a rating from 1 to 5.", "value": "<raw>", "validator": "validate_rating"}
+async def validate_rating(ctx) -> dict:
+    raw = (ctx.value or "").strip()
+    if raw in {"1", "2", "3", "4", "5"}:
+        return ctx.valid(value=raw)
+    return ctx.invalid("Please provide a rating from 1 to 5.", value=raw)
 ```
 
-### Injected kwargs
-
-The framework filters kwargs by function signature:
-
-| Kwarg | Available |
-|-------|-----------|
-| `value` | Always (raw user input) |
-| `session` | Always |
-| `visitor` | When accepted |
-| `interview` | When accepted |
-| Contract `kwargs` | Merged from `validator_args` |
+`ctx.valid(value=None)` defaults `value` to the raw `ctx.value`. `ctx.invalid(error,
+value=…)` states the re-ask as a plain instruction — the framework auto-frames and
+delivers it to the user (no `Tell the user:` prefix; same as `ctx.say`). Read
+`ctx.args` for `validator_args`, and `ctx.session` to consult `session.context` or
+collected fields during validation.
 
 ### Validator-side flow control
 
-Validators may return extra keys on success:
+Validators may set extra keys on success via `ctx.valid(..., key=value)`:
 
 | Key | Effect |
 |-----|--------|
 | `interview_complete` | Stop interview; skip `post_processor` for this field; clears session |
-| `response_directive` | Tell LLM what to do next (e.g. welcome message, stop) |
+| `response_directive` | Tell LLM what to do next (e.g. welcome message, stop) — use `ctx.call_tool(...)` for a tool chain |
 | `retain_context_keys` | List of `conversation.context` keys to keep after terminal cleanup |
 
 Use for OTP confirmation and other cases where validating the value should finish the interview. See `validate_otp_code` in onboarding skills. Completion handlers may also return `retain_context_keys` (e.g. `user_is_onboarded`, `customer_id`).
@@ -130,65 +181,46 @@ fields:
 ```
 
 ```python
-async def suggest_email(session=None, visitor=None, **kwargs) -> dict:
-    suggested = "user@example.com"  # from conversation.context, API, etc.
-    return {
-        "ok": True,
-        "suggested_value": suggested,
-        "response_directive": tell_user(
-            f"We have {suggested} on file. Use this for follow-up?",
-            note="If user confirms, call interview__set_fields with {\"fields\": {\"follow_up_email\": \"...\"}}",
-        ),
-    }
+async def suggest_email(ctx) -> str:
+    suggested = ctx.session.context.get("known_email")  # from context, API, etc.
+    ctx.say(
+        f"We have {suggested} on file. Use this for follow-up?",
+        hint='If the user confirms, call interview__set_fields with '
+        '{"fields": {"follow_up_email": "..."}}.',
+    )
+    return ctx.tool_response(ok=True, status="ok", suggested_value=suggested)
 ```
 
 The LLM must **confirm** before `set_field` — a pre-tool suggestion is not a stored value.
 
-### Surfacing extra user-visible content (the `directives` sink)
+### Surfacing extra user-visible content (a `say` list)
 
-A processor's `response_directive` carries **one** thing for the user: the field's
-question. The `note=` on `tell_user(question, note=…)` is **model-only guidance** —
-it sits after the `DIRECTIVE_GUIDANCE_MARKER`, so the compose model reads it to
-steer rendering but **producer egress strips it before the reply reaches the user**.
-Use the note for steering ("ask for the code only", "do not say you stored it"),
-**never** for content the user must read — content placed there is silently lost.
-
-When a field's prompt needs **more than the bare question** — an options list, a
-table, a rendered summary — furnish it through the [common `ctx`](#the-common-ctx-interface):
-`ctx.tell_user(content)`. `ctx` is always injected (no null guard), so:
+A field's prompt sometimes needs **more than the bare question** — an options list, a
+table, a rendered summary. Pass `ctx.say` a **list** of sequential statements: the
+framework delivers the leading statement(s) and then the trailing question as one
+reply.
 
 ```python
-async def get_available_training_times(ctx) -> dict:
+async def get_available_training_times(ctx) -> str:
     slots = "\n".join(f"- {s}" for s in AVAILABLE_TRAINING_TIMES)
-    ctx.tell_user(f"Here are the available slots:\n{slots}")
-    return {
-        "ok": True,
-        "response_directive": tell_user("Which time works for you?"),
-    }
+    # Two sequential statements: the slot list the user must see, then the question.
+    ctx.say(
+        [
+            f"Here are the available slots:\n{slots}",
+            "Which time works for you?",
+        ]
+    )
+    return ctx.tool_response(ok=True, status="ok", available_times=AVAILABLE_TRAINING_TIMES)
 ```
 
-`ctx.tell_user(content)` (delegating to `ctx.directives`) frames the content as a
-`Tell the user:` directive and queues it onto the live interaction (ADR-0025);
-ReplyAction composes it into the reply **alongside** the bare question, so it
-survives egress. `ctx.directives.add(raw, source=…)` is the escape hatch for an
-already-framed directive.
+`ctx.say` is the **single** user-text channel. It is inert outside the activation run
+(see [the two rules](#two-rules-to-internalize)), so the slot list fires exactly once
+— when the field is asked — and never bleeds onto a later field's reply. Call it
+unconditionally; the engine binds it to the correct turn. Reference:
+`get_available_training_times` in `signup_interview`.
 
-**A directive binds to the turn that ACTIVATES the field.** A pre_processor runs on
-more than the activation run — it fires again while the answer is **stored**, and
-validators / branch conditions / post_processors fire while **advancing** the field
-graph. The injected sink is **active only on the activation run** (when the field is
-being asked) and **inert** on every other run. So call `directives.tell_user(...)`
-unconditionally: the content fires exactly once, when the field is asked, and never
-bleeds onto a later field's reply. To message the user off the activation run, use
-`response_directive` / `note` — the engine binds those to the correct turn.
-
-| Destination | Reaches the user? | Mechanism |
-|-------------|-------------------|-----------|
-| The field's question | yes | `response_directive` → `tell_user(question)` |
-| Extra content the user must SEE | yes | `ctx.tell_user(content)` (activation run only) |
-| Steering for the compose model | no — stripped at egress | `note=` on `tell_user(question, note=…)` |
-
-Reference: `get_available_training_times` in `examples/jvagent_app/.../signup_interview`.
+For **model-only** steering on a user message (not content the user reads), pass
+`hint=` — e.g. `ctx.say("…", hint="ask for the code only; do not skip")`.
 
 ### Post-processors (after save)
 
@@ -202,34 +234,59 @@ fields:
 ```
 
 ```python
-async def check_low_rating(session=None, visitor=None, interview=None, **kwargs) -> str:
-    rating = int(session.get_value("product_rating"))
+async def check_low_rating(ctx) -> str:
+    rating = int(ctx.session.get_value("product_rating"))
     if rating <= 2:
-        session.context["escalate"] = True
-        await interview._save_session(session, visitor)
-        return interview_tool_response(
+        ctx.session.context["escalate"] = True
+        await ctx.interview._save_session(ctx.session, ctx.visitor)
+        # No user text here — chain a tool via a control directive.
+        return ctx.tool_response(
             ok=True,
             status="ok",
             next_tool="interview__review",
-            response_directive=call_tool_directive("interview__review"),
+            response_directive=ctx.call_tool("interview__review"),
         )
-    return interview_tool_response(ok=True, status="ok")
+    return ctx.tool_response(ok=True, status="ok")
+```
+
+#### Deferred user-facing notes (the `note` key)
+
+A post_processor must **not** bake in the next question — `set_fields` may store
+several fields in one call, and a next-question computed mid-batch goes stale once a
+later field fills it. To show the user a sidebar, return a **`note`** via
+`ctx.tool_response`; the framework pairs it with the authoritative next question
+computed from the *final* settled state. Use `note` (deferred), **not** `ctx.say`
+(immediate), in a post_processor:
+
+```python
+async def append_work_email_note(ctx) -> str:
+    email = (ctx.session.get_value("user_email") or "").lower()
+    if "@work.com" not in email:
+        return ctx.tool_response(ok=True, status="ok")
+    # A NOTE (not say): the framework pairs it with the authoritative next question.
+    return ctx.tool_response(
+        ok=True,
+        status="ok",
+        note="Thank you for using your work email! We'll send you training updates.",
+    )
 ```
 
 ### Hook result keys
 
-Exposed via `HOOK_RESULT_KEYS` in [`../responses.py`](../responses.py):
+The keys `ctx.tool_response(...)` may carry (forwarded from pre/post processor
+results to the LLM via `HOOK_RESULT_KEYS` in [`../hooks.py`](../hooks.py)):
 
 | Key | Meaning |
 |-----|---------|
 | `ok` / `status` | Hook outcome |
 | `value` / `error` / `error_code` | Result detail |
 | `system_message` | Context for the model (not a user reply) |
-| `response_directive` | Override directive for this hook result |
+| `response_directive` | Control directive for this hook result (e.g. `ctx.call_tool(...)`) |
+| `note` | Deferred user-facing sidebar paired with the next question |
 | `next_tool` | Suggested next tool (e.g. `interview__review`) |
 | `interview_complete` | Done server-side — session cleared, task closed |
 
-Skill-specific signals (existing customer, OTP pending, etc.) are expressed through `response_directive` / `next_tool` / `system_message` — no special-cased keys. Prefer `interview_tool_response()` from `responses.py` for consistent envelopes.
+Skill-specific signals (existing customer, OTP pending, etc.) are expressed through `response_directive` / `next_tool` / `system_message` — no special-cased keys.
 
 ---
 
@@ -245,29 +302,22 @@ interview:
 ```
 
 ```python
-async def example_review(
-    session=None,
-    extracted_values=None,
-    review_data=None,
-    **kwargs,
-) -> dict:
-    if session.context.get("escalate"):
-        return {
-            "response_directive": "A team member will contact you shortly.",
-            "terminate": True,
-            "modified_values": {"__terminate__": "true"},
-        }
+async def example_review(ctx) -> dict:
+    if ctx.session.context.get("escalate"):
+        ctx.say("A team member will contact you shortly.")
+        return {"terminate": True, "modified_values": {"__terminate__": "true"}}
     # Empty optional fields can be omitted from display
     return {"modified_values": {"feedback_comments": "__omit__"}}
 ```
 
 | Return key | Purpose |
 |------------|---------|
-| `response_directive` | User-facing message (required for custom behavior) |
 | `terminate` | If `true`, skip `interview__complete()` |
 | `modified_values` | Display-only overrides; `__omit__` hides a field |
 | `additional_data` | Extra data for completion handler |
 | `custom_message` | Appended to default summary |
+
+Emit any user-facing message with `ctx.say(...)` (e.g. the escalation notice above).
 
 ---
 
@@ -283,21 +333,18 @@ interview:
 ```
 
 ```python
-async def example_complete(
-    session=None,
-    visitor=None,
-    interview=None,
-    extracted_values=None,
-    **kwargs,
-) -> dict:
+async def example_complete(ctx) -> str:
     # Call external APIs; set conversation.context keys before complete clears scratch
-    return {
-        "response_directive": "Thank you! Your feedback has been recorded.",
-        "retain_context_keys": ["my_persistent_flag"],  # optional
-    }
+    name = (ctx.extracted_values or {}).get("user_name", "")
+    ctx.say(f"Thank you, {name}! Your feedback has been recorded.")
+    return ctx.tool_response(
+        ok=True,
+        status="ok",
+        retain_context_keys=["my_persistent_flag"],  # optional
+    )
 ```
 
-Always return a `response_directive` string the LLM delivers to the user. The foundation calls `clear_interview_context()` after completion — use `retain_context_keys` only for keys that must survive (platform flags, user profile markers).
+Always deliver the user-facing message with `ctx.say(...)`. The foundation calls `clear_interview_context()` after completion — use `retain_context_keys` only for keys that must survive (platform flags, user profile markers).
 
 ---
 
@@ -329,7 +376,19 @@ interview:
     reset: reset_my_interview
 ```
 
-Implement `reset_my_interview` in `scripts/custom_tools.py`. The model calls **`interview__reset()`** — the foundation invokes your handler when `handlers.reset` is set. Return `interview_tool_response(...)` or a dict with `response_directive` / `status`.
+Implement the skill tool and `reset_my_interview` in `scripts/custom_tools.py`, each taking the single `ctx`. Read tool args from `ctx.args`; emit user text via `ctx.say` and control/return data via `ctx.tool_response`:
+
+```python
+async def send_otp(ctx) -> str:
+    phone = ctx.session.get_value("phone_number")
+    # ... send the code via an external API ...
+    ctx.session.context["otp_sent"] = True
+    await ctx.interview._save_session(ctx.session, ctx.visitor)
+    ctx.say("I've sent a 6-digit code. What is it?", hint="ask for the code only")
+    return ctx.tool_response(ok=True, status="ok")
+```
+
+The model calls **`interview__reset()`** — the foundation invokes your reset handler when `handlers.reset` is set. Return `ctx.tool_response(...)` (and `ctx.say(...)` for any user message).
 
 Most skills use the built-in default reset (no `handlers.reset`).
 
@@ -345,105 +404,31 @@ Document acceptance criteria in `fields[].guidance`. Validators are the only ser
 
 ---
 
-## Response helpers
+## `custom_tools.py` organization
 
-Use [`../responses.py`](../responses.py) — do not invent ad-hoc directive formats:
-
-```python
-from jvagent.action.interview.responses import (
-    call_tool_directive,
-    interview_tool_response,
-    tell_user,
-    tell_user_with_followup,
-)
-
-tell_user("What is your name?")
-tell_user_with_followup("Thanks.", "What is your phone number?")
-call_tool_directive("interview__review")
-interview_tool_response(ok=True, status="ok", next_tool="interview__review", ...)
-```
-
-### Post-processor notes (preferred)
-
-A post_processor must **not** bake in the next question — `set_fields` may store
-several fields in one call, and a next-question computed mid-batch goes stale once a
-later field fills it. Return a **`note`** instead; the framework pairs your note with
-the authoritative next question computed from the *final* settled state:
+Every hook takes the single `ctx` and imports nothing from the interview package.
+The full `ctx` surface is documented in [The single `ctx`
+interface](#the-single-ctx-interface) above:
 
 ```python
-# Good: emit a note only. Framework appends the real next question.
-return interview_tool_response(
-    ok=True,
-    status="ok",
-    note="Thank you for using your work email! We'll send you training updates.",
-)
-```
-
-`tell_user_then_continue(...)` (which bakes a branch-aware next question) is retained
-for legacy single-field flows but is **discouraged** — prefer `note`.
-
-> **Two different "notes" — don't confuse them.** The top-level `note` key returned
-> from a hook (above) is **user-facing**: the framework pairs it with the next
-> question and delivers both. The `note=` argument of `tell_user(question, note=…)`
-> is **model-only guidance** and is **stripped at egress** — use it for steering the
-> compose model, never for user content. For extra user-visible content on a field's
-> prompt, use the [`directives` sink](#surfacing-extra-user-visible-content-the-directives-sink).
-
----
-
-## The common `ctx` interface
-
-Every hook — pre/post processor, validator, or handler — may declare a **single
-`ctx` parameter** instead of the individual kwargs. `ctx` (a `HookExecutionContext`)
-is **always injected and never `None`** — declare it with no default and skip the
-null guard. It is the one place a hook reads its inputs and furnishes user output:
-
-```python
-# Pre-processor
-async def suggest_email(ctx) -> dict:
-    email = ctx.session.context.get("known_email")
-    return {"ok": True, "response_directive": tell_user(f"Use {email}?")}
-
 # Validator — raw value is ctx.value
 async def validate_rating(ctx) -> dict:
     raw = (ctx.value or "").strip()
     if raw in {"1", "2", "3", "4", "5"}:
-        return {"valid": True, "value": raw}
-    return {"valid": False, "error": "Please give a rating from 1 to 5.", "value": raw}
+        return ctx.valid(value=raw)
+    return ctx.invalid("Please give a rating from 1 to 5.", value=raw)
 
-# Pre-processor furnishing extra user-visible content
-async def get_slots(ctx) -> dict:
-    ctx.tell_user("Here are the slots:\n- Mon 9am\n- Tue 2pm")
-    return {"ok": True, "response_directive": tell_user("Which works for you?")}
+# Pre-processor — statement(s) then the question, in one say list
+async def get_slots(ctx) -> str:
+    ctx.say(["Here are the slots:\n- Mon 9am\n- Tue 2pm", "Which works for you?"])
+    return ctx.tool_response(ok=True, status="ok")
+
+# Post-processor — deferred sidebar paired with the next question
+async def thank_for_work_email(ctx) -> str:
+    return ctx.tool_response(ok=True, status="ok", note="Thanks for using your work email!")
 ```
 
-| `ctx` member | Purpose |
-|--------------|---------|
-| `ctx.session` | Read/write collected fields and `session.context` |
-| `ctx.value` | Raw user input (validators) |
-| `ctx.visitor` | Conversation, tasks, interaction |
-| `ctx.extracted_values` | All collected fields (review/complete time) |
-| `ctx.config` | The interview spec |
-| `ctx.interview` | The `InterviewAction` (`_save_session`, `_close_task`, …) |
-| `ctx.phase` | Lifecycle run name (activation vs advancing) |
-| `ctx.tell_user(content)` | **Output:** queue extra user-visible content (activation run only) |
-| `ctx.directives` | The underlying sink (`.add(raw, source=…)` escape hatch) |
-
-The individual kwargs below are still injected for back-compat, but `ctx` is the
-preferred single interface. `hooks.call_hook()` injects either only when the
-callable's signature accepts it:
-
-| Kwarg | Typical use |
-|-------|-------------|
-| `session` | Read/write collected fields and `session.context` |
-| `visitor` | Access conversation, tasks, interaction |
-| `directives` | Queue extra user-visible content onto the reply (`directives.tell_user(...)`) — active only on the field-activation run |
-| `value` | Raw user input (validators) |
-| `interview_action` | `_save_session`, `_close_task`, `_handle_start` |
-| `config` | Review/completion handlers |
-| `extracted_values` | All collected fields at review/complete time |
-
-Organize `custom_tools.py` in labeled sections (see [`../examples/example_interview/scripts/custom_tools.py`](../examples/example_interview/scripts/custom_tools.py)):
+Organize `custom_tools.py` in labeled sections (see [`signup_interview/scripts/custom_tools.py`](../../../../examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup_interview/scripts/custom_tools.py)):
 
 1. Constants
 2. Shared helpers
@@ -462,10 +447,11 @@ Organize `custom_tools.py` in labeled sections (see [`../examples/example_interv
 - [ ] Processors and handlers are **not** in `interview.skill_tools`
 - [ ] LLM tools are in both `interview.skill_tools` and frontmatter `allowed-tools` (additive; do not re-list base `interview__*` tools)
 - [ ] `SKILL.md` body is custom rules only (no per-field Procedure steps)
-- [ ] Validators return correct shape; use `interview_complete` when validation finishes the flow
-- [ ] Post-tools use `interview_tool_response` with clear `response_directive`
-- [ ] Review returns `response_directive`; terminate path sets `terminate: true`
-- [ ] Completion returns `response_directive` and closes tasks / persists data
+- [ ] Every hook takes the single `ctx`; emits user text only via `ctx.say` and control/return data via `ctx.tool_response`
+- [ ] Validators return `ctx.valid` / `ctx.invalid`; use `interview_complete` when validation finishes the flow
+- [ ] Post-tools use `ctx.tool_response`; user sidebars use the deferred `note` key, not `ctx.say`
+- [ ] Review uses `ctx.say` for user text; terminate path sets `terminate: true`
+- [ ] Completion uses `ctx.say` and closes tasks / persists data
 - [ ] Skill registered in agent `orchestrator.skills:`
 - [ ] `requires-actions` lists all dependencies
 

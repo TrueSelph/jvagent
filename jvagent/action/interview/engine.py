@@ -15,7 +15,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from jvagent.tooling.tool_executor import get_dispatch_visitor
 
 from . import tasks
-from .directives import ACTIVATION_PHASE
 from .flow import (
     build_awaiting_fields,
     build_next_field,
@@ -25,18 +24,31 @@ from .flow import (
     prune_unreachable_fields,
     resolve_next_field_name,
 )
-from .hooks import call_hook, coerce_hook_result, load_hook_function, run_validator
-from .responses import (
+from .hooks import (
+    ACTIVATION_PHASE,
+    CANCEL_PHASE,
+    COMPLETE_PHASE,
+    POST_PHASE,
+    RESET_PHASE,
+    REVIEW_PHASE,
+    STORE_PHASE,
+    TOOL_PHASE,
     auto_confirm_directive,
+    call_hook,
     call_tool_directive,
+    coerce_hook_result,
+    field_prompt_directive,
     interview_tool_response,
+    load_hook_function,
     no_session_directive,
     restart_session_directive,
     review_confirmation_directive,
+    run_validator,
     slim_hook_entry,
-    tell_user,
-    tell_user_with_followup,
+    user_directive,
+    user_followup_directive,
     validation_guidance_directive,
+    with_hint,
 )
 from .session import (
     InterviewSession,
@@ -154,7 +166,7 @@ def _batch_failure_status(failures: List[Dict[str, Any]], *, stored_any: bool) -
 
 def _batch_failure_directive(failures: List[Dict[str, Any]]) -> str:
     if not failures:
-        return tell_user("Please share the missing information for this process.")
+        return user_directive("Please share the missing information for this process.")
     # A handler/validator-authored directive is written for the user — prefer it.
     if len(failures) == 1:
         direct = str(failures[0].get("response_directive") or "").strip()
@@ -188,7 +200,7 @@ def _batch_failure_directive(failures: List[Dict[str, Any]]) -> str:
         message = "I still need a bit more information to continue."
     if user_error:
         message = f"{message} {user_error}"
-    return tell_user(message)
+    return user_directive(message)
 
 
 def _append_directive_event(
@@ -343,7 +355,7 @@ async def run_pre_processors(
     """Run pre_processor hooks before asking; return (directive, extras)."""
     extras: Dict[str, Any] = {}
     if not fdef.pre_processor:
-        return tell_user(fdef.prompt), extras
+        return field_prompt_directive(fdef.prompt, fdef.hint), extras
 
     results: List[Dict[str, Any]] = []
     directive: Optional[str] = None
@@ -377,7 +389,7 @@ async def run_pre_processors(
                 directive = parsed.get("response_directive")
 
     extras["pre_tools_results"] = results
-    return directive or tell_user(fdef.prompt), extras
+    return directive or field_prompt_directive(fdef.prompt, fdef.hint), extras
 
 
 async def run_pre_processors_for_store(
@@ -402,6 +414,7 @@ async def run_pre_processors_for_store(
                     spec=spec,
                     visitor=visitor,
                     interview_action=action,
+                    phase=STORE_PHASE,
                 )
             )
         except Exception as e:
@@ -457,6 +470,7 @@ async def run_post_processors(
                     spec=spec,
                     visitor=visitor,
                     interview_action=action,
+                    phase=POST_PHASE,
                 )
             )
         except Exception as e:
@@ -942,8 +956,11 @@ async def handle_set_fields(
             # Inlining the next question bypasses interview__next_field, so carry
             # what that tool would have provided: the canonical key (next_field_key
             # below) and, for optional fields, the skip path.
-            directive = tell_user_with_followup(notes_text, next_field["prompt"])
             next_fdef = spec.get_field(next_field["key"])
+            next_hint = next_fdef.hint if next_fdef is not None else ""
+            directive = user_followup_directive(
+                notes_text, with_hint(next_field["prompt"], next_hint)
+            )
             if next_fdef is not None and not next_fdef.required:
                 directive += (
                     " If the user declines or has nothing to add, call "
@@ -1152,7 +1169,7 @@ async def handle_skip_field(action: Any, field: str, visitor: Any = None) -> str
         prompt = nxt.get("prompt") or (
             f"Please provide your {nxt['key'].replace('_', ' ')}."
         )
-        directive = tell_user(prompt)
+        directive = field_prompt_directive(prompt, pending.hint if pending else "")
         if pending is not None and not pending.required:
             directive += (
                 " If the user declines or has nothing to add, call "
@@ -1180,7 +1197,7 @@ async def handle_skip_field(action: Any, field: str, visitor: Any = None) -> str
             ok=False,
             status=session.status.value,
             error=f"Field '{field}' is required and cannot be skipped.",
-            response_directive=tell_user(question),
+            response_directive=field_prompt_directive(question, fdef.hint),
         )
 
     session.skip_field(field)
@@ -1302,7 +1319,12 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
 
     try:
         result = await call_hook(
-            func, session=session, spec=spec, visitor=visitor, interview_action=action
+            func,
+            session=session,
+            spec=spec,
+            visitor=visitor,
+            interview_action=action,
+            phase=REVIEW_PHASE,
         )
     except Exception as e:
         return interview_tool_response(
@@ -1343,7 +1365,7 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
             ok=True,
             status="completed",
             terminate=True,
-            response_directive=tell_user(status_text),
+            response_directive=user_directive(status_text),
             fields=review_fields,
             skipped_fields=sorted(session.skipped_fields),
             custom_message=custom_message or None,
@@ -1415,7 +1437,12 @@ async def handle_complete(action: Any, visitor: Any = None) -> str:
         )
     try:
         result = await call_hook(
-            func, session=session, spec=spec, visitor=visitor, interview_action=action
+            func,
+            session=session,
+            spec=spec,
+            visitor=visitor,
+            interview_action=action,
+            phase=COMPLETE_PHASE,
         )
     except Exception as e:
         return interview_tool_response(
@@ -1441,7 +1468,7 @@ async def handle_complete(action: Any, visitor: Any = None) -> str:
         directive = (
             raw_directive
             if stripped.startswith("Tell the user:") or stripped.startswith("Call ")
-            else tell_user(raw_directive)
+            else user_directive(raw_directive)
         )
         return interview_tool_response(
             ok=True,
@@ -1487,6 +1514,7 @@ async def handle_cancel(action: Any, visitor: Any = None) -> str:
                 spec=spec,
                 visitor=visitor,
                 interview_action=action,
+                phase=CANCEL_PHASE,
             )
             if isinstance(result, dict):
                 cancel_message = result.get("response_directive") or cancel_message
@@ -1501,7 +1529,7 @@ async def handle_cancel(action: Any, visitor: Any = None) -> str:
     return interview_tool_response(
         ok=True,
         status="cancelled",
-        response_directive=tell_user(cancel_message),
+        response_directive=user_directive(cancel_message),
         fields={},
     )
 
@@ -1527,6 +1555,7 @@ async def handle_reset(action: Any, visitor: Any = None) -> str:
                 spec=spec,
                 visitor=visitor,
                 interview_action=action,
+                phase=RESET_PHASE,
             )
         except Exception as e:
             logger.error("Custom reset handler failed: %s", e)
@@ -1534,7 +1563,7 @@ async def handle_reset(action: Any, visitor: Any = None) -> str:
                 ok=False,
                 status="error",
                 error=f"Custom reset handler failed: {e}",
-                response_directive=tell_user(
+                response_directive=user_directive(
                     "I couldn't reset the process. Say when you'd like to try again."
                 ),
             )
@@ -1552,7 +1581,7 @@ async def handle_reset(action: Any, visitor: Any = None) -> str:
     return interview_tool_response(
         ok=True,
         status="restarted",
-        response_directive=tell_user("No problem — let's start over."),
+        response_directive=user_directive("No problem — let's start over."),
         next_tool="interview__next_field",
         system_message=call_tool_directive("interview__next_field"),
     )
@@ -1572,7 +1601,7 @@ def _coerce_reset_hook_result(result: Any) -> Optional[str]:
         if ok is None:
             ok = status not in ("error", "validation_failed")
         if directive and not str(directive).startswith("Tell the user:"):
-            directive = tell_user(str(directive))
+            directive = user_directive(str(directive))
         return interview_tool_response(
             ok=bool(ok),
             status=status,
@@ -1736,8 +1765,9 @@ async def handle_custom_tool(
     try:
         visitor = kwargs.pop("visitor", None) or get_dispatch_visitor()
         session = await action._get_session(visitor)
+        # The LLM-provided tool arguments become ctx.args (visitor already popped —
+        # it is ctx.visitor, not a tool argument).
         call_kwargs = dict(kwargs)
-        call_kwargs["visitor"] = visitor
         result = await call_hook(
             func,
             session=session,
@@ -1745,6 +1775,7 @@ async def handle_custom_tool(
             visitor=visitor,
             interview_action=action,
             kwargs=call_kwargs,
+            phase=TOOL_PHASE,
         )
         if isinstance(result, str):
             try:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from jvagent.action.interview.responses import validation_guidance_directive
+from jvagent.action.interview.hooks import validation_guidance_directive
 from jvagent.action.reply.reply_action import user_facing_directive
 
 

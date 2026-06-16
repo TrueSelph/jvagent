@@ -42,7 +42,8 @@ Each value is a **string** (function name), not a nested `{ function: … }` obj
 | `key` | Yes | Field identifier (used with `set_fields` / `get_fields`) |
 | `prompt` | Yes | Question text shown to the user |
 | `required` | No | Default `true` |
-| `guidance` | No | Acceptance criteria / author notes for the model |
+| `guidance` | No | Acceptance criteria for judging the **answer** (model-facing extraction/validation grounding) |
+| `hint` | No | Plain **answer-guidance for the user** — how to answer this question (e.g. `Enter your first, last, and any other names`; an accepted format; that a field is optional). Woven into the prompt so the agent instructs the user on the intended answer, and surfaced in `field_reference` / `next_field` so the model can answer the user's clarifications about the field. Phrase it as what to tell the user, one line, **non-redundant with `prompt`** (overlap gets deduped). Distinct from `guidance` (model-facing, judges the answer). |
 | `validator` | No | Validator function name (string) |
 | `validator_args` | No | Kwargs passed to the validator |
 | `pre_processor` | No | Function name or list — runs before asking |
@@ -88,6 +89,11 @@ interview:
       required: true
       post_processor: append_work_email_note
       validator: validate_signup_email
+    - key: phone_number
+      prompt: "What is your phone number?"
+      required: false
+      hint: Enter a mobile number with country and area code; optional, so you may skip.
+      validator: phone
   handlers:
     review: signup_review
     complete: signup_complete
