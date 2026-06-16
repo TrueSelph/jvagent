@@ -12,7 +12,7 @@ incomplete prerequisite), not a status — the state machine is unchanged.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List, Optional, Sequence
+from typing import TYPE_CHECKING, Collection, List, Optional
 
 if TYPE_CHECKING:
     from jvagent.memory.task_store import TaskHandle, TaskStore
@@ -37,7 +37,7 @@ def is_runnable(store: "TaskStore", handle: "TaskHandle") -> bool:
 
 
 def has_outstanding_work(
-    store: "TaskStore", *, task_types: Optional[Sequence[str]] = None
+    store: "TaskStore", *, task_types: Optional[Collection[str]] = None
 ) -> bool:
     """Engagement state (ADR-0026 invariant 7): any non-terminal task exists.
 
@@ -67,7 +67,7 @@ def _runnable_sort_key(handle: "TaskHandle") -> tuple:
 
 
 def pick_top_runnable(
-    store: "TaskStore", *, task_types: Optional[Sequence[str]] = None
+    store: "TaskStore", *, task_types: Optional[Collection[str]] = None
 ) -> Optional["TaskHandle"]:
     """The top runnable task to own this turn: non-terminal, prerequisites met,
     highest priority then FIFO. ``None`` when the store has no runnable work."""
