@@ -10,8 +10,9 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [0.1.0rc5] - 2026-06-16
 
-Fifth release candidate (TestPyPI). Fixes a turn-lock re-grounding regression
-introduced in rc4.
+Fifth release candidate (TestPyPI). Fixes two egress regressions introduced in
+rc4: turn-lock re-grounding lost the field catalog, and pre/post-processor
+user-facing content was stripped at egress.
 
 ### Fixed
 
@@ -24,6 +25,44 @@ introduced in rc4.
   prompts. The re-ground now re-asserts the **full** `field_reference` (key,
   prompt, guidance, required) on every locked turn. Covered by
   `tests/action/interview/test_get_status_reference.py`.
+- **Pre/post-processor user-facing content was stripped at egress (regression).**
+  Producer egress drops the model-only guidance segment (after the
+  `DIRECTIVE_GUIDANCE_MARKER`) of a directive, so a processor that stuffed content
+  the user must SEE — an options list, a table, a rendered summary — into a
+  `tell_user(question, note=…)` `note` lost that content (the `note` is
+  model-facing guidance, and the strip removed it).
+
+### Added
+
+- **`ctx` — one common interface for every interview hook.** Pre/post processors,
+  validators, and handlers may now declare a single `ctx` parameter
+  (`HookExecutionContext`) instead of the individual kwargs. It is **always
+  injected and never `None`** (no null-guard), and is the one place a hook reads
+  inputs (`ctx.session`, `ctx.value`, `ctx.visitor`, `ctx.extracted_values`,
+  `ctx.config`, `ctx.interview`, `ctx.phase`) and furnishes user output
+  (`ctx.tell_user(content)` / `ctx.directives`). The individual kwargs remain
+  injected for back-compat. The example signup interview's
+  `get_available_training_times` now takes just `ctx`.
+- **`InterviewDirectives` — first-class processor directive sink.** A hook that
+  needs to surface user-visible CONTENT beyond the single bare `response_directive`
+  question calls `ctx.tell_user(content)` (or declares a `directives` parameter
+  for the bare sink). It queues onto `interaction.directives` (ADR-0025), which
+  ReplyAction composes into the reply, so the content survives egress — unlike the
+  `tell_user` `note=` arg, which is model-only guidance stripped at egress.
+  Processors no longer reach into `visitor.interaction` themselves. The example
+  signup interview's `get_available_training_times` uses it for the slot list.
+
+  A directive belongs to the interaction of the turn that **activates** its field
+  (the prompt-building run). But pre/post processors run on more than that run —
+  the same pre_processor fires again while STORING the user's answer, and
+  validators / branch conditions / post_processors fire while advancing through
+  the field graph. Emitting from any of those would land the directive on a
+  different field's interaction, bleeding the previous prompt (e.g. the slot list)
+  ahead of the next question. So the sink is active **only on the field-activation
+  run** and inert everywhere else: `call_hook` defaults to an inert phase and only
+  `run_pre_processors` opts into `ACTIVATION_PHASE`, so any future call site is
+  bleed-safe by default. Covered by
+  `tests/action/interview/test_interview_directives.py`.
 
 ## [0.1.0rc4] - 2026-06-16
 

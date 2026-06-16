@@ -18,6 +18,7 @@ import os
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterator, Optional
 
+from .directives import ADVANCE_PHASE, InterviewDirectives
 from .session import InterviewSession
 from .spec import FieldDef, InterviewSpec
 from .validators import get_validator
@@ -29,10 +30,47 @@ _module_cache: Dict[str, Any] = {}
 
 @dataclass(frozen=True)
 class HookExecutionContext:
+    """The common I/O context injected into every interview hook.
+
+    Any hook — pre/post processor, validator, or handler — may declare a single
+    ``ctx`` parameter and receive this object. It is **always** injected and never
+    ``None`` (no null-guard needed), and is the one place a hook both reads its
+    inputs and furnishes user-facing output:
+
+    - **Input:** ``ctx.session``, ``ctx.value`` (validators), ``ctx.visitor``,
+      ``ctx.extracted_values``, ``ctx.config`` (spec), ``ctx.interview`` (action),
+      ``ctx.phase``.
+    - **Output:** ``ctx.tell_user(content)`` / ``ctx.directives`` — queue extra
+      user-visible content onto the reply. Active only on the field-activation run
+      (see :mod:`jvagent.action.interview.directives`); inert elsewhere, so the
+      same call is safe from any hook.
+
+    The individual kwargs (``session``, ``visitor``, ``directives``, …) are still
+    injected for back-compat, but ``ctx`` is the preferred single interface.
+    """
+
     session: Optional[InterviewSession]
     spec: Optional[InterviewSpec]
     visitor: Any
     interview_action: Any
+    directives: InterviewDirectives
+    phase: str = ADVANCE_PHASE
+    value: Optional[str] = None
+    extracted_values: Optional[Dict[str, Any]] = None
+
+    @property
+    def interview(self) -> Any:
+        """The InterviewAction instance (``_save_session``, ``_close_task``, …)."""
+        return self.interview_action
+
+    @property
+    def config(self) -> Optional[InterviewSpec]:
+        """The interview spec (alias used by handlers)."""
+        return self.spec
+
+    def tell_user(self, content: str) -> bool:
+        """Queue user-visible content onto the reply (activation run only)."""
+        return self.directives.tell_user(content)
 
 
 _hook_execution_context_var: contextvars.ContextVar[Optional[HookExecutionContext]] = (
@@ -52,6 +90,7 @@ def hook_execution_context(
     spec: Optional[InterviewSpec] = None,
     visitor: Any = None,
     interview_action: Any = None,
+    directives: Optional[InterviewDirectives] = None,
 ) -> Iterator[None]:
     """Bind hook context for tell_user_then_continue and similar helpers."""
     token = _hook_execution_context_var.set(
@@ -60,6 +99,7 @@ def hook_execution_context(
             spec=spec,
             visitor=visitor,
             interview_action=interview_action,
+            directives=directives or InterviewDirectives(None),
         )
     )
     try:
@@ -109,14 +149,40 @@ async def call_hook(
     interview_action: Any = None,
     value: Optional[str] = None,
     kwargs: Optional[dict] = None,
+    phase: str = ADVANCE_PHASE,
 ) -> Any:
-    """Invoke a hook with signature-filtered kwargs."""
+    """Invoke a hook with signature-filtered kwargs.
+
+    ``phase`` names the lifecycle run this hook fires on (see
+    :mod:`jvagent.action.interview.directives`). It gates the injected
+    ``directives`` sink: the sink may queue user content ONLY on the
+    field-activation run (``phase=ACTIVATION_PHASE``, passed by
+    ``run_pre_processors``). Every other run defaults to the inert
+    ``ADVANCE_PHASE`` so a directive can't bleed onto another field's interaction.
+    """
+    directives = InterviewDirectives(getattr(visitor, "interaction", None), phase=phase)
+    extracted_values = session.get_collected_summary() if session else {}
+    # The one common context — injected as `ctx`, and bound for context-var helpers
+    # (tell_user_then_continue). The same object backs both so a hook and a helper
+    # see identical state.
+    ctx = HookExecutionContext(
+        session=session,
+        spec=spec,
+        visitor=visitor,
+        interview_action=interview_action,
+        directives=directives,
+        phase=phase,
+        value=value,
+        extracted_values=extracted_values,
+    )
     call_kwargs: Dict[str, Any] = {
+        "ctx": ctx,
         "session": session,
         "visitor": visitor,
         "interview_action": interview_action,
+        "directives": directives,
         "config": spec,
-        "extracted_values": session.get_collected_summary() if session else {},
+        "extracted_values": extracted_values,
     }
     if value is not None:
         call_kwargs["value"] = value
@@ -130,15 +196,13 @@ async def call_hook(
     except (ValueError, TypeError):
         pass
 
-    with hook_execution_context(
-        session=session,
-        spec=spec,
-        visitor=visitor,
-        interview_action=interview_action,
-    ):
+    token = _hook_execution_context_var.set(ctx)
+    try:
         result = func(**call_kwargs)
         if asyncio.iscoroutine(result):
             result = await result
+    finally:
+        _hook_execution_context_var.reset(token)
     return result
 
 

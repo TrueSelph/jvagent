@@ -144,6 +144,52 @@ async def suggest_email(session=None, visitor=None, **kwargs) -> dict:
 
 The LLM must **confirm** before `set_field` — a pre-tool suggestion is not a stored value.
 
+### Surfacing extra user-visible content (the `directives` sink)
+
+A processor's `response_directive` carries **one** thing for the user: the field's
+question. The `note=` on `tell_user(question, note=…)` is **model-only guidance** —
+it sits after the `DIRECTIVE_GUIDANCE_MARKER`, so the compose model reads it to
+steer rendering but **producer egress strips it before the reply reaches the user**.
+Use the note for steering ("ask for the code only", "do not say you stored it"),
+**never** for content the user must read — content placed there is silently lost.
+
+When a field's prompt needs **more than the bare question** — an options list, a
+table, a rendered summary — furnish it through the [common `ctx`](#the-common-ctx-interface):
+`ctx.tell_user(content)`. `ctx` is always injected (no null guard), so:
+
+```python
+async def get_available_training_times(ctx) -> dict:
+    slots = "\n".join(f"- {s}" for s in AVAILABLE_TRAINING_TIMES)
+    ctx.tell_user(f"Here are the available slots:\n{slots}")
+    return {
+        "ok": True,
+        "response_directive": tell_user("Which time works for you?"),
+    }
+```
+
+`ctx.tell_user(content)` (delegating to `ctx.directives`) frames the content as a
+`Tell the user:` directive and queues it onto the live interaction (ADR-0025);
+ReplyAction composes it into the reply **alongside** the bare question, so it
+survives egress. `ctx.directives.add(raw, source=…)` is the escape hatch for an
+already-framed directive.
+
+**A directive binds to the turn that ACTIVATES the field.** A pre_processor runs on
+more than the activation run — it fires again while the answer is **stored**, and
+validators / branch conditions / post_processors fire while **advancing** the field
+graph. The injected sink is **active only on the activation run** (when the field is
+being asked) and **inert** on every other run. So call `directives.tell_user(...)`
+unconditionally: the content fires exactly once, when the field is asked, and never
+bleeds onto a later field's reply. To message the user off the activation run, use
+`response_directive` / `note` — the engine binds those to the correct turn.
+
+| Destination | Reaches the user? | Mechanism |
+|-------------|-------------------|-----------|
+| The field's question | yes | `response_directive` → `tell_user(question)` |
+| Extra content the user must SEE | yes | `ctx.tell_user(content)` (activation run only) |
+| Steering for the compose model | no — stripped at egress | `note=` on `tell_user(question, note=…)` |
+
+Reference: `get_available_training_times` in `examples/jvagent_app/.../signup_interview`.
+
 ### Post-processors (after save)
 
 Run automatically after successful `interview__set_fields`. The LLM reads `post_tools_results`; never calls the hook manually.
@@ -336,20 +382,66 @@ return interview_tool_response(
 `tell_user_then_continue(...)` (which bakes a branch-aware next question) is retained
 for legacy single-field flows but is **discouraged** — prefer `note`.
 
+> **Two different "notes" — don't confuse them.** The top-level `note` key returned
+> from a hook (above) is **user-facing**: the framework pairs it with the next
+> question and delivers both. The `note=` argument of `tell_user(question, note=…)`
+> is **model-only guidance** and is **stripped at egress** — use it for steering the
+> compose model, never for user content. For extra user-visible content on a field's
+> prompt, use the [`directives` sink](#surfacing-extra-user-visible-content-the-directives-sink).
+
 ---
 
-## Function signature reference
+## The common `ctx` interface
 
-`hooks.call_hook()` injects kwargs only when the callable accepts them:
+Every hook — pre/post processor, validator, or handler — may declare a **single
+`ctx` parameter** instead of the individual kwargs. `ctx` (a `HookExecutionContext`)
+is **always injected and never `None`** — declare it with no default and skip the
+null guard. It is the one place a hook reads its inputs and furnishes user output:
+
+```python
+# Pre-processor
+async def suggest_email(ctx) -> dict:
+    email = ctx.session.context.get("known_email")
+    return {"ok": True, "response_directive": tell_user(f"Use {email}?")}
+
+# Validator — raw value is ctx.value
+async def validate_rating(ctx) -> dict:
+    raw = (ctx.value or "").strip()
+    if raw in {"1", "2", "3", "4", "5"}:
+        return {"valid": True, "value": raw}
+    return {"valid": False, "error": "Please give a rating from 1 to 5.", "value": raw}
+
+# Pre-processor furnishing extra user-visible content
+async def get_slots(ctx) -> dict:
+    ctx.tell_user("Here are the slots:\n- Mon 9am\n- Tue 2pm")
+    return {"ok": True, "response_directive": tell_user("Which works for you?")}
+```
+
+| `ctx` member | Purpose |
+|--------------|---------|
+| `ctx.session` | Read/write collected fields and `session.context` |
+| `ctx.value` | Raw user input (validators) |
+| `ctx.visitor` | Conversation, tasks, interaction |
+| `ctx.extracted_values` | All collected fields (review/complete time) |
+| `ctx.config` | The interview spec |
+| `ctx.interview` | The `InterviewAction` (`_save_session`, `_close_task`, …) |
+| `ctx.phase` | Lifecycle run name (activation vs advancing) |
+| `ctx.tell_user(content)` | **Output:** queue extra user-visible content (activation run only) |
+| `ctx.directives` | The underlying sink (`.add(raw, source=…)` escape hatch) |
+
+The individual kwargs below are still injected for back-compat, but `ctx` is the
+preferred single interface. `hooks.call_hook()` injects either only when the
+callable's signature accepts it:
 
 | Kwarg | Typical use |
 |-------|-------------|
 | `session` | Read/write collected fields and `session.context` |
 | `visitor` | Access conversation, tasks, interaction |
-| `interview` | `_save_session`, `_close_task`, `_handle_start` |
+| `directives` | Queue extra user-visible content onto the reply (`directives.tell_user(...)`) — active only on the field-activation run |
+| `value` | Raw user input (validators) |
+| `interview_action` | `_save_session`, `_close_task`, `_handle_start` |
 | `config` | Review/completion handlers |
 | `extracted_values` | All collected fields at review/complete time |
-| `review_data` | Review-stage snapshot |
 
 Organize `custom_tools.py` in labeled sections (see [`../examples/example_interview/scripts/custom_tools.py`](../examples/example_interview/scripts/custom_tools.py)):
 

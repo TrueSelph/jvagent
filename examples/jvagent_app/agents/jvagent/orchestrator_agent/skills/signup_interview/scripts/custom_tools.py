@@ -11,10 +11,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from jvagent.action.interview.responses import (
-    interview_tool_response,
-    tell_user,
-)
+from jvagent.action.interview.responses import interview_tool_response, tell_user
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +152,10 @@ async def _get_conversation(visitor: Any) -> Any:
 async def validate_full_name(value: str, **kwargs) -> str:
     if not value or not isinstance(value, str):
         return _validation_result(
-            False, value or "", "validate_full_name", "Ask: Please provide your full name"
+            False,
+            value or "",
+            "validate_full_name",
+            "Ask: Please provide your full name",
         )
 
     name = value.strip()
@@ -252,7 +252,11 @@ async def validate_training_format(value: str, **kwargs) -> str:
     normalized = _normalize_spaces(value)
     if normalized in _IN_PERSON_ALIASES or "in person" in normalized:
         return _validation_result(True, "In person", "validate_training_format")
-    if normalized in _VIRTUAL_ALIASES or "virtual" in normalized or "online" in normalized:
+    if (
+        normalized in _VIRTUAL_ALIASES
+        or "virtual" in normalized
+        or "online" in normalized
+    ):
         return _validation_result(True, "Virtual", "validate_training_format")
 
     return _validation_result(
@@ -305,23 +309,23 @@ async def validate_signup_email(value: str, **kwargs) -> str:
 # ─── Pre-tools ───────────────────────────────────────────────────────
 
 
-async def get_available_training_times(
-    session: Any = None,
-    visitor: Any = None,
-    **kwargs,
-) -> Dict[str, Any]:
+async def get_available_training_times(ctx) -> Dict[str, Any]:
     slots_text = "\n".join(f"- {slot}" for slot in AVAILABLE_TRAINING_TIMES)
+    # The slot list is CONTENT the user must see, so furnish it through the common
+    # hook context. ctx.tell_user queues it onto the reply (it lands on
+    # interaction.directives and ReplyAction composes it in). Putting it in the
+    # tell_user note would lose it: the note is model-only guidance, stripped at
+    # egress. ctx is always injected — no null guard needed — and ctx.tell_user is
+    # inert off the field-activation run, so the slots never bleed onto a later turn.
+    ctx.tell_user(
+        "Here are the available training slots (Eastern Time) — ask the user to "
+        f"pick one:\n{slots_text}"
+    )
     return {
         "ok": True,
         "available_times": AVAILABLE_TRAINING_TIMES,
         "timezone": "America/New_York",
-        "response_directive": tell_user(
-            "What times are you available to train?",
-            note=(
-                "Present these available slots (Eastern Time) and ask the user to pick one:\n"
-                f"{slots_text}"
-            ),
-        ),
+        "response_directive": tell_user("What times are you available to train?"),
     }
 
 
@@ -377,8 +381,10 @@ async def signup_review(
 
     for field_name, value in data.items():
         if field_name == "phone_number":
-            if value is None or value == "" or (
-                isinstance(value, str) and value.strip().lower() in ("n/a", "na")
+            if (
+                value is None
+                or value == ""
+                or (isinstance(value, str) and value.strip().lower() in ("n/a", "na"))
             ):
                 result["modified_values"]["phone_number"] = "__omit__"
             elif session is not None and session.is_skipped("phone_number"):

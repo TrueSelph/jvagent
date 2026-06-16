@@ -130,8 +130,10 @@ Set `binds_tools_to_visitor = True` on `InterviewAction` so tool dispatch receiv
 
 | Injected kwarg | When available |
 |----------------|----------------|
+| `ctx` | Always — the **common interface**: one always-present `HookExecutionContext` carrying inputs (`session`, `value`, `visitor`, `extracted_values`, `config`, `interview`, `phase`) and output (`ctx.tell_user(...)` / `ctx.directives`). Declare just `ctx` (no null guard) — see [extending.md](docs/extending.md#the-common-ctx-interface) |
 | `session` | Always (current `InterviewSession`) |
 | `visitor` | Always |
+| `directives` | Always — `InterviewDirectives` sink for extra user-visible content; queues only on the field-activation run |
 | `interview` | Always |
 | `config` | Handler/completion calls |
 | `extracted_values` | Review/completion handlers |
@@ -287,6 +289,12 @@ interview_tool_response(
     response_directive=call_tool_directive("interview__review"),
 )
 ```
+
+For extra user-visible content on a field's prompt (an options list, a table, a
+rendered summary) that does not fit the single `response_directive` question, a
+hook calls `ctx.tell_user(content)` on the [common `ctx`](docs/extending.md#the-common-ctx-interface)
+— **not** the `tell_user` `note=` arg, which is model-only guidance stripped at
+egress.
 
 ## Core `interview__*` tools
 

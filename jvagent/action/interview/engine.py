@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from jvagent.tooling.tool_executor import get_dispatch_visitor
 
 from . import tasks
+from .directives import ACTIVATION_PHASE
 from .flow import (
     build_awaiting_fields,
     build_next_field,
@@ -358,6 +359,7 @@ async def run_pre_processors(
                     spec=spec,
                     visitor=visitor,
                     interview_action=action,
+                    phase=ACTIVATION_PHASE,
                 )
             )
         except Exception as e:
