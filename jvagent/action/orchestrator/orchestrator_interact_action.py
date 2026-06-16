@@ -1421,6 +1421,100 @@ class OrchestratorInteractAction(InteractAction):
         ctx = getattr(conversation, "context", None) or {}
         return bool(ctx.get("new_user"))
 
+    async def _has_runnable_work(self, visitor: Any) -> bool:
+        """Engagement state (ADR-0026 invariant 7): a task the orchestrator can drain
+        is runnable right now. Used so the turn does not finalize idle while runnable
+        work remains. Scoped to drainable types (SKILL + registered runners)."""
+        from jvagent.action.orchestrator.skill_tasks import task_store_for_conversation
+        from jvagent.action.orchestrator.task_runners import runnable_task_types
+        from jvagent.memory.task_graph import pick_top_runnable
+
+        store = getattr(visitor, "tasks", None) or task_store_for_conversation(
+            getattr(visitor, "conversation", None)
+        )
+        if store is None:
+            return False
+        try:
+            return (
+                pick_top_runnable(store, task_types=runnable_task_types()) is not None
+            )
+        except Exception:
+            return False
+
+    async def _drain_runnable_tasks(
+        self, visitor: Any, observations: List[Dict[str, Any]]
+    ) -> Optional[str]:
+        """Drain non-SKILL runnable tasks via their registered runners (ADR-0026
+        §2.4/§3): the standard mechanism that keeps the orchestrator watching the
+        work graph regardless of any skill turn-lock.
+
+        Resolves the top runnable task; SKILL tasks are advanced by the orchestrator's
+        own think-act loop, so they are left for the skill path. A non-skill type with
+        a registered runner is dispatched: a ``completed`` result re-resolves (a parent
+        may unblock), a ``blocked`` result yields one egress directive (stay engaged),
+        ``advanced`` keeps draining. Bounded by ``activation_budget``. Inert until a
+        consumer registers a runner, so it never changes skill-only behavior. Returns a
+        blocking egress directive, or ``None`` when nothing non-skill is runnable.
+        """
+        from jvagent.action.orchestrator.skill_tasks import task_store_for_conversation
+        from jvagent.action.orchestrator.task_runners import (
+            RunContext,
+            get_task_runner,
+            runnable_task_types,
+        )
+        from jvagent.memory.task_graph import pick_top_runnable
+
+        store = getattr(visitor, "tasks", None) or task_store_for_conversation(
+            getattr(visitor, "conversation", None)
+        )
+        if store is None:
+            return None
+        budget = max(1, int(getattr(self, "activation_budget", 0) or 1))
+        for _ in range(budget):
+            top = pick_top_runnable(store, task_types=runnable_task_types())
+            if top is None:
+                return None  # store drained
+            ttype = str(getattr(top, "task_type", "") or "").upper()
+            if ttype == "SKILL":
+                return None  # the skill path advances it; not ours to dispatch
+            runner = get_task_runner(ttype)
+            if runner is None:  # pragma: no cover - guarded by runnable_task_types
+                return None
+            try:
+                result = await runner(
+                    RunContext(
+                        orchestrator=self,
+                        visitor=visitor,
+                        task=top,
+                        observations=observations,
+                    )
+                )
+            except Exception as exc:
+                logger.warning(
+                    "orchestrator: task runner for %r raised: %s", ttype, exc
+                )
+                return None
+            for ob in getattr(result, "observations", None) or []:
+                if isinstance(ob, dict):
+                    observations.append(ob)
+            status = getattr(result, "status", "advanced")
+            if status == "blocked":
+                return getattr(result, "directive", None)
+            if status == "completed":
+                fresh = store.get(top.id)
+                if fresh is not None and fresh.status not in (
+                    "completed",
+                    "failed",
+                    "cancelled",
+                ):
+                    try:
+                        await fresh.complete()
+                    except Exception as exc:  # pragma: no cover - defensive
+                        logger.debug("orchestrator: runner-complete failed: %s", exc)
+                continue
+            # advanced → keep draining
+        return None
+
     async def _find_active_task_lock_skill_doc(
         self, visitor: Any, skill_docs: List[Any], actions: List[Any]
     ) -> Optional[Any]:
@@ -2178,6 +2272,18 @@ class OrchestratorInteractAction(InteractAction):
         # the slow gear) — scheduled on the first heavy tick below, not up front.
         ack_task: Optional["asyncio.Task"] = None
         ack_started = False
+
+        # Standing store drain (ADR-0026 §3/§2.4): the orchestrator watches the work
+        # graph every turn, independent of any skill turn-lock. Dispatch non-skill
+        # runnable tasks via their registered runners first; a task that blocks on
+        # external input owns the turn's egress. Inert until a consumer registers a
+        # runner — SKILL tasks fall through to the skill path/loop below.
+        drain_directive = await self._drain_runnable_tasks(visitor, observations)
+        if drain_directive:
+            await self._send_reply(visitor, drain_directive, compose=True)
+            ended_via = "drain_reply"
+            return
+
         try:
             while budget > 0:
                 if deadline and time.time() > deadline:
@@ -2574,12 +2680,29 @@ class OrchestratorInteractAction(InteractAction):
                 ended_via = "unknown"
                 return
 
+            # Invariant 7 (ADR-0026): the loop ended, but the orchestrator must not
+            # finalize idle while runnable work remains. Drain non-skill runnable
+            # tasks now (some may have become runnable mid-turn — e.g. a completion
+            # unblocked one); if one blocks on input it owns the egress. Inert until a
+            # runner is registered, so skill-only turns are unaffected.
+            interaction = getattr(visitor, "interaction", None)
+            emitted = bool(getattr(interaction, "response", "") if interaction else "")
+            if not emitted:
+                drain_directive = await self._drain_runnable_tasks(
+                    visitor, observations
+                )
+                if drain_directive:
+                    await self._send_reply(visitor, drain_directive, compose=True)
+                    ended_via = f"{ended_via}_drained"
+                    return
+                emitted = bool(
+                    getattr(interaction, "response", "") if interaction else ""
+                )
+
             # Budget/time ran out mid-task. Rather than dropping to the generic
             # clarify fallback (which discards the work and misreports the
             # cause), force ONE compose so the user gets the agent's best answer
             # from what it gathered. Only when there's actual work to summarize.
-            interaction = getattr(visitor, "interaction", None)
-            emitted = bool(getattr(interaction, "response", "") if interaction else "")
             if (
                 not emitted
                 and ended_via in ("budget", "duration", "no_decision")

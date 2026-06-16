@@ -244,40 +244,32 @@ def _task_lock_skill_from_task_store(
 ) -> Optional[Any]:
     """Resolve the top *runnable* task-lock skill from the store (ADR-0026).
 
-    A task whose ``blocked_on`` prerequisites are not yet complete is skipped — so a
-    parent that pushed a prerequisite stays active-but-blocked and the prerequisite
-    owns the turn; when the prerequisite completes, the parent becomes the top
-    runnable and resumes. Today (no blocked tasks) this is equivalent to the prior
-    most-recently-updated-active behavior.
+    Uses the generic graph resolver (``pick_top_runnable``): the standard "what runs
+    next" over the whole work graph, scoped to the types the orchestrator can drain
+    (``runnable_task_types`` — the built-in SKILL type plus any registered runner).
+    A task whose ``blocked_on`` prerequisites are not complete is not runnable, so a
+    parent that pushed a prerequisite stays blocked and the prerequisite owns the
+    turn; on its completion the parent becomes top-runnable and resumes.
+
+    Returns the matching SkillDoc when the top runnable task is a task-lock skill
+    this agent knows; ``None`` when the store is drained, the top task is a non-skill
+    type (its runner advances it — see the drain in the orchestrator), or the skill
+    is unknown here.
     """
     store = task_store_for_conversation(conversation)
     if store is None:
         return None
-    from jvagent.memory.task_graph import prerequisites_met
+    from jvagent.action.orchestrator.task_runners import runnable_task_types
+    from jvagent.memory.task_graph import pick_top_runnable
 
-    try:
-        active_tasks = store.list(status="active")
-    except Exception as exc:
-        logger.debug("skill_tasks: failed to list active tasks: %s", exc)
+    top = pick_top_runnable(store, task_types=runnable_task_types())
+    if top is None:
         return None
-
-    candidates: List[tuple[str, Any]] = []
-    for task in active_tasks or []:
-        owner = getattr(task, "owner_action", None)
-        if not owner or owner not in skill_by_name:
-            continue
-        sd = skill_by_name[owner]
-        if not getattr(sd, "task_lock", False):
-            continue
-        if not prerequisites_met(store, task):
-            continue  # blocked: a prerequisite owns the turn instead
-        updated_at = str(getattr(task, "updated_at", "") or "")
-        candidates.append((updated_at, sd))
-
-    if not candidates:
-        return None
-    candidates.sort(key=lambda item: item[0], reverse=True)
-    return candidates[0][1]
+    owner = getattr(top, "owner_action", None)
+    sd = skill_by_name.get(owner) if owner else None
+    if sd is not None and getattr(sd, "task_lock", False):
+        return sd
+    return None
 
 
 def _task_lock_skill_from_auto_start(

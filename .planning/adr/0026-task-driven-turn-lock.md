@@ -289,6 +289,19 @@ on external input — never "the model chose to stop."
    `example_signin_interview`) + `tests/action/orchestrator/test_example_gated_skill.py`,
    which also drains a 3-step plan through the same graph primitives unchanged.
 
+7. **Standing store drain (§2.4 + §3 + invariant 7 wired).** The drain is now a
+   standard orchestrator mechanism, not a skill-lock side effect:
+   - Resolution uses the generic `pick_top_runnable` (`_task_lock_skill_from_task_store`),
+     scoped to drainable types (`task_runners.runnable_task_types`).
+   - A **task-runner registry** (`task_runners.py`, §2.4) dispatches non-`SKILL`
+     types; `SKILL` is advanced by the orchestrator's own loop. Consumers register a
+     runner like they register a precondition.
+   - The orchestrator drains runnable non-skill tasks **every turn** (pre-loop) and
+     again before finalizing idle (`_drain_runnable_tasks` / `_has_runnable_work`),
+     so it never goes idle while runnable work remains (invariant 7) — independent of
+     any skill turn-lock. Inert until a runner is registered, so skill-only behavior
+     is unchanged. Tests: `tests/action/orchestrator/test_task_runners.py`.
+
 ## 6. Consequences
 
 **Positive**
