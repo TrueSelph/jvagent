@@ -1,5 +1,11 @@
 """Custom tools for the onboarding_interview interview.
 
+Every hook takes the single ``ctx`` (HookExecutionContext): read inputs as
+attributes (``ctx.value``, ``ctx.session``, ``ctx.visitor``, ``ctx.interview``,
+``ctx.config``, ``ctx.extracted_values``, ``ctx.args``), furnish user-facing text
+via ``ctx.say`` and control/return data via ``ctx.tool_response`` (or
+``ctx.valid`` / ``ctx.invalid`` for validators).
+
 Functions are loaded by ``function:`` name in SKILL.md frontmatter ``interview:``. Sections:
 
 1. Constants
@@ -19,35 +25,28 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from jvagent.action.interview.responses import (
-    call_tool_directive,
-    interview_tool_response,
-    no_session_directive,
-    tell_user,
-)
-
 logger = logging.getLogger(__name__)
 
 _ONBOARDING_SKILL_NAME = "onboarding_interview"
 _ID_FIELDS = ("id_number", "full_name", "date_of_birth")
 
-_CUSTOMER_EXISTS_DIRECTIVE = tell_user(
+_CUSTOMER_EXISTS_MESSAGE = (
     "They already have a Zoon account linked to this number — onboarding is not needed. "
     "Let them know they can request product quotations, track shipments, arrange deliveries, or ask any questions about our services. "
-    "Then invite them to say what they need help with.",
-    note=(
-        "Do not ask for email, ID, or other onboarding fields. "
-        "Do not call interview__complete or any other interview tools."
-    ),
+    "Then invite them to say what they need help with."
+)
+_CUSTOMER_EXISTS_HINT = (
+    "Do not ask for email, ID, or other onboarding fields. "
+    "Do not call interview__complete or any other interview tools."
 )
 
-_RESET_CANCELLED_DIRECTIVE = tell_user(
+_RESET_CANCELLED_MESSAGE = (
     "Your onboarding has been cancelled. To chat with me and use Zoon services, "
-    "you'll need to complete the onboarding process first.",
-    note=(
-        "Deliver this message only. Do not ask for phone, email, or other onboarding fields. "
-        "Do not call interview__next_field, interview__set_fields, or any other interview tools."
-    ),
+    "you'll need to complete the onboarding process first."
+)
+_RESET_CANCELLED_HINT = (
+    "Deliver this message only. Do not ask for phone, email, or other onboarding fields. "
+    "Do not call interview__next_field, interview__set_fields, or any other interview tools."
 )
 
 
@@ -270,22 +269,24 @@ def _get_completed_skill_fields(visitor: Any, skill_name: str) -> Dict[str, Any]
 
 
 async def _complete_otp_success(
-    session: Any,
-    visitor: Any,
-    interview_action: Any,
+    ctx,
     *,
     account_number: str = "",
     flow_mode: str = "onboard",
     phone_updated: bool = False,
-) -> str:
-    """Mark onboarding complete after OTP verification; return welcome directive."""
+) -> None:
+    """Mark onboarding complete after OTP verification; surface welcome via ctx.say."""
     from jvagent.action.interview.session import (
         InterviewStatus,
     )
 
-    ctx = getattr(session, "context", None) if session else None
+    session = ctx.session
+    visitor = ctx.visitor
+    interview_action = ctx.interview
+
+    sctx = getattr(session, "context", None) if session else None
     customer = (
-        (ctx or {}).get("email_lookup_customer") if isinstance(ctx, dict) else None
+        (sctx or {}).get("email_lookup_customer") if isinstance(sctx, dict) else None
     )
     fields = _build_completion_task_fields(session, customer)
     await _persist_skill_task_data(
@@ -311,28 +312,29 @@ async def _complete_otp_success(
 
     conversation = await _get_conversation(visitor)
     if conversation is not None:
-        ctx = getattr(conversation, "context", None)
-        if isinstance(ctx, dict):
-            ctx["user_is_onboarded"] = "completed"
+        cctx = getattr(conversation, "context", None)
+        if isinstance(cctx, dict):
+            cctx["user_is_onboarded"] = "completed"
             if account_number:
-                ctx["customer_id"] = str(account_number)
+                cctx["customer_id"] = str(account_number)
             try:
                 await conversation.save()
             except Exception as e:
                 logger.error("_complete_otp_success: failed to save context: %s", e)
 
     welcome = _build_otp_welcome_message(account_number, phone_updated=phone_updated)
-    return tell_user(
+    ctx.say(
         welcome,
-        note="Do not call interview__complete or any other interview tools.",
+        hint="Do not call interview__complete or any other interview tools.",
     )
 
 
 # ─── Validators ──────────────────────────────────────────────────────
 
 
-async def validate_id_number(value: str, **kwargs) -> str:
+async def validate_id_number(ctx) -> Dict[str, Any]:
     """Validate national ID (8-9 digits) or passport number."""
+    value = ctx.value
 
     cleaned = value.strip().upper()
     cleaned_len = len(cleaned)
@@ -349,82 +351,54 @@ async def validate_id_number(value: str, **kwargs) -> str:
         passport_value = cleaned
 
     if passport_valid:
-        return json.dumps(
-            {
-                "valid": True,
-                "value": passport_value,
-                "validator": "validate_id_number",
-            }
-        )
+        return ctx.valid(value=passport_value)
 
-    return json.dumps(
-        {
-            "valid": False,
-            "error": (
-                passport_error
-                or f"ID number must be 8 to 9 digits, got {cleaned_len} digits."
-            ),
-            "value": value,
-            "validator": "validate_id_number",
-        }
+    return ctx.invalid(
+        passport_error or f"ID number must be 8 to 9 digits, got {cleaned_len} digits.",
+        value=value,
     )
 
 
-async def validate_otp_code(
-    value: str,
-    session: Any = None,
-    visitor: Any = None,
-    interview_action: Any = None,
-    **kwargs,
-) -> Dict[str, Any]:
+async def validate_otp_code(ctx) -> Dict[str, Any]:
     """Validate OTP format and confirm via Zoon API."""
-    ctx = getattr(session, "context", None) if session else None
-    otp_sent = isinstance(ctx, dict) and ctx.get("otp_sent")
+    value = ctx.value
+    session = ctx.session
+    visitor = ctx.visitor
+    interview_action = ctx.interview
+
+    sctx = getattr(session, "context", None) if session else None
+    otp_sent = isinstance(sctx, dict) and sctx.get("otp_sent")
 
     if not otp_sent:
-        return {
-            "valid": False,
-            "error": "OTP was not sent for this session.",
-            "validator": "validate_otp_code",
-            "response_directive": call_tool_directive(
-                'interview__skip_field(field="otp_code")'
-            ),
-        }
+        return ctx.invalid(
+            "OTP was not sent for this session.",
+            response_directive=ctx.call_tool('interview__skip_field(field="otp_code")'),
+        )
 
     digits = "".join(c for c in str(value or "") if c.isdigit())
     if not digits:
-        return {
-            "valid": False,
-            "error": "Please enter the verification code you received.",
-            "value": value,
-            "validator": "validate_otp_code",
-        }
+        return ctx.invalid(
+            "Please enter the verification code you received.",
+            value=value,
+        )
     if len(digits) < 4 or len(digits) > 8:
-        return {
-            "valid": False,
-            "error": "Verification code must be 4 to 8 digits.",
-            "value": value,
-            "validator": "validate_otp_code",
-        }
+        return ctx.invalid(
+            "Verification code must be 4 to 8 digits.",
+            value=value,
+        )
 
     email = (session.get_value("email") or "").strip() if session else ""
     phone = (session.get_value("phone_number") or "").strip() if session else ""
 
     if not email or not phone:
-        return {
-            "valid": False,
-            "error": "Email and phone number are required before verifying OTP.",
-            "validator": "validate_otp_code",
-        }
+        return ctx.invalid(
+            "Email and phone number are required before verifying OTP.",
+        )
 
     try:
         api = await interview_action.get_action("ZoonAPIAction")
         if not api:
-            return {
-                "valid": False,
-                "error": "OTP confirmation is unavailable.",
-                "validator": "validate_otp_code",
-            }
+            return ctx.invalid("OTP confirmation is unavailable.")
 
         result = await api.confirm_whatsapp_otp(email, digits, phone)
         if isinstance(result, dict) and result.get("status") == 400:
@@ -434,72 +408,54 @@ async def validate_otp_code(
                     "message", "Invalid or expired verification code."
                 )
             hint = _otp_phone_hint(session)
-            return {
-                "valid": False,
-                "error": str(message),
-                "value": value,
-                "validator": "validate_otp_code",
-                "response_directive": tell_user(
-                    f"That verification code is incorrect. Would you like me to resend "
-                    f"the code to the number {hint}?",
-                    note=(
-                        "If the user wants a resend, call onboarding_interview__send_otp. "
-                        "Otherwise ask them to enter the code again."
-                    ),
+            ctx.say(
+                f"That verification code is incorrect. Would you like me to resend "
+                f"the code to the number {hint}?",
+                hint=(
+                    "If the user wants a resend, call onboarding_interview__send_otp. "
+                    "Otherwise ask them to enter the code again."
                 ),
-            }
+            )
+            return ctx.invalid(
+                str(message),
+                value=value,
+            )
 
         if not result or (
             isinstance(result, dict) and result.get("status") in (409, 400)
         ):
-            return {
-                "valid": False,
-                "error": "OTP confirmation failed.",
-                "validator": "validate_otp_code",
-                "response_directive": tell_user(
-                    "We could not verify your code. Would you like me to resend it?"
-                ),
-            }
+            ctx.say("We could not verify your code. Would you like me to resend it?")
+            return ctx.invalid(
+                "OTP confirmation failed.",
+            )
 
-        customer = (ctx or {}).get("email_lookup_customer") or {}
+        customer = (sctx or {}).get("email_lookup_customer") or {}
         account_number = customer.get("account_number", "")
-        flow_mode = (ctx or {}).get("flow_mode", "onboard")
+        flow_mode = (sctx or {}).get("flow_mode", "onboard")
         phone_updated = flow_mode == "update_phone"
 
-        welcome = await _complete_otp_success(
-            session,
-            visitor,
-            interview_action,
+        await _complete_otp_success(
+            ctx,
             account_number=str(account_number or ""),
             flow_mode=flow_mode,
             phone_updated=phone_updated,
         )
-        return {
-            "valid": True,
-            "value": digits,
-            "validator": "validate_otp_code",
-            "interview_complete": True,
-            "response_directive": welcome,
-            "retain_context_keys": ["user_is_onboarded", "customer_id"],
-        }
+        return ctx.valid(
+            value=digits,
+            interview_complete=True,
+            retain_context_keys=["user_is_onboarded", "customer_id"],
+        )
     except Exception as e:
         logger.error("validate_otp_code failed: %s", e)
-        return {
-            "valid": False,
-            "error": f"OTP verification failed: {e}",
-            "validator": "validate_otp_code",
-        }
+        return ctx.invalid(f"OTP verification failed: {e}")
 
 
 # ─── Input context providers ─────────────────────────────────────────
 
 
-async def get_phone_number(
-    session: Any = None,
-    visitor: Any = None,
-    **kwargs,
-) -> Dict[str, Any]:
+async def get_phone_number(ctx) -> Dict[str, Any]:
     """Input context provider for phone_number — suggests WhatsApp phone on file."""
+    visitor = ctx.visitor
     channel = getattr(visitor, "channel", None) if visitor else None
     if channel != "whatsapp":
         return {}
@@ -509,27 +465,25 @@ async def get_phone_number(
     if len(digits) != 10:
         return {}
 
-    return {
-        "ok": True,
-        "value": digits,
-        "response_directive": tell_user(
-            f"We have {digits} on file from WhatsApp. Would you like to use this "
-            "as your contact number?",
-            note=(
-                "On the user's NEXT message: if they confirm (yes/ok/sure), call "
-                'interview__set_fields with {"fields": {"phone_number": "<digits>"}}). '
-                "Read post_tools_results; if exists:false, call interview__next_field."
-            ),
+    ctx.say(
+        f"We have {digits} on file from WhatsApp. Would you like to use this "
+        "as your contact number?",
+        hint=(
+            "On the user's NEXT message: if they confirm (yes/ok/sure), call "
+            'interview__set_fields with {"fields": {"phone_number": "<digits>"}}). '
+            "Read post_tools_results; if exists:false, call interview__next_field."
         ),
-    }
+    )
+    return ctx.tool_response(
+        ok=True,
+        value=digits,
+    )
 
 
-async def suggest_email_from_task(
-    session: Any = None,
-    visitor: Any = None,
-    **kwargs,
-) -> Dict[str, Any]:
+async def suggest_email_from_task(ctx) -> Dict[str, Any]:
     """Pre-tool for email — suggests address from completed onboarding task."""
+    session = ctx.session
+    visitor = ctx.visitor
     if session and session.get_value("email"):
         return {}
 
@@ -538,43 +492,41 @@ async def suggest_email_from_task(
     if not suggested:
         return {}
 
-    return {
-        "ok": True,
-        "suggested_value": suggested,
-        "response_directive": tell_user(
-            f"We have {suggested} on file from your previous onboarding. "
-            "Would you like to use this email?",
-            note=(
-                "On the user's NEXT message: if they confirm (yes/ok/sure), call "
-                f'interview__set_fields with {{"fields": {{"email": "{suggested}"}}}}). '
-                "If they provide a different email, save that instead."
-            ),
+    ctx.say(
+        f"We have {suggested} on file from your previous onboarding. "
+        "Would you like to use this email?",
+        hint=(
+            "On the user's NEXT message: if they confirm (yes/ok/sure), call "
+            f'interview__set_fields with {{"fields": {{"email": "{suggested}"}}}}). '
+            "If they provide a different email, save that instead."
         ),
-    }
+    )
+    return ctx.tool_response(
+        ok=True,
+        suggested_value=suggested,
+    )
 
 
 # ─── Custom tools ──────────────────────────────────────────────────────
 
 
-async def verify_phone_number(
-    phone: str = "",
-    visitor: Any = None,
-    interview_action: Any = None,
-    session: Any = None,
-    **kwargs,
-) -> str:
+async def verify_phone_number(ctx) -> str:
     """Check if customer exists by phone (runs via post_tools after phone_number save)."""
+    visitor = ctx.visitor
+    interview_action = ctx.interview
+    session = ctx.session
+
     if visitor is None:
         from jvagent.tooling.tool_executor import get_dispatch_visitor
 
         visitor = get_dispatch_visitor()
 
-    phone = (phone or "").strip()
+    phone = (ctx.args.get("phone") or "").strip()
     if not phone and session:
         phone = session.get_value("phone_number") or ""
 
     if not phone:
-        return interview_tool_response(
+        return ctx.tool_response(
             ok=False,
             status="error",
             exists=False,
@@ -613,11 +565,11 @@ async def verify_phone_number(
 
                 conversation = getattr(visitor, "conversation", None)
                 if conversation is not None:
-                    ctx = getattr(conversation, "context", None)
-                    if isinstance(ctx, dict):
-                        ctx["user_is_onboarded"] = "completed"
+                    cctx = getattr(conversation, "context", None)
+                    if isinstance(cctx, dict):
+                        cctx["user_is_onboarded"] = "completed"
                         if account_number:
-                            ctx["customer_id"] = str(account_number)
+                            cctx["customer_id"] = str(account_number)
                         try:
                             await conversation.save()
                         except Exception as e:
@@ -625,17 +577,20 @@ async def verify_phone_number(
                                 "verify_phone_number: failed to save context: %s", e
                             )
 
-                return interview_tool_response(
+                ctx.say(
+                    _CUSTOMER_EXISTS_MESSAGE,
+                    hint=_CUSTOMER_EXISTS_HINT,
+                )
+                return ctx.tool_response(
                     ok=True,
                     status="customer_exists",
                     exists=True,
                     interview_complete=True,
                     system_message="This phone number is already registered with Zoon.",
-                    response_directive=_CUSTOMER_EXISTS_DIRECTIVE,
                 )
     except Exception as e:
         logger.error(f"verify_phone_number check failed: {e}")
-        return interview_tool_response(
+        return ctx.tool_response(
             ok=False,
             status="error",
             exists=False,
@@ -643,7 +598,7 @@ async def verify_phone_number(
             system_message="Customer lookup failed.",
         )
 
-    return interview_tool_response(
+    return ctx.tool_response(
         ok=True,
         status="not_registered",
         exists=False,
@@ -651,30 +606,23 @@ async def verify_phone_number(
     )
 
 
-async def verify_email(
-    visitor: Any = None,
-    interview_action: Any = None,
-    session: Any = None,
-    **kwargs,
-) -> str:
+async def verify_email(ctx) -> str:
     """Check if customer exists by email and trigger OTP when phone differs."""
+    visitor = ctx.visitor
+    interview_action = ctx.interview
+    session = ctx.session
+
     if session is None:
-        return interview_tool_response(
-            ok=False,
-            status="error",
-            error_code="NO_SESSION",
-            system_message="No active interview session for email verification.",
-            response_directive=no_session_directive(),
-        )
+        return ctx.no_session()
 
     email = (session.get_value("email") or "").strip()
     if not email:
-        return interview_tool_response(
+        return ctx.tool_response(
             ok=False,
             status="error",
             error_code="MISSING_FIELD",
             system_message="Email not yet stored in session.",
-            response_directive=call_tool_directive("interview__set_fields"),
+            response_directive=ctx.call_tool("interview__set_fields"),
         )
 
     session_phone = _normalize_phone_digits(session.get_value("phone_number") or "")
@@ -682,7 +630,7 @@ async def verify_email(
     try:
         api = await interview_action.get_action("ZoonAPIAction")
         if not api:
-            return interview_tool_response(
+            return ctx.tool_response(
                 ok=False,
                 status="error",
                 system_message="Customer lookup unavailable.",
@@ -692,7 +640,7 @@ async def verify_email(
         customer = result.get("customer") if isinstance(result, dict) else None
 
         if not customer:
-            return interview_tool_response(
+            return ctx.tool_response(
                 ok=True,
                 status="not_registered",
                 system_message="No existing customer found with this email. Proceed with onboarding.",
@@ -700,7 +648,7 @@ async def verify_email(
 
         account_phone = _get_customer_phone_digits(customer)
         if not account_phone or account_phone == session_phone:
-            return interview_tool_response(
+            return ctx.tool_response(
                 ok=True,
                 status="ok",
                 system_message="Email matched an existing account with the same phone. Proceed with onboarding.",
@@ -713,27 +661,27 @@ async def verify_email(
         session.context.setdefault("flow_mode", "onboard")
         await interview_action._save_session(session, visitor)
 
-        return interview_tool_response(
+        ctx.say(
+            "We found an existing account with this email, but it has a different "
+            "phone number on file. I'll send a verification code to the email on your "
+            "account.",
+            hint=(
+                "Call onboarding_interview__send_otp now. Do not call "
+                "interview__next_field until OTP is handled or skipped."
+            ),
+        )
+        return ctx.tool_response(
             ok=True,
             status="otp_required",
             otp_pending=True,
             system_message=(
                 "Existing account with different phone — call send_otp to verify."
             ),
-            response_directive=tell_user(
-                "We found an existing account with this email, but it has a different "
-                "phone number on file. I'll send a verification code to the email on your "
-                "account.",
-                note=(
-                    "Call onboarding_interview__send_otp now. Do not call "
-                    "interview__next_field until OTP is handled or skipped."
-                ),
-            ),
             next_tool="onboarding_interview__send_otp",
         )
     except Exception as e:
         logger.error("verify_email check failed: %s", e)
-        return interview_tool_response(
+        return ctx.tool_response(
             ok=False,
             status="error",
             system_message="Email verification failed.",
@@ -741,19 +689,14 @@ async def verify_email(
         )
 
 
-async def send_otp(
-    visitor: Any = None,
-    interview_action: Any = None,
-    session: Any = None,
-    **kwargs,
-) -> Dict[str, Any]:
+async def send_otp(ctx) -> Dict[str, Any]:
     """Send WhatsApp verification OTP to the email on the account."""
+    visitor = ctx.visitor
+    interview_action = ctx.interview
+    session = ctx.session
+
     if session is None:
-        return {
-            "ok": False,
-            "status": "error",
-            "response_directive": no_session_directive(),
-        }
+        return ctx.no_session()
 
     email = (session.get_value("email") or "").strip()
     if not email:
@@ -767,15 +710,15 @@ async def send_otp(
     phone = (session.get_value("phone_number") or "").strip()
 
     if not email or not phone:
-        return {
-            "ok": False,
-            "status": "error",
-            "system_message": "Email and phone number are required before sending OTP.",
-            "response_directive": tell_user(
-                "Please provide your email and phone number before we can send a "
-                "verification code."
-            ),
-        }
+        ctx.say(
+            "Please provide your email and phone number before we can send a "
+            "verification code."
+        )
+        return ctx.tool_response(
+            ok=False,
+            status="error",
+            system_message="Email and phone number are required before sending OTP.",
+        )
 
     if not isinstance(session.context, dict):
         session.context = {}
@@ -789,40 +732,37 @@ async def send_otp(
         session.context["otp_target_phone"] = phone
         await interview_action._save_session(session, visitor)
         hint = _otp_phone_hint(session)
-        return {
-            "ok": True,
-            "status": "otp_sent",
-            "otp_sent": True,
-            "system_message": f"Verification code sent to the phone number ending with {hint}.",
-            "response_directive": tell_user(
-                f"We found a different phone number linked to your account. A verification code has been sent to the number ending with {hint}. Please enter the code to verify your identity.",
-                note=(
-                    "When the user provides the code, call "
-                    'interview__set_fields with {"fields": {"otp_code": "<code>"}}).'
-                ),
+        ctx.say(
+            f"We found a different phone number linked to your account. A verification code has been sent to the number ending with {hint}. Please enter the code to verify your identity.",
+            hint=(
+                "When the user provides the code, call "
+                'interview__set_fields with {"fields": {"otp_code": "<code>"}}).'
             ),
-        }
+        )
+        return ctx.tool_response(
+            ok=True,
+            status="otp_sent",
+            otp_sent=True,
+            system_message=f"Verification code sent to the phone number ending with {hint}.",
+        )
 
     session.context["otp_sent"] = False
     await interview_action._save_session(session, visitor)
-    return {
-        "ok": False,
-        "status": "error",
-        "otp_sent": False,
-        "system_message": "Could not send verification code.",
-        "response_directive": call_tool_directive(
-            'interview__skip_field(field="otp_code")'
-        ),
-    }
+    return ctx.tool_response(
+        ok=False,
+        status="error",
+        otp_sent=False,
+        system_message="Could not send verification code.",
+        response_directive=ctx.call_tool('interview__skip_field(field="otp_code")'),
+    )
 
 
-async def process_id_card(
-    visitor: Any = None,
-    interview_action: Any = None,
-    session: Any = None,
-    **kwargs,
-) -> str:
+async def process_id_card(ctx) -> str:
     """Get ID image from visitor data, extract fields, and persist on success."""
+    visitor = ctx.visitor
+    interview_action = ctx.interview
+    session = ctx.session
+
     if visitor is None:
         from jvagent.tooling.tool_executor import get_dispatch_visitor
 
@@ -830,17 +770,17 @@ async def process_id_card(
 
     image_urls = _get_image_urls(visitor)
     if not image_urls:
-        return interview_tool_response(
+        ctx.say(
+            "Please upload a clear photo of your ID card, or say no to enter your details manually.",
+        )
+        return ctx.tool_response(
             ok=False,
             status="no_image",
             system_message="No ID card image found.",
-            response_directive=tell_user(
-                "Please upload a clear photo of your ID card, or say no to enter your details manually.",
-            ),
         )
 
     if interview_action is None:
-        return interview_tool_response(
+        return ctx.tool_response(
             ok=False,
             status="error",
             system_message="Interview action not available for ID extraction.",
@@ -849,13 +789,13 @@ async def process_id_card(
     try:
         model_action = await interview_action.get_model_action(required=True)
         if not model_action or not hasattr(model_action, "create_multimodal_content"):
-            return interview_tool_response(
+            ctx.say(
+                "We could not read your ID photo. Please enter your details manually."
+            )
+            return ctx.tool_response(
                 ok=False,
                 status="extract_failed",
                 system_message="Image extraction is not available.",
-                response_directive=tell_user(
-                    "We could not read your ID photo. Please enter your details manually."
-                ),
             )
 
         prompt = (
@@ -882,13 +822,13 @@ async def process_id_card(
         )
 
         if not result:
-            return interview_tool_response(
+            ctx.say(
+                "We could not read that photo. Please upload a clearer image or enter your details manually."
+            )
+            return ctx.tool_response(
                 ok=False,
                 status="extract_failed",
                 system_message="Could not read the ID card image.",
-                response_directive=tell_user(
-                    "We could not read that photo. Please upload a clearer image or enter your details manually."
-                ),
             )
 
         json_match = re.search(r"\{.*\}", result, re.DOTALL)
@@ -901,23 +841,18 @@ async def process_id_card(
                 extracted[field_name] = str(val).strip()
 
         if not extracted:
-            return interview_tool_response(
+            ctx.say(
+                "We could not read the required details from that photo. "
+                "Please try another image or enter your details manually."
+            )
+            return ctx.tool_response(
                 ok=False,
                 status="no_fields",
                 system_message="Could not find the required information in the ID card image.",
-                response_directive=tell_user(
-                    "We could not read the required details from that photo. "
-                    "Please try another image or enter your details manually."
-                ),
             )
 
         if session is None:
-            return interview_tool_response(
-                ok=False,
-                status="error",
-                system_message="No active interview session to store extracted fields.",
-                response_directive=no_session_directive(),
-            )
+            return ctx.no_session()
 
         persist_result = await interview_action.persist_interview_fields(
             session, visitor, extracted, validate=True
@@ -934,47 +869,44 @@ async def process_id_card(
 
         if validation_errors:
             failed = list(validation_errors.keys())
-            return interview_tool_response(
+            ctx.say(
+                "Some details from the ID photo could not be saved. Please provide the missing information."
+            )
+            return ctx.tool_response(
                 ok=False,
                 status="validation_failed",
                 system_message=f"Some ID details could not be saved: {failed}.",
                 fields=fields_summary,
                 missing_required=missing,
-                response_directive=tell_user(
-                    "Some details from the ID photo could not be saved. Please provide the missing information."
-                ),
             )
 
         stored = list(extracted.keys())
-        return interview_tool_response(
+        ctx.say("ID details were saved from your photo.")
+        return ctx.tool_response(
             ok=True,
             status="extracted",
             system_message=f"Extracted and saved ID details: {', '.join(stored)}.",
             fields=fields_summary,
             missing_required=missing,
-            response_directive=tell_user("ID details were saved from your photo."),
         )
 
     except Exception as e:
         logger.error(f"process_id_card extraction failed: {e}")
-        return interview_tool_response(
+        ctx.say(
+            "We could not read that photo. Please upload a clearer image or enter your details manually."
+        )
+        return ctx.tool_response(
             ok=False,
             status="extract_failed",
             system_message="Could not extract details from the ID card image.",
-            response_directive=tell_user(
-                "We could not read that photo. Please upload a clearer image or enter your details manually."
-            ),
         )
 
 
-async def reset_onboarding(
-    visitor: Any = None,
-    interview_action: Any = None,
-    session: Any = None,
-    config: Any = None,
-    **kwargs,
-) -> str:
+async def reset_onboarding(ctx) -> str:
     """Clear interview progress, cancel tasks, and inform user onboarding was cancelled."""
+    visitor = ctx.visitor
+    interview_action = ctx.interview
+
     if visitor is None:
         try:
             from jvagent.tooling.tool_executor import get_dispatch_visitor
@@ -985,18 +917,18 @@ async def reset_onboarding(
 
     conversation = await _get_conversation(visitor)
     if conversation is None:
-        return interview_tool_response(
+        return ctx.tool_response(
             ok=False,
             status="error",
             response_directive="No conversation available to reset onboarding.",
         )
 
-    ctx = getattr(conversation, "context", None)
-    if isinstance(ctx, dict):
-        ctx.pop("interview", None)
-        ctx["onboarding_required"] = True
-        if ctx.get("user_is_onboarded") != "completed":
-            ctx["user_is_onboarded"] = ""
+    cctx = getattr(conversation, "context", None)
+    if isinstance(cctx, dict):
+        cctx.pop("interview", None)
+        cctx["onboarding_required"] = True
+        if cctx.get("user_is_onboarded") != "completed":
+            cctx["user_is_onboarded"] = ""
 
     try:
         await conversation.save()
@@ -1013,28 +945,28 @@ async def reset_onboarding(
         except Exception as exc:
             logger.debug("reset_onboarding: close interview task failed: %s", exc)
 
-    return interview_tool_response(
+    ctx.say(
+        _RESET_CANCELLED_MESSAGE,
+        hint=_RESET_CANCELLED_HINT,
+    )
+    return ctx.tool_response(
         ok=True,
         status="cancelled",
         system_message=(
             "Onboarding cancelled. User must complete onboarding to chat with the agent."
         ),
-        response_directive=_RESET_CANCELLED_DIRECTIVE,
     )
 
 
 # ─── Completion handler ────────────────────────────────────────────────
 
 
-async def complete_onboarding(
-    session: Any = None,
-    visitor: Any = None,
-    interview_action: Any = None,
-    config: Any = None,
-    extracted_values: Optional[Dict[str, str]] = None,
-    review_data: Optional[Dict[str, str]] = None,
-) -> Dict[str, Any]:
+async def complete_onboarding(ctx) -> Dict[str, Any]:
     """Create customer account via Zoon API after interview__complete."""
+    visitor = ctx.visitor
+    interview_action = ctx.interview
+    extracted_values = ctx.extracted_values
+
     result: Dict[str, Any] = {}
 
     if not extracted_values or not interview_action:
@@ -1118,12 +1050,12 @@ async def complete_onboarding(
 
         conversation = await _get_conversation(visitor)
         if conversation:
-            ctx = getattr(conversation, "context", None)
-            if ctx is not None and isinstance(ctx, dict):
-                ctx["user_is_onboarded"] = "completed"
-                ctx.pop("onboarding_required", None)
+            cctx = getattr(conversation, "context", None)
+            if cctx is not None and isinstance(cctx, dict):
+                cctx["user_is_onboarded"] = "completed"
+                cctx.pop("onboarding_required", None)
                 if account_number:
-                    ctx["customer_id"] = str(account_number)
+                    cctx["customer_id"] = str(account_number)
                 try:
                     await conversation.save()
                 except Exception as e:

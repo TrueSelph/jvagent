@@ -1,20 +1,16 @@
 """Custom tools for the signup_interview skill (jvagent training registration).
 
-Ported from the v1 interview action — validators, training-slot matching,
-review display, and completion handling for the skills-v2 InterviewAction path.
+Every hook takes the single ``ctx`` (HookExecutionContext): read inputs as
+attributes (``ctx.value``, ``ctx.session``, ``ctx.extracted_values``), furnish
+user-facing text via ``ctx.say`` and control/return data via ``ctx.tool_response``
+(or ``ctx.valid`` / ``ctx.invalid`` for validators).
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from typing import Any, Dict, List, Optional
-
-from jvagent.action.interview.responses import (
-    interview_tool_response,
-    tell_user,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -30,22 +26,6 @@ AVAILABLE_TRAINING_TIMES: List[str] = [
 ]
 
 _INVALID_TEST_DOMAINS = frozenset({"example.com", "test.com", "invalid.com"})
-
-
-def _validation_result(
-    valid: bool,
-    value: str,
-    validator: str,
-    error: str = "",
-) -> str:
-    payload: Dict[str, Any] = {
-        "valid": valid,
-        "value": value,
-        "validator": validator,
-    }
-    if not valid:
-        payload["error"] = error
-    return json.dumps(payload)
 
 
 def _normalize_spaces(text: str) -> str:
@@ -135,99 +115,60 @@ def _match_training_slot(raw_input: str) -> Optional[str]:
     return None
 
 
-async def _get_conversation(visitor: Any) -> Any:
-    if visitor is None:
-        return None
-    if hasattr(visitor, "conversation") and visitor.conversation is not None:
-        return visitor.conversation
-    interaction = getattr(visitor, "interaction", None)
-    if interaction is not None and hasattr(interaction, "get_conversation"):
-        try:
-            return await interaction.get_conversation()
-        except Exception:
-            pass
-    return None
-
-
 # ─── Validators ──────────────────────────────────────────────────────
 
 
-async def validate_full_name(value: str, **kwargs) -> str:
+async def validate_full_name(ctx) -> Dict[str, Any]:
+    value = ctx.value
     if not value or not isinstance(value, str):
-        return _validation_result(
-            False, value or "", "validate_full_name", "Ask: Please provide your full name"
-        )
+        return ctx.invalid("Please provide your full name", value=value or "")
 
     name = value.strip()
     if len(name) < 3:
-        return _validation_result(
-            False,
-            value,
-            "validate_full_name",
-            "Ask: Please provide your complete full name",
-        )
+        return ctx.invalid("Please provide your complete full name")
 
     parts = name.split()
     if len(parts) < 2:
-        return _validation_result(
-            False,
-            value,
-            "validate_full_name",
-            "Ask: Please provide both your first and last name",
-        )
+        return ctx.invalid("Please provide both your first and last name")
 
     for part in parts:
         if len(part) < 2:
-            return _validation_result(
-                False,
-                value,
-                "validate_full_name",
-                "Tell the user: Each name part should be at least 2 characters long",
-            )
+            return ctx.invalid("Each name part should be at least 2 characters long")
 
     if not re.match(r"^[a-zA-Z\s\-']+$", name):
-        return _validation_result(
-            False,
-            value,
-            "validate_full_name",
-            "Tell the user: Name should only contain letters, spaces, hyphens, and apostrophes",
+        return ctx.invalid(
+            "Name should only contain letters, spaces, hyphens, and apostrophes"
         )
 
-    return _validation_result(True, name, "validate_full_name")
+    return ctx.valid(value=name)
 
 
-async def validate_available_times(
-    value: str,
-    session: Any = None,
-    **kwargs,
-) -> str:
+async def validate_available_times(ctx) -> Dict[str, Any]:
+    value = ctx.value
     if not value or not isinstance(value, str):
-        return _validation_result(
-            False,
-            value or "",
-            "validate_available_times",
-            "Ask: Please provide your available training times",
+        return ctx.invalid(
+            "Please provide your available training times", value=value or ""
         )
 
+    session = ctx.session
     matched = _match_training_slot(value)
     if matched:
         if session is not None:
             if not isinstance(getattr(session, "context", None), dict):
                 session.context = {}
             session.context["matched_training_times"] = [matched]
-        return _validation_result(True, matched, "validate_available_times")
+        return ctx.valid(value=matched)
 
     if session is not None:
-        ctx = getattr(session, "context", None)
-        if isinstance(ctx, dict):
-            ctx.pop("matched_training_times", None)
+        sctx = getattr(session, "context", None)
+        if isinstance(sctx, dict):
+            sctx.pop("matched_training_times", None)
 
     available_list = ", ".join(AVAILABLE_TRAINING_TIMES)
-    return _validation_result(
-        False,
-        value.strip(),
-        "validate_available_times",
-        f"Tell the user that their choice is not available and advise them to select from the available training times: {available_list}",
+    return ctx.invalid(
+        "That time isn't available. Please pick from the available training "
+        f"times: {available_list}",
+        value=value.strip(),
     )
 
 
@@ -239,110 +180,89 @@ _VIRTUAL_ALIASES = frozenset(
 )
 
 
-async def validate_training_format(value: str, **kwargs) -> str:
+async def validate_training_format(ctx) -> Dict[str, Any]:
     """Normalize Saturday-session attendance preference (branch-only field)."""
+    value = ctx.value
     if not value or not isinstance(value, str):
-        return _validation_result(
-            False,
-            value or "",
-            "validate_training_format",
-            "Ask: Will you attend in person or join virtually?",
+        return ctx.invalid(
+            "Will you attend in person or join virtually?", value=value or ""
         )
 
     normalized = _normalize_spaces(value)
     if normalized in _IN_PERSON_ALIASES or "in person" in normalized:
-        return _validation_result(True, "In person", "validate_training_format")
-    if normalized in _VIRTUAL_ALIASES or "virtual" in normalized or "online" in normalized:
-        return _validation_result(True, "Virtual", "validate_training_format")
+        return ctx.valid(value="In person")
+    if (
+        normalized in _VIRTUAL_ALIASES
+        or "virtual" in normalized
+        or "online" in normalized
+    ):
+        return ctx.valid(value="Virtual")
 
-    return _validation_result(
-        False,
-        value.strip(),
-        "validate_training_format",
-        "Tell the user: Please say whether you will attend in person or join virtually.",
+    return ctx.invalid(
+        "Please say whether you will attend in person or join virtually.",
+        value=value.strip(),
     )
 
 
-async def validate_signup_email(value: str, **kwargs) -> str:
+async def validate_signup_email(ctx) -> Dict[str, Any]:
+    value = ctx.value
     if not value or not isinstance(value, str):
-        return _validation_result(
-            False,
-            value or "",
-            "validate_signup_email",
-            "Ask: Please provide a valid email address",
-        )
+        return ctx.invalid("Please provide a valid email address", value=value or "")
 
     email = value.strip().lower()
     email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
     if not re.match(email_pattern, email):
-        return _validation_result(
-            False,
-            value,
-            "validate_signup_email",
-            "Tell the user: Please provide a valid email address format (e.g., name@example.com)",
+        return ctx.invalid(
+            "Please provide a valid email address format " "(e.g., name@example.com)"
         )
 
     domain = email.split("@")[1] if "@" in email else ""
     if domain in _INVALID_TEST_DOMAINS:
-        return _validation_result(
-            False,
-            value,
-            "validate_signup_email",
-            "Tell the user: Please provide a real email address, not a test domain",
-        )
+        return ctx.invalid("Please provide a real email address, not a test domain")
 
     if len(domain.split(".")) < 2:
-        return _validation_result(
-            False,
-            value,
-            "validate_signup_email",
-            "Tell the user: Email domain appears to be invalid",
-        )
+        return ctx.invalid("Email domain appears to be invalid")
 
-    return _validation_result(True, email, "validate_signup_email")
+    return ctx.valid(value=email)
 
 
 # ─── Pre-tools ───────────────────────────────────────────────────────
 
 
-async def get_available_training_times(
-    session: Any = None,
-    visitor: Any = None,
-    **kwargs,
-) -> Dict[str, Any]:
+async def get_available_training_times(ctx) -> str:
     slots_text = "\n".join(f"- {slot}" for slot in AVAILABLE_TRAINING_TIMES)
-    return {
-        "ok": True,
-        "available_times": AVAILABLE_TRAINING_TIMES,
-        "timezone": "America/New_York",
-        "response_directive": tell_user(
+    # Two sequential statements: the slot list the user must see, then the question.
+    # ctx.say is the single user-text channel — inert off the activation run, so the
+    # slot list never bleeds onto a later turn.
+    ctx.say(
+        [
+            f"Here are the available training slots (Eastern Time) — please pick one:\n{slots_text}",
             "What times are you available to train?",
-            note=(
-                "Present these available slots (Eastern Time) and ask the user to pick one:\n"
-                f"{slots_text}"
-            ),
-        ),
-    }
+        ]
+    )
+    return ctx.tool_response(
+        ok=True,
+        status="ok",
+        available_times=AVAILABLE_TRAINING_TIMES,
+        timezone="America/New_York",
+    )
 
 
 # ─── Post-tools ──────────────────────────────────────────────────────
 
 
-async def append_work_email_note(
-    session: Any = None,
-    **kwargs,
-) -> str:
+async def append_work_email_note(ctx) -> str:
     email = ""
-    if session is not None:
-        email = (session.get_value("user_email") or "").lower()
+    if ctx.session is not None:
+        email = (ctx.session.get_value("user_email") or "").lower()
 
     if "@mail.com" not in email:
-        return interview_tool_response(ok=True, status="ok")
+        return ctx.tool_response(ok=True, status="ok")
 
-    # Return a NOTE only. The framework pairs notes with the authoritative next
-    # question computed from final settled state — a processor must not bake in a
-    # next-field question (it goes stale when later fields fill it in the same batch).
-    return interview_tool_response(
+    # Return a NOTE (not say): the framework pairs it with the authoritative next
+    # question computed from the FINAL settled state. A note must not bake in a
+    # next-field question — it would go stale when later batch fields fill it in.
+    return ctx.tool_response(
         ok=True,
         status="ok",
         note=(
@@ -355,11 +275,7 @@ async def append_work_email_note(
 # ─── Review handler ──────────────────────────────────────────────────
 
 
-async def signup_review(
-    session: Any = None,
-    extracted_values: Optional[Dict[str, str]] = None,
-    **kwargs,
-) -> Dict[str, Any]:
+async def signup_review(ctx) -> Dict[str, Any]:
     result: Dict[str, Any] = {
         "modified_values": {},
         "additional_data": {},
@@ -369,7 +285,8 @@ async def signup_review(
         ),
     }
 
-    data = extracted_values or (
+    session = ctx.session
+    data = ctx.extracted_values or (
         session.get_collected_summary() if session is not None else {}
     )
     if not data:
@@ -377,8 +294,10 @@ async def signup_review(
 
     for field_name, value in data.items():
         if field_name == "phone_number":
-            if value is None or value == "" or (
-                isinstance(value, str) and value.strip().lower() in ("n/a", "na")
+            if (
+                value is None
+                or value == ""
+                or (isinstance(value, str) and value.strip().lower() in ("n/a", "na"))
             ):
                 result["modified_values"]["phone_number"] = "__omit__"
             elif session is not None and session.is_skipped("phone_number"):
@@ -390,27 +309,20 @@ async def signup_review(
 # ─── Completion handler ──────────────────────────────────────────────
 
 
-async def signup_complete(
-    session: Any = None,
-    visitor: Any = None,
-    interview_action: Any = None,
-    extracted_values: Optional[Dict[str, str]] = None,
-    **kwargs,
-) -> Dict[str, Any]:
-    values = extracted_values or {}
+async def signup_complete(ctx) -> str:
+    values = ctx.extracted_values or {}
     user_name = (values.get("user_name") or "").strip()
     user_email = (values.get("user_email") or "").strip()
     available_times = (values.get("available_times") or "").strip()
-    phone_number = (values.get("phone_number") or "").strip()
 
     if not user_name or not user_email or not available_times:
-        return {
-            "response_directive": (
-                "Some required signup fields are missing. "
-                "Please go back and collect all required information."
-            )
-        }
+        ctx.say(
+            "Some required signup fields are missing. "
+            "Please go back and collect all required information."
+        )
+        return ctx.tool_response(ok=True, status="ok")
 
+    session = ctx.session
     matched_times: List[str] = []
     if session is not None and isinstance(getattr(session, "context", None), dict):
         raw = session.context.get("matched_training_times") or []
@@ -434,9 +346,8 @@ async def signup_complete(
     if training_format:
         times_note = f"{times_note} Format: {training_format}."
     employer_note = f" Employer: {employer_name}." if employer_name else ""
-    return {
-        "response_directive": (
-            f"Thank you, {user_name}! Your signup for jvagent training is complete. "
-            f"We will contact you at {user_email}.{employer_note} {times_note}"
-        )
-    }
+    ctx.say(
+        f"Thank you, {user_name}! Your signup for jvagent training is complete. "
+        f"We will contact you at {user_email}.{employer_note} {times_note}"
+    )
+    return ctx.tool_response(ok=True, status="ok")

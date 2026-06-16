@@ -39,11 +39,11 @@ interview/
 ├── spec.py               # Frontmatter parsing: FieldDef / InterviewSpec / registry
 ├── session.py            # InterviewSession + conversation persistence
 ├── flow.py               # Branch evaluation, path walk, prune
-├── hooks.py              # custom_tools.py loader, call_hook, validator dispatch
+├── hooks.py              # custom_tools.py loader; the ctx interface (HookExecutionContext);
+│                         #   call_hook; validator dispatch; internal directive framing
 ├── validators.py         # Built-in validators
 ├── engine.py             # The 8 tool handlers + activation + skill-tool dispatch
 ├── tools.py              # Tool definitions binding to engine
-├── responses.py          # Response envelope + directive strings
 ├── tasks.py              # interview SKILL-task lifecycle
 ├── procedure.py          # SOP composition
 ├── _validate_contract.py # Skill frontmatter ↔ custom_tools.py validation

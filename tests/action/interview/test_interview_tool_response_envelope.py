@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from jvagent.action.interview.responses import (
+from jvagent.action.interview.hooks import (
     HOOK_RESULT_KEYS,
     interview_tool_response,
     no_session_directive,

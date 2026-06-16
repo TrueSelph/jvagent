@@ -24,6 +24,9 @@ interview:
     - key: user_name
       prompt: "What's your full name?"
       required: true
+      hint: >-
+        Enter your first, last, and any other names (e.g. any middle names) as they
+        appear on your ID.
       guidance: >-
         A real person's first and last name (e.g. "Jane Doe", "Li Wei"). Not an
         acknowledgement, filler, or conversational reply. If the user says "ok",
@@ -67,8 +70,11 @@ interview:
         Only asked for @mail.com work emails. Organization or employer name —
         not a job title alone.
     - key: phone_number
-      prompt: "What is your phone number? (optional)"
+      prompt: "What is your phone number?"
       required: false
+      hint: >-
+        Enter a mobile number with country and area code; it's optional, so you can
+        say "skip" if you'd rather not.
       guidance: >-
         Optional phone contact. Call interview__skip_field when the user
         declines or has nothing to add.
