@@ -8,6 +8,59 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+## [0.1.0rc4] - 2026-06-16
+
+Fourth release candidate (TestPyPI). Task-driven turn-lock: the orchestrator's
+work graph becomes a standard, drainable mechanism (ADR-0026).
+
+### Added
+
+- **Task-driven turn-lock — work-stack orchestration (ADR-0026).** The
+  `TaskStore` is now a work graph the orchestrator drains. Prerequisites push,
+  completion pops and re-resolves, and resume is orchestrator-selected (not
+  model-mediated). Generic, domain-agnostic primitives in `memory/task_graph.py`
+  (`prerequisites_met`, `is_runnable`, `has_outstanding_work`,
+  `pick_top_runnable`) over new `Task` fields (`resumes`/`blocked_on`/`order`/
+  `seed`/`snapshot`).
+- **Declarative `requires-tasks` + precondition registry
+  (`action/orchestrator/preconditions.py`, `skills.py`).** A skill declares
+  `{when: <precondition>, push: <skill>, seed_from: [...]}` in frontmatter; a
+  consumer binds precondition names to predicates at bootstrap. The first unmet
+  precondition is pushed as a blocking prerequisite, seeded with the original
+  request, and resumed deterministically on completion. The detour's first
+  question and the resume are server-delivered (terminal), never model-fabricated.
+- **Task-runner registry + standing store drain
+  (`action/orchestrator/task_runners.py`, §2.4/§3, invariant 7).** A
+  `task_type → runner` registry; `SKILL`/`PROACTIVE` are advanced by the
+  orchestrator loop, other types by registered runners. The orchestrator drains
+  runnable work every turn and never finalizes idle while runnable work remains —
+  independent of any skill turn-lock.
+- **Proactive scheduler folded into the work graph (ADR-0022 unification).** A
+  `PROACTIVE` task is runnable for the generic resolver only once the scheduler
+  claims it (`pending` queued → `active` due); the orchestrator resolves a claimed
+  proactive task from the store, not only via a side channel.
+- **Snapshot/rehydrate hooks (§2.3)** so a flow torn down for a detour rebuilds
+  from its task snapshot on resume.
+- **Full work graph in the debug `tasks` payload** (every status + a derived
+  `blocked` flag), instead of a this-turn window. Production payloads stay
+  redacted.
+- **Framework-agnostic CI guard** (`tests/test_framework_domain_agnostic.py`):
+  no consumer domain vocabulary may appear in `jvagent/`. Plus a non-zoon example
+  consumer under `action/interview/examples/example_account_gating/`.
+
+### Fixed
+
+- **Dead-prerequisite deadlock.** A blocker that ends `cancelled`/`failed` now
+  cascade-abandons its dependents (it would otherwise leave a non-terminal but
+  unrunnable zombie that kept the engagement state True forever).
+- **Directive guidance no longer leaks to the user.** Model-only composition
+  guidance after the `U+2063` marker is stripped before egress (a weak compose
+  model could echo it), and an entry directive that auto-resolves to a tool-call
+  chain (`Call interview__next_field()`) advances server-side to the first real
+  question instead of leaking the chain.
+- **User-facing copy never calls the flow an "interview"** (cancel/reset/missing
+  messages reworded).
+
 ## [0.1.0rc3] - 2026-06-14
 
 Third release candidate (TestPyPI). Adds the bundled jvchat web UI + CLI and an
