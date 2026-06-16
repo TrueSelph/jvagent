@@ -5,13 +5,13 @@ import uuid
 import pytest
 
 from jvagent.memory.conversation import Conversation
-from jvagent.memory.task_store import TaskStore
 from jvagent.memory.task_graph import (
     has_outstanding_work,
     is_runnable,
     pick_top_runnable,
     prerequisites_met,
 )
+from jvagent.memory.task_store import TaskStore
 
 
 def _sid():

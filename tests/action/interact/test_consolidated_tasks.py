@@ -4,11 +4,11 @@ import uuid
 
 import pytest
 
-from jvagent.memory.conversation import Conversation
-from jvagent.memory.task_store import TaskStore
 from jvagent.action.interact.response_builder import (
     _consolidated_tasks_for_interaction,
 )
+from jvagent.memory.conversation import Conversation
+from jvagent.memory.task_store import TaskStore
 
 
 @pytest.mark.asyncio

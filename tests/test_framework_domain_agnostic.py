@@ -34,7 +34,9 @@ def test_no_consumer_domain_vocabulary_in_core():
         text = path.read_text(encoding="utf-8", errors="replace")
         for lineno, line in enumerate(text.splitlines(), start=1):
             if _PATTERN.search(line):
-                offenders.append(f"{path.relative_to(_PKG_ROOT.parent)}:{lineno}: {line.strip()}")
+                offenders.append(
+                    f"{path.relative_to(_PKG_ROOT.parent)}:{lineno}: {line.strip()}"
+                )
     assert not offenders, (
         "Consumer domain vocabulary leaked into jvagent/ (ADR-0026 invariant 6). "
         "Route it through register_precondition + requires-tasks instead:\n"

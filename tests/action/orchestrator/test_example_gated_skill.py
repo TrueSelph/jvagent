@@ -12,18 +12,18 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from jvagent.memory.conversation import Conversation
-from jvagent.memory.task_store import TaskStore
-from jvagent.memory.task_graph import is_runnable, pick_top_runnable
 from jvagent.action.orchestrator.preconditions import (
     clear_preconditions,
     register_precondition,
 )
-from jvagent.action.orchestrator.skills import SkillDoc, _parse_requires_tasks
 from jvagent.action.orchestrator.skill_tasks import (
     _active_skill_task,
     push_unmet_prerequisites,
 )
+from jvagent.action.orchestrator.skills import SkillDoc, _parse_requires_tasks
+from jvagent.memory.conversation import Conversation
+from jvagent.memory.task_graph import is_runnable, pick_top_runnable
+from jvagent.memory.task_store import TaskStore
 
 _EXAMPLES = (
     Path(__file__).resolve().parents[3]
