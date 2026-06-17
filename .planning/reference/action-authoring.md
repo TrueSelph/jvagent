@@ -158,10 +158,11 @@ This is the discovery hook the loader uses. Both the class export and the `endpo
 
 ```python
 """My Action — does X."""
-from typing import Any, Dict, List
+from typing import Annotated, Any, Dict, List
 
 from jvspatial.core.annotations import attribute
 from jvagent.action.base import Action
+from jvagent.tooling.tool_decorator import tool
 
 
 class MyActionClassName(Action):
@@ -201,9 +202,12 @@ class MyActionClassName(Action):
         # Strings shown on the Orchestrator tool surface so the model knows you exist.
         return ["Send X via Y", "Query Z"]
 
-    async def get_tools(self) -> List[Any]:
-        # Tools the Orchestrator can call. Wrap callables in jvagent.tooling.tool.Tool.
-        return []
+    @tool
+    async def do_thing(self, target: Annotated[str, "what to act on"]) -> dict:
+        """Trigger the thing."""  # docstring → tool description
+        # Decorated methods are auto-published by the base get_tools(); no
+        # override needed. See §10.
+        return {"ok": True, "target": target}
 ```
 
 ### 5.2 `InteractAction` — pick a category first
@@ -398,33 +402,40 @@ Source: [`action/base.py:710-852`](../../jvagent/action/base.py).
 
 ## 10. Tool exposure (Orchestrator tool surface)
 
-If your action's capabilities should be callable by the LLM, override `get_tools()`:
+If your action's capabilities should be callable by the LLM, **decorate a method
+with `@tool`** — the base `get_tools()` discovers it automatically (no override):
 
 ```python
-from jvagent.tooling.tool import Tool
+from typing import Annotated
+from jvagent.tooling.tool_decorator import tool
 
-async def get_tools(self) -> List[Any]:
-    return [
-        Tool(
-            name="action__my_action__do_thing",   # underscore-prefixed namespace
-            description="Trigger the thing.",
-            parameters_schema={
-                "type": "object",
-                "properties": {
-                    "target": {"type": "string"},
-                },
-                "required": ["target"],
-            },
-            handler=self._tool_do_thing,
-        ),
-    ]
-
-async def _tool_do_thing(self, target: str) -> dict:
-    # Tool handler. Return a JSON-serializable dict.
-    return {"ok": True, "target": target}
+class MyAction(Action):
+    @tool
+    async def do_thing(self, target: Annotated[str, "what to act on"]) -> dict:
+        """Trigger the thing."""
+        return {"ok": True, "target": target}
 ```
 
-The Orchestrator collects `get_tools()` results from every enabled action and registers them with an `action__` prefix on the unified tool surface. See [`../docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) for the pattern overview.
+The decorator derives everything from the function:
+
+| Tool field | Source | Override |
+|---|---|---|
+| `name` | `{action_name}__{method}` (here `my_action__do_thing`) | `@tool(name="…")` |
+| `description` | method docstring, first paragraph | `@tool(description="…")` |
+| `parameters_schema` | the signature; `Annotated[T, "desc"]` supplies per-arg docs | — |
+
+Supported arg types: `str`/`int`/`float`/`bool`, `List[T]`, `Dict`, `Literal`,
+`Enum`, `Optional[T]` (→ not required). The generated schema is always the
+portable subset enforced by `tool_schema_validator` — no hand-written JSON Schema
+and no drift.
+
+The Orchestrator collects `get_tools()` results from every enabled action and
+registers them with an `action__` prefix on the unified tool surface. See
+[`../docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) for the pattern overview.
+
+**Manual `Tool()` still works.** Override `get_tools()` only when a tool can't be
+a decorated method (dynamic tool sets, etc.); combine both by calling
+`collect_tools(self)` and extending the result.
 
 ---
 

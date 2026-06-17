@@ -13,12 +13,21 @@ class Tool:
     an async dispatch function that accepts keyword arguments and returns a
     ``ToolResult``.  Each Action exposes its capabilities as ``Tool`` instances;
     harness services expose themselves as tools so the tool-calling model can call them.
+
+    The optional ``access_label`` / ``terminal`` / ``binds_visitor`` hints are
+    populated by the ``@tool`` decorator (see
+    :mod:`jvagent.tooling.tool_decorator`) for the orchestrator's wrap step to
+    consume. They are ``None`` for hand-built tools and ignored unless the
+    orchestrator opts to read them.
     """
 
     name: str
     description: str
     parameters_schema: Dict[str, Any] = field(default_factory=dict)
     execute: Callable[..., Any] = field(default=lambda **_: ToolResult(""))
+    access_label: Optional[str] = None
+    terminal: Optional[bool] = None
+    binds_visitor: Optional[bool] = None
 
     def __post_init__(self) -> None:
         if not self.parameters_schema:

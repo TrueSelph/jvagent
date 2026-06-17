@@ -217,18 +217,6 @@ class Action(Node):
         """
         return self.__class__.__name__
 
-    def get_capabilities(self) -> List[str]:
-        """Return capabilities this action contributes to PersonaAction's prompt.
-
-        Override this method to contribute capabilities to the persona when this action
-        is enabled. PersonaAction aggregates these at runtime from all enabled actions.
-        Returns empty list by default.
-
-        Returns:
-            List of capability strings (e.g., "Join WhatsApp groups and send messages")
-        """
-        return []
-
     async def get_responder(self) -> Optional["Action"]:
         """Resolve the agent's egress voice (ADR-0024/0025).
 
@@ -272,14 +260,22 @@ class Action(Node):
     async def get_tools(self) -> List[Any]:
         """Return Tool instances this action exposes for agentic-loop runs.
 
-        Override in subclasses that provide executable tools callable by the
-        language model. Each Tool wraps a named function with a JSON Schema
-        for arguments.
+        By default this discovers every ``@tool``-decorated method on the action
+        (see :mod:`jvagent.tooling.tool_decorator`) and builds a ``Tool`` for
+        each — so most actions never override this. The decorator derives the
+        tool name (``{action_name}__{method}``), description (method docstring),
+        and JSON Schema (method signature) automatically.
+
+        Actions with no decorated methods get an empty list (no behaviour
+        change). Override only for tools that can't be expressed as a decorated
+        method; to combine both, call ``collect_tools(self)`` and extend it.
 
         Returns:
             List of :class:`jvagent.tooling.tool.Tool` instances.
         """
-        return []
+        from jvagent.tooling.tool_decorator import collect_tools
+
+        return collect_tools(self)
 
     @property
     def config(self) -> Dict[str, Any]:

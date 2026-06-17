@@ -16,13 +16,14 @@ import asyncio
 import ipaddress
 import logging
 import re
-from typing import Any, List, Optional, Tuple
+from typing import Annotated, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 import httpx
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
+from jvagent.tooling.tool_decorator import tool
 
 logger = logging.getLogger(__name__)
 
@@ -114,8 +115,17 @@ class WebFetchAction(Action):
 
     # -- Fetch + extract ----------------------------------------------------
 
-    async def fetch(self, url: str, max_chars: Optional[int] = None) -> str:
-        """Fetch *url* and return readable content, or a parenthesized error."""
+    @tool
+    async def fetch(
+        self,
+        url: Annotated[str, "The http(s) URL to fetch."],
+        max_chars: Annotated[
+            Optional[int], "Max characters to return (omit/null = default)."
+        ] = None,
+    ) -> str:
+        """Fetch a public web page by URL and return its main content as clean
+        markdown. Use after web_search to read a source in full instead of
+        relying on snippets."""
         url = (url or "").strip()
         if not url:
             return "(refused: empty url)"
@@ -190,40 +200,3 @@ class WebFetchAction(Action):
         if nl > limit * 0.6:
             cut = cut[:nl]
         return f"{cut}\n\n…[truncated at {limit} chars]"
-
-    # -- Tool surface -------------------------------------------------------
-
-    async def get_tools(self) -> List[Any]:
-        from jvagent.tooling.tool import Tool
-
-        action = self
-
-        async def _fetch(url: str, max_chars: int = 0) -> str:
-            return await action.fetch(url, max_chars=max_chars or None)
-
-        return [
-            Tool(
-                name="web_fetch__fetch",
-                description=(
-                    "Fetch a public web page by URL and return its main content "
-                    "as clean markdown. Use after web_search to read a source in "
-                    "full instead of relying on snippets."
-                ),
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "url": {
-                            "type": "string",
-                            "description": "The http(s) URL to fetch.",
-                        },
-                        "max_chars": {
-                            "type": "integer",
-                            "description": "Max characters to return (0 = default).",
-                            "default": 0,
-                        },
-                    },
-                    "required": ["url"],
-                },
-                execute=_fetch,
-            ),
-        ]
