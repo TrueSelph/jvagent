@@ -95,14 +95,27 @@ def _camel_to_snake(name: str) -> str:
     return _CAMEL_BOUNDARY.sub("_", name).lower()
 
 
+_UNSET = object()
+
+
 def _action_name(instance: Any) -> str:
     """Resolve the tool-name prefix for *instance*.
 
-    Prefer the loader package name (``metadata["name"]``); fall back to a
-    deterministic class-name derivation (``WebFetchAction`` → ``web_fetch``) so
-    names are stable even when an instance is constructed without loader
-    metadata (e.g. in unit tests).
+    Resolution order:
+
+    1. A class-level ``tool_namespace`` attribute, when declared. This is the
+       explicit, deterministic control: set it when the desired prefix differs
+       from the package name (e.g. ``GoogleGmailAction`` → ``"gmail"``) or set
+       it to ``""`` to publish bare, unprefixed tool names. ``@tool(name=...)``
+       still overrides this per tool.
+    2. The loader package name (``metadata["name"]``).
+    3. The action ``label``.
+    4. A deterministic class-name derivation (``WebFetchAction`` → ``web_fetch``)
+       so names are stable even without loader metadata (e.g. in unit tests).
     """
+    ns = getattr(instance, "tool_namespace", _UNSET)
+    if ns is not _UNSET:
+        return str(ns or "")
     meta = getattr(instance, "metadata", None) or {}
     pkg = meta.get("name")
     if pkg:
