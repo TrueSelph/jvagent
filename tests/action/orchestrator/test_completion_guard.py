@@ -87,3 +87,32 @@ def test_open_plan_step_none_when_planning_off(monkeypatch):
 def test_open_plan_step_none_when_no_plan(monkeypatch):
     monkeypatch.setattr(oia, "active_plan", lambda *a, **k: None)
     assert _act()._open_plan_step(visitor=object()) is None
+
+
+# --- plan-aware relevance pre-surfacing ------------------------------------
+
+
+class _FakeTool:
+    def __init__(self, description):
+        self.description = description
+
+
+def test_presurface_uses_plan_step_tokens():
+    # A low-signal utterance surfaces nothing on its own, but the active plan's
+    # checklist ("knowledge base") matches the tool description — so augmenting
+    # the relevance signal with the plan text surfaces the right tool without a
+    # find_tool round-trip.
+    tools = {
+        "pageindex__assimilate": _FakeTool(
+            "Ingest one document into the knowledge base so it can be searched."
+        )
+    }
+    cand = {"pageindex__assimilate"}
+
+    assert (
+        OrchestratorInteractAction._presurface_tools("Well?", cand, tools, 6) == set()
+    )
+    keep = OrchestratorInteractAction._presurface_tools(
+        "Well?\n1. [ ] add the report to the knowledge base", cand, tools, 6
+    )
+    assert "pageindex__assimilate" in keep

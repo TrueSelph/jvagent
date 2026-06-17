@@ -1270,8 +1270,17 @@ class OrchestratorInteractAction(InteractAction):
             self.lean_tool_threshold
         )
         if lean:
+            # Relevance signal = the user's message PLUS any in-progress plan's
+            # checklist. A parked multi-step plan resumed on a low-signal turn
+            # ("Well?", "continue") would otherwise surface nothing and force the
+            # model through find_tool round-trips for tools the next plan step
+            # needs (e.g. pageindex__assimilate for "add to knowledge base").
+            relevance_text = utterance
+            plan_steps = self._open_plan_step(visitor)
+            if plan_steps:
+                relevance_text = f"{utterance}\n{plan_steps}"
             keep = self._presurface_tools(
-                utterance, longtail, tools, int(self.lean_presurface_k)
+                relevance_text, longtail, tools, int(self.lean_presurface_k)
             )
             keep |= set(self._user_named_tools(utterance, longtail))
             visible |= keep
