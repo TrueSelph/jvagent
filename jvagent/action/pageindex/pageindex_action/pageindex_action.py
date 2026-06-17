@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import os
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Dict, List, Optional
 
 from jvspatial.api.auth.api_key_service import APIKeyService
@@ -25,6 +26,7 @@ from jvagent.tooling.tool_decorator import collect_tools, tool
 
 from .. import llm_bridge
 from ..core import utils as pageindex_core_utils
+from ..documents import looks_like_doc_path
 from ..prompts import (
     DIRECTIVE_TEMPLATE,
     DIRECTIVE_TEMPLATE_NO_REFS,
@@ -633,8 +635,61 @@ class PageIndexAction(Action):
                 },
                 indent=2,
             )
+        # If ``doc`` is a path/filename (e.g. a file just written by
+        # code_execution__bash or file_interface__write_file), resolve it from
+        # the caller's per-user sandbox and ingest the file CONTENT — not the
+        # literal filename string. Raw text and URLs pass through untouched.
+        if isinstance(doc, str) and looks_like_doc_path(doc):
+            src_path = doc.strip()
+            resolved, err = await self._resolve_sandbox_doc(src_path)
+            if err:
+                return json.dumps({"error": err}, indent=2)
+            doc = resolved
+            if not doc_name:
+                doc_name = os.path.basename(src_path) or None
         result = await self.assimilate(doc, doc_name=doc_name or None)
         return json.dumps(result, indent=2)
+
+    async def _resolve_sandbox_doc(self, rel_path: str):
+        """Read a sandbox-relative document path into content/bytes.
+
+        Returns ``(doc, None)`` on success (text str for text-like extensions,
+        bytes otherwise) or ``(None, error_message)`` when the path cannot be
+        read from the caller's sandbox. The sandbox slice is the same one
+        ``code_execution__bash`` and ``file_interface__*`` use.
+        """
+        from jvagent.action.file_interface import _core
+        from jvagent.tooling.tool_executor import get_dispatch_visitor
+
+        from ..documents import DOC_TEXT_EXTENSIONS
+
+        rel = rel_path.strip()
+        visitor = get_dispatch_visitor()
+        if visitor is None:
+            return None, (
+                f"{rel!r} looks like a file path but there is no execution "
+                "context to resolve your workspace. Pass the document content "
+                "directly as 'doc'."
+            )
+        ext = os.path.splitext(rel)[1].lower()
+        try:
+            if ext in DOC_TEXT_EXTENSIONS:
+                content = await _core.read_text_file(visitor, rel)
+                if not (content or "").strip():
+                    return None, f"{rel!r} is empty — nothing to ingest."
+                return content, None
+            data = await _core.read_binary_file(visitor, rel)
+            if not data:
+                raise FileNotFoundError(rel)
+            return data, None
+        except Exception as exc:  # FileNotFoundError, sandbox errors, etc.
+            return None, (
+                f"{rel!r} looks like a file path but could not be read from "
+                f"your workspace ({type(exc).__name__}). Pass the document "
+                "content directly as 'doc', or a valid workspace-relative path "
+                "(e.g. a file you wrote with code_execution__bash or "
+                "file_interface__write_file)."
+            )
 
     @tool(name="pageindex__list")
     async def _t_list_docs(

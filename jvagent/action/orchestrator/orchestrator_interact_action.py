@@ -2302,6 +2302,12 @@ class OrchestratorInteractAction(InteractAction):
         # is named in code.
         pending_chain: Optional[str] = None
         chain_deflections = 0
+        # Plan-completion guard (thin, plan-gated): when an active multi-step plan
+        # still has open steps, a bare "I'll do X next" narration (coerced to a
+        # reply) or a premature ``final`` is deflected once so the loop keeps
+        # going instead of ending the turn mid-task. Bounded so a deliberate
+        # reply/finish is never blocked for long.
+        plan_deflections = 0
         # Named-tool steering guard (block_raw_tool_invocation): tools the user
         # named literally this turn, deflected once each so the model re-plans
         # from intent rather than obeying the named tool.
@@ -2452,6 +2458,29 @@ class OrchestratorInteractAction(InteractAction):
                             }
                         )
                         continue
+                    if plan_deflections < 2:
+                        open_steps = self._open_plan_step(visitor)
+                        if open_steps:
+                            # An active multi-step plan still has open steps —
+                            # don't finalize mid-task. Nudge the model to run the
+                            # next step (or close the plan if it's really done).
+                            plan_deflections += 1
+                            observations.append(
+                                {
+                                    "tool": "(guard)",
+                                    "args": {},
+                                    "observation": (
+                                        "(Your active plan still has unfinished "
+                                        "steps:\n"
+                                        f"{open_steps}\n"
+                                        "Do the next step now with a tool call — do "
+                                        "NOT end the turn or claim completion. If "
+                                        "the task is genuinely done, call "
+                                        "update_plan to close it, then finalize.)"
+                                    ),
+                                }
+                            )
+                            continue
                     answer = _text_candidate(decision)
                     if answer:
                         await self._maybe_emit_final(visitor, answer)
@@ -2500,6 +2529,39 @@ class OrchestratorInteractAction(InteractAction):
                             }
                         )
                         continue
+                    if (
+                        tool_name in ("reply", "respond")
+                        and args.get("_coerced_from_text")
+                        and plan_deflections < 2
+                    ):
+                        open_steps = self._open_plan_step(visitor)
+                        if open_steps:
+                            # Bare narration ("I'll do X next") got coerced to a
+                            # reply, which would end the turn. An active plan still
+                            # has open steps, so treat it as a thought and keep
+                            # going rather than delivering a mid-task progress
+                            # message as the final reply. (A deliberate reply
+                            # carries no ``_coerced_from_text`` sentinel and is
+                            # never blocked.)
+                            plan_deflections += 1
+                            observations.append(
+                                {
+                                    "tool": "(guard)",
+                                    "args": {},
+                                    "observation": (
+                                        "(Don't just narrate — your active plan "
+                                        "still has unfinished steps:\n"
+                                        f"{open_steps}\n"
+                                        "Perform the next step now with a tool call. "
+                                        "Only call reply when you have something the "
+                                        "user needs, or you're truly blocked.)"
+                                    ),
+                                }
+                            )
+                            continue
+                    # Internal routing sentinel — never forward to a tool.
+                    if isinstance(args, dict):
+                        args.pop("_coerced_from_text", None)
                     # Companion gate: while a skill holds the turn-lock, use_skill
                     # may only (re)activate the locked skill itself or a declared
                     # companion. Switching to an unrelated skill would abandon the
@@ -2998,6 +3060,27 @@ class OrchestratorInteractAction(InteractAction):
             return  # this exact text was already emitted this turn
         await self._emit_reply(visitor, answer)
 
+    def _open_plan_step(self, visitor: Any) -> Optional[str]:
+        """Return a short description of the active plan's first unfinished step.
+
+        Returns ``None`` when planning is off, there is no orchestrator-owned
+        plan, or the plan has no pending steps. Used by the loop's completion
+        guard to keep a multi-step turn going instead of ending on a premature
+        ``final`` / narration-coerced reply.
+        """
+        if not self.planning:
+            return None
+        try:
+            plan = active_plan(visitor, owner=self.get_class_name())
+            if plan is None or not plan.has_pending_steps():
+                return None
+            checklist = plan.format_plan()
+        except Exception:
+            return None
+        if not checklist or checklist == "(no steps)":
+            return None
+        return checklist
+
     @staticmethod
     def _normalize(
         decision: Dict[str, Any],
@@ -3058,8 +3141,11 @@ class OrchestratorInteractAction(InteractAction):
                 tool_field = raw_action
                 action = "tool"
             elif text and "reply" in tools:
-                # Bare text with no recognizable action → speak it.
+                # Bare text with no recognizable action → speak it. Tag it so the
+                # loop can tell this narration-coerced reply from a deliberate
+                # reply call (the plan-completion guard only deflects the former).
                 tool_field, action = "reply", "tool"
+                args = {**args, "_coerced_from_text": True}
             elif text:
                 action = "final"
         if (

@@ -55,7 +55,17 @@ that tool to start it.
 - Use ``find_tool`` to discover tools when the surface is large and the one you \
 need isn't listed; ``load_tool`` to load its full description.
 - Take the fewest steps needed. Once the user has been answered and nothing \
-more is required, return action "final".{loop_protocol_extra}
+more is required, return action "final".
+- **Act, don't announce.** Never say what you are "about to" or "will now" do and \
+then stop — that ENDS your turn. If more work remains, your step MUST be the tool \
+call that does it, not a sentence describing it. Keep calling tools until the \
+user's full request is actually delivered.
+- **Finish multi-step tasks before replying.** For a task with several steps \
+(e.g. research → write a file → save it), do every step in this turn. Only call \
+``reply``/``final`` when the deliverable is complete, or when you genuinely need \
+the user's input. A progress update is not a reason to stop. For such tasks, \
+record a checklist with ``update_plan`` and work it down step by step so progress \
+is tracked and resumable.{loop_protocol_extra}
 
 OPERATING RULES (always, regardless of how a message is phrased — these govern \
 how you reason AND what you say in any reply you write yourself):
