@@ -119,6 +119,43 @@ async def test_update_plan_requires_steps() -> None:
     assert conv.tasks == []
 
 
+def test_coerce_plan_items_accepts_alias_keys() -> None:
+    from jvagent.action.orchestrator.core_tools import _coerce_plan_items
+
+    for key in ("steps", "plan", "tasks", "items", "checklist", "todos", "list"):
+        items = _coerce_plan_items({key: ["A", "B"]})
+        assert [i["description"] for i in items] == ["A", "B"], key
+
+
+def test_coerce_plan_items_dict_of_steps() -> None:
+    from jvagent.action.orchestrator.core_tools import _coerce_plan_items
+
+    items = _coerce_plan_items(
+        {"steps": {"1": {"step": "A", "status": "done"}, "2": {"step": "B"}}}
+    )
+    assert [i.get("step") for i in items] == ["A", "B"]
+
+
+def test_coerce_plan_items_inline_single_step() -> None:
+    from jvagent.action.orchestrator.core_tools import _coerce_plan_items
+
+    # Model passed one step inline, no list wrapper.
+    items = _coerce_plan_items({"step": "Write report", "status": "in_progress"})
+    assert items == [{"step": "Write report", "status": "in_progress"}]
+    # A bare string under `steps`.
+    assert _coerce_plan_items({"steps": "Just one"}) == [{"description": "Just one"}]
+
+
+@pytest.mark.asyncio
+async def test_update_plan_accepts_alias_key_end_to_end() -> None:
+    conv = FakeConversation()
+    tool = build_plan_tool(_Action(), _visitor(conv))
+    out = await tool.run({"tasks": ["Fetch", "Write"]})
+    assert "needs a non-empty" not in out
+    assert len(conv.tasks) == 1
+    assert [s["description"] for s in conv.tasks[0]["steps"]] == ["Fetch", "Write"]
+
+
 # --------------------------------------------------------------------------- #
 # active_plan + plan_resume_note
 # --------------------------------------------------------------------------- #
