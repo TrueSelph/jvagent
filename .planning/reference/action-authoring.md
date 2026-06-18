@@ -420,9 +420,11 @@ The decorator derives everything from the function:
 
 | Tool field | Source | Override |
 |---|---|---|
-| `name` | `{action_name}__{method}` (here `my_action__do_thing`) | `@tool(name="…")` |
+| `name` | `{action_name}__{method}` (here `my_action__do_thing`) | `@tool(name="…")` per tool, or a class-level `tool_namespace = "…"` to change the prefix for all of the action's tools (set `tool_namespace = ""` for bare, unprefixed names) |
 | `description` | method docstring, first paragraph | `@tool(description="…")` |
 | `parameters_schema` | the signature; `Annotated[T, "desc"]` supplies per-arg docs | — |
+
+The prefix resolves in order: a class-level `tool_namespace` (when declared) → the loader package name (`metadata["name"]`) → the action `label` → a class-name fallback (`WebFetchAction` → `web_fetch`), so names stay stable even when an instance is built without loader metadata.
 
 Supported arg types: `str`/`int`/`float`/`bool`, `List[T]`, `Dict`, `Literal`,
 `Enum`, `Optional[T]` (→ not required). The generated schema is always the

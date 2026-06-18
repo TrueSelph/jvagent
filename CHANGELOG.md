@@ -8,6 +8,70 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+## [0.1.0rc6] - 2026-06-17
+
+Sixth release candidate (TestPyPI). Headline: a `@tool` decorator makes Action
+tools declarative (no more hand-written JSON Schema), and the Orchestrator now
+reliably drives multi-step tasks to completion (plan-drain guard, plan-aware
+tool surfacing, friction-free tool discovery) instead of stalling mid-task on a
+weaker model.
+
+### Added
+
+- **`@tool` decorator for Action tools.** Decorate an `async def` method with
+  `@tool` and the base `get_tools()` auto-publishes it — name
+  (`{action_name}__{method}`, override via `@tool(name=…)` or a class-level
+  `tool_namespace`), description (method docstring), and `parameters_schema`
+  (derived from the signature; `Annotated[T, "desc"]` for per-arg docs) all
+  come from the function. New `jvagent/tooling/signature_schema.py` (Python type
+  → portable JSON Schema) + `tool_decorator.py` (`tool`, `collect_tools`). Every
+  capability action migrated (Google/Microsoft/file_interface/pageindex/
+  skill_hub/vision/web_fetch/web_search/code_execution), removing ~1500 lines of
+  hand-written `Tool()`/schema. Manual `Tool()` and `get_tools()` overrides
+  still work. See [`action-authoring.md`](.planning/reference/action-authoring.md) §10.
+- **Resumable plans carry work across the resume (ADR-0019).** `update_plan`
+  steps accept an optional `result`/note (e.g. an artifact path) persisted on the
+  step; `plan_resume_note` surfaces it so a resumed turn reuses saved work
+  (read the file) instead of regenerating it.
+
+### Changed
+
+- **The Orchestrator finishes multi-step tasks instead of stalling.**
+  - **Plan-drain completion guard**: while an active plan has open steps, a
+    turn-ending decision (`final`/`reply`/`respond`) is deflected with an
+    actionable nudge (do the next step; use `find_tool` if needed; produced text
+    can go straight to the tool) — bounded by `plan_completion_max_deflections`
+    (default 6).
+  - **Plan-aware lean pre-surfacing**: the relevance signal folds in the active
+    plan's checklist, so a resumed/low-signal turn still surfaces the next
+    step's tools.
+  - **Prompt hardening**: act-don't-announce; finish multi-step work before
+    replying; `find_tool` first if the exact tool isn't visible, don't
+    substitute a look-alike.
+- **`block_raw_tool_invocation` no longer hard-gates hidden tools.** A real tool
+  the model names directly is **auto-promoted and run** (implicit `load_tool`);
+  only an unknown/hallucinated name is bounced to `find_tool`. The flag still
+  stops the *user* from dictating tool selection. (Previously this dead-looped
+  when a weak model repeatedly named a correct-but-hidden tool.)
+- **`update_plan` tolerates the shapes models emit**: the step list under many
+  key aliases, a dict-of-steps, a bare string, or a single inline step; and the
+  loop normalizer folds a **flattened** call (args at the decision top level
+  instead of under `args`) into the tool args.
+- **Model-floor guidance**: the Orchestrator is model-mediated — documented a
+  gpt-4.1 / Claude Opus-Sonnet floor for the heavy gear (the class default
+  `gpt-4o-mini` is for cheap single-step agents). See
+  [`docs/ORCHESTRATOR.md`](docs/ORCHESTRATOR.md) "Model floor".
+- **Example orchestrator agent**: disabled the redundant sandboxed-filesystem
+  MCP server (it duplicated `file_interface`'s per-user slice and was the
+  surface a weak model kept mis-calling); `pinned_tools` left available but off.
+
+### Fixed
+
+- **PageIndex assimilate no longer loses document content.** A path-like `doc`
+  (e.g. a file written by `code_execution__bash`) is resolved from the caller's
+  per-user sandbox and its **content** ingested; an unresolvable path now fails
+  loud instead of silently storing the filename string as the document body.
+
 ## [0.1.0rc5] - 2026-06-16
 
 Fifth release candidate (TestPyPI). Headline: the interview hook authoring
