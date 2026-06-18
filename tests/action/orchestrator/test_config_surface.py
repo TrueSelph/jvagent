@@ -842,6 +842,48 @@ async def test_steering_guard_off_when_flag_disabled(make_orchestrator, make_vis
     assert calls["n"] == 1
 
 
+async def test_hidden_real_tool_named_directly_is_auto_promoted_and_run(
+    make_orchestrator, make_visitor
+):
+    """A REAL tool that lean surfacing hid, named directly by the model (not by
+    the user), must auto-promote and RUN — not dead-end on a find_tool demand."""
+    calls = {"n": 0}
+    ex = make_orchestrator(
+        actions=[
+            _fake_capability_action("alpha", calls),
+            _fake_capability_action("beta", {"n": 0}),
+        ],
+        decisions=[
+            {"action": "tool", "tool": "alpha", "args": {}},
+            {"action": "final", "answer": "ok"},
+        ],
+    )
+    ex.block_raw_tool_invocation = True
+    ex.lean_tool_threshold = 1  # 2 capability tools > 1 → lean engages
+    ex.lean_presurface_k = 0  # nothing pre-surfaced → both hidden
+    # utterance shares no token with the tool names → not user-named, not surfaced
+    v = make_visitor(utterance="please handle this for me")
+    await ex.execute(v)
+    assert calls["n"] == 1  # hidden-but-real tool ran instead of being bounced
+
+
+async def test_unknown_tool_name_is_bounced_to_find_tool(
+    make_orchestrator, make_visitor
+):
+    """An unknown/hallucinated tool name is NOT run — the loop continues and the
+    observation points the model at find_tool."""
+    ex = make_orchestrator(
+        decisions=[
+            {"action": "tool", "tool": "nonexistent_tool", "args": {}},
+            {"action": "final", "answer": "done"},
+        ]
+    )
+    ex.block_raw_tool_invocation = True
+    v = make_visitor()
+    await ex.execute(v)
+    assert v.interaction.response == "done"  # bounced, then finalized cleanly
+
+
 async def test_select_mcp_actions_empty_without_servers():
     assert OrchestratorInteractAction()._select_mcp_actions([]) == []
 

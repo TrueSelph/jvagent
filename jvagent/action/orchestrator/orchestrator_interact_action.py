@@ -574,10 +574,12 @@ class OrchestratorInteractAction(InteractAction):
     )
     block_raw_tool_invocation: bool = attribute(
         default=False,
-        description="When True: (1) the loop may only call tools currently "
-        "surfaced (visible) — hidden tools must be reached via find_tool / a "
-        "skill; and (2) a TOOL-USE POLICY is added so the user cannot steer "
-        "tool selection — they state a goal, the agent chooses the tools.",
+        description="When True a TOOL-USE POLICY is added so the USER cannot "
+        "steer tool selection — they state a goal, the agent chooses the tools; "
+        "a tool the user named is deflected once. It does NOT block the model "
+        "from calling a real tool that lean surfacing merely hid: naming a real "
+        "tool is valid intent, so it is auto-promoted and run (an implicit "
+        "load_tool). Only an unknown/hallucinated name is bounced to find_tool.",
     )
     tool_tier: str = attribute(
         default="standard",
@@ -2602,15 +2604,29 @@ class OrchestratorInteractAction(InteractAction):
                         continue
                     tool = tools.get(tool_name)
                     if tool is None:
-                        obs = f"(no such tool: {tool_name})"
-                    elif self.block_raw_tool_invocation and tool_name not in visible:
-                        # Surface discipline: a hidden tool must be reached via
-                        # find_tool or a skill, not named raw.
+                        # Genuinely unknown name (often a hallucinated tool) —
+                        # this is where find_tool earns its keep: point the model
+                        # at discovery instead of letting it guess again.
                         obs = (
-                            f"(tool {tool_name} is not directly available — use "
-                            "find_tool or the relevant skill to reach it)"
+                            f"(no such tool: {tool_name}. Call "
+                            "find_tool(query) to find the right tool by "
+                            "capability — e.g. find_tool('write file'), "
+                            "find_tool('add to knowledge base') — then call the "
+                            "exact name it returns.)"
                         )
                     else:
+                        if self.block_raw_tool_invocation and tool_name not in visible:
+                            # The model named a REAL tool that lean surfacing had
+                            # hidden. Naming it IS effective intent (not a
+                            # hallucination), so promote it and run it — an
+                            # implicit load_tool — rather than dead-ending on a
+                            # find_tool demand the model just repeats until the
+                            # repeat-guard kills the turn. Dispatch already
+                            # resolves the full surface; hiding a tool from the
+                            # prompt never made it uncallable. (The user-named-tool
+                            # steer guard above still blocks tools the *user*
+                            # dictated.)
+                            visible.add(tool_name)
                         # Structured tool thought for the UI's TOOL CALLS panel:
                         # tool_call before, tool_result after (shared segment_id
                         # so they fold into one element). Substantive tools only.
