@@ -436,6 +436,18 @@ class OrchestratorInteractAction(InteractAction):
         description="Appended when planning is on (no placeholders). Nudges "
         "update_plan use for multi-step work.",
     )
+    plan_completion_max_deflections: int = attribute(
+        default=4,
+        description=(
+            "Plan-drain guard: while an active plan has unfinished steps, a "
+            "turn-ending decision (final / reply / respond) is deflected up to "
+            "this many times so the model finishes (or explicitly closes) the "
+            "plan before completing the turn — instead of stalling on a 'doing "
+            "X next' message. After the cap the reply passes (so a genuine "
+            "mid-plan question to the user isn't blocked forever). 0 disables "
+            "the drain guard."
+        ),
+    )
     memory_prompt: str = attribute(
         default=MEMORY_PROMPT,
         description="Memory-access protocol rendered in the LOOP PROTOCOL: search "
@@ -2467,7 +2479,7 @@ class OrchestratorInteractAction(InteractAction):
                             }
                         )
                         continue
-                    if plan_deflections < 2:
+                    if plan_deflections < int(self.plan_completion_max_deflections):
                         open_steps = self._open_plan_step(visitor)
                         if open_steps:
                             # An active multi-step plan still has open steps —
@@ -2538,39 +2550,37 @@ class OrchestratorInteractAction(InteractAction):
                             }
                         )
                         continue
-                    if (
-                        tool_name in ("reply", "respond")
-                        and args.get("_coerced_from_text")
-                        and plan_deflections < 2
+                    if tool_name in ("reply", "respond") and plan_deflections < int(
+                        self.plan_completion_max_deflections
                     ):
+                        # Plan-drain: the orchestrator must not COMPLETE the turn
+                        # (reply/respond is terminal egress) while its active plan
+                        # still has unfinished steps — whether the reply is bare
+                        # narration coerced to a reply ("Proceeding to drafting
+                        # now") or a deliberate reply. Deflect and drive the model
+                        # to do the next step or explicitly close the plan. After
+                        # the cap the reply passes, so a genuine mid-plan question
+                        # to the user is never blocked forever.
                         open_steps = self._open_plan_step(visitor)
                         if open_steps:
-                            # Bare narration ("I'll do X next") got coerced to a
-                            # reply, which would end the turn. An active plan still
-                            # has open steps, so treat it as a thought and keep
-                            # going rather than delivering a mid-task progress
-                            # message as the final reply. (A deliberate reply
-                            # carries no ``_coerced_from_text`` sentinel and is
-                            # never blocked.)
                             plan_deflections += 1
                             observations.append(
                                 {
                                     "tool": "(guard)",
                                     "args": {},
                                     "observation": (
-                                        "(Don't just narrate — your active plan "
-                                        "still has unfinished steps:\n"
+                                        "(Don't stop yet — your active plan still "
+                                        "has unfinished steps:\n"
                                         f"{open_steps}\n"
-                                        "Perform the next step now with a tool call. "
-                                        "Only call reply when you have something the "
-                                        "user needs, or you're truly blocked.)"
+                                        "Do the next step now with a tool call. If "
+                                        "the work is genuinely done, mark the steps "
+                                        "done/skipped with update_plan first, then "
+                                        "reply. Only reply now if you truly need "
+                                        "the user's input to proceed.)"
                                     ),
                                 }
                             )
                             continue
-                    # Internal routing sentinel — never forward to a tool.
-                    if isinstance(args, dict):
-                        args.pop("_coerced_from_text", None)
                     # Companion gate: while a skill holds the turn-lock, use_skill
                     # may only (re)activate the locked skill itself or a declared
                     # companion. Switching to an unrelated skill would abandon the
@@ -3150,11 +3160,8 @@ class OrchestratorInteractAction(InteractAction):
                 tool_field = raw_action
                 action = "tool"
             elif text and "reply" in tools:
-                # Bare text with no recognizable action → speak it. Tag it so the
-                # loop can tell this narration-coerced reply from a deliberate
-                # reply call (the plan-completion guard only deflects the former).
+                # Bare text with no recognizable action → speak it.
                 tool_field, action = "reply", "tool"
-                args = {**args, "_coerced_from_text": True}
             elif text:
                 action = "final"
         if (

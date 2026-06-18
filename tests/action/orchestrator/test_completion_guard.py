@@ -1,18 +1,22 @@
-"""Plan-gated completion guard + narration-coercion sentinel.
+"""Plan-drain completion guard.
 
-Regression: the model emitted a bare progress message ("I'll now synthesize the
-report next") with no tool call; the loop coerced it to a ``reply`` and ENDED the
-turn mid-task. The guard keeps a multi-step turn going while an active plan has
-open steps, and ``_normalize`` tags narration-coerced replies so a *deliberate*
-reply is never blocked.
+Regression: the model emitted a mid-task progress message ("Proceeding to the
+report drafting step now") and the loop ENDED the turn, needing a user nudge.
+The drain guard keeps a multi-step turn going while an active plan has open
+steps — deflecting ``final`` and ``reply``/``respond`` (bare-narration-coerced
+OR deliberate) until the model does the next step or closes the plan, bounded by
+``plan_completion_max_deflections``. Inert when planning is off or no plan is open.
 """
 
 from __future__ import annotations
+
+import pytest
 
 import jvagent.action.orchestrator.orchestrator_interact_action as oia
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
+from jvagent.memory.task_store import TaskStore
 
 
 class _FakePlan:
@@ -30,26 +34,25 @@ class _FakePlan:
 # --- _normalize: narration-coercion sentinel --------------------------------
 
 
-def test_bare_text_coerced_reply_is_tagged():
+def test_bare_text_coerced_to_reply():
     action, tool, args = OrchestratorInteractAction._normalize(
         {"answer": "I'll now synthesize the report next."},
         {"reply": object()},
     )
     assert (action, tool) == ("tool", "reply")
-    assert args.get("_coerced_from_text") is True
     assert args.get("text") == "I'll now synthesize the report next."
 
 
-def test_deliberate_reply_is_not_tagged():
+def test_deliberate_reply_passes_through():
     action, tool, args = OrchestratorInteractAction._normalize(
         {"action": "tool", "tool": "reply", "args": {"text": "Here you go."}},
         {"reply": object()},
     )
     assert (action, tool) == ("tool", "reply")
-    assert "_coerced_from_text" not in args
+    assert args.get("text") == "Here you go."
 
 
-def test_final_is_not_tagged():
+def test_final_action_recognized():
     action, tool, _ = OrchestratorInteractAction._normalize(
         {"action": "final", "answer": "All done."},
         {"reply": object()},
@@ -116,3 +119,103 @@ def test_presurface_uses_plan_step_tokens():
         "Well?\n1. [ ] add the report to the knowledge base", cand, tools, 6
     )
     assert "pageindex__assimilate" in keep
+
+
+# --- drain guard: live loop must not complete while plan has open steps -----
+
+
+@pytest.mark.asyncio
+async def test_plan_drain_deflects_reply_until_steps_closed(
+    make_orchestrator, make_visitor, monkeypatch
+):
+    """A deliberate mid-plan reply ("Proceeding to drafting now") must be
+    deflected while the plan has open steps; only after the model drains the
+    plan (marks steps done) does a reply reach the user."""
+    from jvagent.action.reply.reply_action import ReplyAction
+
+    reply = ReplyAction()
+
+    async def _pipe(self, text, interaction, visitor, streaming=False, transient=False):
+        visitor.interaction.response = (visitor.interaction.response or "") + text
+
+    monkeypatch.setattr(ReplyAction, "_pipe_response", _pipe)
+
+    ex = make_orchestrator(
+        actions=[reply],
+        decisions=[
+            # Stall: deliberate reply while a step is still open → deflected.
+            {
+                "action": "tool",
+                "tool": "reply",
+                "args": {"text": "Proceeding to the report drafting step now."},
+            },
+            # Model drains the plan (marks the step done).
+            {
+                "action": "tool",
+                "tool": "update_plan",
+                "args": {
+                    "steps": [
+                        {
+                            "step": "Draft report",
+                            "status": "done",
+                            "result": "report.md",
+                        }
+                    ]
+                },
+            },
+            # Now a reply reaches the user.
+            {
+                "action": "tool",
+                "tool": "reply",
+                "args": {"text": "Done — report saved."},
+            },
+            {"action": "final", "answer": ""},
+        ],
+    )
+    ex.planning = True
+
+    v = make_visitor(utterance="write the report")
+    store = TaskStore(v.conversation)
+    handle = await store.create(
+        title="p",
+        description="p",
+        task_type="AGENTIC_LOOP",
+        owner_action=ex.get_class_name(),
+    )
+    await handle.start()
+    await handle.sync_plan([{"step": "Draft report", "status": "in_progress"}])
+
+    await ex.execute(v)
+
+    resp = v.interaction.response or ""
+    # The mid-plan narration was deflected (never voiced); the post-drain reply was.
+    assert "Proceeding to the report drafting" not in resp
+    assert "Done — report saved." in resp
+
+
+@pytest.mark.asyncio
+async def test_no_plan_reply_completes_normally(
+    make_orchestrator, make_visitor, monkeypatch
+):
+    """Without an active plan the drain guard is inert — a reply ends the turn."""
+    from jvagent.action.reply.reply_action import ReplyAction
+
+    reply = ReplyAction()
+
+    async def _pipe(self, text, interaction, visitor, streaming=False, transient=False):
+        visitor.interaction.response = (visitor.interaction.response or "") + text
+
+    monkeypatch.setattr(ReplyAction, "_pipe_response", _pipe)
+
+    ex = make_orchestrator(
+        actions=[reply],
+        decisions=[
+            {"action": "tool", "tool": "reply", "args": {"text": "Here you go."}},
+            {"action": "final", "answer": ""},
+        ],
+    )
+    ex.planning = True  # planning on, but no plan exists → guard inert
+
+    v = make_visitor(utterance="hi")
+    await ex.execute(v)
+    assert v.interaction.response == "Here you go."
