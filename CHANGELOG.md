@@ -8,6 +8,19 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+## [0.1.0rc7] - 2026-06-18
+
+Seventh release candidate (TestPyPI). Maintenance: the bundled base image now
+comes from a public registry, so `jvagent bundle` Dockerfiles build without
+private-registry credentials.
+
+### Changed
+
+- **Bundle base image → public ECR.** `jvagent/bundle/Dockerfile.base` now
+  `FROM public.ecr.aws/s1x1t0a3/jvagent:latest` (was the private
+  `registry.v75inc.dev/jvagent/jvagent-base:latest`), so generated Dockerfiles
+  build without Harbor access.
+
 ## [0.1.0rc6] - 2026-06-17
 
 Sixth release candidate (TestPyPI). Headline: a `@tool` decorator makes Action
