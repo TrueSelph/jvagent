@@ -121,7 +121,15 @@ actions:
       # Always-visible pins: tool-name globs that survive lean, for capabilities
       # that must be callable turn-1 regardless of phrasing. Skill-native
       # equivalent: a SKILL.md with `always-active: true` pins its allowed-tools.
-      pinned_tools: []                   # e.g. ["filing__*", "web_fetch__fetch"]
+      # Pin the persistence path so it survives lean surfacing: a research →
+      # write → assimilate task reaches the save/knowledge-base step many ticks
+      # in, where a relevance pre-surface keyed on the original message no longer
+      # covers it — without these pins a weak model grabs whatever IS visible
+      # (get_artifact, a filesystem MCP) instead of the right tool and stalls.
+      pinned_tools:
+        - "file_interface__write_file"
+        - "file_interface__describe_write_workspace"
+        - "pageindex__assimilate"
       enable_transient_ack: true         # emit ack(s) only on COMPLEX turns (skill or multiple tools)
       first_emit_timeout_ms: 1200        # delay before the FIRST ack
       ack_interval_ms: 12000             # delay between subsequent acks
@@ -150,16 +158,23 @@ actions:
   # MCP gateway: a sandboxed filesystem server (npx). Its tools surface to the
   # executive (tool_servers above) as mcp_filesystem__<tool>, sandboxed per
   # agent + per user.
+  #
+  # DISABLED by default: it writes the SAME per-user slice as ``file_interface``
+  # (below) and ``code_execution``, so enabling it gives the model THREE
+  # overlapping file surfaces — and in practice a weak model reaches for
+  # ``mcp_filesystem__search_files`` (and mis-calls it) instead of the cleaner
+  # ``file_interface__*`` tools, stalling a save step. Re-enable only to
+  # demo/exercise the MCP path; for file I/O prefer ``file_interface``.
   - action: jvagent/mcp
     context:
-      enabled: true
+      enabled: false
       model_action_type: OpenAILanguageModelAction
       model: gpt-4o-mini
       sandbox_mode: true
       sandbox_user_scoped: true
       servers:
         - name: filesystem
-          enabled: true
+          enabled: false
           transport: stdio
           command: npx
           args:
