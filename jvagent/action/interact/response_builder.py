@@ -84,25 +84,41 @@ def _consolidated_tasks_for_interaction(
     conversation: Any,
     active_tasks: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """Build the consolidated ``tasks`` array with status on each entry.
+    """Build the consolidated ``tasks`` array — the FULL work graph for inspection.
 
-    Includes:
-    - Currently active tasks on the conversation.
-    - Tasks reaching any terminal status (completed, failed, cancelled) within
-      this interaction's window.
-
-    Deduplicated by ``id`` (active wins on overlap), ordered by ``updated_at``
-    ascending so consumers see chronological progression.
+    Includes every task on the conversation, each carrying its ``status``
+    (``active``/``pending``/``completed``/``failed``/``cancelled``), its
+    ``blocked_on``/``resumes`` edges, and a derived ``blocked`` flag (non-terminal
+    with an unmet prerequisite — "blocked" is not a status, so it is computed here).
+    Deduplicated by ``id``, ordered by ``updated_at`` ascending so consumers see the
+    chronological progression. Terminal tasks are pruned from the store by
+    ``sweep_terminal``; until then the whole graph is visible.
     """
     seen: Dict[str, Dict[str, Any]] = {}
-    for t in active_tasks or []:
+    # The full graph (every status), so the debug surface is complete rather than
+    # windowed to this turn. Fall back to the passed-in active set if the full
+    # read fails for any reason.
+    try:
+        full = conversation.get_tasks()
+    except Exception:
+        full = list(active_tasks or [])
+    for t in full:
         tid = t.get("id")
         if tid:
             seen[tid] = t
-    for t in _terminal_tasks_for_interaction(interaction, conversation):
+    for t in active_tasks or []:  # defensive: ensure the active set is present
         tid = t.get("id")
         if tid and tid not in seen:
             seen[tid] = t
+
+    # Derive `blocked`: non-terminal with a prerequisite that is not completed.
+    status_by_id = {t.get("id"): t.get("status") for t in seen.values()}
+    for t in seen.values():
+        blockers = t.get("blocked_on") or []
+        t["blocked"] = bool(
+            t.get("status") in ("pending", "active")
+            and any(status_by_id.get(b) != "completed" for b in blockers)
+        )
 
     def _sort_key(t: Dict[str, Any]) -> Any:
         ts = _parse_interaction_timestamp(

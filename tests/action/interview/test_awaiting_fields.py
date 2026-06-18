@@ -154,6 +154,10 @@ async def test_get_status_field_reference_excludes_server_internals(signup_actio
     result = json.loads(await action._handle_get_status(visitor=SimpleNamespace()))
 
     for f in result["field_reference"]:
-        assert set(f.keys()) == {"key", "prompt", "guidance", "required"}
+        # Model-facing keys only — no server internals (validator, pre/post
+        # processors, branches). ``hint`` (optional) is model-facing presentation
+        # guidance and is allowed when set.
+        assert {"key", "prompt", "required"} <= set(f.keys())
+        assert set(f.keys()) <= {"key", "prompt", "guidance", "required", "hint"}
     assert "field_definitions" not in result
     assert "guidance_page" not in result

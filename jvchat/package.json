@@ -12,15 +12,15 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@assistant-ui/react": "^0.14.12",
+    "@assistant-ui/react": "^0.14.20",
     "@assistant-ui/react-markdown": "^0.14.1",
     "@assistant-ui/styles": "^0.3.7",
     "@codemirror/lang-json": "^6.0.2",
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.41.1",
-    "@uiw/codemirror-theme-github": "^4.25.9",
+    "@uiw/codemirror-theme-github": "^4.25.10",
     "@uiw/codemirror-theme-vscode": "^4.25.9",
-    "@uiw/react-codemirror": "^4.25.9",
+    "@uiw/react-codemirror": "^4.25.10",
     "axios": "^1.6.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

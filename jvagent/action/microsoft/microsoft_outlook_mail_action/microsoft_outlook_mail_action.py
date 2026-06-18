@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, Dict, List, Optional
+from typing import Annotated, Any, ClassVar, Dict, List, Optional
 from urllib.parse import quote
 
 from jvagent.action.email_action.canonical_send_builder import (
@@ -7,6 +7,7 @@ from jvagent.action.email_action.canonical_send_builder import (
     standalone_mailbox_effective_sender_name,
 )
 from jvagent.action.email_action.modules.outlook import OutlookEmailProvider
+from jvagent.tooling.tool_decorator import tool
 
 from ..microsoft_action import MicrosoftAction
 
@@ -155,181 +156,98 @@ class MicrosoftOutlookMailAction(MicrosoftAction):
             "displayName": me.get("displayName"),
         }
 
-    async def get_tools(self) -> List[Any]:
-        """Full Outlook tool surface (ADR-0012: actions are first-class tools)."""
+    @tool(name="outlook__send_email")
+    async def _t_send_email(
+        self,
+        to: Annotated[str, "Recipient email address."],
+        subject: Annotated[str, "Email subject line."],
+        body: Annotated[Optional[str], "HTML body of the email."] = None,
+    ) -> str:
+        """Send an email via Outlook."""
         import json
 
-        from jvagent.tooling.tool import Tool
+        body = body if body is not None else ""
+        data: Dict[str, Any] = {"to": to, "subject": subject}
+        if body:
+            data["html_content"] = body
+        return json.dumps(await self.send_email(data), indent=2)
 
-        action = self
+    @tool(name="outlook__list_messages")
+    async def _t_list_messages(
+        self,
+        query: Annotated[Optional[str], "Search query (default: '')."] = None,
+        max_results: Annotated[
+            int, "Maximum number of messages to return (default: 10)."
+        ] = 10,
+        user_id: Annotated[Optional[str], "User identifier (default: 'me')."] = None,
+    ) -> str:
+        """List Outlook mail messages matching a query."""
+        import json
 
-        async def _send(to: str, subject: str, body: str = "") -> str:
-            data: Dict[str, Any] = {"to": to, "subject": subject}
-            if body:
-                data["html_content"] = body
-            return json.dumps(await action.send_email(data), indent=2)
+        query = query if query is not None else ""
+        user_id = user_id if user_id is not None else "me"
+        return json.dumps(
+            await self.list_messages(query, max_results=max_results, user_id=user_id),
+            indent=2,
+        )
 
-        async def _list_messages(
-            query: str = "", max_results: int = 10, user_id: str = "me"
-        ) -> str:
-            return json.dumps(
-                await action.list_messages(
-                    query, max_results=max_results, user_id=user_id
-                ),
-                indent=2,
-            )
+    @tool(name="outlook__list_inbox_messages")
+    async def _t_list_inbox_messages(
+        self,
+        odata_filter: Annotated[
+            Optional[str], "OData filter expression (default: 'isRead eq false')."
+        ] = None,
+        max_results: Annotated[
+            int, "Maximum number of messages to return (default: 25)."
+        ] = 25,
+        user_id: Annotated[Optional[str], "User identifier (default: 'me')."] = None,
+    ) -> str:
+        """List Outlook inbox messages with OData filtering."""
+        import json
 
-        async def _list_inbox_messages(
-            odata_filter: str = "isRead eq false",
-            max_results: int = 25,
-            user_id: str = "me",
-        ) -> str:
-            return json.dumps(
-                await action.list_inbox_messages(
-                    odata_filter=odata_filter,
-                    max_results=max_results,
-                    user_id=user_id,
-                ),
-                indent=2,
-            )
-
-        async def _get_message(message_id: str, user_id: str = "me") -> str:
-            return json.dumps(
-                await action.get_message(message_id, user_id=user_id), indent=2
-            )
-
-        async def _mark_read(message_id: str, user_id: str = "me") -> str:
-            await action.mark_read(message_id, user_id=user_id)
-            return json.dumps({"success": True}, indent=2)
-
-        async def _get_profile(user_id: str = "me") -> str:
-            return json.dumps(await action.get_profile(user_id=user_id), indent=2)
-
-        return [
-            Tool(
-                name="outlook__send_email",
-                description="Send an email via Outlook.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "to": {
-                            "type": "string",
-                            "description": "Recipient email address.",
-                        },
-                        "subject": {
-                            "type": "string",
-                            "description": "Email subject line.",
-                        },
-                        "body": {
-                            "type": "string",
-                            "description": "HTML body of the email.",
-                        },
-                    },
-                    "required": ["to", "subject"],
-                },
-                execute=_send,
+        odata_filter = odata_filter if odata_filter is not None else "isRead eq false"
+        user_id = user_id if user_id is not None else "me"
+        return json.dumps(
+            await self.list_inbox_messages(
+                odata_filter=odata_filter,
+                max_results=max_results,
+                user_id=user_id,
             ),
-            Tool(
-                name="outlook__list_messages",
-                description="List Outlook mail messages matching a query.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "Search query (default: '').",
-                        },
-                        "max_results": {
-                            "type": "integer",
-                            "description": "Maximum number of messages to return (default: 10).",
-                            "default": 10,
-                        },
-                        "user_id": {
-                            "type": "string",
-                            "description": "User identifier (default: 'me').",
-                        },
-                    },
-                    "required": [],
-                },
-                execute=_list_messages,
-            ),
-            Tool(
-                name="outlook__list_inbox_messages",
-                description="List Outlook inbox messages with OData filtering.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "odata_filter": {
-                            "type": "string",
-                            "description": (
-                                "OData filter expression (default: 'isRead eq false')."
-                            ),
-                        },
-                        "max_results": {
-                            "type": "integer",
-                            "description": "Maximum number of messages to return (default: 25).",
-                            "default": 25,
-                        },
-                        "user_id": {
-                            "type": "string",
-                            "description": "User identifier (default: 'me').",
-                        },
-                    },
-                    "required": [],
-                },
-                execute=_list_inbox_messages,
-            ),
-            Tool(
-                name="outlook__get_message",
-                description="Get a specific Outlook mail message by ID.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "message_id": {
-                            "type": "string",
-                            "description": "The ID of the message to retrieve.",
-                        },
-                        "user_id": {
-                            "type": "string",
-                            "description": "User identifier (default: 'me').",
-                        },
-                    },
-                    "required": ["message_id"],
-                },
-                execute=_get_message,
-            ),
-            Tool(
-                name="outlook__mark_read",
-                description="Mark an Outlook mail message as read.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "message_id": {
-                            "type": "string",
-                            "description": "The ID of the message to mark as read.",
-                        },
-                        "user_id": {
-                            "type": "string",
-                            "description": "User identifier (default: 'me').",
-                        },
-                    },
-                    "required": ["message_id"],
-                },
-                execute=_mark_read,
-            ),
-            Tool(
-                name="outlook__get_profile",
-                description="Get the authenticated user's Outlook mail profile.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "user_id": {
-                            "type": "string",
-                            "description": "User identifier (default: 'me').",
-                        },
-                    },
-                    "required": [],
-                },
-                execute=_get_profile,
-            ),
-        ]
+            indent=2,
+        )
+
+    @tool(name="outlook__get_message")
+    async def _t_get_message(
+        self,
+        message_id: Annotated[str, "The ID of the message to retrieve."],
+        user_id: Annotated[Optional[str], "User identifier (default: 'me')."] = None,
+    ) -> str:
+        """Get a specific Outlook mail message by ID."""
+        import json
+
+        user_id = user_id if user_id is not None else "me"
+        return json.dumps(await self.get_message(message_id, user_id=user_id), indent=2)
+
+    @tool(name="outlook__mark_read")
+    async def _t_mark_read(
+        self,
+        message_id: Annotated[str, "The ID of the message to mark as read."],
+        user_id: Annotated[Optional[str], "User identifier (default: 'me')."] = None,
+    ) -> str:
+        """Mark an Outlook mail message as read."""
+        import json
+
+        user_id = user_id if user_id is not None else "me"
+        await self.mark_read(message_id, user_id=user_id)
+        return json.dumps({"success": True}, indent=2)
+
+    @tool(name="outlook__get_profile")
+    async def _t_get_profile(
+        self,
+        user_id: Annotated[Optional[str], "User identifier (default: 'me')."] = None,
+    ) -> str:
+        """Get the authenticated user's Outlook mail profile."""
+        import json
+
+        user_id = user_id if user_id is not None else "me"
+        return json.dumps(await self.get_profile(user_id=user_id), indent=2)

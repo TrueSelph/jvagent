@@ -63,9 +63,15 @@ Configure trusted publishers before the first publish:
 ## Local build check (no publish)
 
 ```bash
+python scripts/build_jvchat.py   # build + stage the jvchat UI (requires Node)
 python -m build
 python -m twine check dist/*
 ```
+
+> The publish workflow runs `scripts/build_jvchat.py` automatically before
+> `python -m build`, so the bundled `jvagent/webui/dist/` UI ships in released
+> wheels. A local `python -m build` without that step produces a wheel whose
+> `jvagent chat` command reports the UI is not bundled.
 
 ## Docker base image
 

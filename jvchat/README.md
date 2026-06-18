@@ -2,6 +2,12 @@
 
 React-based chat interface for interacting with jvagent agents. A ChatGPT-like experience with authentication, agent selection, and conversation management.
 
+> **Just want to run it?** The built UI ships inside the `jvagent` package — run
+> `jvagent chat` (optionally `jvagent chat --url <agent-url>`) and skip the Node
+> setup entirely. See [`docs/jvchat.md`](../docs/jvchat.md). The instructions
+> below are for **developing jvchat itself** (hot-reload dev server, building the
+> bundle).
+
 ## Features
 
 - 🔐 **Authentication**: Login with jvagent admin credentials

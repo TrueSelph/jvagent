@@ -18,7 +18,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Annotated, Any, Dict, Optional, Tuple
 
 from jvagent.action.base import Action
 from jvagent.action.skill_hub._installer import (
@@ -32,6 +32,7 @@ from jvagent.action.skill_hub._skills_cli import (
     run_skills_list,
 )
 from jvagent.core.app_context import get_app_root
+from jvagent.tooling.tool_decorator import tool
 
 logger = logging.getLogger(__name__)
 
@@ -396,158 +397,88 @@ class SkillHubAction(Action):
 
     # -- Tool surface -------------------------------------------------------
 
-    async def get_tools(self) -> List[Any]:
-        """Expose skill-management capabilities as first-class tools."""
+    @tool(name="skill_hub__search_registry")
+    async def _t_search_registry(
+        self,
+        query: Annotated[
+            str,
+            "Search query — keywords, capability name, or domain "
+            "(e.g. 'react testing', 'deployment', 'calendar')",
+        ],
+        top_k: Annotated[
+            Optional[int], "Maximum number of results to return (default: 5, max: 20)"
+        ] = None,
+    ) -> str:
+        """Search the skills.sh ecosystem for available skill bundles. Returns matching skills with name, source, and install count. Use this when the user asks for new capabilities or says "find a skill for X"."""  # noqa: E501
         import json
 
-        from jvagent.tooling.tool import Tool
         from jvagent.tooling.tool_executor import get_dispatch_visitor
 
-        action = self
+        arguments: Dict[str, Any] = {"query": query, "top_k": top_k}
+        visitor = get_dispatch_visitor()
+        result = await self.search_registry(arguments, visitor=visitor)
+        return result if isinstance(result, str) else json.dumps(result)
 
-        async def _search_registry(query: str, top_k: int = 5) -> str:
-            arguments: Dict[str, Any] = {"query": query, "top_k": top_k}
-            visitor = get_dispatch_visitor()
-            result = await action.search_registry(arguments, visitor=visitor)
-            return result if isinstance(result, str) else json.dumps(result)
+    @tool(name="skill_hub__install_skill")
+    async def _t_install_skill(
+        self,
+        source: Annotated[
+            str,
+            "GitHub source for the skill "
+            "(e.g. 'vercel-labs/agent-skills' or a full GitHub URL)",
+        ],
+        skill: Annotated[str, "Name of the skill to install from the source"],
+        confirmed: Annotated[
+            bool,
+            "Whether the user has confirmed installation. Must be True when the "
+            "skill has .py tool files. Set True only after explicit user approval.",
+        ],
+    ) -> str:
+        """Download and install a skill from the skills.sh ecosystem. The source is a GitHub repo (owner/repo) and the skill is a specific skill name within that repo. If the skill contains executable code (.py tool files), you MUST set confirmed=True only after the user has explicitly approved. For SOP-only skills (no .py files), confirmed may be True without prior approval."""  # noqa: E501
+        import json
 
-        async def _install_skill(source: str, skill: str, confirmed: bool) -> str:
-            arguments: Dict[str, Any] = {
-                "source": source,
-                "skill": skill,
-                "confirmed": confirmed,
-            }
-            visitor = get_dispatch_visitor()
-            result = await action.install_skill(arguments, visitor=visitor)
-            return result if isinstance(result, str) else json.dumps(result)
+        from jvagent.tooling.tool_executor import get_dispatch_visitor
 
-        async def _list_installed() -> str:
-            arguments: Dict[str, Any] = {}
-            visitor = get_dispatch_visitor()
-            result = await action.list_installed(arguments, visitor=visitor)
-            return result if isinstance(result, str) else json.dumps(result)
+        arguments: Dict[str, Any] = {
+            "source": source,
+            "skill": skill,
+            "confirmed": confirmed,
+        }
+        visitor = get_dispatch_visitor()
+        result = await self.install_skill(arguments, visitor=visitor)
+        return result if isinstance(result, str) else json.dumps(result)
 
-        async def _remove_skill(skill_name: str, confirmed: bool) -> str:
-            arguments: Dict[str, Any] = {
-                "skill_name": skill_name,
-                "confirmed": confirmed,
-            }
-            visitor = get_dispatch_visitor()
-            result = await action.remove_skill(arguments, visitor=visitor)
-            return result if isinstance(result, str) else json.dumps(result)
+    @tool(name="skill_hub__list_installed")
+    async def _t_list_installed(self) -> str:
+        """List skill bundles currently installed for this agent. Shows both built-in and app-local skills with their names, descriptions, and whether they contain tool modules."""  # noqa: E501
+        import json
 
-        return [
-            Tool(
-                name="skill_hub__search_registry",
-                description=(
-                    "Search the skills.sh ecosystem for available skill bundles. "
-                    "Returns matching skills with name, source, and install count. "
-                    "Use this when the user asks for new capabilities or says "
-                    '"find a skill for X".'
-                ),
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": (
-                                "Search query — keywords, capability name, or "
-                                "domain (e.g. 'react testing', 'deployment', "
-                                "'calendar')"
-                            ),
-                        },
-                        "top_k": {
-                            "type": "integer",
-                            "description": (
-                                "Maximum number of results to return "
-                                "(default: 5, max: 20)"
-                            ),
-                        },
-                    },
-                    "required": ["query"],
-                },
-                execute=_search_registry,
-            ),
-            Tool(
-                name="skill_hub__install_skill",
-                description=(
-                    "Download and install a skill from the skills.sh ecosystem. "
-                    "The source is a GitHub repo (owner/repo) and the skill is a "
-                    "specific skill name within that repo. "
-                    "If the skill contains executable code (.py tool files), you "
-                    "MUST set confirmed=True only after the user has explicitly "
-                    "approved. For SOP-only skills (no .py files), confirmed may "
-                    "be True without prior approval."
-                ),
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "source": {
-                            "type": "string",
-                            "description": (
-                                "GitHub source for the skill (e.g. "
-                                "'vercel-labs/agent-skills' or a full GitHub URL)"
-                            ),
-                        },
-                        "skill": {
-                            "type": "string",
-                            "description": (
-                                "Name of the skill to install from the source"
-                            ),
-                        },
-                        "confirmed": {
-                            "type": "boolean",
-                            "description": (
-                                "Whether the user has confirmed installation. Must "
-                                "be True when the skill has .py tool files. Set True "
-                                "only after explicit user approval."
-                            ),
-                        },
-                    },
-                    "required": ["source", "skill", "confirmed"],
-                },
-                execute=_install_skill,
-            ),
-            Tool(
-                name="skill_hub__list_installed",
-                description=(
-                    "List skill bundles currently installed for this agent. "
-                    "Shows both built-in and app-local skills with their names, "
-                    "descriptions, and whether they contain tool modules."
-                ),
-                parameters_schema={
-                    "type": "object",
-                    "properties": {},
-                },
-                execute=_list_installed,
-            ),
-            Tool(
-                name="skill_hub__remove_skill",
-                description=(
-                    "Remove an installed skill bundle from this agent. "
-                    "Deletes the skill directory, updates agent.yaml, and "
-                    "hot-unloads the skill from the current session. "
-                    "Cannot remove built-in skills. "
-                    "Requires confirmed=True — you must ask the user for "
-                    "explicit confirmation before removing a skill."
-                ),
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "skill_name": {
-                            "type": "string",
-                            "description": "Name of the installed skill to remove",
-                        },
-                        "confirmed": {
-                            "type": "boolean",
-                            "description": (
-                                "Whether the user has confirmed removal. "
-                                "Must be True before removal proceeds."
-                            ),
-                        },
-                    },
-                    "required": ["skill_name", "confirmed"],
-                },
-                execute=_remove_skill,
-            ),
-        ]
+        from jvagent.tooling.tool_executor import get_dispatch_visitor
+
+        arguments: Dict[str, Any] = {}
+        visitor = get_dispatch_visitor()
+        result = await self.list_installed(arguments, visitor=visitor)
+        return result if isinstance(result, str) else json.dumps(result)
+
+    @tool(name="skill_hub__remove_skill")
+    async def _t_remove_skill(
+        self,
+        skill_name: Annotated[str, "Name of the installed skill to remove"],
+        confirmed: Annotated[
+            bool,
+            "Whether the user has confirmed removal. "
+            "Must be True before removal proceeds.",
+        ],
+    ) -> str:
+        """Remove an installed skill bundle from this agent. Deletes the skill directory, updates agent.yaml, and hot-unloads the skill from the current session. Cannot remove built-in skills. Requires confirmed=True — you must ask the user for explicit confirmation before removing a skill."""  # noqa: E501
+        import json
+
+        from jvagent.tooling.tool_executor import get_dispatch_visitor
+
+        arguments: Dict[str, Any] = {
+            "skill_name": skill_name,
+            "confirmed": confirmed,
+        }
+        visitor = get_dispatch_visitor()
+        result = await self.remove_skill(arguments, visitor=visitor)
+        return result if isinstance(result, str) else json.dumps(result)

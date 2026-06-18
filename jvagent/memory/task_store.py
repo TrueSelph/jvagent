@@ -178,6 +178,15 @@ class Task:
         owner_action: Name of the Action that owns this task.
         data: Flexible extension bag.
         steps: Ordered list of Step objects.
+        blocked_on: Task IDs that must be ``completed`` before this task is runnable
+            (the work-stack/graph edge — ADR-0026). Empty ⇒ no prerequisites.
+        resumes: The task ID that becomes runnable when THIS task completes (the
+            back-link a prerequisite carries to its parent).
+        order: FIFO tie-break among equally-eligible sibling tasks (lower first).
+        seed: Opaque payload to (re)start the task — e.g. the originating utterance
+            and captured inputs. The harness moves it; it never inspects it.
+        snapshot: Durable runtime state for the task's owner (e.g. an interview's
+            collected fields), so the live runtime can be torn down and rehydrated.
     """
 
     id: str
@@ -191,6 +200,11 @@ class Task:
     owner_action: Optional[str] = None
     data: Dict[str, Any] = field(default_factory=dict)
     steps: List[Step] = field(default_factory=list)
+    blocked_on: List[str] = field(default_factory=list)
+    resumes: Optional[str] = None
+    order: int = 0
+    seed: Dict[str, Any] = field(default_factory=dict)
+    snapshot: Dict[str, Any] = field(default_factory=dict)
 
     def _touch(self) -> None:
         self.updated_at = _now_iso()
@@ -265,6 +279,11 @@ class Task:
             owner_action=data.get("owner_action"),
             data=dict(data.get("data") or {}),
             steps=[Step.from_dict(s) for s in raw_steps if isinstance(s, dict)],
+            blocked_on=[str(t) for t in (data.get("blocked_on") or []) if t],
+            resumes=data.get("resumes"),
+            order=int(data.get("order") or 0),
+            seed=dict(data.get("seed") or {}),
+            snapshot=dict(data.get("snapshot") or {}),
         )
 
 
@@ -401,6 +420,47 @@ class TaskHandle:
     def updated_at(self) -> str:
         return self._task.updated_at
 
+    # --- Work-graph (ADR-0026) ---
+
+    @property
+    def blocked_on(self) -> List[str]:
+        return list(self._task.blocked_on)
+
+    @property
+    def resumes(self) -> Optional[str]:
+        return self._task.resumes
+
+    @property
+    def order(self) -> int:
+        return self._task.order
+
+    @property
+    def seed(self) -> Dict[str, Any]:
+        return self._task.seed
+
+    @property
+    def snapshot(self) -> Dict[str, Any]:
+        return self._task.snapshot
+
+    async def set_snapshot(self, snapshot: Dict[str, Any]) -> None:
+        """Persist durable runtime state for the task's owner (ADR-0026)."""
+        self._task.snapshot = dict(snapshot or {})
+        self._task._touch()
+        await self._store._persist_task(self._task)
+
+    async def set_seed(self, seed: Dict[str, Any]) -> None:
+        """Persist the opaque restart payload (ADR-0026)."""
+        self._task.seed = dict(seed or {})
+        self._task._touch()
+        await self._store._persist_task(self._task)
+
+    async def add_blocker(self, task_id: str) -> None:
+        """Add a prerequisite that must complete before this task is runnable."""
+        if task_id and task_id not in self._task.blocked_on:
+            self._task.blocked_on.append(str(task_id))
+            self._task._touch()
+            await self._store._persist_task(self._task)
+
     # --- Task lifecycle ---
 
     async def start(self) -> None:
@@ -417,20 +477,28 @@ class TaskHandle:
         await self._store._emit_task_callback(self._task, "completed")
 
     async def fail(self, reason: Optional[str] = None) -> None:
-        """Transition -> failed."""
+        """Transition -> failed. Cascades: dependents blocked on this task are
+        abandoned (they can never satisfy their prerequisite)."""
         self._task.transition("failed")
         if reason is not None:
             self._task.data["failure_reason"] = reason
         await self._store._persist_task(self._task)
         await self._store._emit_task_callback(self._task, "failed")
+        await self._store._cascade_abandon_dependents(
+            self._task.id, reason=f"prerequisite {self._task.id} failed"
+        )
 
     async def cancel(self, reason: Optional[str] = None) -> None:
-        """Transition -> cancelled."""
+        """Transition -> cancelled. Cascades: dependents blocked on this task are
+        abandoned (they can never satisfy their prerequisite)."""
         self._task.transition("cancelled")
         if reason is not None:
             self._task.data["cancel_reason"] = reason
         await self._store._persist_task(self._task)
         await self._store._emit_task_callback(self._task, "cancelled")
+        await self._store._cascade_abandon_dependents(
+            self._task.id, reason=f"prerequisite {self._task.id} cancelled"
+        )
 
     async def update(self, **data: Any) -> None:
         """Merge key-value pairs into the task's data bag."""
@@ -476,6 +544,12 @@ class TaskHandle:
         ``status`` (loose values are normalized via ``normalize_step_status``);
         items without a description are skipped. Steps with a terminal status get
         a ``completed_at`` stamp. Empty/blank input clears the plan.
+
+        An optional ``result`` (or ``note``/``outcome``) per item is carried onto
+        the step so a later turn can RESUME from recorded work — e.g. an artifact
+        path ("draft saved to report.md") — instead of redoing the step. It is
+        bounded so the plan stays compact; large artifacts belong in a sandbox
+        file referenced by the note, not inline here.
         """
         steps: List[Step] = []
         for it in items or []:
@@ -487,6 +561,9 @@ class TaskHandle:
                 continue
             status = normalize_step_status(it.get("status"))
             step = Step(id=_new_id("step_"), description=desc, status=status)
+            note = it.get("result") or it.get("note") or it.get("outcome")
+            if note:
+                step.result = str(note).strip()[:1000] or None
             if status in _STEP_TERMINAL:
                 step.completed_at = step.updated_at
             steps.append(step)
@@ -533,8 +610,14 @@ class TaskHandle:
             return None
         return StepHandle(self._store, self._task.id, self._task.steps[idx - 1])
 
-    def format_plan(self) -> str:
-        """Return a human-readable plan string."""
+    def format_plan(self, with_results: bool = False) -> str:
+        """Return a human-readable plan string.
+
+        When ``with_results`` is set, each step's recorded ``result``/note is
+        appended below it — used by the cross-turn resume note so a resumed turn
+        sees what prior steps produced (e.g. artifact paths) instead of redoing
+        them.
+        """
         if not self._task.steps:
             return "(no steps)"
         lines = []
@@ -542,6 +625,8 @@ class TaskHandle:
             entry = f"{i}. [{s.status}] {s.description}"
             if s.status == "skipped" and s.data.get("skip_reason"):
                 entry += f" (skipped: {s.data['skip_reason']})"
+            if with_results and s.result:
+                entry += f"\n   ↳ {s.result}"
             lines.append(entry)
         return "\n".join(lines)
 
@@ -704,8 +789,18 @@ class TaskStore:
         task_type: Optional[str] = None,
         data: Optional[Dict[str, Any]] = None,
         task_id: Optional[str] = None,
+        blocked_on: Optional[List[str]] = None,
+        resumes: Optional[str] = None,
+        order: int = 0,
+        seed: Optional[Dict[str, Any]] = None,
+        snapshot: Optional[Dict[str, Any]] = None,
     ) -> TaskHandle:
-        """Create a new pending task."""
+        """Create a new pending task.
+
+        ``blocked_on``/``resumes``/``seed``/``order``/``snapshot`` wire the task into
+        the work graph (ADR-0026): a prerequisite is created with ``resumes`` pointing
+        at its parent and the parent gains it as a blocker.
+        """
         task = Task(
             id=task_id or _new_id("task_"),
             title=title,
@@ -713,6 +808,11 @@ class TaskStore:
             task_type=task_type or "",
             owner_action=owner_action,
             data=dict(data or {}),
+            blocked_on=[str(t) for t in (blocked_on or []) if t],
+            resumes=resumes,
+            order=int(order or 0),
+            seed=dict(seed or {}),
+            snapshot=dict(snapshot or {}),
         )
         tasks = self._load_tasks()
         tasks.append(task)
@@ -753,6 +853,37 @@ class TaskStore:
         self._save_tasks(filtered)
         await self._persist()
         return True
+
+    async def _cascade_abandon_dependents(
+        self, task_id: str, *, reason: str
+    ) -> List[str]:
+        """A task reached a non-completed terminal state (cancelled/failed); cancel
+        every non-terminal task that is ``blocked_on`` it, transitively.
+
+        ``prerequisites_met`` only treats a ``completed`` prerequisite as satisfied,
+        so a dead (cancelled/failed) blocker would otherwise leave its dependents
+        non-terminal yet permanently unrunnable — a zombie that keeps the engagement
+        state True forever. Abandoning the chain is the correct gating semantics: if
+        the prerequisite (e.g. a verify detour) is abandoned, the gated work it was
+        a precondition for is abandoned too. Returns the ids cancelled.
+        """
+        abandoned: List[str] = []
+        seen: set = set()
+        frontier = [str(task_id)]
+        while frontier:
+            dead = frontier.pop()
+            for task in self._load_tasks():
+                if task.status in _TASK_TERMINAL or task.id in seen:
+                    continue
+                if dead in (task.blocked_on or []):
+                    task.transition("cancelled")
+                    task.data["cancel_reason"] = reason
+                    await self._persist_task(task)
+                    await self._emit_task_callback(task, "cancelled")
+                    seen.add(task.id)
+                    abandoned.append(task.id)
+                    frontier.append(task.id)
+        return abandoned
 
     # --- Utility ---
 

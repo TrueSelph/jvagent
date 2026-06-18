@@ -119,6 +119,66 @@ async def test_update_plan_requires_steps() -> None:
     assert conv.tasks == []
 
 
+def test_coerce_plan_items_accepts_alias_keys() -> None:
+    from jvagent.action.orchestrator.core_tools import _coerce_plan_items
+
+    for key in ("steps", "plan", "tasks", "items", "checklist", "todos", "list"):
+        items = _coerce_plan_items({key: ["A", "B"]})
+        assert [i["description"] for i in items] == ["A", "B"], key
+
+
+def test_coerce_plan_items_dict_of_steps() -> None:
+    from jvagent.action.orchestrator.core_tools import _coerce_plan_items
+
+    items = _coerce_plan_items(
+        {"steps": {"1": {"step": "A", "status": "done"}, "2": {"step": "B"}}}
+    )
+    assert [i.get("step") for i in items] == ["A", "B"]
+
+
+def test_coerce_plan_items_inline_single_step() -> None:
+    from jvagent.action.orchestrator.core_tools import _coerce_plan_items
+
+    # Model passed one step inline, no list wrapper.
+    items = _coerce_plan_items({"step": "Write report", "status": "in_progress"})
+    assert items == [{"step": "Write report", "status": "in_progress"}]
+    # A bare string under `steps`.
+    assert _coerce_plan_items({"steps": "Just one"}) == [{"description": "Just one"}]
+
+
+def test_coerce_plan_items_unknown_key_first_list() -> None:
+    from jvagent.action.orchestrator.core_tools import _coerce_plan_items
+
+    # An invented key — fall back to the first list-valued arg.
+    items = _coerce_plan_items({"the_plan": ["A", "B"]})
+    assert [i["description"] for i in items] == ["A", "B"]
+
+
+def test_coerce_plan_items_args_as_list() -> None:
+    from jvagent.action.orchestrator.core_tools import _coerce_plan_items
+
+    items = _coerce_plan_items(["A", "B"])
+    assert [i["description"] for i in items] == ["A", "B"]
+
+
+def test_coerce_plan_items_nested_list() -> None:
+    from jvagent.action.orchestrator.core_tools import _coerce_plan_items
+
+    items = _coerce_plan_items({"steps": [["A", {"step": "B"}]]})
+    assert items[0]["description"] == "A"
+    assert items[1]["step"] == "B"
+
+
+@pytest.mark.asyncio
+async def test_update_plan_accepts_alias_key_end_to_end() -> None:
+    conv = FakeConversation()
+    tool = build_plan_tool(_Action(), _visitor(conv))
+    out = await tool.run({"tasks": ["Fetch", "Write"]})
+    assert "needs a non-empty" not in out
+    assert len(conv.tasks) == 1
+    assert [s["description"] for s in conv.tasks[0]["steps"]] == ["Fetch", "Write"]
+
+
 # --------------------------------------------------------------------------- #
 # active_plan + plan_resume_note
 # --------------------------------------------------------------------------- #
@@ -184,6 +244,88 @@ async def test_finalize_completes_done_plan_and_parks_pending() -> None:
     await ex._finalize_plan(_visitor(conv))
     assert active_plan(_visitor(conv), owner=ex.get_class_name()) is None
     assert conv.tasks == []  # deleted on completion
+
+
+# --------------------------------------------------------------------------- #
+# P2: per-step result/note persistence + resume-with-results
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_sync_plan_carries_step_result() -> None:
+    conv = FakeConversation()
+    store = TaskStore(conv)
+    handle = await store.create(
+        title="t", description="t", task_type="AGENTIC_LOOP", owner_action="O"
+    )
+    await handle.start()
+    await handle.sync_plan(
+        [
+            {"step": "Research", "status": "done", "result": "saved sources.md"},
+            {"step": "Write report", "status": "done", "note": "draft → report.md"},
+            {"step": "Assimilate", "status": "pending"},
+        ]
+    )
+    steps = store.get(handle.id).list_steps()
+    assert steps[0].result == "saved sources.md"
+    assert steps[1].result == "draft → report.md"  # `note` alias accepted
+    assert steps[2].result is None
+
+
+@pytest.mark.asyncio
+async def test_sync_plan_bounds_result_length() -> None:
+    conv = FakeConversation()
+    store = TaskStore(conv)
+    handle = await store.create(
+        title="t", description="t", task_type="AGENTIC_LOOP", owner_action="O"
+    )
+    await handle.start()
+    await handle.sync_plan([{"step": "X", "status": "done", "result": "y" * 5000}])
+    assert len(store.get(handle.id).list_steps()[0].result) == 1000
+
+
+def test_format_plan_with_results_opt_in() -> None:
+    from jvagent.memory.task_store import Step, Task, TaskHandle
+
+    task = Task(
+        id="t",
+        title="t",
+        description="t",
+        created_at="",
+        updated_at="",
+        task_type="AGENTIC_LOOP",
+    )
+    task.steps = [
+        Step(
+            id="s1",
+            description="Write report",
+            status="done",
+            created_at="",
+            updated_at="",
+            result="draft saved to report.md",
+        ),
+    ]
+    handle = TaskHandle(TaskStore(FakeConversation()), task)
+    assert "report.md" not in handle.format_plan()  # default: compact
+    detailed = handle.format_plan(with_results=True)
+    assert "↳ draft saved to report.md" in detailed
+
+
+@pytest.mark.asyncio
+async def test_resume_note_surfaces_recorded_results() -> None:
+    conv = FakeConversation()
+    tool = build_plan_tool(_Action(), _visitor(conv))
+    await tool.run(
+        {
+            "steps": [
+                {"step": "Write report", "status": "done", "result": "saved report.md"},
+                {"step": "Add to knowledge base", "status": "pending"},
+            ]
+        }
+    )
+    handle = active_plan(_visitor(conv), owner="OrchestratorInteractAction")
+    note = plan_resume_note(handle)
+    # The resume note carries the artifact path so the model reuses the file.
+    assert "saved report.md" in note
+    assert "read the file" in note
 
 
 @pytest.mark.asyncio

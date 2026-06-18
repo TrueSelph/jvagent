@@ -33,8 +33,39 @@ class SkillDoc:
     # tool-name globs and/or non-locking skill names (e.g. an FAQ). Lets a locked
     # interview field a side question, then return to its pending step.
     lock_companions: Tuple[str, ...] = ()
+    # Declarative prerequisites (ADR-0026): each entry is
+    # ``{"when": <precondition name>, "push": <skill>, "seed_from": [...]}``. When a
+    # precondition is unmet at activation, the harness pushes the named prerequisite
+    # task and the gated skill waits — generic, domain-agnostic gating.
+    requires_tasks: Tuple[dict, ...] = ()
     extends: Optional[str] = None
     metadata: dict = field(default_factory=dict)
+
+
+def _parse_requires_tasks(raw: Any) -> Tuple[dict, ...]:
+    """Normalize ``requires-tasks`` frontmatter into ``{when, push, seed_from}``
+    entries (ADR-0026). Tolerant: drops malformed entries."""
+    if not raw or not isinstance(raw, (list, tuple)):
+        return ()
+    out: List[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        when = str(item.get("when") or "").strip()
+        push = str(item.get("push") or "").strip()
+        if not when or not push:
+            continue
+        seed_from = item.get("seed_from") or []
+        if isinstance(seed_from, str):
+            seed_from = [seed_from]
+        out.append(
+            {
+                "when": when,
+                "push": push,
+                "seed_from": [str(s) for s in seed_from if s],
+            }
+        )
+    return tuple(out)
 
 
 def discover_skill_docs(
@@ -132,6 +163,9 @@ def discover_skill_docs(
                 always_active=bool(bundle.get("always_active", False)),
                 task_lock=bool(bundle.get("task_lock", False)),
                 lock_companions=tuple(bundle.get("lock_companions") or ()),
+                requires_tasks=_parse_requires_tasks(
+                    bundle.get("requires_tasks") or bundle.get("requires-tasks")
+                ),
                 extends=bundle.get("extends") or None,
                 metadata=bundle.get("metadata") or {},
             )

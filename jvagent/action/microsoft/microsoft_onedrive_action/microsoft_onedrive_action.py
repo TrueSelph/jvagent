@@ -1,10 +1,13 @@
 import base64
 import io
+import json
 import logging
-from typing import Any, ClassVar, Dict, List, Optional
+from typing import Annotated, Any, ClassVar, Dict, List, Optional
 
 import httpx
 from jvspatial.env import env
+
+from jvagent.tooling.tool_decorator import tool
 
 from ..microsoft_action import MicrosoftAction
 
@@ -206,172 +209,86 @@ class MicrosoftOneDriveAction(MicrosoftAction):
 
         return {"added": added, "removed": removed, "modified": modified}
 
-    async def get_tools(self) -> List[Any]:
-        """Full OneDrive tool surface (ADR-0012: actions are first-class tools)."""
-        import json
+    @tool(name="onedrive__list_files")
+    async def _t_list_files(
+        self,
+        folder_id: Annotated[
+            Optional[str], "ID of the folder to list (root if omitted)."
+        ] = None,
+        with_link: Annotated[
+            Optional[bool], "Include sharing links (default: false)."
+        ] = None,
+        depth: Annotated[
+            Optional[int], "Recursion depth for subfolders (default: 5)."
+        ] = None,
+    ) -> str:
+        """List files and folders in a OneDrive folder."""
+        results = await self.list_files(
+            folder_id=(folder_id or "") or None,
+            with_link=with_link if with_link is not None else False,
+            depth=depth if depth is not None else 5,
+        )
+        return json.dumps(results, indent=2)
 
-        from jvagent.tooling.tool import Tool
+    @tool(name="onedrive__upload_file")
+    async def _t_upload_file(
+        self,
+        name: Annotated[str, "Name for the uploaded file."],
+        content: Annotated[
+            Optional[str], "Base64-encoded file content (use this or source_url)."
+        ] = None,
+        source_url: Annotated[
+            Optional[str],
+            "URL to download file content from (use this or content).",
+        ] = None,
+        mime_type: Annotated[Optional[str], "MIME type of the file."] = None,
+        parent_folder_id: Annotated[Optional[str], "ID of the parent folder."] = None,
+    ) -> str:
+        """Upload a file to OneDrive."""
+        result = await self.upload_file(
+            name=name,
+            content=(content or "") or None,
+            source_url=(source_url or "") or None,
+            mime_type=(mime_type or "") or None,
+            parent_folder_id=(parent_folder_id or "") or None,
+        )
+        return json.dumps(result, indent=2)
 
-        action = self
+    @tool(name="onedrive__share_file")
+    async def _t_share_file(
+        self,
+        file_id: Annotated[str, "The ID of the file to share."],
+        share_type: Annotated[
+            Optional[str], "Type of sharing: 'link' or 'user' (default: 'link')."
+        ] = None,
+        link_scope: Annotated[
+            Optional[str],
+            "Link scope: 'anyone' or 'organization' (default: 'anyone'). "
+            "Only used when share_type='link'.",
+        ] = None,
+        email: Annotated[
+            Optional[str],
+            "Email address for user-level sharing. " "Required when share_type='user'.",
+        ] = None,
+        role: Annotated[
+            Optional[str], "Permission role: 'read' or 'write' (default: 'read')."
+        ] = None,
+    ) -> str:
+        """Share a OneDrive file by creating a shareable link or granting access to a specific user. Use share_type='link' for public/organization links or share_type='user' to invite a specific email address."""  # noqa: E501
+        result = await self.share_file(
+            file_id=file_id,
+            share_type=share_type if share_type is not None else "link",
+            link_scope=link_scope if link_scope is not None else "anyone",
+            email=(email or "") or None,
+            role=role if role is not None else "read",
+        )
+        return json.dumps(result, indent=2)
 
-        async def _list_files(
-            folder_id: str = "",
-            with_link: bool = False,
-            depth: int = 5,
-        ) -> str:
-            results = await action.list_files(
-                folder_id=folder_id or None,
-                with_link=with_link,
-                depth=depth,
-            )
-            return json.dumps(results, indent=2)
-
-        async def _upload_file(
-            name: str,
-            content: str = "",
-            source_url: str = "",
-            mime_type: str = "",
-            parent_folder_id: str = "",
-        ) -> str:
-            result = await action.upload_file(
-                name=name,
-                content=content or None,
-                source_url=source_url or None,
-                mime_type=mime_type or None,
-                parent_folder_id=parent_folder_id or None,
-            )
-            return json.dumps(result, indent=2)
-
-        async def _share_file(
-            file_id: str,
-            share_type: str = "link",
-            link_scope: str = "anyone",
-            email: str = "",
-            role: str = "read",
-        ) -> str:
-            result = await action.share_file(
-                file_id=file_id,
-                share_type=share_type,
-                link_scope=link_scope,
-                email=email or None,
-                role=role,
-            )
-            return json.dumps(result, indent=2)
-
-        async def _delete_file(file_id: str) -> str:
-            deleted = await action.delete_file(file_id=file_id)
-            return json.dumps({"deleted": deleted}, indent=2)
-
-        return [
-            Tool(
-                name="onedrive__list_files",
-                description="List files and folders in a OneDrive folder.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "folder_id": {
-                            "type": "string",
-                            "description": "ID of the folder to list (root if omitted).",
-                        },
-                        "with_link": {
-                            "type": "boolean",
-                            "description": "Include sharing links (default: false).",
-                        },
-                        "depth": {
-                            "type": "integer",
-                            "description": "Recursion depth for subfolders (default: 5).",
-                        },
-                    },
-                    "required": [],
-                },
-                execute=_list_files,
-            ),
-            Tool(
-                name="onedrive__upload_file",
-                description="Upload a file to OneDrive.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "Name for the uploaded file.",
-                        },
-                        "content": {
-                            "type": "string",
-                            "description": "Base64-encoded file content (use this or source_url).",
-                        },
-                        "source_url": {
-                            "type": "string",
-                            "description": "URL to download file content from (use this or content).",
-                        },
-                        "mime_type": {
-                            "type": "string",
-                            "description": "MIME type of the file.",
-                        },
-                        "parent_folder_id": {
-                            "type": "string",
-                            "description": "ID of the parent folder.",
-                        },
-                    },
-                    "required": ["name"],
-                },
-                execute=_upload_file,
-            ),
-            Tool(
-                name="onedrive__share_file",
-                description=(
-                    "Share a OneDrive file by creating a shareable link or "
-                    "granting access to a specific user. "
-                    "Use share_type='link' for public/organization links or "
-                    "share_type='user' to invite a specific email address."
-                ),
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "file_id": {
-                            "type": "string",
-                            "description": "The ID of the file to share.",
-                        },
-                        "share_type": {
-                            "type": "string",
-                            "description": "Type of sharing: 'link' or 'user' (default: 'link').",
-                        },
-                        "link_scope": {
-                            "type": "string",
-                            "description": (
-                                "Link scope: 'anyone' or 'organization' (default: 'anyone'). "
-                                "Only used when share_type='link'."
-                            ),
-                        },
-                        "email": {
-                            "type": "string",
-                            "description": (
-                                "Email address for user-level sharing. "
-                                "Required when share_type='user'."
-                            ),
-                        },
-                        "role": {
-                            "type": "string",
-                            "description": "Permission role: 'read' or 'write' (default: 'read').",
-                        },
-                    },
-                    "required": ["file_id"],
-                },
-                execute=_share_file,
-            ),
-            Tool(
-                name="onedrive__delete_file",
-                description="Permanently delete a file from OneDrive.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "file_id": {
-                            "type": "string",
-                            "description": "The ID of the file to delete.",
-                        },
-                    },
-                    "required": ["file_id"],
-                },
-                execute=_delete_file,
-            ),
-        ]
+    @tool(name="onedrive__delete_file")
+    async def _t_delete_file(
+        self,
+        file_id: Annotated[str, "The ID of the file to delete."],
+    ) -> str:
+        """Permanently delete a file from OneDrive."""
+        deleted = await self.delete_file(file_id=file_id)
+        return json.dumps({"deleted": deleted}, indent=2)

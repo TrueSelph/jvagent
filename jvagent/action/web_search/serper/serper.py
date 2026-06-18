@@ -5,7 +5,7 @@ Implements web search using Serper's Google Search REST API.
 
 import json
 import logging
-from typing import Any, Dict, List
+from typing import Annotated, Any, Dict, List
 from urllib.parse import urlparse
 
 import httpx
@@ -13,6 +13,7 @@ from jvspatial.core.annotations import attribute
 from jvspatial.env import env
 
 from jvagent.action.web_search.base import BaseWebSearchAction
+from jvagent.tooling.tool_decorator import tool
 
 logger = logging.getLogger(__name__)
 _SERPER_DEFAULT_ENDPOINT = "https://google.serper.dev/search"
@@ -120,38 +121,14 @@ class SerperWebSearchAction(BaseWebSearchAction):
             )
             return []
 
-    async def get_tools(self) -> List[Any]:
-        from jvagent.tooling.tool import Tool
-
-        action = self
-
-        async def _search(query: str, limit: int = 5) -> str:
-            import json
-
-            results = await action.search(query, max_results=limit)
-            if not results:
-                return "No web search results found."
-            return json.dumps(results, indent=2)
-
-        return [
-            Tool(
-                name="web_search__search",
-                description="Search the public web for current information. Returns titles, links, and snippets.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "The search query.",
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "description": "Max results to return (default 5).",
-                            "default": 5,
-                        },
-                    },
-                    "required": ["query"],
-                },
-                execute=_search,
-            ),
-        ]
+    @tool(name="web_search__search")
+    async def _t_search(
+        self,
+        query: Annotated[str, "The search query."],
+        limit: Annotated[int, "Max results to return (default 5)."] = 5,
+    ) -> str:
+        """Search the public web for current information. Returns titles, links, and snippets."""  # noqa: E501
+        results = await self.search(query, max_results=limit)
+        if not results:
+            return "No web search results found."
+        return json.dumps(results, indent=2)

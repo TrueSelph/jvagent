@@ -20,13 +20,33 @@ export interface AppConfig {
   ui: UIConfig
 }
 
+/**
+ * Runtime config injected into index.html by a static host (e.g. the
+ * `jvagent chat` CLI's `--url` flag). Lets a pre-built bundle target a
+ * specific agent server without a rebuild. Priority for the resolved URL:
+ * localStorage (login screen) > runtime injection > build-time VITE env >
+ * built-in default.
+ */
+function runtimeConfig(): { jvagentUrl?: string; jvforgeUrl?: string } {
+  if (typeof window === 'undefined') return {}
+  return (
+    (window as unknown as {
+      __JVCHAT_RUNTIME_CONFIG__?: { jvagentUrl?: string; jvforgeUrl?: string }
+    }).__JVCHAT_RUNTIME_CONFIG__ || {}
+  )
+}
+
 const DEFAULT_CONFIG: AppConfig = {
   jvagent: {
-    url: import.meta.env.VITE_JVAGENT_URL || 'http://localhost:8000',
+    url:
+      runtimeConfig().jvagentUrl ||
+      import.meta.env.VITE_JVAGENT_URL ||
+      'http://localhost:8000',
     timeout: 900000, // 15 minutes
   },
   jvforge: {
     url:
+      runtimeConfig().jvforgeUrl ||
       import.meta.env.VITE_JVFORGE_URL ||
       import.meta.env.VITE_JVAGENT_JVFORGE_BASE_URL ||
       'http://127.0.0.1:8088',

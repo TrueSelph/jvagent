@@ -54,6 +54,7 @@ SUBCOMMANDS:
   bundle <app_root>    emit Dockerfile + deployment artifacts
   app create|profile   scaffold a new app or profile
   validate             validate app.yaml + agents
+  chat                 serve the bundled jvchat UI on its own port (jvagent/webui)
   stress-seed          generate synthetic graph for testing
 
 FLAGS (apply to default + bootstrap):

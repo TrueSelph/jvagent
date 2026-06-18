@@ -1,10 +1,12 @@
 import io
 import logging
-from typing import Any, ClassVar, Dict, List, Optional
+from typing import Annotated, Any, ClassVar, Dict, List, Optional
 
 from googleapiclient.http import MediaIoBaseDownload
 from jvspatial.core.annotations import attribute
 from jvspatial.env import env
+
+from jvagent.tooling.tool_decorator import tool
 
 from ..google_action import GoogleAction
 
@@ -295,234 +297,129 @@ class GoogleDriveAction(GoogleAction):
 
         return {"added": added, "removed": removed, "modified": modified}
 
-    async def get_tools(self) -> List[Any]:
-        """Full Google Drive tool surface (ADR-0012: actions are first-class tools)."""
+    @tool(name="google_drive__list_files")
+    async def _t_list_files(
+        self,
+        folder_id: Annotated[
+            Optional[str], "ID of the folder to list (root if omitted)."
+        ] = None,
+        with_link: Annotated[
+            Optional[bool], "Include sharing links (default: false)."
+        ] = None,
+        depth: Annotated[
+            Optional[int], "Recursion depth for subfolders (default: 5)."
+        ] = None,
+    ) -> str:
+        """List files and folders in a Google Drive folder."""
+        import json
+
+        results = await self.list_files(
+            folder_id=(folder_id if folder_id is not None else "") or None,
+            with_link=with_link if with_link is not None else False,
+            depth=depth if depth is not None else 5,
+        )
+        return json.dumps(results, indent=2)
+
+    @tool(name="google_drive__upload_file")
+    async def _t_upload_file(
+        self,
+        name: Annotated[str, "Name for the uploaded file."],
+        content: Annotated[
+            Optional[str], "Base64-encoded file content (use this or source_url)."
+        ] = None,
+        source_url: Annotated[
+            Optional[str], "URL to download file content from (use this or content)."
+        ] = None,
+        mime_type: Annotated[Optional[str], "MIME type of the file."] = None,
+        parent_folder_id: Annotated[Optional[str], "ID of the parent folder."] = None,
+    ) -> str:
+        """Upload a file to Google Drive."""
+        import json
+
+        result = await self.upload_file(
+            name=name,
+            content=(content if content is not None else "") or None,
+            source_url=(source_url if source_url is not None else "") or None,
+            mime_type=(mime_type if mime_type is not None else "") or None,
+            parent_folder_id=(parent_folder_id if parent_folder_id is not None else "")
+            or None,
+        )
+        return json.dumps(result, indent=2)
+
+    @tool(name="google_drive__get_file_metadata")
+    async def _t_get_file_metadata(
+        self,
+        file_id: Annotated[str, "The ID of the file."],
+        fields: Annotated[
+            Optional[str],
+            "Comma-separated list of fields to return "
+            "(default: 'id, name, mimeType').",
+        ] = None,
+    ) -> str:
+        """Get metadata for a Google Drive file."""
+        import json
+
+        result = await self.get_file_metadata(
+            file_id=file_id,
+            fields=fields if fields is not None else "id, name, mimeType",
+        )
+        return json.dumps(result, indent=2)
+
+    @tool(name="google_drive__get_media")
+    async def _t_get_media(
+        self,
+        file_id: Annotated[str, "The ID of the file to download."],
+    ) -> str:
+        """Download a file's media content from Google Drive. Returns base64-encoded content. Google Workspace files (Docs, Sheets, etc.) are exported as PDF."""  # noqa: E501
         import base64
         import json
 
-        from jvagent.tooling.tool import Tool
+        data = await self.get_media(file_id=file_id)
+        return json.dumps(
+            {"file_id": file_id, "content_base64": base64.b64encode(data).decode()},
+            indent=2,
+        )
 
-        action = self
+    @tool(name="google_drive__share_file")
+    async def _t_share_file(
+        self,
+        file_id: Annotated[str, "The ID of the file to share."],
+        share_type: Annotated[
+            Optional[str], "Type of sharing: 'link' or 'user' (default: 'link')."
+        ] = None,
+        link_scope: Annotated[
+            Optional[str],
+            "Link scope: 'anyone' or 'domain' (default: 'anyone'). "
+            "Only used when share_type='link'.",
+        ] = None,
+        email: Annotated[
+            Optional[str],
+            "Email address for user-level sharing. " "Required when share_type='user'.",
+        ] = None,
+        role: Annotated[
+            Optional[str],
+            "Permission role: 'reader', 'writer', or 'owner' (default: 'reader').",
+        ] = None,
+    ) -> str:
+        """Share a Google Drive file by creating a shareable link or granting access to a specific user. Use share_type='link' for public/domain links or share_type='user' to invite a specific email address."""  # noqa: E501
+        import json
 
-        async def _list_files(
-            folder_id: str = "",
-            with_link: bool = False,
-            depth: int = 5,
-        ) -> str:
-            results = await action.list_files(
-                folder_id=folder_id or None,
-                with_link=with_link,
-                depth=depth,
-            )
-            return json.dumps(results, indent=2)
+        result = await self.share_file(
+            file_id=file_id,
+            share_type=share_type if share_type is not None else "link",
+            link_scope=link_scope if link_scope is not None else "anyone",
+            email=(email if email is not None else "") or None,
+            role=role if role is not None else "reader",
+        )
+        return json.dumps(result, indent=2)
 
-        async def _upload_file(
-            name: str,
-            content: str = "",
-            source_url: str = "",
-            mime_type: str = "",
-            parent_folder_id: str = "",
-        ) -> str:
-            result = await action.upload_file(
-                name=name,
-                content=content or None,
-                source_url=source_url or None,
-                mime_type=mime_type or None,
-                parent_folder_id=parent_folder_id or None,
-            )
-            return json.dumps(result, indent=2)
+    @tool(name="google_drive__delete_file")
+    async def _t_delete_file(
+        self,
+        file_id: Annotated[str, "The ID of the file to delete."],
+    ) -> str:
+        """Permanently delete a file from Google Drive."""
+        import json
 
-        async def _get_file_metadata(
-            file_id: str,
-            fields: str = "id, name, mimeType",
-        ) -> str:
-            result = await action.get_file_metadata(
-                file_id=file_id,
-                fields=fields,
-            )
-            return json.dumps(result, indent=2)
-
-        async def _get_media(file_id: str) -> str:
-            data = await action.get_media(file_id=file_id)
-            return json.dumps(
-                {"file_id": file_id, "content_base64": base64.b64encode(data).decode()},
-                indent=2,
-            )
-
-        async def _share_file(
-            file_id: str,
-            share_type: str = "link",
-            link_scope: str = "anyone",
-            email: str = "",
-            role: str = "reader",
-        ) -> str:
-            result = await action.share_file(
-                file_id=file_id,
-                share_type=share_type,
-                link_scope=link_scope,
-                email=email or None,
-                role=role,
-            )
-            return json.dumps(result, indent=2)
-
-        async def _delete_file(file_id: str) -> str:
-            deleted = await action.delete_file(file_id=file_id)
-            return json.dumps({"deleted": deleted}, indent=2)
-
-        return [
-            Tool(
-                name="google_drive__list_files",
-                description="List files and folders in a Google Drive folder.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "folder_id": {
-                            "type": "string",
-                            "description": "ID of the folder to list (root if omitted).",
-                        },
-                        "with_link": {
-                            "type": "boolean",
-                            "description": "Include sharing links (default: false).",
-                        },
-                        "depth": {
-                            "type": "integer",
-                            "description": "Recursion depth for subfolders (default: 5).",
-                        },
-                    },
-                    "required": [],
-                },
-                execute=_list_files,
-            ),
-            Tool(
-                name="google_drive__upload_file",
-                description="Upload a file to Google Drive.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "Name for the uploaded file.",
-                        },
-                        "content": {
-                            "type": "string",
-                            "description": "Base64-encoded file content (use this or source_url).",
-                        },
-                        "source_url": {
-                            "type": "string",
-                            "description": "URL to download file content from (use this or content).",
-                        },
-                        "mime_type": {
-                            "type": "string",
-                            "description": "MIME type of the file.",
-                        },
-                        "parent_folder_id": {
-                            "type": "string",
-                            "description": "ID of the parent folder.",
-                        },
-                    },
-                    "required": ["name"],
-                },
-                execute=_upload_file,
-            ),
-            Tool(
-                name="google_drive__get_file_metadata",
-                description="Get metadata for a Google Drive file.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "file_id": {
-                            "type": "string",
-                            "description": "The ID of the file.",
-                        },
-                        "fields": {
-                            "type": "string",
-                            "description": (
-                                "Comma-separated list of fields to return "
-                                "(default: 'id, name, mimeType')."
-                            ),
-                        },
-                    },
-                    "required": ["file_id"],
-                },
-                execute=_get_file_metadata,
-            ),
-            Tool(
-                name="google_drive__get_media",
-                description=(
-                    "Download a file's media content from Google Drive. "
-                    "Returns base64-encoded content. "
-                    "Google Workspace files (Docs, Sheets, etc.) are exported as PDF."
-                ),
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "file_id": {
-                            "type": "string",
-                            "description": "The ID of the file to download.",
-                        },
-                    },
-                    "required": ["file_id"],
-                },
-                execute=_get_media,
-            ),
-            Tool(
-                name="google_drive__share_file",
-                description=(
-                    "Share a Google Drive file by creating a shareable link or "
-                    "granting access to a specific user. "
-                    "Use share_type='link' for public/domain links or "
-                    "share_type='user' to invite a specific email address."
-                ),
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "file_id": {
-                            "type": "string",
-                            "description": "The ID of the file to share.",
-                        },
-                        "share_type": {
-                            "type": "string",
-                            "description": "Type of sharing: 'link' or 'user' (default: 'link').",
-                        },
-                        "link_scope": {
-                            "type": "string",
-                            "description": (
-                                "Link scope: 'anyone' or 'domain' (default: 'anyone'). "
-                                "Only used when share_type='link'."
-                            ),
-                        },
-                        "email": {
-                            "type": "string",
-                            "description": (
-                                "Email address for user-level sharing. "
-                                "Required when share_type='user'."
-                            ),
-                        },
-                        "role": {
-                            "type": "string",
-                            "description": (
-                                "Permission role: 'reader', 'writer', or 'owner' "
-                                "(default: 'reader')."
-                            ),
-                        },
-                    },
-                    "required": ["file_id"],
-                },
-                execute=_share_file,
-            ),
-            Tool(
-                name="google_drive__delete_file",
-                description="Permanently delete a file from Google Drive.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "file_id": {
-                            "type": "string",
-                            "description": "The ID of the file to delete.",
-                        },
-                    },
-                    "required": ["file_id"],
-                },
-                execute=_delete_file,
-            ),
-        ]
+        deleted = await self.delete_file(file_id=file_id)
+        return json.dumps({"deleted": deleted}, indent=2)

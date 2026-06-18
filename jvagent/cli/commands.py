@@ -257,6 +257,9 @@ jvagent - Agentive Platform
                                   Discovers action dependencies from info.yaml files
                                   App root can be specified before or after 'bundle' command
                                   Defaults to current working directory if not specified
+    jvagent chat [--url URL] [--port N] [--host HOST] [--no-browser]
+                                  Serve the bundled jvchat web UI on its own port (default 3000)
+                                  --url injects the agent server URL the UI talks to (no rebuild)
     jvagent [<app_root>] agent create [SPEC] [--profile NAME] [--action ID]... [--force]
                                   Scaffold agents/<ns>/<id>/ and register in app.yaml
                                   SPEC: namespace/agent or namespace/agent@profile
@@ -550,6 +553,13 @@ async def bootstrap_only(
 
     load_app_env(app_root=app_root)
     _set_db_env_from_config(app_root)
+
+    # Instantiate (but do not run) the Server so it registers in jvspatial's
+    # context. jvspatial >=0.0.9 resolves the auth service from the current
+    # Server (get_auth_service()), which ensure_admin_user() relies on; the
+    # serve path gets this for free, so the standalone bootstrap path must do
+    # the same or admin creation fails with "requires a Server in context".
+    create_server_from_config(app_root=app_root)
 
     # Install log counter to track warnings and errors during bootstrap
     log_counter = StartupLogCounter()

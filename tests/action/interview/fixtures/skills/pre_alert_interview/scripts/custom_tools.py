@@ -1,5 +1,11 @@
 """Custom tools for the pre_alert_interview interview.
 
+Every hook takes the single ``ctx`` (HookExecutionContext): read inputs as
+attributes (``ctx.value``, ``ctx.session``, ``ctx.visitor``, ``ctx.interview``,
+``ctx.extracted_values``), furnish user-facing text via ``ctx.say`` and control/
+return data via ``ctx.tool_response`` (or ``ctx.valid`` / ``ctx.invalid`` for
+validators).
+
 Functions are loaded by ``function:`` name in SKILL.md frontmatter ``interview:``. Sections:
 
 1. Constants
@@ -13,17 +19,9 @@ Functions are loaded by ``function:`` name in SKILL.md frontmatter ``interview:`
 
 from __future__ import annotations
 
-import json
 import logging
 import re
-from typing import Any, Dict, Optional
-
-from jvagent.action.interview.responses import (
-    call_tool_directive,
-    interview_tool_response,
-    no_session_directive,
-    tell_user,
-)
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -65,118 +63,69 @@ async def _get_user_pre_alerts(visitor: Any) -> Dict[str, Any]:
 # ─── Validators ──────────────────────────────────────────────────────
 
 
-async def validate_tracking_number(value: str, **kwargs) -> str:
+async def validate_tracking_number(ctx) -> Dict[str, Any]:
     """Validate tracking number (at least 10 digits)."""
+    value = ctx.value
     digits = "".join(c for c in (value or "") if c.isdigit())
     if len(digits) < 10:
-        return json.dumps(
-            {
-                "valid": False,
-                "error": "Please provide a valid tracking number (at least 10 digits).",
-                "value": value,
-                "validator": "validate_tracking_number",
-            }
+        return ctx.invalid(
+            "Please provide a valid tracking number (at least 10 digits).",
+            value=value,
         )
-    return json.dumps(
-        {
-            "valid": True,
-            "value": digits,
-            "validator": "validate_tracking_number",
-        }
-    )
+    return ctx.valid(value=digits)
 
 
-async def validate_invoice_value(value: str, **kwargs) -> str:
+async def validate_invoice_value(ctx) -> Dict[str, Any]:
     """Validate invoice value (optional — empty is valid)."""
+    value = ctx.value
     if not value or not str(value).strip():
-        return json.dumps(
-            {
-                "valid": True,
-                "value": "",
-                "validator": "validate_invoice_value",
-            }
-        )
+        return ctx.valid(value="")
     cleaned = re.sub(r"[$,\s]", "", str(value).strip())
     try:
         float(cleaned)
-        return json.dumps(
-            {
-                "valid": True,
-                "value": str(cleaned),
-                "validator": "validate_invoice_value",
-            }
-        )
+        return ctx.valid(value=str(cleaned))
     except ValueError:
-        return json.dumps(
-            {
-                "valid": False,
-                "error": "Please provide a valid numeric value (e.g. '540000' or '1299.99'), or say 'skip'.",
-                "value": value,
-                "validator": "validate_invoice_value",
-            }
+        return ctx.invalid(
+            "Please provide a valid numeric value (e.g. '540000' or '1299.99'), or say 'skip'.",
+            value=value,
         )
 
 
-async def validate_alternative_tracking_number(value: str, **kwargs) -> str:
+async def validate_alternative_tracking_number(ctx) -> Dict[str, Any]:
     """Validate alternative tracking (optional — empty is valid)."""
+    value = ctx.value
     if not value or not str(value).strip():
-        return json.dumps(
-            {
-                "valid": True,
-                "value": "",
-                "validator": "validate_alternative_tracking_number",
-            }
-        )
+        return ctx.valid(value="")
     digits = "".join(c for c in str(value) if c.isdigit())
     if len(digits) < 10:
-        return json.dumps(
-            {
-                "valid": False,
-                "error": "Please provide a valid tracking number (at least 10 digits) or say 'skip'.",
-                "value": value,
-                "validator": "validate_alternative_tracking_number",
-            }
+        return ctx.invalid(
+            "Please provide a valid tracking number (at least 10 digits) or say 'skip'.",
+            value=value,
         )
-    return json.dumps(
-        {
-            "valid": True,
-            "value": digits,
-            "validator": "validate_alternative_tracking_number",
-        }
-    )
+    return ctx.valid(value=digits)
 
 
 # ─── Custom tools ──────────────────────────────────────────────────────
 
 
-async def check_tracking_status(
-    visitor: Any = None,
-    interview_action: Any = None,
-    session: Any = None,
-    **kwargs,
-) -> str:
+async def check_tracking_status(ctx) -> str:
     """Check known status tracking or existing user_pre_alerts after tracking_number is stored."""
+    session = ctx.session
     if session is None:
-        return interview_tool_response(
-            ok=False,
-            status="error",
-            error_code="NO_SESSION",
-            system_message="No active interview session for tracking check.",
-            skip_to_review=False,
-            response_directive=no_session_directive(),
-        )
+        return ctx.no_session()
 
     tracking_number = (session.get_value("tracking_number") or "").strip()
     if not tracking_number:
-        return interview_tool_response(
+        return ctx.tool_response(
             ok=False,
             status="error",
             error_code="MISSING_FIELD",
             system_message="Tracking number not yet stored in session.",
             skip_to_review=False,
-            response_directive=call_tool_directive("interview__set_fields"),
+            response_directive=ctx.call_tool("interview__set_fields"),
         )
 
+    visitor = ctx.visitor
     user_pre_alerts = await _get_user_pre_alerts(visitor)
     existing = user_pre_alerts.get(tracking_number)
     is_known = tracking_number == _KNOWN_STATUS_TRACKING
@@ -191,19 +140,20 @@ async def check_tracking_status(
             session.context = {}
         session.context["tracking_status"] = status_payload
 
+        interview_action = ctx.interview
         if interview_action:
             await interview_action._save_session(session, visitor)
 
-        return interview_tool_response(
+        return ctx.tool_response(
             ok=True,
             status="tracking_status",
             skip_to_review=True,
             system_message="Pre-alert or known status found for this tracking number.",
             next_tool="interview__review",
-            response_directive=call_tool_directive("interview__review"),
+            response_directive=ctx.call_tool("interview__review"),
         )
 
-    return interview_tool_response(
+    return ctx.tool_response(
         ok=True,
         status="ok",
         skip_to_review=False,
@@ -214,14 +164,7 @@ async def check_tracking_status(
 # ─── Review handler ────────────────────────────────────────────────────
 
 
-async def pre_alert_review(
-    session: Any = None,
-    visitor: Any = None,
-    interview_action: Any = None,
-    config: Any = None,
-    extracted_values: Optional[Dict[str, str]] = None,
-    review_data: Optional[Dict[str, str]] = None,
-) -> Dict[str, Any]:
+async def pre_alert_review(ctx) -> Dict[str, Any]:
     """Status-only path when tracking_status is set, else confirmation summary."""
     result: Dict[str, Any] = {
         "modified_values": {},
@@ -229,6 +172,7 @@ async def pre_alert_review(
         "custom_message": "",
     }
 
+    session = ctx.session
     if not session:
         return result
 
@@ -238,6 +182,7 @@ async def pre_alert_review(
         else None
     )
 
+    interview_action = ctx.interview
     if tracking_status and isinstance(tracking_status, dict) and interview_action:
         tracking_number = tracking_status.get("tracking_number", "")
         status_msg = f"Your package with tracking number **{tracking_number}** is being processed."
@@ -269,7 +214,7 @@ async def pre_alert_review(
         result["terminate"] = True
         return result
 
-    collected = extracted_values or session.get_collected_summary()
+    collected = ctx.extracted_values or session.get_collected_summary()
     if not (collected or {}).get("alternative_tracking_number"):
         result["modified_values"]["alternative_tracking_number"] = "__omit__"
 
@@ -279,15 +224,10 @@ async def pre_alert_review(
 # ─── Completion handler ────────────────────────────────────────────────
 
 
-async def pre_alert_complete(
-    session: Any = None,
-    visitor: Any = None,
-    interview_action: Any = None,
-    config: Any = None,
-    extracted_values: Optional[Dict[str, str]] = None,
-    review_data: Optional[Dict[str, str]] = None,
-) -> Dict[str, Any]:
+async def pre_alert_complete(ctx) -> Dict[str, Any]:
     """Create pre-alert via Zoon API and update user_pre_alerts in context."""
+    extracted_values = ctx.extracted_values
+    interview_action = ctx.interview
     if not extracted_values or not interview_action:
         return {"response_directive": "No extracted values to process."}
 
@@ -324,6 +264,7 @@ async def pre_alert_complete(
             )
         }
 
+    visitor = ctx.visitor
     customer_id = None
     user_id = str(getattr(visitor, "user_id", "") or "") if visitor else ""
     if user_id:
@@ -393,11 +334,11 @@ async def pre_alert_complete(
 
     conversation = await _get_conversation(visitor)
     if conversation:
-        ctx = getattr(conversation, "context", None)
-        if not isinstance(ctx, dict):
-            ctx = {}
-            conversation.context = ctx
-        user_pre_alerts = ctx.get("user_pre_alerts", {})
+        conv_ctx = getattr(conversation, "context", None)
+        if not isinstance(conv_ctx, dict):
+            conv_ctx = {}
+            conversation.context = conv_ctx
+        user_pre_alerts = conv_ctx.get("user_pre_alerts", {})
         if not isinstance(user_pre_alerts, dict):
             user_pre_alerts = {}
         user_pre_alerts[tracking_number] = {
@@ -407,7 +348,7 @@ async def pre_alert_complete(
             "customer_id": customer_id,
             "pre_alert_id": result.get("id"),
         }
-        ctx["user_pre_alerts"] = user_pre_alerts
+        conv_ctx["user_pre_alerts"] = user_pre_alerts
         try:
             await conversation.save()
         except Exception as e:

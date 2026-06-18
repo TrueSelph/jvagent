@@ -84,7 +84,7 @@ def test_render_lean_hint_appended():
     full = render_tools_section(tools)
     lean = render_tools_section(tools, lean=True)
     assert "find_tool" not in full
-    assert "partial list" in lean and "find_tool" in lean
+    assert "partial list" in lean.lower() and "find_tool" in lean
 
 
 async def test_find_tool_groups_by_namespace():

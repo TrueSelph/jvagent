@@ -268,7 +268,7 @@ class TestResponseBuilder:
                 os.environ.pop("JVSPATIAL_ENVIRONMENT", None)
 
     @pytest.mark.asyncio
-    async def test_build_interact_response_includes_completed_tasks_for_window(self):
+    async def test_build_interact_response_includes_full_task_graph(self):
         original = os.environ.get("JVSPATIAL_ENVIRONMENT")
         try:
             os.environ["JVSPATIAL_ENVIRONMENT"] = "development"
@@ -337,11 +337,14 @@ class TestResponseBuilder:
                     report=None,
                 )
 
-            # Unified ``tasks`` list: active + in-window terminal, sorted by
-            # ``updated_at`` ascending; out-of-window terminal is excluded.
-            assert response["interaction"]["tasks"] == [
-                active_task,
-                in_window_completed,
+            # Full task graph (ADR-0026 observability): every task on the
+            # conversation, including out-of-window terminals, sorted by
+            # ``updated_at`` ascending, each carrying a derived ``blocked`` flag.
+            tasks = response["interaction"]["tasks"]
+            assert [(t["id"], t["status"], t["blocked"]) for t in tasks] == [
+                ("t2", "completed", False),
+                ("t3", "active", False),
+                ("t1", "completed", False),
             ]
         finally:
             if original:

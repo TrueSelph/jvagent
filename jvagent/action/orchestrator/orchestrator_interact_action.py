@@ -128,6 +128,27 @@ _STEER_EXEMPT = frozenset(
 )
 _NON_SUBSTANTIVE_TOOLS = _STEER_EXEMPT
 
+# Decision keys that are control/text fields, never tool arguments. When a model
+# FLATTENS a call (puts args at the decision top level instead of under "args"),
+# everything outside this set is folded into the tool args by ``_normalize``.
+_DECISION_RESERVED_KEYS = frozenset(
+    {
+        "action",
+        "tool",
+        "args",
+        "answer",
+        "text",
+        "content",
+        "message",
+        "reasoning",
+        "thought",
+        "name",
+        "skill",
+        "topic",
+        "query",
+    }
+)
+
 # A ``requires-actions`` spec is an Action class name with an optional inline
 # version constraint, PEP 508-style: the comparison operator is the delimiter
 # (``PageIndexAction>=2.0``, ``WebFetchAction==1.4.0``, ``X>=1.0,<2.0``).
@@ -436,6 +457,18 @@ class OrchestratorInteractAction(InteractAction):
         description="Appended when planning is on (no placeholders). Nudges "
         "update_plan use for multi-step work.",
     )
+    plan_completion_max_deflections: int = attribute(
+        default=6,
+        description=(
+            "Plan-drain guard: while an active plan has unfinished steps, a "
+            "turn-ending decision (final / reply / respond) is deflected up to "
+            "this many times so the model finishes (or explicitly closes) the "
+            "plan before completing the turn — instead of stalling on a 'doing "
+            "X next' message. After the cap the reply passes (so a genuine "
+            "mid-plan question to the user isn't blocked forever). 0 disables "
+            "the drain guard."
+        ),
+    )
     memory_prompt: str = attribute(
         default=MEMORY_PROMPT,
         description="Memory-access protocol rendered in the LOOP PROTOCOL: search "
@@ -541,10 +574,12 @@ class OrchestratorInteractAction(InteractAction):
     )
     block_raw_tool_invocation: bool = attribute(
         default=False,
-        description="When True: (1) the loop may only call tools currently "
-        "surfaced (visible) — hidden tools must be reached via find_tool / a "
-        "skill; and (2) a TOOL-USE POLICY is added so the user cannot steer "
-        "tool selection — they state a goal, the agent chooses the tools.",
+        description="When True a TOOL-USE POLICY is added so the USER cannot "
+        "steer tool selection — they state a goal, the agent chooses the tools; "
+        "a tool the user named is deflected once. It does NOT block the model "
+        "from calling a real tool that lean surfacing merely hid: naming a real "
+        "tool is valid intent, so it is auto-promoted and run (an implicit "
+        "load_tool). Only an unknown/hallucinated name is bounced to find_tool.",
     )
     tool_tier: str = attribute(
         default="standard",
@@ -1270,8 +1305,17 @@ class OrchestratorInteractAction(InteractAction):
             self.lean_tool_threshold
         )
         if lean:
+            # Relevance signal = the user's message PLUS any in-progress plan's
+            # checklist. A parked multi-step plan resumed on a low-signal turn
+            # ("Well?", "continue") would otherwise surface nothing and force the
+            # model through find_tool round-trips for tools the next plan step
+            # needs (e.g. pageindex__assimilate for "add to knowledge base").
+            relevance_text = utterance
+            plan_steps = self._open_plan_step(visitor)
+            if plan_steps:
+                relevance_text = f"{utterance}\n{plan_steps}"
             keep = self._presurface_tools(
-                utterance, longtail, tools, int(self.lean_presurface_k)
+                relevance_text, longtail, tools, int(self.lean_presurface_k)
             )
             keep |= set(self._user_named_tools(utterance, longtail))
             visible |= keep
@@ -1421,6 +1465,101 @@ class OrchestratorInteractAction(InteractAction):
         ctx = getattr(conversation, "context", None) or {}
         return bool(ctx.get("new_user"))
 
+    async def _has_runnable_work(self, visitor: Any) -> bool:
+        """Engagement state (ADR-0026 invariant 7): a task the orchestrator can drain
+        is runnable right now. Used so the turn does not finalize idle while runnable
+        work remains. Scoped to drainable types (SKILL + registered runners)."""
+        from jvagent.action.orchestrator.skill_tasks import task_store_for_conversation
+        from jvagent.action.orchestrator.task_runners import runnable_task_types
+        from jvagent.memory.task_graph import pick_top_runnable
+
+        store = getattr(visitor, "tasks", None) or task_store_for_conversation(
+            getattr(visitor, "conversation", None)
+        )
+        if store is None:
+            return False
+        try:
+            return (
+                pick_top_runnable(store, task_types=runnable_task_types()) is not None
+            )
+        except Exception:
+            return False
+
+    async def _drain_runnable_tasks(
+        self, visitor: Any, observations: List[Dict[str, Any]]
+    ) -> Optional[str]:
+        """Drain non-SKILL runnable tasks via their registered runners (ADR-0026
+        §2.4/§3): the standard mechanism that keeps the orchestrator watching the
+        work graph regardless of any skill turn-lock.
+
+        Resolves the top runnable task; SKILL tasks are advanced by the orchestrator's
+        own think-act loop, so they are left for the skill path. A non-skill type with
+        a registered runner is dispatched: a ``completed`` result re-resolves (a parent
+        may unblock), a ``blocked`` result yields one egress directive (stay engaged),
+        ``advanced`` keeps draining. Bounded by ``activation_budget``. Inert until a
+        consumer registers a runner, so it never changes skill-only behavior. Returns a
+        blocking egress directive, or ``None`` when nothing non-skill is runnable.
+        """
+        from jvagent.action.orchestrator.skill_tasks import task_store_for_conversation
+        from jvagent.action.orchestrator.task_runners import (
+            BUILTIN_LOOP_ADVANCED,
+            RunContext,
+            get_task_runner,
+            runnable_task_types,
+        )
+        from jvagent.memory.task_graph import pick_top_runnable
+
+        store = getattr(visitor, "tasks", None) or task_store_for_conversation(
+            getattr(visitor, "conversation", None)
+        )
+        if store is None:
+            return None
+        budget = max(1, int(getattr(self, "activation_budget", 0) or 1))
+        for _ in range(budget):
+            top = pick_top_runnable(store, task_types=runnable_task_types())
+            if top is None:
+                return None  # store drained
+            ttype = str(getattr(top, "task_type", "") or "").upper()
+            if ttype in BUILTIN_LOOP_ADVANCED:
+                return None  # SKILL/PROACTIVE are advanced by the loop, not a runner
+            runner = get_task_runner(ttype)
+            if runner is None:  # pragma: no cover - guarded by runnable_task_types
+                return None
+            try:
+                result = await runner(
+                    RunContext(
+                        orchestrator=self,
+                        visitor=visitor,
+                        task=top,
+                        observations=observations,
+                    )
+                )
+            except Exception as exc:
+                logger.warning(
+                    "orchestrator: task runner for %r raised: %s", ttype, exc
+                )
+                return None
+            for ob in getattr(result, "observations", None) or []:
+                if isinstance(ob, dict):
+                    observations.append(ob)
+            status = getattr(result, "status", "advanced")
+            if status == "blocked":
+                return getattr(result, "directive", None)
+            if status == "completed":
+                fresh = store.get(top.id)
+                if fresh is not None and fresh.status not in (
+                    "completed",
+                    "failed",
+                    "cancelled",
+                ):
+                    try:
+                        await fresh.complete()
+                    except Exception as exc:  # pragma: no cover - defensive
+                        logger.debug("orchestrator: runner-complete failed: %s", exc)
+                continue
+            # advanced → keep draining
+        return None
+
     async def _find_active_task_lock_skill_doc(
         self, visitor: Any, skill_docs: List[Any], actions: List[Any]
     ) -> Optional[Any]:
@@ -1497,21 +1636,48 @@ class OrchestratorInteractAction(InteractAction):
         visible: Set[str],
         activated: List[str],
         observations: List[Dict[str, Any]],
-    ) -> Tuple[Optional[Any], Dict[str, Any], Set[str], str]:
+    ) -> Tuple[Optional[Any], Dict[str, Any], Set[str], str, Optional[str]]:
         """Run turn-lock prep when use_skill first-activates a locked skill mid-loop.
 
         Pre-loop ``apply_task_lock_turn`` covers auto-start and resumed tasks;
         model-driven ``use_skill`` on tick 1 skipped that path, so message
         evaluation / next_field prep never ran on the activation turn.
+
+        Returns a 5th element: a terminal *detour directive* when a prerequisite was
+        pushed this turn. The detour's first question must be asked by the server and
+        end the turn — handed to the model as a fillable observation it fabricates the
+        answer and races past the gate (ADR-0026: the detour start is
+        orchestrator-delivered, not model-mediated).
         """
         if not (activation_obs or "").startswith("Activated skill"):
-            return None, tools, visible, ""
+            return None, tools, visible, "", None
         doc = next(
             (d for d in skill_docs if getattr(d, "name", None) == skill_name),
             None,
         )
         if doc is None or not getattr(doc, "task_lock", False):
-            return None, tools, visible, ""
+            return None, tools, visible, "", None
+        # Declarative gate (ADR-0026): if the activated skill has an unmet
+        # precondition, push the prerequisite task and redirect the lock to it (the
+        # gated skill is now blocked and resumes when the prerequisite completes).
+        # Chained so a prerequisite with its own unmet precondition pushes too.
+        from jvagent.action.orchestrator.skill_tasks import (
+            action_for_skill,
+            push_unmet_prerequisites,
+        )
+
+        pushed_any = False
+        for _ in range(8):
+            pushed = await push_unmet_prerequisites(visitor, doc, loop_actions)
+            if not pushed:
+                break
+            pushed_any = True
+            prereq_doc = next(
+                (d for d in skill_docs if getattr(d, "name", None) == pushed), None
+            )
+            if prereq_doc is None:
+                break
+            doc = prereq_doc
         tools, visible, skills_section = await self._apply_active_task_lock_skill(
             doc,
             loop_actions,
@@ -1528,7 +1694,20 @@ class OrchestratorInteractAction(InteractAction):
         )
 
         await prune_task_lock_tools_for_actions(loop_actions, visitor, tools, visible)
-        return doc, tools, visible, skills_section
+        # When a prerequisite was just pushed, end the turn on its first question so
+        # the model cannot answer it itself. Generic, duck-typed — any task-lock
+        # action may expose the hook; absent it, fall through to normal egress.
+        detour_directive: Optional[str] = None
+        if pushed_any:
+            bound = action_for_skill(doc, loop_actions)
+            if bound is not None and hasattr(bound, "task_lock_entry_directive"):
+                try:
+                    detour_directive = await bound.task_lock_entry_directive(
+                        doc.name, visitor
+                    )
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.debug("orchestrator: detour entry directive failed: %s", exc)
+        return doc, tools, visible, skills_section, detour_directive
 
     async def _reground_parent_lock(
         self,
@@ -1565,6 +1744,150 @@ class OrchestratorInteractAction(InteractAction):
                 "kind": "server_prep",
             }
         )
+
+    async def _maybe_resume_after_completion(
+        self,
+        obs: str,
+        completed_doc: Any,
+        skill_docs: List[Any],
+        loop_actions: List[Any],
+        visitor: Any,
+        utterance: str,
+        tools: Dict[str, Any],
+        visible: Set[str],
+        activated: List[str],
+        observations: List[Dict[str, Any]],
+    ) -> Optional[Tuple[Any, Dict[str, Any], Set[str], str, Optional[str]]]:
+        """Drain step (ADR-0026): if a task-lock skill just completed and another
+        task is now the top runnable task, resume it in the same turn.
+
+        Returns ``(resumed_doc, tools, visible, skills_section, terminal_directive)``.
+        When the resumed skill can voice its own next question (``terminal_directive``
+        set), the caller delivers it and ends the turn — the resume is
+        orchestrator-driven, not model-mediated, so the model never gets to fabricate
+        the next answer. Otherwise ``terminal_directive`` is ``None`` and the caller
+        keeps draining with a re-ground note. Returns ``None`` when nothing is waiting
+        (inert until prerequisites are pushed).
+        """
+        try:
+            data = json.loads(obs)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        if not (data.get("interview_complete") or data.get("status") == "completed"):
+            return None
+        # A skill completed → its task is closed and its session cleared. Re-resolve
+        # the top runnable task-lock skill.
+        parent = await self._find_active_task_lock_skill_doc(
+            visitor, skill_docs, loop_actions
+        )
+        if parent is None:
+            return None
+        if getattr(parent, "name", None) == getattr(completed_doc, "name", None):
+            return None  # same skill still owns the lock — not a resume
+        from jvagent.action.orchestrator.skill_tasks import (
+            _active_skill_task,
+            action_for_skill,
+            task_store_for_conversation,
+        )
+
+        # The gated task carries the original request as its seed (seed_from:
+        # [utterance]); a pushed prerequisite has none. That presence is the clean
+        # discriminator between "resume the gated service with its original request"
+        # and "enter a fresh prerequisite".
+        store = task_store_for_conversation(getattr(visitor, "conversation", None))
+        ptask = _active_skill_task(store, parent.name) if store else None
+        seed_utterance = str(
+            (getattr(ptask, "seed", None) or {}).get("utterance") or ""
+        )
+        # Re-apply the parent's locked surface. When resuming the gated service, run
+        # its activation against the *original* request so its first fields extract
+        # from it (extraction is model-owned, so this is fed as the activation input,
+        # not auto-filled) instead of re-asking for what the user already provided.
+        tools, visible, skills_section = await self._apply_active_task_lock_skill(
+            parent,
+            loop_actions,
+            visitor,
+            seed_utterance or utterance,
+            tools,
+            visible,
+            activated,
+            observations,
+            skill_docs=skill_docs,
+        )
+        _, rd = self._result_next(obs)
+        ack = self._directive_user_text(rd)
+
+        if seed_utterance:
+            # Resume the gated service: hand the model the original request to fill
+            # the pending field(s), then continue. Consume the seed so it is not
+            # re-injected on any later resume.
+            if ptask is not None:
+                try:
+                    remaining = {
+                        k: v for k, v in (ptask.seed or {}).items() if k != "utterance"
+                    }
+                    await ptask.set_seed(remaining)
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.debug("orchestrator: seed consume failed: %s", exc)
+            observations.append(
+                {
+                    "tool": "(task-resume)",
+                    "args": {},
+                    "observation": (
+                        "(A prerequisite just completed; the account/session is now "
+                        f"in place. {ack} Resume {parent.name}: the user's original "
+                        f'request was "{seed_utterance}". Fill the pending field(s) '
+                        "from it, then continue — do not re-ask for anything already "
+                        "in that request and do not start anything else.)"
+                    ),
+                    "kind": "server_prep",
+                }
+            )
+            return parent, tools, visible, skills_section, None
+
+        # Fresh prerequisite (no seed): deliver its first question terminally
+        # (server-driven), prefixed with the completed step's acknowledgement, so the
+        # model cannot fabricate the answer the way the detour-start would.
+        bound = action_for_skill(parent, loop_actions)
+        entry = None
+        if bound is not None and hasattr(bound, "task_lock_entry_directive"):
+            try:
+                entry = await bound.task_lock_entry_directive(parent.name, visitor)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("orchestrator: resume entry directive failed: %s", exc)
+        if entry:
+            question = self._directive_user_text(entry)
+            terminal = "Tell the user: " + (f"{ack} {question}".strip())
+            return parent, tools, visible, skills_section, terminal
+        # No deliverable question — fall back to a re-ground note.
+        observations.append(
+            {
+                "tool": "(task-resume)",
+                "args": {},
+                "observation": (
+                    "(A prerequisite just completed; its account/session is now in "
+                    f"place. {ack} Resume {parent.name} now and continue its next "
+                    "step in your reply — do not start anything else.)"
+                ),
+                "kind": "server_prep",
+            }
+        )
+        return parent, tools, visible, skills_section, None
+
+    @staticmethod
+    def _directive_user_text(directive: str) -> str:
+        """Strip a directive's ``Tell the user:`` prefix and any model-facing guidance
+        (separated by the invisible U+2063) down to the user-facing sentence."""
+        text = (directive or "").strip()
+        if not text:
+            return ""
+        text = text.split("\u2063", 1)[0].strip()
+        low = text.lower()
+        if low.startswith("tell the user:"):
+            text = text[len("tell the user:") :].strip()
+        return text
 
     async def _run_tool_observation(
         self,
@@ -1645,12 +1968,36 @@ class OrchestratorInteractAction(InteractAction):
         tools: Dict[str, Any],
         observations: List[Dict[str, Any]],
     ) -> None:
-        """Pre-load proactive task context and optional skill before the loop."""
+        """Pre-load proactive task context and optional skill before the loop.
+
+        The scheduler (ADR-0022) claims an eligible proactive task (pending → active)
+        and passes it via ``visitor.data``. As a fallback the orchestrator resolves a
+        claimed proactive task straight from the work graph — so proactive work is
+        drained from the store like any other task, not only via the side channel
+        (ADR-0026 unification: scheduler eligibility-gates + claims; the drain
+        dispatches)."""
         data = getattr(visitor, "data", None) or {}
         task_id = data.get("proactive_task_id")
         directive = str(data.get("proactive_directive") or "").strip()
+        skill_hint = str(data.get("proactive_skill") or "").strip()
         if not task_id or not directive:
-            return
+            resolved = self._resolve_active_proactive(visitor)
+            if resolved is None:
+                return
+            task_id, directive, skill_hint = resolved
+            # Mirror into visitor.data so the rest of the turn (e.g.
+            # _finalize_proactive_task) treats a store-resolved task identically to a
+            # scheduler-passed one.
+            if not isinstance(getattr(visitor, "data", None), dict):
+                visitor.data = {}
+            visitor.data.update(
+                {
+                    "is_proactive": True,
+                    "proactive_task_id": task_id,
+                    "proactive_directive": directive,
+                    "proactive_skill": skill_hint,
+                }
+            )
         observations.append(
             {
                 "tool": "(proactive-task)",
@@ -1661,7 +2008,7 @@ class OrchestratorInteractAction(InteractAction):
                 ),
             }
         )
-        skill = str(data.get("proactive_skill") or "").strip()
+        skill = skill_hint
         if not skill:
             return
         skill_by_name = {d.name: d for d in skill_docs if getattr(d, "name", None)}
@@ -1673,6 +2020,36 @@ class OrchestratorInteractAction(InteractAction):
             {"name": skill},
             observations,
         )
+
+    def _resolve_active_proactive(self, visitor: Any) -> Optional[Tuple[str, str, str]]:
+        """Resolve a claimed (active) proactive task from the work graph as
+        ``(task_id, directive, skill)``, or ``None``. The graph treats a proactive
+        task as runnable only once the scheduler has claimed it (active), so this
+        never fires for a still-queued (pending) task."""
+        from jvagent.action.orchestrator.skill_tasks import task_store_for_conversation
+        from jvagent.memory.task_graph import pick_top_runnable
+        from jvagent.memory.task_proactive import (
+            PROACTIVE_TASK_TYPE,
+            ProactiveTaskSpec,
+        )
+
+        store = getattr(visitor, "tasks", None) or task_store_for_conversation(
+            getattr(visitor, "conversation", None)
+        )
+        if store is None:
+            return None
+        try:
+            top = pick_top_runnable(store, task_types=[PROACTIVE_TASK_TYPE])
+            if top is None:
+                return None
+            spec = ProactiveTaskSpec.from_task_handle(top)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("orchestrator: proactive resolve failed: %s", exc)
+            return None
+        directive = str(getattr(spec, "directive", "") or "").strip()
+        if not directive:
+            return None
+        return top.id, directive, str(getattr(spec, "skill", "") or "").strip()
 
     async def _finalize_proactive_task(self, visitor: Any) -> None:
         """Complete, requeue, or fail an in-flight proactive dispatch."""
@@ -1969,6 +2346,12 @@ class OrchestratorInteractAction(InteractAction):
         # is named in code.
         pending_chain: Optional[str] = None
         chain_deflections = 0
+        # Plan-completion guard (thin, plan-gated): when an active multi-step plan
+        # still has open steps, a bare "I'll do X next" narration (coerced to a
+        # reply) or a premature ``final`` is deflected once so the loop keeps
+        # going instead of ending the turn mid-task. Bounded so a deliberate
+        # reply/finish is never blocked for long.
+        plan_deflections = 0
         # Named-tool steering guard (block_raw_tool_invocation): tools the user
         # named literally this turn, deflected once each so the model re-plans
         # from intent rather than obeying the named tool.
@@ -1994,6 +2377,18 @@ class OrchestratorInteractAction(InteractAction):
         # the slow gear) — scheduled on the first heavy tick below, not up front.
         ack_task: Optional["asyncio.Task"] = None
         ack_started = False
+
+        # Standing store drain (ADR-0026 §3/§2.4): the orchestrator watches the work
+        # graph every turn, independent of any skill turn-lock. Dispatch non-skill
+        # runnable tasks via their registered runners first; a task that blocks on
+        # external input owns the turn's egress. Inert until a consumer registers a
+        # runner — SKILL tasks fall through to the skill path/loop below.
+        drain_directive = await self._drain_runnable_tasks(visitor, observations)
+        if drain_directive:
+            await self._send_reply(visitor, drain_directive, compose=True)
+            ended_via = "drain_reply"
+            return
+
         try:
             while budget > 0:
                 if deadline and time.time() > deadline:
@@ -2107,6 +2502,15 @@ class OrchestratorInteractAction(InteractAction):
                             }
                         )
                         continue
+                    if plan_deflections < int(self.plan_completion_max_deflections):
+                        open_steps = self._open_plan_step(visitor)
+                        if open_steps:
+                            # An active multi-step plan still has open steps —
+                            # don't finalize mid-task. Nudge the model to run the
+                            # next step (or close the plan if it's really done).
+                            plan_deflections += 1
+                            observations.append(self._plan_drain_nudge(open_steps))
+                            continue
                     answer = _text_candidate(decision)
                     if answer:
                         await self._maybe_emit_final(visitor, answer)
@@ -2155,6 +2559,22 @@ class OrchestratorInteractAction(InteractAction):
                             }
                         )
                         continue
+                    if tool_name in ("reply", "respond") and plan_deflections < int(
+                        self.plan_completion_max_deflections
+                    ):
+                        # Plan-drain: the orchestrator must not COMPLETE the turn
+                        # (reply/respond is terminal egress) while its active plan
+                        # still has unfinished steps — whether the reply is bare
+                        # narration coerced to a reply ("Proceeding to drafting
+                        # now") or a deliberate reply. Deflect and drive the model
+                        # to do the next step or explicitly close the plan. After
+                        # the cap the reply passes, so a genuine mid-plan question
+                        # to the user is never blocked forever.
+                        open_steps = self._open_plan_step(visitor)
+                        if open_steps:
+                            plan_deflections += 1
+                            observations.append(self._plan_drain_nudge(open_steps))
+                            continue
                     # Companion gate: while a skill holds the turn-lock, use_skill
                     # may only (re)activate the locked skill itself or a declared
                     # companion. Switching to an unrelated skill would abandon the
@@ -2184,15 +2604,29 @@ class OrchestratorInteractAction(InteractAction):
                         continue
                     tool = tools.get(tool_name)
                     if tool is None:
-                        obs = f"(no such tool: {tool_name})"
-                    elif self.block_raw_tool_invocation and tool_name not in visible:
-                        # Surface discipline: a hidden tool must be reached via
-                        # find_tool or a skill, not named raw.
+                        # Genuinely unknown name (often a hallucinated tool) —
+                        # this is where find_tool earns its keep: point the model
+                        # at discovery instead of letting it guess again.
                         obs = (
-                            f"(tool {tool_name} is not directly available — use "
-                            "find_tool or the relevant skill to reach it)"
+                            f"(no such tool: {tool_name}. Call "
+                            "find_tool(query) to find the right tool by "
+                            "capability — e.g. find_tool('write file'), "
+                            "find_tool('add to knowledge base') — then call the "
+                            "exact name it returns.)"
                         )
                     else:
+                        if self.block_raw_tool_invocation and tool_name not in visible:
+                            # The model named a REAL tool that lean surfacing had
+                            # hidden. Naming it IS effective intent (not a
+                            # hallucination), so promote it and run it — an
+                            # implicit load_tool — rather than dead-ending on a
+                            # find_tool demand the model just repeats until the
+                            # repeat-guard kills the turn. Dispatch already
+                            # resolves the full surface; hiding a tool from the
+                            # prompt never made it uncallable. (The user-named-tool
+                            # steer guard above still blocks tools the *user*
+                            # dictated.)
+                            visible.add(tool_name)
                         # Structured tool thought for the UI's TOOL CALLS panel:
                         # tool_call before, tool_result after (shared segment_id
                         # so they fold into one element). Substantive tools only.
@@ -2234,7 +2668,7 @@ class OrchestratorInteractAction(InteractAction):
                     if tool_name == "use_skill":
                         skill_name = ((args or {}).get("name") or "").strip()
                         prep_obs_before = len(observations)
-                        locked_doc, tools, visible, new_section = (
+                        locked_doc, tools, visible, new_section, detour_directive = (
                             await self._apply_task_lock_after_use_skill(
                                 skill_name=skill_name,
                                 activation_obs=obs if isinstance(obs, str) else "",
@@ -2255,6 +2689,15 @@ class OrchestratorInteractAction(InteractAction):
                             await self._emit_server_prep_tool_thoughts(
                                 visitor, observations, since_index=prep_obs_before
                             )
+                            # A prerequisite was pushed: deliver its first question
+                            # as the turn's terminal reply so the model cannot
+                            # fabricate the answer and skip the gate. The directive
+                            # contract below reads a JSON tool-result, so frame it as
+                            # one (no next_tool ⇒ it is treated as the terminal reply).
+                            if detour_directive:
+                                obs = json.dumps(
+                                    {"response_directive": detour_directive}
+                                )
                     # Companion detour: a companion capability (tool or skill) was
                     # used while a parent skill holds the turn-lock. Re-ground the
                     # parent in place so the model returns to it as soon as the side
@@ -2288,6 +2731,42 @@ class OrchestratorInteractAction(InteractAction):
                             pending_chain = nt
                             chain_deflections = 0
                         elif rd.strip().lower().startswith("tell the user:"):
+                            # Drain (ADR-0026): before ending on a completion's
+                            # terminal reply, re-resolve the task lock. If a task-lock
+                            # skill just completed and a parent task is now the top
+                            # runnable, resume it in THIS turn instead of ending — the
+                            # resumed task produces the egress. Inert until prerequisites
+                            # exist (nothing blocked ⇒ no parent to resume).
+                            resumed = await self._maybe_resume_after_completion(
+                                obs,
+                                active_skill_doc,
+                                skill_docs,
+                                loop_actions,
+                                visitor,
+                                utterance,
+                                tools,
+                                visible,
+                                activated,
+                                observations,
+                            )
+                            if resumed is not None:
+                                (
+                                    active_skill_doc,
+                                    tools,
+                                    visible,
+                                    skills_section,
+                                    resume_terminal,
+                                ) = resumed
+                                if resume_terminal:
+                                    # The resumed skill voices its own next question:
+                                    # deliver it and end the turn (server-driven
+                                    # resume — the model cannot fabricate the answer).
+                                    await self._send_reply(
+                                        visitor, resume_terminal, compose=True
+                                    )
+                                    ended_via = "resume_reply"
+                                    return
+                                continue
                             # Terminal reply directive with no chain — deliver it
                             # and end so the model cannot re-decide (e.g. re-run a
                             # tool it already ran). Compose (not literal relay): the
@@ -2345,12 +2824,29 @@ class OrchestratorInteractAction(InteractAction):
                 ended_via = "unknown"
                 return
 
+            # Invariant 7 (ADR-0026): the loop ended, but the orchestrator must not
+            # finalize idle while runnable work remains. Drain non-skill runnable
+            # tasks now (some may have become runnable mid-turn — e.g. a completion
+            # unblocked one); if one blocks on input it owns the egress. Inert until a
+            # runner is registered, so skill-only turns are unaffected.
+            interaction = getattr(visitor, "interaction", None)
+            emitted = bool(getattr(interaction, "response", "") if interaction else "")
+            if not emitted:
+                drain_directive = await self._drain_runnable_tasks(
+                    visitor, observations
+                )
+                if drain_directive:
+                    await self._send_reply(visitor, drain_directive, compose=True)
+                    ended_via = f"{ended_via}_drained"
+                    return
+                emitted = bool(
+                    getattr(interaction, "response", "") if interaction else ""
+                )
+
             # Budget/time ran out mid-task. Rather than dropping to the generic
             # clarify fallback (which discards the work and misreports the
             # cause), force ONE compose so the user gets the agent's best answer
             # from what it gathered. Only when there's actual work to summarize.
-            interaction = getattr(visitor, "interaction", None)
-            emitted = bool(getattr(interaction, "response", "") if interaction else "")
             if (
                 not emitted
                 and ended_via in ("budget", "duration", "no_decision")
@@ -2520,6 +3016,13 @@ class OrchestratorInteractAction(InteractAction):
         """
         interaction = getattr(visitor, "interaction", None)
         text = (text or "").strip()
+        # Drop model-only composition guidance (everything after the U+2063 marker).
+        # An orchestrator-authored reply is composed/relayed directly, not handed to
+        # the model to relay, so the guidance ("You may paraphrase…", "Do not…",
+        # tool-chain hints) is vestigial here — and a weak compose model would echo
+        # it verbatim to the user. The user-facing text is always before the marker.
+        if text:
+            text = text.split("\u2063", 1)[0].strip()
         if interaction is not None and text:
             framed = (
                 text
@@ -2584,6 +3087,50 @@ class OrchestratorInteractAction(InteractAction):
             return  # this exact text was already emitted this turn
         await self._emit_reply(visitor, answer)
 
+    def _open_plan_step(self, visitor: Any) -> Optional[str]:
+        """Return a short description of the active plan's first unfinished step.
+
+        Returns ``None`` when planning is off, there is no orchestrator-owned
+        plan, or the plan has no pending steps. Used by the loop's completion
+        guard to keep a multi-step turn going instead of ending on a premature
+        ``final`` / narration-coerced reply.
+        """
+        if not self.planning:
+            return None
+        try:
+            plan = active_plan(visitor, owner=self.get_class_name())
+            if plan is None or not plan.has_pending_steps():
+                return None
+            checklist = plan.format_plan()
+        except Exception:
+            return None
+        if not checklist or checklist == "(no steps)":
+            return None
+        return checklist
+
+    @staticmethod
+    def _plan_drain_nudge(open_steps: str) -> Dict[str, Any]:
+        """The deflection observation when a turn-ending decision hits an open
+        plan. Actionable: redirect the model to DO the next step (discovering the
+        tool with find_tool if needed) rather than narrate it or dump the result
+        as a chat message — the observed failure mode."""
+        return {
+            "tool": "(guard)",
+            "args": {},
+            "observation": (
+                "(Your active plan still has unfinished steps:\n"
+                f"{open_steps}\n"
+                "Do the NEXT step now with a real tool call — do not just "
+                "describe it, and do not deliver the result as a chat message "
+                "instead of completing the step. If you can't see the tool you "
+                "need, call find_tool to locate it (e.g. find_tool('write "
+                "file'), find_tool('add document to knowledge base')). Text you "
+                "have already produced can be passed straight to the tool — you "
+                "do not need to save a file first. When the work is genuinely "
+                "done, mark the steps done/skipped with update_plan, then reply.)"
+            ),
+        }
+
     @staticmethod
     def _normalize(
         decision: Dict[str, Any],
@@ -2610,6 +3157,17 @@ class OrchestratorInteractAction(InteractAction):
         action = raw_action.lower()
         tool_field = (decision.get("tool") or "").strip()
         args = decision.get("args") if isinstance(decision.get("args"), dict) else {}
+        # Tolerate a FLATTENED call: some models put the tool's arguments at the
+        # decision top level instead of nesting them under "args" — e.g.
+        # {"action":"tool","tool":"update_plan","steps":[...]}. Only fold when no
+        # args dict was supplied (don't pollute a well-formed call), and skip the
+        # reserved control/text keys.
+        if not args:
+            folded = {
+                k: v for k, v in decision.items() if k not in _DECISION_RESERVED_KEYS
+            }
+            if folded:
+                args = folded
         text = _text_candidate(decision)
 
         names: FrozenSet[str] = frozenset(skill_names) if skill_names else frozenset()

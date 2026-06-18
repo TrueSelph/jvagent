@@ -8,9 +8,250 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+## [0.1.0rc6] - 2026-06-17
+
+Sixth release candidate (TestPyPI). Headline: a `@tool` decorator makes Action
+tools declarative (no more hand-written JSON Schema), and the Orchestrator now
+reliably drives multi-step tasks to completion (plan-drain guard, plan-aware
+tool surfacing, friction-free tool discovery) instead of stalling mid-task on a
+weaker model.
+
+### Added
+
+- **`@tool` decorator for Action tools.** Decorate an `async def` method with
+  `@tool` and the base `get_tools()` auto-publishes it — name
+  (`{action_name}__{method}`, override via `@tool(name=…)` or a class-level
+  `tool_namespace`), description (method docstring), and `parameters_schema`
+  (derived from the signature; `Annotated[T, "desc"]` for per-arg docs) all
+  come from the function. New `jvagent/tooling/signature_schema.py` (Python type
+  → portable JSON Schema) + `tool_decorator.py` (`tool`, `collect_tools`). Every
+  capability action migrated (Google/Microsoft/file_interface/pageindex/
+  skill_hub/vision/web_fetch/web_search/code_execution), removing ~1500 lines of
+  hand-written `Tool()`/schema. Manual `Tool()` and `get_tools()` overrides
+  still work. See [`action-authoring.md`](.planning/reference/action-authoring.md) §10.
+- **Resumable plans carry work across the resume (ADR-0019).** `update_plan`
+  steps accept an optional `result`/note (e.g. an artifact path) persisted on the
+  step; `plan_resume_note` surfaces it so a resumed turn reuses saved work
+  (read the file) instead of regenerating it.
+
 ### Changed
 
-- **`jvagent/vision` made self-contained + configurable prompt.** All vision prompts and model operations moved out of `interact/utils/vision_prompt.py` into the action's own package: prompt constants in `jvagent/action/vision/prompts.py` (`IMAGE_INTERPRETATION_PROMPT`, now multiline) and the builders/model call in `jvagent/action/vision/multimodal.py` (`build_prompt_for_vision`, `generate_image_interpretation`). `VisionAction` gains an **`interpretation_prompt`** attribute (default = `IMAGE_INTERPRETATION_PROMPT`) overridable in `agent.yaml`; precedence is per-call prompt → `interpretation_prompt` → constant. Fixes a latent bug where `describe()` passed `prompt=None`, clobbering the default and sending a `{"type":"text","text":null}` part to the model. The old `interact/utils/vision_prompt.py` and its `interact/utils/__init__` re-exports are removed (no other callers). Example `orchestrator_agent` and `zoon` agent configs document the model + `interpretation_prompt` knobs (and note that a non-vision model returns HTTP 400 `image_url is only supported by certain models`). Covered by `tests/action/test_vision_action.py`, `tests/action/test_vision_multimodal.py`.
+- **The Orchestrator finishes multi-step tasks instead of stalling.**
+  - **Plan-drain completion guard**: while an active plan has open steps, a
+    turn-ending decision (`final`/`reply`/`respond`) is deflected with an
+    actionable nudge (do the next step; use `find_tool` if needed; produced text
+    can go straight to the tool) — bounded by `plan_completion_max_deflections`
+    (default 6).
+  - **Plan-aware lean pre-surfacing**: the relevance signal folds in the active
+    plan's checklist, so a resumed/low-signal turn still surfaces the next
+    step's tools.
+  - **Prompt hardening**: act-don't-announce; finish multi-step work before
+    replying; `find_tool` first if the exact tool isn't visible, don't
+    substitute a look-alike.
+- **`block_raw_tool_invocation` no longer hard-gates hidden tools.** A real tool
+  the model names directly is **auto-promoted and run** (implicit `load_tool`);
+  only an unknown/hallucinated name is bounced to `find_tool`. The flag still
+  stops the *user* from dictating tool selection. (Previously this dead-looped
+  when a weak model repeatedly named a correct-but-hidden tool.)
+- **`update_plan` tolerates the shapes models emit**: the step list under many
+  key aliases, a dict-of-steps, a bare string, or a single inline step; and the
+  loop normalizer folds a **flattened** call (args at the decision top level
+  instead of under `args`) into the tool args.
+- **Model-floor guidance**: the Orchestrator is model-mediated — documented a
+  gpt-4.1 / Claude Opus-Sonnet floor for the heavy gear (the class default
+  `gpt-4o-mini` is for cheap single-step agents). See
+  [`docs/ORCHESTRATOR.md`](docs/ORCHESTRATOR.md) "Model floor".
+- **Example orchestrator agent**: disabled the redundant sandboxed-filesystem
+  MCP server (it duplicated `file_interface`'s per-user slice and was the
+  surface a weak model kept mis-calling); `pinned_tools` left available but off.
+
+### Fixed
+
+- **PageIndex assimilate no longer loses document content.** A path-like `doc`
+  (e.g. a file written by `code_execution__bash`) is resolved from the caller's
+  per-user sandbox and its **content** ingested; an unresolvable path now fails
+  loud instead of silently storing the filename string as the document body.
+
+## [0.1.0rc5] - 2026-06-16
+
+Fifth release candidate (TestPyPI). Headline: the interview hook authoring
+interface is now a single `ctx` object (**BREAKING for skill authors**). Also
+fixes a turn-lock re-grounding regression from rc4 and applies `country_code` in
+the builtin phone validator.
+
+### Changed
+
+- **Interview hooks take a single `ctx` (BREAKING for skill authors).** Every
+  `custom_tools` hook — validator, pre/post processor, skill tool, handler, branch
+  condition — now takes exactly one argument, `ctx` (`HookExecutionContext`), and
+  imports nothing from the interview package.
+  - **Inputs** are attributes: `ctx.value` (validators), `ctx.session`,
+    `ctx.visitor`, `ctx.interview` (the action), `ctx.config` (the spec),
+    `ctx.extracted_values`, `ctx.args` (validator_args / skill-tool args),
+    `ctx.phase`. `ctx` is always injected and never `None` (no null-guard).
+  - **Output** is methods: `ctx.say(msg | [msgs], *, continue_=False, hint="")` is
+    the single channel for user-facing text — one string is one question, a list is
+    sequential statements (statement-then-followup), `continue_` appends the
+    branch-aware next prompt, `hint` is model-only guidance. `ctx.tool_response(...)`
+    is the control envelope (status / next_tool / interview_complete / value /
+    retain_context_keys / review keys / a deferred `note`). `ctx.call_tool(tool)`,
+    `ctx.no_session()`, and `ctx.valid(...)` / `ctx.invalid(...)` (validators —
+    `invalid` auto-frames the error as the re-ask) round out the surface.
+  - `ctx.say` records onto the context; `call_hook` folds it into the result's
+    `response_directive` in one place, so it flows the existing, proven delivery
+    path (no double-emit). It is **inert outside reply-producing phases** (the
+    pre-processor store re-run, branch eval), so a prompt-builder that re-runs while
+    the answer is stored can't bleed the previous prompt onto the next turn — call
+    it unconditionally. This also resolves the rc4 regression where user-facing
+    content placed in a `tell_user` `note=` was stripped at egress.
+  - The standalone `responses.py` directive builders (`tell_user`,
+    `tell_user_with_followup`, `interview_tool_response`, `call_tool_directive`,
+    `no_session_directive`, …) and the `InterviewDirectives` sink (`directives.py`)
+    are **removed** — both modules are deleted; the framing primitives now live
+    inside `hooks.py` (internal; used by the engine and by `ctx`). The
+    `directives`/`session`/`visitor`/… back-compat kwarg injection is gone — `ctx`
+    is the only injected argument.
+
+### Added
+
+- **Field-level `hint`.** Interview fields take an optional `hint` alongside
+  `prompt` / `guidance` — plain **answer-guidance for the user** (how to answer the
+  question, e.g. "Enter your first, last, and any other names"; an accepted format;
+  that a field is optional). It is woven into the prompt's user-facing text so the
+  agent instructs the user on the intended answer, and surfaced in `field_reference`
+  / `next_field` so the model can answer the user's per-question clarifications.
+  Distinct from `guidance` (model-facing, judges the answer). Phrase it as what to
+  tell the user and keep it non-redundant with `prompt`.
+
+### Fixed
+
+- **Locked-interview re-grounding lost the field catalog (regression).** Under
+  task-driven turn-lock (ADR-0026) a skill entered as a pushed prerequisite or
+  resumed via the drain is delivered terminally, so the model never runs the
+  activation turn where the full `field_reference` is surfaced — and the per-turn
+  re-ground (`interview_turn_status`) only sent the slim key list. The re-ground
+  now re-asserts the **full** `field_reference` (key, prompt, guidance, required,
+  optional `hint`) on every locked turn. Covered by
+  `tests/action/interview/test_get_status_reference.py`.
+- **Builtin `phone` validator now applies `country_code`.** `validator_args` were
+  relayed to the validator but the `country_code` arg was ignored, so a bare local
+  number was never normalized (a 7-digit number with `country_code: 592` was
+  rejected by the 10-digit check instead of becoming `592…`). It now prepends
+  `country_code` to a bare **local-length** number — exactly `full_length −
+  code_length` digits (7 for `592`, full 10) — leaving full-length numbers and
+  numbers already carrying the code untouched. Acceptance is therefore strictly a
+  local number (→ full) or an already-full number, nothing in between (6/8/9/11-digit
+  inputs are rejected). No `country_code` → unchanged. Covered by
+  `tests/action/interview/test_phone_validator_country_code.py`.
+
+## [0.1.0rc4] - 2026-06-16
+
+Fourth release candidate (TestPyPI). Task-driven turn-lock: the orchestrator's
+work graph becomes a standard, drainable mechanism (ADR-0026).
+
+### Added
+
+- **Task-driven turn-lock — work-stack orchestration (ADR-0026).** The
+  `TaskStore` is now a work graph the orchestrator drains. Prerequisites push,
+  completion pops and re-resolves, and resume is orchestrator-selected (not
+  model-mediated). Generic, domain-agnostic primitives in `memory/task_graph.py`
+  (`prerequisites_met`, `is_runnable`, `has_outstanding_work`,
+  `pick_top_runnable`) over new `Task` fields (`resumes`/`blocked_on`/`order`/
+  `seed`/`snapshot`).
+- **Declarative `requires-tasks` + precondition registry
+  (`action/orchestrator/preconditions.py`, `skills.py`).** A skill declares
+  `{when: <precondition>, push: <skill>, seed_from: [...]}` in frontmatter; a
+  consumer binds precondition names to predicates at bootstrap. The first unmet
+  precondition is pushed as a blocking prerequisite, seeded with the original
+  request, and resumed deterministically on completion. The detour's first
+  question and the resume are server-delivered (terminal), never model-fabricated.
+- **Task-runner registry + standing store drain
+  (`action/orchestrator/task_runners.py`, §2.4/§3, invariant 7).** A
+  `task_type → runner` registry; `SKILL`/`PROACTIVE` are advanced by the
+  orchestrator loop, other types by registered runners. The orchestrator drains
+  runnable work every turn and never finalizes idle while runnable work remains —
+  independent of any skill turn-lock.
+- **Proactive scheduler folded into the work graph (ADR-0022 unification).** A
+  `PROACTIVE` task is runnable for the generic resolver only once the scheduler
+  claims it (`pending` queued → `active` due); the orchestrator resolves a claimed
+  proactive task from the store, not only via a side channel.
+- **Snapshot/rehydrate hooks (§2.3)** so a flow torn down for a detour rebuilds
+  from its task snapshot on resume.
+- **Full work graph in the debug `tasks` payload** (every status + a derived
+  `blocked` flag), instead of a this-turn window. Production payloads stay
+  redacted.
+- **Framework-agnostic CI guard** (`tests/test_framework_domain_agnostic.py`):
+  no consumer domain vocabulary may appear in `jvagent/`. Plus a non-zoon example
+  consumer under `action/interview/examples/example_account_gating/`.
+
+### Fixed
+
+- **Dead-prerequisite deadlock.** A blocker that ends `cancelled`/`failed` now
+  cascade-abandons its dependents (it would otherwise leave a non-terminal but
+  unrunnable zombie that kept the engagement state True forever).
+- **Directive guidance no longer leaks to the user.** Model-only composition
+  guidance after the `U+2063` marker is stripped before egress (a weak compose
+  model could echo it), and an entry directive that auto-resolves to a tool-call
+  chain (`Call interview__next_field()`) advances server-side to the first real
+  question instead of leaking the chain.
+- **User-facing copy never calls the flow an "interview"** (cancel/reset/missing
+  messages reworded).
+
+## [0.1.0rc3] - 2026-06-14
+
+Third release candidate (TestPyPI). Adds the bundled jvchat web UI + CLI and an
+interview re-ask fix.
+
+### Added
+
+- **`jvagent chat` — bundled jvchat web UI.** The built jvchat SPA now ships
+  inside the wheel and is served by `jvagent chat` on its own port (a separate
+  process/origin from the agent server, by design — see
+  [`docs/jvchat.md`](docs/jvchat.md) for the security rationale). `--url`
+  injects the target agent URL at runtime (`window.__JVCHAT_RUNTIME_CONFIG__`),
+  so one pre-built bundle targets any agent without a rebuild. The static server
+  adds SPA fallback, a path-traversal guard, and security headers (`no-store`
+  HTML, `immutable` assets, `nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy`). Built/staged by `scripts/build_jvchat.py` and shipped as
+  wheel package-data (the publish workflow builds the UI before
+  `python -m build`). Covered by `tests/webui/`.
+
+### Fixed
+
+- **Interview validation re-ask no longer duplicates the question.** A
+  validator returning a complete-sentence error already re-asks for the value;
+  `validation_guidance_directive` previously also appended the field question,
+  producing a doubled ask. The field question is now appended only for a terse
+  error fragment (an error is treated as self-contained when it is prefixed with
+  `Tell the user:` / `Ask:` or ends with `.`/`!`/`?`). Covered by
+  `tests/action/interview/test_validation_reask.py`.
+
+## [0.1.0rc2] - 2026-06-14
+
+Second release candidate (TestPyPI). Fixes the standalone `jvagent bootstrap`
+path on jvspatial 0.0.9 and refreshes CI / dependency tooling.
+
+### Fixed
+
+- **Standalone `jvagent bootstrap` creates the admin user again.** jvspatial
+  ≥0.0.9 resolves the auth service from the `Server` in context. The serve
+  path builds the `Server` before `ensure_admin_user()`, but the standalone
+  `bootstrap_only` path did not — so `jvagent bootstrap` (which the scaffolder
+  tells users to run) failed with `get_auth_service() requires a Server to be
+  set in context` and never created the admin. `bootstrap_only` now
+  instantiates the `Server` (without starting uvicorn) before
+  `ensure_admin_user()`. Covered by
+  `test_bootstrap_only_creates_admin_without_preexisting_server`.
+
+### Changed
+
+- **CI GitHub Actions moved to Node 24.** `actions/checkout@v5`,
+  `actions/setup-python@v6`, `actions/setup-node@v6`,
+  `actions/{upload,download}-artifact@v5`, plus Dependabot bumps of the Docker
+  build actions (`setup-buildx@v4`, `login@v4`, `metadata@v6`). Clears the
+  Node 20 deprecation warnings.
+- **jvchat dependency bumps** via Dependabot (`@assistant-ui/react`,
+  `@uiw/react-codemirror`, `@uiw/codemirror-theme-github`).
 
 ## [0.1.0rc1] - 2026-06-14
 
@@ -18,6 +259,10 @@ First public release candidate. Consolidates the `dev-executive` line: the
 Orchestrator turn model, the thin-harness interview v2, single-egress
 `ReplyAction`, and the skills-v2 surface. See the entries below for the full
 set of changes rolled into this candidate.
+
+### Changed
+
+- **`jvagent/vision` made self-contained + configurable prompt.** All vision prompts and model operations moved out of `interact/utils/vision_prompt.py` into the action's own package: prompt constants in `jvagent/action/vision/prompts.py` (`IMAGE_INTERPRETATION_PROMPT`, now multiline) and the builders/model call in `jvagent/action/vision/multimodal.py` (`build_prompt_for_vision`, `generate_image_interpretation`). `VisionAction` gains an **`interpretation_prompt`** attribute (default = `IMAGE_INTERPRETATION_PROMPT`) overridable in `agent.yaml`; precedence is per-call prompt → `interpretation_prompt` → constant. Fixes a latent bug where `describe()` passed `prompt=None`, clobbering the default and sending a `{"type":"text","text":null}` part to the model. The old `interact/utils/vision_prompt.py` and its `interact/utils/__init__` re-exports are removed (no other callers). Example `orchestrator_agent` and `zoon` agent configs document the model + `interpretation_prompt` knobs (and note that a non-vision model returns HTTP 400 `image_url is only supported by certain models`). Covered by `tests/action/test_vision_action.py`, `tests/action/test_vision_multimodal.py`.
 
 ### Dependencies
 

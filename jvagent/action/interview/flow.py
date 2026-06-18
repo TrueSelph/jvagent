@@ -132,6 +132,7 @@ async def matches_branch_condition(
             session=session,
             visitor=visitor,
             interview_action=interview_action,
+            phase="branch",
         )
         if operator:
             try:
@@ -332,6 +333,8 @@ def _slim_field_entry(fdef: FieldDef) -> Dict[str, Any]:
     }
     if fdef.guidance:
         entry["guidance"] = fdef.guidance
+    if fdef.hint:
+        entry["hint"] = fdef.hint
     return entry
 
 

@@ -27,6 +27,16 @@ def validate_phone(value: str, **kwargs) -> Dict[str, Any]:
     digits = re.sub(r"\D", "", value or "")
     if not digits:
         return _fail("Ask: Please provide a phone number")
+    # ``country_code``: prepend it to a bare LOCAL number — one whose length is
+    # exactly (full length − country-code length), e.g. a 7-digit number with
+    # country_code=592 → the 10-digit full number. Any other length is left as-is,
+    # so the length/pattern checks below accept ONLY a bare local number (after the
+    # code is added) or an already-full number — nothing in between.
+    country_code = re.sub(r"\D", "", str(kwargs.get("country_code") or ""))
+    if country_code and not digits.startswith(country_code):
+        target_full = length or max_len or 10
+        if len(digits) == target_full - len(country_code):
+            digits = country_code + digits
     if length and len(digits) != length:
         return _fail(f"Ask: Please provide a {length}-digit phone number")
     if len(digits) < min_len:

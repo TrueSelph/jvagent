@@ -228,6 +228,17 @@ def parse_skill_bundle(
         skill_file,
         key="lock-companions",
     )
+    # Declarative prerequisites (ADR-0026): a list of {when, push, seed_from}.
+    # Passed through raw; normalized by SkillDoc.
+    requires_tasks = frontmatter.get("requires-tasks") or frontmatter.get(
+        "requires_tasks"
+    )
+    if requires_tasks is not None and not isinstance(requires_tasks, (list, tuple)):
+        logger.warning(
+            "Skill bundle %s frontmatter 'requires-tasks' must be a list; ignoring",
+            skill_file,
+        )
+        requires_tasks = None
     # Skill spec: ``jv`` (default — an SOP that references action/IA tools) or
     # ``claude`` (a standard Anthropic Agent Skills folder whose bundled scripts
     # the model runs via the code-execution substrate). Unknown values fall back
@@ -303,6 +314,7 @@ def parse_skill_bundle(
         "always_active": always_active,
         "task_lock": task_lock,
         "lock_companions": lock_companions,
+        "requires_tasks": requires_tasks or [],
         "spec": spec,
         "dispatch": dispatch,
         "exports": exports,
