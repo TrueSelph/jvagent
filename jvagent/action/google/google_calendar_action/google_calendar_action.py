@@ -1,5 +1,8 @@
+import json
 import logging
-from typing import Any, ClassVar, Dict, List, Optional
+from typing import Annotated, Any, ClassVar, Dict, List, Optional
+
+from jvagent.tooling.tool_decorator import tool
 
 from ..google_action import GoogleAction
 
@@ -60,127 +63,59 @@ class GoogleCalendarAction(GoogleAction):
         service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
         return True
 
-    async def get_tools(self) -> List[Any]:
-        """Full Google Calendar tool surface (ADR-0012: actions are first-class tools)."""
-        import json
+    @tool(name="calendar__list_events")
+    async def _t_list_events(
+        self,
+        calendar_id: Annotated[
+            Optional[str], "Calendar identifier (default: 'primary')"
+        ] = None,
+        time_min: Annotated[
+            Optional[str], "Lower bound for event start time (ISO 8601)"
+        ] = None,
+        max_results: Annotated[
+            Optional[int], "Maximum number of events to return (default: 10)"
+        ] = None,
+    ) -> str:
+        """List upcoming events from Google Calendar."""
+        results = await self.list_events(
+            calendar_id=calendar_id or "primary",
+            time_min=time_min,
+            max_results=max_results if max_results is not None else 10,
+        )
+        return json.dumps(results, indent=2)
 
-        from jvagent.tooling.tool import Tool
+    @tool(name="calendar__create_event")
+    async def _t_create_event(
+        self,
+        summary: Annotated[str, "Event title/summary"],
+        start_time: Annotated[str, "Event start time (ISO 8601)"],
+        end_time: Annotated[str, "Event end time (ISO 8601)"],
+        calendar_id: Annotated[
+            Optional[str], "Calendar identifier (default: 'primary')"
+        ] = None,
+        description: Annotated[Optional[str], "Optional event description"] = None,
+        location: Annotated[Optional[str], "Optional event location"] = None,
+    ) -> str:
+        """Create a new event on Google Calendar."""
+        result = await self.create_event(
+            summary=summary,
+            start_time=start_time,
+            end_time=end_time,
+            calendar_id=calendar_id or "primary",
+            description=description,
+            location=location,
+        )
+        return json.dumps(result, indent=2)
 
-        action = self
-
-        async def _list_events(
-            calendar_id: str = "primary",
-            time_min: Optional[str] = None,
-            max_results: int = 10,
-        ) -> str:
-            results = await action.list_events(
-                calendar_id=calendar_id,
-                time_min=time_min,
-                max_results=max_results,
-            )
-            return json.dumps(results, indent=2)
-
-        async def _create_event(
-            summary: str,
-            start_time: str,
-            end_time: str,
-            calendar_id: str = "primary",
-            description: Optional[str] = None,
-            location: Optional[str] = None,
-        ) -> str:
-            result = await action.create_event(
-                summary=summary,
-                start_time=start_time,
-                end_time=end_time,
-                calendar_id=calendar_id,
-                description=description,
-                location=location,
-            )
-            return json.dumps(result, indent=2)
-
-        async def _delete_event(calendar_id: str, event_id: str) -> str:
-            result = await action.delete_event(
-                calendar_id=calendar_id,
-                event_id=event_id,
-            )
-            return json.dumps({"deleted": result}, indent=2)
-
-        return [
-            Tool(
-                name="calendar__list_events",
-                description="List upcoming events from Google Calendar.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "calendar_id": {
-                            "type": "string",
-                            "description": "Calendar identifier (default: 'primary')",
-                        },
-                        "time_min": {
-                            "type": "string",
-                            "description": "Lower bound for event start time (ISO 8601)",
-                        },
-                        "max_results": {
-                            "type": "integer",
-                            "description": "Maximum number of events to return (default: 10)",
-                        },
-                    },
-                    "required": [],
-                },
-                execute=_list_events,
-            ),
-            Tool(
-                name="calendar__create_event",
-                description="Create a new event on Google Calendar.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "summary": {
-                            "type": "string",
-                            "description": "Event title/summary",
-                        },
-                        "start_time": {
-                            "type": "string",
-                            "description": "Event start time (ISO 8601)",
-                        },
-                        "end_time": {
-                            "type": "string",
-                            "description": "Event end time (ISO 8601)",
-                        },
-                        "calendar_id": {
-                            "type": "string",
-                            "description": "Calendar identifier (default: 'primary')",
-                        },
-                        "description": {
-                            "type": "string",
-                            "description": "Optional event description",
-                        },
-                        "location": {
-                            "type": "string",
-                            "description": "Optional event location",
-                        },
-                    },
-                    "required": ["summary", "start_time", "end_time"],
-                },
-                execute=_create_event,
-            ),
-            Tool(
-                name="calendar__delete_event",
-                description="Delete an event from Google Calendar.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "calendar_id": {
-                            "type": "string",
-                            "description": "Calendar identifier (default: 'primary')",
-                        },
-                        "event_id": {
-                            "type": "string",
-                            "description": "The ID of the event to delete",
-                        },
-                    },
-                    "required": ["calendar_id", "event_id"],
-                },
-                execute=_delete_event,
-            ),
-        ]
+    @tool(name="calendar__delete_event")
+    async def _t_delete_event(
+        self,
+        calendar_id: Annotated[str, "Calendar identifier (default: 'primary')"],
+        event_id: Annotated[str, "The ID of the event to delete"],
+    ) -> str:
+        """Delete an event from Google Calendar."""
+        result = await self.delete_event(
+            calendar_id=calendar_id,
+            event_id=event_id,
+        )
+        return json.dumps({"deleted": result}, indent=2)

@@ -19,13 +19,14 @@ action is self-contained. Suppression:
 from __future__ import annotations
 
 import logging
-from typing import Any, List, Optional
+from typing import Annotated, Any, List, Optional
 
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
 from jvagent.action.vision.multimodal import generate_image_interpretation
 from jvagent.action.vision.prompts import IMAGE_INTERPRETATION_PROMPT
+from jvagent.tooling.tool_decorator import tool
 
 logger = logging.getLogger(__name__)
 
@@ -92,35 +93,24 @@ class VisionAction(Action):
             logger.warning("VisionAction.describe failed: %s", exc)
             return ""
 
-    async def get_tools(self) -> List[Any]:
-        from jvagent.tooling.tool import Tool
-
-        return [
-            Tool(
-                name="interpret_images",
-                description=(
-                    "Describe the image(s) attached to the current message. "
-                    "Returns an extensive text interpretation you can use to "
-                    "answer the user's question about them."
-                ),
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "prompt": {
-                            "type": "string",
-                            "description": "Custom prompt for image interpretation. Defaults to exhaustive description.",
-                        },
-                    },
-                },
-                execute=self._tool_interpret,
-            )
-        ]
-
-    async def _tool_interpret(
-        self, visitor: Any = None, prompt: Optional[str] = None, **_: Any
+    @tool(name="interpret_images")
+    async def _t_interpret_images(
+        self,
+        prompt: Annotated[
+            Optional[str],
+            "Custom prompt for image interpretation. "
+            "Defaults to exhaustive description.",
+        ] = None,
+        **kwargs: Any,
     ) -> Any:
+        """Describe the image(s) attached to the current message. Returns an extensive text interpretation you can use to answer the user's question about them."""  # noqa: E501
+        from jvagent.tooling.tool_executor import get_dispatch_visitor
         from jvagent.tooling.tool_result import ToolResult
 
+        # ``visitor`` may be passed explicitly by a caller/executor; otherwise
+        # resolve it from the dispatch context. (``**kwargs`` keeps it out of
+        # the derived schema — the model only sees ``prompt``.)
+        visitor = kwargs.get("visitor") or get_dispatch_visitor()
         text = await self.describe(visitor=visitor, prompt=prompt)
         if not text:
             return ToolResult(content="(no images on the current message to interpret)")

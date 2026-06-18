@@ -22,7 +22,9 @@ The plugin-loadable extension surface of jvagent:
 | File | Purpose |
 |---|---|
 | `base.py:48` | `Action` base class (canonical) |
-| `base.py:192` | `get_tools()` — for the Executive's Skills center tool registry |
+| `base.py:272` | `get_tools()` — default discovers `@tool`-decorated methods via `collect_tools` |
+| `jvagent/tooling/tool_decorator.py` | `@tool` decorator + `collect_tools` — preferred way to publish tools |
+| `jvagent/tooling/signature_schema.py` | signature → JSON Schema deriver used by `@tool` |
 | `base.py:180` | `get_capabilities()` — for PersonaAction prompt aggregation |
 | `base.py:225` | `delete(cascade=True)` — walks outgoing edges and cascade-deletes children |
 | `base.py:256-348` | Lifecycle hook contracts (`on_register`, `on_reload`, `post_register`, `on_startup`, `on_enable`, `on_disable`, `on_deregister`, `pulse`, `healthcheck`) |
@@ -50,6 +52,7 @@ The plugin-loadable extension surface of jvagent:
 6. **Child Nodes attached via outgoing edges are cascade-deleted** when the action is deleted ([`base.py:225`](base.py)). Always connect via `await self.connect(child, direction="out")`.
 7. **`is_singleton` default is `True`** ([`base.py:221`](base.py)). Override `config.singleton: false` in `info.yaml` if multiple instances per agent are allowed.
 8. **Thin harness** — Actions expose capabilities via `get_tools()`; they must not classify user intent, inject prep steering, auto-store extracted values, or inline multi-step workflows. Put judgment in skill SOPs and domain logic in skill extensions. See [`docs/thin-harness.md`](../../docs/thin-harness.md).
+9. **Prefer the `@tool` decorator over hand-built `Tool()`** — decorate an `async def` method with `@tool` ([`jvagent/tooling/tool_decorator.py`](../tooling/tool_decorator.py)) and the base `get_tools()` auto-publishes it. Name = `{action_name}__{method}` (override with `@tool(name=...)`); description = method docstring's first paragraph; JSON Schema = signature (use `Annotated[T, "desc"]` for per-arg docs). Hand-built `Tool()` and `get_tools()` overrides still work; only override when a tool can't be a decorated method (combine with `collect_tools(self)`).
 
 ---
 
@@ -103,7 +106,7 @@ The detailed walkthrough lives at [`/.planning/reference/action-authoring.md`](.
 1. Pick base class (Action / InteractAction / specialized).
 2. Choose namespace (`jvagent/` for core, otherwise `contrib/` or `custom/`).
 3. Create the 4-file directory.
-4. Define `attribute(...)` fields; implement lifecycle hooks + `execute` (if InteractAction) + `get_tools()` (if exposed as a tool).
+4. Define `attribute(...)` fields; implement lifecycle hooks + `execute` (if InteractAction). Publish tools by decorating methods with `@tool` (preferred over overriding `get_tools()`).
 5. Wire endpoints under `/actions/{action_id}/...`.
 6. Add tests under `tests/action/{name}/`.
 7. Update [`actions-catalog.md`](../../.planning/reference/actions-catalog.md).

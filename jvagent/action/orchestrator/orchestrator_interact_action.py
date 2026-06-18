@@ -128,6 +128,27 @@ _STEER_EXEMPT = frozenset(
 )
 _NON_SUBSTANTIVE_TOOLS = _STEER_EXEMPT
 
+# Decision keys that are control/text fields, never tool arguments. When a model
+# FLATTENS a call (puts args at the decision top level instead of under "args"),
+# everything outside this set is folded into the tool args by ``_normalize``.
+_DECISION_RESERVED_KEYS = frozenset(
+    {
+        "action",
+        "tool",
+        "args",
+        "answer",
+        "text",
+        "content",
+        "message",
+        "reasoning",
+        "thought",
+        "name",
+        "skill",
+        "topic",
+        "query",
+    }
+)
+
 # A ``requires-actions`` spec is an Action class name with an optional inline
 # version constraint, PEP 508-style: the comparison operator is the delimiter
 # (``PageIndexAction>=2.0``, ``WebFetchAction==1.4.0``, ``X>=1.0,<2.0``).
@@ -436,6 +457,18 @@ class OrchestratorInteractAction(InteractAction):
         description="Appended when planning is on (no placeholders). Nudges "
         "update_plan use for multi-step work.",
     )
+    plan_completion_max_deflections: int = attribute(
+        default=6,
+        description=(
+            "Plan-drain guard: while an active plan has unfinished steps, a "
+            "turn-ending decision (final / reply / respond) is deflected up to "
+            "this many times so the model finishes (or explicitly closes) the "
+            "plan before completing the turn — instead of stalling on a 'doing "
+            "X next' message. After the cap the reply passes (so a genuine "
+            "mid-plan question to the user isn't blocked forever). 0 disables "
+            "the drain guard."
+        ),
+    )
     memory_prompt: str = attribute(
         default=MEMORY_PROMPT,
         description="Memory-access protocol rendered in the LOOP PROTOCOL: search "
@@ -541,10 +574,12 @@ class OrchestratorInteractAction(InteractAction):
     )
     block_raw_tool_invocation: bool = attribute(
         default=False,
-        description="When True: (1) the loop may only call tools currently "
-        "surfaced (visible) — hidden tools must be reached via find_tool / a "
-        "skill; and (2) a TOOL-USE POLICY is added so the user cannot steer "
-        "tool selection — they state a goal, the agent chooses the tools.",
+        description="When True a TOOL-USE POLICY is added so the USER cannot "
+        "steer tool selection — they state a goal, the agent chooses the tools; "
+        "a tool the user named is deflected once. It does NOT block the model "
+        "from calling a real tool that lean surfacing merely hid: naming a real "
+        "tool is valid intent, so it is auto-promoted and run (an implicit "
+        "load_tool). Only an unknown/hallucinated name is bounced to find_tool.",
     )
     tool_tier: str = attribute(
         default="standard",
@@ -1270,8 +1305,17 @@ class OrchestratorInteractAction(InteractAction):
             self.lean_tool_threshold
         )
         if lean:
+            # Relevance signal = the user's message PLUS any in-progress plan's
+            # checklist. A parked multi-step plan resumed on a low-signal turn
+            # ("Well?", "continue") would otherwise surface nothing and force the
+            # model through find_tool round-trips for tools the next plan step
+            # needs (e.g. pageindex__assimilate for "add to knowledge base").
+            relevance_text = utterance
+            plan_steps = self._open_plan_step(visitor)
+            if plan_steps:
+                relevance_text = f"{utterance}\n{plan_steps}"
             keep = self._presurface_tools(
-                utterance, longtail, tools, int(self.lean_presurface_k)
+                relevance_text, longtail, tools, int(self.lean_presurface_k)
             )
             keep |= set(self._user_named_tools(utterance, longtail))
             visible |= keep
@@ -2302,6 +2346,12 @@ class OrchestratorInteractAction(InteractAction):
         # is named in code.
         pending_chain: Optional[str] = None
         chain_deflections = 0
+        # Plan-completion guard (thin, plan-gated): when an active multi-step plan
+        # still has open steps, a bare "I'll do X next" narration (coerced to a
+        # reply) or a premature ``final`` is deflected once so the loop keeps
+        # going instead of ending the turn mid-task. Bounded so a deliberate
+        # reply/finish is never blocked for long.
+        plan_deflections = 0
         # Named-tool steering guard (block_raw_tool_invocation): tools the user
         # named literally this turn, deflected once each so the model re-plans
         # from intent rather than obeying the named tool.
@@ -2452,6 +2502,15 @@ class OrchestratorInteractAction(InteractAction):
                             }
                         )
                         continue
+                    if plan_deflections < int(self.plan_completion_max_deflections):
+                        open_steps = self._open_plan_step(visitor)
+                        if open_steps:
+                            # An active multi-step plan still has open steps —
+                            # don't finalize mid-task. Nudge the model to run the
+                            # next step (or close the plan if it's really done).
+                            plan_deflections += 1
+                            observations.append(self._plan_drain_nudge(open_steps))
+                            continue
                     answer = _text_candidate(decision)
                     if answer:
                         await self._maybe_emit_final(visitor, answer)
@@ -2500,6 +2559,22 @@ class OrchestratorInteractAction(InteractAction):
                             }
                         )
                         continue
+                    if tool_name in ("reply", "respond") and plan_deflections < int(
+                        self.plan_completion_max_deflections
+                    ):
+                        # Plan-drain: the orchestrator must not COMPLETE the turn
+                        # (reply/respond is terminal egress) while its active plan
+                        # still has unfinished steps — whether the reply is bare
+                        # narration coerced to a reply ("Proceeding to drafting
+                        # now") or a deliberate reply. Deflect and drive the model
+                        # to do the next step or explicitly close the plan. After
+                        # the cap the reply passes, so a genuine mid-plan question
+                        # to the user is never blocked forever.
+                        open_steps = self._open_plan_step(visitor)
+                        if open_steps:
+                            plan_deflections += 1
+                            observations.append(self._plan_drain_nudge(open_steps))
+                            continue
                     # Companion gate: while a skill holds the turn-lock, use_skill
                     # may only (re)activate the locked skill itself or a declared
                     # companion. Switching to an unrelated skill would abandon the
@@ -2529,15 +2604,29 @@ class OrchestratorInteractAction(InteractAction):
                         continue
                     tool = tools.get(tool_name)
                     if tool is None:
-                        obs = f"(no such tool: {tool_name})"
-                    elif self.block_raw_tool_invocation and tool_name not in visible:
-                        # Surface discipline: a hidden tool must be reached via
-                        # find_tool or a skill, not named raw.
+                        # Genuinely unknown name (often a hallucinated tool) —
+                        # this is where find_tool earns its keep: point the model
+                        # at discovery instead of letting it guess again.
                         obs = (
-                            f"(tool {tool_name} is not directly available — use "
-                            "find_tool or the relevant skill to reach it)"
+                            f"(no such tool: {tool_name}. Call "
+                            "find_tool(query) to find the right tool by "
+                            "capability — e.g. find_tool('write file'), "
+                            "find_tool('add to knowledge base') — then call the "
+                            "exact name it returns.)"
                         )
                     else:
+                        if self.block_raw_tool_invocation and tool_name not in visible:
+                            # The model named a REAL tool that lean surfacing had
+                            # hidden. Naming it IS effective intent (not a
+                            # hallucination), so promote it and run it — an
+                            # implicit load_tool — rather than dead-ending on a
+                            # find_tool demand the model just repeats until the
+                            # repeat-guard kills the turn. Dispatch already
+                            # resolves the full surface; hiding a tool from the
+                            # prompt never made it uncallable. (The user-named-tool
+                            # steer guard above still blocks tools the *user*
+                            # dictated.)
+                            visible.add(tool_name)
                         # Structured tool thought for the UI's TOOL CALLS panel:
                         # tool_call before, tool_result after (shared segment_id
                         # so they fold into one element). Substantive tools only.
@@ -2998,6 +3087,50 @@ class OrchestratorInteractAction(InteractAction):
             return  # this exact text was already emitted this turn
         await self._emit_reply(visitor, answer)
 
+    def _open_plan_step(self, visitor: Any) -> Optional[str]:
+        """Return a short description of the active plan's first unfinished step.
+
+        Returns ``None`` when planning is off, there is no orchestrator-owned
+        plan, or the plan has no pending steps. Used by the loop's completion
+        guard to keep a multi-step turn going instead of ending on a premature
+        ``final`` / narration-coerced reply.
+        """
+        if not self.planning:
+            return None
+        try:
+            plan = active_plan(visitor, owner=self.get_class_name())
+            if plan is None or not plan.has_pending_steps():
+                return None
+            checklist = plan.format_plan()
+        except Exception:
+            return None
+        if not checklist or checklist == "(no steps)":
+            return None
+        return checklist
+
+    @staticmethod
+    def _plan_drain_nudge(open_steps: str) -> Dict[str, Any]:
+        """The deflection observation when a turn-ending decision hits an open
+        plan. Actionable: redirect the model to DO the next step (discovering the
+        tool with find_tool if needed) rather than narrate it or dump the result
+        as a chat message — the observed failure mode."""
+        return {
+            "tool": "(guard)",
+            "args": {},
+            "observation": (
+                "(Your active plan still has unfinished steps:\n"
+                f"{open_steps}\n"
+                "Do the NEXT step now with a real tool call — do not just "
+                "describe it, and do not deliver the result as a chat message "
+                "instead of completing the step. If you can't see the tool you "
+                "need, call find_tool to locate it (e.g. find_tool('write "
+                "file'), find_tool('add document to knowledge base')). Text you "
+                "have already produced can be passed straight to the tool — you "
+                "do not need to save a file first. When the work is genuinely "
+                "done, mark the steps done/skipped with update_plan, then reply.)"
+            ),
+        }
+
     @staticmethod
     def _normalize(
         decision: Dict[str, Any],
@@ -3024,6 +3157,17 @@ class OrchestratorInteractAction(InteractAction):
         action = raw_action.lower()
         tool_field = (decision.get("tool") or "").strip()
         args = decision.get("args") if isinstance(decision.get("args"), dict) else {}
+        # Tolerate a FLATTENED call: some models put the tool's arguments at the
+        # decision top level instead of nesting them under "args" — e.g.
+        # {"action":"tool","tool":"update_plan","steps":[...]}. Only fold when no
+        # args dict was supplied (don't pollute a well-formed call), and skip the
+        # reserved control/text keys.
+        if not args:
+            folded = {
+                k: v for k, v in decision.items() if k not in _DECISION_RESERVED_KEYS
+            }
+            if folded:
+                args = folded
         text = _text_candidate(decision)
 
         names: FrozenSet[str] = frozenset(skill_names) if skill_names else frozenset()

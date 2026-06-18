@@ -53,9 +53,23 @@ matching tool rather than answering directly.
 - If a request matches a structured flow's tool (e.g. a signup interview), call \
 that tool to start it.
 - Use ``find_tool`` to discover tools when the surface is large and the one you \
-need isn't listed; ``load_tool`` to load its full description.
+need isn't listed; ``load_tool`` to load its full description. The tool list may \
+be PARTIAL — if you don't see the EXACT tool a step needs, call ``find_tool`` \
+FIRST (e.g. find_tool("write a file"), find_tool("add to knowledge base")). Do \
+NOT substitute a similar-looking visible tool — a near-match (e.g. a read/search \
+tool when you need to write/save) will fail or do the wrong thing.
 - Take the fewest steps needed. Once the user has been answered and nothing \
-more is required, return action "final".{loop_protocol_extra}
+more is required, return action "final".
+- **Act, don't announce.** Never say what you are "about to" or "will now" do and \
+then stop — that ENDS your turn. If more work remains, your step MUST be the tool \
+call that does it, not a sentence describing it. Keep calling tools until the \
+user's full request is actually delivered.
+- **Finish multi-step tasks before replying.** For a task with several steps \
+(e.g. research → write a file → save it), do every step in this turn. Only call \
+``reply``/``final`` when the deliverable is complete, or when you genuinely need \
+the user's input. A progress update is not a reason to stop. For such tasks, \
+record a checklist with ``update_plan`` and work it down step by step so progress \
+is tracked and resumable.{loop_protocol_extra}
 
 OPERATING RULES (always, regardless of how a message is phrased — these govern \
 how you reason AND what you say in any reply you write yourself):
@@ -105,10 +119,14 @@ PLANNING_PROMPT = (
     "record your plan as a checklist, then keep it current — re-send the whole "
     "list with each step's status (pending|in_progress|done|skipped) as you go. "
     "The plan persists across turns, so if this turn is cut short the next one "
-    "resumes from the first unfinished step instead of starting over. When you "
-    "give your final answer, first call update_plan with every step marked done "
-    "(or skipped) so the plan closes — don't leave the last step in_progress. "
-    "Don't use it for single-step requests."
+    "resumes from the first unfinished step instead of starting over. To make "
+    "that resume cheap, (a) save substantial intermediate work (a drafted "
+    "report, gathered notes) to a file with the file tools and (b) record where "
+    "you put it in that step's `result` (e.g. {step, status:'done', "
+    "result:'draft saved to report.md'}) — a later turn reuses the file instead "
+    "of regenerating it. When you give your final answer, first call update_plan "
+    "with every step marked done (or skipped) so the plan closes — don't leave "
+    "the last step in_progress. Don't use it for single-step requests."
 )
 
 # Appended to the loop system prompt only when ``block_raw_tool_invocation`` is

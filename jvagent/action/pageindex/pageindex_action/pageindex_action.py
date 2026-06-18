@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import copy
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Optional
+import os
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Dict, List, Optional
 
 from jvspatial.api.auth.api_key_service import APIKeyService
 from jvspatial.api.exceptions import ValidationError
@@ -21,9 +22,11 @@ from jvspatial.exceptions import DatabaseError
 from jvagent.action.base import Action
 from jvagent.core.public_url import get_public_base_url
 from jvagent.env import get_jvagent_jvforge_base_url
+from jvagent.tooling.tool_decorator import collect_tools, tool
 
 from .. import llm_bridge
 from ..core import utils as pageindex_core_utils
+from ..documents import looks_like_doc_path
 from ..prompts import (
     DIRECTIVE_TEMPLATE,
     DIRECTIVE_TEMPLATE_NO_REFS,
@@ -520,204 +523,202 @@ class PageIndexAction(Action):
         )
 
     async def get_tools(self) -> List[Any]:
-        from jvagent.tooling.tool import Tool
+        # Decorated methods supply names/descriptions/schemas; the assimilate
+        # schema additionally pins ``additionalProperties: false``, which the
+        # signature deriver does not emit, so we re-add it here.
+        tools = collect_tools(self)
+        for t in tools:
+            if t.name == "pageindex__assimilate":
+                t.parameters_schema["additionalProperties"] = False
+                # ``doc`` is runtime-optional (the body coalesces aliases like
+                # content/text/url), so it carries a signature default and the
+                # deriver omits it from ``required``. The published contract
+                # still presents it as required, so re-assert that here.
+                t.parameters_schema["required"] = ["doc"]
+        return tools
 
-        action = self
+    # Aliases a model might use for doc_name instead of the canonical name.
+    _name_aliases = ("name", "title", "doc_title", "filename", "file_name")
 
-        async def _search(
-            query: str = "",
-            limit: int = 5,
-            doc_name: Optional[str] = None,
-            **kwargs: Any,
-        ) -> str:
-            import json
+    @tool(name="pageindex__search")
+    async def _t_search(
+        self,
+        query: Annotated[str, "Search query."],
+        doc_name: Annotated[
+            Optional[str], "Restrict search to a specific document name."
+        ] = None,
+        limit: Annotated[int, "Max results to return (default 5)."] = 5,
+        **kwargs: Any,
+    ) -> str:
+        """Search the internal knowledge base for documents matching a query."""
+        import json
 
-            from jvagent.tooling.tool_executor import get_dispatch_visitor
+        from jvagent.tooling.tool_executor import get_dispatch_visitor
 
-            query = query or kwargs.get("q") or kwargs.get("text") or ""
-            if not query:
-                return json.dumps(
-                    {"error": "no query provided: pass it in 'query'"}, indent=2
-                )
-            visitor = get_dispatch_visitor()
-            results = await action.search(
-                query,
-                limit=limit,
-                doc_name=doc_name,
-                visitor=visitor,
-                metadata_filter=self.metadata_filter,
+        query = query or kwargs.get("q") or kwargs.get("text") or ""
+        if not query:
+            return json.dumps(
+                {"error": "no query provided: pass it in 'query'"}, indent=2
             )
-            if not results:
-                return "No matching documents found."
-            return json.dumps(results, indent=2)
+        visitor = get_dispatch_visitor()
+        results = await self.search(
+            query,
+            limit=limit,
+            doc_name=doc_name,
+            visitor=visitor,
+            metadata_filter=self.metadata_filter,
+        )
+        if not results:
+            return "No matching documents found."
+        return json.dumps(results, indent=2)
 
-        # Aliases a model might use for doc_name instead of the canonical name.
-        _name_aliases = ("name", "title", "doc_title", "filename", "file_name")
+    @tool(name="pageindex__assimilate")
+    async def _t_assimilate(
+        self,
+        doc: Annotated[
+            Optional[str],
+            "REQUIRED. The document to ingest, as a single string. One of: "
+            "(a) raw text/markdown content, (b) an http(s) URL to a web page or "
+            "PDF (fetched automatically), or (c) a local file path. This is the "
+            "only place to put the document — do not use 'source', 'content', "
+            "'file', 'url', or 'path'.",
+        ] = None,
+        doc_name: Annotated[
+            Optional[str],
+            "Optional display name for the document (also used to infer the file "
+            "type for raw content). Defaults to a name derived from a URL/path.",
+        ] = None,
+        **kwargs: Any,
+    ) -> str:
+        """Ingest one document into the knowledge base so it can be searched later with pageindex__search. Provide the document in the REQUIRED parameter named exactly `doc` (not 'source', 'content', 'file', or 'url'). The value of `doc` may be raw text/markdown, an http(s) URL (downloaded automatically — web pages and PDFs supported), or a local file path. Example call: {"doc": "https://example.com/report.pdf", "doc_name": "Q3 Report"}."""  # noqa: E501
+        import json
 
-        async def _assimilate(doc: str = "", doc_name: str = "", **kwargs) -> str:
-            import json
-
+        if not doc_name:
+            for alias in self._name_aliases:
+                if kwargs.get(alias):
+                    doc_name = kwargs.pop(alias)
+                    break
+        # Coalesce the document argument. Lesser models reach for plausible
+        # names (source / content / text / url / file / path / data ...);
+        # accept the known aliases first, then fall back to ANY remaining
+        # non-empty string kwarg — the tool only takes doc + doc_name, so a
+        # stray string is the document. A near-miss arg name never errors.
+        if not doc:
+            for alias in (
+                "source",
+                "content",
+                "text",
+                "document",
+                "doc_content",
+                "url",
+                "file",
+                "path",
+                "file_path",
+                "data",
+                "body",
+                "input",
+            ):
+                if kwargs.get(alias):
+                    doc = kwargs[alias]
+                    break
+        if not doc:
+            for value in kwargs.values():
+                if isinstance(value, str) and value.strip():
+                    doc = value
+                    break
+        if not doc:
+            return json.dumps(
+                {
+                    "error": "no document provided. Pass the document text, "
+                    "an http(s) URL, or a file path as the 'doc' argument, "
+                    'e.g. {"doc": "https://example.com/report.pdf"}.'
+                },
+                indent=2,
+            )
+        # If ``doc`` is a path/filename (e.g. a file just written by
+        # code_execution__bash or file_interface__write_file), resolve it from
+        # the caller's per-user sandbox and ingest the file CONTENT — not the
+        # literal filename string. Raw text and URLs pass through untouched.
+        if isinstance(doc, str) and looks_like_doc_path(doc):
+            src_path = doc.strip()
+            resolved, err = await self._resolve_sandbox_doc(src_path)
+            if err:
+                return json.dumps({"error": err}, indent=2)
+            doc = resolved
             if not doc_name:
-                for alias in _name_aliases:
-                    if kwargs.get(alias):
-                        doc_name = kwargs.pop(alias)
-                        break
-            # Coalesce the document argument. Lesser models reach for plausible
-            # names (source / content / text / url / file / path / data ...);
-            # accept the known aliases first, then fall back to ANY remaining
-            # non-empty string kwarg — the tool only takes doc + doc_name, so a
-            # stray string is the document. A near-miss arg name never errors.
-            if not doc:
-                for alias in (
-                    "source",
-                    "content",
-                    "text",
-                    "document",
-                    "doc_content",
-                    "url",
-                    "file",
-                    "path",
-                    "file_path",
-                    "data",
-                    "body",
-                    "input",
-                ):
-                    if kwargs.get(alias):
-                        doc = kwargs[alias]
-                        break
-            if not doc:
-                for value in kwargs.values():
-                    if isinstance(value, str) and value.strip():
-                        doc = value
-                        break
-            if not doc:
-                return json.dumps(
-                    {
-                        "error": "no document provided. Pass the document text, "
-                        "an http(s) URL, or a file path as the 'doc' argument, "
-                        'e.g. {"doc": "https://example.com/report.pdf"}.'
-                    },
-                    indent=2,
-                )
-            result = await action.assimilate(doc, doc_name=doc_name or None)
-            return json.dumps(result, indent=2)
+                doc_name = os.path.basename(src_path) or None
+        result = await self.assimilate(doc, doc_name=doc_name or None)
+        return json.dumps(result, indent=2)
 
-        async def _list_docs(collection_name: str = "") -> str:
-            import json
+    async def _resolve_sandbox_doc(self, rel_path: str):
+        """Read a sandbox-relative document path into content/bytes.
 
-            result = await action.list_documents(
-                collection_name=collection_name or None
+        Returns ``(doc, None)`` on success (text str for text-like extensions,
+        bytes otherwise) or ``(None, error_message)`` when the path cannot be
+        read from the caller's sandbox. The sandbox slice is the same one
+        ``code_execution__bash`` and ``file_interface__*`` use.
+        """
+        from jvagent.action.file_interface import _core
+        from jvagent.tooling.tool_executor import get_dispatch_visitor
+
+        from ..documents import DOC_TEXT_EXTENSIONS
+
+        rel = rel_path.strip()
+        visitor = get_dispatch_visitor()
+        if visitor is None:
+            return None, (
+                f"{rel!r} looks like a file path but there is no execution "
+                "context to resolve your workspace. Pass the document content "
+                "directly as 'doc'."
             )
-            return json.dumps(result, indent=2)
-
-        async def _delete_doc(
-            doc_name: str = "", collection_name: str = "", **kwargs
-        ) -> str:
-            doc_name = doc_name or kwargs.get("name") or kwargs.get("document") or ""
-            if not doc_name:
-                return "No document name provided (pass it in 'doc_name')."
-            ok = await action.delete_document(
-                doc_name, collection_name=collection_name or None
+        ext = os.path.splitext(rel)[1].lower()
+        try:
+            if ext in DOC_TEXT_EXTENSIONS:
+                content = await _core.read_text_file(visitor, rel)
+                if not (content or "").strip():
+                    return None, f"{rel!r} is empty — nothing to ingest."
+                return content, None
+            data = await _core.read_binary_file(visitor, rel)
+            if not data:
+                raise FileNotFoundError(rel)
+            return data, None
+        except Exception as exc:  # FileNotFoundError, sandbox errors, etc.
+            return None, (
+                f"{rel!r} looks like a file path but could not be read from "
+                f"your workspace ({type(exc).__name__}). Pass the document "
+                "content directly as 'doc', or a valid workspace-relative path "
+                "(e.g. a file you wrote with code_execution__bash or "
+                "file_interface__write_file)."
             )
-            return f"Document '{doc_name}' {'deleted' if ok else 'not found'}."
 
-        return [
-            Tool(
-                name="pageindex__search",
-                description="Search the internal knowledge base for documents matching a query.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "Search query."},
-                        "doc_name": {
-                            "type": "string",
-                            "description": "Restrict search to a specific document name.",
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "description": "Max results to return (default 5).",
-                            "default": 5,
-                        },
-                    },
-                    "required": ["query"],
-                },
-                execute=_search,
-            ),
-            Tool(
-                name="pageindex__assimilate",
-                description=(
-                    "Ingest one document into the knowledge base so it can be "
-                    "searched later with pageindex__search. Provide the document "
-                    "in the REQUIRED parameter named exactly `doc` (not 'source', "
-                    "'content', 'file', or 'url'). The value of `doc` may be raw "
-                    "text/markdown, an http(s) URL (downloaded automatically — web "
-                    "pages and PDFs supported), or a local file path. "
-                    'Example call: {"doc": "https://example.com/report.pdf", '
-                    '"doc_name": "Q3 Report"}.'
-                ),
-                parameters_schema={
-                    "type": "object",
-                    "additionalProperties": False,
-                    "properties": {
-                        "doc": {
-                            "type": "string",
-                            "description": (
-                                "REQUIRED. The document to ingest, as a single "
-                                "string. One of: (a) raw text/markdown content, "
-                                "(b) an http(s) URL to a web page or PDF "
-                                "(fetched automatically), or (c) a local file "
-                                "path. This is the only place to put the "
-                                "document — do not use 'source', 'content', "
-                                "'file', 'url', or 'path'."
-                            ),
-                        },
-                        "doc_name": {
-                            "type": "string",
-                            "description": (
-                                "Optional display name for the document (also "
-                                "used to infer the file type for raw content). "
-                                "Defaults to a name derived from a URL/path."
-                            ),
-                        },
-                    },
-                    "required": ["doc"],
-                },
-                execute=_assimilate,
-            ),
-            Tool(
-                name="pageindex__list",
-                description="List all documents in the knowledge base.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "collection_name": {
-                            "type": "string",
-                            "description": "Optional collection to filter by.",
-                        },
-                    },
-                },
-                execute=_list_docs,
-            ),
-            Tool(
-                name="pageindex__delete",
-                description="Delete a document from the knowledge base by name.",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {
-                        "doc_name": {
-                            "type": "string",
-                            "description": "Name of the document to delete.",
-                        },
-                        "collection_name": {
-                            "type": "string",
-                            "description": "Optional collection name.",
-                        },
-                    },
-                    "required": ["doc_name"],
-                },
-                execute=_delete_doc,
-            ),
-        ]
+    @tool(name="pageindex__list")
+    async def _t_list_docs(
+        self,
+        collection_name: Annotated[
+            Optional[str], "Optional collection to filter by."
+        ] = None,
+    ) -> str:
+        """List all documents in the knowledge base."""
+        import json
+
+        result = await self.list_documents(collection_name=collection_name or None)
+        return json.dumps(result, indent=2)
+
+    @tool(name="pageindex__delete")
+    async def _t_delete_doc(
+        self,
+        doc_name: Annotated[str, "Name of the document to delete."],
+        collection_name: Annotated[Optional[str], "Optional collection name."] = None,
+        **kwargs: Any,
+    ) -> str:
+        """Delete a document from the knowledge base by name."""
+        doc_name = doc_name or kwargs.get("name") or kwargs.get("document") or ""
+        if not doc_name:
+            return "No document name provided (pass it in 'doc_name')."
+        ok = await self.delete_document(
+            doc_name, collection_name=collection_name or None
+        )
+        return f"Document '{doc_name}' {'deleted' if ok else 'not found'}."
 
     async def resolved_metadata_filter(
         self, visitor: InteractWalker, metadata_filter: Optional[Dict[str, Any]] = None

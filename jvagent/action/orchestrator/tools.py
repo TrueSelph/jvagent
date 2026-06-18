@@ -111,10 +111,12 @@ def render_tools_section(tools: List[Any], *, lean: bool = False) -> str:
     body = "\n".join(lines)
     if lean:
         body += (
-            "\n\n(This is a partial list of your most relevant tools. More are "
-            "available — call find_tool(query) to discover them by capability, "
-            "e.g. find_tool('file'), find_tool('email'), find_tool('calendar'), "
-            "then call the tool it returns.)"
+            "\n\n(This is a PARTIAL list of your most relevant tools. If the "
+            "exact tool a step needs isn't here, call find_tool(query) to "
+            "discover it — e.g. find_tool('write file'), find_tool('add to "
+            "knowledge base'), find_tool('email') — then call the tool it "
+            "returns. Do NOT substitute a similar-looking tool from this list "
+            "(a read/search tool when you need to write/save will fail).)"
         )
     return body
 

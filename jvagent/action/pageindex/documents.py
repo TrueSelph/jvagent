@@ -82,6 +82,36 @@ PAGEINDEX_UPLOAD_EXTENSIONS = frozenset(
     | PAGEINDEX_DOCLING_IMAGE_EXTENSIONS
 )
 
+# Extra UTF-8 text extensions accepted as content when a `doc` path is resolved.
+_EXTRA_TEXT_EXTENSIONS = frozenset(
+    {".html", ".htm", ".rst", ".json", ".csv", ".text", ".log", ".yaml", ".yml"}
+)
+# Every extension we recognise as "this looks like a document file".
+KNOWN_DOC_EXTENSIONS = PAGEINDEX_UPLOAD_EXTENSIONS | _EXTRA_TEXT_EXTENSIONS
+# Of those, the ones safe to read as UTF-8 text (vs. binary office/pdf/images).
+DOC_TEXT_EXTENSIONS = PAGEINDEX_TEXT_LIKE_EXTENSIONS | _EXTRA_TEXT_EXTENSIONS
+
+
+def looks_like_doc_path(value: Any) -> bool:
+    """True when *value* reads as a file path/filename rather than document content.
+
+    Used to (a) resolve a sandbox-relative file in the ``pageindex__assimilate``
+    tool and (b) fail loud instead of silently ingesting a stray filename as the
+    document body. Heuristic: short, single-line, not a URL, and either contains a
+    path separator or ends in a known document extension. Genuine content (prose,
+    multi-line markdown, long strings) does not match.
+    """
+    if not isinstance(value, str):
+        return False
+    s = value.strip()
+    if not s or "\n" in s or len(s) >= 256:
+        return False
+    if s.startswith(("http://", "https://")):
+        return False
+    if "/" in s or os.sep in s or (os.altsep and os.altsep in s):
+        return True
+    return os.path.splitext(s)[1].lower() in KNOWN_DOC_EXTENSIONS
+
 
 async def _ensure_pageindex_work_dir() -> str:
     """Resolved ``.../pageindex/tmp`` under App file_storage; created if missing."""
@@ -440,6 +470,18 @@ async def assimilate_document(
                     from .url_guard import require_path_under_work_dir
 
                     require_path_under_work_dir(doc_str, work_dir)
+                if not is_existing_file and looks_like_doc_path(doc_str):
+                    # A path/filename that does not resolve to a file. Do NOT
+                    # silently ingest the literal string as the document body
+                    # (that loses the real content). Callers that have a file
+                    # must resolve it to content/bytes first (the
+                    # ``pageindex__assimilate`` tool does this against the user
+                    # sandbox); a genuine document must be passed as content.
+                    raise ValueError(
+                        f"doc {doc_str!r} looks like a file path but no such "
+                        "file exists here. Pass the document content directly, "
+                        "or a path to a file that exists."
+                    )
                 if not is_existing_file:
                     inferred_ext = (
                         Path(doc_name).suffix.lower() if doc_name else ""

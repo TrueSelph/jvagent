@@ -48,18 +48,69 @@ def _datetime_tool(action: Any) -> SkillTool:
     )
 
 
-def _coerce_plan_items(args: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Normalize ``update_plan`` args into ``[{description, status}]`` items.
+# List-key aliases a model reaches for instead of the canonical ``steps``.
+_PLAN_LIST_KEYS = (
+    "steps",
+    "plan",
+    "tasks",
+    "items",
+    "checklist",
+    "todos",
+    "todo",
+    "plan_steps",
+    "list",
+)
 
-    Accepts ``steps`` or ``plan`` as the list key; each entry may be a bare
-    string (→ pending step) or a mapping with ``step``/``description`` and an
-    optional ``status``. Tolerant of the shapes a model emits.
+
+def _coerce_plan_items(args: Any) -> List[Dict[str, Any]]:
+    """Normalize ``update_plan`` args into ``[{description, status, ...}]`` items.
+
+    Deliberately catch-all about the wrapper shape a model emits — only the step
+    *content* matters, not which key it landed under:
+
+    - ``args`` itself is the list (no wrapper dict);
+    - the step list under a known key (``steps``/``plan``/``tasks``/``items``/
+      ``checklist``/``todos``/``todo``/``plan_steps``/``list``) — or, failing
+      that, under ANY key whose value is a non-empty list;
+    - a dict-of-steps (keyed by index/name) → its values, unwrapping one nested
+      ``{steps: [...]}`` level;
+    - a single string → a one-step plan;
+    - args that themselves describe one step (``step``/``description`` present)
+      → a one-step plan.
+
+    Each entry may be a bare string (→ pending step), a mapping with
+    ``step``/``description`` + optional ``status``/``result``, or one level of
+    accidental list nesting.
     """
-    raw = args.get("steps")
-    if raw is None:
-        raw = args.get("plan")
+    raw: Any = None
+    if isinstance(args, (list, tuple)):
+        raw = args  # model sent the list directly as the tool args
+        args = {}
+    elif isinstance(args, dict):
+        for key in _PLAN_LIST_KEYS:
+            if args.get(key) is not None:
+                raw = args[key]
+                break
+        if raw is None and (args.get("step") or args.get("description")):
+            raw = [args]  # one step passed inline, no list wrapper
+        if raw is None:
+            # Unknown key: take the first list-valued arg, whatever it's called.
+            for value in args.values():
+                if isinstance(value, (list, tuple)) and value:
+                    raw = value
+                    break
+
+    # Unwrap a nested mapping: {steps: [...]} inside, else its values.
+    if isinstance(raw, dict):
+        inner = None
+        for key in _PLAN_LIST_KEYS:
+            if isinstance(raw.get(key), (list, tuple)):
+                inner = raw[key]
+                break
+        raw = inner if inner is not None else list(raw.values())
     if isinstance(raw, str):
         raw = [raw]
+
     items: List[Dict[str, Any]] = []
     for entry in raw or []:
         if isinstance(entry, str):
@@ -68,6 +119,13 @@ def _coerce_plan_items(args: Dict[str, Any]) -> List[Dict[str, Any]]:
                 items.append({"description": text})
         elif isinstance(entry, dict):
             items.append(entry)
+        elif isinstance(entry, (list, tuple)):
+            # One level of accidental nesting: [["a", "b"]] or [[{...}]].
+            for sub in entry:
+                if isinstance(sub, str) and sub.strip():
+                    items.append({"description": sub.strip()})
+                elif isinstance(sub, dict):
+                    items.append(sub)
     return items
 
 
@@ -90,8 +148,11 @@ def _plan_tool(action: Any, visitor: Any) -> SkillTool:
         items = _coerce_plan_items(args)
         if not items:
             return (
-                "(update_plan needs a non-empty `steps` list, e.g. "
-                'steps=["Fetch data", "Summarize", "Write report"].)'
+                "(update_plan needs a non-empty `steps` LIST under the key "
+                '`steps`. Example: {"steps": [{"step": "Fetch data", "status": '
+                '"done"}, {"step": "Write report", "status": "in_progress"}]}. '
+                "Re-send the WHOLE checklist each call. A bare string per step "
+                'is also fine: {"steps": ["Fetch data", "Write report"]}.)'
             )
         conversation = getattr(_visitor, "conversation", None)
         if conversation is None:
@@ -121,10 +182,17 @@ def _plan_tool(action: Any, visitor: Any) -> SkillTool:
         name="update_plan",
         description=(
             "Record or update your multi-step plan as a checklist that PERSISTS "
-            "across turns (so you can resume if interrupted). Pass the full "
-            "`steps` list every call (each: a string, or {step, status} where "
-            "status is pending|in_progress|done|skipped). Use for genuinely "
-            "multi-step work; skip it for single-step requests."
+            "across turns (so you can resume if interrupted). Argument shape: a "
+            "single key `steps` holding a LIST — re-send the WHOLE list every "
+            'call. Example: {"steps": [{"step": "Research", "status": "done", '
+            '"result": "saved sources.md"}, {"step": "Write report", "status": '
+            '"in_progress"}]}. Each item is either a bare string (a pending '
+            "step) or an object with `step` (the text), optional `status` "
+            "(pending|in_progress|done|skipped), and optional `result`. On a "
+            "completed step set `result` to a short note of what it produced — "
+            "especially an artifact path (e.g. 'draft saved to report.md') — so "
+            "a later turn reuses that work instead of redoing it. Use for "
+            "genuinely multi-step work; skip it for single-step requests."
         ),
         run=_run,
     )
