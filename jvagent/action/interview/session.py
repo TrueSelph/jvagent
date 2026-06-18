@@ -103,6 +103,21 @@ SESSION_KEY = "interview"
 # Conversation.context keys owned by the platform (not interview runtime).
 CONVERSATION_CONTEXT_PLATFORM_KEYS: FrozenSet[str] = frozenset({"new_user"})
 
+# Additional platform-durable keys registered by the host app. These survive every
+# interview teardown (cancel/complete/reset) exactly like the built-in platform
+# keys, so an app can keep its own cross-flow state (e.g. an account session) in
+# conversation.context without each skill having to remember a retain list.
+_APP_PLATFORM_CONTEXT_KEYS: Set[str] = set()
+
+
+def register_platform_context_keys(*keys: str) -> None:
+    """Register conversation.context keys the host app treats as platform-durable.
+
+    Idempotent. Registered keys are retained by ``clear_interview_context`` on top
+    of the built-in platform keys and any per-call ``retain_keys``.
+    """
+    _APP_PLATFORM_CONTEXT_KEYS.update(k for k in keys if k)
+
 
 async def save_session(conversation, session: InterviewSession) -> None:
     conversation.context[SESSION_KEY] = session.to_dict()
@@ -130,7 +145,11 @@ def clear_interview_context(
     ctx = getattr(conversation, "context", None)
     if not isinstance(ctx, dict):
         return
-    retain = CONVERSATION_CONTEXT_PLATFORM_KEYS | frozenset(retain_keys or ())
+    retain = (
+        CONVERSATION_CONTEXT_PLATFORM_KEYS
+        | _APP_PLATFORM_CONTEXT_KEYS
+        | frozenset(retain_keys or ())
+    )
     preserved = {k: ctx[k] for k in retain if k in ctx}
     ctx.clear()
     ctx.update(preserved)
