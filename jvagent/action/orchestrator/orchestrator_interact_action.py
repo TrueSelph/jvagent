@@ -458,7 +458,7 @@ class OrchestratorInteractAction(InteractAction):
         "update_plan use for multi-step work.",
     )
     plan_completion_max_deflections: int = attribute(
-        default=4,
+        default=6,
         description=(
             "Plan-drain guard: while an active plan has unfinished steps, a "
             "turn-ending decision (final / reply / respond) is deflected up to "
@@ -2507,21 +2507,7 @@ class OrchestratorInteractAction(InteractAction):
                             # don't finalize mid-task. Nudge the model to run the
                             # next step (or close the plan if it's really done).
                             plan_deflections += 1
-                            observations.append(
-                                {
-                                    "tool": "(guard)",
-                                    "args": {},
-                                    "observation": (
-                                        "(Your active plan still has unfinished "
-                                        "steps:\n"
-                                        f"{open_steps}\n"
-                                        "Do the next step now with a tool call — do "
-                                        "NOT end the turn or claim completion. If "
-                                        "the task is genuinely done, call "
-                                        "update_plan to close it, then finalize.)"
-                                    ),
-                                }
-                            )
+                            observations.append(self._plan_drain_nudge(open_steps))
                             continue
                     answer = _text_candidate(decision)
                     if answer:
@@ -2585,22 +2571,7 @@ class OrchestratorInteractAction(InteractAction):
                         open_steps = self._open_plan_step(visitor)
                         if open_steps:
                             plan_deflections += 1
-                            observations.append(
-                                {
-                                    "tool": "(guard)",
-                                    "args": {},
-                                    "observation": (
-                                        "(Don't stop yet — your active plan still "
-                                        "has unfinished steps:\n"
-                                        f"{open_steps}\n"
-                                        "Do the next step now with a tool call. If "
-                                        "the work is genuinely done, mark the steps "
-                                        "done/skipped with update_plan first, then "
-                                        "reply. Only reply now if you truly need "
-                                        "the user's input to proceed.)"
-                                    ),
-                                }
-                            )
+                            observations.append(self._plan_drain_nudge(open_steps))
                             continue
                     # Companion gate: while a skill holds the turn-lock, use_skill
                     # may only (re)activate the locked skill itself or a declared
@@ -3120,6 +3091,29 @@ class OrchestratorInteractAction(InteractAction):
         if not checklist or checklist == "(no steps)":
             return None
         return checklist
+
+    @staticmethod
+    def _plan_drain_nudge(open_steps: str) -> Dict[str, Any]:
+        """The deflection observation when a turn-ending decision hits an open
+        plan. Actionable: redirect the model to DO the next step (discovering the
+        tool with find_tool if needed) rather than narrate it or dump the result
+        as a chat message — the observed failure mode."""
+        return {
+            "tool": "(guard)",
+            "args": {},
+            "observation": (
+                "(Your active plan still has unfinished steps:\n"
+                f"{open_steps}\n"
+                "Do the NEXT step now with a real tool call — do not just "
+                "describe it, and do not deliver the result as a chat message "
+                "instead of completing the step. If you can't see the tool you "
+                "need, call find_tool to locate it (e.g. find_tool('write "
+                "file'), find_tool('add document to knowledge base')). Text you "
+                "have already produced can be passed straight to the tool — you "
+                "do not need to save a file first. When the work is genuinely "
+                "done, mark the steps done/skipped with update_plan, then reply.)"
+            ),
+        }
 
     @staticmethod
     def _normalize(
