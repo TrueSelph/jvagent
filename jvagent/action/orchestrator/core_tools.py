@@ -122,8 +122,11 @@ def _plan_tool(action: Any, visitor: Any) -> SkillTool:
         description=(
             "Record or update your multi-step plan as a checklist that PERSISTS "
             "across turns (so you can resume if interrupted). Pass the full "
-            "`steps` list every call (each: a string, or {step, status} where "
-            "status is pending|in_progress|done|skipped). Use for genuinely "
+            "`steps` list every call (each: a string, or {step, status, result} "
+            "where status is pending|in_progress|done|skipped). On a completed "
+            "step, set `result` to a short note of what it produced — especially "
+            "an artifact path (e.g. 'draft saved to report.md') — so a later "
+            "turn reuses that work instead of redoing it. Use for genuinely "
             "multi-step work; skip it for single-step requests."
         ),
         run=_run,

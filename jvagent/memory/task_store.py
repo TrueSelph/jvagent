@@ -544,6 +544,12 @@ class TaskHandle:
         ``status`` (loose values are normalized via ``normalize_step_status``);
         items without a description are skipped. Steps with a terminal status get
         a ``completed_at`` stamp. Empty/blank input clears the plan.
+
+        An optional ``result`` (or ``note``/``outcome``) per item is carried onto
+        the step so a later turn can RESUME from recorded work — e.g. an artifact
+        path ("draft saved to report.md") — instead of redoing the step. It is
+        bounded so the plan stays compact; large artifacts belong in a sandbox
+        file referenced by the note, not inline here.
         """
         steps: List[Step] = []
         for it in items or []:
@@ -555,6 +561,9 @@ class TaskHandle:
                 continue
             status = normalize_step_status(it.get("status"))
             step = Step(id=_new_id("step_"), description=desc, status=status)
+            note = it.get("result") or it.get("note") or it.get("outcome")
+            if note:
+                step.result = str(note).strip()[:1000] or None
             if status in _STEP_TERMINAL:
                 step.completed_at = step.updated_at
             steps.append(step)
@@ -601,8 +610,14 @@ class TaskHandle:
             return None
         return StepHandle(self._store, self._task.id, self._task.steps[idx - 1])
 
-    def format_plan(self) -> str:
-        """Return a human-readable plan string."""
+    def format_plan(self, with_results: bool = False) -> str:
+        """Return a human-readable plan string.
+
+        When ``with_results`` is set, each step's recorded ``result``/note is
+        appended below it — used by the cross-turn resume note so a resumed turn
+        sees what prior steps produced (e.g. artifact paths) instead of redoing
+        them.
+        """
         if not self._task.steps:
             return "(no steps)"
         lines = []
@@ -610,6 +625,8 @@ class TaskHandle:
             entry = f"{i}. [{s.status}] {s.description}"
             if s.status == "skipped" and s.data.get("skip_reason"):
                 entry += f" (skipped: {s.data['skip_reason']})"
+            if with_results and s.result:
+                entry += f"\n   ↳ {s.result}"
             lines.append(entry)
         return "\n".join(lines)
 

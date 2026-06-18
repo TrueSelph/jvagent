@@ -131,7 +131,9 @@ def plan_resume_note(plan: Any) -> str:
     try:
         if not plan.has_pending_steps():
             return ""
-        checklist = plan.format_plan()
+        # with_results: surface what completed steps produced (e.g. artifact
+        # paths) so the resume continues from saved work instead of redoing it.
+        checklist = plan.format_plan(with_results=True)
     except Exception:
         return ""
     if not checklist or checklist == "(no steps)":
@@ -141,10 +143,13 @@ def plan_resume_note(plan: Any) -> str:
         "progress:\n"
         f"{checklist}\n\n"
         "Continue from the first unfinished step — do NOT redo completed steps. "
-        "Keep it updated with update_plan as you finish steps, and when the last "
-        "step is done the plan closes automatically. If the user has changed "
-        "topic, handle that instead; the plan stays parked and resumes when they "
-        "return to it."
+        "A '↳' line under a step is the work it already produced (e.g. a saved "
+        "file path) — reuse it (read the file) instead of regenerating it. "
+        "Keep it updated with update_plan as you finish steps (record a short "
+        "result/note per step, especially where you saved an artifact), and when "
+        "the last step is done the plan closes automatically. If the user has "
+        "changed topic, handle that instead; the plan stays parked and resumes "
+        "when they return to it."
     )
 
 

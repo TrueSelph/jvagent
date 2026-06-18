@@ -186,6 +186,88 @@ async def test_finalize_completes_done_plan_and_parks_pending() -> None:
     assert conv.tasks == []  # deleted on completion
 
 
+# --------------------------------------------------------------------------- #
+# P2: per-step result/note persistence + resume-with-results
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_sync_plan_carries_step_result() -> None:
+    conv = FakeConversation()
+    store = TaskStore(conv)
+    handle = await store.create(
+        title="t", description="t", task_type="AGENTIC_LOOP", owner_action="O"
+    )
+    await handle.start()
+    await handle.sync_plan(
+        [
+            {"step": "Research", "status": "done", "result": "saved sources.md"},
+            {"step": "Write report", "status": "done", "note": "draft → report.md"},
+            {"step": "Assimilate", "status": "pending"},
+        ]
+    )
+    steps = store.get(handle.id).list_steps()
+    assert steps[0].result == "saved sources.md"
+    assert steps[1].result == "draft → report.md"  # `note` alias accepted
+    assert steps[2].result is None
+
+
+@pytest.mark.asyncio
+async def test_sync_plan_bounds_result_length() -> None:
+    conv = FakeConversation()
+    store = TaskStore(conv)
+    handle = await store.create(
+        title="t", description="t", task_type="AGENTIC_LOOP", owner_action="O"
+    )
+    await handle.start()
+    await handle.sync_plan([{"step": "X", "status": "done", "result": "y" * 5000}])
+    assert len(store.get(handle.id).list_steps()[0].result) == 1000
+
+
+def test_format_plan_with_results_opt_in() -> None:
+    from jvagent.memory.task_store import Step, Task, TaskHandle
+
+    task = Task(
+        id="t",
+        title="t",
+        description="t",
+        created_at="",
+        updated_at="",
+        task_type="AGENTIC_LOOP",
+    )
+    task.steps = [
+        Step(
+            id="s1",
+            description="Write report",
+            status="done",
+            created_at="",
+            updated_at="",
+            result="draft saved to report.md",
+        ),
+    ]
+    handle = TaskHandle(TaskStore(FakeConversation()), task)
+    assert "report.md" not in handle.format_plan()  # default: compact
+    detailed = handle.format_plan(with_results=True)
+    assert "↳ draft saved to report.md" in detailed
+
+
+@pytest.mark.asyncio
+async def test_resume_note_surfaces_recorded_results() -> None:
+    conv = FakeConversation()
+    tool = build_plan_tool(_Action(), _visitor(conv))
+    await tool.run(
+        {
+            "steps": [
+                {"step": "Write report", "status": "done", "result": "saved report.md"},
+                {"step": "Add to knowledge base", "status": "pending"},
+            ]
+        }
+    )
+    handle = active_plan(_visitor(conv), owner="OrchestratorInteractAction")
+    note = plan_resume_note(handle)
+    # The resume note carries the artifact path so the model reuses the file.
+    assert "saved report.md" in note
+    assert "read the file" in note
+
+
 @pytest.mark.asyncio
 async def test_planning_off_is_zero_cost() -> None:
     from jvagent.action.orchestrator.orchestrator_interact_action import (

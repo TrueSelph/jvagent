@@ -115,10 +115,14 @@ PLANNING_PROMPT = (
     "record your plan as a checklist, then keep it current — re-send the whole "
     "list with each step's status (pending|in_progress|done|skipped) as you go. "
     "The plan persists across turns, so if this turn is cut short the next one "
-    "resumes from the first unfinished step instead of starting over. When you "
-    "give your final answer, first call update_plan with every step marked done "
-    "(or skipped) so the plan closes — don't leave the last step in_progress. "
-    "Don't use it for single-step requests."
+    "resumes from the first unfinished step instead of starting over. To make "
+    "that resume cheap, (a) save substantial intermediate work (a drafted "
+    "report, gathered notes) to a file with the file tools and (b) record where "
+    "you put it in that step's `result` (e.g. {step, status:'done', "
+    "result:'draft saved to report.md'}) — a later turn reuses the file instead "
+    "of regenerating it. When you give your final answer, first call update_plan "
+    "with every step marked done (or skipped) so the plan closes — don't leave "
+    "the last step in_progress. Don't use it for single-step requests."
 )
 
 # Appended to the loop system prompt only when ``block_raw_tool_invocation`` is
