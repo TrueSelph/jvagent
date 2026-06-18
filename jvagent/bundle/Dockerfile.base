@@ -1,4 +1,4 @@
-FROM registry.v75inc.dev/jvagent/jvagent-base:latest
+FROM public.ecr.aws/s1x1t0a3/jvagent:latest
 
 WORKDIR /var/task
 COPY . /var/task/
