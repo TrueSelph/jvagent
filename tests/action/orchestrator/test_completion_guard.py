@@ -60,6 +60,25 @@ def test_final_action_recognized():
     assert action == "final"
 
 
+def test_normalize_folds_flattened_tool_args():
+    # Model put args at the decision top level (no "args" wrapper).
+    action, tool, args = OrchestratorInteractAction._normalize(
+        {"action": "tool", "tool": "update_plan", "steps": [{"step": "A"}]},
+        {"update_plan": object()},
+    )
+    assert (action, tool) == ("tool", "update_plan")
+    assert args.get("steps") == [{"step": "A"}]
+
+
+def test_normalize_does_not_fold_when_args_present():
+    # A well-formed args dict is trusted as-is — no stray top-level keys folded.
+    _, _, args = OrchestratorInteractAction._normalize(
+        {"action": "tool", "tool": "x", "args": {"a": 1}, "junk": [1, 2]},
+        {"x": object()},
+    )
+    assert args == {"a": 1}
+
+
 # --- _open_plan_step: plan-gating ------------------------------------------
 
 

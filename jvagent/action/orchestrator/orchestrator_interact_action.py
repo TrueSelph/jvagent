@@ -128,6 +128,27 @@ _STEER_EXEMPT = frozenset(
 )
 _NON_SUBSTANTIVE_TOOLS = _STEER_EXEMPT
 
+# Decision keys that are control/text fields, never tool arguments. When a model
+# FLATTENS a call (puts args at the decision top level instead of under "args"),
+# everything outside this set is folded into the tool args by ``_normalize``.
+_DECISION_RESERVED_KEYS = frozenset(
+    {
+        "action",
+        "tool",
+        "args",
+        "answer",
+        "text",
+        "content",
+        "message",
+        "reasoning",
+        "thought",
+        "name",
+        "skill",
+        "topic",
+        "query",
+    }
+)
+
 # A ``requires-actions`` spec is an Action class name with an optional inline
 # version constraint, PEP 508-style: the comparison operator is the delimiter
 # (``PageIndexAction>=2.0``, ``WebFetchAction==1.4.0``, ``X>=1.0,<2.0``).
@@ -3126,6 +3147,17 @@ class OrchestratorInteractAction(InteractAction):
         action = raw_action.lower()
         tool_field = (decision.get("tool") or "").strip()
         args = decision.get("args") if isinstance(decision.get("args"), dict) else {}
+        # Tolerate a FLATTENED call: some models put the tool's arguments at the
+        # decision top level instead of nesting them under "args" — e.g.
+        # {"action":"tool","tool":"update_plan","steps":[...]}. Only fold when no
+        # args dict was supplied (don't pollute a well-formed call), and skip the
+        # reserved control/text keys.
+        if not args:
+            folded = {
+                k: v for k, v in decision.items() if k not in _DECISION_RESERVED_KEYS
+            }
+            if folded:
+                args = folded
         text = _text_candidate(decision)
 
         names: FrozenSet[str] = frozenset(skill_names) if skill_names else frozenset()

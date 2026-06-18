@@ -146,6 +146,29 @@ def test_coerce_plan_items_inline_single_step() -> None:
     assert _coerce_plan_items({"steps": "Just one"}) == [{"description": "Just one"}]
 
 
+def test_coerce_plan_items_unknown_key_first_list() -> None:
+    from jvagent.action.orchestrator.core_tools import _coerce_plan_items
+
+    # An invented key — fall back to the first list-valued arg.
+    items = _coerce_plan_items({"the_plan": ["A", "B"]})
+    assert [i["description"] for i in items] == ["A", "B"]
+
+
+def test_coerce_plan_items_args_as_list() -> None:
+    from jvagent.action.orchestrator.core_tools import _coerce_plan_items
+
+    items = _coerce_plan_items(["A", "B"])
+    assert [i["description"] for i in items] == ["A", "B"]
+
+
+def test_coerce_plan_items_nested_list() -> None:
+    from jvagent.action.orchestrator.core_tools import _coerce_plan_items
+
+    items = _coerce_plan_items({"steps": [["A", {"step": "B"}]]})
+    assert items[0]["description"] == "A"
+    assert items[1]["step"] == "B"
+
+
 @pytest.mark.asyncio
 async def test_update_plan_accepts_alias_key_end_to_end() -> None:
     conv = FakeConversation()

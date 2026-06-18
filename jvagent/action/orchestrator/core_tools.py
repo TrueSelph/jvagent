@@ -62,33 +62,55 @@ _PLAN_LIST_KEYS = (
 )
 
 
-def _coerce_plan_items(args: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _coerce_plan_items(args: Any) -> List[Dict[str, Any]]:
     """Normalize ``update_plan`` args into ``[{description, status, ...}]`` items.
 
-    Tolerant of the shapes a model emits:
+    Deliberately catch-all about the wrapper shape a model emits — only the step
+    *content* matters, not which key it landed under:
 
-    - the step list under any of ``steps``/``plan``/``tasks``/``items``/
-      ``checklist``/``todos``/``todo``/``plan_steps``/``list``;
-    - a dict-of-steps (keyed by index/name) → its values;
+    - ``args`` itself is the list (no wrapper dict);
+    - the step list under a known key (``steps``/``plan``/``tasks``/``items``/
+      ``checklist``/``todos``/``todo``/``plan_steps``/``list``) — or, failing
+      that, under ANY key whose value is a non-empty list;
+    - a dict-of-steps (keyed by index/name) → its values, unwrapping one nested
+      ``{steps: [...]}`` level;
     - a single string → a one-step plan;
-    - no list key at all but the args themselves describe one step
-      (``step``/``description`` present) → a one-step plan.
+    - args that themselves describe one step (``step``/``description`` present)
+      → a one-step plan.
 
-    Each entry may be a bare string (→ pending step) or a mapping with
-    ``step``/``description`` and optional ``status``/``result``.
+    Each entry may be a bare string (→ pending step), a mapping with
+    ``step``/``description`` + optional ``status``/``result``, or one level of
+    accidental list nesting.
     """
     raw: Any = None
-    for key in _PLAN_LIST_KEYS:
-        if args.get(key) is not None:
-            raw = args[key]
-            break
+    if isinstance(args, (list, tuple)):
+        raw = args  # model sent the list directly as the tool args
+        args = {}
+    elif isinstance(args, dict):
+        for key in _PLAN_LIST_KEYS:
+            if args.get(key) is not None:
+                raw = args[key]
+                break
+        if raw is None and (args.get("step") or args.get("description")):
+            raw = [args]  # one step passed inline, no list wrapper
+        if raw is None:
+            # Unknown key: take the first list-valued arg, whatever it's called.
+            for value in args.values():
+                if isinstance(value, (list, tuple)) and value:
+                    raw = value
+                    break
+
+    # Unwrap a nested mapping: {steps: [...]} inside, else its values.
     if isinstance(raw, dict):
-        raw = list(raw.values())
+        inner = None
+        for key in _PLAN_LIST_KEYS:
+            if isinstance(raw.get(key), (list, tuple)):
+                inner = raw[key]
+                break
+        raw = inner if inner is not None else list(raw.values())
     if isinstance(raw, str):
         raw = [raw]
-    if raw is None and (args.get("step") or args.get("description")):
-        # The model passed a single step inline instead of wrapping it in a list.
-        raw = [args]
+
     items: List[Dict[str, Any]] = []
     for entry in raw or []:
         if isinstance(entry, str):
@@ -97,6 +119,13 @@ def _coerce_plan_items(args: Dict[str, Any]) -> List[Dict[str, Any]]:
                 items.append({"description": text})
         elif isinstance(entry, dict):
             items.append(entry)
+        elif isinstance(entry, (list, tuple)):
+            # One level of accidental nesting: [["a", "b"]] or [[{...}]].
+            for sub in entry:
+                if isinstance(sub, str) and sub.strip():
+                    items.append({"description": sub.strip()})
+                elif isinstance(sub, dict):
+                    items.append(sub)
     return items
 
 
