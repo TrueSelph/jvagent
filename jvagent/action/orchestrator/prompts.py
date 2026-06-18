@@ -53,7 +53,11 @@ matching tool rather than answering directly.
 - If a request matches a structured flow's tool (e.g. a signup interview), call \
 that tool to start it.
 - Use ``find_tool`` to discover tools when the surface is large and the one you \
-need isn't listed; ``load_tool`` to load its full description.
+need isn't listed; ``load_tool`` to load its full description. The tool list may \
+be PARTIAL — if you don't see the EXACT tool a step needs, call ``find_tool`` \
+FIRST (e.g. find_tool("write a file"), find_tool("add to knowledge base")). Do \
+NOT substitute a similar-looking visible tool — a near-match (e.g. a read/search \
+tool when you need to write/save) will fail or do the wrong thing.
 - Take the fewest steps needed. Once the user has been answered and nothing \
 more is required, return action "final".
 - **Act, don't announce.** Never say what you are "about to" or "will now" do and \
