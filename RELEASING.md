@@ -30,6 +30,14 @@ Configure trusted publishers before the first publish:
 3. In the GitHub repo, create two
    [environments](https://github.com/TrueSelph/jvagent/settings/environments)
    named `pypi` and `testpypi` (optionally add required reviewers to `pypi`).
+4. **`RELEASE_PAT` secret** (for the auto-tag workflow). Add a repo
+   [secret](https://github.com/TrueSelph/jvagent/settings/secrets/actions)
+   `RELEASE_PAT` — a fine-grained PAT (or GitHub App token) with `contents:
+   write` on this repo. [`auto-tag.yaml`](.github/workflows/auto-tag.yaml) uses
+   it to push the release tag. A tag pushed with the default `GITHUB_TOKEN` does
+   **not** trigger `publish-pypi.yaml` (GitHub suppresses workflow cascades), so
+   without this secret the auto-tag job fails fast and you fall back to tagging
+   by hand (below).
 
 ## Cutting a release
 
@@ -37,7 +45,11 @@ Configure trusted publishers before the first publish:
    `## [X.Y.Z] - YYYY-MM-DD` heading; leave a fresh `[Unreleased]` stub.
 2. Bump `__version__` in [`jvagent/version.py`](jvagent/version.py).
 3. Commit on `main` (via PR), e.g. `chore(release): 0.1.0rc1`.
-4. Tag and push:
+4. **Merging that PR auto-tags the release.** When `jvagent/version.py` changes
+   on `main`, [`auto-tag.yaml`](.github/workflows/auto-tag.yaml) pushes the
+   matching `vX.Y.Z` tag (using `RELEASE_PAT`), which triggers the publish below.
+   No manual tagging needed. If `RELEASE_PAT` is unset, or you need to (re)tag by
+   hand:
 
    ```bash
    git tag v0.1.0rc1
