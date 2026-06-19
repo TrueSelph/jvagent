@@ -59,6 +59,12 @@ After retrieval:
 
 1. **Answer** — 2–5 short, clear sentences grounded in the retrieved excerpts. Cite `[N]` inline for each fact drawn from an excerpt. Place the citation **immediately after** the claim or sentence it supports.
 2. **References / Sources** — at the end, list only the `[N]` reference lines you actually cited (copy them verbatim from the references block). Do not paraphrase or reorder them. If no sources were cited, omit this section entirely.
+   - **Formatting rules**:
+     - Include only sources you actually cited (not all retrieved excerpts).
+     - Copy the reference line verbatim from the retrieval directive — do not modify, paraphrase, or reorder.
+     - Keep the `[N]` numbering consistent with your inline citations.
+     - If a source has no URL (only document name and page range), omit the URL portion.
+     - If a source has no page range but has a URL, show only the document name and URL.
 3. **Contact / Support** — when relevant (hours, location, policy help, returns), include official contact details (phone, email, WhatsApp, website) **only as returned** in the search results.
 4. **Next step** — one low-friction next step (e.g., advising them to contact support, visit a link) when it fits; do not invent links or phone numbers.
 5. **No catalog / transaction tools** — do not call transaction/inventory tools on document retrieval turns.
