@@ -1,0 +1,77 @@
+name: Auto-tag on version bump
+
+# When jvagent/version.py changes on main, push a matching `v<version>` tag.
+# That tag is what actually ships a release:
+#   - publish-pypi.yaml  (on: push tags 'v*')  → TestPyPI (pre-release) / PyPI (final)
+#   - release-docker.yaml already fires on the version.py push itself.
+# This removes the easy-to-forget manual `git tag … && git push --tags` step
+# after merging a release bump.
+#
+# IMPORTANT — the tag MUST be pushed with a token that can re-trigger workflows.
+# A tag pushed with the default GITHUB_TOKEN does NOT start new workflow runs
+# (GitHub suppresses cascades to avoid loops), so publish-pypi would never fire.
+# Provide a fine-grained PAT (or GitHub App token) as the `RELEASE_PAT` secret,
+# with `contents: write` on this repo. Without it, the workflow fails fast with
+# a clear message rather than silently tagging-but-not-publishing.
+#
+# Idempotent: if the tag already exists (e.g. a re-run, or it was pushed by
+# hand), the workflow logs and exits cleanly.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "jvagent/version.py"
+
+permissions:
+  contents: read  # the PAT does the write; GITHUB_TOKEN needs nothing extra
+
+jobs:
+  tag:
+    name: Tag v<version>
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require RELEASE_PAT
+        env:
+          RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
+        run: |
+          if [ -z "$RELEASE_PAT" ]; then
+            echo "::error::RELEASE_PAT secret is not set. A tag pushed with the" \
+                 "default GITHUB_TOKEN will not trigger publish-pypi.yaml. Add a" \
+                 "fine-grained PAT (contents: write) as RELEASE_PAT — see the" \
+                 "header of this workflow and RELEASING.md."
+            exit 1
+          fi
+
+      - name: Check out (full history, PAT for tag push)
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
+
+      - name: Read version
+        id: ver
+        run: |
+          VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' jvagent/version.py)
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not parse __version__ from jvagent/version.py"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VERSION (tag v$VERSION)"
+
+      - name: Create and push tag (skip if it already exists)
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists on origin — nothing to do."
+            exit 0
+          fi
+          git tag -a "$TAG" -m "jvagent $TAG"
+          git push origin "$TAG"
+          echo "Pushed $TAG — publish-pypi.yaml will now build and publish."
