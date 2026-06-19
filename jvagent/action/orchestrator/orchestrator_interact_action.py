@@ -1831,16 +1831,30 @@ class OrchestratorInteractAction(InteractAction):
                     await ptask.set_seed(remaining)
                 except Exception as exc:  # pragma: no cover - defensive
                     logger.debug("orchestrator: seed consume failed: %s", exc)
+            # The completed prerequisite's user-facing confirmation (ack) must reach
+            # the user, but this resume is model-driven (the model fills the pending
+            # field from the seed and voices the next question). Queue the ack as an
+            # authored directive so ReplyAction composes it together with the resumed
+            # question in this turn's single emission — relying on the model to echo it
+            # from an observation is unreliable (it gets dropped).
+            if ack:
+                try:
+                    await visitor.add_directive(f"Tell the user: {ack}")
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.debug("orchestrator: resume ack directive failed: %s", exc)
             observations.append(
                 {
                     "tool": "(task-resume)",
                     "args": {},
                     "observation": (
                         "(A prerequisite just completed; the account/session is now "
-                        f"in place. {ack} Resume {parent.name}: the user's original "
-                        f'request was "{seed_utterance}". Fill the pending field(s) '
-                        "from it, then continue — do not re-ask for anything already "
-                        "in that request and do not start anything else.)"
+                        "in place. A confirmation message has ALREADY been queued and "
+                        "will be delivered to the user — do NOT repeat, restate, or "
+                        "paraphrase it; your reply must contain ONLY the next pending "
+                        f"question. Resume {parent.name}: the user's original request "
+                        f'was "{seed_utterance}". Fill the pending field(s) from it, '
+                        "then continue — do not re-ask for anything already in that "
+                        "request and do not start anything else.)"
                     ),
                     "kind": "server_prep",
                 }
