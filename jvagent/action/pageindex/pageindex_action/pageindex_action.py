@@ -731,10 +731,25 @@ class PageIndexAction(Action):
         ``access`` key so retrieval scopes to documents whose ``access`` metadata
         includes at least one of those groups.
 
-        **Default-deny**: if ``AccessControlAction.user_groups`` is non-empty and the
-        visitor matches no group, the filter is set to ``access=[]`` (Mongo ``$in``
-        matches nothing) so all documents — including those with no ``access``
-        metadata — are excluded for unauthorized visitors.
+        **Public-or-member**: documents with no ``access`` metadata are public
+        and remain visible when an ``access`` filter is active; documents tagged
+        with ``access`` groups are visible only to members of those groups.
+        Access scoping is opt-in via an ``access`` key in ``metadata_filter``
+        (or a per-call override): when no ``access`` key is configured, retrieval
+        is not restricted by group membership and all documents are eligible.
+        When a baseline ``access`` value is configured (e.g. ``"public"``) and
+        the visitor matches no group, that baseline is preserved unchanged.
+        When the visitor matches one or more groups, their group names are merged
+        into the filter alongside any baseline. The ``access``-aware matching
+        lives in ``_build_metadata_query`` (DB layer) and ``_root_matches_metadata``
+        (in-Python layer).
+
+        Documents should be tagged with a **scalar** ``access`` group name
+        (``metadata={"access": "admins"}``). The JSON/Mongo ``$in`` used by the
+        DB layer cannot intersect a list-valued field, so list-valued per-document
+        tags are only honored on the in-Python tree/walker paths, not the direct
+        path. The *filter* side (a visitor's groups) is always a list and matches
+        any document whose scalar ``access`` is one of those groups.
         """
         base = metadata_filter or self.metadata_filter
         access_control_action = await self.get_action("AccessControlAction")
@@ -762,11 +777,10 @@ class PageIndexAction(Action):
             if visitor.user_id in users or visitor.session_id in users
         ]
         if not matched_groups:
-            # Default-deny: groups are configured but the visitor matches none.
-            # Force ``access=[]`` so the Mongo ``$in`` matches nothing — returning
-            # the unfiltered ``mf`` here would leak every document to an
-            # unauthorized visitor.
-            mf["access"] = []
+            # No group match: preserve any configured access baseline (e.g.
+            # "public") so explicitly-tagged public docs stay visible. When
+            # metadata_filter has no access key, leave mf unchanged — the agent
+            # may access all documents.
             return mf
 
         existing = mf.get("access")
