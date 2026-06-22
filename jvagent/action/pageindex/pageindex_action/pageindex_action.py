@@ -732,14 +732,17 @@ class PageIndexAction(Action):
         includes at least one of those groups.
 
         **Public-or-member**: documents with no ``access`` metadata are public
-        and remain visible to everyone; documents tagged with ``access`` groups
-        are visible only to members of those groups. If
-        ``AccessControlAction.user_groups`` is non-empty and the visitor matches
-        no group, the filter is set to ``access=[]`` which scopes retrieval to
-        public (untagged) documents only — restricted documents are excluded,
-        but the visitor is not denied the public knowledge base. The
-        ``access``-aware matching lives in ``_build_metadata_query`` (DB layer)
-        and ``_root_matches_metadata`` (in-Python layer).
+        and remain visible when an ``access`` filter is active; documents tagged
+        with ``access`` groups are visible only to members of those groups.
+        Access scoping is opt-in via an ``access`` key in ``metadata_filter``
+        (or a per-call override): when no ``access`` key is configured, retrieval
+        is not restricted by group membership and all documents are eligible.
+        When a baseline ``access`` value is configured (e.g. ``"public"``) and
+        the visitor matches no group, that baseline is preserved unchanged.
+        When the visitor matches one or more groups, their group names are merged
+        into the filter alongside any baseline. The ``access``-aware matching
+        lives in ``_build_metadata_query`` (DB layer) and ``_root_matches_metadata``
+        (in-Python layer).
 
         Documents should be tagged with a **scalar** ``access`` group name
         (``metadata={"access": "admins"}``). The JSON/Mongo ``$in`` used by the
@@ -774,12 +777,10 @@ class PageIndexAction(Action):
             if visitor.user_id in users or visitor.session_id in users
         ]
         if not matched_groups:
-            # Groups are configured but the visitor matches none. Scope to
-            # public documents only: ``access=[]`` admits untagged/public docs
-            # while excluding every access-tagged (restricted) document.
-            # Returning the unfiltered ``mf`` here would instead leak restricted
-            # documents to an unauthorized visitor.
-            mf["access"] = []
+            # No group match: preserve any configured access baseline (e.g.
+            # "public") so explicitly-tagged public docs stay visible. When
+            # metadata_filter has no access key, leave mf unchanged — the agent
+            # may access all documents.
             return mf
 
         existing = mf.get("access")

@@ -1413,8 +1413,8 @@ async def test_resolved_metadata_filter_visitor_matches_merges_access():
 
 
 @pytest.mark.asyncio
-async def test_resolved_metadata_filter_visitor_unmatched_public_only():
-    """Visitor matches no PageIndexAction group → access=[] (public docs only)."""
+async def test_resolved_metadata_filter_visitor_unmatched_no_access_baseline():
+    """Visitor matches no group and no access baseline → no access constraint."""
     action = _make_pageindex_action(metadata_filter=None)
     aca = _StubACA(
         user_groups={
@@ -1431,7 +1431,75 @@ async def test_resolved_metadata_filter_visitor_unmatched_public_only():
             action, _make_visitor("user-1"), None
         )
 
-    assert result == {"access": []}
+    assert result == {}
+    assert "access" not in result
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_visitor_unmatched_preserves_public_baseline():
+    """Visitor matches no group → configured public baseline is preserved."""
+    action = _make_pageindex_action(metadata_filter={"access": "public"})
+    aca = _StubACA(
+        user_groups={
+            "PageIndexAction": {
+                "private": ["other-user"],
+            }
+        }
+    )
+
+    with patch.object(
+        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
+    ):
+        result = await PageIndexAction.resolved_metadata_filter(
+            action, _make_visitor("user-1"), None
+        )
+
+    assert result == {"access": "public"}
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_visitor_unmatched_empty_filter_all_docs():
+    """Empty metadata_filter with no group match → no access constraint."""
+    action = _make_pageindex_action(metadata_filter={})
+    aca = _StubACA(
+        user_groups={
+            "PageIndexAction": {
+                "admins": ["other-user"],
+            }
+        }
+    )
+
+    with patch.object(
+        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
+    ):
+        result = await PageIndexAction.resolved_metadata_filter(
+            action, _make_visitor("user-1"), None
+        )
+
+    assert result == {}
+    assert "access" not in result
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_matched_extends_public_baseline():
+    """Matched visitor → baseline public access plus member groups."""
+    action = _make_pageindex_action(metadata_filter={"access": "public"})
+    aca = _StubACA(
+        user_groups={
+            "PageIndexAction": {
+                "private": ["user-1"],
+            }
+        }
+    )
+
+    with patch.object(
+        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
+    ):
+        result = await PageIndexAction.resolved_metadata_filter(
+            action, _make_visitor("user-1"), None
+        )
+
+    assert set(result["access"]) == {"public", "private"}
 
 
 def test_root_matches_metadata_access_public_or_member():
@@ -1556,3 +1624,42 @@ async def test_search_access_member_sees_public_and_own(
         metadata_filter={"access": ["admins"]},
     )
     assert {r.get("doc_name") for r in results} == {"doc_public", "doc_admins"}
+
+
+@pytest.mark.asyncio
+async def test_search_access_unmatched_public_baseline(
+    pageindex_temp_db, sample_markdown
+):
+    """End-to-end: public baseline returns untagged + public-tagged, excludes private."""
+    await assimilate_document(
+        sample_markdown,
+        doc_name="doc_untagged",
+        if_add_node_summary="no",
+        collection_name="col_acl3",
+    )
+    await assimilate_document(
+        sample_markdown,
+        doc_name="doc_public_tagged",
+        if_add_node_summary="no",
+        collection_name="col_acl3",
+        metadata={"access": "public"},
+    )
+    await assimilate_document(
+        sample_markdown,
+        doc_name="doc_private",
+        if_add_node_summary="no",
+        collection_name="col_acl3",
+        metadata={"access": "private"},
+    )
+
+    results = await search_documents(
+        query="content",
+        strategy="direct",
+        limit=20,
+        collection_name="col_acl3",
+        metadata_filter={"access": "public"},
+    )
+    assert {r.get("doc_name") for r in results} == {
+        "doc_untagged",
+        "doc_public_tagged",
+    }
