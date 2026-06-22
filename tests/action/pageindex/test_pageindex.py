@@ -1411,8 +1411,8 @@ async def test_resolved_metadata_filter_visitor_matches_merges_access():
 
 
 @pytest.mark.asyncio
-async def test_resolved_metadata_filter_visitor_unmatched_default_deny():
-    """Visitor matches no PageIndexAction group → access=[] (default-deny per docstring)."""
+async def test_resolved_metadata_filter_visitor_unmatched_returns_empty_filter():
+    """Visitor matches no PageIndexAction group → returns empty filter (no access key)."""
     action = _make_pageindex_action(metadata_filter=None)
     aca = _StubACA(
         user_groups={
@@ -1429,4 +1429,4 @@ async def test_resolved_metadata_filter_visitor_unmatched_default_deny():
             action, _make_visitor("user-1"), None
         )
 
-    assert result == {"access": []}
+    assert result == {}
