@@ -39,7 +39,7 @@
     "react-router-dom": "^7.18.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.6.0",
-    "yaml": "^2.3.4",
+    "yaml": "^2.9.0",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
