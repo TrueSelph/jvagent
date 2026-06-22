@@ -1357,9 +1357,26 @@ async def test_resolved_metadata_filter_ac_absent_falls_back(caplog):
 
 
 @pytest.mark.asyncio
-async def test_resolved_metadata_filter_ac_empty_user_groups_falls_back():
-    """AccessControlAction present but user_groups empty → return base unchanged."""
+async def test_resolved_metadata_filter_no_filter_skips_access_control():
+    """No metadata filter set → access control NOT engaged (decoupled)."""
     action = _make_pageindex_action(metadata_filter=None)
+    aca = _StubACA(user_groups={"PageIndexAction": {"private": ["other-user"]}})
+
+    with patch.object(
+        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
+    ):
+        result = await PageIndexAction.resolved_metadata_filter(
+            action, _make_visitor("user-1"), None
+        )
+
+    # Pageindex and access control coexist in the agent, but not together.
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_ac_empty_user_groups_falls_back():
+    """Filter set, AccessControlAction present but user_groups empty → base unchanged."""
+    action = _make_pageindex_action(metadata_filter={"topic": "faq"})
     aca = _StubACA(user_groups={})
 
     with patch.object(
@@ -1369,7 +1386,7 @@ async def test_resolved_metadata_filter_ac_empty_user_groups_falls_back():
             action, _make_visitor(), None
         )
 
-    assert result is None
+    assert result == {"topic": "faq"}
 
 
 @pytest.mark.asyncio
@@ -1392,7 +1409,7 @@ async def test_resolved_metadata_filter_no_pageindex_scope_falls_back():
 @pytest.mark.asyncio
 async def test_resolved_metadata_filter_visitor_matches_merges_access():
     """Visitor matches a configured PageIndexAction group → access list includes that group."""
-    action = _make_pageindex_action(metadata_filter=None)
+    action = _make_pageindex_action(metadata_filter={"topic": "faq"})
     aca = _StubACA(
         user_groups={
             "PageIndexAction": {
@@ -1410,12 +1427,13 @@ async def test_resolved_metadata_filter_visitor_matches_merges_access():
         )
 
     assert result.get("access") == ["admins"]
+    assert result.get("topic") == "faq"
 
 
 @pytest.mark.asyncio
 async def test_resolved_metadata_filter_visitor_unmatched_no_access_baseline():
-    """Visitor matches no group and no access baseline → no access constraint."""
-    action = _make_pageindex_action(metadata_filter=None)
+    """Filter set without access baseline + no group match → access=[] (no leak)."""
+    action = _make_pageindex_action(metadata_filter={"topic": "faq"})
     aca = _StubACA(
         user_groups={
             "PageIndexAction": {
@@ -1431,8 +1449,8 @@ async def test_resolved_metadata_filter_visitor_unmatched_no_access_baseline():
             action, _make_visitor("user-1"), None
         )
 
-    assert result == {}
-    assert "access" not in result
+    # Restricted docs must not leak to an unauthorized visitor.
+    assert result == {"topic": "faq", "access": []}
 
 
 @pytest.mark.asyncio
@@ -1458,8 +1476,8 @@ async def test_resolved_metadata_filter_visitor_unmatched_preserves_public_basel
 
 
 @pytest.mark.asyncio
-async def test_resolved_metadata_filter_visitor_unmatched_empty_filter_all_docs():
-    """Empty metadata_filter with no group match → no access constraint."""
+async def test_resolved_metadata_filter_empty_filter_skips_access_control():
+    """Empty metadata_filter is treated as no filter → access control not engaged."""
     action = _make_pageindex_action(metadata_filter={})
     aca = _StubACA(
         user_groups={
@@ -1477,7 +1495,6 @@ async def test_resolved_metadata_filter_visitor_unmatched_empty_filter_all_docs(
         )
 
     assert result == {}
-    assert "access" not in result
 
 
 @pytest.mark.asyncio

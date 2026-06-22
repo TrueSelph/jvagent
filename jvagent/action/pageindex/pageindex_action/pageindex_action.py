@@ -723,35 +723,47 @@ class PageIndexAction(Action):
     async def resolved_metadata_filter(
         self, visitor: InteractWalker, metadata_filter: Optional[Dict[str, Any]] = None
     ) -> Any:
-        """Resolve effective metadata_filter applying ``user_groups`` access control.
+        """Resolve effective metadata_filter, optionally applying access control.
 
-        Delegates to the agent's ``AccessControlAction.user_groups`` to determine
-        which groups the visitor belongs to under the ``PageIndexAction`` scope,
-        then merges matching group names into the metadata filter under the
-        ``access`` key so retrieval scopes to documents whose ``access`` metadata
-        includes at least one of those groups.
+        **Access control is opt-in via the metadata filter.** Group-based access
+        control engages only when a metadata filter is in effect — either passed
+        per call or configured as ``PageIndexAction.metadata_filter``. When no
+        filter is set, retrieval is **not** gated by ``AccessControlAction`` at
+        all: an agent can host both ``AccessControlAction`` (for action-level
+        permissions) and ``PageIndexAction`` without the former constraining
+        document retrieval ("in the same agent, but not together").
 
-        **Public-or-member**: documents with no ``access`` metadata are public
-        and remain visible when an ``access`` filter is active; documents tagged
-        with ``access`` groups are visible only to members of those groups.
-        Access scoping is opt-in via an ``access`` key in ``metadata_filter``
-        (or a per-call override): when no ``access`` key is configured, retrieval
-        is not restricted by group membership and all documents are eligible.
-        When a baseline ``access`` value is configured (e.g. ``"public"``) and
-        the visitor matches no group, that baseline is preserved unchanged.
-        When the visitor matches one or more groups, their group names are merged
-        into the filter alongside any baseline. The ``access``-aware matching
-        lives in ``_build_metadata_query`` (DB layer) and ``_root_matches_metadata``
-        (in-Python layer).
+        When a filter **is** in effect, the agent's
+        ``AccessControlAction.user_groups`` is consulted under the
+        ``PageIndexAction`` scope and the visitor's matching group names are
+        merged into the filter under the ``access`` key, so retrieval scopes to
+        documents whose ``access`` metadata is one of those groups (plus the
+        configured baseline). Typical model: tag documents ``access: "public"``
+        or ``access: "private"``, configure ``metadata_filter={"access":
+        "public"}`` as the baseline, and list the user ids allowed to see
+        private docs under ``user_groups["PageIndexAction"]["private"]``. A
+        member of ``private`` then sees public + private; everyone else sees the
+        configured baseline only.
 
-        Documents should be tagged with a **scalar** ``access`` group name
-        (``metadata={"access": "admins"}``). The JSON/Mongo ``$in`` used by the
-        DB layer cannot intersect a list-valued field, so list-valued per-document
-        tags are only honored on the in-Python tree/walker paths, not the direct
-        path. The *filter* side (a visitor's groups) is always a list and matches
-        any document whose scalar ``access`` is one of those groups.
+        When the visitor matches **no** group: a configured ``access`` baseline
+        (e.g. ``"public"``) is preserved so the public knowledge base stays
+        reachable; if the filter carries no ``access`` baseline, ``access=[]`` is
+        forced so restricted documents are not leaked to an unauthorized visitor.
+
+        Document ``access`` tags should be **scalar** group names. The JSON/Mongo
+        ``$in`` used by the DB layer cannot intersect a list-valued field, so
+        list-valued per-document tags are only honored on the in-Python
+        tree/walker paths, not the direct path. The *filter* side (the visitor's
+        groups) is always a list and matches any document whose scalar ``access``
+        is one of those groups. Matching lives in ``_build_metadata_query`` (DB
+        layer) and ``_root_matches_metadata`` (in-Python layer).
         """
         base = metadata_filter or self.metadata_filter
+        if not base:
+            # No metadata filter in effect → access control is not engaged for
+            # pageindex. Retrieval stays decoupled from AccessControlAction.
+            return base
+
         access_control_action = await self.get_action("AccessControlAction")
         if not access_control_action:
             logger.debug(
@@ -777,10 +789,16 @@ class PageIndexAction(Action):
             if visitor.user_id in users or visitor.session_id in users
         ]
         if not matched_groups:
-            # No group match: preserve any configured access baseline (e.g.
-            # "public") so explicitly-tagged public docs stay visible. When
-            # metadata_filter has no access key, leave mf unchanged — the agent
-            # may access all documents.
+            # Groups are configured but the visitor matches none.
+            #   * If an ``access`` baseline is already configured (e.g.
+            #     ``"public"``), preserve it — the operator has scoped this
+            #     action to that baseline and we must not widen it.
+            #   * Otherwise force ``access=[]`` so retrieval is scoped to public
+            #     (untagged) documents only. Returning the unfiltered ``mf``
+            #     here would leak every access-tagged (restricted) document to
+            #     an unauthorized visitor.
+            if mf.get("access") is None:
+                mf["access"] = []
             return mf
 
         existing = mf.get("access")
