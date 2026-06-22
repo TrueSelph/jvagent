@@ -188,16 +188,38 @@ def _build_metadata_query(metadata_filter: Dict[str, Any]) -> Dict[str, Any]:
 
     Supports single-key, multi-key, and list-valued filters (OR semantics for lists).
     Uses dot notation for all keys to allow matching a subset of metadata.
+
+    The reserved ``access`` key carries access-control semantics: a document
+    with no ``access`` metadata (or an empty one) is public and matches any
+    visitor, while a tagged document matches only when its ``access`` value
+    intersects the visitor's allowed groups. An empty allowed-groups list thus
+    scopes to public documents only, rather than matching nothing.
     """
     if not metadata_filter:
         return {}
 
-    query = {}
+    query: Dict[str, Any] = {}
+    access_clause: Optional[Dict[str, Any]] = None
     for k, v in metadata_filter.items():
+        if k == "access":
+            groups = v if isinstance(v, list) else [v]
+            field = "context.metadata.access"
+            options: List[Dict[str, Any]] = [
+                {field: {"$exists": False}},
+                {field: None},
+                {field: []},
+            ]
+            if groups:
+                options.append({field: {"$in": groups}})
+            access_clause = {"$or": options}
+            continue
         if isinstance(v, list):
             query[f"context.metadata.{k}"] = {"$in": v}
         else:
             query[f"context.metadata.{k}"] = v
+
+    if access_clause is not None:
+        return {"$and": [query, access_clause]} if query else access_clause
     return query
 
 

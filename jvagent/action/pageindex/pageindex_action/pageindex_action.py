@@ -731,10 +731,22 @@ class PageIndexAction(Action):
         ``access`` key so retrieval scopes to documents whose ``access`` metadata
         includes at least one of those groups.
 
-        **Default-deny**: if ``AccessControlAction.user_groups`` is non-empty and the
-        visitor matches no group, the filter is set to ``access=[]`` (Mongo ``$in``
-        matches nothing) so all documents — including those with no ``access``
-        metadata — are excluded for unauthorized visitors.
+        **Public-or-member**: documents with no ``access`` metadata are public
+        and remain visible to everyone; documents tagged with ``access`` groups
+        are visible only to members of those groups. If
+        ``AccessControlAction.user_groups`` is non-empty and the visitor matches
+        no group, the filter is set to ``access=[]`` which scopes retrieval to
+        public (untagged) documents only — restricted documents are excluded,
+        but the visitor is not denied the public knowledge base. The
+        ``access``-aware matching lives in ``_build_metadata_query`` (DB layer)
+        and ``_root_matches_metadata`` (in-Python layer).
+
+        Documents should be tagged with a **scalar** ``access`` group name
+        (``metadata={"access": "admins"}``). The JSON/Mongo ``$in`` used by the
+        DB layer cannot intersect a list-valued field, so list-valued per-document
+        tags are only honored on the in-Python tree/walker paths, not the direct
+        path. The *filter* side (a visitor's groups) is always a list and matches
+        any document whose scalar ``access`` is one of those groups.
         """
         base = metadata_filter or self.metadata_filter
         access_control_action = await self.get_action("AccessControlAction")
@@ -762,10 +774,11 @@ class PageIndexAction(Action):
             if visitor.user_id in users or visitor.session_id in users
         ]
         if not matched_groups:
-            # Default-deny: groups are configured but the visitor matches none.
-            # Force ``access=[]`` so the Mongo ``$in`` matches nothing — returning
-            # the unfiltered ``mf`` here would leak every document to an
-            # unauthorized visitor.
+            # Groups are configured but the visitor matches none. Scope to
+            # public documents only: ``access=[]`` admits untagged/public docs
+            # while excluding every access-tagged (restricted) document.
+            # Returning the unfiltered ``mf`` here would instead leak restricted
+            # documents to an unauthorized visitor.
             mf["access"] = []
             return mf
 

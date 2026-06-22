@@ -30,6 +30,7 @@ from jvagent.action.pageindex.config import (
 from jvagent.action.pageindex.core.utils import list_to_tree
 from jvagent.action.pageindex.document_walker import DocumentWalker
 from jvagent.action.pageindex.documents import (
+    _build_metadata_query,
     assimilate_document,
     delete_document,
     enrich_structure_titles,
@@ -56,6 +57,7 @@ from jvagent.action.pageindex.pageindex_action import (
 from jvagent.action.pageindex.retrieval import (
     _graph_to_tree,
     _parse_llm_json_object,
+    _root_matches_metadata,
     search_documents,
 )
 
@@ -1411,8 +1413,8 @@ async def test_resolved_metadata_filter_visitor_matches_merges_access():
 
 
 @pytest.mark.asyncio
-async def test_resolved_metadata_filter_visitor_unmatched_default_deny():
-    """Visitor matches no PageIndexAction group → access=[] (default-deny per docstring)."""
+async def test_resolved_metadata_filter_visitor_unmatched_public_only():
+    """Visitor matches no PageIndexAction group → access=[] (public docs only)."""
     action = _make_pageindex_action(metadata_filter=None)
     aca = _StubACA(
         user_groups={
@@ -1430,3 +1432,127 @@ async def test_resolved_metadata_filter_visitor_unmatched_default_deny():
         )
 
     assert result == {"access": []}
+
+
+def test_root_matches_metadata_access_public_or_member():
+    """Untagged docs are public; tagged docs require group intersection."""
+    from types import SimpleNamespace
+
+    public = SimpleNamespace(metadata=None)
+    public_empty = SimpleNamespace(metadata={"access": []})
+    admins = SimpleNamespace(metadata={"access": ["admins"]})
+    guests = SimpleNamespace(metadata={"access": ["guests"]})
+
+    # Unmatched visitor (access=[]) sees public docs only.
+    assert _root_matches_metadata(public, {"access": []}) is True
+    assert _root_matches_metadata(public_empty, {"access": []}) is True
+    assert _root_matches_metadata(admins, {"access": []}) is False
+
+    # admins member sees public + admins-tagged, not guests-tagged.
+    assert _root_matches_metadata(public, {"access": ["admins"]}) is True
+    assert _root_matches_metadata(admins, {"access": ["admins"]}) is True
+    assert _root_matches_metadata(guests, {"access": ["admins"]}) is False
+
+    # Access control does not relax other metadata constraints.
+    finance_admins = SimpleNamespace(
+        metadata={"topic": "finance", "access": ["admins"]}
+    )
+    assert (
+        _root_matches_metadata(
+            finance_admins, {"topic": "finance", "access": ["admins"]}
+        )
+        is True
+    )
+    assert (
+        _root_matches_metadata(finance_admins, {"topic": "legal", "access": ["admins"]})
+        is False
+    )
+
+
+def test_build_metadata_query_access_public_or_member():
+    """access filter expands to (public OR member); empty groups = public only."""
+    field = "context.metadata.access"
+
+    q = _build_metadata_query({"access": ["admins"]})
+    assert {field: {"$exists": False}} in q["$or"]
+    assert {field: None} in q["$or"]
+    assert {field: []} in q["$or"]
+    assert {field: {"$in": ["admins"]}} in q["$or"]
+
+    # Empty allowed groups → public only, no membership clause.
+    q_empty = _build_metadata_query({"access": []})
+    assert {field: {"$exists": False}} in q_empty["$or"]
+    assert all(
+        not (isinstance(clause.get(field), dict) and "$in" in clause[field])
+        for clause in q_empty["$or"]
+    )
+
+    # Combined with a non-access key → wrapped in $and.
+    q_combined = _build_metadata_query({"topic": "finance", "access": ["admins"]})
+    assert "$and" in q_combined
+    assert {"context.metadata.topic": "finance"} in q_combined["$and"]
+
+
+@pytest.mark.asyncio
+async def test_search_access_public_visible_to_unmatched(
+    pageindex_temp_db, sample_markdown
+):
+    """End-to-end: access=[] returns untagged (public) docs, excludes tagged ones."""
+    await assimilate_document(
+        sample_markdown,
+        doc_name="doc_public",
+        if_add_node_summary="no",
+        collection_name="col_acl",
+    )
+    await assimilate_document(
+        sample_markdown,
+        doc_name="doc_restricted",
+        if_add_node_summary="no",
+        collection_name="col_acl",
+        metadata={"access": "admins"},
+    )
+
+    results = await search_documents(
+        query="content",
+        strategy="direct",
+        limit=20,
+        collection_name="col_acl",
+        metadata_filter={"access": []},
+    )
+    assert {r.get("doc_name") for r in results} == {"doc_public"}
+
+
+@pytest.mark.asyncio
+async def test_search_access_member_sees_public_and_own(
+    pageindex_temp_db, sample_markdown
+):
+    """End-to-end: a member sees public docs plus docs tagged with their group."""
+    await assimilate_document(
+        sample_markdown,
+        doc_name="doc_public",
+        if_add_node_summary="no",
+        collection_name="col_acl2",
+    )
+    await assimilate_document(
+        sample_markdown,
+        doc_name="doc_admins",
+        if_add_node_summary="no",
+        collection_name="col_acl2",
+        metadata={"access": "admins"},
+    )
+    await assimilate_document(
+        sample_markdown,
+        doc_name="doc_guests",
+        if_add_node_summary="no",
+        collection_name="col_acl2",
+        metadata={"access": "guests"},
+    )
+
+    results = await search_documents(
+        query="content",
+        strategy="direct",
+        limit=20,
+        collection_name="col_acl2",
+        metadata_filter={"access": ["admins"]},
+    )
+    assert {r.get("doc_name") for r in results} == {"doc_public", "doc_admins"}

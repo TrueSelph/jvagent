@@ -55,6 +55,18 @@ def _root_matches_metadata(
         root_meta = {}
     for key, value in metadata_filter.items():
         root_val = root_meta.get(key)
+        if key == "access":
+            # Access control: an untagged/empty ``access`` field marks a public
+            # document that is always visible; a tagged document is visible only
+            # when its ``access`` value intersects the visitor's allowed groups
+            # ``value`` (an empty ``value`` admits public documents only).
+            if not root_val:
+                continue
+            allowed = set(value if isinstance(value, list) else [value])
+            doc_groups = set(root_val if isinstance(root_val, list) else [root_val])
+            if not (allowed & doc_groups):
+                return False
+            continue
         if isinstance(value, list):
             if root_val is None:
                 return False
