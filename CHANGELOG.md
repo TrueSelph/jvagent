@@ -8,6 +8,28 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+## [0.1.0rc9] - 2026-06-22
+
+Ninth release candidate (TestPyPI). Fixes PageIndex access control: having
+`AccessControlAction` in an agent no longer silently gates document retrieval.
+
+### Fixed
+
+- **PageIndex access control is now opt-in via the metadata filter.** Previously
+  any agent that hosted `AccessControlAction` had every PageIndex search gated by
+  `user_groups`, so documents tagged with their own scheme (e.g.
+  `access: "public"` / `access: "private"`) matched the injected group filter
+  nothing and the knowledge base returned no results. `resolved_metadata_filter`
+  now engages access control only when a metadata filter is in effect (passed per
+  call or configured as `PageIndexAction.metadata_filter`); with no filter set,
+  retrieval is decoupled from `AccessControlAction` ("in the same agent, but not
+  together"). When a filter is set, matched `user_groups["PageIndexAction"]`
+  groups are merged alongside the configured baseline, an unmatched visitor keeps
+  the public baseline, and a filter without an `access` baseline is scoped to
+  `access=[]` so restricted documents are never leaked. Untagged/empty `access`
+  is treated as public in both filter layers (`_build_metadata_query`,
+  `_root_matches_metadata`).
+
 ## [0.1.0rc7] - 2026-06-18
 
 Seventh release candidate (TestPyPI). Maintenance: the bundled base image now
