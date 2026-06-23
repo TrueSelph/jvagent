@@ -43,7 +43,9 @@ def _visitor_with_conv() -> tuple[SimpleNamespace, MagicMock]:
 
 
 @pytest.mark.asyncio
-@patch("jvagent.action.interview.engine.tasks.ensure_active_task", new_callable=AsyncMock)
+@patch(
+    "jvagent.action.interview.engine.tasks.ensure_active_task", new_callable=AsyncMock
+)
 async def test_fresh_start_stashes_activation_utterance(mock_task, signup_action):
     visitor, conv = _visitor_with_conv()
     signup_action._get_conversation = AsyncMock(return_value=conv)
@@ -62,8 +64,12 @@ async def test_fresh_start_stashes_activation_utterance(mock_task, signup_action
 
 
 @pytest.mark.asyncio
-@patch("jvagent.action.interview.engine.tasks.ensure_active_task", new_callable=AsyncMock)
-async def test_resume_empty_fields_updates_activation_utterance(mock_task, signup_action):
+@patch(
+    "jvagent.action.interview.engine.tasks.ensure_active_task", new_callable=AsyncMock
+)
+async def test_resume_empty_fields_updates_activation_utterance(
+    mock_task, signup_action
+):
     visitor, conv = _visitor_with_conv()
     session = InterviewSession(
         interview_type="signup_interview",
@@ -87,7 +93,9 @@ async def test_resume_empty_fields_updates_activation_utterance(mock_task, signu
 
 
 @pytest.mark.asyncio
-@patch("jvagent.action.interview.engine.tasks.ensure_active_task", new_callable=AsyncMock)
+@patch(
+    "jvagent.action.interview.engine.tasks.ensure_active_task", new_callable=AsyncMock
+)
 async def test_resume_with_fields_does_not_clobber_activation_utterance(
     mock_task, signup_action
 ):

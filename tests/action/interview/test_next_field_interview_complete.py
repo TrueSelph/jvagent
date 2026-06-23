@@ -115,7 +115,10 @@ async def test_set_fields_hook_completion_closes_task(onboarding_action, monkeyp
     action._clear_interview_session = AsyncMock()
 
     async def _fake_post(*_a, **_k):
-        return ([], {"interview_complete": True, "retain_context_keys": ["zoon_account"]})
+        return (
+            [],
+            {"interview_complete": True, "retain_context_keys": ["zoon_account"]},
+        )
 
     monkeypatch.setattr(engine, "run_post_processors", _fake_post)
 

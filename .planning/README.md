@@ -49,6 +49,7 @@ by slug (e.g. `specs/<date>-foo-design.md` ↔ `plans/<date>-foo.md`).
 | Logging, metrics, observability | [`reference/observability.md`](reference/observability.md) |
 | Memory model + rolling-window pruning | [`reference/memory-and-pruning.md`](reference/memory-and-pruning.md) |
 | The jvspatial dependency boundary | [`reference/jvspatial-integration.md`](reference/jvspatial-integration.md) |
+| Conversation use case scenarios (CUCS) | [`reference/conversation-use-cases.md`](reference/conversation-use-cases.md) |
 | Thin harness principle (platform-wide) | [`../docs/thin-harness.md`](../docs/thin-harness.md) |
 
 ## runbooks/ — procedures
@@ -80,6 +81,8 @@ those records covered patterns (bridge/helm/cockpit) that were removed.
 | [0016](adr/0016-model-gearing-light-heavy.md) | Model gearing: light completion + heavy reasoning | Accepted |
 | [0017](adr/0017-two-skill-specs-code-execution-substrate.md) | Two skill specs (JV + Claude) + multitenant code-execution substrate | Accepted |
 | [0018](adr/0018-lean-tool-surfacing.md) | Lean tool surfacing (threshold-auto progressive tool disclosure) | Accepted |
+| [0026](adr/0026-task-driven-turn-lock.md) | Task-driven turn-lock (work-stack orchestration) | Accepted |
+| [0027](adr/0027-conversation-use-case-spec.md) | Conversation Use Case Specification (CUCS) | Accepted |
 
 ## specs/ — design specs
 
