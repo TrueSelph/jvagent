@@ -41,6 +41,7 @@ interview/
 ├── flow.py               # Branch evaluation, path walk, prune
 ├── hooks.py              # custom_tools.py loader; the ctx interface (HookExecutionContext);
 │                         #   call_hook; validator dispatch; internal directive framing
+├── directive_compose.py  # Internal: merge hook directives into tool-response envelopes
 ├── validators.py         # Built-in validators
 ├── engine.py             # The 8 tool handlers + activation + skill-tool dispatch
 ├── tools.py              # Tool definitions binding to engine
@@ -104,3 +105,5 @@ pytest tests/action/interview/ -v
 | [docs/extending.md](docs/extending.md) | Validators, processors, handlers, skill tools |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common failures and fixes |
 | [examples/example_interview/](examples/example_interview/) | Reference implementation |
+| [CUCS witness scenarios](examples/example_account_gating/use-cases/) | Domain-neutral conversation use cases |
+| [`.planning/reference/conversation-use-cases.md`](../../../.planning/reference/conversation-use-cases.md) | Conversation Use Case Specification |

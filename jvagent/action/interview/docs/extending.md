@@ -69,6 +69,14 @@ The authoritative source is the `HookExecutionContext` docstring in
 | `ctx.args` | `validator_args` / skill-tool args |
 | `ctx.phase` | Lifecycle run name (activation vs storing vs advancing) |
 
+**`session.context["activation_utterance"]`.** On a fresh interview start (or a
+gated task-lock resume before any field is stored), `handle_start` stashes the
+activating `user_message` under the key `activation_utterance` (constant
+`ACTIVATION_UTTERANCE_KEY` in `session.py`). Activation `pre_processor` hooks
+can read `ctx.session.context.get("activation_utterance")` to seed the first
+field from the user's original request without re-parsing an aged observation.
+The value is **not** updated once `session.fields` is non-empty.
+
 ### Output (methods)
 
 | Method | Purpose |

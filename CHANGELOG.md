@@ -8,6 +8,28 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Added
+
+- **Conversation Use Case Specification (CUCS).** Framework-level YAML schema
+  (`jvagent.use-case/v1`) for documenting multi-turn conversational scenarios
+  that inform orchestrator E2E test suites. Normative reference:
+  `.planning/reference/conversation-use-cases.md`; JSON Schema:
+  `jvagent/schemas/use-case-v1.schema.json`; ADR-0027. Domain-neutral witness
+  scenarios under `jvagent/action/interview/examples/example_account_gating/use-cases/`.
+
+- **Interview `activation_utterance` session context.** `handle_start` stashes the
+  activating `user_message` on a fresh session (or a resumed session with no stored
+  fields yet) as `session.context["activation_utterance"]` so activation
+  `pre_processor` hooks can seed the first field from the user's original request
+  on gated task-lock resume without relying on the model re-extracting from an
+  aged observation. Key constant: `ACTIVATION_UTTERANCE_KEY` in `session.py`.
+
+### Changed
+
+- **Interview directive composition extracted from `engine.py`.** Batch-failure
+  and multi-directive merge helpers moved to `directive_compose.py` to shrink the
+  tool-handler module.
+
 ## [0.1.0rc9] - 2026-06-22
 
 Ninth release candidate (TestPyPI). Fixes PageIndex access control: having
