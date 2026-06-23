@@ -2413,7 +2413,10 @@ class OrchestratorInteractAction(InteractAction):
                 # Gear selection (sticky): heavy once the turn is multi-step —
                 # enough substantive tool calls, or a skill (multi-step SOP) is
                 # active. Single-model agents always run heavy.
-                gear = self._select_gear(substantive_tool_calls, bool(activated))
+                gear = self._select_gear(
+                    substantive_tool_calls,
+                    bool(activated) or active_skill_doc is not None,
+                )
                 if gear == "light":
                     ticks_light += 1
                 else:
@@ -3452,14 +3455,57 @@ class OrchestratorInteractAction(InteractAction):
             return "Wrapping up…"
         return ""
 
+    def _model_override(self) -> Optional[Dict[str, Any]]:
+        from jvagent.action.model.context import get_model_override
+
+        return get_model_override()
+
+    def _effective_main_model_id(self) -> str:
+        from jvagent.action.model.context import resolve_slot_config
+
+        cfg = resolve_slot_config(
+            "heavy",
+            calling_action_name="OrchestratorInteractAction",
+            gear="heavy",
+        )
+        if cfg:
+            model_id = str(cfg.get("model") or "").strip()
+            if model_id:
+                return model_id
+        override = self._model_override()
+        if override:
+            model_id = str(override.get("model") or "").strip()
+            if model_id:
+                return model_id
+        return (self.model or "").strip()
+
+    def _effective_light_model_id(self) -> str:
+        from jvagent.action.model.context import resolve_slot_config
+
+        cfg = resolve_slot_config(
+            "light",
+            calling_action_name="OrchestratorInteractAction",
+            gear="light",
+        )
+        if cfg:
+            light_id = str(cfg.get("model") or "").strip()
+            if light_id:
+                return light_id
+        override = self._model_override()
+        if override:
+            light_id = str(override.get("light_model") or "").strip()
+            if light_id:
+                return light_id
+        return (self.light_model or "").strip()
+
     def _has_main_model(self) -> bool:
-        return bool((self.model or "").strip())
+        return bool(self._effective_main_model_id())
 
     def _gearing_on(self) -> bool:
         # Gearing needs two distinct tiers: a light model AND a main model. A
         # light model with no main model is the single-model fallback (the light
         # model becomes the sole model) — so gearing is off.
-        return bool((self.light_model or "").strip()) and self._has_main_model()
+        return bool(self._effective_light_model_id()) and self._has_main_model()
 
     def _select_gear(self, substantive_tool_calls: int, skill_active: bool) -> str:
         """Light until the turn proves multi-step, then heavy (sticky). Single-
@@ -3472,12 +3518,53 @@ class OrchestratorInteractAction(InteractAction):
             return "heavy"
         return "light"
 
-    async def _resolve_model_action(self, action_type: str) -> Any:
+    async def _resolve_model_action(
+        self, action_type: str, *, profile: str = "heavy"
+    ) -> Any:
         """Resolve a model action by class name, falling back to the heavy one."""
+        from jvagent.action.model.context import (
+            get_model_override,
+            model_action_class_for_provider,
+            resolve_slot_config,
+        )
+
+        override = get_model_override()
+        if override:
+            profile_key = (profile or "").strip().lower()
+            slot = "light" if profile_key == "light" else "heavy"
+            cfg = resolve_slot_config(
+                slot,
+                calling_action_name="OrchestratorInteractAction",
+                gear=profile_key,
+                override=override,
+            )
+            provider = str((cfg or {}).get("provider") or "").strip()
+            if not provider:
+                if profile_key == "light":
+                    provider = str(
+                        override.get("light_provider") or override.get("provider") or ""
+                    ).strip()
+                else:
+                    provider = str(
+                        override.get("heavy_provider") or override.get("provider") or ""
+                    ).strip()
+            provider_class = model_action_class_for_provider(provider)
+            if provider_class:
+                try:
+                    action: Any = await self.get_action(provider_class)
+                    if action is not None:
+                        return action
+                except Exception as exc:
+                    logger.debug(
+                        "orchestrator: override get_action(%r) failed: %s",
+                        provider_class,
+                        exc,
+                    )
+
         at = (action_type or "").strip()
         if at:
             try:
-                action: Any = await self.get_action(at)
+                action = await self.get_action(at)
                 if action is not None:
                     return action
             except Exception as exc:
@@ -3487,11 +3574,12 @@ class OrchestratorInteractAction(InteractAction):
     async def _light_profile(self):
         """The light/completion profile tuple (no reasoning)."""
         action = await self._resolve_model_action(
-            self.light_model_action_type or self.model_action_type
+            self.light_model_action_type or self.model_action_type,
+            profile="light",
         )
         return (
             action,
-            (self.light_model or None),
+            (self._effective_light_model_id() or None),
             self.light_model_temperature,
             self.light_model_max_tokens,
             False,
@@ -3502,15 +3590,33 @@ class OrchestratorInteractAction(InteractAction):
         for the requested gear. The light profile is used for the light gear when
         gearing is on; it is also used as the SOLE model (fallback) when a light
         model is configured but no main model is. Otherwise the heavy profile."""
-        light_set = bool((self.light_model or "").strip())
+        override = self._model_override()
+        light_set = bool(self._effective_light_model_id())
         if light_set and (
             (gear == "light" and self._gearing_on()) or not self._has_main_model()
         ):
-            return await self._light_profile()
+            action, model_id, temp, max_tokens, reasoning_on = (
+                await self._light_profile()
+            )
+            effective_light = self._effective_light_model_id()
+            if effective_light:
+                model_id = effective_light
+            if override:
+                action = await self._resolve_model_action(
+                    self.light_model_action_type or self.model_action_type,
+                    profile="light",
+                )
+            return action, model_id, temp, max_tokens, reasoning_on
+
         action = await self.get_model_action(required=False)
+        model_id = self._effective_main_model_id() or None
+        if override:
+            action = await self._resolve_model_action(
+                self.model_action_type, profile="heavy"
+            )
         return (
             action,
-            (self.model or None),
+            model_id,
             self.model_temperature,
             self.model_max_tokens,
             True,
@@ -3895,8 +4001,11 @@ class OrchestratorInteractAction(InteractAction):
             kwargs["response_format"] = {"type": "json_object"}
         if reasoning_on:  # reasoning only on the heavy gear
             kwargs.update(self._reasoning_kwargs())
+        from jvagent.action.model.context import bind_model_gear
+
         try:
-            result = await model_action.query_messages(**kwargs)
+            with bind_model_gear(gear):
+                result = await model_action.query_messages(**kwargs)
         except Exception as exc:
             logger.warning("orchestrator: model call raised: %s", exc)
             return None

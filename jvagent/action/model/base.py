@@ -190,7 +190,28 @@ class BaseModelAction(Action, ABC):
                 await asyncio.sleep(delay)
 
     def api_key_from_context(self, *environment_variable_names: str) -> str:
-        """Resolve an API key from the first matching environment variable."""
+        """Resolve an API key from per-turn override, then environment."""
+        from jvagent.action.model.context import (
+            get_calling_action_name,
+            get_model_override,
+            resolve_slot_config,
+        )
+
+        override = get_model_override()
+        if override:
+            cfg = resolve_slot_config(
+                "default",
+                calling_action_name=get_calling_action_name(),
+            )
+            if cfg:
+                key = str(cfg.get("api_key") or "").strip()
+                if key:
+                    return key
+            # Legacy flat override (pre-slots hosts).
+            key = override.get("api_key")
+            if key:
+                return str(key).strip()
+
         if not environment_variable_names:
             return ""
         from jvspatial.env import env

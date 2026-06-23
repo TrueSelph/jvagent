@@ -10,6 +10,15 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Added
 
+- **Per-turn model credential override (BYOK).** `per_turn_model_override`
+  ContextVar in `jvagent.action.model.context` with `bind_model_override()`.
+  `api_key_from_context()` consults the override before environment variables;
+  `bind_model_gear()` selects `light_api_key` vs `api_key` per orchestrator gear.
+  Orchestrator `_resolve_model_action()` / `_gear_model()` honor per-turn
+  `provider` / `light_provider` and model IDs for multi-tenant embed hosts.
+  `_gearing_on()` and gear selection honor BYOK `light_model` even when the
+  agent YAML leaves `light_model` empty.
+
 - **Conversation Use Case Specification (CUCS).** Framework-level YAML schema
   (`jvagent.use-case/v1`) for documenting multi-turn conversational scenarios
   that inform orchestrator E2E test suites. Normative reference:

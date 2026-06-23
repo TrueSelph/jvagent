@@ -663,3 +663,43 @@ async def test_respond_is_a_conduit_never_answers_utterance(monkeypatch):
     out = await ra.respond(v.interaction, visitor=v)
     assert out == ""
     model.generate.assert_not_awaited()
+
+
+async def test_respond_uses_byok_primary_model(monkeypatch):
+    from jvagent.action.model.context import bind_model_override
+
+    ra = ReplyAction()
+    ra.model = "yaml-mini"
+    _patch_agent(monkeypatch)
+    model = MagicMock()
+    captured = {}
+
+    async def _gen(**kwargs):
+        captured.update(kwargs)
+        return "Hello."
+
+    model.generate = _gen
+
+    async def _ga(self, name):
+        return model if name == "OpenAILanguageModelAction" else None
+
+    monkeypatch.setattr(ReplyAction, "get_action", _ga)
+    v = _visitor_with(directives=[{"content": "Be brief."}])
+    with bind_model_override(
+        {
+            "slots": {
+                "default": {
+                    "provider": "openai",
+                    "model": "byok-primary",
+                    "api_key": "sk-test",
+                },
+                "light": {
+                    "provider": "openai",
+                    "model": "byok-secondary",
+                    "api_key": "sk-test",
+                },
+            },
+        }
+    ):
+        await ra.reply("answer", v)
+    assert captured.get("model") == "byok-primary"
