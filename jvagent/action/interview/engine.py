@@ -1704,6 +1704,14 @@ async def handle_start(
     conversation = await action._get_conversation(visitor)
     existing = load_session(conversation) if conversation else None
 
+    # The message that activated this interview — on a gated resume this is the
+    # task's seed (the user's ORIGINAL request), fed in by the orchestrator. Stash
+    # it so activation pre_processors can fill their field from it deterministically
+    # instead of relying on the model to re-extract it from an observation. Only
+    # meaningful at the start of an interview (no fields stored yet); never clobber
+    # mid-interview state.
+    activation_msg = str(kwargs.get("user_message") or "").strip()
+
     async def _session_envelope(session: InterviewSession, **extra: Any) -> str:
         load_fn = action._load_fn(spec)
         next_field = await build_next_field(session, spec, load_fn, visitor, action)
@@ -1727,6 +1735,10 @@ async def handle_start(
         )
 
     if existing and existing.is_active() and existing.interview_type == interview_type:
+        if activation_msg and not existing.fields:
+            existing.context["activation_utterance"] = activation_msg
+            if conversation:
+                await save_session(conversation, existing)
         if visitor:
             await tasks.ensure_active_task(visitor, spec, action.description)
         return await _session_envelope(existing)
@@ -1741,6 +1753,8 @@ async def handle_start(
         fresh_session = True
 
     session = InterviewSession(interview_type=interview_type)
+    if activation_msg:
+        session.context["activation_utterance"] = activation_msg
     if conversation:
         await save_session(conversation, session)
     if visitor:
