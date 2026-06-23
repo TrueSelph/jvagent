@@ -1,0 +1,34 @@
+schema: jvagent.use-case/v1
+id: example.booking.gated-no-session
+title: Visitor without session requests booking; sign-in prerequisite blocks and seeds utterance
+priority: P0
+tags: [example, gating, booking, reference]
+traceability:
+  skills: [example_booking_interview, example_signin_interview]
+  docs:
+    - jvagent/action/interview/examples/example_account_gating/README.md
+given:
+  channel: default
+  new_user: false
+  context: {}
+  preconditions:
+    signed_in: false
+turns:
+  - id: request-booking
+    when:
+      user: "I'd like to book a haircut on Friday"
+    harness:
+      decisions:
+        - action: tool
+          tool: use_skill
+          args:
+            skill: example_booking_interview
+    then:
+      task_graph:
+        pushed: example_signin_interview
+        blocked:
+          example_booking_interview: example_signin_interview
+        seed:
+          example_booking_interview:
+            utterance: "I'd like to book a haircut on Friday"
+        runnable: example_signin_interview

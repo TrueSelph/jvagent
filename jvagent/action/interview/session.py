@@ -16,6 +16,9 @@ from typing import Any, Dict, FrozenSet, List, Optional, Set, Union
 
 logger = logging.getLogger(__name__)
 
+# Set by ``handle_start`` on activation; read by activation ``pre_processor`` hooks.
+ACTIVATION_UTTERANCE_KEY = "activation_utterance"
+
 
 class InterviewStatus(str, Enum):
     ACTIVE = "active"

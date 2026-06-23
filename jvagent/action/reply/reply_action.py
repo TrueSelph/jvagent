@@ -225,6 +225,38 @@ class ReplyAction(Action):
         except Exception:
             return []
 
+    def _compose_model_id(self) -> Optional[str]:
+        """Default slot model for compose — BYOK override wins over agent.yaml."""
+        from jvagent.action.model.context import resolve_slot_config
+
+        cfg = resolve_slot_config("default", calling_action_name="ReplyAction")
+        if cfg:
+            model_id = str(cfg.get("model") or "").strip()
+            if model_id:
+                return model_id
+        return self.model or None
+
+    async def _compose_model_action(self) -> Any:
+        """Model action for compose — BYOK default-slot provider wins."""
+        from jvagent.action.model.context import (
+            model_action_class_for_provider,
+            resolve_slot_config,
+        )
+
+        cfg = resolve_slot_config("default", calling_action_name="ReplyAction")
+        if cfg:
+            provider_class = model_action_class_for_provider(
+                str(cfg.get("provider") or "")
+            )
+            if provider_class:
+                try:
+                    action: Any = await self.get_action(provider_class)
+                    if action is not None:
+                        return action
+                except Exception:
+                    pass
+        return await self.get_model_action(required=False)
+
     # ------------------------------------------------------------------
     # Identity (from the Agent node) + system prompt
     # ------------------------------------------------------------------
@@ -509,7 +541,7 @@ class ReplyAction(Action):
             self.get_channel_format(channel) if self.apply_channel_format else ""
         )
 
-        model_action = await self.get_model_action(required=False)
+        model_action = await self._compose_model_action()
         if model_action is None:
             # No compose model — thin-publish the literal message. `content` is
             # now the user's utterance (the message was framed as a directive),
@@ -541,20 +573,23 @@ class ReplyAction(Action):
             and getattr(visitor, "session_id", None)
         )
         response_bus = getattr(visitor, "response_bus", None) if visitor else None
+        from jvagent.action.model.context import bind_model_gear
+
         try:
-            response = await model_action.generate(
-                prompt=content or " ",
-                stream=streaming,
-                system=system,
-                history=list(history or []),
-                calling_action_name=self.get_class_name(),
-                model=self.model or None,
-                temperature=self.model_temperature,
-                max_tokens=self.model_max_tokens,
-                response_bus=response_bus if streaming else None,
-                interaction=interaction,
-                transient=transient,
-            )
+            with bind_model_gear("heavy"):
+                response = await model_action.generate(
+                    prompt=content or " ",
+                    stream=streaming,
+                    system=system,
+                    history=list(history or []),
+                    calling_action_name=self.get_class_name(),
+                    model=self._compose_model_id(),
+                    temperature=self.model_temperature,
+                    max_tokens=self.model_max_tokens,
+                    response_bus=response_bus if streaming else None,
+                    interaction=interaction,
+                    transient=transient,
+                )
         except Exception as exc:
             logger.warning("ReplyAction.respond: generate failed: %s", exc)
             # Slim fallback: the identity-shaped compose failed, but the user

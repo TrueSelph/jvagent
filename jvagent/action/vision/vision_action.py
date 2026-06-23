@@ -73,7 +73,7 @@ class VisionAction(Action):
         if not urls:
             return ""
         prompt = prompt or self.interpretation_prompt or IMAGE_INTERPRETATION_PROMPT
-        model_action = await self.get_model_action(required=False)
+        model_action, model_id = await self._resolve_vision_model()
         if model_action is None:
             logger.warning(
                 "VisionAction: no model action (%s) resolved; skipping vision",
@@ -84,7 +84,7 @@ class VisionAction(Action):
             return await generate_image_interpretation(
                 urls,
                 model_action,
-                model=self.model or None,
+                model=model_id or self.model or None,
                 temperature=self.model_temperature,
                 max_tokens=self.model_max_tokens,
                 prompt=prompt,
@@ -92,6 +92,33 @@ class VisionAction(Action):
         except Exception as exc:
             logger.warning("VisionAction.describe failed: %s", exc)
             return ""
+
+    async def _resolve_vision_model(self) -> tuple[Optional[Any], Optional[str]]:
+        """BYOK vision slot, then agent.yaml model_action_type/model."""
+        from jvagent.action.model.context import (
+            model_action_class_for_provider,
+            resolve_slot_config,
+        )
+
+        cfg = resolve_slot_config("vision", calling_action_name="VisionAction")
+        model_id = (
+            (self.model or None)
+            if not cfg
+            else (str(cfg.get("model") or "").strip() or None)
+        )
+        if cfg:
+            provider_class = model_action_class_for_provider(
+                str(cfg.get("provider") or "")
+            )
+            if provider_class:
+                try:
+                    action: Any = await self.get_action(provider_class)
+                    if action is not None:
+                        return action, model_id
+                except Exception:
+                    pass
+        action = await self.get_model_action(required=False)
+        return action, model_id
 
     @tool(name="interpret_images")
     async def _t_interpret_images(

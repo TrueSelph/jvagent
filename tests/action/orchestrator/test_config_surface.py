@@ -331,6 +331,91 @@ async def test_select_gear_logic():
     assert ex._select_gear(0, True) == "light"  # skill ignored when off
 
 
+async def test_gearing_on_from_byok_override_without_yaml_light():
+    from jvagent.action.model.context import bind_model_override
+
+    ex = OrchestratorInteractAction()
+    assert ex._gearing_on() is False
+    with bind_model_override(
+        {
+            "provider": "openai",
+            "model": "gpt-4.1",
+            "api_key": "sk-byok",
+            "light_model": "gpt-4o-mini",
+        }
+    ):
+        assert ex._gearing_on() is True
+        assert ex._select_gear(0, False) == "light"
+
+
+async def test_gear_model_byok_override_heavy_vs_light(monkeypatch):
+    from jvagent.action.model.context import bind_model_override
+
+    ex = OrchestratorInteractAction()
+    ex.model = "yaml-heavy"
+    ex.light_model = "yaml-light"
+    heavy = object()
+
+    async def _gma(self, required=False):
+        return heavy
+
+    async def _ra(self, action_type, *, profile="heavy"):
+        return heavy
+
+    monkeypatch.setattr(OrchestratorInteractAction, "get_model_action", _gma)
+    monkeypatch.setattr(OrchestratorInteractAction, "_resolve_model_action", _ra)
+    with bind_model_override(
+        {
+            "provider": "openai",
+            "model": "byok-primary",
+            "api_key": "sk",
+            "light_model": "byok-secondary",
+        }
+    ):
+        _, light_id, _, _, _ = await ex._gear_model("light")
+        _, heavy_id, _, _, _ = await ex._gear_model("heavy")
+    assert light_id == "byok-secondary"
+    assert heavy_id == "byok-primary"
+
+
+async def test_gearing_escalates_after_one_substantive_tool(
+    make_orchestrator, make_visitor, monkeypatch
+):
+    calls = {"n": 0}
+    fake = _fake_capability_action("work", calls)
+    ex = make_orchestrator(actions=[fake], decisions=[])
+    ex.light_model = "lite"
+    ex.escalate_after_tool_calls = 1
+    ex.escalate_on_skill = False
+    seq = [
+        {"action": "tool", "tool": "work", "args": {"i": 1}},
+        {"action": "final", "answer": "done"},
+    ]
+    gears = []
+
+    async def _rm(
+        self,
+        visitor,
+        utterance,
+        history,
+        tools,
+        observations,
+        flow_note="",
+        skills_section="",
+        finalize=False,
+        gear="heavy",
+        lean=False,
+        plan_note="",
+        **kwargs,
+    ):
+        gears.append(gear)
+        return seq.pop(0) if seq else {"action": "final", "answer": ""}
+
+    monkeypatch.setattr(OrchestratorInteractAction, "_run_model", _rm)
+    await ex.execute(make_visitor(utterance="one tool"))
+    assert gears == ["light", "heavy"]
+
+
 async def test_gear_model_off_uses_heavy(monkeypatch):
     ex = OrchestratorInteractAction()  # light_model="" → gearing off
     heavy = object()
@@ -500,7 +585,7 @@ async def test_light_model_no_main_falls_back_to_light(monkeypatch):
 
     lite = object()
 
-    async def _ra(self, action_type):
+    async def _ra(self, action_type, *, profile="heavy"):
         return lite
 
     async def _gma(self, required=False):

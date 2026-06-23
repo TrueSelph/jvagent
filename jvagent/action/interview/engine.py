@@ -15,6 +15,14 @@ from typing import Any, Dict, List, Optional, Tuple
 from jvagent.tooling.tool_executor import get_dispatch_visitor
 
 from . import tasks
+from .directive_compose import (
+    append_directive_event,
+    append_system_event,
+    batch_failure_directive,
+    batch_failure_status,
+    compose_directives,
+    compose_system_message,
+)
 from .flow import (
     build_awaiting_fields,
     build_next_field,
@@ -51,6 +59,7 @@ from .hooks import (
     with_hint,
 )
 from .session import (
+    ACTIVATION_UTTERANCE_KEY,
     InterviewSession,
     InterviewStatus,
     clear_interview_context,
@@ -154,173 +163,6 @@ def _unknown_field_error(
     return err, system_message
 
 
-def _batch_failure_status(failures: List[Dict[str, Any]], *, stored_any: bool) -> str:
-    if stored_any:
-        return "partial_success"
-    if failures and all(
-        failure.get("error_code") == "VALIDATION_FAILED" for failure in failures
-    ):
-        return "validation_failed"
-    return "error"
-
-
-def _batch_failure_directive(failures: List[Dict[str, Any]]) -> str:
-    if not failures:
-        return user_directive("Please share the missing information for this process.")
-    # A handler/validator-authored directive is written for the user — prefer it.
-    if len(failures) == 1:
-        direct = str(failures[0].get("response_directive") or "").strip()
-        if direct:
-            return direct
-    # Name only genuinely-pending fields that failed validation. Unknown/guessed
-    # keys are model errors (the model invented a field) and mean nothing to the
-    # user. Field keys are humanized so the raw snake_case never shows.
-    names = [
-        str(f.get("field") or "").strip().replace("_", " ")
-        for f in failures
-        if f.get("error_code") == "VALIDATION_FAILED"
-        and str(f.get("field") or "").strip()
-    ]
-    fields_text = ", ".join(name for name in names if name)
-    # Surface only user-authored validation messages. Raw engine errors
-    # (UNKNOWN_FIELD keys, "Awaiting keys: [...]") are model-facing context and
-    # MUST NOT reach the user — they travel in system_message instead.
-    user_error = next(
-        (
-            str(f.get("error") or "").strip()
-            for f in failures
-            if f.get("error_code") == "VALIDATION_FAILED"
-            and str(f.get("error") or "").strip()
-        ),
-        "",
-    )
-    if fields_text:
-        message = f"I still need valid values for: {fields_text}."
-    else:
-        message = "I still need a bit more information to continue."
-    if user_error:
-        message = f"{message} {user_error}"
-    return user_directive(message)
-
-
-def _append_directive_event(
-    queue: List[Dict[str, Any]],
-    *,
-    field: Optional[str],
-    stage: str,
-    source: str,
-    directive: Optional[str],
-) -> None:
-    text = str(directive or "").strip()
-    if not text:
-        return
-    queue.append(
-        {
-            "field": field,
-            "stage": stage,
-            "source": source,
-            "directive": text,
-        }
-    )
-
-
-def _append_system_event(
-    queue: List[Dict[str, Any]],
-    *,
-    field: Optional[str],
-    stage: str,
-    source: str,
-    system_message: Optional[str],
-) -> None:
-    text = str(system_message or "").strip()
-    if not text:
-        return
-    queue.append(
-        {
-            "field": field,
-            "stage": stage,
-            "source": source,
-            "system_message": text,
-        }
-    )
-
-
-def _normalize_user_directive_text(directive: str) -> str:
-    text = str(directive or "").strip()
-    lowered = text.lower()
-    if lowered.startswith("tell the user:"):
-        return text[len("Tell the user:") :].strip()
-    if lowered.startswith("ask:"):
-        return text[len("Ask:") :].strip()
-    return text
-
-
-def _compose_directives(
-    queue: List[Dict[str, Any]],
-    *,
-    fallback: str,
-) -> str:
-    if not queue:
-        return fallback
-
-    user_parts: List[str] = []
-    call_parts: List[str] = []
-    for item in queue:
-        directive = str(item.get("directive") or "").strip()
-        if not directive:
-            continue
-        lowered = directive.lower()
-        if lowered.startswith("call "):
-            call_parts.append(directive)
-            continue
-        user_parts.append(_normalize_user_directive_text(directive))
-
-    merged_user: List[str] = []
-    for part in user_parts:
-        text = part.strip()
-        if not text or text in merged_user:
-            continue
-        merged_user.append(text)
-
-    merged_calls: List[str] = []
-    for call in call_parts:
-        text = call.strip()
-        if not text or text in merged_calls:
-            continue
-        merged_calls.append(text)
-
-    if not merged_user and not merged_calls:
-        return fallback
-
-    if merged_user:
-        base = f"Tell the user: {' '.join(merged_user)}"
-    else:
-        base = merged_calls.pop(0)
-
-    for call in merged_calls:
-        if call.lower().startswith("call "):
-            base = f"{base} Then {call[0].lower() + call[1:]}"
-        else:
-            base = f"{base} Then {call}"
-    return base
-
-
-def _compose_system_message(
-    queue: List[Dict[str, Any]],
-    *,
-    fallback: str = "",
-) -> Optional[str]:
-    parts: List[str] = []
-    for item in queue:
-        text = str(item.get("system_message") or "").strip()
-        if not text or text in parts:
-            continue
-        parts.append(text)
-    if not parts:
-        return fallback or None
-    return " ".join(parts)
-
-
 def _compact_field_updates(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     updates: List[Dict[str, Any]] = []
     for item in results:
@@ -387,6 +229,16 @@ async def run_pre_processors(
                 extras["suggested_value"] = suggested
             if parsed.get("response_directive"):
                 directive = parsed.get("response_directive")
+            # A pre_processor may terminate the interview (e.g. an "already done"
+            # early-out). Surface that so the caller can complete + close the task
+            # rather than presenting the field — honouring interview_complete in
+            # every phase, not just store.
+            if parsed.get("interview_complete"):
+                extras["interview_complete"] = True
+                if parsed.get("retain_context_keys") is not None:
+                    extras["retain_context_keys"] = parsed["retain_context_keys"]
+                if parsed.get("system_message"):
+                    extras["system_message"] = parsed["system_message"]
 
     extras["pre_tools_results"] = results
     return directive or field_prompt_directive(fdef.prompt, fdef.hint), extras
@@ -671,7 +523,7 @@ async def handle_set_fields(
             if unknown_system:
                 failure["system_message"] = unknown_system
             failures.append(failure)
-            _append_system_event(
+            append_system_event(
                 system_queue,
                 field=fname,
                 stage="set",
@@ -735,14 +587,14 @@ async def handle_set_fields(
             )
             if pre_entries:
                 for hook_entry in pre_entries:
-                    _append_directive_event(
+                    append_directive_event(
                         directive_queue,
                         field=fname,
                         stage="pre",
                         source=str(hook_entry.get("tool") or "pre_processor"),
                         directive=hook_entry.get("response_directive"),
                     )
-                    _append_system_event(
+                    append_system_event(
                         system_queue,
                         field=fname,
                         stage="pre",
@@ -766,7 +618,7 @@ async def handle_set_fields(
                 or validation_guidance_directive(err, question_text=fdef.prompt),
             }
             failures.append(failure)
-            _append_directive_event(
+            append_directive_event(
                 directive_queue,
                 field=fname,
                 stage="validator",
@@ -782,7 +634,7 @@ async def handle_set_fields(
         stored_any = True
         entry["stored"] = True
         if check.get("response_directive"):
-            _append_directive_event(
+            append_directive_event(
                 directive_queue,
                 field=fname,
                 stage="validator",
@@ -790,7 +642,7 @@ async def handle_set_fields(
                 directive=check.get("response_directive"),
             )
         if check.get("system_message"):
-            _append_system_event(
+            append_system_event(
                 system_queue,
                 field=fname,
                 stage="validator",
@@ -806,14 +658,14 @@ async def handle_set_fields(
             )
             if hook_entries:
                 for hook_entry in hook_entries:
-                    _append_directive_event(
+                    append_directive_event(
                         directive_queue,
                         field=fname,
                         stage="post",
                         source=str(hook_entry.get("tool") or "post_processor"),
                         directive=hook_entry.get("response_directive"),
                     )
-                    _append_system_event(
+                    append_system_event(
                         system_queue,
                         field=fname,
                         stage="post",
@@ -896,12 +748,17 @@ async def handle_set_fields(
     if complete_check is not None and not failures:
         retain = complete_check.get("retain_context_keys") or []
         await action._clear_interview_session(visitor, retain_context_keys=retain)
+        # Close the skill task too — clearing the session alone leaves the task
+        # active with no session (orphaned), so a later utterance re-enters it.
+        # Mirrors handle_complete.
+        if visitor:
+            await tasks.close_task(visitor, status="completed", spec_name=spec.name)
         fallback_directive = str(complete_check.get("response_directive") or "").strip()
-        directive = _compose_directives(
+        directive = compose_directives(
             directive_queue,
             fallback=fallback_directive or "Interview completed.",
         )
-        system_message = _compose_system_message(
+        system_message = compose_system_message(
             system_queue,
             fallback=str(complete_check.get("system_message") or "").strip(),
         )
@@ -931,10 +788,10 @@ async def handle_set_fields(
 
     if failures:
         first_failure = failures[0]
-        payload["status"] = _batch_failure_status(failures, stored_any=stored_any)
+        payload["status"] = batch_failure_status(failures, stored_any=stored_any)
         # One clean directive from the failure set; per-field errors are in results[].
-        payload["response_directive"] = _batch_failure_directive(failures)
-        system_message = _compose_system_message(
+        payload["response_directive"] = batch_failure_directive(failures)
+        system_message = compose_system_message(
             system_queue,
             fallback=str(first_failure.get("system_message") or "").strip(),
         )
@@ -984,7 +841,7 @@ async def handle_set_fields(
             # already in the directive), so it carries no next_tool — the directive
             # is delivered and the turn ends, preserving the note.
             payload["next_tool"] = next_tool
-        system_message = _compose_system_message(
+        system_message = compose_system_message(
             system_queue,
             fallback=str(post_outcome.get("system_message") or "").strip(),
         )
@@ -1091,6 +948,24 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
             error="One or more pre_processor hooks failed.",
             next_field={"key": next_field["key"], "prompt": next_field.get("prompt")},
             pre_tools_results=pre_tools_results,
+        )
+
+    # A pre_processor may end the interview before the field is ever asked (e.g. an
+    # "already done" early-out returning interview_complete). Honour it the same way
+    # the store path does: clear the session, close the task, and return a
+    # completion response — otherwise the interview lingers active with an empty
+    # session and the task is orphaned (a later utterance re-enters it).
+    if extras.get("interview_complete"):
+        retain = extras.get("retain_context_keys") or []
+        await action._clear_interview_session(visitor, retain_context_keys=retain)
+        if visitor:
+            await tasks.close_task(visitor, status="completed", spec_name=spec.name)
+        return interview_tool_response(
+            ok=True,
+            status="completed",
+            interview_complete=True,
+            response_directive=directive,
+            system_message=extras.get("system_message"),
         )
 
     slim_next = {
@@ -1704,6 +1579,14 @@ async def handle_start(
     conversation = await action._get_conversation(visitor)
     existing = load_session(conversation) if conversation else None
 
+    # The message that activated this interview — on a gated resume this is the
+    # task's seed (the user's ORIGINAL request), fed in by the orchestrator. Stash
+    # it so activation pre_processors can fill their field from it deterministically
+    # instead of relying on the model to re-extract it from an observation. Only
+    # meaningful at the start of an interview (no fields stored yet); never clobber
+    # mid-interview state.
+    activation_msg = str(kwargs.get("user_message") or "").strip()
+
     async def _session_envelope(session: InterviewSession, **extra: Any) -> str:
         load_fn = action._load_fn(spec)
         next_field = await build_next_field(session, spec, load_fn, visitor, action)
@@ -1727,6 +1610,10 @@ async def handle_start(
         )
 
     if existing and existing.is_active() and existing.interview_type == interview_type:
+        if activation_msg and not existing.fields:
+            existing.context[ACTIVATION_UTTERANCE_KEY] = activation_msg
+            if conversation:
+                await save_session(conversation, existing)
         if visitor:
             await tasks.ensure_active_task(visitor, spec, action.description)
         return await _session_envelope(existing)
@@ -1741,6 +1628,8 @@ async def handle_start(
         fresh_session = True
 
     session = InterviewSession(interview_type=interview_type)
+    if activation_msg:
+        session.context[ACTIVATION_UTTERANCE_KEY] = activation_msg
     if conversation:
         await save_session(conversation, session)
     if visitor:

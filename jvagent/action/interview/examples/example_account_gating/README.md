@@ -43,3 +43,15 @@ parent task with ordered children it is `blocked_on`. `pick_top_runnable` walks
 them in priority/order, and completion re-resolves the next runnable step — the
 graph machinery is reused unchanged. See
 `tests/action/orchestrator/test_example_gated_skill.py::test_plan_drains_in_order`.
+
+## Conversation use cases (CUCS)
+
+Declarative multi-turn scenarios for orchestrator E2E testing live in
+[`use-cases/`](use-cases/). They follow the jvagent
+[Conversation Use Case Specification](../../../../.planning/reference/conversation-use-cases.md)
+(`schema: jvagent.use-case/v1`).
+
+| ID | File | Demonstrates |
+|----|------|--------------|
+| `example.booking.gated-no-session` | `booking-gated-no-session.yaml` | `requires-tasks` push → sign-in blocks booking → seed utterance |
+| `example.booking.with-session` | `booking-with-session.yaml` | precondition satisfied → no push |

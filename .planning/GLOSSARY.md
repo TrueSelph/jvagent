@@ -118,6 +118,24 @@ A `SKILL.md`-first folder the Orchestrator loads through progressive disclosure 
 ### InterviewAction
 `Action` (not `InteractAction`) that registers `interview__*` tools and runs the interview session pipeline for skills with `interview:` frontmatter and `extends: action:jvagent/interview`. Source: [`jvagent/action/interview/`](../jvagent/action/interview/). Follows the *thin harness* design — session + hooks + raw tools only; the model drives turns via the composed SOP.
 
+### Conversation Use Case Specification (CUCS)
+Portable YAML format (`schema: jvagent.use-case/v1`) for documenting multi-turn conversational scenarios that inform orchestrator E2E test suites. Normative spec: [`.planning/reference/conversation-use-cases.md`](reference/conversation-use-cases.md). JSON Schema: [`jvagent/schemas/use-case-v1.schema.json`](../jvagent/schemas/use-case-v1.schema.json). ADR: [`adr/0027`](adr/0027-conversation-use-case-spec.md). Distinct from `SKILL.md` `interview:` frontmatter (implementation contract vs. behavioral scenario). Witness: [`example_account_gating/use-cases/`](../jvagent/action/interview/examples/example_account_gating/use-cases/).
+
+### Fixture profile
+Named reusable stub or seed configuration referenced from a CUCS scenario's `given.fixtures` block. App-defined (e.g. zoon `fixtures.stub: profile/default-unregistered`). Documented in the app's `docs/use-cases.md`.
+
+### Harness (CUCS)
+The `harness.decisions` block in a CUCS turn — canned `_run_model` returns that drive deterministic orchestrator E2E tests. Maintained by engineers; not required for product/QA review of `when`/`then`.
+
+### Scenario (CUCS)
+One YAML file describing a single use case: metadata, `given` world state, ordered `turns`, optional `outcome`. Lives under `<app-root>/use-cases/`.
+
+### Use case (CUCS)
+A documented multi-turn user journey across one or more skills, expressed as a CUCS scenario. Informs orchestrator E2E tests; does not replace handler unit tests or `interview:` field contracts.
+
+### Assertion namespace (CUCS)
+Grouped `then` keys evaluated by the test runner. Framework-owned: `task_graph`, `context`, `session`, `publish`, `tools_surface`. App extensions (e.g. `api`) documented per app.
+
 ### Thin harness (principle)
 jvagent-wide design contract: **thin server harness** (Orchestrator, Actions, turn-lock hooks — session, validation dispatch, raw tool JSON, no conversation steering) and **thick SOP + skill extensions** (intent routing, extraction, domain logic in skills and `custom_tools.py`). Forbidden platform-wide: server intent classification, prep steering, activation auto-store, response inlining, orchestrator action special-casing. Canonical rules: [`docs/thin-harness.md`](../docs/thin-harness.md). Interview-specific profile: [`jvagent/action/interview/docs/thin-harness.md`](../jvagent/action/interview/docs/thin-harness.md).
 

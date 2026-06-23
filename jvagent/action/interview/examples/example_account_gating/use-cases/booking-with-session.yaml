@@ -1,0 +1,32 @@
+schema: jvagent.use-case/v1
+id: example.booking.with-session
+title: Signed-in visitor requests booking; no prerequisite push, booking runs directly
+priority: P0
+tags: [example, gating, booking, reference]
+traceability:
+  skills: [example_booking_interview]
+  docs:
+    - jvagent/action/interview/examples/example_account_gating/README.md
+given:
+  channel: default
+  new_user: false
+  context:
+    session_email: visitor@example.com
+  preconditions:
+    signed_in: true
+turns:
+  - id: request-booking
+    when:
+      user: "Book me a consultation next Monday"
+    harness:
+      decisions:
+        - action: tool
+          tool: use_skill
+          args:
+            skill: example_booking_interview
+        - action: final
+          answer: "What would you like to book?"
+    then:
+      task_graph:
+        not_pushed: example_signin_interview
+        runnable: example_booking_interview
