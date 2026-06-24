@@ -100,10 +100,12 @@ def append_system_event(
 def _normalize_user_directive_text(directive: str) -> str:
     text = str(directive or "").strip()
     lowered = text.lower()
+    if lowered.startswith("tell the user or ask the user:"):
+        return text[len("Tell the user or ask the user:"):].strip()
     if lowered.startswith("tell the user:"):
-        return text[len("Tell the user:") :].strip()
+        return text[len("Tell the user:"):].strip()
     if lowered.startswith("ask:"):
-        return text[len("Ask:") :].strip()
+        return text[len("Ask:"):].strip()
     return text
 
 
@@ -145,7 +147,7 @@ def compose_directives(
         return fallback
 
     if merged_user:
-        base = f"Tell the user: {' '.join(merged_user)}"
+        base = f"Tell the user or ask the user: {' '.join(merged_user)}"
     else:
         base = merged_calls.pop(0)
 
