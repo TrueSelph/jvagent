@@ -247,7 +247,10 @@ async def test_respond_composes_message_with_params_only(monkeypatch):
     monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
     v = _visitor_with(parameters=[{"condition": "asked price", "response": "$9"}])
     await ra.respond(v.interaction, visitor=v, text="Sure.")
-    assert "Tell the user or ask the user: Sure." in model.generate.call_args.kwargs["system"]
+    assert (
+        "Tell the user or ask the user: Sure."
+        in model.generate.call_args.kwargs["system"]
+    )
     assert "Tell the user or ask the user: Sure." not in [
         d["content"] for d in v.interaction.directives
     ]
@@ -566,7 +569,10 @@ async def test_collect_directive_text():
     inter.get_unexecuted_directives = MagicMock(
         return_value=[{"content": "Tell the user or ask the user: X"}, {"content": ""}]
     )
-    assert ReplyAction._collect_directive_text(None, inter) == "Tell the user or ask the user: X"
+    assert (
+        ReplyAction._collect_directive_text(None, inter)
+        == "Tell the user or ask the user: X"
+    )
     assert ReplyAction._collect_directive_text(["A", "B"], inter) == "A\nB"
 
 

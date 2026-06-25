@@ -11,9 +11,9 @@ def _user_text(directive: str) -> str:
     # then drop model-only guidance after the marker
     raw = directive
     if raw.lower().startswith("tell the user or ask the user:"):
-        raw = raw[len("Tell the user or ask the user:"):]
+        raw = raw[len("Tell the user or ask the user:") :]
     elif raw.lower().startswith("tell the user:"):
-        raw = raw[len("Tell the user:"):]
+        raw = raw[len("Tell the user:") :]
     return user_facing_directive(raw.strip())
 
 

@@ -113,7 +113,14 @@ class PageIndexAction(Action):
     )
     metadata_filter: Optional[Dict[str, Any]] = attribute(
         default=None,
-        description="Optional key-value filter to narrow search by document metadata",
+        description="Optional key-value filter to narrow search by document metadata (not for access control; use access_control instead)",
+    )
+    access_control: bool = attribute(
+        default=False,
+        description="When True, apply group-based access control to document retrieval. "
+        "When False (default), all documents are accessible regardless of group membership. "
+        "When enabled, access is always granted to 'public' documents; additional groups "
+        "are resolved from AccessControlAction.user_groups based on visitor identity.",
     )
     directive: str = attribute(
         default=DIRECTIVE_TEMPLATE.template,
@@ -326,6 +333,7 @@ class PageIndexAction(Action):
         max_docs_for_tree_search: Optional[Any] = None,
         retrieval_excerpt_source: Optional[Any] = None,
         visitor: Optional[InteractWalker] = None,
+        access_control: Optional[bool] = None,
     ) -> List[Dict[str, Any]]:
         from ..config import (
             initialize_pageindex_database,
@@ -360,6 +368,9 @@ class PageIndexAction(Action):
         )
         resolved_only_enabled = (
             only_enabled if only_enabled is not None else self.only_enabled
+        )
+        resolved_access_control = (
+            access_control if access_control is not None else self.access_control
         )
 
         eff_max_summary = (
@@ -429,7 +440,7 @@ class PageIndexAction(Action):
                 set_pageindex_model_action(model_action)
             if visitor is not None:
                 metadata_filter = await self.resolved_metadata_filter(
-                    visitor, metadata_filter
+                    visitor, metadata_filter, resolved_access_control
                 )
 
             return await search_documents(
@@ -721,34 +732,37 @@ class PageIndexAction(Action):
         return f"Document '{doc_name}' {'deleted' if ok else 'not found'}."
 
     async def resolved_metadata_filter(
-        self, visitor: InteractWalker, metadata_filter: Optional[Dict[str, Any]] = None
+        self,
+        visitor: InteractWalker,
+        metadata_filter: Optional[Dict[str, Any]] = None,
+        access_control: bool = False,
     ) -> Any:
         """Resolve effective metadata_filter, optionally applying access control.
 
-        **Access control is opt-in via the metadata filter.** Group-based access
-        control engages only when a metadata filter is in effect — either passed
-        per call or configured as ``PageIndexAction.metadata_filter``. When no
-        filter is set, retrieval is **not** gated by ``AccessControlAction`` at
-        all: an agent can host both ``AccessControlAction`` (for action-level
-        permissions) and ``PageIndexAction`` without the former constraining
-        document retrieval ("in the same agent, but not together").
-
-        When a filter **is** in effect, the agent's
-        ``AccessControlAction.user_groups`` is consulted under the
+        **Access control is opt-in via ``access_control``.** When ``access_control``
+        is ``False`` (the default), no access filtering is applied — the
+        metadata filter (if any) is returned unchanged. When ``True``, the
+        agent's ``AccessControlAction.user_groups`` is consulted under the
         ``PageIndexAction`` scope and the visitor's matching group names are
-        merged into the filter under the ``access`` key, so retrieval scopes to
-        documents whose ``access`` metadata is one of those groups (plus the
-        configured baseline). Typical model: tag documents ``access: "public"``
-        or ``access: "private"``, configure ``metadata_filter={"access":
-        "public"}`` as the baseline, and list the user ids allowed to see
-        private docs under ``user_groups["PageIndexAction"]["private"]``. A
-        member of ``private`` then sees public + private; everyone else sees the
-        configured baseline only.
+        merged into the filter under the ``access`` key.
 
-        When the visitor matches **no** group: a configured ``access`` baseline
-        (e.g. ``"public"``) is preserved so the public knowledge base stays
-        reachable; if the filter carries no ``access`` baseline, ``access=[]`` is
-        forced so restricted documents are not leaked to an unauthorized visitor.
+        When ``access_control`` is ``True``:
+
+        *   ``"public"`` is **always** included in the ``access`` list, ensuring
+            every visitor can reach public (untagged or ``access: "public"``)
+            documents.
+        *   If the visitor matches one or more groups (their ``user_id`` or
+            ``session_id`` appears in the group's user list), those group names
+            are added alongside ``"public"`` — e.g.
+            ``access=["public", "private"]``.
+        *   If the visitor matches **no** group, the access list is
+            ``["public"]`` — only public/untagged documents are returned.
+
+        Typical model: tag documents ``access: "public"`` or
+        ``access: "private"``, set ``access_control: true`` on the action, and
+        list the user ids allowed to see private docs under
+        ``user_groups["PageIndexAction"]["private"]``. A member of
+        ``private`` then sees public + private; everyone else sees public only.
 
         Document ``access`` tags should be **scalar** group names. The JSON/Mongo
         ``$in`` used by the DB layer cannot intersect a list-valued field, so
@@ -759,55 +773,35 @@ class PageIndexAction(Action):
         layer) and ``_root_matches_metadata`` (in-Python layer).
         """
         base = metadata_filter or self.metadata_filter
-        if not base:
-            # No metadata filter in effect → access control is not engaged for
-            # pageindex. Retrieval stays decoupled from AccessControlAction.
+
+        if not access_control:
             return base
+
+        mf: Dict[str, Any] = copy.deepcopy(base) if isinstance(base, dict) else {}
 
         access_control_action = await self.get_action("AccessControlAction")
-        if not access_control_action:
-            logger.debug(
-                "AccessControlAction not registered; PageIndexAction.search "
-                "proceeds without group-based access filtering"
-            )
-            return base
-
-        if not access_control_action.user_groups:
-            return base
+        if not access_control_action or not access_control_action.user_groups:
+            mf["access"] = ["public"]
+            return mf
 
         page_index_groups = access_control_action._resolve_user_groups(
             "PageIndexAction"
         )
         if not page_index_groups:
-            return base
-
-        mf: Dict[str, Any] = copy.deepcopy(base) if isinstance(base, dict) else {}
+            mf["access"] = ["public"]
+            return mf
 
         matched_groups: List[str] = [
             group
             for group, users in page_index_groups.items()
             if visitor.user_id in users or visitor.session_id in users
         ]
+
         if not matched_groups:
-            # Groups are configured but the visitor matches none.
-            #   * If an ``access`` baseline is already configured (e.g.
-            #     ``"public"``), preserve it — the operator has scoped this
-            #     action to that baseline and we must not widen it.
-            #   * Otherwise force ``access=[]`` so retrieval is scoped to public
-            #     (untagged) documents only. Returning the unfiltered ``mf``
-            #     here would leak every access-tagged (restricted) document to
-            #     an unauthorized visitor.
-            if mf.get("access") is None:
-                mf["access"] = []
+            mf["access"] = ["public"]
             return mf
 
-        existing = mf.get("access")
-        if isinstance(existing, list):
-            existing.extend(matched_groups)
-        elif existing is not None:
-            mf["access"] = [existing, *matched_groups]
-        else:
-            mf["access"] = matched_groups
+        mf["access"] = ["public", *matched_groups]
         return mf
 
     def _resolve_include_references(self) -> bool:

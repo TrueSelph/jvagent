@@ -1305,9 +1305,10 @@ def _make_visitor(user_id: str = "user-1", session_id: str = "sess-1"):
     return SimpleNamespace(user_id=user_id, session_id=session_id)
 
 
-def _make_pageindex_action(metadata_filter=None):
+def _make_pageindex_action(metadata_filter=None, access_control=False):
     action = object.__new__(PageIndexAction)
     object.__setattr__(action, "metadata_filter", metadata_filter)
+    object.__setattr__(action, "access_control", access_control)
     return action
 
 
@@ -1328,11 +1329,45 @@ class _StubACA:
 
 
 @pytest.mark.asyncio
-async def test_resolved_metadata_filter_ac_absent_falls_back(caplog):
-    """AccessControlAction not registered → return base unchanged, log at DEBUG (not WARNING)."""
+async def test_resolved_metadata_filter_access_control_false_no_filter():
+    """access_control=False with no metadata filter → returns None (no filtering)."""
+    action = _make_pageindex_action(metadata_filter=None, access_control=False)
+    aca = _StubACA(user_groups={"PageIndexAction": {"private": ["other-user"]}})
+
+    with patch.object(
+        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
+    ):
+        result = await PageIndexAction.resolved_metadata_filter(
+            action, _make_visitor("user-1"), None, access_control=False
+        )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_access_control_false_preserves_filter():
+    """access_control=False with metadata_filter set → returns filter unchanged."""
+    action = _make_pageindex_action(
+        metadata_filter={"topic": "finance"}, access_control=False
+    )
+    aca = _StubACA(user_groups={"PageIndexAction": {"private": ["other-user"]}})
+
+    with patch.object(
+        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
+    ):
+        result = await PageIndexAction.resolved_metadata_filter(
+            action, _make_visitor("user-1"), None, access_control=False
+        )
+
+    assert result == {"topic": "finance"}
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_access_control_true_ac_absent(caplog):
+    """access_control=True with AccessControlAction not registered → access=["public"]."""
     import logging
 
-    action = _make_pageindex_action(metadata_filter={"topic": "finance"})
+    action = _make_pageindex_action(metadata_filter=None, access_control=True)
 
     with patch.object(
         PageIndexAction, "get_action", new_callable=AsyncMock, return_value=None
@@ -1342,74 +1377,55 @@ async def test_resolved_metadata_filter_ac_absent_falls_back(caplog):
             logger="jvagent.action.pageindex.pageindex_action.pageindex_action",
         ):
             result = await PageIndexAction.resolved_metadata_filter(
-                action, _make_visitor(), None
+                action, _make_visitor(), None, access_control=True
             )
 
-    assert result == {"topic": "finance"}
-    warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
-    assert warnings == [], f"expected no WARNING records, got {warnings}"
-    debugs = [
-        r
-        for r in caplog.records
-        if r.levelno == logging.DEBUG and "AccessControlAction" in r.getMessage()
-    ]
-    assert debugs, "expected a DEBUG record noting graceful fallback"
+    assert result == {"access": ["public"]}
 
 
 @pytest.mark.asyncio
-async def test_resolved_metadata_filter_no_filter_skips_access_control():
-    """No metadata filter set → access control NOT engaged (decoupled)."""
-    action = _make_pageindex_action(metadata_filter=None)
-    aca = _StubACA(user_groups={"PageIndexAction": {"private": ["other-user"]}})
-
-    with patch.object(
-        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
-    ):
-        result = await PageIndexAction.resolved_metadata_filter(
-            action, _make_visitor("user-1"), None
-        )
-
-    # Pageindex and access control coexist in the agent, but not together.
-    assert result is None
-
-
-@pytest.mark.asyncio
-async def test_resolved_metadata_filter_ac_empty_user_groups_falls_back():
-    """Filter set, AccessControlAction present but user_groups empty → base unchanged."""
-    action = _make_pageindex_action(metadata_filter={"topic": "faq"})
+async def test_resolved_metadata_filter_access_control_true_ac_empty_user_groups():
+    """access_control=True with empty user_groups → access=["public"]."""
+    action = _make_pageindex_action(
+        metadata_filter={"topic": "faq"}, access_control=True
+    )
     aca = _StubACA(user_groups={})
 
     with patch.object(
         PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
     ):
         result = await PageIndexAction.resolved_metadata_filter(
-            action, _make_visitor(), None
+            action, _make_visitor(), None, access_control=True
         )
 
-    assert result == {"topic": "faq"}
+    assert result == {"topic": "faq", "access": ["public"]}
 
 
 @pytest.mark.asyncio
-async def test_resolved_metadata_filter_no_pageindex_scope_falls_back():
-    """AccessControlAction has user_groups but none for PageIndexAction or default → return base."""
-    action = _make_pageindex_action(metadata_filter={"topic": "finance"})
+async def test_resolved_metadata_filter_access_control_true_no_pageindex_scope():
+    """access_control=True with no PageIndexAction groups → access=["public"]."""
+    action = _make_pageindex_action(
+        metadata_filter={"topic": "finance"}, access_control=True
+    )
     aca = _StubACA(user_groups={"SomeOtherAction": {"admins": ["user-1"]}})
 
     with patch.object(
         PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
     ):
         result = await PageIndexAction.resolved_metadata_filter(
-            action, _make_visitor(), None
+            action, _make_visitor(), None, access_control=True
         )
 
-    assert result == {"topic": "finance"}
-    assert "access" not in result
+    assert result["access"] == ["public"]
+    assert result["topic"] == "finance"
 
 
 @pytest.mark.asyncio
-async def test_resolved_metadata_filter_visitor_matches_merges_access():
-    """Visitor matches a configured PageIndexAction group → access list includes that group."""
-    action = _make_pageindex_action(metadata_filter={"topic": "faq"})
+async def test_resolved_metadata_filter_access_control_true_visitor_matches():
+    """access_control=True, visitor matches group → access includes public + matched group."""
+    action = _make_pageindex_action(
+        metadata_filter={"topic": "faq"}, access_control=True
+    )
     aca = _StubACA(
         user_groups={
             "PageIndexAction": {
@@ -1423,17 +1439,19 @@ async def test_resolved_metadata_filter_visitor_matches_merges_access():
         PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
     ):
         result = await PageIndexAction.resolved_metadata_filter(
-            action, _make_visitor("user-1"), None
+            action, _make_visitor("user-1"), None, access_control=True
         )
 
-    assert result.get("access") == ["admins"]
+    assert result.get("access") == ["public", "admins"]
     assert result.get("topic") == "faq"
 
 
 @pytest.mark.asyncio
-async def test_resolved_metadata_filter_visitor_unmatched_no_access_baseline():
-    """Filter set without access baseline + no group match → access=[] (no leak)."""
-    action = _make_pageindex_action(metadata_filter={"topic": "faq"})
+async def test_resolved_metadata_filter_access_control_true_visitor_unmatched():
+    """access_control=True, visitor matches no group → access=["public"]."""
+    action = _make_pageindex_action(
+        metadata_filter={"topic": "faq"}, access_control=True
+    )
     aca = _StubACA(
         user_groups={
             "PageIndexAction": {
@@ -1446,21 +1464,36 @@ async def test_resolved_metadata_filter_visitor_unmatched_no_access_baseline():
         PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
     ):
         result = await PageIndexAction.resolved_metadata_filter(
-            action, _make_visitor("user-1"), None
+            action, _make_visitor("user-1"), None, access_control=True
         )
 
-    # Restricted docs must not leak to an unauthorized visitor.
-    assert result == {"topic": "faq", "access": []}
+    assert result == {"topic": "faq", "access": ["public"]}
 
 
 @pytest.mark.asyncio
-async def test_resolved_metadata_filter_visitor_unmatched_preserves_public_baseline():
-    """Visitor matches no group → configured public baseline is preserved."""
-    action = _make_pageindex_action(metadata_filter={"access": "public"})
+async def test_resolved_metadata_filter_access_control_true_no_filter():
+    """access_control=True with no metadata_filter → access=["public"]."""
+    action = _make_pageindex_action(metadata_filter=None, access_control=True)
+    aca = _StubACA(user_groups={"PageIndexAction": {"private": ["other-user"]}})
+
+    with patch.object(
+        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
+    ):
+        result = await PageIndexAction.resolved_metadata_filter(
+            action, _make_visitor("user-1"), None, access_control=True
+        )
+
+    assert result == {"access": ["public"]}
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_access_control_true_session_id_match():
+    """access_control=True, visitor matches via session_id → access includes public + group."""
+    action = _make_pageindex_action(metadata_filter=None, access_control=True)
     aca = _StubACA(
         user_groups={
             "PageIndexAction": {
-                "private": ["other-user"],
+                "private": ["sess-special"],
             }
         }
     )
@@ -1469,20 +1502,25 @@ async def test_resolved_metadata_filter_visitor_unmatched_preserves_public_basel
         PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
     ):
         result = await PageIndexAction.resolved_metadata_filter(
-            action, _make_visitor("user-1"), None
+            action,
+            _make_visitor(user_id="user-1", session_id="sess-special"),
+            None,
+            access_control=True,
         )
 
-    assert result == {"access": "public"}
+    assert result == {"access": ["public", "private"]}
 
 
 @pytest.mark.asyncio
-async def test_resolved_metadata_filter_empty_filter_skips_access_control():
-    """Empty metadata_filter is treated as no filter → access control not engaged."""
-    action = _make_pageindex_action(metadata_filter={})
+async def test_resolved_metadata_filter_access_control_true_multiple_groups():
+    """access_control=True, visitor in multiple groups → access includes public + all matched."""
+    action = _make_pageindex_action(metadata_filter=None, access_control=True)
     aca = _StubACA(
         user_groups={
             "PageIndexAction": {
-                "admins": ["other-user"],
+                "admins": ["user-1"],
+                "editors": ["user-1"],
+                "viewers": ["other-user"],
             }
         }
     )
@@ -1491,16 +1529,18 @@ async def test_resolved_metadata_filter_empty_filter_skips_access_control():
         PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
     ):
         result = await PageIndexAction.resolved_metadata_filter(
-            action, _make_visitor("user-1"), None
+            action, _make_visitor("user-1"), None, access_control=True
         )
 
-    assert result == {}
+    assert result["access"] == ["public", "admins", "editors"]
 
 
 @pytest.mark.asyncio
-async def test_resolved_metadata_filter_matched_extends_public_baseline():
-    """Matched visitor → baseline public access plus member groups."""
-    action = _make_pageindex_action(metadata_filter={"access": "public"})
+async def test_resolved_metadata_filter_access_control_true_preserves_existing_access():
+    """access_control=True with existing access key in metadata_filter → overwritten with group-based access."""
+    action = _make_pageindex_action(
+        metadata_filter={"topic": "faq", "access": "public"}, access_control=True
+    )
     aca = _StubACA(
         user_groups={
             "PageIndexAction": {
@@ -1513,10 +1553,11 @@ async def test_resolved_metadata_filter_matched_extends_public_baseline():
         PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
     ):
         result = await PageIndexAction.resolved_metadata_filter(
-            action, _make_visitor("user-1"), None
+            action, _make_visitor("user-1"), None, access_control=True
         )
 
-    assert set(result["access"]) == {"public", "private"}
+    assert result["access"] == ["public", "private"]
+    assert result["topic"] == "faq"
 
 
 def test_root_matches_metadata_access_public_or_member():
@@ -1679,4 +1720,83 @@ async def test_search_access_unmatched_public_baseline(
     assert {r.get("doc_name") for r in results} == {
         "doc_untagged",
         "doc_public_tagged",
+    }
+
+
+@pytest.mark.asyncio
+async def test_search_access_public_list_includes_public_and_untagged(
+    pageindex_temp_db, sample_markdown
+):
+    """End-to-end: access=['public'] returns untagged + public-tagged, excludes private."""
+    await assimilate_document(
+        sample_markdown,
+        doc_name="doc_untagged",
+        if_add_node_summary="no",
+        collection_name="col_acl4",
+    )
+    await assimilate_document(
+        sample_markdown,
+        doc_name="doc_public_tagged",
+        if_add_node_summary="no",
+        collection_name="col_acl4",
+        metadata={"access": "public"},
+    )
+    await assimilate_document(
+        sample_markdown,
+        doc_name="doc_private",
+        if_add_node_summary="no",
+        collection_name="col_acl4",
+        metadata={"access": "private"},
+    )
+
+    results = await search_documents(
+        query="content",
+        strategy="direct",
+        limit=20,
+        collection_name="col_acl4",
+        metadata_filter={"access": ["public"]},
+    )
+    assert {r.get("doc_name") for r in results} == {
+        "doc_untagged",
+        "doc_public_tagged",
+    }
+
+
+@pytest.mark.asyncio
+async def test_search_access_public_plus_private_includes_both(
+    pageindex_temp_db, sample_markdown
+):
+    """End-to-end: access=['public','private'] returns all docs including private-tagged."""
+    await assimilate_document(
+        sample_markdown,
+        doc_name="doc_untagged",
+        if_add_node_summary="no",
+        collection_name="col_acl5",
+    )
+    await assimilate_document(
+        sample_markdown,
+        doc_name="doc_public_tagged",
+        if_add_node_summary="no",
+        collection_name="col_acl5",
+        metadata={"access": "public"},
+    )
+    await assimilate_document(
+        sample_markdown,
+        doc_name="doc_private",
+        if_add_node_summary="no",
+        collection_name="col_acl5",
+        metadata={"access": "private"},
+    )
+
+    results = await search_documents(
+        query="content",
+        strategy="direct",
+        limit=20,
+        collection_name="col_acl5",
+        metadata_filter={"access": ["public", "private"]},
+    )
+    assert {r.get("doc_name") for r in results} == {
+        "doc_untagged",
+        "doc_public_tagged",
+        "doc_private",
     }

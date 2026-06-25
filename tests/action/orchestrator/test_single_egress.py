@@ -106,6 +106,7 @@ async def test_send_reply_queues_reply_as_orchestrator_directive(monkeypatch):
         "OrchestratorInteractAction"
     ]
     assert (
-        interaction.directives[0]["content"] == "Tell the user or ask the user: What is your full name?"
+        interaction.directives[0]["content"]
+        == "Tell the user or ask the user: What is your full name?"
     )
     assert gathered  # the responder gathered the queued directive
