@@ -28,7 +28,7 @@ async def test_say_single_folds_into_response_directive():
     assert isinstance(r, dict)
     assert r["ok"] is True and r["extra"] == "x"
     rd = r["response_directive"]
-    assert rd.startswith("Tell the user: What is your name?")
+    assert rd.startswith("Tell the user or ask the user: What is your name?")
     assert _MARKER in rd  # model-only guidance present after the marker
 
 

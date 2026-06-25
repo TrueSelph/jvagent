@@ -86,7 +86,7 @@ The value is **not** updated once `session.fields` is non-empty.
 | `ctx.call_tool(tool)` | A control directive that chains one interview tool (no user text), e.g. `response_directive=ctx.call_tool("interview__review")`. |
 | `ctx.no_session()` | The standard envelope when a hook runs without an active session. |
 | `ctx.valid(value=None, **extra)` | Validator success result dict (`value` defaults to `ctx.value`). |
-| `ctx.invalid(error, *, value=None, **extra)` | Validator failure result dict. `error` is stated as a plain instruction — it is auto-framed and delivered as the re-ask (same as `ctx.say`; no `Tell the user:` prefix). Skipped if the validator already `say`-ed or passed an explicit `response_directive`. |
+| `ctx.invalid(error, *, value=None, **extra)` | Validator failure result dict. `error` is stated as a plain instruction — it is auto-framed and delivered as the re-ask (same as `ctx.say`; no `Tell the user:` prefix needed). Skipped if the validator already `say`-ed or passed an explicit `response_directive`. |
 
 ### Two rules to internalize
 

@@ -52,7 +52,7 @@ async def test_reset_returns_reply_directive_not_next_field_chain(
     assert result["ok"] is True
     assert result["status"] == "restarted"
     directive = result["response_directive"]
-    assert "Tell the user:" in directive
+    assert "Tell the user or ask the user:" in directive
     assert "start over" in directive.lower()
     assert "What is your email?" not in directive
     assert result.get("next_tool") == "interview__next_field"

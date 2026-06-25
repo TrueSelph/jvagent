@@ -7,13 +7,14 @@ from jvagent.action.reply.reply_action import user_facing_directive
 
 
 def _user_text(directive: str) -> str:
-    # strip the "Tell the user:" prefix, then drop model-only guidance after the marker
-    body = (
-        directive[len("Tell the user:") :]
-        if directive.lower().startswith("tell the user:")
-        else directive
-    )
-    return user_facing_directive(body)
+    # strip the "Tell the user or ask the user:" / "Tell the user:" prefix,
+    # then drop model-only guidance after the marker
+    raw = directive
+    if raw.lower().startswith("tell the user or ask the user:"):
+        raw = raw[len("Tell the user or ask the user:"):]
+    elif raw.lower().startswith("tell the user:"):
+        raw = raw[len("Tell the user:"):]
+    return user_facing_directive(raw.strip())
 
 
 def test_complete_sentence_error_not_duplicated_with_question():

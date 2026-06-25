@@ -63,7 +63,7 @@ Use `interview__get_status` for progress. On `NO_SESSION`, activate then `interv
 - **Skip declined optionals BEFORE asking (same turn).** Immediately after `set_fields`, scan the latest message for any **optional** field the user lacks or declines ("I do not have a phone", "no second tracking number", "skip the invoice value") and call `interview__skip_field` for each one **now** — then call `next_field`. A declined optional is resolved, not pending: never surface its question. So a message giving the required values and declining an optional ends as `set_fields` → `skip_field` → (`review`/`complete` if nothing else remains), with no optional question asked.
 - **Anti-drip rule:** For one user utterance, make one initial `set_fields` call with all extracted keys; do not split the same message into one-field calls unless retrying after validation failures.
 - **Correction:** `set_fields` → `next_field` if more required fields remain, else `review` when at review stage. After review corrections, call `review` again before asking for summary confirmation.
-- **`response_directive` beats `next_tool`.** When it starts with `Tell the user:`, reply unless it explicitly says `Call interview__…`.
+- **`response_directive` beats `next_tool`.** When it starts with `Tell the user` (or `Tell the user or ask the user`), reply unless it explicitly says `Call interview__…`.
 - **Unknown key recovery:** on `error_code: UNKNOWN_FIELD` (or failed fields with that code), read `system_message` / `system_messages_queue` / `failed_fields[].system_message` for the canonical key mapping, then retry one corrective `set_fields` batch with corrected canonical keys.
 - Do not claim the process is finished until `interview__complete()` succeeds.
 

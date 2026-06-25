@@ -46,6 +46,6 @@ async def test_reset_delegates_to_custom_handler(onboarding_action):
 
     assert result["ok"] is True
     assert result["status"] == "cancelled"
-    assert "Tell the user:" in result["response_directive"]
+    assert "Tell the user or ask the user:" in result["response_directive"]
     assert "onboarding" in result["response_directive"].lower()
     action._close_task.assert_called_once()

@@ -57,7 +57,7 @@ async def test_hint_folded_into_framed_prompt_user_facing():
     # must reach the compose model in the USER-FACING (before-marker) portion,
     # framed as a compose instruction (the model applies it, doesn't echo it).
     user_part = directive.split(_MARKER, 1)[0]
-    assert user_part.startswith("Tell the user: What's your ID number?")
+    assert user_part.startswith("Tell the user or ask the user: What's your ID number?")
     assert "upload a photo of the ID" in user_part
 
 
@@ -68,4 +68,4 @@ async def test_no_hint_leaves_prompt_unchanged():
         action=None, session=None, spec=_spec(fd), fdef=fd, visitor=None
     )
     assert "upload a photo" not in directive
-    assert directive.startswith("Tell the user: What is your name?")
+    assert directive.startswith("Tell the user or ask the user: What is your name?")
