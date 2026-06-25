@@ -85,9 +85,9 @@ PARAMETERS_SECTION = (
 # to. ``respond`` renders via a model call; passing the bare answer as the prompt
 # makes the model treat it as a user utterance to answer (so
 # ``respond("Five plus five equals ten.")`` came back as "That's correct. Five
-# plus five equals ten."). Enqueuing it as a "Tell the user: ..." directive makes
+# plus five equals ten."). Enqueuing it as a "Tell the user or ask the user: ..." directive makes
 # the compose model deliver it faithfully in the agent's identity.
-RELAY_PREFIX = "Tell the user: "
+RELAY_PREFIX = "Tell the user or ask the user: "
 
 # A directive may carry model-only composition guidance after this marker: how to
 # render the user-facing part ("you may paraphrase"), or producer chaining notes
@@ -426,7 +426,7 @@ class ReplyAction(Action):
         """Conduit egress — emit the interaction's queued directives as ONE reply.
 
         Producers (the orchestrator, rails IAs) queue directives; ReplyAction only
-        gathers them, never adds. A single relay directive (``Tell the user: …``)
+        gathers them, never adds. A single relay directive (``Tell the user or ask the user: …``)
         with no other shaping is slim-published literally (the N=1 fast path, no
         model call); anything else — an instruction directive, multiple
         directives, or queued parameters/channel format — composes into one
@@ -445,12 +445,20 @@ class ReplyAction(Action):
         content = (
             (first.get("content") if isinstance(first, dict) else str(first)) or ""
         ).strip()
-        is_relay = content.lower().startswith("tell the user:")
+        is_relay = content.lower().startswith(
+            ("tell the user or ask the user:", "tell the user:")
+        )
         if len(directive_items) == 1 and is_relay and not has_params and not has_format:
             # Drop any model-only guidance: the literal relay skips the compose
             # model, so guidance ("you may paraphrase", "Do NOT call …") would
             # otherwise reach the user verbatim.
-            literal = user_facing_directive(content[len("tell the user:") :])
+            low = content.lower()
+            if low.startswith("tell the user or ask the user:"):
+                literal = user_facing_directive(
+                    content[len("Tell the user or ask the user:") :]
+                )
+            else:
+                literal = user_facing_directive(content[len("Tell the user:") :])
             if interaction is not None:
                 try:
                     interaction.set_to_executed(directives=[first], parameters=[])
@@ -490,7 +498,7 @@ class ReplyAction(Action):
         original_text = (text or "").strip()
         base = original_text
         # The explicit message text is what to RELAY to the user, not a prompt to
-        # react to. Frame it as a "Tell the user: ..." directive so the compose
+        # react to. Frame it as a "Tell the user or ask the user: ..." directive so the compose
         # model renders it faithfully in the agent's identity instead of treating
         # it as a user utterance to answer (the bug: respond("Five plus five
         # equals ten.") came back "That's correct. Five plus five equals ten.").

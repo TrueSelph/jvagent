@@ -121,7 +121,7 @@ def user_directive(question: str, *, note: str = "") -> str:
     )
     if note:
         guidance = f"{guidance} {note}"
-    return f"Tell the user: {question}{_G}{guidance}"
+    return f"Tell the user or ask the user: {question}{_G}{guidance}"
 
 
 def with_hint(prompt: str, hint: str = "") -> str:
@@ -150,7 +150,7 @@ def field_prompt_directive(prompt: str, hint: str = "") -> str:
 def user_followup_directive(message: str, follow_up_question: str) -> str:
     """Sidebar note plus the next interview question in one user-facing reply."""
     return (
-        f"Tell the user: {message}\n\n{follow_up_question}"
+        f"Tell the user or ask the user: {message}\n\n{follow_up_question}"
         f"{_G}The text above is a note followed by the next question — deliver both, "
         "in that order. You may paraphrase but keep both the note and the question."
     )
@@ -159,7 +159,7 @@ def user_followup_directive(message: str, follow_up_question: str) -> str:
 def user_directive_then_tool(message: str, next_tool: str) -> str:
     """Sidebar note when no further questions remain; chain a tool in the same turn."""
     return (
-        f"Tell the user: {message}"
+        f"Tell the user or ask the user: {message}"
         f"{_G}You may paraphrase slightly but keep the same intent. "
         f"Then call {next_tool}."
     )
@@ -169,7 +169,11 @@ def validation_guidance_directive(error: str, *, question_text: str = "") -> str
     """Build a single user-facing re-ask from a validator error message."""
     raw = (error or "").strip()
     lower = raw.lower()
-    prefixed = lower.startswith("tell the user:") or lower.startswith("ask:")
+    prefixed = (
+        lower.startswith("tell the user or ask the user:")
+        or lower.startswith("tell the user:")
+        or lower.startswith("ask:")
+    )
     err = raw.split(":", 1)[1].strip() if prefixed else raw
     self_contained = prefixed or err.endswith((".", "!", "?"))
     if question_text and not self_contained:
@@ -185,7 +189,7 @@ def review_confirmation_directive(
     """Confirmation-step directive — not completion."""
     summary_block = f"\n\n{summary}" if summary else ""
     return (
-        f"Tell the user: {preamble}{summary_block}\n\n"
+        f"Tell the user or ask the user: {preamble}{summary_block}\n\n"
         "Ask whether everything looks correct and whether they want to confirm, "
         "and if they want changes, ask what to update."
         f"{_G}This is a confirmation step only — the process is NOT complete yet. "
@@ -200,7 +204,7 @@ def auto_confirm_directive(summary: str, *, preamble: str = "") -> str:
     summary_block = f"\n\n{summary}" if summary else ""
     intro = (preamble or "Here is a summary of what was collected.").strip()
     return (
-        f"Tell the user: {intro}{summary_block}"
+        f"Tell the user or ask the user: {intro}{summary_block}"
         f"{_G}Do not ask whether everything looks correct. "
         "Call interview__complete now in this same turn. "
         "Do NOT call interview__review again."
@@ -208,11 +212,15 @@ def auto_confirm_directive(summary: str, *, preamble: str = "") -> str:
 
 
 def _plain_directive_text(text: str) -> str:
-    """Strip a legacy ``Tell the user:`` / ``Ask:`` prefix to a plain instruction."""
+    """Strip a legacy ``Tell the user or ask the user:`` / ``Tell the user:`` / ``Ask:`` prefix to a plain instruction."""
     raw = (text or "").strip()
     low = raw.lower()
-    if low.startswith("tell the user:") or low.startswith("ask:"):
-        return raw.split(":", 1)[1].strip()
+    if low.startswith("tell the user or ask the user:"):
+        return raw[len("Tell the user or ask the user:") :].strip()
+    if low.startswith("tell the user:"):
+        return raw[len("Tell the user:") :].strip()
+    if low.startswith("ask:"):
+        return raw[len("Ask:") :].strip()
     return raw
 
 

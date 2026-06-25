@@ -74,6 +74,24 @@ def _guess_mime(filename: str, fallback: str = "application/octet-stream") -> st
     return fallback
 
 
+def _ensure_extension(filename: str, mime: str) -> str:
+    """Append the correct extension when *filename* lacks one but *mime* is known.
+
+    Avoids ``application/octet-stream`` fallbacks in the storage validator by
+    ensuring every saved file carries an extension that ``mimetypes`` can
+    resolve back to the correct MIME type.
+    """
+    if not filename or not mime or mime == "application/octet-stream":
+        return filename or "upload"
+    base, _, ext = filename.rpartition(".")
+    if ext and mimetypes.guess_type(filename)[0]:
+        return filename
+    candidate = mimetypes.guess_extension(mime)
+    if candidate:
+        return f"{filename}{candidate}"
+    return filename
+
+
 def _filename_from_url(url: str) -> str:
     try:
         tail = os.path.basename(urlparse(url).path)
@@ -151,8 +169,9 @@ def normalize_upload_entry(
 
     if not mime:
         mime = _guess_mime(filename)
+    filename = _ensure_extension(filename or "upload", mime)
     return UploadItem(
-        filename=filename or "upload",
+        filename=filename,
         mime=mime,
         kind=classify_kind(mime),
         raw=raw,

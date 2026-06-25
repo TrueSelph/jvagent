@@ -1839,7 +1839,7 @@ class OrchestratorInteractAction(InteractAction):
             # from an observation is unreliable (it gets dropped).
             if ack:
                 try:
-                    await visitor.add_directive(f"Tell the user: {ack}")
+                    await visitor.add_directive(f"Tell the user or ask the user: {ack}")
                 except Exception as exc:  # pragma: no cover - defensive
                     logger.debug("orchestrator: resume ack directive failed: %s", exc)
             observations.append(
@@ -1873,7 +1873,7 @@ class OrchestratorInteractAction(InteractAction):
                 logger.debug("orchestrator: resume entry directive failed: %s", exc)
         if entry:
             question = self._directive_user_text(entry)
-            terminal = "Tell the user: " + (f"{ack} {question}".strip())
+            terminal = "Tell the user or ask the user: " + (f"{ack} {question}".strip())
             return parent, tools, visible, skills_section, terminal
         # No deliverable question — fall back to a re-ground note.
         observations.append(
@@ -1892,14 +1892,17 @@ class OrchestratorInteractAction(InteractAction):
 
     @staticmethod
     def _directive_user_text(directive: str) -> str:
-        """Strip a directive's ``Tell the user:`` prefix and any model-facing guidance
-        (separated by the invisible U+2063) down to the user-facing sentence."""
+        """Strip a directive's ``Tell the user or ask the user:`` / ``Tell the user:``
+        prefix and any model-facing guidance (separated by the invisible U+2063)
+        down to the user-facing sentence."""
         text = (directive or "").strip()
         if not text:
             return ""
         text = text.split("\u2063", 1)[0].strip()
         low = text.lower()
-        if low.startswith("tell the user:"):
+        if low.startswith("tell the user or ask the user:"):
+            text = text[len("tell the user or ask the user:") :].strip()
+        elif low.startswith("tell the user:"):
             text = text[len("tell the user:") :].strip()
         return text
 
@@ -2354,7 +2357,7 @@ class OrchestratorInteractAction(InteractAction):
         # Directive contract: a tool result carries the authoritative next step.
         # ``pending_chain`` holds a tool the model MUST call before it can finalize
         # (so it can't fabricate "you're all set" without running it); a terminal
-        # "Tell the user:" directive with no chain is the turn's reply and is
+        # "Tell the user or ask the user:" directive with no chain is the turn's reply and is
         # delivered directly in the loop body (so the model can't re-decide and
         # re-run the same tool). Both are enforced below — generically, no tool
         # is named in code.
@@ -2738,7 +2741,7 @@ class OrchestratorInteractAction(InteractAction):
                     # Directive contract (see loop-state init): a tool result may
                     # carry the authoritative next step. A pending ``next_tool`` is a
                     # chain the model MUST take before it can finalize; a bare
-                    # "Tell the user:" directive with no chain is the turn's reply,
+                    # "Tell the user or ask the user:" directive with no chain is the turn's reply,
                     # delivered directly so the model cannot re-decide (e.g. re-call
                     # the same tool). Generic — no tool is named in code.
                     if isinstance(obs, str):
@@ -2747,7 +2750,7 @@ class OrchestratorInteractAction(InteractAction):
                             # The result chains to another tool the model MUST call.
                             pending_chain = nt
                             chain_deflections = 0
-                        elif rd.strip().lower().startswith("tell the user:"):
+                        elif rd.strip().lower().startswith("tell the user"):
                             # Drain (ADR-0026): before ending on a completion's
                             # terminal reply, re-resolve the task lock. If a task-lock
                             # skill just completed and a parent task is now the top
@@ -3025,7 +3028,7 @@ class OrchestratorInteractAction(InteractAction):
         ``compose=True`` forces an identity compose (``respond``) instead of the
         responder's N=1 literal relay fast path. Use it when ``text`` is an
         authored directive that still carries model-facing guidance (e.g. an
-        interview engine directive: "Tell the user: <prompt> You may paraphrase …
+        interview engine directive: "Tell the user or ask the user: <prompt> You may paraphrase …
         call <tool> …"). Relaying that literally would leak the guidance to the
         user; composing renders the user-facing intent in the agent's voice. The
         compose step replaces the per-turn reasoning the model used to do before
@@ -3044,7 +3047,7 @@ class OrchestratorInteractAction(InteractAction):
             framed = (
                 text
                 if text.lower().startswith("tell the user")
-                else f"Tell the user: {text}"
+                else f"Tell the user or ask the user: {text}"
             )
             try:
                 interaction.add_directive(framed, self.get_class_name())

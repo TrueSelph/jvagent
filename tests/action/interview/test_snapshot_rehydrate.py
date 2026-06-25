@@ -92,7 +92,7 @@ async def test_snapshot_empty_without_matching_session():
 @pytest.mark.asyncio
 async def test_entry_directive_is_terminal_first_question():
     """ADR-0026: when a skill is entered as a pushed prerequisite, its entry
-    directive is the first field's terminal 'Tell the user:' prompt — so the
+    directive is the first field's terminal 'Tell the user or ask the user:' prompt — so the
     orchestrator ends the turn asking the user instead of letting the model
     fabricate the answer and race past the gate."""
     action = _action()
@@ -102,7 +102,7 @@ async def test_entry_directive_is_terminal_first_question():
 
     directive = await action.task_lock_entry_directive("pre_alert_interview", visitor)
     assert isinstance(directive, str) and directive.strip()
-    assert directive.strip().lower().startswith("tell the user:")
+    assert directive.strip().lower().startswith("tell the user or ask the user:")
 
 
 @pytest.mark.asyncio

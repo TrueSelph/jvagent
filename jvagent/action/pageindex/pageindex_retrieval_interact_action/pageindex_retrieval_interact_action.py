@@ -93,7 +93,14 @@ class PageIndexRetrievalInteractAction(InteractAction):
     )
     metadata_filter: Optional[Dict[str, Any]] = attribute(
         default=None,
-        description="Optional key-value filter to narrow search by document metadata",
+        description="Optional key-value filter to narrow search by document metadata (not for access control; use access_control instead)",
+    )
+    access_control: bool = attribute(
+        default=False,
+        description="When True, apply group-based access control to document retrieval. "
+        "When False (default), all documents are accessible regardless of group membership. "
+        "When enabled, access is always granted to 'public' documents; additional groups "
+        "are resolved from AccessControlAction.user_groups based on visitor identity.",
     )
     max_summary_chars: Optional[int] = attribute(
         default=None,
@@ -154,6 +161,12 @@ class PageIndexRetrievalInteractAction(InteractAction):
         if include_list is None:
             include_list = self._coerce_include_list(self.retrieval_include)
 
+        access_control = (
+            bool_from_config(cfg["access_control"], self.access_control)
+            if "access_control" in cfg and cfg["access_control"] is not None
+            else self.access_control
+        )
+
         return {
             "limit": cfg.get("limit") if cfg.get("limit") is not None else self.limit,
             "strategy": cfg.get("strategy") or self.strategy,
@@ -161,6 +174,7 @@ class PageIndexRetrievalInteractAction(InteractAction):
             "doc_name": self.doc_name or cfg.get("doc_name"),
             "collection_name": self._resolve_collection(),
             "metadata_filter": self.metadata_filter,
+            "access_control": access_control,
             "max_summary_chars": max_summary_chars,
             "max_tree_prompt_tokens": max_tree_prompt_tokens,
             "retrieval_excerpt_source": self._resolve_retrieval_excerpt_source(),
@@ -243,6 +257,7 @@ class PageIndexRetrievalInteractAction(InteractAction):
                 limit=rtc["limit"],
                 collection_name=rtc["collection_name"],
                 metadata_filter=rtc["metadata_filter"],
+                access_control=rtc["access_control"],
                 max_summary_chars=rtc["max_summary_chars"],
                 max_tree_prompt_tokens=rtc["max_tree_prompt_tokens"],
                 include_references=self._resolve_include_references(),

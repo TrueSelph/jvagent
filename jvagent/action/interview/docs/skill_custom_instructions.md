@@ -18,7 +18,7 @@ Canonical base SOP: [`../SKILL.md`](../SKILL.md). Design contract: [platform thi
 | | **Intent routing** — cancel vs start over vs answer vs start interview (base procedure) |
 | | **Activation (session gate)** — `use_skill`, late activation (base procedure) |
 | | Cancel/reset/`set_field` decision rules (base procedure) |
-| | Chaining rules and `Tell the user:` reply-only turns (base procedure) |
+| | Chaining rules and `Tell the user or ask the user:` reply-only turns (base procedure) |
 | | Per-field "when X appears in applicable, call set_field" restatements (base covers first missing applicable field) |
 
 ## Field guidance as acceptance criteria

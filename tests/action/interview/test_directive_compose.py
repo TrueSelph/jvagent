@@ -49,5 +49,5 @@ def test_compose_directives_merges_user_parts_and_chains_calls():
         },
     ]
     merged = compose_directives(queue, fallback="fallback")
-    assert merged.startswith("Tell the user: Thanks.")
+    assert merged.startswith("Tell the user or ask the user: Thanks.")
     assert "interview__next_field" in merged

@@ -179,7 +179,7 @@ async def test_respond_does_not_persist_its_own_message_as_directive(monkeypatch
     await ra.respond(v.interaction, visitor=v, text="Everest is tallest; 169.")
     # Only the genuine IA directive is queued — not ReplyAction's own message.
     contents = [d["content"] for d in v.interaction.directives]
-    assert "Tell the user: Everest is tallest; 169." not in contents
+    assert "Tell the user or ask the user: Everest is tallest; 169." not in contents
     assert "Introduce yourself." in contents
     # But the message IS composed (MANDATORY) into the reply.
     sysprompt = model.generate.call_args.kwargs["system"]
@@ -206,11 +206,11 @@ async def test_respond_relays_message_with_no_shaping(monkeypatch):
     assert out == "Five plus five equals ten."
     sysprompt = model.generate.call_args.kwargs["system"]
     assert "MANDATORY" in sysprompt
-    assert "Tell the user: Five plus five equals ten." in sysprompt
+    assert "Tell the user or ask the user: Five plus five equals ten." in sysprompt
     # The bare answer is NOT handed to the model as a user prompt to react to.
     assert model.generate.call_args.kwargs["prompt"] != "Five plus five equals ten."
     # The relay is a transient compose input — not persisted onto directives.
-    assert "Tell the user: Five plus five equals ten." not in [
+    assert "Tell the user or ask the user: Five plus five equals ten." not in [
         d["content"] for d in v.interaction.directives
     ]
 
@@ -230,7 +230,7 @@ async def test_respond_does_not_double_prefix(monkeypatch):
     await ra.respond(v.interaction, visitor=v, text="Tell the user the order shipped.")
     sysprompt = model.generate.call_args.kwargs["system"]
     assert "Tell the user the order shipped." in sysprompt
-    assert "Tell the user: Tell the user" not in sysprompt
+    assert "Tell the user or ask the user: Tell the user" not in sysprompt
 
 
 async def test_respond_composes_message_with_params_only(monkeypatch):
@@ -247,8 +247,11 @@ async def test_respond_composes_message_with_params_only(monkeypatch):
     monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
     v = _visitor_with(parameters=[{"condition": "asked price", "response": "$9"}])
     await ra.respond(v.interaction, visitor=v, text="Sure.")
-    assert "Tell the user: Sure." in model.generate.call_args.kwargs["system"]
-    assert "Tell the user: Sure." not in [
+    assert (
+        "Tell the user or ask the user: Sure."
+        in model.generate.call_args.kwargs["system"]
+    )
+    assert "Tell the user or ask the user: Sure." not in [
         d["content"] for d in v.interaction.directives
     ]
 
@@ -494,8 +497,8 @@ def test_directive_guidance_marker_split():
         user_facing_directive,
     )
 
-    content = f"Tell the user: Hello.{DIRECTIVE_GUIDANCE_MARKER}Do NOT call x."
-    assert user_facing_directive(content) == "Tell the user: Hello."
+    content = f"Tell the user or ask the user: Hello.{DIRECTIVE_GUIDANCE_MARKER}Do NOT call x."
+    assert user_facing_directive(content) == "Tell the user or ask the user: Hello."
     composed = compose_directive(content)
     assert DIRECTIVE_GUIDANCE_MARKER not in composed
     assert "Do NOT call x." in composed and "Hello." in composed
@@ -543,7 +546,7 @@ async def test_respond_generates_in_identity_and_publishes(monkeypatch):
     # The message is RELAYED (framed as a "Tell the user: ..." directive) rather
     # than passed as the prompt — otherwise the model reacts to it ("That's
     # correct. ...") instead of delivering it.
-    assert "Tell the user: raw answer" in kwargs["system"]
+    assert "Tell the user or ask the user: raw answer" in kwargs["system"]
     assert "MANDATORY" in kwargs["system"]
 
 
@@ -564,9 +567,12 @@ async def test_respond_without_model_thin_publishes(monkeypatch):
 async def test_collect_directive_text():
     inter = MagicMock()
     inter.get_unexecuted_directives = MagicMock(
-        return_value=[{"content": "Tell the user: X"}, {"content": ""}]
+        return_value=[{"content": "Tell the user or ask the user: X"}, {"content": ""}]
     )
-    assert ReplyAction._collect_directive_text(None, inter) == "Tell the user: X"
+    assert (
+        ReplyAction._collect_directive_text(None, inter)
+        == "Tell the user or ask the user: X"
+    )
     assert ReplyAction._collect_directive_text(["A", "B"], inter) == "A\nB"
 
 

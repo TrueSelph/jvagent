@@ -1142,7 +1142,10 @@ def _review_response(
     auto = spec.confirm == "auto"
     if auto:
         directive = auto_confirm_directive(summary, preamble=preamble)
-    elif preamble and not preamble.strip().startswith("Tell the user:"):
+    elif preamble and not (
+        preamble.strip().startswith("Tell the user:")
+        or preamble.strip().startswith("Tell the user or ask the user:")
+    ):
         directive = review_confirmation_directive(summary, preamble=preamble)
     else:
         directive = review_confirmation_directive(summary)
@@ -1342,7 +1345,9 @@ async def handle_complete(action: Any, visitor: Any = None) -> str:
         stripped = raw_directive.strip()
         directive = (
             raw_directive
-            if stripped.startswith("Tell the user:") or stripped.startswith("Call ")
+            if stripped.startswith("Tell the user or ask the user:")
+            or stripped.startswith("Tell the user:")
+            or stripped.startswith("Call ")
             else user_directive(raw_directive)
         )
         return interview_tool_response(
@@ -1475,7 +1480,10 @@ def _coerce_reset_hook_result(result: Any) -> Optional[str]:
         ok = result.get("ok")
         if ok is None:
             ok = status not in ("error", "validation_failed")
-        if directive and not str(directive).startswith("Tell the user:"):
+        if directive and not (
+            str(directive).startswith("Tell the user:")
+            or str(directive).startswith("Tell the user or ask the user:")
+        ):
             directive = user_directive(str(directive))
         return interview_tool_response(
             ok=bool(ok),
