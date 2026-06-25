@@ -66,7 +66,7 @@ repos:
     hooks:
       - id: detect-secrets
         name: Detect Secrets
-        args: ['scan', '.']
+        args: ["scan", "."]
         files: \.(py|txt|yaml|json)$
         # pnpm-lock.yaml (and similar) embed sha512 integrity strings that trip Base64HighEntropyString.
         exclude: "^(venv|.mypy_cache|.test_dbs|tests|examples)/|(^|/)pnpm-lock\\.yaml$"

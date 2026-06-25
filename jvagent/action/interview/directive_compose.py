@@ -101,11 +101,11 @@ def _normalize_user_directive_text(directive: str) -> str:
     text = str(directive or "").strip()
     lowered = text.lower()
     if lowered.startswith("tell the user or ask the user:"):
-        return text[len("Tell the user or ask the user:"):].strip()
+        return text[len("Tell the user or ask the user:") :].strip()
     if lowered.startswith("tell the user:"):
-        return text[len("Tell the user:"):].strip()
+        return text[len("Tell the user:") :].strip()
     if lowered.startswith("ask:"):
-        return text[len("Ask:"):].strip()
+        return text[len("Ask:") :].strip()
     return text
 
 

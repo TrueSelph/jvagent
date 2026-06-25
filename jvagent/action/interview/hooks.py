@@ -169,7 +169,11 @@ def validation_guidance_directive(error: str, *, question_text: str = "") -> str
     """Build a single user-facing re-ask from a validator error message."""
     raw = (error or "").strip()
     lower = raw.lower()
-    prefixed = lower.startswith("tell the user or ask the user:") or lower.startswith("tell the user:") or lower.startswith("ask:")
+    prefixed = (
+        lower.startswith("tell the user or ask the user:")
+        or lower.startswith("tell the user:")
+        or lower.startswith("ask:")
+    )
     err = raw.split(":", 1)[1].strip() if prefixed else raw
     self_contained = prefixed or err.endswith((".", "!", "?"))
     if question_text and not self_contained:
@@ -212,11 +216,11 @@ def _plain_directive_text(text: str) -> str:
     raw = (text or "").strip()
     low = raw.lower()
     if low.startswith("tell the user or ask the user:"):
-        return raw[len("Tell the user or ask the user:"):].strip()
+        return raw[len("Tell the user or ask the user:") :].strip()
     if low.startswith("tell the user:"):
-        return raw[len("Tell the user:"):].strip()
+        return raw[len("Tell the user:") :].strip()
     if low.startswith("ask:"):
-        return raw[len("Ask:"):].strip()
+        return raw[len("Ask:") :].strip()
     return raw
 
 

@@ -445,16 +445,20 @@ class ReplyAction(Action):
         content = (
             (first.get("content") if isinstance(first, dict) else str(first)) or ""
         ).strip()
-        is_relay = content.lower().startswith(("tell the user or ask the user:", "tell the user:"))
+        is_relay = content.lower().startswith(
+            ("tell the user or ask the user:", "tell the user:")
+        )
         if len(directive_items) == 1 and is_relay and not has_params and not has_format:
             # Drop any model-only guidance: the literal relay skips the compose
             # model, so guidance ("you may paraphrase", "Do NOT call …") would
             # otherwise reach the user verbatim.
             low = content.lower()
             if low.startswith("tell the user or ask the user:"):
-                literal = user_facing_directive(content[len("Tell the user or ask the user:"):])
+                literal = user_facing_directive(
+                    content[len("Tell the user or ask the user:") :]
+                )
             else:
-                literal = user_facing_directive(content[len("Tell the user:"):])
+                literal = user_facing_directive(content[len("Tell the user:") :])
             if interaction is not None:
                 try:
                     interaction.set_to_executed(directives=[first], parameters=[])
