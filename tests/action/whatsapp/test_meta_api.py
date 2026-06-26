@@ -1,5 +1,7 @@
 """Tests for Meta WhatsApp Cloud API provider."""
 
+from typing import Optional
+
 import pytest
 
 from jvagent.action.whatsapp.modules.meta_api import MetaWhatsAppAPI
@@ -137,8 +139,90 @@ class TestMetaWhatsAppSend:
         assert MetaWhatsAppAPI._normalize_recipient("+15551234") == "+15551234"
 
     @pytest.mark.asyncio
-    async def test_register_session_noop(self, meta_api):
+    async def test_register_session_requires_webhook_and_token(self, meta_api):
         result = await meta_api.register_session()
-        assert result["ok"] is True
+        assert result["ok"] is False
         assert result["status"] == "skipped"
-        assert result["reason"] == "meta_cloud_api"
+
+    @pytest.mark.asyncio
+    async def test_register_webhook_subscription_waba(self):
+        api = MetaWhatsAppAPI(
+            api_url="https://graph.facebook.com/v25.0/",
+            session="106540352242922",
+            token="test-token",
+            phone_number_id="106540352242922",
+            waba_id="107732305578216",
+            verify_token="jvagent-meta-verify",
+        )
+        captured = {}
+
+        async def fake_send(url, method="POST", data=None, **kwargs):
+            captured["url"] = url
+            captured["data"] = data
+            return {"success": True}
+
+        api.send_rest_request = fake_send  # type: ignore[method-assign]
+
+        result = await api.register_webhook_subscription(
+            "https://example.com/api/whatsapp/interact/webhook/n.Agent.x?api_key=secret",
+            "jvagent-meta-verify",
+        )
+        assert result["ok"] is True
+        assert captured["url"].endswith("/107732305578216/subscribed_apps")
+        assert captured["data"]["override_callback_uri"] == (
+            "https://example.com/api/whatsapp/interact/webhook/n.Agent.x"
+        )
+        assert captured["data"]["verify_token"] == "jvagent-meta-verify"
+
+    @pytest.mark.asyncio
+    async def test_register_webhook_subscription_phone_fallback(self, meta_api):
+        captured = {}
+
+        async def fake_send(url, method="POST", data=None, **kwargs):
+            captured["url"] = url
+            captured["data"] = data
+            captured["method"] = method
+            return {"success": True}
+
+        meta_api.send_rest_request = fake_send  # type: ignore[method-assign]
+
+        result = await meta_api.register_webhook_subscription(
+            "https://example.com/callback", "verify-me"
+        )
+        assert result["ok"] is True
+        assert captured["url"].endswith("/106540352242922")
+        assert captured["data"]["webhook_configuration"]["override_callback_uri"] == (
+            "https://example.com/callback"
+        )
+
+    @pytest.mark.asyncio
+    async def test_register_webhook_subscribes_waba_before_override(self):
+        api = MetaWhatsAppAPI(
+            api_url="https://graph.facebook.com/v25.0/",
+            session="106540352242922",
+            token="test-token",
+            phone_number_id="106540352242922",
+            waba_id="107732305578216",
+            verify_token="jvagent-meta-verify",
+        )
+        calls: list[tuple[str, Optional[dict]]] = []
+
+        async def fake_send(url, method="POST", data=None, **kwargs):
+            calls.append((method, data))
+            if len(calls) == 1:
+                return {
+                    "ok": False,
+                    "error": "HTTP 400: (#100) Before override the current callback uri",
+                }
+            return {"success": True}
+
+        api.send_rest_request = fake_send  # type: ignore[method-assign]
+
+        result = await api.register_webhook_subscription(
+            "https://example.com/callback", "verify-me"
+        )
+        assert result["ok"] is True
+        assert len(calls) == 3
+        assert calls[0][1] is not None
+        assert calls[1][1] is None
+        assert calls[2][1]["override_callback_uri"] == "https://example.com/callback"

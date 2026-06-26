@@ -270,13 +270,25 @@ WHATSAPP_APP_ID=1837228823924621       # or FACEBOOK_APP_ID
 WHATSAPP_GRAPH_VERSION=v25.0
 ```
 
-**Meta App Dashboard setup** (WhatsApp → Webhooks → Configuration):
+**Meta webhook callback** (automatic override on startup):
 
-1. **Callback URL**: `{JVAGENT_PUBLIC_BASE_URL}/api/whatsapp/interact/webhook/{agent_id}` — no `api_key` query param.
-2. **Verify token**: must match `WHATSAPP_VERIFY_TOKEN`.
-3. Subscribe to the **messages** field.
+On startup (meta provider), jvagent waits `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS` (default **8**) after the HTTP server is listening, then calls the Meta Graph API to set **`override_callback_uri`** on your WABA (`WHATSAPP_WABA_ID`) or phone number.
 
-Admin helper: `GET /api/actions/{action_id}/meta/webhook-url` returns `meta_callback_url` (stripped of `api_key`) for the dashboard.
+**The Meta App Dashboard callback URL will not change.** Dashboard shows the app default only. Overrides are per-WABA/phone; verify with `GET /api/actions/{action_id}/meta/webhook-status` (returns Graph `subscribed_apps` / `webhook_configuration`).
+
+1. **Callback URL**: `{JVAGENT_PUBLIC_BASE_URL}/api/whatsapp/interact/webhook/{agent_id}` — `{agent_id}` is the agent **node id** (e.g. `n.Agent.xxxx`), not the YAML path; no `api_key` query param.
+2. **Verify token**: must match `WHATSAPP_VERIFY_TOKEN` (Meta sends GET hub.challenge to verify before override succeeds).
+3. Subscribe to the **messages** field in the dashboard (one-time app setup).
+
+Env toggles:
+
+- `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true` — skip deferred override; call `POST /api/actions/{action_id}/meta/webhook-register` when ready.
+- `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE=false` — skip override on action reload.
+
+Admin helpers:
+
+- `GET /api/actions/{action_id}/meta/webhook-url` — returns `meta_callback_url` (stripped of `api_key`).
+- `POST /api/actions/{action_id}/meta/webhook-register` — register override immediately.
 
 Bridge-only variables (`WHATSAPP_API_URL`, `WHATSAPP_API_KEY`, `WHATSAPP_SESSION`) are not used when `provider: meta`.
 

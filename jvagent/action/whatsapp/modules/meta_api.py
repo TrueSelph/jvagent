@@ -22,9 +22,13 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         secret_key: Optional[str] = None,
         timeout: float = 10.0,
         phone_number_id: str = "",
+        waba_id: str = "",
+        verify_token: str = "",
     ) -> None:
         super().__init__(api_url, session, token, secret_key, timeout)
         self.phone_number_id = (phone_number_id or session or "").strip()
+        self.waba_id = (waba_id or "").strip()
+        self.verify_token = (verify_token or "").strip()
 
     def _build_headers(self, headers: Optional[dict] = None) -> dict:
         if headers is None:
@@ -79,13 +83,135 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         wait_qr_code: bool = True,
         auto_register: bool = True,
     ) -> dict:
-        """Cloud API has no bridge session; webhook is configured in Meta App Dashboard."""
-        return {
-            "ok": True,
-            "status": "skipped",
-            "reason": "meta_cloud_api",
-            "message": "Configure webhook in Meta App Dashboard (WhatsApp > Webhooks)",
-        }
+        """Register webhook override with Meta (delegates to register_webhook_subscription)."""
+        callback = self._strip_query(webhook_url)
+        token = self.verify_token
+        if not callback or not token:
+            return {
+                "ok": False,
+                "status": "skipped",
+                "reason": "webhook_url and verify_token required",
+            }
+        return await self.register_webhook_subscription(callback, token)
+
+    @staticmethod
+    def _strip_query(url: str) -> str:
+        s = (url or "").strip()
+        q = s.find("?")
+        return s[:q] if q >= 0 else s
+
+    async def register_webhook_subscription(
+        self, callback_url: str, verify_token: str
+    ) -> dict:
+        """Set WABA or phone-number webhook override via Graph API."""
+        callback = self._strip_query(callback_url)
+        verify = (verify_token or self.verify_token or "").strip()
+        if not callback:
+            return {"ok": False, "error": "callback_url is required"}
+        if not verify:
+            return {"ok": False, "error": "verify_token is required"}
+
+        if self.waba_id:
+            url = f"{self.api_url.rstrip('/')}/{self.waba_id}/subscribed_apps"
+            override_data: Dict[str, Any] = {
+                "override_callback_uri": callback,
+                "verify_token": verify,
+            }
+            target = f"waba:{self.waba_id}"
+            result = await self.send_rest_request(
+                url, method="POST", data=override_data, use_full_url=True
+            )
+            if self._needs_waba_subscribe_first(result):
+                logger.info(
+                    "Meta WABA not subscribed yet; subscribing before override (%s)",
+                    target,
+                )
+                subscribe = await self.send_rest_request(
+                    url, method="POST", data=None, use_full_url=True
+                )
+                if not self._graph_success(subscribe):
+                    return self._normalize_graph_result(subscribe, target, callback)
+                result = await self.send_rest_request(
+                    url, method="POST", data=override_data, use_full_url=True
+                )
+        elif self.phone_number_id:
+            url = f"{self.api_url.rstrip('/')}/{self.phone_number_id}"
+            data = {
+                "webhook_configuration": {
+                    "override_callback_uri": callback,
+                    "verify_token": verify,
+                }
+            }
+            target = f"phone:{self.phone_number_id}"
+            result = await self.send_rest_request(
+                url, method="POST", data=data, use_full_url=True
+            )
+        else:
+            return {
+                "ok": False,
+                "error": "WHATSAPP_WABA_ID or WHATSAPP_PHONE_NUMBER_ID required",
+            }
+
+        return self._normalize_graph_result(result, target, callback)
+
+    @staticmethod
+    def _graph_error_message(result: dict) -> str:
+        err = result.get("error")
+        if isinstance(err, dict):
+            return str(err.get("message") or err)
+        return str(err or "")
+
+    @classmethod
+    def _needs_waba_subscribe_first(cls, result: dict) -> bool:
+        if cls._graph_success(result):
+            return False
+        msg = cls._graph_error_message(result).lower()
+        return "before override" in msg or "(#100)" in msg
+
+    @staticmethod
+    def _graph_success(result: dict) -> bool:
+        if result.get("success") is True:
+            return True
+        if result.get("ok") is True:
+            return True
+        if result.get("ok") is False or result.get("error"):
+            return False
+        return "error" not in result
+
+    def _normalize_graph_result(
+        self, result: dict, target: str, callback: str
+    ) -> dict:
+        if self._graph_success(result):
+            result["ok"] = True
+            logger.info(
+                "Meta webhook override registered for %s -> %s", target, callback
+            )
+            return result
+        msg = self._graph_error_message(result)
+        if msg:
+            result["ok"] = False
+            result["error"] = msg
+        else:
+            result["ok"] = False
+            result["error"] = result or "Graph request failed"
+        return result
+
+    async def get_webhook_override_status(self) -> dict:
+        """Fetch active WABA or phone-number webhook override from Meta."""
+        if self.waba_id:
+            url = f"{self.api_url.rstrip('/')}/{self.waba_id}/subscribed_apps"
+            return await self.send_rest_request(
+                url, method="GET", use_full_url=True
+            )
+        if self.phone_number_id:
+            url = (
+                f"{self.api_url.rstrip('/')}/{self.phone_number_id}"
+                "?fields=webhook_configuration"
+            )
+            return await self.send_rest_request(
+                url, method="GET", use_full_url=True
+            )
+        return {"ok": False, "error": "WHATSAPP_WABA_ID or WHATSAPP_PHONE_NUMBER_ID required"}
 
     async def convert_lid_to_phone_number(self, lid: str) -> str:
         return lid

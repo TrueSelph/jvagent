@@ -200,6 +200,9 @@ falls back to a sibling env var when its primary key is unset:
 - `WHATSAPP_WABA_ID` — optional WABA id
 - `WHATSAPP_APP_ID` — optional (falls back to `FACEBOOK_APP_ID`)
 - `WHATSAPP_GRAPH_VERSION` — default `v25.0`
+- `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION` — when `true`, skip deferred Meta webhook override on startup (meta provider only)
+- `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS` — seconds to wait before calling Meta Graph override (default `8`; meta provider only)
+- `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE` — when `false`, skip Meta webhook override on action reload (default subscribe on reload)
 
 ### Facebook / Messenger
 - `FACEBOOK_API_URL`

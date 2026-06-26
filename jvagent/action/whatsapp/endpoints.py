@@ -1154,7 +1154,52 @@ async def get_meta_webhook_url(action_id: str) -> Dict[str, Any]:
         "webhook_url": url,
         "meta_callback_url": meta_url,
         "verify_token_env": "WHATSAPP_VERIFY_TOKEN",
+        "dashboard_note": (
+            "App Dashboard shows the app default callback only. After startup, "
+            "GET .../meta/webhook-status shows the active WABA/phone override."
+        ),
     }
+
+
+@endpoint(
+    "/actions/{action_id}/meta/webhook-status",
+    methods=["GET"],
+    auth=True,
+    roles=["admin"],
+    tags=["WhatsApp"],
+    summary="Get Meta WhatsApp webhook override status from Graph API",
+)
+async def get_meta_webhook_status(action_id: str) -> Dict[str, Any]:
+    """Return expected callback URL and live override from Meta Graph."""
+    whatsapp_action = await get_whatsapp_action(action_id)
+    if not whatsapp_action.is_meta_provider():
+        raise HTTPException(
+            status_code=400, detail="Endpoint only applies to meta provider"
+        )
+    return await whatsapp_action.get_meta_webhook_override_status()
+
+
+@endpoint(
+    "/actions/{action_id}/meta/webhook-register",
+    methods=["POST"],
+    auth=True,
+    roles=["admin"],
+    tags=["WhatsApp"],
+    summary="Register Meta WhatsApp webhook override (WABA or phone number)",
+)
+async def register_meta_webhook(action_id: str) -> Dict[str, Any]:
+    """Push callback URL override to Meta Graph API immediately."""
+    whatsapp_action = await get_whatsapp_action(action_id)
+    if not whatsapp_action.is_meta_provider():
+        raise HTTPException(
+            status_code=400, detail="Endpoint only applies to meta provider"
+        )
+    result = await whatsapp_action.register_meta_webhook_subscription()
+    if result.get("status") == "error":
+        raise HTTPException(status_code=502, detail=result)
+    if result.get("ok") and result.get("status") == "ok":
+        whatsapp_action._session_registered = True
+    return result
 
 
 @endpoint(
