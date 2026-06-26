@@ -67,6 +67,19 @@ async def _agent_and_whatsapp_action_for_webhook(agent_id: str) -> tuple[Any, An
         )
     return agent, whatsapp_action
 
+
+async def _authenticate_bridge_webhook_api_key(request: Request) -> None:
+    """Require jvagent webhook API key for bridge providers (wwebjs, etc.)."""
+    from jvspatial.api.context import get_current_server
+    from jvspatial.api.integrations.webhooks.webhook_auth import (
+        authenticate_webhook_api_key,
+    )
+
+    await authenticate_webhook_api_key(
+        request, "api_key", webhook_config=None, server=get_current_server()
+    )
+
+
 # --- Browser connection / QR page (public link, unguessable action_id) ---
 
 _WA_LINK_THEMES = {
@@ -477,7 +490,6 @@ async def whatsapp_interact_webhook_verify(request: Request, agent_id: str) -> A
     methods=["POST"],
     webhook=True,
     auth=False,
-    webhook_auth="api_key",  # Bridge providers: API key; meta uses X-Hub-Signature-256 in handler
     tags=["WhatsApp"],
     response=success_response(
         data={
@@ -491,7 +503,8 @@ async def whatsapp_interact_webhook_verify(request: Request, agent_id: str) -> A
 async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
     """WhatsApp Interact Webhook.
 
-    Processes incoming WhatsApp messages and triggers an interaction via InteractWalker.
+    Meta Cloud API POST uses ``X-Hub-Signature-256`` (no ``api_key``). Bridge
+    providers must pass ``?api_key=`` or ``X-API-Key``; validated in-handler.
 
     AWS Lambda compatibility: In serverless mode, the webhook typically awaits the full
     interaction (including response generation and WhatsApp send) before returning, so work
@@ -533,6 +546,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
                 logger.debug("Meta WhatsApp webhook JSON parse error: %s", e)
                 raise HTTPException(status_code=400, detail="Invalid JSON body")
         else:
+            await _authenticate_bridge_webhook_api_key(request)
             request_data = getattr(request.state, "parsed_payload", None)
             if request_data is None:
                 request_data = await request.json()

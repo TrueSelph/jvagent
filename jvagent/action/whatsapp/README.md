@@ -150,10 +150,10 @@ This document outlines the security improvements and coding standards compliance
    @endpoint(
        "/whatsapp/interact/webhook/{agent_id}",
        webhook=True,
-       webhook_auth="api_key"
+       auth=False,
    )
    async def whatsapp_interact(request: Request, agent_id: str):
-       # Proper validation and error handling
+       # meta: X-Hub-Signature-256 in handler; bridge: ?api_key= in handler
    ```
 
 ## Architecture Improvements
