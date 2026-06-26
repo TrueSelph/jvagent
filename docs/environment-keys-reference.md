@@ -193,6 +193,13 @@ falls back to a sibling env var when its primary key is unset:
 - `WHATSAPP_SESSION_REGISTER_TIMEOUT_SECONDS`
 - `WHATSAPP_SKIP_STARTUP_REGISTRATION`
 - `WHATSAPP_REQUEST_TIMEOUT`
+- `WHATSAPP_PHONE_NUMBER_ID` — Meta Cloud API (`provider: meta`)
+- `WHATSAPP_ACCESS_TOKEN` — Meta Cloud API system user token
+- `WHATSAPP_APP_SECRET` — Meta webhook signature (falls back to `FACEBOOK_APP_SECRET`)
+- `WHATSAPP_VERIFY_TOKEN` — Meta App Dashboard webhook verify token
+- `WHATSAPP_WABA_ID` — optional WABA id
+- `WHATSAPP_APP_ID` — optional (falls back to `FACEBOOK_APP_ID`)
+- `WHATSAPP_GRAPH_VERSION` — default `v25.0`
 
 ### Facebook / Messenger
 - `FACEBOOK_API_URL`

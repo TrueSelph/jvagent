@@ -243,7 +243,7 @@ For **Lambda**:
 
 ## Configuration
 
-### Required Environment Variables
+### Required Environment Variables (bridge providers: wwebjs, wppconnect, ultramsg)
 
 ```env
 # WhatsApp API Configuration
@@ -251,7 +251,38 @@ WHATSAPP_API_URL=https://api.whatsapp.provider.com
 WHATSAPP_API_KEY=your_api_key
 WHATSAPP_SESSION=your_session_name
 WHATSAPP_TOKEN=your_token
+```
 
+### Meta Cloud API (`provider: meta`)
+
+Use the official WhatsApp Business Cloud API instead of a self-hosted bridge. Text messages only in v1 (inbound/outbound within the 24-hour customer service window).
+
+```env
+WHATSAPP_PHONE_NUMBER_ID=102274452799236
+WHATSAPP_ACCESS_TOKEN=EAAJ...          # system user access token
+WHATSAPP_APP_SECRET=...                # or FACEBOOK_APP_SECRET
+WHATSAPP_VERIFY_TOKEN=your-verify-token  # Meta App Dashboard verify token
+JVAGENT_PUBLIC_BASE_URL=https://your-app.com
+
+# Optional
+WHATSAPP_WABA_ID=107732305578216
+WHATSAPP_APP_ID=1837228823924621       # or FACEBOOK_APP_ID
+WHATSAPP_GRAPH_VERSION=v25.0
+```
+
+**Meta App Dashboard setup** (WhatsApp → Webhooks → Configuration):
+
+1. **Callback URL**: `{JVAGENT_PUBLIC_BASE_URL}/api/whatsapp/interact/webhook/{agent_id}` — no `api_key` query param.
+2. **Verify token**: must match `WHATSAPP_VERIFY_TOKEN`.
+3. Subscribe to the **messages** field.
+
+Admin helper: `GET /api/actions/{action_id}/meta/webhook-url` returns `meta_callback_url` (stripped of `api_key`) for the dashboard.
+
+Bridge-only variables (`WHATSAPP_API_URL`, `WHATSAPP_API_KEY`, `WHATSAPP_SESSION`) are not used when `provider: meta`.
+
+### Shared / optional
+
+```env
 # Application Base URL (required for webhooks and media delivery)
 # Used for webhook generation and to resolve relative media URLs (e.g. TTS audio)
 # to absolute URLs when the adapter fetches files for sending
@@ -267,7 +298,7 @@ WHATSAPP_SESSION_REGISTER_TIMEOUT_SECONDS=120
 # Media batch mode follows jvspatial is_serverless_mode() only (SERVERLESS_MODE or platform auto-detect).
 # Deferred path: MongoDB + jvspatial create_task (Shape A); in-process path: in-memory batch + create_task (Shape B).
 
-# Skip Startup Registration (optional, for Lambda)
+# Skip Startup Registration (optional, for Lambda; bridge providers only)
 # Set to true to skip session registration on cold start; use POST /api/actions/{action_id}/session/register manually
 WHATSAPP_SKIP_STARTUP_REGISTRATION=false
 

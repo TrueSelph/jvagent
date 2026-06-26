@@ -2,12 +2,12 @@
 
 import asyncio
 import base64
-import hashlib
-import hmac
 import logging
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from fastapi import Request
+
+from jvagent.action.utils.meta_webhook import verify_meta_webhook_signature
 from jvspatial.exceptions import DatabaseError
 
 from jvagent.action.facebook_action.facebook_api import FacebookAPI
@@ -30,19 +30,7 @@ def verify_meta_messenger_signature(
     raw_body: bytes, request: Request, app_secret: str
 ) -> bool:
     """Verify ``X-Hub-Signature-256`` using Meta app secret (SHA256 HMAC, hex digest)."""
-    secret = (app_secret or "").strip()
-    if not secret:
-        return False
-    # Meta often sends both X-Hub-Signature (sha1) and X-Hub-Signature-256. Generic
-    # extract_hmac_signature checks sha1 first; using that value with SHA256 HMAC fails.
-    sig_header = request.headers.get("x-hub-signature-256")
-    if not sig_header:
-        return False
-    signature = str(sig_header).strip()
-    if signature.startswith("sha256="):
-        signature = signature[len("sha256=") :]
-    expected = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(signature, expected)
+    return verify_meta_webhook_signature(raw_body, request, app_secret)
 
 
 def _display_name_from_psid_profile(profile: Dict[str, Any]) -> Optional[str]:

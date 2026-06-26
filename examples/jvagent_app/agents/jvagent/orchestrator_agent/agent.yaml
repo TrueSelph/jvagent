@@ -312,3 +312,15 @@ actions:
   #     enabled: true
   #     tick_interval: "every 2 minutes"
   #     max_parallel_conversations: 5
+
+
+  - action: jvagent/whatsapp_action
+    context:
+      enabled: true
+      description: "WhatsApp provider (wppconnect, ultramsg, wwebjs, meta)"
+      # Bridge: provider wwebjs + WHATSAPP_API_URL / WHATSAPP_API_KEY in .env
+      # Cloud API: provider meta + WHATSAPP_PHONE_NUMBER_ID / WHATSAPP_ACCESS_TOKEN / etc.
+      provider: "wwebjs"
+#      session: "wiin-dev"
+      stt_action: "DeepgramSTTAction"
+      tts_action: "ElevenLabsTTSAction"
