@@ -16,8 +16,8 @@ WORKDIR /var/task
 RUN set -eux && \
     dnf -y update && \
     dnf install -y git && \
-    git clone --depth 1 --single-branch --branch dev-executive https://github.com/TrueSelph/jvagent && \
-    git clone --depth 1 --single-branch --branch dev https://github.com/TrueSelph/jvspatial
+    git clone --depth 1 --single-branch --branch main https://github.com/TrueSelph/jvagent && \
+    git clone --depth 1 --single-branch --branch main https://github.com/TrueSelph/jvspatial
 
 # Stage 2: venv and Python deps (Lambda image provides python3.12 under /var/lang/bin)
 RUN set -eux && \
