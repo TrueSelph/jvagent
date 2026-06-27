@@ -212,7 +212,7 @@ def _build_metadata_query(metadata_filter: Dict[str, Any]) -> Dict[str, Any]:
             if groups:
                 options.append({field: {"$in": groups}})
             access_clause = {"$or": options}
-            logger.warning(
+            logger.debug(
                 "PageIndex _build_metadata_query: access key detected groups=%s → %s",
                 groups,
                 access_clause,
@@ -227,7 +227,7 @@ def _build_metadata_query(metadata_filter: Dict[str, Any]) -> Dict[str, Any]:
         result = {"$and": [query, access_clause]} if query else access_clause
     else:
         result = query
-    logger.warning(
+    logger.debug(
         "PageIndex _build_metadata_query: input=%s → output=%s",
         metadata_filter,
         result,
@@ -742,13 +742,13 @@ async def get_document_roots(
     async with _scoped_pageindex_context(context):
         query: Dict[str, Any] = {"context.collection_name": collection_name}
         query.update(_build_metadata_query(metadata_filter or {}))
-        logger.warning(
+        logger.debug(
             "PageIndex get_document_roots: collection=%s query=%s",
             collection_name,
             query,
         )
         roots = await DocumentRootNode.find(query)
-        logger.warning(
+        logger.debug(
             "PageIndex get_document_roots: collection=%s returned %d roots",
             collection_name,
             len(roots),

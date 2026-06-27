@@ -452,7 +452,7 @@ class PageIndexAction(Action):
                     resolved_access_control,
                 )
 
-            logger.warning(
+            logger.debug(
                 "PageIndex search: query=%r strategy=%s collection=%s "
                 "metadata_filter=%s access_control=%s",
                 query[:100] if query else "",
@@ -591,7 +591,7 @@ class PageIndexAction(Action):
                 {"error": "no query provided: pass it in 'query'"}, indent=2
             )
         visitor = get_dispatch_visitor()
-        logger.warning(
+        logger.debug(
             "PageIndex _t_search: visitor=%s user_id=%s session_id=%s access_control=%s",
             type(visitor).__name__ if visitor else "None",
             getattr(visitor, "user_id", None) if visitor else None,
@@ -804,7 +804,7 @@ class PageIndexAction(Action):
         is one of those groups. Matching lives in ``_build_metadata_query`` (DB
         layer) and ``_root_matches_metadata`` (in-Python layer).
         """
-        logger.warning(
+        logger.debug(
             "PageIndex access_control: enter resolved_metadata_filter "
             "access_control=%s metadata_filter=%s visitor.user_id=%s visitor.session_id=%s",
             access_control,
@@ -814,7 +814,7 @@ class PageIndexAction(Action):
         )
 
         if not access_control:
-            logger.warning(
+            logger.debug(
                 "PageIndex access_control: access_control=False, "
                 "returning metadata_filter unchanged"
             )
@@ -824,7 +824,7 @@ class PageIndexAction(Action):
         # metadata_filter is intentionally NOT merged so that
         # access control and document metadata filtering stay decoupled.
         if visitor is None or (visitor.user_id is None and visitor.session_id is None):
-            logger.warning(
+            logger.debug(
                 "PageIndex access_control: visitor has no identity "
                 "(visitor=%s, user_id=%s, session_id=%s); "
                 "returning access=['public'] only",
@@ -838,14 +838,14 @@ class PageIndexAction(Action):
             "AccessControlAction", enabled_only=False
         )
         if not access_control_action:
-            logger.warning(
+            logger.debug(
                 "PageIndex access_control: AccessControlAction not found; "
                 "returning access=['public'] only"
             )
             return {"access": ["public"]}
 
         if not access_control_action.user_groups:
-            logger.warning(
+            logger.debug(
                 "PageIndex access_control: AccessControlAction has no user_groups; "
                 "returning access=['public'] only"
             )
@@ -854,13 +854,13 @@ class PageIndexAction(Action):
         page_index_groups = access_control_action._resolve_user_groups(
             "PageIndexAction"
         )
-        logger.warning(
+        logger.debug(
             "PageIndex access_control: resolved user_groups for PageIndexAction: %s",
             page_index_groups,
         )
 
         if not page_index_groups:
-            logger.warning(
+            logger.debug(
                 "PageIndex access_control: no groups resolved for PageIndexAction; "
                 "returning access=['public'] only"
             )
@@ -872,7 +872,7 @@ class PageIndexAction(Action):
             if (visitor.user_id is not None and visitor.user_id in users)
             or (visitor.session_id is not None and visitor.session_id in users)
         ]
-        logger.warning(
+        logger.debug(
             "PageIndex access_control: visitor.user_id=%r visitor.session_id=%r "
             "matched_groups=%s",
             visitor.user_id,
@@ -881,7 +881,7 @@ class PageIndexAction(Action):
         )
 
         if not matched_groups:
-            logger.warning(
+            logger.debug(
                 "PageIndex access_control: visitor (user_id=%r, session_id=%r) "
                 "matched no groups; returning access=['public'] only",
                 visitor.user_id,
@@ -890,7 +890,7 @@ class PageIndexAction(Action):
             return {"access": ["public"]}
 
         result = {"access": ["public", *matched_groups]}
-        logger.warning(
+        logger.debug(
             "PageIndex access_control: visitor (user_id=%r, session_id=%r) "
             "matched groups %s; returning access=%s",
             visitor.user_id,

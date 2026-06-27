@@ -220,7 +220,7 @@ async def _lexical_candidates(
             metadata_filter=metadata_filter,
         )
         allowed_doc_names = [r.doc_name for r in roots]
-        logger.warning(
+        logger.debug(
             "PageIndex _lexical_candidates: metadata_filter=%s → %d allowed_doc_names=%s",
             metadata_filter,
             len(allowed_doc_names),
@@ -823,7 +823,7 @@ async def search_documents(
     # here before any retrieval helper tries to read from it.
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
 
-    logger.warning(
+    logger.debug(
         "PageIndex search_documents: query=%r strategy=%s collection=%s "
         "metadata_filter=%s doc_name=%s limit=%s",
         query[:100] if query else "",

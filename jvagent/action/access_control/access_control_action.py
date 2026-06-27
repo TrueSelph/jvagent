@@ -21,7 +21,7 @@ def log_access_denied(
     reason: str = "rule",
 ) -> None:
     """Structured log line for denied access (interact entry, walker, background, whatsapp)."""
-    logger.warning(
+    logger.debug(
         "access_control_denied",
         extra={
             "event": "access_control_denied",
@@ -160,7 +160,7 @@ class AccessControlAction(Action):
         deep-copied to prevent shared-reference mutation across
         concurrent serverless invocations.
         """
-        logger.warning(
+        logger.debug(
             "AccessControl: _resolve_user_groups action_label=%s aca_id=%s aca_enabled=%s user_groups_keys=%s",
             action_label,
             getattr(self, "id", "?"),
@@ -176,7 +176,7 @@ class AccessControlAction(Action):
             }
             for k, v in groups.items():
                 merged[k] = list(v) if isinstance(v, list) else v
-            logger.warning(
+            logger.debug(
                 "AccessControl: _resolve_user_groups merged default=%s with %s=%s → %s",
                 default_groups,
                 action_label,
@@ -188,7 +188,7 @@ class AccessControlAction(Action):
             k: list(v) if isinstance(v, list) else v
             for k, v in self.user_groups.get("default", {}).items()
         }
-        logger.warning(
+        logger.debug(
             "AccessControl: _resolve_user_groups fallback to default → %s",
             result,
         )

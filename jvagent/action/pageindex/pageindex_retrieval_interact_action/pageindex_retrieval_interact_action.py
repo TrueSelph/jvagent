@@ -240,7 +240,7 @@ class PageIndexRetrievalInteractAction(InteractAction):
 
             initialize_pageindex_database()
             rtc = self._retrieval_runtime_config(visitor)
-            logger.warning(
+            logger.debug(
                 "PageIndexRetrieval: search params access_control=%s "
                 "metadata_filter=%s visitor.user_id=%s visitor.session_id=%s",
                 rtc["access_control"],
