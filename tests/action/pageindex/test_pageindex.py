@@ -1346,7 +1346,7 @@ async def test_resolved_metadata_filter_access_control_false_no_filter():
 
 @pytest.mark.asyncio
 async def test_resolved_metadata_filter_access_control_false_preserves_filter():
-    """access_control=False with metadata_filter set → returns filter unchanged."""
+    """access_control=False with metadata_filter passed → returns filter unchanged."""
     action = _make_pageindex_action(
         metadata_filter={"topic": "finance"}, access_control=False
     )
@@ -1356,7 +1356,7 @@ async def test_resolved_metadata_filter_access_control_false_preserves_filter():
         PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
     ):
         result = await PageIndexAction.resolved_metadata_filter(
-            action, _make_visitor("user-1"), None, access_control=False
+            action, _make_visitor("user-1"), {"topic": "finance"}, access_control=False
         )
 
     assert result == {"topic": "finance"}
@@ -1385,7 +1385,7 @@ async def test_resolved_metadata_filter_access_control_true_ac_absent(caplog):
 
 @pytest.mark.asyncio
 async def test_resolved_metadata_filter_access_control_true_ac_empty_user_groups():
-    """access_control=True with empty user_groups → access=["public"]."""
+    """access_control=True with empty user_groups → access=["public"] only (no metadata_filter merge)."""
     action = _make_pageindex_action(
         metadata_filter={"topic": "faq"}, access_control=True
     )
@@ -1398,12 +1398,12 @@ async def test_resolved_metadata_filter_access_control_true_ac_empty_user_groups
             action, _make_visitor(), None, access_control=True
         )
 
-    assert result == {"topic": "faq", "access": ["public"]}
+    assert result == {"access": ["public"]}
 
 
 @pytest.mark.asyncio
 async def test_resolved_metadata_filter_access_control_true_no_pageindex_scope():
-    """access_control=True with no PageIndexAction groups → access=["public"]."""
+    """access_control=True with no PageIndexAction groups → access=["public"] only (no metadata_filter merge)."""
     action = _make_pageindex_action(
         metadata_filter={"topic": "finance"}, access_control=True
     )
@@ -1416,13 +1416,12 @@ async def test_resolved_metadata_filter_access_control_true_no_pageindex_scope()
             action, _make_visitor(), None, access_control=True
         )
 
-    assert result["access"] == ["public"]
-    assert result["topic"] == "finance"
+    assert result == {"access": ["public"]}
 
 
 @pytest.mark.asyncio
 async def test_resolved_metadata_filter_access_control_true_visitor_matches():
-    """access_control=True, visitor matches group → access includes public + matched group."""
+    """access_control=True, visitor matches group → access includes public + matched group (no metadata_filter merge)."""
     action = _make_pageindex_action(
         metadata_filter={"topic": "faq"}, access_control=True
     )
@@ -1442,13 +1441,12 @@ async def test_resolved_metadata_filter_access_control_true_visitor_matches():
             action, _make_visitor("user-1"), None, access_control=True
         )
 
-    assert result.get("access") == ["public", "admins"]
-    assert result.get("topic") == "faq"
+    assert result == {"access": ["public", "admins"]}
 
 
 @pytest.mark.asyncio
 async def test_resolved_metadata_filter_access_control_true_visitor_unmatched():
-    """access_control=True, visitor matches no group → access=["public"]."""
+    """access_control=True, visitor matches no group → access=["public"] only (no metadata_filter merge)."""
     action = _make_pageindex_action(
         metadata_filter={"topic": "faq"}, access_control=True
     )
@@ -1467,7 +1465,7 @@ async def test_resolved_metadata_filter_access_control_true_visitor_unmatched():
             action, _make_visitor("user-1"), None, access_control=True
         )
 
-    assert result == {"topic": "faq", "access": ["public"]}
+    assert result == {"access": ["public"]}
 
 
 @pytest.mark.asyncio
@@ -1537,7 +1535,7 @@ async def test_resolved_metadata_filter_access_control_true_multiple_groups():
 
 @pytest.mark.asyncio
 async def test_resolved_metadata_filter_access_control_true_preserves_existing_access():
-    """access_control=True with existing access key in metadata_filter → overwritten with group-based access."""
+    """access_control=True with existing access key in metadata_filter → overwritten with group-based access (no merge)."""
     action = _make_pageindex_action(
         metadata_filter={"topic": "faq", "access": "public"}, access_control=True
     )
@@ -1556,8 +1554,95 @@ async def test_resolved_metadata_filter_access_control_true_preserves_existing_a
             action, _make_visitor("user-1"), None, access_control=True
         )
 
-    assert result["access"] == ["public", "private"]
-    assert result["topic"] == "faq"
+    assert result == {"access": ["public", "private"]}
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_access_control_true_visitor_none():
+    """access_control=True with visitor=None → returns access=['public'] (no bypass)."""
+    action = _make_pageindex_action(metadata_filter=None, access_control=True)
+    aca = _StubACA(user_groups={"PageIndexAction": {"private": ["user-1"]}})
+
+    with patch.object(
+        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
+    ):
+        result = await PageIndexAction.resolved_metadata_filter(
+            action, None, None, access_control=True
+        )
+
+    assert result == {"access": ["public"]}
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_access_control_true_visitor_no_identity():
+    """access_control=True with visitor having None user_id and session_id → access=['public']."""
+    action = _make_pageindex_action(metadata_filter=None, access_control=True)
+    aca = _StubACA(user_groups={"PageIndexAction": {"private": ["user-1"]}})
+
+    with patch.object(
+        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
+    ):
+        result = await PageIndexAction.resolved_metadata_filter(
+            action, _make_visitor(user_id=None, session_id=None), None, access_control=True
+        )
+
+    assert result == {"access": ["public"]}
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_access_control_true_default_groups_merged():
+    """access_control=True merges default groups with PageIndexAction groups."""
+    action = _make_pageindex_action(metadata_filter=None, access_control=True)
+    aca = _StubACA(
+        user_groups={
+            "default": {"public": [], "private": []},
+            "PageIndexAction": {"private": ["user-1"]},
+        }
+    )
+
+    with patch.object(
+        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
+    ):
+        result = await PageIndexAction.resolved_metadata_filter(
+            action, _make_visitor("user-1"), None, access_control=True
+        )
+
+    assert result == {"access": ["public", "private"]}
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_access_control_false_no_merge_with_self():
+    """access_control=False does not fall back to self.metadata_filter."""
+    action = _make_pageindex_action(
+        metadata_filter={"topic": "finance"}, access_control=False
+    )
+    aca = _StubACA(user_groups={"PageIndexAction": {"private": ["user-1"]}})
+
+    with patch.object(
+        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
+    ):
+        # Pass metadata_filter=None explicitly; self.metadata_filter should NOT be used
+        result = await PageIndexAction.resolved_metadata_filter(
+            action, _make_visitor("user-1"), None, access_control=False
+        )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_access_control_true_no_aca_uses_enabled_only_false():
+    """access_control=True calls get_action with enabled_only=False."""
+    action = _make_pageindex_action(metadata_filter=None, access_control=True)
+
+    with patch.object(
+        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=None
+    ) as mock_get:
+        result = await PageIndexAction.resolved_metadata_filter(
+            action, _make_visitor("user-1"), None, access_control=True
+        )
+
+    assert result == {"access": ["public"]}
+    mock_get.assert_awaited_once_with("AccessControlAction", enabled_only=False)
 
 
 def test_root_matches_metadata_access_public_or_member():

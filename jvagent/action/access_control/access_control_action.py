@@ -155,16 +155,38 @@ class AccessControlAction(Action):
     def _resolve_user_groups(self, action_label: str) -> Dict[str, List[str]]:
         """Resolve user groups for an action label.
 
-        Looks up ``action_label`` first, then falls back to ``"default"``.
-        Returns an empty dict when neither key exists.
+        Looks up ``action_label`` first, then merges with ``"default"``.
+        Returns an empty dict when neither key exists. Inner lists are
+        deep-copied to prevent shared-reference mutation across
+        concurrent serverless invocations.
         """
+        logger.warning(
+            "AccessControl: _resolve_user_groups action_label=%s aca_id=%s aca_enabled=%s user_groups_keys=%s",
+            action_label,
+            getattr(self, "id", "?"),
+            getattr(self, "enabled", "?"),
+            list(self.user_groups.keys()) if self.user_groups else [],
+        )
         if action_label in self.user_groups:
             groups = self.user_groups[action_label]
             default_groups = self.user_groups.get("default", {})
-            merged = dict(default_groups)
-            merged.update(groups)
+            merged = {k: list(v) if isinstance(v, list) else v for k, v in default_groups.items()}
+            for k, v in groups.items():
+                merged[k] = list(v) if isinstance(v, list) else v
+            logger.warning(
+                "AccessControl: _resolve_user_groups merged default=%s with %s=%s → %s",
+                default_groups,
+                action_label,
+                groups,
+                merged,
+            )
             return merged
-        return dict(self.user_groups.get("default", {}))
+        result = {k: list(v) if isinstance(v, list) else v for k, v in self.user_groups.get("default", {}).items()}
+        logger.warning(
+            "AccessControl: _resolve_user_groups fallback to default → %s",
+            result,
+        )
+        return result
 
     def _matches_rule(
         self, user_id: str, rule: Dict, action_label: str = "default"
