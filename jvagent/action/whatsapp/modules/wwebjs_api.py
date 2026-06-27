@@ -297,7 +297,11 @@ class WWebJSAPI(BaseWhatsAppAPI):
         return await self.status()
 
     async def set_typing_status(
-        self, phone: str, value: bool = True, is_group: bool = False
+        self,
+        phone: str,
+        value: bool = True,
+        is_group: bool = False,
+        message_id: str = "",
     ) -> dict:
         """POST /chat/sendStateTyping/{sessionId} or /chat/clearState/{sessionId}
 

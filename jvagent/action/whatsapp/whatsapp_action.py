@@ -274,6 +274,9 @@ class WhatsAppAction(Action):
         if self.is_meta_provider():
             return [
                 "Send and receive text messages over WhatsApp (Cloud API)",
+                "Send and receive images, documents, and video over WhatsApp (Cloud API)",
+                "Send and receive voice notes over WhatsApp (Cloud API); STT/TTS via configured actions",
+                "Typing indicators on inbound messages (Cloud API)",
             ]
         return [
             "Join WhatsApp groups and send / receive messages to groups",

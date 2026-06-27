@@ -200,6 +200,8 @@ falls back to a sibling env var when its primary key is unset:
 - `WHATSAPP_WABA_ID` — optional WABA id
 - `WHATSAPP_APP_ID` — optional (falls back to `FACEBOOK_APP_ID`)
 - `WHATSAPP_GRAPH_VERSION` — default `v25.0`
+- Meta media/voice outbound requires `JVAGENT_PUBLIC_BASE_URL` (files fetched from jvagent before Graph upload)
+- Meta typing uses inbound message wamid; configure `stt_action` / `tts_action` on the WhatsApp action for voice notes
 - `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION` — when `true`, skip deferred Meta webhook override on startup (meta provider only)
 - `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS` — seconds to wait before calling Meta Graph override (default `8`; meta provider only)
 - `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE` — when `false`, skip Meta webhook override on action reload (default subscribe on reload)

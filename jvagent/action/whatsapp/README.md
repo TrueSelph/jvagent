@@ -255,7 +255,9 @@ WHATSAPP_TOKEN=your_token
 
 ### Meta Cloud API (`provider: meta`)
 
-Use the official WhatsApp Business Cloud API instead of a self-hosted bridge. Text messages only in v1 (inbound/outbound within the 24-hour customer service window).
+Use the official WhatsApp Business Cloud API instead of a self-hosted bridge. Supports 1:1 text, images, documents, video, voice notes (inbound STT / outbound TTS), location, and typing indicators (within the 24-hour customer service window).
+
+Configure `stt_action` and `tts_action` on the WhatsApp action (same as bridge providers) for voice note transcription and voice replies.
 
 ```env
 WHATSAPP_PHONE_NUMBER_ID=102274452799236
@@ -289,6 +291,13 @@ Admin helpers:
 
 - `GET /api/actions/{action_id}/meta/webhook-url` — returns `meta_callback_url` (stripped of `api_key`).
 - `POST /api/actions/{action_id}/meta/webhook-register` — register override immediately.
+
+**Media and voice (meta provider):**
+
+- Inbound media: Meta sends a media id in the webhook; jvagent downloads via Graph and feeds the same pipeline as bridge providers (vision, STT, etc.).
+- Outbound media: agent replies upload files from jvagent public URLs (`JVAGENT_PUBLIC_BASE_URL` + `/api/files/...`) to Meta before send.
+- Typing: uses inbound `wamid` (`message_id`) with Meta’s read + typing_indicator API.
+- Outbound voice notes (native PTT bubble): requires OGG/OPUS; TTS output in MP3 is sent as a basic audio file unless transcoded to OGG/OPUS.
 
 Bridge-only variables (`WHATSAPP_API_URL`, `WHATSAPP_API_KEY`, `WHATSAPP_SESSION`) are not used when `provider: meta`.
 

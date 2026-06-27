@@ -1,14 +1,24 @@
-"""WhatsApp Cloud API (Meta Graph API) provider — text-only MVP."""
+"""WhatsApp Cloud API (Meta Graph API) provider."""
 
+import base64
+import json
 import logging
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
-from .base import BaseWhatsAppAPI, MessagePayload
+import aiohttp
+
+from .base import BaseWhatsAppAPI, MessagePayload, get_connection_pool
 
 logger = logging.getLogger(__name__)
 
 META_TEXT_MAX_LENGTH = 4096
+META_CAPTION_MAX_LENGTH = 1024
+
+# Meta webhook type -> jvagent message_type (audio resolved in parser)
+_META_INBOUND_TYPES = frozenset(
+    {"text", "image", "video", "document", "audio", "location"}
+)
 
 
 class MetaWhatsAppAPI(BaseWhatsAppAPI):
@@ -264,6 +274,160 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
                     return msg, value
         return None
 
+    async def download_media(self, media_id: str) -> Tuple[bytes, str]:
+        """Fetch media bytes from Meta Graph (media id from webhook)."""
+        mid = (media_id or "").strip()
+        if not mid:
+            return b"", ""
+        url = f"{self.api_url.rstrip('/')}/{mid}"
+        meta = await self.send_rest_request(url, method="GET", use_full_url=True)
+        if meta.get("error") or not meta.get("url"):
+            logger.warning("Meta media metadata fetch failed for %s: %s", mid, meta)
+            return b"", ""
+        download_url = str(meta["url"])
+        mime = str(meta.get("mime_type") or "application/octet-stream")
+        headers = self._build_headers()
+        if "error" in headers:
+            return b"", ""
+        headers.pop("Content-Type", None)
+        result = await self._make_request(
+            download_url, "GET", headers, json_body=False
+        )
+        raw = result.get("raw")
+        if isinstance(raw, bytes) and raw:
+            return raw, mime
+        logger.warning("Meta media download empty for %s", mid)
+        return b"", mime
+
+    async def _fetch_url_bytes(self, file_url: str) -> Tuple[bytes, str]:
+        """Download file from URL (jvagent public file URL) for outbound upload."""
+        encoded = await self.file_url_to_base64(file_url, force_prefix=True)
+        if not encoded:
+            return b"", ""
+        if "," in encoded:
+            header, payload = encoded.split(",", 1)
+            mime = "application/octet-stream"
+            if header.startswith("data:"):
+                mime = header[5:].split(";")[0].strip() or mime
+            try:
+                return base64.b64decode(payload), mime
+            except (ValueError, TypeError):
+                return b"", ""
+        try:
+            return base64.b64decode(encoded), "application/octet-stream"
+        except (ValueError, TypeError):
+            return b"", ""
+
+    async def _upload_media(
+        self, file_bytes: bytes, mime_type: str, filename: str = "file"
+    ) -> str:
+        """Upload bytes to Meta Media API; return media id."""
+        if not file_bytes:
+            return ""
+        url = f"{self.api_url.rstrip('/')}/{self.phone_number_id}/media"
+        clean_mime = (mime_type or "application/octet-stream").split(";")[0].strip()
+        form = aiohttp.FormData()
+        form.add_field("messaging_product", "whatsapp")
+        form.add_field(
+            "file",
+            file_bytes,
+            filename=filename,
+            content_type=clean_mime,
+        )
+        headers: Dict[str, str] = {}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        pool = await get_connection_pool()
+        session = await pool.get_session(self.api_url, self.timeout)
+        async with session.post(url, data=form, headers=headers) as resp:
+            body = await resp.read()
+            if resp.status >= 400:
+                logger.warning(
+                    "Meta media upload failed HTTP %s: %s",
+                    resp.status,
+                    body[:500],
+                )
+                return ""
+            try:
+                parsed = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                return ""
+            return str(parsed.get("id") or "")
+
+    async def _send_media_message(
+        self,
+        phone: str,
+        msg_type: str,
+        media_id: str,
+        caption: str = "",
+        context_id: str = "",
+        extra_media_fields: Optional[Dict[str, Any]] = None,
+    ) -> dict:
+        if not media_id:
+            return {"ok": False, "error": "media_id required"}
+        to = self._normalize_recipient(phone)
+        media_obj: Dict[str, Any] = {"id": media_id}
+        if caption and msg_type in ("image", "video", "document"):
+            media_obj["caption"] = caption[:META_CAPTION_MAX_LENGTH]
+        if extra_media_fields:
+            media_obj.update(extra_media_fields)
+        data: Dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to,
+            "type": msg_type,
+            msg_type: media_obj,
+        }
+        if context_id:
+            data["context"] = {"message_id": context_id}
+        return await self.send_rest_request(
+            self._messages_url(), method="POST", data=data, use_full_url=True
+        )
+
+    @staticmethod
+    def _jvagent_message_type(msg: dict) -> str:
+        """Map Meta message type to jvagent MessagePayload.message_type."""
+        msg_type = str(msg.get("type") or "").lower()
+        if msg_type == "text":
+            return "chat"
+        if msg_type == "audio":
+            audio = msg.get("audio") or {}
+            if isinstance(audio, dict) and audio.get("voice"):
+                return "ptt"
+            return "audio"
+        if msg_type in ("image", "video", "document"):
+            return msg_type
+        if msg_type == "location":
+            return "location"
+        return "ignored"
+
+    @staticmethod
+    def _meta_type_payload(msg: dict) -> dict:
+        msg_type = str(msg.get("type") or "").lower()
+        payload = msg.get(msg_type)
+        return payload if isinstance(payload, dict) else {}
+
+    async def _populate_inbound_media(self, msg: dict, payload: MessagePayload) -> None:
+        msg_type = str(msg.get("type") or "").lower()
+        if msg_type not in ("image", "video", "document", "audio"):
+            return
+        media_obj = self._meta_type_payload(msg)
+        media_id = str(media_obj.get("id") or "").strip()
+        if not media_id:
+            return
+        file_bytes, mime = await self.download_media(media_id)
+        if file_bytes:
+            payload.media = base64.b64encode(file_bytes).decode("ascii")
+        payload.mime_type = str(
+            media_obj.get("mime_type") or mime or payload.mime_type or ""
+        )
+        if msg_type == "document":
+            payload.filename = str(media_obj.get("filename") or "")
+        caption = media_obj.get("caption")
+        if caption and not payload.body:
+            payload.body = str(caption)
+            payload.caption = str(caption)
+
     async def parse_inbound_message(self, request: dict) -> Optional[MessagePayload]:
         """Parse Meta Cloud API webhook envelope into MessagePayload."""
         try:
@@ -284,22 +448,9 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
 
             msg, value = extracted
             msg_type = str(msg.get("type") or "").lower()
-            if msg_type != "text":
-                return MessagePayload(
-                    message_id=str(msg.get("id") or ""),
-                    event_type="meta_webhook",
-                    message_type="ignored",
-                    author="",
-                    sender=str(msg.get("from") or ""),
-                    receiver="",
-                )
-
-            text_obj = msg.get("text") or {}
-            body = (text_obj.get("body") or "").strip() if isinstance(text_obj, dict) else ""
             sender = str(msg.get("from") or "")
             names = self._contact_name_map(value)
             sender_name = names.get(sender, "")
-
             metadata = value.get("metadata") or {}
             display_phone = str(metadata.get("display_phone_number") or "")
 
@@ -308,30 +459,91 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
             if isinstance(context, dict) and context.get("id"):
                 quoted = {"id": context.get("id")}
 
-            return MessagePayload(
+            jv_type = self._jvagent_message_type(msg)
+            if msg_type not in _META_INBOUND_TYPES:
+                logger.debug("Meta inbound type %r not handled; ignoring", msg_type)
+                return MessagePayload(
+                    message_id=str(msg.get("id") or ""),
+                    event_type="meta_webhook",
+                    message_type="ignored",
+                    author=sender,
+                    sender=sender,
+                    receiver=display_phone,
+                )
+
+            body = ""
+            caption = ""
+            location: Dict[str, Any] = {}
+            if msg_type == "text":
+                text_obj = msg.get("text") or {}
+                body = (
+                    (text_obj.get("body") or "").strip()
+                    if isinstance(text_obj, dict)
+                    else ""
+                )
+            elif msg_type == "location":
+                loc = msg.get("location") or {}
+                if isinstance(loc, dict):
+                    location = {
+                        "latitude": loc.get("latitude"),
+                        "longitude": loc.get("longitude"),
+                        "name": loc.get("name", ""),
+                        "address": loc.get("address", ""),
+                    }
+
+            payload = MessagePayload(
                 message_id=str(msg.get("id") or ""),
                 event_type="meta_webhook",
-                message_type="chat",
+                message_type=jv_type,
                 author=sender,
                 sender=sender,
                 receiver=display_phone,
                 body=body,
+                caption=caption,
+                location=location,
                 fromMe=False,
                 isGroup=False,
                 sender_name=sender_name,
                 quoted_message=quoted,
             )
+
+            if msg_type in ("image", "video", "document", "audio"):
+                await self._populate_inbound_media(msg, payload)
+                if not payload.media:
+                    logger.warning(
+                        "Meta inbound %s missing downloadable media; ignoring",
+                        msg_type,
+                    )
+                    payload.message_type = "ignored"
+
+            return payload
         except Exception as e:
             self.logger.error("Error parsing Meta inbound message: %s", e)
             return None
 
     async def set_typing_status(
-        self, phone: str, value: bool = True, is_group: bool = False
+        self,
+        phone: str,
+        value: bool = True,
+        is_group: bool = False,
+        message_id: str = "",
     ) -> dict:
         if is_group:
             return {"ok": True, "skipped": True, "reason": "groups_not_supported"}
         if not value:
             return {"ok": True, "skipped": True, "reason": "typing_off_noop"}
+
+        wamid = (message_id or "").strip()
+        if wamid:
+            data: Dict[str, Any] = {
+                "messaging_product": "whatsapp",
+                "status": "read",
+                "message_id": wamid,
+                "typing_indicator": {"type": "text"},
+            }
+            return await self.send_rest_request(
+                self._messages_url(), method="POST", data=data, use_full_url=True
+            )
 
         to = self._normalize_recipient(phone)
         data = {
@@ -343,6 +555,16 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         return await self.send_rest_request(
             self._messages_url(), method="POST", data=data, use_full_url=True
         )
+
+    async def set_recording_status(
+        self,
+        phone: str,
+        value: bool = True,
+        is_group: bool = False,
+        duration: int = 5,
+    ) -> dict:
+        """Cloud API has no recording indicator; typing is used instead."""
+        return {"ok": True, "skipped": True, "reason": "meta_cloud_api"}
 
     async def mark_message_read(self, message_id: str) -> dict:
         if not message_id:
@@ -382,19 +604,95 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
             self._messages_url(), method="POST", data=data, use_full_url=True
         )
 
-    async def send_image(self, phone: str, file_url: str = "", **kwargs) -> dict:
-        return {"ok": False, "error": "Media not supported for meta provider v1"}
+    async def send_image(
+        self, phone: str, file_url: str = "", caption: str = "", is_group: bool = False, **kwargs
+    ) -> dict:
+        if is_group:
+            return {"ok": False, "error": "Group messaging not supported for meta provider v1"}
+        file_bytes, mime = await self._fetch_url_bytes(file_url)
+        if not file_bytes:
+            return {"ok": False, "error": "Failed to fetch image from URL"}
+        media_id = await self._upload_media(file_bytes, mime or "image/jpeg", "image.jpg")
+        if not media_id:
+            return {"ok": False, "error": "Meta media upload failed"}
+        result = await self._send_media_message(
+            phone, "image", media_id, caption=caption
+        )
+        if result.get("ok", True) and "error" not in result:
+            result["ok"] = True
+        return result
 
-    async def send_file(self, phone: str, file_url: str = "", **kwargs) -> dict:
-        return {"ok": False, "error": "Media not supported for meta provider v1"}
+    async def send_file(
+        self,
+        phone: str,
+        file_url: str = "",
+        caption: str = "",
+        filename: str = "",
+        is_group: bool = False,
+        **kwargs,
+    ) -> dict:
+        if is_group:
+            return {"ok": False, "error": "Group messaging not supported for meta provider v1"}
+        file_bytes, mime = await self._fetch_url_bytes(file_url)
+        if not file_bytes:
+            return {"ok": False, "error": "Failed to fetch document from URL"}
+        fname = filename or "document"
+        media_id = await self._upload_media(
+            file_bytes, mime or "application/octet-stream", fname
+        )
+        if not media_id:
+            return {"ok": False, "error": "Meta media upload failed"}
+        result = await self._send_media_message(
+            phone, "document", media_id, caption=caption
+        )
+        if result.get("ok", True) and "error" not in result:
+            result["ok"] = True
+        return result
 
-    async def send_video(self, phone: str, file_url: str = "", **kwargs) -> dict:
-        return {"ok": False, "error": "Media not supported for meta provider v1"}
+    async def send_video(
+        self, phone: str, file_url: str = "", caption: str = "", is_group: bool = False, **kwargs
+    ) -> dict:
+        if is_group:
+            return {"ok": False, "error": "Group messaging not supported for meta provider v1"}
+        file_bytes, mime = await self._fetch_url_bytes(file_url)
+        if not file_bytes:
+            return {"ok": False, "error": "Failed to fetch video from URL"}
+        media_id = await self._upload_media(file_bytes, mime or "video/mp4", "video.mp4")
+        if not media_id:
+            return {"ok": False, "error": "Meta media upload failed"}
+        result = await self._send_media_message(
+            phone, "video", media_id, caption=caption
+        )
+        if result.get("ok", True) and "error" not in result:
+            result["ok"] = True
+        return result
 
     async def send_voice(
-        self, phone: str, file_url: str = "", is_ptt: bool = True, **kwargs
+        self, phone: str, file_url: str = "", is_ptt: bool = True, is_group: bool = False, **kwargs
     ) -> dict:
-        return {"ok": False, "error": "Voice not supported for meta provider v1"}
+        if is_group:
+            return {"ok": False, "error": "Group messaging not supported for meta provider v1"}
+        file_bytes, mime = await self._fetch_url_bytes(file_url)
+        if not file_bytes:
+            return {"ok": False, "error": "Failed to fetch audio from URL"}
+        clean_mime = (mime or "audio/mpeg").split(";")[0].strip().lower()
+        is_voice_note = is_ptt and (
+            "ogg" in clean_mime or "opus" in clean_mime
+        )
+        ext = "voice.ogg" if is_voice_note else "audio.mp3"
+        upload_mime = clean_mime if clean_mime else "audio/mpeg"
+        media_id = await self._upload_media(file_bytes, upload_mime, ext)
+        if not media_id:
+            return {"ok": False, "error": "Meta media upload failed"}
+        extra: Dict[str, Any] = {}
+        if is_voice_note:
+            extra["voice"] = True
+        result = await self._send_media_message(
+            phone, "audio", media_id, extra_media_fields=extra
+        )
+        if result.get("ok", True) and "error" not in result:
+            result["ok"] = True
+        return result
 
     async def send_location(
         self, phone: str, latitude: float = 0.0, longitude: float = 0.0, **kwargs

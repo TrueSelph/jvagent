@@ -633,14 +633,20 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             utterance = voice_result.get("transcript", "")
         elif data.message_type in ["location"] and data.location:
             typing_result = await wa.set_typing_status(
-                phone=sender, value=True, is_group=data.isGroup
+                phone=sender,
+                value=True,
+                is_group=data.isGroup,
+                message_id=data.message_id or "",
             )
             utterance = f"Location: {data.location.get('latitude')}, {data.location.get('longitude')}"
         elif utterance:
             # Trigger typing immediately
             try:
                 typing_result = await wa.set_typing_status(
-                    phone=sender, value=True, is_group=data.isGroup
+                    phone=sender,
+                    value=True,
+                    is_group=data.isGroup,
+                    message_id=data.message_id or "",
                 )
                 t0 = getattr(request.state, "webhook_start", None)
                 if t0 is not None:

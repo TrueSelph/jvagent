@@ -457,7 +457,10 @@ async def _handle_media_message(
         try:
             wa = await whatsapp_action.api()
             typing_result = await wa.set_typing_status(
-                phone=sender, value=True, is_group=data.isGroup
+                phone=sender,
+                value=True,
+                is_group=data.isGroup,
+                message_id=getattr(data, "message_id", "") or "",
             )
             if not typing_result.get("ok", True):
                 logger.debug(
@@ -595,7 +598,10 @@ async def _handle_voice_message(
             else:
                 wa = await whatsapp_action.api()
                 typing_result = await wa.set_typing_status(
-                    phone=sender, value=True, is_group=data.isGroup
+                    phone=sender,
+                    value=True,
+                    is_group=data.isGroup,
+                    message_id=getattr(data, "message_id", "") or "",
                 )
                 if not typing_result.get("ok", True):
                     logger.debug(
