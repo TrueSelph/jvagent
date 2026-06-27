@@ -170,7 +170,10 @@ class AccessControlAction(Action):
         if action_label in self.user_groups:
             groups = self.user_groups[action_label]
             default_groups = self.user_groups.get("default", {})
-            merged = {k: list(v) if isinstance(v, list) else v for k, v in default_groups.items()}
+            merged = {
+                k: list(v) if isinstance(v, list) else v
+                for k, v in default_groups.items()
+            }
             for k, v in groups.items():
                 merged[k] = list(v) if isinstance(v, list) else v
             logger.warning(
@@ -181,7 +184,10 @@ class AccessControlAction(Action):
                 merged,
             )
             return merged
-        result = {k: list(v) if isinstance(v, list) else v for k, v in self.user_groups.get("default", {}).items()}
+        result = {
+            k: list(v) if isinstance(v, list) else v
+            for k, v in self.user_groups.get("default", {}).items()
+        }
         logger.warning(
             "AccessControl: _resolve_user_groups fallback to default → %s",
             result,

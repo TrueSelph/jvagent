@@ -447,7 +447,9 @@ class PageIndexAction(Action):
             elif visitor is not None or self.metadata_filter is not None:
                 # Non-AC path: resolve any action-level metadata filter
                 metadata_filter = await self.resolved_metadata_filter(
-                    visitor, metadata_filter or self.metadata_filter, resolved_access_control
+                    visitor,
+                    metadata_filter or self.metadata_filter,
+                    resolved_access_control,
                 )
 
             logger.warning(

@@ -214,7 +214,8 @@ def _build_metadata_query(metadata_filter: Dict[str, Any]) -> Dict[str, Any]:
             access_clause = {"$or": options}
             logger.warning(
                 "PageIndex _build_metadata_query: access key detected groups=%s → %s",
-                groups, access_clause,
+                groups,
+                access_clause,
             )
             continue
         if isinstance(v, list):
@@ -228,7 +229,8 @@ def _build_metadata_query(metadata_filter: Dict[str, Any]) -> Dict[str, Any]:
         result = query
     logger.warning(
         "PageIndex _build_metadata_query: input=%s → output=%s",
-        metadata_filter, result,
+        metadata_filter,
+        result,
     )
     return result
 
@@ -742,12 +744,14 @@ async def get_document_roots(
         query.update(_build_metadata_query(metadata_filter or {}))
         logger.warning(
             "PageIndex get_document_roots: collection=%s query=%s",
-            collection_name, query,
+            collection_name,
+            query,
         )
         roots = await DocumentRootNode.find(query)
         logger.warning(
             "PageIndex get_document_roots: collection=%s returned %d roots",
-            collection_name, len(roots),
+            collection_name,
+            len(roots),
         )
         return roots
 

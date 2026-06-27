@@ -1583,7 +1583,10 @@ async def test_resolved_metadata_filter_access_control_true_visitor_no_identity(
         PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
     ):
         result = await PageIndexAction.resolved_metadata_filter(
-            action, _make_visitor(user_id=None, session_id=None), None, access_control=True
+            action,
+            _make_visitor(user_id=None, session_id=None),
+            None,
+            access_control=True,
         )
 
     assert result == {"access": ["public"]}
