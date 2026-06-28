@@ -220,6 +220,12 @@ async def _lexical_candidates(
             metadata_filter=metadata_filter,
         )
         allowed_doc_names = [r.doc_name for r in roots]
+        logger.debug(
+            "PageIndex _lexical_candidates: metadata_filter=%s → %d allowed_doc_names=%s",
+            metadata_filter,
+            len(allowed_doc_names),
+            allowed_doc_names[:10] if allowed_doc_names else [],
+        )
         if not allowed_doc_names:
             return []
         if doc_name and doc_name not in allowed_doc_names:
@@ -816,6 +822,17 @@ async def search_documents(
     # on_register lifecycle hook has not run, so we must register the database
     # here before any retrieval helper tries to read from it.
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
+
+    logger.debug(
+        "PageIndex search_documents: query=%r strategy=%s collection=%s "
+        "metadata_filter=%s doc_name=%s limit=%s",
+        query[:100] if query else "",
+        strategy,
+        collection_name,
+        metadata_filter,
+        doc_name,
+        limit,
+    )
 
     try:
         manager = get_database_manager()
