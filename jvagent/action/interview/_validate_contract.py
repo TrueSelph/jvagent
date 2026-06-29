@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, List, Set, Tuple
 
-from .hooks import load_hook_function
+from .hooks import BUILTIN_HOOKS, load_hook_function
 from .spec import INTERVIEW_FRONTMATTER_KEY, load_interview_spec_from_skill
 from .validators import BUILTIN_VALIDATORS
 
@@ -17,6 +17,12 @@ def _collect_function_refs(spec: Any) -> Set[str]:
             refs.add(f.validator)
         refs.update(f.pre_processor or [])
         refs.update(f.post_processor or [])
+        if f.for_each:
+            for child in f.for_each.fields:
+                if child.validator:
+                    refs.add(child.validator)
+                refs.update(child.pre_processor or [])
+                refs.update(child.post_processor or [])
     for tool in spec.skill_tools or []:
         if tool.function:
             refs.add(tool.function)
@@ -47,7 +53,7 @@ def validate_interview_skill_dir(skill_dir: Path) -> Tuple[bool, List[str]]:
 
     refs = _collect_function_refs(spec)
     for name in sorted(refs):
-        if name in BUILTIN_VALIDATORS:
+        if name in BUILTIN_VALIDATORS or name in BUILTIN_HOOKS:
             continue
         if load_hook_function(spec, name) is None:
             issues.append(

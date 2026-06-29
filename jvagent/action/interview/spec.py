@@ -42,6 +42,24 @@ _FIELD_KEYS = frozenset(
         "post_processor",
         "branches",
         "else",
+        "for_each",
+    }
+)
+
+_FOR_EACH_KEYS = frozenset({"prompt_prefix", "fields"})
+
+# Subpart fields inside for_each — no branches/else/nested for_each in v1.
+_FOR_EACH_CHILD_FIELD_KEYS = frozenset(
+    {
+        "key",
+        "prompt",
+        "guidance",
+        "hint",
+        "required",
+        "validator",
+        "validator_args",
+        "pre_processor",
+        "post_processor",
     }
 )
 
@@ -56,6 +74,14 @@ _SKILL_TOOL_KEYS = frozenset({"name", "description", "function", "parameters"})
 class BranchDef:
     when: Dict[str, Any] = field(default_factory=dict)
     goto: str = ""
+
+
+@dataclass
+class ForEachDef:
+    """Per-item subpart field templates declared under a parent field."""
+
+    prompt_prefix: str = "For item #{index}:"
+    fields: List["FieldDef"] = field(default_factory=list)
 
 
 @dataclass
@@ -78,6 +104,7 @@ class FieldDef:
     post_processor: List[str] = field(default_factory=list)
     branches: List[BranchDef] = field(default_factory=list)
     else_field: Optional[str] = None
+    for_each: Optional[ForEachDef] = None
 
 
 @dataclass
@@ -116,6 +143,25 @@ class InterviewSpec:
                 return f
         return None
 
+    def get_for_each_child_field(
+        self, parent_key: str, child_key: str
+    ) -> Optional[FieldDef]:
+        parent = self.get_field(parent_key)
+        if not parent or not parent.for_each:
+            return None
+        for child in parent.for_each.fields:
+            if child.key == child_key:
+                return child
+        return None
+
+    def all_for_each_child_keys(self) -> frozenset[str]:
+        keys: set[str] = set()
+        for f in self.fields:
+            if f.for_each:
+                for child in f.for_each.fields:
+                    keys.add(child.key)
+        return frozenset(keys)
+
     def get_skill_tool(self, name: str) -> Optional[SkillToolDef]:
         for t in self.skill_tools:
             if t.name == name:
@@ -142,6 +188,20 @@ def fields_reference(spec: InterviewSpec) -> List[Dict[str, Any]]:
         }
         if f.hint:
             entry["hint"] = f.hint
+        if f.for_each and f.for_each.fields:
+            subparts: List[Dict[str, Any]] = []
+            for child in f.for_each.fields:
+                sub: Dict[str, Any] = {
+                    "key": child.key,
+                    "prompt": child.prompt,
+                    "required": child.required,
+                }
+                if child.guidance:
+                    sub["guidance"] = child.guidance
+                if child.hint:
+                    sub["hint"] = child.hint
+                subparts.append(sub)
+            entry["for_each"] = {"fields": subparts}
         out.append(entry)
     return out
 
@@ -174,6 +234,47 @@ def _parse_branch(data: Dict[str, Any], *, path: str) -> BranchDef:
     )
 
 
+def _parse_for_each_child(data: Dict[str, Any], *, path: str) -> FieldDef:
+    if not isinstance(data, dict):
+        raise ValueError(f"Field at {path} must be a mapping")
+    _reject_unknown_keys(data, _FOR_EACH_CHILD_FIELD_KEYS, path=path)
+    validator = data.get("validator", "")
+    if validator is not None and not isinstance(validator, str):
+        raise ValueError(
+            f"validator at {path} must be a function name string; "
+            "use validator_args for parameters"
+        )
+    return FieldDef(
+        key=str(data.get("key", "") or "").strip(),
+        prompt=str(data.get("prompt", "") or ""),
+        guidance=str(data.get("guidance", "") or ""),
+        hint=str(data.get("hint", "") or ""),
+        required=bool(data.get("required", True)),
+        validator=str(validator or "").strip(),
+        validator_args=dict(data.get("validator_args") or {}),
+        pre_processor=_parse_string_list(data.get("pre_processor")),
+        post_processor=_parse_string_list(data.get("post_processor")),
+    )
+
+
+def _parse_for_each(data: Any, *, path: str) -> ForEachDef:
+    if not isinstance(data, dict):
+        raise ValueError(f"for_each at {path} must be a mapping")
+    _reject_unknown_keys(data, _FOR_EACH_KEYS, path=path)
+    raw_fields = data.get("fields") or []
+    if not isinstance(raw_fields, list) or not raw_fields:
+        raise ValueError(f"for_each.fields at {path} must be a non-empty list")
+    children = [
+        _parse_for_each_child(child, path=f"{path}.fields[{i}]")
+        for i, child in enumerate(raw_fields)
+    ]
+    child_keys = [c.key for c in children]
+    if len(child_keys) != len(set(child_keys)):
+        raise ValueError(f"Duplicate for_each child keys at {path}")
+    prefix = str(data.get("prompt_prefix") or "For item #{index}:").strip()
+    return ForEachDef(prompt_prefix=prefix, fields=children)
+
+
 def _parse_field(data: Dict[str, Any], *, index: int) -> FieldDef:
     path = f"fields[{index}]"
     if not isinstance(data, dict):
@@ -190,6 +291,10 @@ def _parse_field(data: Dict[str, Any], *, index: int) -> FieldDef:
         _parse_branch(b, path=f"{path}.branches[{i}]")
         for i, b in enumerate(data.get("branches", []) or [])
     ]
+    for_each_raw = data.get("for_each")
+    for_each = (
+        _parse_for_each(for_each_raw, path=f"{path}.for_each") if for_each_raw else None
+    )
     return FieldDef(
         key=str(data.get("key", "") or "").strip(),
         prompt=str(data.get("prompt", "") or ""),
@@ -202,7 +307,22 @@ def _parse_field(data: Dict[str, Any], *, index: int) -> FieldDef:
         post_processor=_parse_string_list(data.get("post_processor")),
         branches=branches,
         else_field=data.get("else"),
+        for_each=for_each,
     )
+
+
+def _validate_for_each_child_keys(fields: List[FieldDef]) -> None:
+    """Ensure for_each child keys do not collide with top-level field keys."""
+    top_keys = {f.key for f in fields}
+    for f in fields:
+        if not f.for_each:
+            continue
+        for child in f.for_each.fields:
+            if child.key in top_keys:
+                raise ValueError(
+                    f"for_each child key '{child.key}' on field '{f.key}' "
+                    f"collides with top-level field key"
+                )
 
 
 def _parse_handlers(data: Any) -> HandlersDef:
@@ -259,6 +379,7 @@ def parse_interview_spec(
     fields = [
         _parse_field(q, index=i) for i, q in enumerate(data.get("fields", []) or [])
     ]
+    _validate_for_each_child_keys(fields)
     skill_tools: List[SkillToolDef] = []
     for i, t in enumerate(data.get("skill_tools", []) or []):
         if not t:

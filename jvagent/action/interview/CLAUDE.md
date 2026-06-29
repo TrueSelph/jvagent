@@ -36,7 +36,8 @@ When fixing behavior for one skill (e.g. `validate_full_name`, training slot mat
 interview/
 ├── SKILL.md              # Base SOP (extends target)
 ├── interview_action.py   # Action shell: discovery, turn-lock hooks, skill activation
-├── spec.py               # Frontmatter parsing: FieldDef / InterviewSpec / registry
+├── spec.py               # Frontmatter parsing: FieldDef / ForEachDef / InterviewSpec / registry
+├── for_each.py           # Per-item subpart expansion state + iteration helpers
 ├── session.py            # InterviewSession + conversation persistence
 ├── flow.py               # Branch evaluation, path walk, prune
 ├── hooks.py              # custom_tools.py loader; the ctx interface (HookExecutionContext);
@@ -58,7 +59,7 @@ interview/
 
 ## Creating a new interview skill (minimum steps)
 
-1. Copy [`examples/example_interview/`](examples/example_interview/) → `agents/<ns>/<agent>/skills/<name>/`.
+1. Copy [`examples/example_interview/`](examples/example_interview/) → `agents/<ns>/<agent>/skills/<name>/`. For **per-item subparts**, also read [`examples/example_for_each_interview/`](examples/example_for_each_interview/).
 2. Align `name` in folder and `SKILL.md` frontmatter.
 3. Implement every `function:` referenced in frontmatter `interview:` inside `scripts/custom_tools.py`.
 4. Write `SKILL.md` custom instructions only; set `extends: action:jvagent/interview` (see `docs/skill_custom_instructions.md`).
@@ -83,6 +84,14 @@ Full tables: **[interview profile](docs/thin-harness.md)** (+ [platform](../../.
 7. **Never reuse stale field values** from older chat turns unless the user repeats them in the latest message.
 8. **Domain logic in skills** — validators, processors, handlers, and branching in `custom_tools.py` + `interview:` frontmatter; never in foundation code.
 
+### `for_each` subpart invariants
+
+9. **`ctx.field_def.key` not literals in processors.** Post-processors and validators receive `ctx.field_def` — use `ctx.field_def.key` to identify the current field instead of a bare string. Hard-coding `"my_field_name"` in a post_processor couples the hook to one field name and breaks silently on rename.
+10. **`ctx.value` is `None` in post_processors.** The value was stored before the hook runs. Read it with `ctx.session.get_value(ctx.field_def.key)`.
+11. **`ctx.get_for_each_records(parent_key)` in handlers.** Review and complete handlers must call `ctx.get_for_each_records("parent_key")` (or `ctx.get_for_each_records(some_key_variable)`) instead of `ctx.session.context["for_each"]["parent_key"]["records"]`. The internal path is framework-private. `ctx.get_for_each_records()` returns `[]` gracefully on skip.
+12. **Wipe-before-validate protection.** The engine wipes existing for_each expansion ONLY after the new parent value passes validation. A failed re-submission leaves the old expansion intact so the children remain reachable. Do not rely on for_each state being wiped on every parent re-submission.
+13. **Item dict shape.** `ctx.expand_for_each(items=[...])` items are plain Python values or dicts with optional `"id"` and `"label"` keys. Primitive values (`str`, `int`) are used as both id and label. Dicts that do not have `"id"` fall back to the list index as id — prefer explicit `{"id": ..., "label": ...}` for readability.
+
 ---
 
 ## Tests
@@ -102,8 +111,9 @@ pytest tests/action/interview/ -v
 | [docs/frontmatter-schema.md](docs/frontmatter-schema.md) | Canonical `interview:` YAML schema |
 | [README.md](README.md) | Reading paths, tool envelope, live skill patterns |
 | [docs/multi-turn-flow.md](docs/multi-turn-flow.md) | Turn-by-turn lifecycle, turn-lock, session states |
-| [docs/extending.md](docs/extending.md) | Validators, processors, handlers, skill tools |
+| [docs/extending.md](docs/extending.md) | Validators, processors, handlers, skill tools, **`for_each`** |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common failures and fixes |
 | [examples/example_interview/](examples/example_interview/) | Reference implementation |
+| [examples/example_for_each_interview/](examples/example_for_each_interview/) | **`for_each` subparts** reference |
 | [CUCS witness scenarios](examples/example_account_gating/use-cases/) | Domain-neutral conversation use cases |
 | [`.planning/reference/conversation-use-cases.md`](../../../.planning/reference/conversation-use-cases.md) | Conversation Use Case Specification |

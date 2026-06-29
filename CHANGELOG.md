@@ -10,6 +10,29 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Added
 
+- **Interview declarative activation seeding (I-INT-SEED-01).** Fields may declare
+  `validator_args.seed_from_activation` (canonical value → trigger phrases) and use
+  built-in pre_processor `seed_field_from_activation`. Matching engine in
+  `activation_seed.py`; downstream hooks call `infer_field_from_activation()`.
+  `HookExecutionContext.field_def` set for pre_processor runs.
+
+- **Interview `for_each` per-item subparts.** Parent fields may declare nested
+  `for_each.fields` templates in frontmatter. After the parent stores, a
+  post-processor returns `for_each_expand` (via `ctx.expand_for_each`) to walk
+  subpart questions once per item. The engine owns iteration, review grouping,
+  and `session.context["for_each"][parent]["records"]`. Reference skill:
+  `interview/examples/example_for_each_interview/`.
+
+- **`ctx` helpers so interview skills import nothing from the interview package.**
+  `HookExecutionContext` gains `get_for_each_records(parent_key)` (read completed
+  per-item records without touching `session.context` internals),
+  `start_for_each(parent_key, items=, skip=)` (launch a parent's subparts from a
+  *different* field's post_processor), `activation_utterance` (the original
+  activating request, no `ACTIVATION_UTTERANCE_KEY` import), and
+  `infer_field_from_activation(field_key)` (declarative seed inference). `ctx.field_def`
+  is now also set for validator and post_processor runs (previously pre_processor only),
+  so hooks use `ctx.field_def.key` instead of hard-coding a field name.
+
 - **Per-turn model credential override (BYOK).** `per_turn_model_override`
   ContextVar in `jvagent.action.model.context` with `bind_model_override()`.
   `api_key_from_context()` consults the override before environment variables;
@@ -38,6 +61,27 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 - **Interview directive composition extracted from `engine.py`.** Batch-failure
   and multi-directive merge helpers moved to `directive_compose.py` to shrink the
   tool-handler module.
+
+### Fixed
+
+- **`for_each` expansion no longer wiped on a failed parent correction.** The engine
+  cleared a parent's expansion *before* validating its new value, so a rejected
+  re-submission left the old value stored with no expansion — permanently blocking
+  the subparts. Wipe now happens only after the new value validates.
+- **`for_each` child fields surfaced in `awaiting_fields`.** `build_awaiting_fields`
+  used `spec.get_field`, which returns `None` for subpart keys, silently dropping
+  them; it now resolves via the active expansion.
+- **Custom review handlers can hide `for_each` records.** `omit_fields` from a review
+  handler now also suppresses the matching parent's per-item records in the summary.
+- **`field_sort_order` no longer raises** when a `for_each` parent key is absent from
+  the top-level field list (defensive `next()` lookup instead of `list.index`).
+
+### Removed
+
+- **Orphaned `interview/responses.py`.** Dead module left from an unmerged conflict
+  (referenced a nonexistent `get_hook_execution_context` and the obsolete
+  `Tell the user:` directive prefix). Its surface was fully superseded by `hooks.py`
+  and `directive_compose.py`; no live imports.
 
 ## [0.1.0rc9] - 2026-06-22
 

@@ -13,6 +13,7 @@ LLM-driven interview framework for structured data collection. The orchestrator 
 | Audience | Start with |
 |----------|------------|
 | **Building a new interview skill** | [Quick start](#quick-start) → [docs/extending.md](docs/extending.md) → [examples/example_interview/](examples/example_interview/) |
+| **Per-item subpart questions (`for_each`)** | [docs/frontmatter-schema.md](docs/frontmatter-schema.md#per-item-subparts-fieldsfor_each) → [docs/extending.md](docs/extending.md#per-item-subparts-for_each) → [examples/example_for_each_interview/](examples/example_for_each_interview/) |
 | **AI agent editing this package** | [CLAUDE.md](CLAUDE.md) |
 | **Debugging a stuck turn** | [docs/troubleshooting.md](docs/troubleshooting.md) → [docs/multi-turn-flow.md](docs/multi-turn-flow.md) |
 | **Authoring `SKILL.md` body only** | [docs/skill_custom_instructions.md](docs/skill_custom_instructions.md) (base SOP: [SKILL.md](SKILL.md)) |
@@ -25,7 +26,7 @@ LLM-driven interview framework for structured data collection. The orchestrator 
 | [docs/thin-harness.md](docs/thin-harness.md) | **Interview profile** — subsystem invariants |
 | [docs/frontmatter-schema.md](docs/frontmatter-schema.md) | Canonical `interview:` YAML schema (fields, handlers, confirm) |
 | [docs/multi-turn-flow.md](docs/multi-turn-flow.md) | Turn-by-turn lifecycle, turn-lock, session states, branching |
-| [docs/extending.md](docs/extending.md) | Validators, pre/post processors, review/completion, skill tools |
+| [docs/extending.md](docs/extending.md) | Validators, pre/post processors, review/completion, skill tools, **`for_each` subparts** |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common failures, symptom → fix |
 
 Skill placement convention (action-backed vs pure SOP): [jvagent/skills/README.md](../../skills/README.md).
@@ -130,7 +131,7 @@ Set `binds_tools_to_visitor = True` on `InterviewAction` so tool dispatch receiv
 
 | Injected arg | When available |
 |--------------|----------------|
-| `ctx` | **Always** — the single `HookExecutionContext` (never `None`). Carries inputs (`ctx.value`, `ctx.session`, `ctx.visitor`, `ctx.interview`, `ctx.config`, `ctx.extracted_values`, `ctx.args`, `ctx.phase`) and output (`ctx.say`, `ctx.tool_response`, `ctx.call_tool`, `ctx.no_session`, `ctx.valid` / `ctx.invalid`). Declare just `ctx` (no null guard) — see [extending.md](docs/extending.md#the-single-ctx-interface) |
+| `ctx` | **Always** — the single `HookExecutionContext` (never `None`). Carries inputs (`ctx.value`, `ctx.session`, `ctx.visitor`, `ctx.interview`, `ctx.config`, `ctx.extracted_values`, `ctx.args`, `ctx.phase`) and output (`ctx.say`, `ctx.tool_response`, `ctx.call_tool`, `ctx.expand_for_each`, `ctx.no_session`, `ctx.valid` / `ctx.invalid`). Declare just `ctx` (no null guard) — see [extending.md](docs/extending.md#the-single-ctx-interface) |
 
 Validators read the raw input from `ctx.value` and `session.context` / collected fields from `ctx.session` during validation.
 
@@ -378,8 +379,9 @@ Corrections to previously stored fields use `interview__set_fields` at any time 
 
 | Pattern | Onboarding | Pre-alert | Example |
 |---------|------------|-----------|---------|
-| Pre-tool suggestion | `get_phone_number`, `suggest_email_from_task` | — | `suggest_email` |
-| Post-tool branch | `verify_phone_number` (stop if exists), `verify_email` (OTP branch) | `check_tracking_status` (`next_tool: interview__review`) | `check_low_rating` (`next_tool: interview__review`) |
+| **`for_each` subparts** | — | per-tracking `description` / `invoice_value` | `example_for_each_interview` |
+| Pre-tool suggestion | `get_phone_number`, `suggest_email_from_task` | `seed_tracking_numbers` | `suggest_email` |
+| Post-tool branch | `verify_phone_number` (stop if exists), `verify_email` (OTP branch) | `check_tracking_statuses` (`expand_for_each` / review) | `check_low_rating` (`next_tool: interview__review`) |
 | Validator completes flow | `validate_otp_code` (`interview_complete`) | — | — |
 | LLM custom tools | `send_otp`, `process_id_card` | none | — |
 | Custom reset | `handlers.reset` → `reset_onboarding` (cancel-and-exit) | base `interview__reset` | base default |
@@ -392,7 +394,8 @@ Corrections to previously stored fields use `interview__set_fields` at any time 
 ### When to use each pattern
 
 - **Pre-tools** — suggest a value the system already knows (WhatsApp phone, email from a prior completed SKILL task). The LLM must confirm before `set_field`.
-- **Post-tools** — run side effects after a field is saved (API lookup, branching). The LLM reads results; never calls the hook manually.
+- **Post-tools** — run side effects after a field is saved (API lookup, branching, **`for_each` expansion**). The LLM reads results; never calls the hook manually.
+- **`for_each` subparts** — when a parent field yields a variable number of items (tracking numbers, failed URLs), declare nested `for_each.fields` in frontmatter and return `ctx.expand_for_each(items)` from the parent post-processor. Engine walks subparts per item; completion reads `session.context["for_each"][parent]["records"]`. See [docs/extending.md](docs/extending.md#per-item-subparts-for_each).
 - **Validator-side completion** — when confirming a value should finish the interview (OTP verify). Return `interview_complete: true` and `response_directive` from the validator; do not use a `post_tool` for the same step.
 - **LLM skill tools** — operations the LLM must initiate (send OTP, image extraction). Declare in `interview.skill_tools` and additive `allowed-tools`.
 - **Custom reset** — when cancel/start-over needs skill-specific behavior, set `handlers.reset` (same pattern as review). Model calls `interview__reset()`.
@@ -480,6 +483,7 @@ Existing tests under `tests/action/interview/`:
 - [ ] Validators return correct shape (`valid`, `value`, `error`); use `interview_complete` + `response_directive` when validation finishes the interview
 - [ ] Every hook takes the single `ctx`; user text via `ctx.say`, control/return via `ctx.tool_response`
 - [ ] Post-tools return `ctx.tool_response`; user sidebars use the deferred `note` key, not `ctx.say`
+- [ ] **`for_each` (if used):** subpart keys unique vs top-level; parent post-processor returns `ctx.expand_for_each(...)`; completion reads `session.context["for_each"][parent]["records"]`
 - [ ] LLM custom tools return `ctx.tool_response`; stop/cancel paths chain via `ctx.call_tool` (especially stop/cancel paths)
 - [ ] If persisting to SKILL task data, normalize fields and call `_persist_skill_task_data` before `handle.complete()` / `_close_task`
 - [ ] Review handler returns `response_directive`; terminate path sets `terminate: true`
@@ -492,9 +496,11 @@ Existing tests under `tests/action/interview/`:
 | Path | Notes |
 |------|-------|
 | [examples/example_interview/](examples/example_interview/) | Copy template — **not** auto-discovered; copy to `agents/.../skills/<name>/` |
+| [examples/example_for_each_interview/](examples/example_for_each_interview/) | **`for_each` subparts** — per-item iteration reference |
 | `examples/jvagent_app/.../skills/signup_interview/` | jvagent demo signup interview |
 | `zoon-ai/agents/zoon/zoon_ai/skills/onboarding_interview/` | Production onboarding — OTP, ID extraction, SKILL task persistence |
-| `zoon-ai/agents/zoon/zoon_ai/skills/pre_alert_interview/` | Production pre-alert — hook branching, custom review terminate path |
+| `zoon-ai/agents/zoon/zoon_ai/skills/pre_alert_interview/` | Production pre-alert — **`for_each` per tracking number**, custom review terminate path |
+| `zoon-ai/agents/zoon/zoon_ai/skills/quotation_interview/` | Production quotation — auto-extract + **`for_each` manual fallback per failed URL** |
 
 ## License
 

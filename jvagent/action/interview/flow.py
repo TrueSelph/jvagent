@@ -5,6 +5,17 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Dict, List, Optional, Set
 
+from .for_each import (
+    STATUS_ACTIVE,
+    build_for_each_metadata,
+    build_prefixed_child_prompt,
+    get_active_for_each,
+    get_for_each_state,
+    is_parent_for_each_blocking,
+    next_unanswered_child_key,
+    reachable_for_each_child_keys,
+    resolve_field_def,
+)
 from .session import InterviewSession
 from .spec import FieldDef, InterviewSpec
 
@@ -251,9 +262,25 @@ async def compute_collectible_path_names(
     interview_action: Any = None,
 ) -> List[str]:
     """Prefix of the active path up to the first unanswered field."""
-    return await _walk_path(
+    path = await _walk_path(
         session, spec, load_function, visitor, interview_action, stop_at_first_gap=True
     )
+    return _inject_for_each_children(session, spec, path)
+
+
+def _inject_for_each_children(
+    session: InterviewSession, spec: InterviewSpec, path: List[str]
+) -> List[str]:
+    """Insert active for_each child keys after their parent on the collectible path."""
+    if not path:
+        return path
+    out: List[str] = []
+    for key in path:
+        out.append(key)
+        state = get_for_each_state(session, key)
+        if state and state.get("status") == STATUS_ACTIVE:
+            out.extend(reachable_for_each_child_keys(session, spec))
+    return out
 
 
 async def compute_active_path_for_prune(
@@ -264,7 +291,7 @@ async def compute_active_path_for_prune(
     interview_action: Any = None,
 ) -> List[str]:
     """Full projected path for prune — retains valid downstream answers after branch pivots."""
-    return await _walk_path(
+    path = await _walk_path(
         session,
         spec,
         load_function,
@@ -272,6 +299,7 @@ async def compute_active_path_for_prune(
         interview_action,
         stop_at_first_gap=False,
     )
+    return _inject_for_each_children(session, spec, path)
 
 
 async def resolve_next_field_name(
@@ -282,10 +310,23 @@ async def resolve_next_field_name(
     interview_action: Any = None,
 ) -> Optional[str]:
     """Return the key of the next reachable unanswered field, or None."""
+    child = next_unanswered_child_key(session, spec)
+    if child:
+        return child
+
     reachable = await compute_collectible_path_names(
         session, spec, load_function, visitor, interview_action
     )
     for key in reachable:
+        if is_parent_for_each_blocking(session, spec, key):
+            state = get_for_each_state(session, key)
+            if state is None:
+                continue
+            if state.get("status") == STATUS_ACTIVE:
+                child = next_unanswered_child_key(session, spec)
+                if child:
+                    return child
+                continue
         if not session.has_field(key) and not session.is_skipped(key):
             return key
     return None
@@ -353,7 +394,7 @@ async def build_awaiting_fields(
     for key in collectible:
         if session.has_field(key) or session.is_skipped(key):
             continue
-        fdef = spec.get_field(key)
+        fdef = resolve_field_def(session, spec, key)
         if fdef:
             awaiting.append(_slim_field_entry(fdef))
     return awaiting
@@ -370,7 +411,26 @@ async def build_next_field(
     nxt = await resolve_next_field_name(
         session, spec, load_function, visitor, interview_action
     )
-    fdef = spec.get_field(nxt) if nxt else None
+    if not nxt:
+        return None
+
+    active = get_active_for_each(session, spec)
+    if active and nxt in set(active.state.get("child_keys") or []):
+        child_fdef = spec.get_for_each_child_field(active.parent_key, nxt)
+        if not child_fdef:
+            return None
+        entry = _slim_field_entry(child_fdef)
+        entry["prompt"] = build_prefixed_child_prompt(
+            active.parent_fdef, child_fdef, active.state
+        )
+        if child_fdef.validator:
+            entry["validator"] = child_fdef.validator
+        meta = build_for_each_metadata(session, spec, active.parent_key)
+        if meta:
+            entry["for_each"] = meta
+        return entry
+
+    fdef = spec.get_field(nxt)
     if not fdef:
         return None
     entry = _slim_field_entry(fdef)
@@ -396,3 +456,22 @@ def prune_unreachable_fields(
         if isinstance(audit, list):
             audit.extend(pruned)
     return pruned
+
+
+def prune_orphan_for_each_states(
+    session: InterviewSession, spec: InterviewSpec, reachable_names: List[str]
+) -> None:
+    """Drop for_each expansion state when its parent leaves the active path."""
+    from .for_each import FOR_EACH_CONTEXT_KEY, wipe_parent_for_each
+
+    reachable = set(reachable_names)
+    store = (
+        session.context.get(FOR_EACH_CONTEXT_KEY)
+        if isinstance(session.context, dict)
+        else None
+    )
+    if not isinstance(store, dict):
+        return
+    for parent_key in list(store.keys()):
+        if parent_key not in reachable and not session.has_field(parent_key):
+            wipe_parent_for_each(session, spec, parent_key)

@@ -27,11 +27,16 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 
 from jvagent.action.reply.reply_action import DIRECTIVE_GUIDANCE_MARKER
 
+from .activation_seed import seed_field_from_activation
 from .session import InterviewSession
 from .spec import FieldDef, InterviewSpec
 from .validators import get_validator
 
 logger = logging.getLogger(__name__)
+
+BUILTIN_HOOKS: Dict[str, Callable] = {
+    "seed_field_from_activation": seed_field_from_activation,
+}
 
 _module_cache: Dict[str, Any] = {}
 
@@ -260,8 +265,8 @@ class HookExecutionContext:
 
     **Inputs:** ``ctx.session``, ``ctx.value`` (validators), ``ctx.visitor``,
     ``ctx.interview`` (the InterviewAction), ``ctx.config`` (the spec),
-    ``ctx.extracted_values``, ``ctx.args`` (validator_args / skill-tool args),
-    ``ctx.phase``.
+    ``ctx.field_def`` (field hook runs on), ``ctx.extracted_values``,
+    ``ctx.args`` (validator_args / skill-tool args), ``ctx.phase``.
 
     **Output:**
     - ``ctx.say(msg | [msgs], *, continue_=False)`` — the single channel for
@@ -275,12 +280,15 @@ class HookExecutionContext:
       interview_complete, value, retain_context_keys, review keys). NOT user text.
     - ``ctx.call_tool(tool)`` / ``ctx.no_session()`` — control directives.
     - ``ctx.valid(...)`` / ``ctx.invalid(...)`` — validator result dicts.
+    - ``ctx.expand_for_each(items=..., skip=False)`` — declare for_each expansion
+      from a parent field post-processor (merged as ``for_each_expand``).
     """
 
     session: Optional[InterviewSession]
     spec: Optional[InterviewSpec]
     visitor: Any
     interview_action: Any
+    field_def: Optional[FieldDef] = None
     phase: str = STORE_PHASE
     value: Optional[str] = None
     extracted_values: Optional[Dict[str, Any]] = None
@@ -366,6 +374,92 @@ class HookExecutionContext:
             self.say(msg)
         return out
 
+    def expand_for_each(
+        self,
+        items: Optional[List[Any]] = None,
+        *,
+        skip: bool = False,
+    ) -> Dict[str, Any]:
+        """Declare for_each expansion items for the parent field's post_processor."""
+        payload: Dict[str, Any] = {"skip": skip}
+        if items is not None:
+            payload["items"] = items
+        return {"for_each_expand": payload}
+
+    def get_for_each_records(self, parent_key: str) -> List[Any]:
+        """Return completed per-item records for a for_each parent field.
+
+        Use this in review and complete handlers instead of accessing
+        ``ctx.session.context["for_each"][parent_key]["records"]`` directly.
+        Returns an empty list when the parent key is unknown or expansion was
+        skipped.
+        """
+        if not self.session or not isinstance(self.session.context, dict):
+            return []
+        store = self.session.context.get("for_each")
+        if not isinstance(store, dict):
+            return []
+        state = store.get(parent_key)
+        if not isinstance(state, dict):
+            return []
+        records = state.get("records")
+        return records if isinstance(records, list) else []
+
+    def start_for_each(
+        self,
+        parent_key: str,
+        items: Optional[List[Any]] = None,
+        *,
+        skip: bool = False,
+    ) -> None:
+        """Begin for_each expansion for ``parent_key`` immediately.
+
+        For the parent field's OWN post_processor, return
+        ``ctx.expand_for_each(items=...)`` instead — the engine applies it after
+        the store. Use ``start_for_each`` only when a DIFFERENT field's
+        post_processor must launch a parent's subparts (e.g. a yes/no gate field
+        that, on "yes", expands a list collected earlier). It mutates the session
+        in place so a following ``ctx.say(..., continue_=True)`` sees the new
+        pending subpart. Keeps skills free of interview-package imports.
+        """
+        if self.session is None or self.spec is None:
+            return
+        from .for_each import apply_for_each_expand
+
+        payload: Dict[str, Any] = {"skip": skip}
+        if items is not None:
+            payload["items"] = items
+        apply_for_each_expand(self.session, self.spec, parent_key, payload)
+
+    @property
+    def activation_utterance(self) -> str:
+        """The user's original request that activated this interview.
+
+        Stashed on activation (or carried through a gated task-lock resume seed)
+        and surfaced here so activation pre_processors can seed fields without
+        importing ``ACTIVATION_UTTERANCE_KEY`` or reaching into ``session.context``.
+        Falls back to the live visitor utterance. Empty string when neither exists.
+        """
+        from .activation_seed import resolve_activation_utterance
+
+        return resolve_activation_utterance(self.session, self.visitor)
+
+    def infer_field_from_activation(self, field_key: str) -> Optional[str]:
+        """Infer a field's value from the activation utterance via its frontmatter.
+
+        Applies the declarative ``validator_args.seed_from_activation`` rules
+        (longest-phrase-wins, ``allowed_items`` filter) for the named field. Returns
+        the matched canonical value or ``None``. Wraps the module-level helper so
+        skills need no interview-package import.
+        """
+        if self.spec is None:
+            return None
+        from .activation_seed import infer_field_from_activation
+
+        return infer_field_from_activation(
+            self.session, self.spec.get_field(field_key), self.visitor
+        )
+
 
 async def _build_say_directive(ctx: HookExecutionContext) -> str:
     """Compose ``ctx``'s recorded ``say`` statements into one directive string."""
@@ -407,7 +501,11 @@ async def _build_say_directive(ctx: HookExecutionContext) -> str:
 
 
 def load_hook_function(spec: InterviewSpec, function_name: str) -> Optional[Callable]:
-    """Load a named function from the skill's scripts/custom_tools.py."""
+    """Load a hook from custom_tools.py or built-in registry."""
+    builtin = BUILTIN_HOOKS.get(function_name)
+    if builtin is not None:
+        return builtin
+
     key = f"{spec.name}:{spec.source_dir}"
     module = _module_cache.get(key)
     if module is None:
@@ -443,6 +541,7 @@ async def call_hook(
     *,
     session: Optional[InterviewSession] = None,
     spec: Optional[InterviewSpec] = None,
+    field_def: Optional[FieldDef] = None,
     visitor: Any = None,
     interview_action: Any = None,
     value: Optional[str] = None,
@@ -462,6 +561,7 @@ async def call_hook(
         spec=spec,
         visitor=visitor,
         interview_action=interview_action,
+        field_def=field_def,
         phase=phase,
         value=value,
         extracted_values=(session.get_collected_summary() if session else {}),
@@ -593,6 +693,7 @@ async def run_validator(
             func,
             session=session,
             spec=spec,
+            field_def=field,
             visitor=visitor,
             interview_action=action,
             value=cleaned,

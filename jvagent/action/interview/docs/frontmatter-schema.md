@@ -50,6 +50,21 @@ Each value is a **string** (function name), not a nested `{ function: … }` obj
 | `post_processor` | No | Function name or list — runs after successful store |
 | `branches` | No | Conditional routing — see below |
 | `else` | No | Default next field when no branch matches |
+| `for_each` | No | Per-item subpart field templates — see below |
+
+### Per-item subparts (`fields[].for_each`)
+
+Declare subpart questions the engine asks once per item after the parent field stores.
+The parent `post_processor` (or activation `pre_processor` on gated resume) returns
+`for_each_expand` via `ctx.expand_for_each(items=[...])` or `ctx.expand_for_each(skip=True)`.
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| `prompt_prefix` | No | Prefix for each subpart prompt; supports `#{index}`, `{index}`, `{label}`. Default: `For item #{index}:` |
+| `fields` | Yes | Ordered subpart field definitions (same keys as top-level fields except no `branches` / `else` / nested `for_each`) |
+
+Child field keys must not collide with any top-level field key. Collected per-item
+data lives in `session.context["for_each"][parent_key]["records"]`.
 
 ### Branches (`fields[].branches[]`)
 
@@ -98,6 +113,52 @@ interview:
     review: signup_review
     complete: signup_complete
 ```
+
+### `for_each` subparts (excerpt)
+
+```yaml
+interview:
+  fields:
+    - key: tracking_numbers
+      prompt: Enter tracking numbers (comma-separated).
+      post_processor: check_tracking_statuses
+      for_each:
+        prompt_prefix: "For tracking #{index} ({label}):"
+        fields:
+          - key: description
+            prompt: What is the description?
+            required: true
+          - key: invoice_value
+            prompt: What is the invoice value?
+            required: true
+```
+
+Child keys (`description`, `invoice_value`) must not collide with other top-level field keys.
+Collected data: `session.context["for_each"]["tracking_numbers"]["records"]`.
+
+### Gated-resume seeding (`seed_from_activation`)
+
+**Invariant I-INT-SEED-01:** trigger phrases for seeding a field from
+`session.context["activation_utterance"]` belong in frontmatter, not skill Python.
+
+On fields with `validator_args.seed_from_activation`, declare canonical values → trigger
+phrases and use built-in pre_processor `seed_field_from_activation`:
+
+```yaml
+    - key: interview_intent
+      validator: list
+      validator_args:
+        allowed_items: [check_status, create_pre_alert]
+        seed_from_activation:
+          create_pre_alert: [pre-alert, pre alert, create a pre]
+          check_status: [check status, where is my package]
+      pre_processor:
+        - seed_field_from_activation
+```
+
+Matching: longest phrase wins; ties → earlier YAML key. Matched values must appear in
+`allowed_items` when declared. Downstream hooks may call
+`infer_field_from_activation(session, field_def, visitor)` for the same rules.
 
 ## Strict parsing
 
