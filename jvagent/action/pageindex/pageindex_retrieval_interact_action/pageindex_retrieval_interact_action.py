@@ -240,6 +240,14 @@ class PageIndexRetrievalInteractAction(InteractAction):
 
             initialize_pageindex_database()
             rtc = self._retrieval_runtime_config(visitor)
+            logger.debug(
+                "PageIndexRetrieval: search params access_control=%s "
+                "metadata_filter=%s visitor.user_id=%s visitor.session_id=%s",
+                rtc["access_control"],
+                rtc["metadata_filter"],
+                getattr(visitor, "user_id", None),
+                getattr(visitor, "session_id", None),
+            )
             push_retrieval_config(
                 {
                     "max_summary_chars": rtc["max_summary_chars"],

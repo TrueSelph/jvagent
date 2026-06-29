@@ -6,7 +6,6 @@ Includes the inbound **jvforge LLM webhook** URL and completions
 
 from __future__ import annotations
 
-import copy
 import logging
 import os
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Dict, List, Optional
@@ -438,10 +437,30 @@ class PageIndexAction(Action):
                 # search calls don't clobber an already-set parent action.
                 prev_model_action = get_pageindex_model_action()
                 set_pageindex_model_action(model_action)
-            if visitor is not None:
+            if resolved_access_control:
+                # Always resolve access control even when visitor is None,
+                # so visitors without identity default to public-only access
+                # instead of bypassing access control entirely.
                 metadata_filter = await self.resolved_metadata_filter(
                     visitor, metadata_filter, resolved_access_control
                 )
+            elif visitor is not None or self.metadata_filter is not None:
+                # Non-AC path: resolve any action-level metadata filter
+                metadata_filter = await self.resolved_metadata_filter(
+                    visitor,
+                    metadata_filter or self.metadata_filter,
+                    resolved_access_control,
+                )
+
+            logger.debug(
+                "PageIndex search: query=%r strategy=%s collection=%s "
+                "metadata_filter=%s access_control=%s",
+                query[:100] if query else "",
+                resolved_strategy,
+                resolved_collection,
+                metadata_filter,
+                resolved_access_control,
+            )
 
             return await search_documents(
                 query=query,
@@ -572,6 +591,13 @@ class PageIndexAction(Action):
                 {"error": "no query provided: pass it in 'query'"}, indent=2
             )
         visitor = get_dispatch_visitor()
+        logger.debug(
+            "PageIndex _t_search: visitor=%s user_id=%s session_id=%s access_control=%s",
+            type(visitor).__name__ if visitor else "None",
+            getattr(visitor, "user_id", None) if visitor else None,
+            getattr(visitor, "session_id", None) if visitor else None,
+            self.access_control,
+        )
         results = await self.search(
             query,
             limit=limit,
@@ -733,7 +759,7 @@ class PageIndexAction(Action):
 
     async def resolved_metadata_filter(
         self,
-        visitor: InteractWalker,
+        visitor: Optional[InteractWalker],
         metadata_filter: Optional[Dict[str, Any]] = None,
         access_control: bool = False,
     ) -> Any:
@@ -744,10 +770,13 @@ class PageIndexAction(Action):
         metadata filter (if any) is returned unchanged. When ``True``, the
         agent's ``AccessControlAction.user_groups`` is consulted under the
         ``PageIndexAction`` scope and the visitor's matching group names are
-        merged into the filter under the ``access`` key.
+        used to build a pure access filter.
 
         When ``access_control`` is ``True``:
 
+        *   ``metadata_filter`` is **not** merged — access groups are the sole
+            filter. This decouples access control from document metadata
+            filtering so the two concerns do not interfere.
         *   ``"public"`` is **always** included in the ``access`` list, ensuring
             every visitor can reach public (untagged or ``access: "public"``)
             documents.
@@ -757,6 +786,9 @@ class PageIndexAction(Action):
             ``access=["public", "private"]``.
         *   If the visitor matches **no** group, the access list is
             ``["public"]`` — only public/untagged documents are returned.
+        *   If the visitor is ``None`` or has no identity (both ``user_id`` and
+            ``session_id`` are ``None``), access defaults to ``["public"]``
+            instead of bypassing access control entirely.
 
         Typical model: tag documents ``access: "public"`` or
         ``access: "private"``, set ``access_control: true`` on the action, and
@@ -772,37 +804,101 @@ class PageIndexAction(Action):
         is one of those groups. Matching lives in ``_build_metadata_query`` (DB
         layer) and ``_root_matches_metadata`` (in-Python layer).
         """
-        base = metadata_filter or self.metadata_filter
+        logger.debug(
+            "PageIndex access_control: enter resolved_metadata_filter "
+            "access_control=%s metadata_filter=%s visitor.user_id=%s visitor.session_id=%s",
+            access_control,
+            metadata_filter,
+            getattr(visitor, "user_id", None) if visitor else None,
+            getattr(visitor, "session_id", None) if visitor else None,
+        )
 
         if not access_control:
-            return base
+            logger.debug(
+                "PageIndex access_control: access_control=False, "
+                "returning metadata_filter unchanged"
+            )
+            return metadata_filter
 
-        mf: Dict[str, Any] = copy.deepcopy(base) if isinstance(base, dict) else {}
+        # Access control is on — build a pure access filter.
+        # metadata_filter is intentionally NOT merged so that
+        # access control and document metadata filtering stay decoupled.
+        if visitor is None or (visitor.user_id is None and visitor.session_id is None):
+            logger.debug(
+                "PageIndex access_control: visitor has no identity "
+                "(visitor=%s, user_id=%s, session_id=%s); "
+                "returning access=['public'] only",
+                type(visitor).__name__ if visitor else "None",
+                visitor.user_id if visitor else None,
+                visitor.session_id if visitor else None,
+            )
+            return {"access": ["public"]}
 
-        access_control_action = await self.get_action("AccessControlAction")
-        if not access_control_action or not access_control_action.user_groups:
-            mf["access"] = ["public"]
-            return mf
+        access_control_action = await self.get_action(
+            "AccessControlAction", enabled_only=False
+        )
+        if not access_control_action:
+            logger.debug(
+                "PageIndex access_control: AccessControlAction not found; "
+                "returning access=['public'] only"
+            )
+            return {"access": ["public"]}
+
+        if not access_control_action.user_groups:
+            logger.debug(
+                "PageIndex access_control: AccessControlAction has no user_groups; "
+                "returning access=['public'] only"
+            )
+            return {"access": ["public"]}
 
         page_index_groups = access_control_action._resolve_user_groups(
             "PageIndexAction"
         )
+        logger.debug(
+            "PageIndex access_control: resolved user_groups for PageIndexAction: %s",
+            page_index_groups,
+        )
+
         if not page_index_groups:
-            mf["access"] = ["public"]
-            return mf
+            logger.debug(
+                "PageIndex access_control: no groups resolved for PageIndexAction; "
+                "returning access=['public'] only"
+            )
+            return {"access": ["public"]}
 
         matched_groups: List[str] = [
             group
             for group, users in page_index_groups.items()
-            if visitor.user_id in users or visitor.session_id in users
+            if (visitor.user_id is not None and visitor.user_id in users)
+            or (visitor.session_id is not None and visitor.session_id in users)
         ]
+        logger.debug(
+            "PageIndex access_control: visitor.user_id=%r visitor.session_id=%r "
+            "matched_groups=%s",
+            visitor.user_id,
+            visitor.session_id,
+            matched_groups,
+        )
 
         if not matched_groups:
-            mf["access"] = ["public"]
-            return mf
+            logger.debug(
+                "PageIndex access_control: visitor (user_id=%r, session_id=%r) "
+                "matched no groups; returning access=['public'] only",
+                visitor.user_id,
+                visitor.session_id,
+            )
+            return {"access": ["public"]}
 
-        mf["access"] = ["public", *matched_groups]
-        return mf
+        result = {"access": ["public", *matched_groups]}
+        logger.debug(
+            "PageIndex access_control: visitor (user_id=%r, session_id=%r) "
+            "matched groups %s; returning access=%s",
+            visitor.user_id,
+            visitor.session_id,
+            matched_groups,
+            result["access"],
+        )
+        return result
 
     def _resolve_include_references(self) -> bool:
         cfg = self.config or {}
