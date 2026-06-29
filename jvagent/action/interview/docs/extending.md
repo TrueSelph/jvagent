@@ -34,6 +34,7 @@ Full key reference: [`frontmatter-schema.md`](frontmatter-schema.md).
 | Custom validator | `fields[].validator: my_validate` | `custom_tools.py` | No |
 | Pre-processor | `fields[].pre_processor: [fn]` | `custom_tools.py` | No |
 | Post-processor | `fields[].post_processor: [fn]` | `custom_tools.py` | No |
+| **`for_each` expansion** | `fields[].for_each` + parent `post_processor` | `custom_tools.py` (`ctx.expand_for_each`) | No — engine iterates subparts |
 | Custom LLM tool | `interview.skill_tools` | `custom_tools.py` | Yes (`{skill}__{name}`) |
 | Review handler | `handlers.review` | `custom_tools.py` | No |
 | Reset handler | `handlers.reset` | `custom_tools.py` | No |
@@ -60,7 +61,8 @@ The authoritative source is the `HookExecutionContext` docstring in
 
 | Attribute | Purpose |
 |-----------|---------|
-| `ctx.value` | Raw user input (validators) |
+| `ctx.value` | Raw user input — **set for validators only; `None` in post_processors** (value is already stored by then) |
+| `ctx.field_def` | The `FieldDef` for the current field — available in validators, pre_processors, and **post_processors**; `None` in handlers and skill_tools |
 | `ctx.session` | Read/write collected fields and `session.context` |
 | `ctx.visitor` | Conversation, tasks, interaction |
 | `ctx.interview` | The `InterviewAction` (`_save_session`, `_close_task`, …) |
@@ -68,14 +70,21 @@ The authoritative source is the `HookExecutionContext` docstring in
 | `ctx.extracted_values` | All collected fields (review/complete time) |
 | `ctx.args` | `validator_args` / skill-tool args |
 | `ctx.phase` | Lifecycle run name (activation vs storing vs advancing) |
+| `ctx.activation_utterance` | The user's original activating request (or live utterance fallback) — for activation seeding without importing `ACTIVATION_UTTERANCE_KEY` |
 
-**`session.context["activation_utterance"]`.** On a fresh interview start (or a
-gated task-lock resume before any field is stored), `handle_start` stashes the
-activating `user_message` under the key `activation_utterance` (constant
-`ACTIVATION_UTTERANCE_KEY` in `session.py`). Activation `pre_processor` hooks
-can read `ctx.session.context.get("activation_utterance")` to seed the first
-field from the user's original request without re-parsing an aged observation.
-The value is **not** updated once `session.fields` is non-empty.
+> **Post-processor field access.** In a post_processor `ctx.value` is `None` — the
+> value was stored before the hook runs. Use `ctx.session.get_value(ctx.field_def.key)`
+> to read the just-stored value without hardcoding the field name. `ctx.field_def.key`
+> is reliable here; prefer it over a bare string literal.
+
+**`ctx.activation_utterance`.** On a fresh interview start (or a gated task-lock
+resume before any field is stored), `handle_start` stashes the activating
+`user_message`. Read it via the `ctx.activation_utterance` property — it returns
+that stashed request (falling back to the live visitor utterance), so an activation
+`pre_processor` can seed the first field from the user's original request without
+re-parsing an aged observation, and **without importing `ACTIVATION_UTTERANCE_KEY`
+or reaching into `session.context`**. The stashed value is **not** updated once
+`session.fields` is non-empty.
 
 ### Output (methods)
 
@@ -87,6 +96,10 @@ The value is **not** updated once `session.fields` is non-empty.
 | `ctx.no_session()` | The standard envelope when a hook runs without an active session. |
 | `ctx.valid(value=None, **extra)` | Validator success result dict (`value` defaults to `ctx.value`). |
 | `ctx.invalid(error, *, value=None, **extra)` | Validator failure result dict. `error` is stated as a plain instruction — it is auto-framed and delivered as the re-ask (same as `ctx.say`; no `Tell the user:` prefix needed). Skipped if the validator already `say`-ed or passed an explicit `response_directive`. |
+| `ctx.expand_for_each(*, items=None, skip=False)` | Returns `{"for_each_expand": {...}}` for parent post-processors. `items=[{"id", "label", ...}]` starts per-item subparts; `skip=True` skips expansion. Engine-owned — not forwarded to the LLM in slim hook entries. |
+| `ctx.get_for_each_records(parent_key)` | Returns the list of completed per-item records for a `for_each` parent field. Use in review and complete handlers instead of accessing `ctx.session.context["for_each"][key]["records"]` directly. Returns `[]` when the parent is unknown or expansion was skipped. |
+| `ctx.start_for_each(parent_key, items=None, *, skip=False)` | Begin `for_each` expansion immediately (mutating the session). Use **only** when a *different* field's post_processor must launch a parent's subparts (e.g. a yes/no gate that expands a list collected earlier). For the parent field's own post_processor use `ctx.expand_for_each(...)` instead. |
+| `ctx.infer_field_from_activation(field_key)` | Infer a field's value from `ctx.activation_utterance` via its frontmatter `validator_args.seed_from_activation` rules (longest-phrase-wins, `allowed_items` filter). Returns the matched canonical value or `None`. Wraps the module helper so skills need no interview-package import. |
 
 ### Two rules to internalize
 
@@ -279,6 +292,75 @@ async def append_work_email_note(ctx) -> str:
     )
 ```
 
+#### Per-item subparts (`for_each`)
+
+When a parent field produces a variable number of items (tracking numbers, URLs),
+declare subpart templates under `for_each` and expand from the parent post-processor:
+
+```yaml
+fields:
+  - key: tracking_numbers
+    post_processor: check_tracking_statuses
+    for_each:
+      prompt_prefix: "For tracking #{index} ({label}):"
+      fields:
+        - key: description
+          prompt: What is the description?
+          validator: description
+        - key: invoice_value
+          prompt: Invoice value in USD?
+          required: false
+          validator: validate_invoice_value
+```
+
+```python
+async def check_tracking_statuses(ctx) -> str:
+    # ctx.field_def.key is available in post_processors — use it instead of
+    # hardcoding "tracking_numbers". ctx.value is None here; read from session.
+    numbers = _clean_tracking_numbers(ctx.session.get_value(ctx.field_def.key) or "")
+    items = [{"id": n, "label": n} for n in numbers]
+    return ctx.tool_response(ok=True, **ctx.expand_for_each(items))
+```
+
+Skip expansion when no manual subparts are needed:
+
+```python
+return ctx.tool_response(ok=True, **ctx.expand_for_each(skip=True), next_tool="interview__complete")
+```
+
+**Launching subparts from a different field.** `ctx.expand_for_each(...)` is applied
+by the engine only when the field being stored IS the `for_each` parent. When a
+*later* field gates the expansion — e.g. a `yes/no` field that, on "yes", starts the
+subparts for a list collected earlier — call `ctx.start_for_each(parent_key, items=...)`
+from that field's post_processor instead. It mutates the session immediately, so a
+following `ctx.say(..., continue_=True)` resolves to the first prefixed subpart prompt:
+
+```python
+async def handle_switch_to_pre_alert(ctx) -> str:
+    if (ctx.session.get_value("switch_to_pre_alert") or "").lower().startswith("y"):
+        new = ctx.session.context.get("new_tracking_numbers") or []
+        ctx.start_for_each("tracking_numbers", items=[{"id": n, "label": n} for n in new])
+        ctx.say("Great, let's create pre-alerts for those.", continue_=True)
+    return ctx.tool_response(ok=True)
+```
+
+Completion and review handlers read per-item records via `ctx.get_for_each_records(parent_key)`:
+
+```python
+async def my_complete(ctx) -> str:
+    records = ctx.get_for_each_records("tracking_numbers")
+    # persist records…
+```
+
+Do **not** access `ctx.session.context["for_each"]["tracking_numbers"]["records"]`
+directly — the internal key path is framework-private. `ctx.get_for_each_records()`
+is the stable interface and returns `[]` gracefully when expansion was skipped.
+
+See `examples/example_for_each_interview/` for a full working reference.
+
+**v2 scope (not supported):** nested `for_each` on subpart fields, `complete_on` per item,
+skill hooks for iteration boundaries, manual `session.context["collection"]` iteration.
+
 ### Hook result keys
 
 The keys `ctx.tool_response(...)` may carry (forwarded from pre/post processor
@@ -293,6 +375,10 @@ results to the LLM via `HOOK_RESULT_KEYS` in [`../hooks.py`](../hooks.py)):
 | `note` | Deferred user-facing sidebar paired with the next question |
 | `next_tool` | Suggested next tool (e.g. `interview__review`) |
 | `interview_complete` | Done server-side — session cleared, task closed |
+
+**Engine-internal (not in `HOOK_RESULT_KEYS`):** `for_each_expand` — consumed by
+[`engine.py`](../engine.py) after the parent post-processor runs. Use
+`ctx.expand_for_each(...)`; do not expect it in `post_tools_results` slim entries.
 
 Skill-specific signals (existing customer, OTP pending, etc.) are expressed through `response_directive` / `next_tool` / `system_message` — no special-cased keys.
 
@@ -458,6 +544,7 @@ Organize `custom_tools.py` in labeled sections (see [`signup_interview/scripts/c
 - [ ] Every hook takes the single `ctx`; emits user text only via `ctx.say` and control/return data via `ctx.tool_response`
 - [ ] Validators return `ctx.valid` / `ctx.invalid`; use `interview_complete` when validation finishes the flow
 - [ ] Post-tools use `ctx.tool_response`; user sidebars use the deferred `note` key, not `ctx.say`
+- [ ] **`for_each`:** subpart keys unique vs top-level; parent post-processor returns `ctx.expand_for_each(...)`; completion reads `session.context["for_each"][parent]["records"]`
 - [ ] Review uses `ctx.say` for user text; terminate path sets `terminate: true`
 - [ ] Completion uses `ctx.say` and closes tasks / persists data
 - [ ] Skill registered in agent `orchestrator.skills:`

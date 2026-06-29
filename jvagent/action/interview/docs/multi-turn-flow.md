@@ -122,8 +122,56 @@ Branching is **procedure-driven**, not graph-evaluated:
 | Skill tools | e.g. `send_otp` — LLM calls `{skill}__{tool}` explicitly |
 | Custom reset | `handlers.reset` — LLM calls `interview__reset()` |
 | `fields[].branches` | `when` / `goto` / `else` — declarative routing after field save |
+| **`for_each` subparts** | Parent post-processor returns `for_each_expand` → engine walks nested fields per item |
 
 Document branches in `SKILL.md` and implement side effects in hooks.
+
+### Per-item subparts (`for_each`)
+
+When a parent field yields a variable number of items (tracking numbers, failed URLs),
+declare nested templates under `fields[].for_each` and expand from the parent
+post-processor:
+
+```yaml
+fields:
+  - key: tracking_numbers
+    post_processor: check_tracking_statuses
+    for_each:
+      prompt_prefix: "For tracking #{index} ({label}):"
+      fields:
+        - key: description
+          prompt: What is the description?
+        - key: invoice_value
+          prompt: What is the invoice value?
+```
+
+```python
+async def check_tracking_statuses(ctx):
+    numbers = _clean(ctx.session.get_value("tracking_numbers") or "")
+    items = [{"id": n, "label": n} for n in numbers]
+    return ctx.tool_response(ok=True, **ctx.expand_for_each(items))
+```
+
+**Turn flow:**
+
+1. Parent field stores → post-processor runs → engine reads `for_each_expand`.
+2. Engine initializes `session.context["for_each"][parent_key]` with `items`, `records`, active index.
+3. Collectible path interleaves subpart fields for the active item (prompts prefixed via `prompt_prefix`).
+4. After the last subpart field for an item stores, engine snapshots to `records[]`, clears scratch, advances index.
+5. When all items done (or `skip=True`), flow resumes the main field path (typically `interview__review`).
+
+**Runtime shape** (`session.context["for_each"][parent_key]`):
+
+| Key | Purpose |
+|-----|---------|
+| `items` | `[{"id", "label", ...}]` from expansion |
+| `index` | Active item (0-based) |
+| `records` | Completed per-item field maps |
+| `scratch` | In-progress fields for active item |
+
+**Corrections:** editing the parent field clears that parent's `for_each` state and re-runs expansion on next store.
+
+Reference: [`examples/example_for_each_interview/`](../examples/example_for_each_interview/), [`docs/extending.md`](extending.md#per-item-subparts-for_each).
 
 ### Collectible path vs active projection (prune)
 
@@ -186,5 +234,6 @@ The framework-standard tool loop lives in [`../SKILL.md`](../SKILL.md) and is pr
 Examples:
 
 - [`examples/example_interview/SKILL.md`](../examples/example_interview/SKILL.md) — reference custom rules
-- zoon-ai `onboarding_interview/`, `pre_alert_interview/` — production behavioral rules
+- [`examples/example_for_each_interview/`](../examples/example_for_each_interview/) — **`for_each` per-item subparts**
+- zoon-ai `onboarding_interview/`, `pre_alert_interview/`, `quotation_interview/` — production behavioral rules
 - jvagent example app `signup_interview/` — demo signup flow

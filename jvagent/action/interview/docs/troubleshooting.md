@@ -149,6 +149,39 @@ If a fix would add server-side turn steering (prep observations, auto-store, ext
 
 ---
 
+## `for_each` subparts not advancing
+
+**Symptom:** After parent field stores, subpart questions never appear; `next_field` skips to review.
+
+**Causes:**
+- Parent post-processor did not return `ctx.expand_for_each(items)` (or returned `skip=True`).
+- Parent field has `for_each` in frontmatter but post-processor name mismatch.
+- Empty `items` list — engine treats as no expansion.
+
+**Fix:** Return `ctx.tool_response(ok=True, **ctx.expand_for_each([{"id": "...", "label": "..."}, ...]))` from the parent's post-processor. Verify with `pytest tests/action/interview/test_for_each.py`.
+
+---
+
+## Child field key collision
+
+**Symptom:** Skill fails to load — validation error about duplicate field keys.
+
+**Cause:** A `for_each.fields[].key` matches a top-level `fields[].key`.
+
+**Fix:** Scope subpart keys to the parent (e.g. `description` under `tracking_numbers` only if no top-level `description`). Rename or prefix subpart keys.
+
+---
+
+## Parent correction resets subparts
+
+**Symptom:** User edits tracking numbers during review; old per-item answers still appear or flow is stuck.
+
+**Cause:** Expected behavior — correcting the parent clears `session.context["for_each"][parent_key]`; post-processor must re-expand on re-store.
+
+**Fix:** Ensure post-processor re-runs expansion after parent correction. Completion handler should read fresh `records` after re-collection.
+
+---
+
 ## External API errors in completion
 
 **Symptom:** User sees generic error after confirming review.
@@ -168,3 +201,4 @@ Key test files:
 - `test_skill_tool_names.py` — hook vs tool exposure
 - `test_interview_next_field.py` — pre-tools
 - `test_interview_skill_activate.py` — contract loading
+- `test_for_each.py` — per-item subpart expansion, iteration, skip, review grouping
