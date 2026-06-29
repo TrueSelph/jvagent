@@ -28,7 +28,10 @@ def _meta_webhook(message: dict) -> dict:
             {
                 "id": "102290129340398",
                 "changes": [
-                    {"value": {**META_BASE_VALUE, "messages": [message]}, "field": "messages"}
+                    {
+                        "value": {**META_BASE_VALUE, "messages": [message]},
+                        "field": "messages",
+                    }
                 ],
             }
         ],
@@ -167,15 +170,15 @@ class TestMetaTyping:
     async def test_typing_with_message_id_uses_read_and_typing(self, meta_api):
         captured = {}
 
-        async def fake_request(url, method, headers, data=None, params=None, json_body=True):
+        async def fake_request(
+            url, method, headers, data=None, params=None, json_body=True
+        ):
             captured["data"] = data
             return {"messaging_product": "whatsapp"}
 
         meta_api._make_request = fake_request  # type: ignore[method-assign]
 
-        await meta_api.set_typing_status(
-            "16505551234", value=True, message_id=WAMID
-        )
+        await meta_api.set_typing_status("16505551234", value=True, message_id=WAMID)
         assert captured["data"]["status"] == "read"
         assert captured["data"]["message_id"] == WAMID
         assert captured["data"]["typing_indicator"] == {"type": "text"}
@@ -194,7 +197,14 @@ class TestMetaOutboundMedia:
             upload_calls.append((mime_type, filename))
             return "media-id-123"
 
-        async def fake_send(phone, msg_type, media_id, caption="", context_id="", extra_media_fields=None):
+        async def fake_send(
+            phone,
+            msg_type,
+            media_id,
+            caption="",
+            context_id="",
+            extra_media_fields=None,
+        ):
             send_calls.append((msg_type, media_id, caption))
             return {"messaging_product": "whatsapp", "messages": [{"id": "wamid.out"}]}
 
@@ -219,7 +229,14 @@ class TestMetaOutboundMedia:
         async def fake_upload(file_bytes, mime_type, filename="file"):
             return "audio-media-id"
 
-        async def fake_send(phone, msg_type, media_id, caption="", context_id="", extra_media_fields=None):
+        async def fake_send(
+            phone,
+            msg_type,
+            media_id,
+            caption="",
+            context_id="",
+            extra_media_fields=None,
+        ):
             extra_fields.append(extra_media_fields)
             return {"messaging_product": "whatsapp"}
 
@@ -243,7 +260,14 @@ class TestMetaOutboundMedia:
         async def fake_upload(file_bytes, mime_type, filename="file"):
             return "voice-media-id"
 
-        async def fake_send(phone, msg_type, media_id, caption="", context_id="", extra_media_fields=None):
+        async def fake_send(
+            phone,
+            msg_type,
+            media_id,
+            caption="",
+            context_id="",
+            extra_media_fields=None,
+        ):
             extra_fields.append(extra_media_fields)
             return {"messaging_product": "whatsapp"}
 
@@ -256,6 +280,68 @@ class TestMetaOutboundMedia:
         )
         assert result.get("ok") is True
         assert extra_fields[0] == {"voice": True}
+
+    @pytest.mark.asyncio
+    async def test_send_voice_mp3_transcodes_to_ogg_when_ffmpeg_available(
+        self, meta_api, monkeypatch
+    ):
+        ogg_payload = b"OggS" + b"\x00" * 100
+        upload_mimes: list[str] = []
+        extra_fields: list[Optional[dict]] = []
+
+        async def fake_fetch(url: str):
+            return b"mp3data", "audio/mpeg"
+
+        async def fake_upload(file_bytes, mime_type, filename="file"):
+            upload_mimes.append(mime_type)
+            assert file_bytes == ogg_payload
+            return "voice-media-id"
+
+        async def fake_send(
+            phone,
+            msg_type,
+            media_id,
+            caption="",
+            context_id="",
+            extra_media_fields=None,
+        ):
+            extra_fields.append(extra_media_fields)
+            return {"messaging_product": "whatsapp"}
+
+        monkeypatch.setattr(
+            "jvagent.action.whatsapp.utils.meta_audio.transcode_mp3_to_ogg_opus",
+            lambda _: ogg_payload,
+        )
+
+        meta_api._fetch_url_bytes = fake_fetch  # type: ignore[method-assign]
+        meta_api._upload_media = fake_upload  # type: ignore[method-assign]
+        meta_api._send_media_message = fake_send  # type: ignore[method-assign]
+
+        result = await meta_api.send_voice(
+            "16505551234", "https://example.com/voice.mp3", is_ptt=True
+        )
+        assert result.get("ok") is True
+        assert upload_mimes[0] == "audio/ogg"
+        assert extra_fields[0] == {"voice": True}
+
+    @pytest.mark.asyncio
+    async def test_send_location_builds_graph_payload(self, meta_api):
+        captured: dict = {}
+
+        async def fake_send(url, method="POST", data=None, **kwargs):
+            captured["data"] = data
+            return {"messaging_product": "whatsapp", "messages": [{"id": "wamid.loc"}]}
+
+        meta_api.send_rest_request = fake_send  # type: ignore[method-assign]
+
+        result = await meta_api.send_location(
+            "16505551234", latitude=37.77, longitude=-122.42, title="HQ"
+        )
+        assert result.get("ok") is True
+        assert captured["data"]["type"] == "location"
+        assert captured["data"]["to"] == "16505551234"
+        assert captured["data"]["location"]["latitude"] == 37.77
+        assert captured["data"]["location"]["name"] == "HQ"
 
     @pytest.mark.asyncio
     async def test_set_recording_status_noop(self, meta_api):

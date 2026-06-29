@@ -91,7 +91,11 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         headers = self._build_headers(headers)
         if "error" in headers:
             return {"ok": False, "error": headers["error"]}
-        url = endpoint if use_full_url else f"{self.api_url.rstrip('/')}/{endpoint.lstrip('/')}"
+        url = (
+            endpoint
+            if use_full_url
+            else f"{self.api_url.rstrip('/')}/{endpoint.lstrip('/')}"
+        )
         result = await self._make_request(url, method, headers, data, params, json_body)
         if result.get("ok", True) and "messaging_product" in result:
             result["ok"] = True
@@ -200,9 +204,7 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
             return False
         return "error" not in result
 
-    def _normalize_graph_result(
-        self, result: dict, target: str, callback: str
-    ) -> dict:
+    def _normalize_graph_result(self, result: dict, target: str, callback: str) -> dict:
         if self._graph_success(result):
             result["ok"] = True
             logger.info(
@@ -222,18 +224,17 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         """Fetch active WABA or phone-number webhook override from Meta."""
         if self.waba_id:
             url = f"{self.api_url.rstrip('/')}/{self.waba_id}/subscribed_apps"
-            return await self.send_rest_request(
-                url, method="GET", use_full_url=True
-            )
+            return await self.send_rest_request(url, method="GET", use_full_url=True)
         if self.phone_number_id:
             url = (
                 f"{self.api_url.rstrip('/')}/{self.phone_number_id}"
                 "?fields=webhook_configuration"
             )
-            return await self.send_rest_request(
-                url, method="GET", use_full_url=True
-            )
-        return {"ok": False, "error": "WHATSAPP_WABA_ID or WHATSAPP_PHONE_NUMBER_ID required"}
+            return await self.send_rest_request(url, method="GET", use_full_url=True)
+        return {
+            "ok": False,
+            "error": "WHATSAPP_WABA_ID or WHATSAPP_PHONE_NUMBER_ID required",
+        }
 
     async def convert_lid_to_phone_number(self, lid: str) -> str:
         return lid
@@ -246,7 +247,9 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
                 continue
             wa_id = str(contact.get("wa_id") or "").strip()
             profile = contact.get("profile") or {}
-            name = (profile.get("name") or "").strip() if isinstance(profile, dict) else ""
+            name = (
+                (profile.get("name") or "").strip() if isinstance(profile, dict) else ""
+            )
             if wa_id and name:
                 names[wa_id] = name
         return names
@@ -271,7 +274,11 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
                     continue
                 metadata = value.get("metadata") or {}
                 phone_id = str(metadata.get("phone_number_id") or "").strip()
-                if expected_phone_number_id and phone_id and phone_id != expected_phone_number_id:
+                if (
+                    expected_phone_number_id
+                    and phone_id
+                    and phone_id != expected_phone_number_id
+                ):
                     logger.debug(
                         "Ignoring webhook for phone_number_id %s (expected %s)",
                         phone_id,
@@ -307,9 +314,7 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         if "error" in headers:
             return b"", ""
         headers.pop("Content-Type", None)
-        result = await self._make_request(
-            download_url, "GET", headers, json_body=False
-        )
+        result = await self._make_request(download_url, "GET", headers, json_body=False)
         raw = result.get("raw")
         if isinstance(raw, bytes) and raw:
             return raw, mime
@@ -643,7 +648,10 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         options: Optional[dict] = None,
     ) -> dict:
         if is_group:
-            return {"ok": False, "error": "Group messaging not supported for meta provider v1"}
+            return {
+                "ok": False,
+                "error": "Group messaging not supported for meta provider v1",
+            }
         to = self._normalize_recipient(phone)
         text_body = (message or "")[:META_TEXT_MAX_LENGTH]
         data: Dict[str, Any] = {
@@ -660,14 +668,24 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         )
 
     async def send_image(
-        self, phone: str, file_url: str = "", caption: str = "", is_group: bool = False, **kwargs
+        self,
+        phone: str,
+        file_url: str = "",
+        caption: str = "",
+        is_group: bool = False,
+        **kwargs,
     ) -> dict:
         if is_group:
-            return {"ok": False, "error": "Group messaging not supported for meta provider v1"}
+            return {
+                "ok": False,
+                "error": "Group messaging not supported for meta provider v1",
+            }
         file_bytes, mime = await self._fetch_url_bytes(file_url)
         if not file_bytes:
             return {"ok": False, "error": "Failed to fetch image from URL"}
-        media_id = await self._upload_media(file_bytes, mime or "image/jpeg", "image.jpg")
+        media_id = await self._upload_media(
+            file_bytes, mime or "image/jpeg", "image.jpg"
+        )
         if not media_id:
             return {"ok": False, "error": "Meta media upload failed"}
         result = await self._send_media_message(
@@ -687,7 +705,10 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         **kwargs,
     ) -> dict:
         if is_group:
-            return {"ok": False, "error": "Group messaging not supported for meta provider v1"}
+            return {
+                "ok": False,
+                "error": "Group messaging not supported for meta provider v1",
+            }
         file_bytes, mime = await self._fetch_url_bytes(file_url)
         if not file_bytes:
             return {"ok": False, "error": "Failed to fetch document from URL"}
@@ -705,14 +726,24 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         return result
 
     async def send_video(
-        self, phone: str, file_url: str = "", caption: str = "", is_group: bool = False, **kwargs
+        self,
+        phone: str,
+        file_url: str = "",
+        caption: str = "",
+        is_group: bool = False,
+        **kwargs,
     ) -> dict:
         if is_group:
-            return {"ok": False, "error": "Group messaging not supported for meta provider v1"}
+            return {
+                "ok": False,
+                "error": "Group messaging not supported for meta provider v1",
+            }
         file_bytes, mime = await self._fetch_url_bytes(file_url)
         if not file_bytes:
             return {"ok": False, "error": "Failed to fetch video from URL"}
-        media_id = await self._upload_media(file_bytes, mime or "video/mp4", "video.mp4")
+        media_id = await self._upload_media(
+            file_bytes, mime or "video/mp4", "video.mp4"
+        )
         if not media_id:
             return {"ok": False, "error": "Meta media upload failed"}
         result = await self._send_media_message(
@@ -723,17 +754,40 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         return result
 
     async def send_voice(
-        self, phone: str, file_url: str = "", is_ptt: bool = True, is_group: bool = False, **kwargs
+        self,
+        phone: str,
+        file_url: str = "",
+        is_ptt: bool = True,
+        is_group: bool = False,
+        **kwargs,
     ) -> dict:
         if is_group:
-            return {"ok": False, "error": "Group messaging not supported for meta provider v1"}
+            return {
+                "ok": False,
+                "error": "Group messaging not supported for meta provider v1",
+            }
         file_bytes, mime = await self._fetch_url_bytes(file_url)
         if not file_bytes:
             return {"ok": False, "error": "Failed to fetch audio from URL"}
         clean_mime = (mime or "audio/mpeg").split(";")[0].strip().lower()
-        is_voice_note = is_ptt and (
-            "ogg" in clean_mime or "opus" in clean_mime
-        )
+        is_voice_note = is_ptt and ("ogg" in clean_mime or "opus" in clean_mime)
+        if (
+            is_ptt
+            and not is_voice_note
+            and clean_mime
+            in (
+                "audio/mpeg",
+                "audio/mp3",
+                "audio/x-mpeg",
+            )
+        ):
+            from ..utils.meta_audio import transcode_mp3_to_ogg_opus
+
+            ogg_bytes = transcode_mp3_to_ogg_opus(file_bytes)
+            if ogg_bytes:
+                file_bytes = ogg_bytes
+                clean_mime = "audio/ogg"
+                is_voice_note = True
         ext = "voice.ogg" if is_voice_note else "audio.mp3"
         upload_mime = clean_mime if clean_mime else "audio/mpeg"
         media_id = await self._upload_media(file_bytes, upload_mime, ext)
@@ -750,9 +804,39 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         return result
 
     async def send_location(
-        self, phone: str, latitude: float = 0.0, longitude: float = 0.0, **kwargs
+        self,
+        phone: str,
+        latitude: float = 0.0,
+        longitude: float = 0.0,
+        title: str = "",
+        is_group: bool = False,
+        **kwargs,
     ) -> dict:
-        return {"ok": False, "error": "Location not supported for meta provider v1"}
+        if is_group:
+            return {
+                "ok": False,
+                "error": "Group messaging not supported for meta provider v1",
+            }
+        to = self._normalize_recipient(phone)
+        location_obj: Dict[str, Any] = {
+            "latitude": latitude,
+            "longitude": longitude,
+        }
+        if title:
+            location_obj["name"] = str(title)[:1024]
+        data: Dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to,
+            "type": "location",
+            "location": location_obj,
+        }
+        result = await self.send_rest_request(
+            self._messages_url(), method="POST", data=data, use_full_url=True
+        )
+        if result.get("ok", True) and "error" not in result:
+            result["ok"] = True
+        return result
 
     async def status(self) -> dict:
         return {"status": "CONNECTED", "provider": "meta", "ok": True}

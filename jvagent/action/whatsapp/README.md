@@ -314,7 +314,15 @@ Admin helpers:
 - Inbound media: Meta sends a media id in the webhook; jvagent downloads via Graph and feeds the same pipeline as bridge providers (vision, STT, etc.).
 - Outbound media: agent replies upload files from jvagent public URLs (`JVAGENT_PUBLIC_BASE_URL` + `/api/files/...`) to Meta before send.
 - Typing: uses inbound `wamid` (`message_id`) with Meta’s read + typing_indicator API.
-- Outbound voice notes (native PTT bubble): requires OGG/OPUS; TTS output in MP3 is sent as a basic audio file unless transcoded to OGG/OPUS.
+- Outbound voice notes (native PTT bubble): requires OGG/OPUS; when TTS returns MP3, jvagent transcodes via **ffmpeg** on PATH (`libopus` → OGG) before upload when available; otherwise sends as a basic audio file.
+
+**Production smoke (Meta 1:1):**
+
+1. Send a user message → confirm **one** agent reply.
+2. Replay the same webhook POST body (same wamid) → response `duplicate webhook`, no second reply.
+3. Automated regression: `pytest tests/action/whatsapp/test_meta_webhook_interact_smoke.py`.
+
+**Meta Groups:** deferred — see [ADR-0028](../../.planning/adr/0028-defer-meta-whatsapp-groups.md). Not wwebjs parity; requires OBA + separate implementation phase.
 
 Bridge-only variables (`WHATSAPP_API_URL`, `WHATSAPP_API_KEY`, `WHATSAPP_SESSION`) are not used when `provider: meta`.
 
