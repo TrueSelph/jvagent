@@ -282,6 +282,23 @@ On startup (meta provider), jvagent waits `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECON
 2. **Verify token**: must match `WHATSAPP_VERIFY_TOKEN` (Meta sends GET hub.challenge to verify before override succeeds).
 3. Subscribe to the **messages** field in the dashboard (one-time app setup).
 
+**Webhook field subscriptions (Meta dashboard):**
+
+- On the WABA override for this agent endpoint, subscribe only **`messages`** for inbound user chat.
+- Do **not** route template alerts, account updates, or **`smb_message_echoes`** to the same agent callback URL unless you add separate handlers — jvagent ignores non-`messages` fields and status-only payloads (`statuses[]` with no `messages[]`).
+- Optional fields (`message_template_status_update`, `phone_number_quality_update`, etc.) belong on a different URL or are dropped.
+
+**Retry idempotency (wamid dedup):**
+
+Meta delivers webhooks **at-least-once** and may retry for up to 7 days. jvagent keeps an in-process cache of seen inbound **`messages[].id`** (wamid) for the meta provider and returns `duplicate webhook` (HTTP 200) on replay so the agent does not reply twice.
+
+Env tuning (optional):
+
+- `WHATSAPP_META_WAMID_DEDUP_TTL_SECONDS` — default **86400** (24h).
+- `WHATSAPP_META_WAMID_DEDUP_MAX` — default **10000** entries.
+
+For multi-worker deployments, consider a shared dedup store (not included in the default in-process cache).
+
 Env toggles:
 
 - `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true` — skip deferred override; call `POST /api/actions/{action_id}/meta/webhook-register` when ready.

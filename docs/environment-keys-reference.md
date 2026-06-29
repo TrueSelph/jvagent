@@ -205,6 +205,8 @@ falls back to a sibling env var when its primary key is unset:
 - `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION` — when `true`, skip deferred Meta webhook override on startup (meta provider only)
 - `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS` — seconds to wait before calling Meta Graph override (default `8`; meta provider only)
 - `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE` — when `false`, skip Meta webhook override on action reload (default subscribe on reload)
+- `WHATSAPP_META_WAMID_DEDUP_TTL_SECONDS` — in-process wamid dedup TTL for meta webhooks (default `86400`)
+- `WHATSAPP_META_WAMID_DEDUP_MAX` — max wamid dedup cache entries (default `10000`)
 
 ### Facebook / Messenger
 - `FACEBOOK_API_URL`

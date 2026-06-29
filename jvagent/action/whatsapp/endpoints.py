@@ -35,6 +35,7 @@ from .utils.endpoint_helpers import (
     is_directed_message,
     normalize_result,
 )
+from .utils.meta_webhook_dedup import remember_meta_wamid
 
 logger = logging.getLogger(__name__)
 
@@ -563,6 +564,14 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
 
         if not data or data.message_type in ["ignored"]:
             return {"status": "ignored", "response": "Ignore message"}
+
+        if whatsapp_action.is_meta_provider() and data.message_id:
+            if not remember_meta_wamid(data.message_id):
+                logger.debug(
+                    "Meta duplicate webhook wamid=%s; ignoring",
+                    data.message_id,
+                )
+                return {"status": "ignored", "response": "duplicate webhook"}
 
         if data.fromMe:
             return {"status": "received", "response": "Ignore message"}

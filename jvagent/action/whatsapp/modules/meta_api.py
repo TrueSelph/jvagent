@@ -19,6 +19,18 @@ META_CAPTION_MAX_LENGTH = 1024
 _META_INBOUND_TYPES = frozenset(
     {"text", "image", "video", "document", "audio", "location"}
 )
+# Explicit non-user / unsupported types (logged and ignored)
+_META_DENIED_TYPES = frozenset(
+    {
+        "system",
+        "unsupported",
+        "reaction",
+        "request_welcome",
+        "sticker",
+        "button",
+        "interactive",
+    }
+)
 
 
 class MetaWhatsAppAPI(BaseWhatsAppAPI):
@@ -268,6 +280,11 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
                     continue
                 messages = value.get("messages") or []
                 if not messages:
+                    statuses = value.get("statuses") or []
+                    if statuses:
+                        logger.debug(
+                            "Meta webhook statuses-only (sent/delivered/read); skipping"
+                        )
                     continue
                 msg = messages[0]
                 if isinstance(msg, dict):
@@ -428,9 +445,44 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
             payload.body = str(caption)
             payload.caption = str(caption)
 
+    @staticmethod
+    def _webhook_has_statuses_only(request: dict) -> bool:
+        """True when the envelope is delivery/read/sent with no user messages."""
+        if request.get("object") != "whatsapp_business_account":
+            return False
+        for entry in request.get("entry") or []:
+            if not isinstance(entry, dict):
+                continue
+            for change in entry.get("changes") or []:
+                if not isinstance(change, dict):
+                    continue
+                if change.get("field") != "messages":
+                    continue
+                value = change.get("value") or {}
+                if not isinstance(value, dict):
+                    continue
+                statuses = value.get("statuses") or []
+                messages = value.get("messages") or []
+                if statuses and not messages:
+                    return True
+        return False
+
     async def parse_inbound_message(self, request: dict) -> Optional[MessagePayload]:
         """Parse Meta Cloud API webhook envelope into MessagePayload."""
         try:
+            if self._webhook_has_statuses_only(request):
+                logger.debug(
+                    "Meta webhook statuses-only (delivery/read/sent); ignoring"
+                )
+                return MessagePayload(
+                    message_id="",
+                    event_type="meta_webhook",
+                    message_type="ignored",
+                    author="",
+                    sender="",
+                    receiver="",
+                )
+
             extracted = self._extract_inbound_message(
                 request, expected_phone_number_id=self.phone_number_id
             )
@@ -460,8 +512,11 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
                 quoted = {"id": context.get("id")}
 
             jv_type = self._jvagent_message_type(msg)
-            if msg_type not in _META_INBOUND_TYPES:
-                logger.debug("Meta inbound type %r not handled; ignoring", msg_type)
+            if msg_type in _META_DENIED_TYPES or msg_type not in _META_INBOUND_TYPES:
+                logger.debug(
+                    "Meta inbound type %r ignored (non-user or unsupported message)",
+                    msg_type,
+                )
                 return MessagePayload(
                     message_id=str(msg.get("id") or ""),
                     event_type="meta_webhook",
