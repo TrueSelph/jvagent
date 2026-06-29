@@ -28,13 +28,21 @@ Run the example app locally:
 jvagent examples/jvagent_app --debug
 ```
 
-## Before you open a PR
+## Commit gate (run before every commit)
 
-Every change must pass the same gates CI enforces:
+Before **every** `git commit` — not just before opening a PR — both gates below
+must pass clean. This includes docs/chore/hotfix commits.
 
 ```bash
 pre-commit run --all-files            # black, isort, flake8, mypy, detect-secrets
-pytest tests/                         # full suite
+pytest tests/                         # full suite (or the affected slice at minimum)
+```
+
+If a hook reformats files (black/isort), re-stage and re-run until it passes with
+no changes — a "files were modified by this hook" result is a failure. Do not
+`git commit --no-verify`. Before opening a PR, also run:
+
+```bash
 jvagent validate examples/jvagent_app # app YAML stays valid
 ```
 
