@@ -219,7 +219,9 @@ class WhatsAppAction(Action):
         version = (self.graph_version or "").strip()
         if not version:
             version = (
-                env("WHATSAPP_GRAPH_VERSION") or os.environ.get("WHATSAPP_GRAPH_VERSION") or "v25.0"
+                env("WHATSAPP_GRAPH_VERSION")
+                or os.environ.get("WHATSAPP_GRAPH_VERSION")
+                or "v25.0"
             ).strip()
         if not version.startswith("v"):
             version = f"v{version}"
@@ -341,7 +343,10 @@ class WhatsAppAction(Action):
     def parse_webhook_verify(self, query: Dict[str, Any]) -> Union[str, Dict[str, Any]]:
         """Meta GET webhook verification (hub.* query params)."""
         if not self.is_meta_provider():
-            return {"message": "Webhook verify only applies to meta provider", "code": 403}
+            return {
+                "message": "Webhook verify only applies to meta provider",
+                "code": 403,
+            }
         expected = self._env_verify_token()
         mode = query.get("hub.mode")
         hub_verify = query.get("hub.verify_token")
@@ -873,7 +878,9 @@ class WhatsAppAction(Action):
             ok = bool(result.get("success") or result.get("ok"))
             if not ok:
                 err_msg = str(result.get("error") or result)
-                logger.warning("Meta WhatsApp webhook override Graph error: %s", err_msg)
+                logger.warning(
+                    "Meta WhatsApp webhook override Graph error: %s", err_msg
+                )
                 if "502" in err_msg or "Callback verification" in err_msg:
                     logger.warning(
                         "Meta could not verify the callback URL. Ensure GET "

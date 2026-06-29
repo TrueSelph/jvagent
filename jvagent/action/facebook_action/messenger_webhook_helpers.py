@@ -6,12 +6,11 @@ import logging
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from fastapi import Request
-
-from jvagent.action.utils.meta_webhook import verify_meta_webhook_signature
 from jvspatial.exceptions import DatabaseError
 
 from jvagent.action.facebook_action.facebook_api import FacebookAPI
 from jvagent.action.interact.interact_walker import InteractWalker
+from jvagent.action.utils.meta_webhook import verify_meta_webhook_signature
 from jvagent.action.whatsapp.utils.endpoint_helpers import (
     _build_utterance_with_quoted_context,
     get_conversation_with_lock,

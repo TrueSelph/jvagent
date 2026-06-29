@@ -540,7 +540,9 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             if not raw_body:
                 raw_body = await request.body()
             if not verify_meta_webhook_signature(raw_body, request, app_secret):
-                raise HTTPException(status_code=401, detail="Invalid X-Hub-Signature-256")
+                raise HTTPException(
+                    status_code=401, detail="Invalid X-Hub-Signature-256"
+                )
             try:
                 request_data = json.loads(raw_body.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError) as e:
