@@ -87,7 +87,9 @@ async def test_for_each_walk_three_items_two_required_subparts(for_each_action):
     action._save_session = AsyncMock()
     load = _load_fn(spec)
 
-    await handle_set_fields(action, fields={"item_ids": "A, B, C"}, visitor=SimpleNamespace())
+    await handle_set_fields(
+        action, fields={"item_ids": "A, B, C"}, visitor=SimpleNamespace()
+    )
 
     state = get_for_each_state(session, "item_ids")
     assert state["status"] == STATUS_ACTIVE
@@ -98,7 +100,9 @@ async def test_for_each_walk_three_items_two_required_subparts(for_each_action):
     assert "For item 1 (A):" in nxt["prompt"]
     assert nxt["for_each"]["total"] == 3
 
-    await handle_set_fields(action, fields={"title": "Widget A"}, visitor=SimpleNamespace())
+    await handle_set_fields(
+        action, fields={"title": "Widget A"}, visitor=SimpleNamespace()
+    )
     nxt = await build_next_field(session, spec, load)
     assert nxt["key"] == "quantity"
 
@@ -113,10 +117,14 @@ async def test_for_each_walk_three_items_two_required_subparts(for_each_action):
     assert nxt["key"] == "title"
     assert "For item 2 (B):" in nxt["prompt"]
 
-    await handle_set_fields(action, fields={"title": "Widget B", "quantity": "1"}, visitor=SimpleNamespace())
+    await handle_set_fields(
+        action, fields={"title": "Widget B", "quantity": "1"}, visitor=SimpleNamespace()
+    )
     await action._handle_skip_field(field="notes", visitor=SimpleNamespace())
 
-    await handle_set_fields(action, fields={"title": "Widget C", "quantity": "5"}, visitor=SimpleNamespace())
+    await handle_set_fields(
+        action, fields={"title": "Widget C", "quantity": "5"}, visitor=SimpleNamespace()
+    )
     await action._handle_skip_field(field="notes", visitor=SimpleNamespace())
 
     state = get_for_each_state(session, "item_ids")
@@ -155,8 +163,12 @@ async def test_for_each_parent_correction_resets_records(for_each_action):
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
     action._save_session = AsyncMock()
 
-    await handle_set_fields(action, fields={"item_ids": "A, B"}, visitor=SimpleNamespace())
-    await handle_set_fields(action, fields={"title": "One", "quantity": "1"}, visitor=SimpleNamespace())
+    await handle_set_fields(
+        action, fields={"item_ids": "A, B"}, visitor=SimpleNamespace()
+    )
+    await handle_set_fields(
+        action, fields={"title": "One", "quantity": "1"}, visitor=SimpleNamespace()
+    )
     await action._handle_skip_field(field="notes", visitor=SimpleNamespace())
 
     assert len(get_for_each_state(session, "item_ids")["records"]) == 1
@@ -243,7 +255,9 @@ async def test_for_each_parent_correction_preserves_state_on_validation_failure(
     action._save_session = AsyncMock()
 
     # Store a valid parent value — expansion initialises to ACTIVE.
-    await handle_set_fields(action, fields={"item_ids": "A, B"}, visitor=SimpleNamespace())
+    await handle_set_fields(
+        action, fields={"item_ids": "A, B"}, visitor=SimpleNamespace()
+    )
     state_before = get_for_each_state(session, "item_ids")
     assert state_before is not None
     assert state_before["status"] == STATUS_ACTIVE
@@ -257,7 +271,9 @@ async def test_for_each_parent_correction_preserves_state_on_validation_failure(
 
     # The expansion state must be unchanged — old value still stored, expansion intact.
     state_after = get_for_each_state(session, "item_ids")
-    assert state_after is not None, "for_each state must not be wiped on validation failure"
+    assert (
+        state_after is not None
+    ), "for_each state must not be wiped on validation failure"
     assert state_after["status"] == STATUS_ACTIVE
     assert session.get_value("item_ids") == "A, B"
 
@@ -265,7 +281,9 @@ async def test_for_each_parent_correction_preserves_state_on_validation_failure(
 @pytest.mark.asyncio
 async def test_default_expand_skips_when_post_processor_omits_expand(for_each_spec):
     """Parent with for_each but no expand payload defaults to skipped."""
-    from jvagent.action.interview.for_each import apply_default_expand_after_parent_store
+    from jvagent.action.interview.for_each import (
+        apply_default_expand_after_parent_store,
+    )
 
     session = InterviewSession(interview_type=for_each_spec.name)
     session.set_value("item_ids", "A")

@@ -12,7 +12,11 @@ from jvagent.action.interview.activation_seed import (
     normalize_seed_from_activation,
     seed_field_from_activation,
 )
-from jvagent.action.interview.hooks import ACTIVATION_PHASE, call_hook, coerce_hook_result
+from jvagent.action.interview.hooks import (
+    ACTIVATION_PHASE,
+    call_hook,
+    coerce_hook_result,
+)
 from jvagent.action.interview.session import ACTIVATION_UTTERANCE_KEY, InterviewSession
 from jvagent.action.interview.spec import FieldDef
 
@@ -54,7 +58,9 @@ def test_match_longest_phrase_wins():
 def test_match_exact_allowed_value():
     seed = normalize_seed_from_activation({"check_status": ["check status"]})
     assert (
-        match_seed_from_activation("check_status", seed, allowed_values=["check_status"])
+        match_seed_from_activation(
+            "check_status", seed, allowed_values=["check_status"]
+        )
         == "check_status"
     )
 

@@ -192,10 +192,7 @@ def current_item(state: Dict[str, Any]) -> Optional[Dict[str, str]]:
 
 
 def is_current_item_complete(session: InterviewSession, child_keys: List[str]) -> bool:
-    for ck in child_keys:
-        if not session.has_field(ck) and not session.is_skipped(ck):
-            return False
-    return True
+    return all(session.has_field(ck) or session.is_skipped(ck) for ck in child_keys)
 
 
 def complete_current_item(session: InterviewSession, spec: InterviewSpec) -> bool:
