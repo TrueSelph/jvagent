@@ -4,6 +4,7 @@ import asyncio
 import base64
 import binascii
 import html
+import json
 import logging
 import re
 import time
@@ -11,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 import aiohttp
 from fastapi import HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from jvspatial import create_task
 from jvspatial.api import endpoint
 from jvspatial.api.constants import APIRoutes
@@ -20,6 +21,7 @@ from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.exceptions import DatabaseError, ValidationError
 
 from jvagent.action.access_control.access_control_action import log_access_denied
+from jvagent.action.utils.meta_webhook import verify_meta_webhook_signature
 from jvagent.core.agent import Agent
 
 from .utils.endpoint_helpers import (
@@ -33,8 +35,51 @@ from .utils.endpoint_helpers import (
     is_directed_message,
     normalize_result,
 )
+from .utils.meta_webhook_dedup import remember_meta_wamid
 
 logger = logging.getLogger(__name__)
+
+_META_BRIDGE_NA = {
+    "status": "not_applicable",
+    "reason": "meta_cloud_api",
+    "message": "Bridge session/QR endpoints are not used with the meta Cloud API provider.",
+    "ok": True,
+}
+
+
+def _bridge_provider_response(whatsapp_action: Any) -> Optional[Dict[str, Any]]:
+    if whatsapp_action.is_meta_provider():
+        return dict(_META_BRIDGE_NA)
+    return None
+
+
+async def _agent_and_whatsapp_action_for_webhook(agent_id: str) -> tuple[Any, Any]:
+    agent = await Agent.get(agent_id)
+    if not agent:
+        raise ResourceNotFoundError(
+            message=f"Agent with ID '{agent_id}' not found",
+            details={"agent_id": agent_id},
+        )
+    whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
+    if not whatsapp_action:
+        raise ResourceNotFoundError(
+            message="Action with label 'WhatsAppAction' not found",
+            details={"agent_id": agent_id},
+        )
+    return agent, whatsapp_action
+
+
+async def _authenticate_bridge_webhook_api_key(request: Request) -> None:
+    """Require jvagent webhook API key for bridge providers (wwebjs, etc.)."""
+    from jvspatial.api.context import get_current_server
+    from jvspatial.api.integrations.webhooks.webhook_auth import (
+        authenticate_webhook_api_key,
+    )
+
+    await authenticate_webhook_api_key(
+        request, "api_key", webhook_config=None, server=get_current_server()
+    )
+
 
 # --- Browser connection / QR page (public link, unguessable action_id) ---
 
@@ -262,6 +307,10 @@ async def whatsapp_connection_qr(action_id: str) -> Response:
     except ResourceNotFoundError:
         raise HTTPException(status_code=404, detail="WhatsApp action not found")
 
+    bridge_na = _bridge_provider_response(wa_action)
+    if bridge_na:
+        raise HTTPException(status_code=400, detail=bridge_na["message"])
+
     if not wa_action.is_configured():
         raise HTTPException(
             status_code=400, detail="WhatsApp is not configured for this action"
@@ -310,6 +359,22 @@ async def whatsapp_connection_page(action_id: str) -> HTMLResponse:
         return _wa_error_html(
             f"WhatsApp action not found: {action_id}", status_code=404
         )
+
+    if wa_action.is_meta_provider() and wa_action.is_configured():
+        body_inner = """
+            <div class="status-badge">Cloud API</div>
+            <h1>WhatsApp Cloud API</h1>
+            <p class="subtitle">This agent uses Meta's WhatsApp Cloud API. No QR scan is required.</p>
+            <p class="hint">Configure webhooks in Meta App Dashboard → WhatsApp → Configuration.</p>
+        """
+        icon_svg = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>'
+        content = _wa_link_page_html(
+            theme="success",
+            title="WhatsApp Cloud API",
+            icon_svg=icon_svg,
+            body_inner=body_inner,
+        )
+        return HTMLResponse(content=content, status_code=200)
 
     if not wa_action.is_configured():
         err = "WhatsApp is not configured for this action. " + "; ".join(
@@ -399,9 +464,33 @@ async def whatsapp_connection_page(action_id: str) -> HTMLResponse:
 
 @endpoint(
     "/whatsapp/interact/webhook/{agent_id}",
+    methods=["GET"],
+    webhook=True,
+    auth=False,
+    tags=["WhatsApp"],
+    summary="Meta Cloud API webhook: GET hub challenge (subscription verify)",
+)
+async def whatsapp_interact_webhook_verify(request: Request, agent_id: str) -> Any:
+    """Meta webhook verification (hub.challenge) for meta provider."""
+    _, whatsapp_action = await _agent_and_whatsapp_action_for_webhook(agent_id)
+    if not whatsapp_action.is_meta_provider():
+        raise HTTPException(
+            status_code=403, detail="Webhook verify only applies to meta provider"
+        )
+    params = getattr(request.state, "parsed_payload", None)
+    if not isinstance(params, dict):
+        params = dict(request.query_params)
+    challenge = whatsapp_action.parse_webhook_verify(params)
+    if isinstance(challenge, dict):
+        raise HTTPException(status_code=403, detail="Webhook verification failed")
+    return PlainTextResponse(str(challenge), media_type="text/plain")
+
+
+@endpoint(
+    "/whatsapp/interact/webhook/{agent_id}",
     methods=["POST"],
     webhook=True,
-    webhook_auth="api_key",  # Validates API key from query param or header
+    auth=False,
     tags=["WhatsApp"],
     response=success_response(
         data={
@@ -415,7 +504,8 @@ async def whatsapp_connection_page(action_id: str) -> HTMLResponse:
 async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
     """WhatsApp Interact Webhook.
 
-    Processes incoming WhatsApp messages and triggers an interaction via InteractWalker.
+    Meta Cloud API POST uses ``X-Hub-Signature-256`` (no ``api_key``). Bridge
+    providers must pass ``?api_key=`` or ``X-API-Key``; validated in-handler.
 
     AWS Lambda compatibility: In serverless mode, the webhook typically awaits the full
     interaction (including response generation and WhatsApp send) before returning, so work
@@ -437,26 +527,32 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         HTTPException: For validation errors
     """
     try:
-        # Validate agent exists
-        agent = await Agent.get(agent_id)
-        if not agent:
-            raise ResourceNotFoundError(
-                message=f"Agent with ID '{agent_id}' not found",
-                details={"agent_id": agent_id},
-            )
+        agent, whatsapp_action = await _agent_and_whatsapp_action_for_webhook(agent_id)
 
-        whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
-        if not whatsapp_action:
-            raise ResourceNotFoundError(
-                message="Action with label 'WhatsAppAction' not found",
-                details={"agent_id": agent_id},
-            )
-
-        # Parse request data with error handling
-        # Use webhook middleware's parsed payload when available (body may be consumed)
-        request_data = getattr(request.state, "parsed_payload", None)
-        if request_data is None:
-            request_data = await request.json()
+        if whatsapp_action.is_meta_provider():
+            app_secret = whatsapp_action._env_app_secret()
+            if not app_secret:
+                raise HTTPException(
+                    status_code=500,
+                    detail="WHATSAPP_APP_SECRET (or FACEBOOK_APP_SECRET) is required for meta webhook POST",
+                )
+            raw_body: bytes = getattr(request.state, "raw_body", b"")
+            if not raw_body:
+                raw_body = await request.body()
+            if not verify_meta_webhook_signature(raw_body, request, app_secret):
+                raise HTTPException(
+                    status_code=401, detail="Invalid X-Hub-Signature-256"
+                )
+            try:
+                request_data = json.loads(raw_body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as e:
+                logger.debug("Meta WhatsApp webhook JSON parse error: %s", e)
+                raise HTTPException(status_code=400, detail="Invalid JSON body")
+        else:
+            await _authenticate_bridge_webhook_api_key(request)
+            request_data = getattr(request.state, "parsed_payload", None)
+            if request_data is None:
+                request_data = await request.json()
 
         try:
             wa = await whatsapp_action.api()
@@ -471,6 +567,14 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         if not data or data.message_type in ["ignored"]:
             return {"status": "ignored", "response": "Ignore message"}
 
+        if whatsapp_action.is_meta_provider() and data.message_id:
+            if not remember_meta_wamid(data.message_id):
+                logger.debug(
+                    "Meta duplicate webhook wamid=%s; ignoring",
+                    data.message_id,
+                )
+                return {"status": "ignored", "response": "duplicate webhook"}
+
         if data.fromMe:
             return {"status": "received", "response": "Ignore message"}
 
@@ -479,7 +583,11 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         utterance = utterance.strip() if utterance else None
 
         # Skip LID conversion for groups - @g.us IDs are not LIDs and cause "No LID for user" errors
-        if "@lid" in data.sender and "@g.us" not in data.sender:
+        if (
+            not whatsapp_action.is_meta_provider()
+            and "@lid" in data.sender
+            and "@g.us" not in data.sender
+        ):
             data.sender = await wa.convert_lid_to_phone_number(data.sender)
             t0 = getattr(request.state, "webhook_start", None)
             if t0 is not None:
@@ -536,14 +644,20 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             utterance = voice_result.get("transcript", "")
         elif data.message_type in ["location"] and data.location:
             typing_result = await wa.set_typing_status(
-                phone=sender, value=True, is_group=data.isGroup
+                phone=sender,
+                value=True,
+                is_group=data.isGroup,
+                message_id=data.message_id or "",
             )
             utterance = f"Location: {data.location.get('latitude')}, {data.location.get('longitude')}"
         elif utterance:
             # Trigger typing immediately
             try:
                 typing_result = await wa.set_typing_status(
-                    phone=sender, value=True, is_group=data.isGroup
+                    phone=sender,
+                    value=True,
+                    is_group=data.isGroup,
+                    message_id=data.message_id or "",
                 )
                 t0 = getattr(request.state, "webhook_start", None)
                 if t0 is not None:
@@ -1051,6 +1165,75 @@ async def register_session(
 
 
 @endpoint(
+    "/actions/{action_id}/meta/webhook-url",
+    methods=["GET"],
+    auth=True,
+    roles=["admin"],
+    tags=["WhatsApp"],
+    summary="Meta Cloud API callback URL (without api_key query param)",
+)
+async def get_meta_webhook_url(action_id: str) -> Dict[str, Any]:
+    """Return webhook URLs for Meta App Dashboard vs bridge providers."""
+    whatsapp_action = await get_whatsapp_action(action_id)
+    if not whatsapp_action.is_meta_provider():
+        raise HTTPException(
+            status_code=400, detail="Endpoint only applies to meta provider"
+        )
+    url = whatsapp_action.webhook_url or await whatsapp_action.get_webhook_url()
+    meta_url = whatsapp_action.meta_callback_url_for_subscription(url)
+    return {
+        "webhook_url": url,
+        "meta_callback_url": meta_url,
+        "verify_token_env": "WHATSAPP_VERIFY_TOKEN",
+        "dashboard_note": (
+            "App Dashboard shows the app default callback only. After startup, "
+            "GET .../meta/webhook-status shows the active WABA/phone override."
+        ),
+    }
+
+
+@endpoint(
+    "/actions/{action_id}/meta/webhook-status",
+    methods=["GET"],
+    auth=True,
+    roles=["admin"],
+    tags=["WhatsApp"],
+    summary="Get Meta WhatsApp webhook override status from Graph API",
+)
+async def get_meta_webhook_status(action_id: str) -> Dict[str, Any]:
+    """Return expected callback URL and live override from Meta Graph."""
+    whatsapp_action = await get_whatsapp_action(action_id)
+    if not whatsapp_action.is_meta_provider():
+        raise HTTPException(
+            status_code=400, detail="Endpoint only applies to meta provider"
+        )
+    return await whatsapp_action.get_meta_webhook_override_status()
+
+
+@endpoint(
+    "/actions/{action_id}/meta/webhook-register",
+    methods=["POST"],
+    auth=True,
+    roles=["admin"],
+    tags=["WhatsApp"],
+    summary="Register Meta WhatsApp webhook override (WABA or phone number)",
+)
+async def register_meta_webhook(action_id: str) -> Dict[str, Any]:
+    """Push callback URL override to Meta Graph API immediately."""
+    whatsapp_action = await get_whatsapp_action(action_id)
+    if not whatsapp_action.is_meta_provider():
+        raise HTTPException(
+            status_code=400, detail="Endpoint only applies to meta provider"
+        )
+    result = await whatsapp_action.register_meta_webhook_subscription()
+    if result.get("status") == "error":
+        raise HTTPException(status_code=502, detail=result)
+    if result.get("ok") and result.get("status") == "ok":
+        whatsapp_action._session_registered = True
+    return result
+
+
+@endpoint(
     "/actions/{action_id}/qrcode",
     methods=["GET"],
     auth=True,
@@ -1076,6 +1259,9 @@ async def get_qrcode(
         Dict[str, Any]: QR code as base64 image
     """
     whatsapp_action = await get_whatsapp_action(action_id)
+    bridge_na = _bridge_provider_response(whatsapp_action)
+    if bridge_na:
+        return bridge_na
     wa = await whatsapp_action.api()
     return await wa.qrcode()
 
@@ -1104,6 +1290,9 @@ async def get_device_info(
         Dict[str, Any]: Device information
     """
     whatsapp_action = await get_whatsapp_action(action_id)
+    bridge_na = _bridge_provider_response(whatsapp_action)
+    if bridge_na:
+        return bridge_na
     wa = await whatsapp_action.api()
     return {"device": await wa.get_host_device()}
 
@@ -1132,6 +1321,9 @@ async def logout(
         Dict[str, Any]: Result of the operation
     """
     whatsapp_action = await get_whatsapp_action(action_id)
+    bridge_na = _bridge_provider_response(whatsapp_action)
+    if bridge_na:
+        return bridge_na
     wa = await whatsapp_action.api()
     result = await wa.logout_session()
     return normalize_result(result, "logout")
@@ -1161,6 +1353,9 @@ async def close(
         Dict[str, Any]: Result of the operation
     """
     whatsapp_action = await get_whatsapp_action(action_id)
+    bridge_na = _bridge_provider_response(whatsapp_action)
+    if bridge_na:
+        return bridge_na
     wa = await whatsapp_action.api()
     result = await wa.close_session()
     return normalize_result(result, "close")

@@ -196,7 +196,11 @@ class WPPConnectAPI(BaseWhatsAppAPI):
         return await self.send_rest_request(url, method="POST", use_full_url=True)
 
     async def set_typing_status(
-        self, phone: str, value: bool = True, is_group: bool = False
+        self,
+        phone: str,
+        value: bool = True,
+        is_group: bool = False,
+        message_id: str = "",
     ) -> dict:
         """
         POST /api/{session}/typing

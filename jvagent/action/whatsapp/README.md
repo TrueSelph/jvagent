@@ -150,10 +150,10 @@ This document outlines the security improvements and coding standards compliance
    @endpoint(
        "/whatsapp/interact/webhook/{agent_id}",
        webhook=True,
-       webhook_auth="api_key"
+       auth=False,
    )
    async def whatsapp_interact(request: Request, agent_id: str):
-       # Proper validation and error handling
+       # meta: X-Hub-Signature-256 in handler; bridge: ?api_key= in handler
    ```
 
 ## Architecture Improvements
@@ -243,7 +243,7 @@ For **Lambda**:
 
 ## Configuration
 
-### Required Environment Variables
+### Required Environment Variables (bridge providers: wwebjs, wppconnect, ultramsg)
 
 ```env
 # WhatsApp API Configuration
@@ -251,7 +251,84 @@ WHATSAPP_API_URL=https://api.whatsapp.provider.com
 WHATSAPP_API_KEY=your_api_key
 WHATSAPP_SESSION=your_session_name
 WHATSAPP_TOKEN=your_token
+```
 
+### Meta Cloud API (`provider: meta`)
+
+Use the official WhatsApp Business Cloud API instead of a self-hosted bridge. Supports 1:1 text, images, documents, video, voice notes (inbound STT / outbound TTS), location, and typing indicators (within the 24-hour customer service window).
+
+Configure `stt_action` and `tts_action` on the WhatsApp action (same as bridge providers) for voice note transcription and voice replies.
+
+```env
+WHATSAPP_PHONE_NUMBER_ID=102274452799236
+WHATSAPP_ACCESS_TOKEN=EAAJ...          # system user access token
+WHATSAPP_APP_SECRET=...                # or FACEBOOK_APP_SECRET
+WHATSAPP_VERIFY_TOKEN=your-verify-token  # Meta App Dashboard verify token
+JVAGENT_PUBLIC_BASE_URL=https://your-app.com
+
+# Optional
+WHATSAPP_WABA_ID=107732305578216
+WHATSAPP_APP_ID=1837228823924621       # or FACEBOOK_APP_ID
+WHATSAPP_GRAPH_VERSION=v25.0
+```
+
+**Meta webhook callback** (automatic override on startup):
+
+On startup (meta provider), jvagent waits `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS` (default **8**) after the HTTP server is listening, then calls the Meta Graph API to set **`override_callback_uri`** on your WABA (`WHATSAPP_WABA_ID`) or phone number.
+
+**The Meta App Dashboard callback URL will not change.** Dashboard shows the app default only. Overrides are per-WABA/phone; verify with `GET /api/actions/{action_id}/meta/webhook-status` (returns Graph `subscribed_apps` / `webhook_configuration`).
+
+1. **Callback URL**: `{JVAGENT_PUBLIC_BASE_URL}/api/whatsapp/interact/webhook/{agent_id}` — `{agent_id}` is the agent **node id** (e.g. `n.Agent.xxxx`), not the YAML path; no `api_key` query param.
+2. **Verify token**: must match `WHATSAPP_VERIFY_TOKEN` (Meta sends GET hub.challenge to verify before override succeeds).
+3. Subscribe to the **messages** field in the dashboard (one-time app setup).
+
+**Webhook field subscriptions (Meta dashboard):**
+
+- On the WABA override for this agent endpoint, subscribe only **`messages`** for inbound user chat.
+- Do **not** route template alerts, account updates, or **`smb_message_echoes`** to the same agent callback URL unless you add separate handlers — jvagent ignores non-`messages` fields and status-only payloads (`statuses[]` with no `messages[]`).
+- Optional fields (`message_template_status_update`, `phone_number_quality_update`, etc.) belong on a different URL or are dropped.
+
+**Retry idempotency (wamid dedup):**
+
+Meta delivers webhooks **at-least-once** and may retry for up to 7 days. jvagent keeps an in-process cache of seen inbound **`messages[].id`** (wamid) for the meta provider and returns `duplicate webhook` (HTTP 200) on replay so the agent does not reply twice.
+
+Env tuning (optional):
+
+- `WHATSAPP_META_WAMID_DEDUP_TTL_SECONDS` — default **86400** (24h).
+- `WHATSAPP_META_WAMID_DEDUP_MAX` — default **10000** entries.
+
+For multi-worker deployments, consider a shared dedup store (not included in the default in-process cache).
+
+Env toggles:
+
+- `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true` — skip deferred override; call `POST /api/actions/{action_id}/meta/webhook-register` when ready.
+- `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE=false` — skip override on action reload.
+
+Admin helpers:
+
+- `GET /api/actions/{action_id}/meta/webhook-url` — returns `meta_callback_url` (stripped of `api_key`).
+- `POST /api/actions/{action_id}/meta/webhook-register` — register override immediately.
+
+**Media and voice (meta provider):**
+
+- Inbound media: Meta sends a media id in the webhook; jvagent downloads via Graph and feeds the same pipeline as bridge providers (vision, STT, etc.).
+- Outbound media: agent replies upload files from jvagent public URLs (`JVAGENT_PUBLIC_BASE_URL` + `/api/files/...`) to Meta before send.
+- Typing: uses inbound `wamid` (`message_id`) with Meta’s read + typing_indicator API.
+- Outbound voice notes (native PTT bubble): requires OGG/OPUS; when TTS returns MP3, jvagent transcodes via **ffmpeg** on PATH (`libopus` → OGG) before upload when available; otherwise sends as a basic audio file.
+
+**Production smoke (Meta 1:1):**
+
+1. Send a user message → confirm **one** agent reply.
+2. Replay the same webhook POST body (same wamid) → response `duplicate webhook`, no second reply.
+3. Automated regression: `pytest tests/action/whatsapp/test_meta_webhook_interact_smoke.py`.
+
+**Meta Groups:** deferred — see [ADR-0028](../../.planning/adr/0028-defer-meta-whatsapp-groups.md). Not wwebjs parity; requires OBA + separate implementation phase.
+
+Bridge-only variables (`WHATSAPP_API_URL`, `WHATSAPP_API_KEY`, `WHATSAPP_SESSION`) are not used when `provider: meta`.
+
+### Shared / optional
+
+```env
 # Application Base URL (required for webhooks and media delivery)
 # Used for webhook generation and to resolve relative media URLs (e.g. TTS audio)
 # to absolute URLs when the adapter fetches files for sending
@@ -267,7 +344,7 @@ WHATSAPP_SESSION_REGISTER_TIMEOUT_SECONDS=120
 # Media batch mode follows jvspatial is_serverless_mode() only (SERVERLESS_MODE or platform auto-detect).
 # Deferred path: MongoDB + jvspatial create_task (Shape A); in-process path: in-memory batch + create_task (Shape B).
 
-# Skip Startup Registration (optional, for Lambda)
+# Skip Startup Registration (optional, for Lambda; bridge providers only)
 # Set to true to skip session registration on cold start; use POST /api/actions/{action_id}/session/register manually
 WHATSAPP_SKIP_STARTUP_REGISTRATION=false
 
