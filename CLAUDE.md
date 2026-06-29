@@ -134,11 +134,30 @@ Full CLI reference in [`jvagent/cli/CLAUDE.md`](jvagent/cli/CLAUDE.md) and [`doc
 
 ## 6. Conventions to follow
 
+### Commit gate (MANDATORY — run before every commit)
+
+Before **any** `git commit`, both of these MUST pass — no exceptions, including
+docs-touching commits (pre-commit still runs trailing-whitespace / YAML / secret
+hooks):
+
+```bash
+pre-commit run --all-files     # black, isort, flake8, mypy, secrets, etc.
+pytest tests/                  # or the affected slice(s) at minimum
+```
+
+- If a hook **reformats** files (black/isort), re-stage and re-run until the run is
+  clean — a hook that "modifies files" is a FAILURE until a re-run passes with no
+  changes. Never commit with a hook still reporting changes.
+- If `pytest` has any failure, fix it or explicitly call it out; do not commit over
+  red tests.
+- Do not use `git commit --no-verify` to bypass the gate.
+- Applies on every branch, including hotfix/docs/chore branches.
+
 ### When editing source
 - **Type-annotate everything.** Pydantic and jvspatial both rely on it.
 - **Use `attribute(...)` for all persisted Node fields.** Plain class attributes are not persisted.
 - **Add a test slice** in `tests/action/{name}/` or `tests/{subsystem}/` for any new behavior.
-- **Run `pre-commit run --all-files`** before claiming a change is done.
+- **Run the commit gate above** (`pre-commit run --all-files` + `pytest`) before every commit and before claiming a change is done.
 - **Cite file:line** in commit messages and PR descriptions when fixing bugs — `core/app.py:124` beats "fixed the App singleton".
 
 ### When editing docs

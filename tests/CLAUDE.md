@@ -114,7 +114,7 @@ For pure-doc PRs, no tests are required, but `pre-commit run --all-files` still 
 | Walker tests time out | Default `max_execution_time=300` — set lower in test setup if needed. |
 | Mocking jvspatial entities directly | Brittle. Mock at the HTTP / model boundary instead. |
 | Hard-coding action IDs in tests | Use the fixture that creates the action and returns its ID. |
-| Skipping pre-commit | Lint/type failures land in CI. Always run locally first. |
+| Skipping the commit gate | `pre-commit run --all-files` + `pytest` must pass before **every** commit (root [`CLAUDE.md` §6](../CLAUDE.md)). Never `--no-verify`. |
 | Asserting on log strings | Use `caplog` fixture, not string match on stderr. |
 
 ---
