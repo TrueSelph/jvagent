@@ -126,9 +126,7 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         q = s.find("?")
         return s[:q] if q >= 0 else s
 
-    async def _register_waba_webhook_override(
-        self, callback: str, verify: str
-    ) -> dict:
+    async def _register_waba_webhook_override(self, callback: str, verify: str) -> dict:
         """POST WABA subscribed_apps override."""
         url = f"{self.api_url.rstrip('/')}/{self.waba_id}/subscribed_apps"
         override_data: Dict[str, Any] = {
@@ -197,12 +195,8 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
                 callback, verify
             )
 
-        any_ok = any(
-            self._graph_success(r) for r in registrations.values()
-        )
-        all_failed = all(
-            not self._graph_success(r) for r in registrations.values()
-        )
+        any_ok = any(self._graph_success(r) for r in registrations.values())
+        all_failed = all(not self._graph_success(r) for r in registrations.values())
         combined: Dict[str, Any] = {
             "ok": any_ok,
             "registrations": registrations,

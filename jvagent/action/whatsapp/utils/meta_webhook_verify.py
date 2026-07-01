@@ -48,7 +48,9 @@ def _extract_from_phone_webhook_configuration(payload: dict) -> List[Dict[str, s
     if isinstance(wc, dict):
         for key, url in wc.items():
             if isinstance(url, str) and url.strip().startswith("http"):
-                entries.append({"source": f"phone.webhook_configuration.{key}", "url": url.strip()})
+                entries.append(
+                    {"source": f"phone.webhook_configuration.{key}", "url": url.strip()}
+                )
     elif isinstance(payload.get("webhook_configuration"), str):
         pass
     # Phone GET wraps fields at top level
@@ -84,7 +86,9 @@ def _extract_from_waba_subscribed_apps(payload: dict) -> List[Dict[str, str]]:
                         )
     override = payload.get("override_callback_uri")
     if isinstance(override, str) and override.strip().startswith("http"):
-        entries.append({"source": "waba.override_callback_uri", "url": override.strip()})
+        entries.append(
+            {"source": "waba.override_callback_uri", "url": override.strip()}
+        )
     return entries
 
 
@@ -95,7 +99,9 @@ def find_stale_callbacks(
 ) -> List[Dict[str, str]]:
     """Return callbacks that do not match expected URL or agent id."""
     expected_norm = normalize_callback_url(expected_callback_url)
-    expected_aid = (expected_agent_id or agent_id_from_callback_url(expected_callback_url)).strip()
+    expected_aid = (
+        expected_agent_id or agent_id_from_callback_url(expected_callback_url)
+    ).strip()
     stale: List[Dict[str, str]] = []
 
     for entry in extract_callback_urls_from_graph(graph):
@@ -111,7 +117,9 @@ def find_stale_callbacks(
             reason = "url_mismatch"
         if expected_aid and url_aid and url_aid != expected_aid:
             mismatch = True
-            reason = "agent_id_mismatch" if not reason else f"{reason},agent_id_mismatch"
+            reason = (
+                "agent_id_mismatch" if not reason else f"{reason},agent_id_mismatch"
+            )
 
         if mismatch:
             stale.append(

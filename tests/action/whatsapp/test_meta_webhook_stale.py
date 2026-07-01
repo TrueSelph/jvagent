@@ -18,7 +18,10 @@ def test_agent_id_from_callback_url():
 
 
 def test_normalize_callback_url_strips_query():
-    assert normalize_callback_url("https://x/callback?api_key=secret") == "https://x/callback"
+    assert (
+        normalize_callback_url("https://x/callback?api_key=secret")
+        == "https://x/callback"
+    )
 
 
 def test_extract_callback_urls_from_phone_graph():
@@ -59,9 +62,7 @@ def test_find_stale_callbacks_flags_mismatched_agent_ids():
             }
         }
     }
-    stale = find_stale_callbacks(
-        graph, expected, "n.Agent.69a75d4a0c084fedb48f2553"
-    )
+    stale = find_stale_callbacks(graph, expected, "n.Agent.69a75d4a0c084fedb48f2553")
     assert len(stale) == 1
     assert stale[0]["source"] == "phone.webhook_configuration.application"
     assert stale[0]["agent_id"] == "n.Agent.3d3d6a76old"
@@ -82,7 +83,9 @@ def test_dashboard_action_for_stale_application_url():
 
 
 def test_find_stale_callbacks_empty_when_all_match():
-    expected = "https://desk8800.example.net/api/whatsapp/interact/webhook/n.Agent.current"
+    expected = (
+        "https://desk8800.example.net/api/whatsapp/interact/webhook/n.Agent.current"
+    )
     graph = {
         "waba": {
             "data": [

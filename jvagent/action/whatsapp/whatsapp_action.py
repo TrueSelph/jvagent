@@ -211,9 +211,7 @@ class WhatsAppAction(Action):
         s = (self.app_secret or "").strip()
         if s:
             return s
-        return (
-            env("WHATSAPP_APP_SECRET") or env("FACEBOOK_APP_SECRET") or ""
-        ).strip()
+        return (env("WHATSAPP_APP_SECRET") or env("FACEBOOK_APP_SECRET") or "").strip()
 
     def effective_verify_token(self, agent_id: str = "") -> str:
         """Return Meta hub.verify_token (yaml override or derived from agent_id + app secret)."""
@@ -351,7 +349,10 @@ class WhatsAppAction(Action):
     ) -> Union[str, Dict[str, Any]]:
         """Meta GET webhook verification (hub.* query params)."""
         if not self.is_meta_provider():
-            return {"message": "Webhook verify only applies to meta provider", "code": 403}
+            return {
+                "message": "Webhook verify only applies to meta provider",
+                "code": 403,
+            }
         expected = self.effective_verify_token(agent_id)
         mode = query.get("hub.mode")
         hub_verify = query.get("hub.verify_token")
@@ -491,9 +492,7 @@ class WhatsAppAction(Action):
                         # Yield once so uvicorn finishes lifespan startup first.
                         await asyncio.sleep(0)
 
-                    logger.info(
-                        "Registering Meta WhatsApp webhook override on startup"
-                    )
+                    logger.info("Registering Meta WhatsApp webhook override on startup")
                     reg = await self.register_meta_webhook_subscription()
                     if reg.get("status") == "ok":
                         self._session_registered = True
@@ -578,7 +577,8 @@ class WhatsAppAction(Action):
             "expected_agent_id": expected_agent_id,
             "verify_token": verify,
             "stale_callbacks": check["stale_callbacks"],
-            "dashboard_action": check["dashboard_action"] or (
+            "dashboard_action": check["dashboard_action"]
+            or (
                 "Meta App Dashboard shows the app default callback URL only. "
                 "WABA/phone overrides appear here and in Graph subscribed_apps."
             ),
@@ -931,7 +931,9 @@ class WhatsAppAction(Action):
             ok = bool(result.get("success") or result.get("ok"))
             if not ok:
                 err_msg = str(result.get("error") or result)
-                logger.warning("Meta WhatsApp webhook override Graph error: %s", err_msg)
+                logger.warning(
+                    "Meta WhatsApp webhook override Graph error: %s", err_msg
+                )
                 if "502" in err_msg or "Callback verification" in err_msg:
                     logger.warning(
                         "Meta could not verify the callback URL. Ensure GET "
