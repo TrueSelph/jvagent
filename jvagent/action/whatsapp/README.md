@@ -288,7 +288,21 @@ JVAGENT_PUBLIC_BASE_URL=https://your-app.com
 
 On startup (meta provider), jvagent registers the Meta Graph **`override_callback_uri`** in a background task **after** uvicorn reports `Application startup complete` (optional `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS`, default **0**).
 
-**The Meta App Dashboard callback URL will not change.** Dashboard shows the app default only. Overrides are per-WABA/phone; verify with `GET /api/actions/{action_id}/meta/webhook-status` (returns Graph `subscribed_apps` / `webhook_configuration`).
+**The Meta App Dashboard callback URL will not change automatically.** Dashboard shows the app default (`application` layer). jvagent registers **WABA** and **phone** overrides when both ids are configured; verify with `GET /api/actions/{action_id}/meta/webhook-status` (returns `expected_callback_url`, `stale_callbacks`, and Graph `subscribed_apps` / `webhook_configuration`).
+
+#### Purge and callback URLs
+
+`jvagent --purge` creates a **new agent node id** (`n.Agent.*`). Every Meta callback URL embeds that id, so after a purge you must realign **all three Meta routing layers**:
+
+| Layer | Where it lives | Updated by jvagent? |
+|-------|----------------|---------------------|
+| `application` | Meta App Dashboard → WhatsApp → Configuration | **No** — manual update required |
+| `whatsapp_business_account` | WABA `subscribed_apps` override | Yes (when `waba_id` set) |
+| Phone override | Phone `webhook_configuration` | Yes (when `phone_number_id` set) |
+
+When both `waba_id` and `phone_number_id` are set, startup registers **both** overrides. If inbound POSTs still hit an old agent id (404 Agent not found), check `GET .../meta/webhook-status` → `stale_callbacks` and follow `dashboard_action` (usually: update App Dashboard callback + verify token, then restart or `POST .../meta/webhook-register`).
+
+Avoid `--purge` on production unless you intentionally reset the database and can update Meta callbacks immediately.
 
 1. **Callback URL**: `{JVAGENT_PUBLIC_BASE_URL}/api/whatsapp/interact/webhook/{agent_id}` — `{agent_id}` is the agent **node id** (e.g. `n.Agent.xxxx`), not the YAML path; no `api_key` query param.
 2. **Verify token**: derived automatically; `GET .../meta/webhook-url` (admin) shows the active token for debugging.

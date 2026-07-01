@@ -1193,7 +1193,8 @@ async def get_meta_webhook_url(action_id: str) -> Dict[str, Any]:
         "agent_id": agent_id,
         "dashboard_note": (
             "App Dashboard shows the app default callback only. After startup, "
-            "GET .../meta/webhook-status shows the active WABA/phone override. "
+            "GET .../meta/webhook-status shows WABA/phone overrides and "
+            "stale_callbacks (including App Dashboard application URL). "
             "verify_token is auto-derived from agent_id + WHATSAPP_APP_SECRET unless "
             "verify_token is set on the action."
         ),

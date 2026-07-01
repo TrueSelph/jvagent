@@ -154,6 +154,45 @@ class TestMetaWhatsAppSend:
             waba_id="107732305578216",
             verify_token="jvagent-meta-verify",
         )
+        calls: list[tuple[str, Optional[dict]]] = []
+
+        async def fake_send(url, method="POST", data=None, **kwargs):
+            calls.append((url, data))
+            return {"success": True}
+
+        api.send_rest_request = fake_send  # type: ignore[method-assign]
+
+        result = await api.register_webhook_subscription(
+            "https://example.com/api/whatsapp/interact/webhook/n.Agent.x?api_key=secret",
+            "jvagent-meta-verify",
+        )
+        assert result["ok"] is True
+        assert "registrations" in result
+        assert result["registrations"]["waba"]["ok"] is True
+        assert result["registrations"]["phone"]["ok"] is True
+        assert len(calls) == 2
+        waba_url, waba_data = calls[0]
+        phone_url, phone_data = calls[1]
+        assert waba_url.endswith("/107732305578216/subscribed_apps")
+        assert waba_data["override_callback_uri"] == (
+            "https://example.com/api/whatsapp/interact/webhook/n.Agent.x"
+        )
+        assert waba_data["verify_token"] == "jvagent-meta-verify"
+        assert phone_url.endswith("/106540352242922")
+        assert phone_data["webhook_configuration"]["override_callback_uri"] == (
+            "https://example.com/api/whatsapp/interact/webhook/n.Agent.x"
+        )
+
+    @pytest.mark.asyncio
+    async def test_register_webhook_subscription_waba_only(self):
+        api = MetaWhatsAppAPI(
+            api_url="https://graph.facebook.com/v25.0/",
+            session="",
+            token="test-token",
+            phone_number_id="",
+            waba_id="107732305578216",
+            verify_token="jvagent-meta-verify",
+        )
         captured = {}
 
         async def fake_send(url, method="POST", data=None, **kwargs):
@@ -164,15 +203,11 @@ class TestMetaWhatsAppSend:
         api.send_rest_request = fake_send  # type: ignore[method-assign]
 
         result = await api.register_webhook_subscription(
-            "https://example.com/api/whatsapp/interact/webhook/n.Agent.x?api_key=secret",
-            "jvagent-meta-verify",
+            "https://example.com/callback", "verify-me"
         )
         assert result["ok"] is True
+        assert "phone" not in result["registrations"]
         assert captured["url"].endswith("/107732305578216/subscribed_apps")
-        assert captured["data"]["override_callback_uri"] == (
-            "https://example.com/api/whatsapp/interact/webhook/n.Agent.x"
-        )
-        assert captured["data"]["verify_token"] == "jvagent-meta-verify"
 
     @pytest.mark.asyncio
     async def test_register_webhook_subscription_phone_fallback(self, meta_api):
@@ -222,7 +257,8 @@ class TestMetaWhatsAppSend:
             "https://example.com/callback", "verify-me"
         )
         assert result["ok"] is True
-        assert len(calls) == 3
+        assert len(calls) == 4
         assert calls[0][1] is not None
         assert calls[1][1] is None
         assert calls[2][1]["override_callback_uri"] == "https://example.com/callback"
+        assert "webhook_configuration" in (calls[3][1] or {})

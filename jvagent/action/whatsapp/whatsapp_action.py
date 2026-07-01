@@ -21,6 +21,11 @@ from .modules.ultramsg import UltraMsgAPI
 from .modules.wppconnect import WPPConnectAPI
 from .modules.wwebjs_api import WWebJSAPI
 from .utils.meta_verify_token import derive_meta_verify_token
+from .utils.meta_webhook_verify import (
+    agent_id_from_callback_url,
+    dashboard_action_for_stale,
+    find_stale_callbacks,
+)
 from .utils.typing_state_manager import TypingStateManager
 from .webhook_auth import get_or_create_system_user
 from .whatsapp_adapter import WhatsAppAdapter
@@ -521,6 +526,30 @@ class WhatsAppAction(Action):
                 e,
             )
 
+    async def _meta_webhook_stale_check(
+        self,
+        callback: str,
+        agent_id: str,
+        wa: MetaWhatsAppAPI,
+    ) -> Dict[str, Any]:
+        """Fetch Graph webhook config and flag URLs that do not match this agent."""
+        graph = await wa.get_webhook_override_status()
+        stale = find_stale_callbacks(graph, callback, agent_id)
+        if stale:
+            for item in stale:
+                logger.warning(
+                    "Meta webhook stale callback (%s): %s (agent_id=%s, expected=%s)",
+                    item.get("source"),
+                    item.get("url"),
+                    item.get("agent_id"),
+                    agent_id,
+                )
+        return {
+            "graph": graph,
+            "stale_callbacks": stale,
+            "dashboard_action": dashboard_action_for_stale(stale),
+        }
+
     async def get_meta_webhook_override_status(self) -> Dict[str, Any]:
         """Return Meta Graph state for WABA/phone webhook override (not App Dashboard)."""
         if not self.is_meta_provider() or not self.is_configured():
@@ -538,15 +567,26 @@ class WhatsAppAction(Action):
                 callback = self.meta_callback_url_for_subscription(url)
             except ValidationError:
                 callback = ""
+        agent = await self.get_agent()
+        agent_id = str(agent.id) if agent else ""
+        expected_agent_id = agent_id or agent_id_from_callback_url(callback)
+        verify = self.effective_verify_token(agent_id)
         wa = await self.api()
-        graph = await wa.get_webhook_override_status()
+        check = await self._meta_webhook_stale_check(callback, expected_agent_id, wa)
         return {
             "expected_callback_url": callback,
+            "expected_agent_id": expected_agent_id,
+            "verify_token": verify,
+            "stale_callbacks": check["stale_callbacks"],
+            "dashboard_action": check["dashboard_action"] or (
+                "Meta App Dashboard shows the app default callback URL only. "
+                "WABA/phone overrides appear here and in Graph subscribed_apps."
+            ),
             "dashboard_note": (
                 "Meta App Dashboard shows the app default callback URL only. "
                 "WABA/phone overrides appear here and in Graph subscribed_apps."
             ),
-            "graph": graph,
+            "graph": check["graph"],
         }
 
     async def on_startup(self) -> None:
@@ -914,12 +954,17 @@ class WhatsAppAction(Action):
                 agent_id,
                 callback,
             )
+            stale_check = await self._meta_webhook_stale_check(callback, agent_id, wa)
             return {
                 "status": "ok",
                 "ok": True,
                 "callback_url": callback,
                 "agent_id": agent_id,
+                "expected_agent_id": agent_id,
+                "stale_callbacks": stale_check["stale_callbacks"],
+                "dashboard_action": stale_check["dashboard_action"],
                 "result": result,
+                "graph": stale_check["graph"],
             }
         except ValidationError as e:
             logger.warning("register_meta_webhook_subscription: %s", e)

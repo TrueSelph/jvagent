@@ -196,6 +196,7 @@ falls back to a sibling env var when its primary key is unset:
 - Meta Cloud API (`provider: meta`) — **agent.yaml** (preferred): `waba_id`, `phone_number_id`, `access_token` on WhatsAppAction; **env fallback** when yaml empty: `WHATSAPP_WABA_ID`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`
 - Meta Cloud API — **env**: `WHATSAPP_APP_SECRET` (webhook signature; falls back to `FACEBOOK_APP_SECRET`), `WHATSAPP_APP_ID` (optional; falls back to `FACEBOOK_APP_ID`), `WHATSAPP_GRAPH_VERSION` (default `v25.0`)
 - Meta verify token: auto-derived from agent id + app secret (optional `verify_token` on action to override)
+- After `jvagent --purge`, agent id changes — update Meta App Dashboard callback URL to match `GET .../meta/webhook-status` `expected_callback_url` (Graph override alone does not update the `application` layer)
 - Meta media/voice outbound requires `JVAGENT_PUBLIC_BASE_URL` (files fetched from jvagent before Graph upload)
 - Meta typing uses inbound message wamid; configure `stt_action` / `tts_action` on the WhatsApp action for voice notes
 - `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION` — when `true`, skip deferred Meta webhook override on startup (meta provider only)
