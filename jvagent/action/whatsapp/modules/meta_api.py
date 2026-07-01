@@ -175,7 +175,7 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         else:
             return {
                 "ok": False,
-                "error": "WHATSAPP_WABA_ID or WHATSAPP_PHONE_NUMBER_ID required",
+                "error": "waba_id or phone_number_id required on WhatsApp action",
             }
 
         return self._normalize_graph_result(result, target, callback)
@@ -233,7 +233,7 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
             return await self.send_rest_request(url, method="GET", use_full_url=True)
         return {
             "ok": False,
-            "error": "WHATSAPP_WABA_ID or WHATSAPP_PHONE_NUMBER_ID required",
+            "error": "waba_id or phone_number_id required on WhatsApp action",
         }
 
     async def convert_lid_to_phone_number(self, lid: str) -> str:

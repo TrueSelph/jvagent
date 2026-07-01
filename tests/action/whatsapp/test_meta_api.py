@@ -119,9 +119,7 @@ class TestMetaWhatsAppSend:
     async def test_send_message_builds_graph_payload(self, meta_api):
         captured = {}
 
-        async def fake_request(
-            url, method, headers, data=None, params=None, json_body=True
-        ):
+        async def fake_request(url, method, headers, data=None, params=None, json_body=True):
             captured["url"] = url
             captured["data"] = data
             return {"messaging_product": "whatsapp", "messages": [{"id": "wamid.x"}]}

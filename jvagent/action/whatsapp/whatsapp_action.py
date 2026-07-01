@@ -20,6 +20,7 @@ from .modules.meta_api import MetaWhatsAppAPI
 from .modules.ultramsg import UltraMsgAPI
 from .modules.wppconnect import WPPConnectAPI
 from .modules.wwebjs_api import WWebJSAPI
+from .utils.meta_verify_token import derive_meta_verify_token
 from .utils.typing_state_manager import TypingStateManager
 from .webhook_auth import get_or_create_system_user
 from .whatsapp_adapter import WhatsAppAdapter
@@ -84,31 +85,31 @@ class WhatsAppAction(Action):
 
     phone_number_id: str = attribute(
         default="",
-        description="Meta Cloud API phone number ID; when empty, WHATSAPP_PHONE_NUMBER_ID is used",
+        description="Meta Cloud API phone number ID; when empty, WHATSAPP_PHONE_NUMBER_ID env is used",
     )
     access_token: str = attribute(
         default="",
-        description="Meta Cloud API access token; when empty, WHATSAPP_ACCESS_TOKEN is used",
+        description="Meta Cloud API access token; when empty, WHATSAPP_ACCESS_TOKEN env is used",
     )
     app_secret: str = attribute(
         default="",
-        description="Meta app secret for webhook signature; WHATSAPP_APP_SECRET or FACEBOOK_APP_SECRET",
+        description="Meta app secret for webhook signature (bridge providers; meta uses env WHATSAPP_APP_SECRET)",
     )
     verify_token: Optional[str] = attribute(
         default=None,
-        description="Meta webhook verify token; when empty, WHATSAPP_VERIFY_TOKEN is used",
+        description="Optional Meta webhook verify token override; when empty, derived from agent_id + app secret",
     )
     waba_id: str = attribute(
         default="",
-        description="WhatsApp Business Account ID (optional; WHATSAPP_WABA_ID)",
+        description="WhatsApp Business Account ID; when empty, WHATSAPP_WABA_ID env is used",
     )
     app_id: str = attribute(
         default="",
-        description="Meta app ID (optional; WHATSAPP_APP_ID or FACEBOOK_APP_ID)",
+        description="Meta app ID (unused for meta; use WHATSAPP_APP_ID env)",
     )
     graph_version: str = attribute(
         default="v25.0",
-        description="Graph API version for meta provider (WHATSAPP_GRAPH_VERSION)",
+        description="Graph API version fallback when WHATSAPP_GRAPH_VERSION env is unset",
         max_length=20,
     )
 
@@ -198,16 +199,23 @@ class WhatsAppAction(Action):
         return (env("WHATSAPP_ACCESS_TOKEN") or "").strip()
 
     def _env_app_secret(self) -> str:
+        if self.is_meta_provider():
+            return (
+                env("WHATSAPP_APP_SECRET") or env("FACEBOOK_APP_SECRET") or ""
+            ).strip()
         s = (self.app_secret or "").strip()
         if s:
             return s
-        return (env("WHATSAPP_APP_SECRET") or env("FACEBOOK_APP_SECRET") or "").strip()
+        return (
+            env("WHATSAPP_APP_SECRET") or env("FACEBOOK_APP_SECRET") or ""
+        ).strip()
 
-    def _env_verify_token(self) -> str:
+    def effective_verify_token(self, agent_id: str = "") -> str:
+        """Return Meta hub.verify_token (yaml override or derived from agent_id + app secret)."""
         configured = self.verify_token
         if isinstance(configured, str) and configured.strip():
             return configured.strip()
-        return (env("WHATSAPP_VERIFY_TOKEN") or "").strip()
+        return derive_meta_verify_token(agent_id, self._env_app_secret())
 
     def _env_waba_id(self) -> str:
         w = (self.waba_id or "").strip()
@@ -216,13 +224,13 @@ class WhatsAppAction(Action):
         return (env("WHATSAPP_WABA_ID") or "").strip()
 
     def _meta_graph_api_url(self) -> str:
-        version = (self.graph_version or "").strip()
+        version = (
+            env("WHATSAPP_GRAPH_VERSION")
+            or os.environ.get("WHATSAPP_GRAPH_VERSION")
+            or ""
+        ).strip()
         if not version:
-            version = (
-                env("WHATSAPP_GRAPH_VERSION")
-                or os.environ.get("WHATSAPP_GRAPH_VERSION")
-                or "v25.0"
-            ).strip()
+            version = (self.graph_version or "v25.0").strip()
         if not version.startswith("v"):
             version = f"v{version}"
         return f"https://graph.facebook.com/{version}/"
@@ -255,8 +263,6 @@ class WhatsAppAction(Action):
             if not self._env_access_token():
                 return False
             if not self._env_app_secret():
-                return False
-            if not self._env_verify_token():
                 return False
             return True
 
@@ -308,12 +314,7 @@ class WhatsAppAction(Action):
                 )
             if not self._env_app_secret():
                 issues.append(
-                    "app_secret (WHATSAPP_APP_SECRET or FACEBOOK_APP_SECRET) is not configured"
-                )
-            if not self._env_verify_token():
-                issues.append(
-                    "verify_token (action.verify_token or WHATSAPP_VERIFY_TOKEN) "
-                    "is not configured"
+                    "app_secret (WHATSAPP_APP_SECRET or FACEBOOK_APP_SECRET env) is not configured"
                 )
             return issues
 
@@ -340,14 +341,13 @@ class WhatsAppAction(Action):
         q = s.find("?")
         return s[:q] if q >= 0 else s
 
-    def parse_webhook_verify(self, query: Dict[str, Any]) -> Union[str, Dict[str, Any]]:
+    def parse_webhook_verify(
+        self, query: Dict[str, Any], agent_id: str = ""
+    ) -> Union[str, Dict[str, Any]]:
         """Meta GET webhook verification (hub.* query params)."""
         if not self.is_meta_provider():
-            return {
-                "message": "Webhook verify only applies to meta provider",
-                "code": 403,
-            }
-        expected = self._env_verify_token()
+            return {"message": "Webhook verify only applies to meta provider", "code": 403}
+        expected = self.effective_verify_token(agent_id)
         mode = query.get("hub.mode")
         hub_verify = query.get("hub.verify_token")
         challenge = query.get("hub.challenge")
@@ -464,16 +464,17 @@ class WhatsAppAction(Action):
                 return
 
             async def _deferred_meta_webhook_register() -> None:
-                """Return immediately; register after server startup + delay."""
-                try:
-                    delay_raw = os.environ.get(
-                        "WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS", "8"
-                    )
-                    delay_sec = max(0.0, float(delay_raw))
-                except (ValueError, TypeError):
-                    delay_sec = 8.0
+                """Schedule Meta webhook override after uvicorn startup (non-blocking)."""
 
                 async def _run_after_startup() -> None:
+                    try:
+                        delay_raw = os.environ.get(
+                            "WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS", "0"
+                        )
+                        delay_sec = max(0.0, float(delay_raw))
+                    except (ValueError, TypeError):
+                        delay_sec = 0.0
+
                     if delay_sec > 0:
                         logger.info(
                             "Deferring Meta WhatsApp webhook override by %.1fs "
@@ -481,25 +482,35 @@ class WhatsAppAction(Action):
                             delay_sec,
                         )
                         await asyncio.sleep(delay_sec)
+                    else:
+                        # Yield once so uvicorn finishes lifespan startup first.
+                        await asyncio.sleep(0)
+
+                    logger.info(
+                        "Registering Meta WhatsApp webhook override on startup"
+                    )
                     reg = await self.register_meta_webhook_subscription()
                     if reg.get("status") == "ok":
                         self._session_registered = True
                         logger.info(
-                            "WhatsApp deferred Meta webhook registration succeeded: %s",
+                            "WhatsApp Meta webhook registration succeeded: %s",
                             reg.get("callback_url"),
                         )
                     elif reg.get("status") == "skipped":
                         logger.info(
-                            "WhatsApp deferred Meta webhook registration skipped: %s",
+                            "WhatsApp Meta webhook registration skipped: %s",
                             reg.get("reason"),
                         )
                     else:
                         logger.warning(
-                            "WhatsApp deferred Meta webhook registration: %s",
+                            "WhatsApp Meta webhook registration: %s",
                             reg,
                         )
 
-                asyncio.create_task(_run_after_startup())
+                asyncio.create_task(
+                    _run_after_startup(),
+                    name="meta_whatsapp_webhook_register",
+                )
 
             server.lifecycle_manager.add_startup_hook(_deferred_meta_webhook_register)
             if action_id:
@@ -706,6 +717,8 @@ class WhatsAppAction(Action):
         try:
             if self.provider == "meta":
                 phone_id = self._env_phone_number_id()
+                agent = await self.get_agent()
+                agent_id = str(agent.id) if agent else ""
                 return MetaWhatsAppAPI(
                     api_url=self._meta_graph_api_url(),
                     session=phone_id,
@@ -714,7 +727,7 @@ class WhatsAppAction(Action):
                     timeout=timeout,
                     phone_number_id=phone_id,
                     waba_id=self._env_waba_id(),
-                    verify_token=self._env_verify_token(),
+                    verify_token=self.effective_verify_token(agent_id),
                 )
 
             session = await self._effective_whatsapp_session()
@@ -866,7 +879,7 @@ class WhatsAppAction(Action):
 
             agent = await self.get_agent()
             agent_id = str(agent.id) if agent else ""
-            verify = self._env_verify_token()
+            verify = self.effective_verify_token(agent_id)
             logger.info(
                 "Registering Meta WhatsApp webhook override (agent_id=%s callback=%s). "
                 "Meta will GET hub.challenge on that URL before accepting it.",
@@ -878,9 +891,7 @@ class WhatsAppAction(Action):
             ok = bool(result.get("success") or result.get("ok"))
             if not ok:
                 err_msg = str(result.get("error") or result)
-                logger.warning(
-                    "Meta WhatsApp webhook override Graph error: %s", err_msg
-                )
+                logger.warning("Meta WhatsApp webhook override Graph error: %s", err_msg)
                 if "502" in err_msg or "Callback verification" in err_msg:
                     logger.warning(
                         "Meta could not verify the callback URL. Ensure GET "

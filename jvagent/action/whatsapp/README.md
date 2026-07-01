@@ -259,27 +259,39 @@ Use the official WhatsApp Business Cloud API instead of a self-hosted bridge. Su
 
 Configure `stt_action` and `tts_action` on the WhatsApp action (same as bridge providers) for voice note transcription and voice replies.
 
-```env
-WHATSAPP_PHONE_NUMBER_ID=102274452799236
-WHATSAPP_ACCESS_TOKEN=EAAJ...          # system user access token
-WHATSAPP_APP_SECRET=...                # or FACEBOOK_APP_SECRET
-WHATSAPP_VERIFY_TOKEN=your-verify-token  # Meta App Dashboard verify token
-JVAGENT_PUBLIC_BASE_URL=https://your-app.com
+**Per-agent credentials** — prefer `agent.yaml`; empty fields fall back to `.env`:
 
-# Optional
-WHATSAPP_WABA_ID=107732305578216
-WHATSAPP_APP_ID=1837228823924621       # or FACEBOOK_APP_ID
-WHATSAPP_GRAPH_VERSION=v25.0
+```yaml
+- action: jvagent/whatsapp_action
+  context:
+    provider: meta
+    waba_id: "107732305578216"          # or WHATSAPP_WABA_ID
+    phone_number_id: "102274452799236"  # or WHATSAPP_PHONE_NUMBER_ID
+    access_token: "EAAJ..."             # or WHATSAPP_ACCESS_TOKEN
 ```
+
+**App-level env** (`.env`) — used when yaml fields above are empty, plus app secrets:
+
+```env
+WHATSAPP_PHONE_NUMBER_ID=102274452799236   # fallback if phone_number_id unset in yaml
+WHATSAPP_ACCESS_TOKEN=EAAJ...              # fallback if access_token unset in yaml
+WHATSAPP_WABA_ID=107732305578216           # fallback if waba_id unset in yaml
+WHATSAPP_APP_SECRET=...                    # or FACEBOOK_APP_SECRET
+WHATSAPP_APP_ID=1837228823924621           # or FACEBOOK_APP_ID (optional)
+WHATSAPP_GRAPH_VERSION=v25.0               # optional; default v25.0
+JVAGENT_PUBLIC_BASE_URL=https://your-app.com
+```
+
+**Verify token:** auto-derived from `agent_id` + `WHATSAPP_APP_SECRET` (no env/yaml). Optional `verify_token` on the action overrides derivation. After `jvagent --purge`, agent id changes → token changes → startup re-registers the override.
 
 **Meta webhook callback** (automatic override on startup):
 
-On startup (meta provider), jvagent waits `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS` (default **8**) after the HTTP server is listening, then calls the Meta Graph API to set **`override_callback_uri`** on your WABA (`WHATSAPP_WABA_ID`) or phone number.
+On startup (meta provider), jvagent registers the Meta Graph **`override_callback_uri`** in a background task **after** uvicorn reports `Application startup complete` (optional `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS`, default **0**).
 
 **The Meta App Dashboard callback URL will not change.** Dashboard shows the app default only. Overrides are per-WABA/phone; verify with `GET /api/actions/{action_id}/meta/webhook-status` (returns Graph `subscribed_apps` / `webhook_configuration`).
 
 1. **Callback URL**: `{JVAGENT_PUBLIC_BASE_URL}/api/whatsapp/interact/webhook/{agent_id}` — `{agent_id}` is the agent **node id** (e.g. `n.Agent.xxxx`), not the YAML path; no `api_key` query param.
-2. **Verify token**: must match `WHATSAPP_VERIFY_TOKEN` (Meta sends GET hub.challenge to verify before override succeeds).
+2. **Verify token**: derived automatically; `GET .../meta/webhook-url` (admin) shows the active token for debugging.
 3. Subscribe to the **messages** field in the dashboard (one-time app setup).
 
 **Webhook field subscriptions (Meta dashboard):**
@@ -301,7 +313,8 @@ For multi-worker deployments, consider a shared dedup store (not included in the
 
 Env toggles:
 
-- `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true` — skip deferred override; call `POST /api/actions/{action_id}/meta/webhook-register` when ready.
+- `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true` — skip override on startup; call `POST /api/actions/{action_id}/meta/webhook-register` when ready.
+- `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS` — optional delay before override (default **0**).
 - `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE=false` — skip override on action reload.
 
 Admin helpers:

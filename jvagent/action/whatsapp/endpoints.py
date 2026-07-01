@@ -480,7 +480,7 @@ async def whatsapp_interact_webhook_verify(request: Request, agent_id: str) -> A
     params = getattr(request.state, "parsed_payload", None)
     if not isinstance(params, dict):
         params = dict(request.query_params)
-    challenge = whatsapp_action.parse_webhook_verify(params)
+    challenge = whatsapp_action.parse_webhook_verify(params, agent_id=agent_id)
     if isinstance(challenge, dict):
         raise HTTPException(status_code=403, detail="Webhook verification failed")
     return PlainTextResponse(str(challenge), media_type="text/plain")
@@ -540,9 +540,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             if not raw_body:
                 raw_body = await request.body()
             if not verify_meta_webhook_signature(raw_body, request, app_secret):
-                raise HTTPException(
-                    status_code=401, detail="Invalid X-Hub-Signature-256"
-                )
+                raise HTTPException(status_code=401, detail="Invalid X-Hub-Signature-256")
             try:
                 request_data = json.loads(raw_body.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError) as e:
@@ -1181,13 +1179,23 @@ async def get_meta_webhook_url(action_id: str) -> Dict[str, Any]:
         )
     url = whatsapp_action.webhook_url or await whatsapp_action.get_webhook_url()
     meta_url = whatsapp_action.meta_callback_url_for_subscription(url)
+    agent = await whatsapp_action.get_agent()
+    agent_id = str(agent.id) if agent else ""
+    verify = whatsapp_action.effective_verify_token(agent_id)
     return {
         "webhook_url": url,
         "meta_callback_url": meta_url,
-        "verify_token_env": "WHATSAPP_VERIFY_TOKEN",
+        "verify_token_derived": not (
+            isinstance(whatsapp_action.verify_token, str)
+            and whatsapp_action.verify_token.strip()
+        ),
+        "verify_token": verify,
+        "agent_id": agent_id,
         "dashboard_note": (
             "App Dashboard shows the app default callback only. After startup, "
-            "GET .../meta/webhook-status shows the active WABA/phone override."
+            "GET .../meta/webhook-status shows the active WABA/phone override. "
+            "verify_token is auto-derived from agent_id + WHATSAPP_APP_SECRET unless "
+            "verify_token is set on the action."
         ),
     }
 
