@@ -10,9 +10,16 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+_SKILL_DISCOVERY_CACHE: Dict[tuple, List["SkillDoc"]] = {}
+
+
+def clear_skill_discovery_cache() -> None:
+    """Drop cached skill discovery results (tests / agent config changes)."""
+    _SKILL_DISCOVERY_CACHE.clear()
 
 
 @dataclass(frozen=True)
@@ -91,7 +98,6 @@ def discover_skill_docs(
             apply_skill_selector,
             resolve_merged_skill_bundles,
         )
-        from jvagent.scaffold.sop_extend import reset_sop_extend_cache
     except Exception as exc:  # pragma: no cover - import wiring
         logger.debug("orchestrator.skills: resolver import failed: %s", exc)
         return []
@@ -101,6 +107,18 @@ def discover_skill_docs(
     name = getattr(agent, "name", None)
     if not app_root or not namespace or not name:
         return []
+
+    cache_key = (
+        str(app_root),
+        str(namespace),
+        str(name),
+        (skills_source or "both").strip().lower(),
+        repr(selector or "-all"),
+        tuple(denied or ()),
+    )
+    cached_docs = _SKILL_DISCOVERY_CACHE.get(cache_key)
+    if cached_docs is not None:
+        return list(cached_docs)
 
     # Canonical sources: ``app`` (adjacent agents/<ns>/<agent>/skills),
     # ``library`` (built-in jvagent/skills), or ``both``. Older values are kept
@@ -122,7 +140,6 @@ def discover_skill_docs(
 
     include_builtin = source in ("both", "library")
     try:
-        reset_sop_extend_cache()
         bundles = resolve_merged_skill_bundles(
             str(app_root), namespace, name, include_builtin=include_builtin
         )
@@ -188,7 +205,8 @@ def discover_skill_docs(
                 docs.append(hd)
                 existing.add(hd.name)
 
+    _SKILL_DISCOVERY_CACHE[cache_key] = list(docs)
     return docs
 
 
-__all__ = ["SkillDoc", "discover_skill_docs"]
+__all__ = ["SkillDoc", "clear_skill_discovery_cache", "discover_skill_docs"]

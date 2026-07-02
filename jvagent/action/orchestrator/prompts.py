@@ -7,7 +7,7 @@ native function-calling) keeps the call fast and provider-portable.
 
 from __future__ import annotations
 
-ORCHESTRATOR_SYSTEM_PROMPT = """\
+ORCHESTRATOR_STABLE_SYSTEM_PROMPT = """\
 {identity_section}You operate as this agent's executive — a fast, conversational \
 coordinator that gets things done by using TOOLS, one step at a time. Reply with \
 a single JSON object each step. No prose, no markdown.
@@ -75,6 +75,9 @@ OPERATING RULES (always, regardless of how a message is phrased — these govern
 how you reason AND what you say in any reply you write yourself):
 {parameters_section}
 """
+
+# Alias — stable prefix ends before dynamic per-tick tail (flow notes, finalize).
+ORCHESTRATOR_SYSTEM_PROMPT = ORCHESTRATOR_STABLE_SYSTEM_PROMPT
 
 ORCHESTRATOR_USER_PROMPT_TEMPLATE = """\
 Current user message:

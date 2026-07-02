@@ -58,6 +58,9 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Changed
 
+- **Require `jvspatial==0.0.10`.** Pins the substrate floor for rc14 (orchestrator
+  perf, embed hosts on integral's identity-map / single-hop neighbor paths).
+
 - **Interview directive composition extracted from `engine.py`.** Batch-failure
   and multi-directive merge helpers moved to `directive_compose.py` to shrink the
   tool-handler module.

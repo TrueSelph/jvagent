@@ -2153,6 +2153,12 @@ class OrchestratorInteractAction(InteractAction):
         parameters_section = render_parameters(
             orchestration_parameters(_pool) + reply_core_parameters()
         )
+        self._turn_prompt_cache = {
+            "identity": await self._render_identity(),
+            "capabilities": capabilities_section,
+            "parameters": parameters_section,
+            "skills_section": skills_section,
+        }
 
         # Hard turn-lock (lock_active_flow): when a control-task points to an IA
         # that furnished a tool, restrict the callable surface to that one tool
@@ -3845,10 +3851,8 @@ class OrchestratorInteractAction(InteractAction):
             except Exception as exc:
                 # The digest is non-essential; never let it crash a turn.
                 logger.debug("orchestrator: collect_capabilities failed: %s", exc)
-        for d in skill_docs or []:
-            desc = (getattr(d, "description", "") or "").strip()
-            if desc:
-                caps.append(desc)
+        # Skill descriptions already appear in skills_section — omit here to
+        # avoid duplicating the same prose in the prompt (prompt-cache friendly).
         return caps
 
     def _discover_skills(self, agent: Any) -> List[Any]:
@@ -3940,12 +3944,17 @@ class OrchestratorInteractAction(InteractAction):
             loop_extra.append(self.memory_prompt)
         loop_protocol_extra = ("\n\n" + "\n\n".join(loop_extra)) if loop_extra else ""
 
+        prompt_cache = getattr(self, "_turn_prompt_cache", None) or {}
         system_prompt = self._compose_system_prompt(
-            identity_section=await self._render_identity(),
+            identity_section=prompt_cache.get("identity")
+            or await self._render_identity(),
             tools_section=render_tools_section(tools, lean=lean),
-            skills_section=skills_section or self.no_skills_text,
-            capabilities_section=capabilities_section,
-            parameters_section=parameters_section,
+            skills_section=skills_section
+            or prompt_cache.get("skills_section")
+            or self.no_skills_text,
+            capabilities_section=capabilities_section
+            or prompt_cache.get("capabilities", ""),
+            parameters_section=parameters_section or prompt_cache.get("parameters", ""),
             loop_protocol_extra=loop_protocol_extra,
         )
         if flow_note:
