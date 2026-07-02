@@ -319,8 +319,14 @@ actions:
       enabled: true
       description: "WhatsApp provider (wppconnect, ultramsg, wwebjs, meta)"
       # Bridge: provider wwebjs + WHATSAPP_API_URL / WHATSAPP_API_KEY in .env
-      # Cloud API: provider meta + WHATSAPP_PHONE_NUMBER_ID / WHATSAPP_ACCESS_TOKEN / etc.
+      # Cloud API: provider meta + waba_id / phone_number_id / access_token in yaml,
+      #   or WHATSAPP_WABA_ID / WHATSAPP_PHONE_NUMBER_ID / WHATSAPP_ACCESS_TOKEN in .env
       provider: "meta"
-#      session: "wiin-dev"
       stt_action: "DeepgramSTTAction"
       tts_action: "ElevenLabsTTSAction"
+      waba_id: ""              # e.g. "107732305578216"
+      phone_number_id: ""      # e.g. "102274452799236"
+      access_token: ""         # Meta system user token for this WABA
+
+
+
