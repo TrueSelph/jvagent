@@ -4,6 +4,7 @@ Exposes lead-profile management as first-class orchestrator tools so the
 orchestrator can decide *when* to update or sync, rather than blindly
 running a background action every turn.
 """
+
 from __future__ import annotations
 
 import json
@@ -13,11 +14,12 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from jvspatial.core.annotations import attribute
+
 from jvagent.action.base import Action
 from jvagent.memory.user import User
 from jvagent.tooling.tool import Tool
 from jvagent.tooling.tool_executor import get_dispatch_visitor
-from jvspatial.core.annotations import attribute
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +46,10 @@ def _validate_and_normalize_phone(raw: str) -> Tuple[Optional[str], Optional[str
 
     # 1. Less than 7 digits is invalid
     if len(digits_only) < 7:
-        return None, f"Invalid phone number '{raw.strip()}': must contain at least 7 digits."
+        return (
+            None,
+            f"Invalid phone number '{raw.strip()}': must contain at least 7 digits.",
+        )
 
     # 2. Exactly 7 digits -> assume Guyana (+592)
     if len(digits_only) == 7:
@@ -76,10 +81,13 @@ def _validate_and_normalize_email(raw: str) -> Tuple[Optional[str], Optional[str
     cleaned = raw.strip()
 
     # 1. Must contain exactly one @ sign
-    if cleaned == 'N/A' or cleaned == 'n/a':
+    if cleaned == "N/A" or cleaned == "n/a":
         return cleaned, None  # Allow 'N/A' as a valid placeholder
     if cleaned.count("@") != 1:
-        return None, f"Invalid email address '{cleaned}': must contain exactly one '@' sign."
+        return (
+            None,
+            f"Invalid email address '{cleaned}': must contain exactly one '@' sign.",
+        )
 
     # 2. Cannot have spaces
     if " " in cleaned:
@@ -88,34 +96,139 @@ def _validate_and_normalize_email(raw: str) -> Tuple[Optional[str], Optional[str
     # 3. Must have something before and after @
     local_part, domain_part = cleaned.split("@")
     if not local_part or not domain_part:
-        return None, f"Invalid email address '{cleaned}': must have text before and after '@'."
+        return (
+            None,
+            f"Invalid email address '{cleaned}': must have text before and after '@'.",
+        )
 
     # 4. Domain must have at least one dot (e.g., example.com)
     if "." not in domain_part:
-        return None, f"Invalid email address '{cleaned}': domain must contain a dot (e.g., 'example.com')."
+        return (
+            None,
+            f"Invalid email address '{cleaned}': domain must contain a dot (e.g., 'example.com').",
+        )
 
     # 5. Lowercase for consistency
     return cleaned.lower(), None
 
+
 _FIELD_ALIASES: Dict[str, List[str]] = {
     "name": ["name", "first_name", "last_name", "full_name", "contact_name"],
-    "organization": ["organization", "company", "org", "organisation", "organization_company", "organization / company"],
-    "project": ["project_description", "project_name", "project", "project_details", "project name", "project description"],
-    "project_location": ["project_location", "location", "site_location", "site", "project location"],
+    "organization": [
+        "organization",
+        "company",
+        "org",
+        "organisation",
+        "organization_company",
+        "organization / company",
+    ],
+    "project": [
+        "project_description",
+        "project_name",
+        "project",
+        "project_details",
+        "project name",
+        "project description",
+    ],
+    "project_location": [
+        "project_location",
+        "location",
+        "site_location",
+        "site",
+        "project location",
+    ],
     "email": ["email", "email_address", "e_mail", "mail"],
     "phone": ["phone", "phone_number", "telephone", "mobile", "contact_number"],
-    "interested_products": ["interested_products", "interested_services", "products interested in", "products and services interested in", "interested in", "products wanted", "services_wanted", "products/services needed", "items interested in", "interested_product", "interested product", "interested service", "product interested", "products/services interested", "items interested"],
+    "interested_products": [
+        "interested_products",
+        "interested_services",
+        "products interested in",
+        "products and services interested in",
+        "interested in",
+        "products wanted",
+        "services_wanted",
+        "products/services needed",
+        "items interested in",
+        "interested_product",
+        "interested product",
+        "interested service",
+        "product interested",
+        "products/services interested",
+        "items interested",
+    ],
     "role": ["role", "title", "job_title", "position", "role_title"],
     "industry": ["industry", "sector", "vertical", "field"],
-    "team_size": ["team_size", "team size", "headcount", "team_count", "number_of_employees", "employees"],
+    "team_size": [
+        "team_size",
+        "team size",
+        "headcount",
+        "team_count",
+        "number_of_employees",
+        "employees",
+    ],
     "budget": ["budget", "budget_amount", "price_range", "spend"],
     "timeline": ["timeline", "deadline", "target_date", "schedule", "when"],
-    "pain_points": ["pain_points", "pain points", "challenges", "problems", "issues", "frustrations"],
-    "current_tools": ["current_tools", "current tools", "tools", "systems", "software", "existing_tools"],
-    "communication_preference": ["communication_preference", "communication preference", "contact_preference", "preferred_contact", "communication_style"],
-    "requested_items": ["requested_items", "requested items", "items requested", "products requested", "items they want", "things they want", "products they need", "requested_item", "requested item", "item requested", "product requested", "product they need"],
-    "declined_items": ["declined_items", "declined items", "items declined", "not wanted", "don't want", "do not want", "don't need", "do not need", "skip", "remove", "not needed", "no longer needed", "changed my mind", "don't bother"],
-    "feedback": ["feedback", "customer_feedback", "product_feedback", "feedback_notes", "comments", "opinion"],
+    "pain_points": [
+        "pain_points",
+        "pain points",
+        "challenges",
+        "problems",
+        "issues",
+        "frustrations",
+    ],
+    "current_tools": [
+        "current_tools",
+        "current tools",
+        "tools",
+        "systems",
+        "software",
+        "existing_tools",
+    ],
+    "communication_preference": [
+        "communication_preference",
+        "communication preference",
+        "contact_preference",
+        "preferred_contact",
+        "communication_style",
+    ],
+    "requested_items": [
+        "requested_items",
+        "requested items",
+        "items requested",
+        "products requested",
+        "items they want",
+        "things they want",
+        "products they need",
+        "requested_item",
+        "requested item",
+        "item requested",
+        "product requested",
+        "product they need",
+    ],
+    "declined_items": [
+        "declined_items",
+        "declined items",
+        "items declined",
+        "not wanted",
+        "don't want",
+        "do not want",
+        "don't need",
+        "do not need",
+        "skip",
+        "remove",
+        "not needed",
+        "no longer needed",
+        "changed my mind",
+        "don't bother",
+    ],
+    "feedback": [
+        "feedback",
+        "customer_feedback",
+        "product_feedback",
+        "feedback_notes",
+        "comments",
+        "opinion",
+    ],
 }
 
 _DEFAULT_FIELD_DESCRIPTIONS: Dict[str, str] = {
@@ -144,9 +257,7 @@ _DEFAULT_FIELD_DESCRIPTIONS: Dict[str, str] = {
 class LeadProfileAction(Action):
     """Tool-based lead profile manager: update and sync to Google Sheet."""
 
-    description: str = (
-        "Update the lead profile from conversation data."
-    )
+    description: str = "Update the lead profile from conversation data."
 
     # -- LLM config for extraction (mirrors old LeadInteractAction) ----------
     model_action_type: str = attribute(default="OpenAILanguageModelAction")
@@ -201,7 +312,9 @@ class LeadProfileAction(Action):
             aliases = cfg.get("aliases", []) if isinstance(cfg, dict) else []
             if aliases:
                 if key in merged:
-                    merged[key] = merged[key] + [a for a in aliases if a not in merged[key]]
+                    merged[key] = merged[key] + [
+                        a for a in aliases if a not in merged[key]
+                    ]
                 else:
                     merged[key] = list(aliases)
         return merged
@@ -214,23 +327,54 @@ class LeadProfileAction(Action):
                 merged[key] = desc
         return merged
 
-    _DEFAULT_REQUIRED = ["name", "organization", "project_description", "email", "phone"]
-    _DEFAULT_OPTIONAL = ["role", "industry", "team_size", "budget", "timeline", "pain_points",
-                         "current_tools", "communication_preference", "past_interests",
-                         "requested_items", "feedback"]
+    _DEFAULT_REQUIRED = [
+        "name",
+        "organization",
+        "project_description",
+        "email",
+        "phone",
+    ]
+    _DEFAULT_OPTIONAL = [
+        "role",
+        "industry",
+        "team_size",
+        "budget",
+        "timeline",
+        "pain_points",
+        "current_tools",
+        "communication_preference",
+        "past_interests",
+        "requested_items",
+        "feedback",
+    ]
     _DEFAULT_MERGE = ["interested_products"]
 
     def _resolved_required_fields(self) -> List[str]:
-        custom = {k for k, cfg in (self.fields or {}).items()
-                  if isinstance(cfg, dict) and cfg.get("required", False)}
-        removed = {k for k, cfg in (self.fields or {}).items()
-                   if isinstance(cfg, dict) and k in self._DEFAULT_REQUIRED and not cfg.get("required", False)}
-        return [f for f in self._DEFAULT_REQUIRED if f not in removed] + [f for f in custom if f not in self._DEFAULT_REQUIRED and f not in removed]
+        custom = {
+            k
+            for k, cfg in (self.fields or {}).items()
+            if isinstance(cfg, dict) and cfg.get("required", False)
+        }
+        removed = {
+            k
+            for k, cfg in (self.fields or {}).items()
+            if isinstance(cfg, dict)
+            and k in self._DEFAULT_REQUIRED
+            and not cfg.get("required", False)
+        }
+        return [f for f in self._DEFAULT_REQUIRED if f not in removed] + [
+            f for f in custom if f not in self._DEFAULT_REQUIRED and f not in removed
+        ]
 
     def _resolved_optional_fields(self) -> List[str]:
-        custom = {k for k, cfg in (self.fields or {}).items()
-                  if isinstance(cfg, dict) and not cfg.get("required", False)}
-        return [f for f in self._DEFAULT_OPTIONAL if f not in custom] + [f for f in custom if f not in self._DEFAULT_OPTIONAL]
+        custom = {
+            k
+            for k, cfg in (self.fields or {}).items()
+            if isinstance(cfg, dict) and not cfg.get("required", False)
+        }
+        return [f for f in self._DEFAULT_OPTIONAL if f not in custom] + [
+            f for f in custom if f not in self._DEFAULT_OPTIONAL
+        ]
 
     def _resolved_merge_fields(self) -> List[str]:
         result = list(self._DEFAULT_MERGE)
@@ -243,8 +387,10 @@ class LeadProfileAction(Action):
         return result
 
     def _all_fields(self) -> List[str]:
-        base = set(self._resolved_required_fields()) | set(self._resolved_optional_fields())
-        for key in (self.fields or {}):
+        base = set(self._resolved_required_fields()) | set(
+            self._resolved_optional_fields()
+        )
+        for key in self.fields or {}:
             base.add(key)
         return list(base)
 
@@ -262,14 +408,18 @@ class LeadProfileAction(Action):
             },
         }
         for canonical in self._all_fields():
-            desc = field_descriptions.get(canonical, f"Lead field: {canonical.replace('_', ' ')}.")
+            desc = field_descriptions.get(
+                canonical, f"Lead field: {canonical.replace('_', ' ')}."
+            )
             all_props[canonical] = {
                 "type": "string",
                 "description": desc,
             }
         for canonical in field_aliases:
             if canonical not in all_props:
-                desc = field_descriptions.get(canonical, f"Lead field: {canonical.replace('_', ' ')}.")
+                desc = field_descriptions.get(
+                    canonical, f"Lead field: {canonical.replace('_', ' ')}."
+                )
                 all_props[canonical] = {
                     "type": "string",
                     "description": desc,
@@ -319,7 +469,6 @@ class LeadProfileAction(Action):
                 },
                 execute=self._tool_update,
             ),
-
             Tool(
                 name="lead_profile__retrieve",
                 description=(
@@ -361,7 +510,10 @@ class LeadProfileAction(Action):
         now = time.time()
         last = _LAST_TOOL_CALLS.get(call_key, 0)
         if now - last < _TOOL_DEDUP_TTL:
-            logger.debug("lead_profile__update dedup: skipping duplicate call for %s", user.user_id)
+            logger.debug(
+                "lead_profile__update dedup: skipping duplicate call for %s",
+                user.user_id,
+            )
             return json.dumps({"status": "deduplicated"})
         _LAST_TOOL_CALLS[call_key] = now
 
@@ -385,7 +537,10 @@ class LeadProfileAction(Action):
                         user.name,
                     )
         except Exception as exc:
-            logger.debug("lead_profile__update: could not read interaction channel/session: %s", exc)
+            logger.debug(
+                "lead_profile__update: could not read interaction channel/session: %s",
+                exc,
+            )
 
         lp = await self._get_profile(user)
         if not lp:
@@ -414,7 +569,9 @@ class LeadProfileAction(Action):
             if old_val and days_since > self.max_days_to_archive > 0:
                 past_field = f"past_{merge_field}"
                 past = str(profile_data.get(past_field, "")).strip()
-                past_list = [p.strip() for p in past.split(",") if p.strip()] if past else []
+                past_list = (
+                    [p.strip() for p in past.split(",") if p.strip()] if past else []
+                )
                 if old_val not in past_list:
                     past_list.append(old_val)
                     fields[past_field] = ", ".join(past_list)
@@ -466,6 +623,7 @@ class LeadProfileAction(Action):
         for field in self.auto_update_fields:
             if field in fields and fields[field]:
                 from jvagent.core.app import App
+
                 app = await App.get()
                 now_str = await app.now("%Y-%m-%d %H:%M")
                 profile_data[f"_field_updated_at"] = now_str
@@ -493,7 +651,7 @@ class LeadProfileAction(Action):
                 profile_md = await lp.as_markdown(include_empty=False)
             except Exception:
                 profile_md = ""
-            result = {"status": "no-op", "reason": "no extractable fields"}
+            result: Dict[str, Any] = {"status": "no-op", "reason": "no extractable fields"}
             if profile_md.strip():
                 result["lead_profile"] = profile_md
             return json.dumps(result)
@@ -510,11 +668,14 @@ class LeadProfileAction(Action):
                 if len(str(v)) > 120:
                     val_str += "..."
                 updates_desc.append(f"{k} = '{val_str}'")
-            summary_text = "Set: " + "; ".join(updates_desc) if updates_desc else "Updated profile"
+            summary_text = (
+                "Set: " + "; ".join(updates_desc) if updates_desc else "Updated profile"
+            )
             await lp.append_to_section("conversation_summaries", summary_text)
 
             # --- Log required field captures ---
             from jvagent.core.app import App
+
             app = await App.get()
             now_str = await app.now("%Y-%m-%d %H:%M")
             logged_fields = []
@@ -525,17 +686,25 @@ class LeadProfileAction(Action):
                 log_entry = f"Captured: {', '.join(logged_fields)}"
                 try:
                     await lp.log_conversation(log_entry)
-                    logger.info("lead_profile__save: logged captured fields for user %s: %s", user.user_id, logged_fields)
+                    logger.info(
+                        "lead_profile__save: logged captured fields for user %s: %s",
+                        user.user_id,
+                        logged_fields,
+                    )
                 except Exception:
                     pass
 
             # --- Log declined items with timestamp AND remove from requested_items ---
             declined_raw = fields.get("declined_items", "")
             if declined_raw:
-                declined_list = [i.strip() for i in str(declined_raw).split(",") if i.strip()]
+                declined_list = [
+                    i.strip() for i in str(declined_raw).split(",") if i.strip()
+                ]
                 if declined_list:
                     # Remove declined items from requested_items
-                    await self._remove_declined_items(declined_list, fields, profile_data)
+                    await self._remove_declined_items(
+                        declined_list, fields, profile_data, lp
+                    )
                     # Log the decline
                     await self._log_declined_items(declined_list, lp, user.user_id)
 
@@ -544,8 +713,6 @@ class LeadProfileAction(Action):
                 await lp.generate_and_save_session_summary(interaction.conversation_id)
             except Exception:
                 pass
-
-
 
             # --- Immediate conversation log when requested_items is updated ---
             if "requested_items" in normalized:
@@ -605,11 +772,17 @@ class LeadProfileAction(Action):
         """Resolve the LeadProfile node, with cross-branch compatibility."""
         try:
             from jvagent.action.lead_profile import LeadProfile
-            return await LeadProfile.get_or_create_for_user(user, required_fields=list(self._resolved_required_fields()))
+
+            return await LeadProfile.get_or_create_for_user(
+                user, required_fields=list(self._resolved_required_fields())
+            )
         except (ImportError, AttributeError):
             try:
-                from jvagent.actions.lead_profile import LeadProfile
-                return await LeadProfile.get_or_create_for_user(user, required_fields=list(self._resolved_required_fields()))
+                from jvagent.actions.lead_profile import LeadProfile  # type: ignore[import-not-found,no-redef]
+
+                return await LeadProfile.get_or_create_for_user(
+                    user, required_fields=list(self._resolved_required_fields())
+                )
             except (ImportError, AttributeError) as exc:
                 logger.warning("LeadProfile unavailable: %s", exc)
                 return None
@@ -638,7 +811,10 @@ class LeadProfileAction(Action):
             for alias in alias_list:
                 if clean == alias.lower().replace(" ", "_").replace("-", "_"):
                     return canonical
-        if clean in self._resolved_required_fields() or clean in self._resolved_optional_fields():
+        if (
+            clean in self._resolved_required_fields()
+            or clean in self._resolved_optional_fields()
+        ):
             return clean
         if clean in {f for fs in aliases.values() for f in fs}:
             return clean
@@ -648,33 +824,65 @@ class LeadProfileAction(Action):
         """Return True if text looks like a specific item with sizes/quantities/models."""
         text_lower = text.lower()
         specific_indicators = [
-            "size", "sz", "rolls", "pieces", "units", "ft", "feet", "inches", "in\"",
-            "mm", "meters", "kg", "lbs", "pairs", "pair", "pack", "box", "carton",
-            "dozen", "qty", "quantity", "length", "width", "height", "diameter",
-            "model", "sku", "code", "no.", "number", "serial",
+            "size",
+            "sz",
+            "rolls",
+            "pieces",
+            "units",
+            "ft",
+            "feet",
+            "inches",
+            'in"',
+            "mm",
+            "meters",
+            "kg",
+            "lbs",
+            "pairs",
+            "pair",
+            "pack",
+            "box",
+            "carton",
+            "dozen",
+            "qty",
+            "quantity",
+            "length",
+            "width",
+            "height",
+            "diameter",
+            "model",
+            "sku",
+            "code",
+            "no.",
+            "number",
+            "serial",
         ]
-        has_numbers = bool(re.search(r'\d', text))
+        has_numbers = bool(re.search(r"\d", text))
         has_indicator = any(ind in text_lower for ind in specific_indicators)
         return (has_numbers and has_indicator) or (has_numbers and len(text) > 40)
 
-    def _merge_requested_items(self, new_items: List[str], existing_list: List[str]) -> List[str]:
+    def _merge_requested_items(
+        self, new_items: List[str], existing_list: List[str]
+    ) -> List[str]:
         """Merge new requested items, replacing existing items that are corrections of the same product."""
         result = list(existing_list)
         for new_item in new_items:
             replaced = False
             new_lower = new_item.lower()
-            new_words = set(w for w in new_lower.split() if len(w) > 2)
+            new_words = {w for w in new_lower.split() if len(w) > 2}
             for i, ex in enumerate(result):
                 ex_lower = ex.lower()
-                ex_words = set(w for w in ex_lower.split() if len(w) > 2)
+                ex_words = {w for w in ex_lower.split() if len(w) > 2}
                 overlap = new_words & ex_words
-                shorter = min(len(new_words), len(ex_words)) if new_words and ex_words else 0
+                shorter = (
+                    min(len(new_words), len(ex_words)) if new_words and ex_words else 0
+                )
                 if shorter > 0 and len(overlap) / shorter >= 0.5:
                     result[i] = new_item
                     replaced = True
                     logger.info(
                         "lead_profile__update: replaced requested item '%s' with '%s'",
-                        ex, new_item,
+                        ex,
+                        new_item,
                     )
                     break
             if not replaced and new_item not in result:
@@ -699,12 +907,12 @@ class LeadProfileAction(Action):
 
         # Pattern: entry is ONLY a size/qty annotation with no real product noun
         _SIZE_ONLY = _re.compile(
-            r'^(?:size|sz|eu|us|uk|quantity|qty|q\.?ty\.?)\s*[\d\.]+\s*$',
+            r"^(?:size|sz|eu|us|uk|quantity|qty|q\.?ty\.?)\s*[\d\.]+\s*$",
             _re.IGNORECASE,
         )
         # Also catch patterns like 'size 38' at the start of otherwise empty entries
         _SIZE_PREFIX = _re.compile(
-            r'^(?:size|sz|eu|us|uk)\s+([\d\.]+(?:\s*-\s*[\d\.]+)?)\s*$',
+            r"^(?:size|sz|eu|us|uk)\s+([\d\.]+(?:\s*-\s*[\d\.]+)?)\s*$",
             _re.IGNORECASE,
         )
 
@@ -725,7 +933,8 @@ class LeadProfileAction(Action):
                     result[-1] = f"{result[-1]} {pending_size}"
                     logger.info(
                         "_consolidate_size_entries: attached '%s' to '%s'",
-                        pending_size, result[-1],
+                        pending_size,
+                        result[-1],
                     )
                     pending_size = None
                 result.append(entry)
@@ -735,7 +944,8 @@ class LeadProfileAction(Action):
             result[-1] = f"{result[-1]} {pending_size}"
             logger.info(
                 "_consolidate_size_entries: attached trailing '%s' to '%s'",
-                pending_size, result[-1],
+                pending_size,
+                result[-1],
             )
 
         return result
@@ -759,11 +969,11 @@ class LeadProfileAction(Action):
                         kept[i] = candidate
                     absorbed = True
                     break
-                if el in cl:           # candidate is more specific
+                if el in cl:  # candidate is more specific
                     kept[i] = candidate
                     absorbed = True
                     break
-                if cl in el:           # existing is already more specific
+                if cl in el:  # existing is already more specific
                     absorbed = True
                     break
             if not absorbed:
@@ -781,7 +991,7 @@ class LeadProfileAction(Action):
             if not node or node.is_empty():
                 return
             content = node.content or ""
-            lines = [l.strip() for l in content.splitlines() if l.strip()]
+            lines = [line.strip() for line in content.splitlines() if line.strip()]
             if not lines:
                 return
 
@@ -841,7 +1051,9 @@ class LeadProfileAction(Action):
                 session_summary[:120],
             )
         except Exception as exc:
-            logger.debug("lead_profile__save: session summary generation failed: %s", exc)
+            logger.debug(
+                "lead_profile__save: session summary generation failed: %s", exc
+            )
 
     async def _resolve_vague_items(
         self, items: List[str], profile_data: Dict[str, Any], lp: Any
@@ -863,14 +1075,22 @@ class LeadProfileAction(Action):
                 for line in reversed(log_node.content.splitlines()):
                     line = line.strip()
                     # Look for patterns like "requested: <product>" or "User requested: <product>"
-                    match = re.search(r'requested[:\s]+(.+?)(?:\||$)', line, re.IGNORECASE)
+                    match = re.search(
+                        r"requested[:\s]+(.+?)(?:\||$)", line, re.IGNORECASE
+                    )
                     if match:
-                        hist_items = [i.strip() for i in match.group(1).split(',')]
+                        hist_items = [i.strip() for i in match.group(1).split(",")]
                         for hist_item in hist_items:
                             # Extract keywords (lowercase, alphanumeric only)
-                            keywords = re.findall(r'\b[a-z]+\b', hist_item.lower())
+                            keywords = re.findall(r"\b[a-z]+\b", hist_item.lower())
                             for kw in keywords:
-                                if len(kw) > 3 and kw not in ('size', 'roll', 'rolls', 'piece', 'pieces'):
+                                if len(kw) > 3 and kw not in (
+                                    "size",
+                                    "roll",
+                                    "rolls",
+                                    "piece",
+                                    "pieces",
+                                ):
                                     if kw not in product_history:
                                         product_history[kw] = hist_item
         except Exception:
@@ -879,10 +1099,18 @@ class LeadProfileAction(Action):
         # Also scan past requested_items in profile YAML
         past_requested = str(profile_data.get("requested_items", "")).strip()
         if past_requested:
-            for past_item in [i.strip() for i in past_requested.split(',') if i.strip()]:
-                keywords = re.findall(r'\b[a-z]+\b', past_item.lower())
+            for past_item in [
+                i.strip() for i in past_requested.split(",") if i.strip()
+            ]:
+                keywords = re.findall(r"\b[a-z]+\b", past_item.lower())
                 for kw in keywords:
-                    if len(kw) > 3 and kw not in ('size', 'roll', 'rolls', 'piece', 'pieces'):
+                    if len(kw) > 3 and kw not in (
+                        "size",
+                        "roll",
+                        "rolls",
+                        "piece",
+                        "pieces",
+                    ):
                         if kw not in product_history:
                             product_history[kw] = past_item
 
@@ -892,7 +1120,7 @@ class LeadProfileAction(Action):
             # Check if this item is vague (generic product name without model/size details)
             if self._is_vague_item(item):
                 # Try to find a match in history
-                keywords = re.findall(r'\b[a-z]+\b', item_lower)
+                keywords = re.findall(r"\b[a-z]+\b", item_lower)
                 best_match = None
                 for kw in keywords:
                     if kw in product_history and len(kw) > 3:
@@ -905,7 +1133,7 @@ class LeadProfileAction(Action):
 
                 if best_match:
                     # Replace vague item with the historical full product, preserving quantity
-                    qty_match = re.match(r'^(\d+\s*)', item)
+                    qty_match = re.match(r"^(\d+\s*)", item)
                     if qty_match:
                         resolved.append(f"{qty_match.group(1)}{best_match}")
                     else:
@@ -924,8 +1152,8 @@ class LeadProfileAction(Action):
         item_lower = item.lower()
         # Vague items are typically: quantity + generic product name, no size/model/color
         vague_patterns = [
-            r'^\d+\s*(boot|boots|shoe|shoes|vest|vests|hat|hats|cover|covers|roll|rolls|fabric|tape|glove|gloves)$',
-            r'^(boot|boots|shoe|shoes|vest|vests|hat|hats|cover|covers|roll|rolls|fabric|tape|glove|gloves)\s*\d*$',
+            r"^\d+\s*(boot|boots|shoe|shoes|vest|vests|hat|hats|cover|covers|roll|rolls|fabric|tape|glove|gloves)$",
+            r"^(boot|boots|shoe|shoes|vest|vests|hat|hats|cover|covers|roll|rolls|fabric|tape|glove|gloves)\s*\d*$",
         ]
         for pattern in vague_patterns:
             if re.match(pattern, item_lower.strip()):
@@ -941,6 +1169,7 @@ class LeadProfileAction(Action):
 
         # Use UTC-4 (Guyana Time) for all timestamps
         from jvagent.core.app import App
+
         app = await App.get()
         now_str = await app.now("%Y-%m-%d %H:%M")
 
@@ -950,7 +1179,8 @@ class LeadProfileAction(Action):
             await lp.log_conversation(entry)
             logger.info(
                 "lead_profile__save: logged declined items for user %s: %s",
-                user_id, declined_items,
+                user_id,
+                declined_items,
             )
         except Exception as exc:
             logger.debug("Failed to log declined items to conversation_log: %s", exc)
@@ -971,7 +1201,11 @@ class LeadProfileAction(Action):
         await lp.set_yaml(profile_data)
 
     async def _remove_declined_items(
-        self, declined_items: List[str], fields: Dict[str, Any], profile_data: Dict[str, Any]
+        self,
+        declined_items: List[str],
+        fields: Dict[str, Any],
+        profile_data: Dict[str, Any],
+        lp: Any,
     ) -> None:
         """Remove declined items from requested_items and archive them in previous_requests."""
         existing_requested = str(fields.get("requested_items", "")).strip()
@@ -981,9 +1215,15 @@ class LeadProfileAction(Action):
         # Combine current fields + profile data for the full list
         existing_list: List[str] = []
         if existing_requested:
-            existing_list = [r.strip() for r in existing_requested.split(",") if r.strip()]
+            existing_list = [
+                r.strip() for r in existing_requested.split(",") if r.strip()
+            ]
         else:
-            existing_list = [r.strip() for r in str(profile_data.get("requested_items", "")).split(",") if r.strip()]
+            existing_list = [
+                r.strip()
+                for r in str(profile_data.get("requested_items", "")).split(",")
+                if r.strip()
+            ]
 
         # Remove items that match declined keywords and archive them
         cleaned: List[str] = []
@@ -994,13 +1234,16 @@ class LeadProfileAction(Action):
             for declined in declined_items:
                 declined_lower = declined.lower()
                 # Check if declined term matches any keyword in the item
-                declined_keywords = set(re.findall(r'\b[a-z]+\b', declined_lower))
-                item_keywords = set(re.findall(r'\b[a-z]+\b', item_lower))
+                declined_keywords = set(re.findall(r"\b[a-z]+\b", declined_lower))
+                item_keywords = set(re.findall(r"\b[a-z]+\b", item_lower))
                 # If there's significant overlap, remove it
                 if declined_keywords & item_keywords:
                     keep = False
                     archived.append(item)
-                    logger.info("lead_profile__save: archived declined item '%s' to previous_requests", item)
+                    logger.info(
+                        "lead_profile__save: archived declined item '%s' to previous_requests",
+                        item,
+                    )
                     break
             if keep:
                 cleaned.append(item)
@@ -1011,6 +1254,7 @@ class LeadProfileAction(Action):
         if archived:
             # Use UTC-4 (Guyana Time) for all timestamps
             from datetime import timedelta
+
             tz_guyana = timezone(timedelta(hours=-4))
             now_str = datetime.now(tz_guyana).strftime("%Y-%m-%d %H:%M")
             prev_requests = profile_data.get("previous_requests", "")
@@ -1022,125 +1266,3 @@ class LeadProfileAction(Action):
                     prev_requests = new_entry
             profile_data["previous_requests"] = prev_requests
             await lp.set_yaml(profile_data)
-
-    async def _remove_fulfilled_items(self, fields: Dict[str, Any], profile_data: Dict[str, Any]) -> None:
-        """Remove items from requested_items if user says they got/received them.
-        Uses `fields["requested_items"]` as the current source of truth.
-        """
-        requested_raw = str(fields.get("requested_items", "")).strip()
-        if not requested_raw:
-            return
-
-        items = [r.strip() for r in requested_raw.split(",") if r.strip()]
-        removals = [i[1:].strip() for i in items if i.startswith("-")]
-        additions = [i for i in items if not i.startswith("-")]
-
-        if removals:
-            # Use the already-merged list from fields as the baseline
-            existing_raw = str(fields.get("requested_items", "")).strip()
-            existing_list = [r.strip() for r in existing_raw.split(",") if r.strip()] if existing_raw else []
-            cleaned = []
-            for ex in existing_list:
-                keep = True
-                for rem in removals:
-                    if rem.lower() == ex.lower() or rem.lower() in ex.lower():
-                        keep = False
-                        logger.info("lead_profile__update: removed fulfilled item '%s' from requested_items", ex)
-                        break
-                if keep:
-                    cleaned.append(ex)
-            fields["requested_items"] = ", ".join(cleaned) if cleaned else ""
-        elif additions:
-            pass
-
-
-        """Draft a follow-up email confirming the requested items and send it."""
-        logger.info("Drafting follow-up email for user %s with requested items: %s", user.user_id, requested_items)
-        try:
-            profile_data = lp.get_yaml() or {}
-            to_email = (profile_data.get("email") or "").strip()
-            if not to_email or "@" not in to_email:
-                logger.debug("EmailAction: No valid recipient email found for user %s", user.user_id)
-                return
-
-            agent = await self.get_agent()
-            if not agent:
-                return
-
-            # Fetch EmailAction
-            email_action = None
-            try:
-                from jvagent.action.email_action.email_action import EmailAction
-                email_action = await agent.get_action_by_type("EmailAction")
-            except Exception:
-                pass
-
-            if not email_action:
-                logger.warning("EmailAction not configured or enabled on the agent")
-                return
-
-            if not email_action.is_configured():
-                logger.warning("EmailAction is registered but not configured in the environment")
-                return
-
-            # Draft the email using LLM
-            model_action = await self.get_action(self.model_action_type)
-            if not model_action:
-                logger.warning("LanguageModelAction not found to draft email")
-                return
-
-            name = profile_data.get("name", "there")
-            prompt = (
-                f"You are the Tropics Construction Lead Generation Agent.\n"
-                f"A customer named '{name}' has requested the following items:\n"
-                f"{requested_items}\n\n"
-                f"Here is the session summary of the conversation:\n"
-                f"{session_summary}\n\n"
-                f"Please draft a professional and warm follow-up email to this customer. "
-                f"Acknowledge their exact request, confirm that the Tropics team will review it and follow up "
-                f"with them directly, and reference their project if details are available. "
-                f"Keep it concise, friendly, and structured. "
-                f"Do not include any subject line or email headers in your output, just the body of the email. "
-                f"Sign off as 'Tropics Assistant'."
-            )
-
-            email_body = await model_action.generate(
-                prompt=prompt,
-                model=self.model,
-                temperature=0.3,
-                max_tokens=512,
-            )
-
-            if not email_body or not email_body.strip():
-                logger.warning("Failed to generate email body using LLM")
-                return
-
-            # Send the email
-            from jvagent.action.email_action.email_payload import CanonicalSendMessage
-            sender_email, sender_name = await email_action.resolve_outbound_sender()
-            if not sender_email:
-                logger.warning("No outbound sender email configured for EmailAction")
-                return
-
-            msg = CanonicalSendMessage(
-                to_email=to_email,
-                to_name=profile_data.get("name"),
-                subject="Requested Items Confirmation - Tropics Construction",
-                text_content=email_body.strip(),
-                sender_email=sender_email,
-                sender_name=sender_name or "Tropics Assistant",
-            )
-
-            provider = await email_action.api()
-            res = await provider.send_canonical(msg)
-            if res.get("ok"):
-                logger.info("Successfully sent requested items email to %s", to_email)
-                # Clear the email drafter flag so we don't duplicate
-                profile_data = lp.get_yaml() or {}
-                profile_data["_email_drafter_flag"] = False
-                await lp.set_yaml(profile_data)
-            else:
-                logger.warning("Failed to send email: %s", res.get("error"))
-
-        except Exception as e:
-            logger.error("Failed to draft and send requested items email: %s", e, exc_info=True)

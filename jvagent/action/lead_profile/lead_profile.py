@@ -347,9 +347,11 @@ class LeadProfile(Node):
             lines.append(f"## {node.title}")
             content = node.content.strip()
             if node.category in ("conversation_log", "conversation_summaries"):
-                content_lines = [l.strip() for l in content.splitlines() if l.strip()]
+                content_lines = [log.strip() for log in content.splitlines() if log.strip()]
                 if len(content_lines) > 25:
-                    content = "... (older entries truncated) ...\n" + "\n".join(content_lines[-25:])
+                    content = "... (older entries truncated) ...\n" + "\n".join(
+                        content_lines[-25:]
+                    )
             lines.append(content)
             lines.append("")
 
@@ -410,6 +412,7 @@ class LeadProfile(Node):
     async def log_conversation(self, entry: str) -> bool:
         """Append a dated entry to the conversation_log section."""
         from datetime import timedelta
+
         # Use UTC-4 (Guyana Time) for all timestamps
         tz_guyana = timezone(timedelta(hours=-4))
         now = datetime.now(tz_guyana).strftime("%Y-%m-%d %H:%M")
@@ -478,7 +481,7 @@ class LeadProfile(Node):
             if not node or node.is_empty():
                 return
             content = node.content or ""
-            lines = [l.strip() for l in content.splitlines() if l.strip()]
+            lines = [line.strip() for line in content.splitlines() if line.strip()]
             if not lines:
                 return
 
@@ -486,7 +489,11 @@ class LeadProfile(Node):
 
             name = profile_data.get("name", "")
             org = profile_data.get("organization", "")
-            project = (profile_data.get("project_description") or profile_data.get("project_name") or "").strip()
+            project = (
+                profile_data.get("project_description")
+                or profile_data.get("project_name")
+                or ""
+            ).strip()
             location = profile_data.get("project_location", "")
             interested = profile_data.get("interested_products", "")
             requested_raw = profile_data.get("requested_items", "")
@@ -495,7 +502,11 @@ class LeadProfile(Node):
             email = profile_data.get("email", "")
 
             # Deduplicate the requested_items list so identical/subsumed entries collapse
-            requested = self._deduplicate_items(str(requested_raw).strip()) if requested_raw else ""
+            requested = (
+                self._deduplicate_items(str(requested_raw).strip())
+                if requested_raw
+                else ""
+            )
 
             # Build identity tokens (name, org, project, location) — joined with spaces
             identity_parts: List[str] = []
@@ -513,7 +524,9 @@ class LeadProfile(Node):
             if requested:
                 actions.append(f"requested {requested}")
             elif interested:
-                actions.append(f"interested in {self._deduplicate_items(str(interested).strip())}")
+                actions.append(
+                    f"interested in {self._deduplicate_items(str(interested).strip())}"
+                )
             if feedback:
                 actions.append(f"gave feedback: {feedback}")
 
@@ -535,6 +548,7 @@ class LeadProfile(Node):
 
             # Use UTC-4 (Guyana Time) for all timestamps
             from datetime import timedelta
+
             tz_guyana = timezone(timedelta(hours=-4))
             now_str = datetime.now(tz_guyana).strftime("%Y-%m-%d %H:%M")
 
@@ -550,7 +564,9 @@ class LeadProfile(Node):
             )
         except Exception as exc:
             logger.warning(
-                "LeadProfile: generate_and_save_session_summary failed: %s", exc, exc_info=True
+                "LeadProfile: generate_and_save_session_summary failed: %s",
+                exc,
+                exc_info=True,
             )
 
     # -------------------------------------------------------------------------

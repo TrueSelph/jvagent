@@ -21,7 +21,7 @@ agent.yaml example
         mode: mcp
         tool: sheets_append_values
         arguments:
-          spreadsheetId: "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+          spreadsheetId: "your_spreadsheet_id"
           range: "Leads"
           values:
             - "{profile_row}"
@@ -35,6 +35,7 @@ agent.yaml example
             - "{user_id}"
             - "{profile_json}"
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -42,10 +43,11 @@ import json
 import logging
 from typing import Any, Dict, List
 
+from jvspatial.core.annotations import attribute
+
 from jvagent.action.base import Action
 from jvagent.tooling.tool_decorator import tool
 from jvagent.tooling.tool_executor import get_dispatch_visitor
-from jvspatial.core.annotations import attribute
 
 logger = logging.getLogger(__name__)
 
@@ -145,10 +147,13 @@ class LeadSyncAction(Action):
         lead_profile_obj: Any = None
         try:
             from jvagent.action.lead_profile import LeadProfile
+
             lead_profile_obj = await LeadProfile.get_or_create_for_user(user)
             profile_data = lead_profile_obj.get_yaml() or {}
         except Exception as exc:
-            logger.debug("LeadProfile unavailable (%s); falling back to User.memory", exc)
+            logger.debug(
+                "LeadProfile unavailable (%s); falling back to User.memory", exc
+            )
             try:
                 mem = getattr(user, "memory", None) or {}
                 if isinstance(mem, dict):
@@ -157,21 +162,35 @@ class LeadSyncAction(Action):
                 pass
 
         if not profile_data:
-            logger.info("sync_lead: skipping sync, profile data is empty for user %s", uid)
+            logger.info(
+                "sync_lead: skipping sync, profile data is empty for user %s", uid
+            )
             return json.dumps({"status": "no-op", "reason": "Profile is empty."})
 
         # ── Digest dedup ──────────────────────────────────────────────────────
         digest = _compute_digest(profile_data)
         last_digest = profile_data.get(_DIGEST_KEY)
         if digest == last_digest:
-            logger.info("sync_lead: skipping sync, digest is unchanged for user %s", uid)
-            return json.dumps({"status": "no-op", "reason": "Profile unchanged since last sync."})
+            logger.info(
+                "sync_lead: skipping sync, digest is unchanged for user %s", uid
+            )
+            return json.dumps(
+                {"status": "no-op", "reason": "Profile unchanged since last sync."}
+            )
 
         if not self.sync_servers:
-            logger.info("sync_lead: skipping sync, no sync_servers configured for user %s", uid)
-            return json.dumps({"status": "no-op", "reason": "No sync_servers configured."})
+            logger.info(
+                "sync_lead: skipping sync, no sync_servers configured for user %s", uid
+            )
+            return json.dumps(
+                {"status": "no-op", "reason": "No sync_servers configured."}
+            )
 
-        logger.info("sync_lead: initiating sync to %d configured destinations for user %s", len(self.sync_servers), uid)
+        logger.info(
+            "sync_lead: initiating sync to %d configured destinations for user %s",
+            len(self.sync_servers),
+            uid,
+        )
 
         # ── Dispatch to each configured destination ───────────────────────────
         results: Dict[str, str] = {}
@@ -185,7 +204,12 @@ class LeadSyncAction(Action):
                 continue
 
             if mode == "mcp":
-                logger.info("sync_lead: syncing via mcp mode (server=%s, tool=%s) for user %s", server_name, entry.get("tool"), uid)
+                logger.info(
+                    "sync_lead: syncing via mcp mode (server=%s, tool=%s) for user %s",
+                    server_name,
+                    entry.get("tool"),
+                    uid,
+                )
                 ok, msg = await self._sync_mcp(entry, profile_data, uid)
             else:
                 ok, msg = False, f"Unknown mode '{mode}'. Only 'mcp' is supported."
@@ -194,7 +218,11 @@ class LeadSyncAction(Action):
             if ok:
                 any_success = True
 
-        logger.info("sync_lead: sync process completed for user %s with results: %s", uid, results)
+        logger.info(
+            "sync_lead: sync process completed for user %s with results: %s",
+            uid,
+            results,
+        )
 
         # ── Persist digest so next call skips if unchanged ────────────────────
         if any_success and lead_profile_obj is not None:
@@ -236,7 +264,8 @@ class LeadSyncAction(Action):
         except Exception as exc:
             logger.warning(
                 "sync_lead[mcp]: get_client_for_user failed (server=%s); falling back: %s",
-                server_name, exc,
+                server_name,
+                exc,
             )
             try:
                 client = mcp_action.get_client(server_name)
@@ -244,15 +273,22 @@ class LeadSyncAction(Action):
                 return False, f"Cannot get MCP client for '{server_name}': {exc2}"
 
         try:
-            logger.info("sync_lead[mcp]: calling %s.%s for user %s", server_name, tool_name, uid)
+            logger.info(
+                "sync_lead[mcp]: calling %s.%s for user %s", server_name, tool_name, uid
+            )
             call_result = await client.call_tool(tool_name, resolved_args)
 
             from jvagent.action.mcp.mcp_action import _normalize_call_result
+
             norm = _normalize_call_result(call_result, tool_name)
             if norm.is_error:
-                logger.warning("sync_lead[mcp]: %s.%s error: %s", server_name, tool_name, norm.text)
+                logger.warning(
+                    "sync_lead[mcp]: %s.%s error: %s", server_name, tool_name, norm.text
+                )
                 return False, f"MCP error: {norm.text}"
             return True, "ok"
         except Exception as exc:
-            logger.error("sync_lead[mcp]: exception on %s.%s: %s", server_name, tool_name, exc)
+            logger.error(
+                "sync_lead[mcp]: exception on %s.%s: %s", server_name, tool_name, exc
+            )
             return False, f"Exception: {exc}"

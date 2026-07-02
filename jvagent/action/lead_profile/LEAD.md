@@ -30,7 +30,7 @@ User --> LeadProfile --> LeadProfileNode (professional_history)
                   --> LeadProfileNode (<custom>)
 ```
 
-The `LeadProfile` anchor node stores YAML frontmatter (structured fields).  
+The `LeadProfile` anchor node stores YAML frontmatter (structured fields).
 Each `LeadProfileNode` stores markdown content for one section.
 
 ## Agent YAML

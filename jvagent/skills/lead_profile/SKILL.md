@@ -20,7 +20,7 @@ tags:
 ---
 
 # Lead Profile — Retrieval & Update
-Look at the LAST message from the user and decide whether to call `lead_profile__save` to update the lead profile. If the user is not providing any new information, call `lead_profile__retrieve` to get the latest profile context.
+Look at the LAST message from the user and decide whether to call `lead_profile__save` to update the lead profile. If the user is not providing any new information, call `lead_profile__retrieve` instead to get the latest profile context.
 ## When to call `lead_profile__save`
 
 Call it whenever the user explicitly provides or refuses to provide in their last message any of the following fields:
@@ -36,7 +36,7 @@ Call it whenever the user explicitly provides or refuses to provide in their las
 
 ## When to call `lead_profile__retrieve`
 
-Call this whenever the user is engaged in general chat or is not giving any specific information to the agent. This ensures you have the latest profile context before responding and can identify missing fields to ask about. If you have already called `lead_profile__save` in the same turn, you do not need to call `lead_profile__retrieve` again.
+Call this whenever the user is engaged in general chat or is not giving any specific information to the agent and `lead_profile__save` is not necessary. This ensures you have the latest profile context before responding and can identify missing fields to ask about. If you have already alled `lead_profile__save` in the same turn, you do not need to call `lead_profile__retrieve` again.
 
 ## Usage examples
 
