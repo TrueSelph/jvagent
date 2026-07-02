@@ -1,0 +1,18 @@
+package:
+  name: jvagent/lead_sync_action
+  author: Integral Client AI
+  archetype: LeadSyncAction
+  version: 1.0.0
+  meta:
+    title: Lead Sync Action
+    description: Sync lead profiles to configured MCP servers.
+    group: jvagent
+    type: action
+  manifest:
+    purpose: >-
+      Exposes the sync_lead tool to programmatically sync lead profiles to active MCP servers.
+    latency_class: instant
+    expected_duration_seconds: 5.0
+    routable_by_anchor: false
+  dependencies:
+    jvagent: ~0.0.1
