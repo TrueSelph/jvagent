@@ -1,0 +1,12 @@
+package:
+  name: jvagent/lead_profile_action
+  author: V75 Inc.
+  archetype: LeadProfileAction
+  version: 1.0.0
+  meta:
+    title: Lead Profile Action
+    description: Tool-based lead profile update and Google Sheet sync for the Orchestrator pattern.
+    group: jvagent
+    type: action
+  dependencies:
+    jvagent: ~0.0.1
