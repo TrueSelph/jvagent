@@ -290,6 +290,7 @@ from jvagent.scaffold.skill_resolve import (
 ## See also
 
 - [ADR-0023 placement standard](../../.planning/adr/0023-skill-placement-standard.md)
+- [Integral skill profile](../../.planning/reference/integral-skill-profile.md) — Integral platform extension (7-section bar, `integral_*` namespace, manifest sync)
 - [Orchestrator](../../docs/ORCHESTRATOR.md) — the loop and skill lifecycle
 - [`jvagent/code_execution`](../action/code_execution) — the sandbox substrate
 - [`jvagent/core/sandbox.py`](../core/sandbox.py) — the per-user FS convention

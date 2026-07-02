@@ -94,9 +94,10 @@ async def test_agent_collect_capabilities_aggregates_and_dedupes(monkeypatch):
     assert await agent.collect_capabilities() == ["Sign users up for training"]
 
 
-async def test_orchestrator_merges_agent_caps_with_skills(monkeypatch):
-    """The orchestrator delegates action aggregation to the agent and only
-    appends skill descriptions on top."""
+async def test_orchestrator_delegates_caps_to_agent_and_omits_skill_prose(monkeypatch):
+    """The orchestrator delegates action aggregation to the agent and does NOT
+    duplicate skill descriptions into the capabilities digest — those already
+    render in skills_section (prompt-cache-friendly dedupe, rc14)."""
     from jvagent.action.orchestrator.orchestrator_interact_action import (
         OrchestratorInteractAction,
     )
@@ -114,4 +115,5 @@ async def test_orchestrator_merges_agent_caps_with_skills(monkeypatch):
     skills = [SimpleNamespace(name="research", description="Research a topic")]
     caps = await ex._collect_capabilities(skills)
 
-    assert caps == ["Sign users up for training", "Research a topic"]
+    # Skill prose is intentionally absent here (lives in skills_section).
+    assert caps == ["Sign users up for training"]
