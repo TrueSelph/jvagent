@@ -18,6 +18,21 @@ from jvagent.action.orchestrator.orchestrator_interact_action import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _clear_skill_discovery_cache():
+    """Reset the module-global skill-discovery cache around every test.
+
+    ``discover_skill_docs`` memoizes results in a process-global dict keyed by
+    (app_root, namespace, name, source, selector, denied). Fixtures that reuse
+    those key components across tests would otherwise read a prior test's docs.
+    """
+    from jvagent.action.orchestrator.skills import clear_skill_discovery_cache
+
+    clear_skill_discovery_cache()
+    yield
+    clear_skill_discovery_cache()
+
+
 @pytest.fixture
 def publish_log() -> List[Dict[str, Any]]:
     return []
