@@ -651,7 +651,10 @@ class LeadProfileAction(Action):
                 profile_md = await lp.as_markdown(include_empty=False)
             except Exception:
                 profile_md = ""
-            result: Dict[str, Any] = {"status": "no-op", "reason": "no extractable fields"}
+            result: Dict[str, Any] = {
+                "status": "no-op",
+                "reason": "no extractable fields",
+            }
             if profile_md.strip():
                 result["lead_profile"] = profile_md
             return json.dumps(result)
@@ -776,16 +779,9 @@ class LeadProfileAction(Action):
             return await LeadProfile.get_or_create_for_user(
                 user, required_fields=list(self._resolved_required_fields())
             )
-        except (ImportError, AttributeError):
-            try:
-                from jvagent.actions.lead_profile import LeadProfile  # type: ignore[import-not-found,no-redef]
-
-                return await LeadProfile.get_or_create_for_user(
-                    user, required_fields=list(self._resolved_required_fields())
-                )
-            except (ImportError, AttributeError) as exc:
-                logger.warning("LeadProfile unavailable: %s", exc)
-                return None
+        except (ImportError, AttributeError) as exc:
+            logger.warning("LeadProfile unavailable: %s", exc)
+            return None
 
     def _normalize_fields(self, raw: Dict[str, Any]) -> Dict[str, Any]:
         out: Dict[str, Any] = {}

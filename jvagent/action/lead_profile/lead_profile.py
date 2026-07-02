@@ -347,7 +347,9 @@ class LeadProfile(Node):
             lines.append(f"## {node.title}")
             content = node.content.strip()
             if node.category in ("conversation_log", "conversation_summaries"):
-                content_lines = [log.strip() for log in content.splitlines() if log.strip()]
+                content_lines = [
+                    log.strip() for log in content.splitlines() if log.strip()
+                ]
                 if len(content_lines) > 25:
                     content = "... (older entries truncated) ...\n" + "\n".join(
                         content_lines[-25:]
@@ -580,7 +582,7 @@ class LeadProfile(Node):
     @classmethod
     async def get_or_create_for_user(
         cls, user: "User", required_fields: Optional[List[str]] = None
-    ) -> "LeadProfile":
+    ) -> Any:
         existing = await cls.get_for_user(user)
         field_list = required_fields or DEFAULT_REQUIRED_FIELDS
         fields_csv = ", ".join(field_list)
@@ -614,7 +616,7 @@ class LeadProfile(Node):
             logger.info(
                 "LeadProfile: Race-skip creation for user %s (existing %s)",
                 user.user_id,
-                current.id,
+                user.id,
             )
             return current
 
