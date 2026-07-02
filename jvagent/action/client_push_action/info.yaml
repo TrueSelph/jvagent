@@ -1,0 +1,17 @@
+# ClientPushAction Package Descriptor
+package:
+  name: jvagent/client_push_action
+  author: jvagent
+  archetype: ClientPushAction
+  version: 0.0.1
+  meta:
+    title: Client Push Action
+    description: >-
+      Publishes messages to a client session and provides a long-lived SSE
+      endpoint for the client to receive them in real time.
+    group: jvagent
+    type: action
+  config:
+    singleton: true
+  dependencies:
+    jvagent: ~0.0.1
