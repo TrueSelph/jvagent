@@ -86,6 +86,17 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   `Tell the user:` directive prefix). Its surface was fully superseded by `hooks.py`
   and `directive_compose.py`; no live imports.
 
+## [0.1.0rc15] - 2026-07-02
+
+### Changed
+
+- Pin **jvspatial 0.0.11** (was 0.0.10). 0.0.11 fixes two single-hop
+  `find_connected_nodes` regressions that broke the embedded agent's memory
+  traversal — `Agent.get_memory()` and `Conversation.node(direction="in",
+  node=User)` returned `None` because of a limit-before-filter bug and a
+  base-`Node` subtype-resolution bug under app/agent `User` entity-name
+  collisions. No jvagent code change beyond the dependency pin.
+
 ## [0.1.0rc9] - 2026-06-22
 
 Ninth release candidate (TestPyPI). Fixes PageIndex access control: having
