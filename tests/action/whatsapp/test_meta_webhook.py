@@ -5,7 +5,23 @@ from jvspatial.api.integrations.webhooks.utils import generate_hmac_signature
 from starlette.requests import Request
 
 from jvagent.action.utils.meta_webhook import verify_meta_webhook_signature
+from jvagent.action.whatsapp.utils.meta_verify_token import derive_meta_verify_token
 from jvagent.action.whatsapp.whatsapp_action import WhatsAppAction
+
+AGENT_ID = "n.Agent.test123"
+APP_SECRET = "test-app-secret"
+
+
+def _meta_action(**kwargs) -> WhatsAppAction:
+    defaults = {
+        "id": "n.WhatsAppAction.meta1",
+        "provider": "meta",
+        "phone_number_id": "123",
+        "access_token": "token",
+        "waba_id": "456",
+    }
+    defaults.update(kwargs)
+    return WhatsAppAction(**defaults)
 
 
 def _req_with_sig(body: bytes, signature: str) -> Request:
@@ -47,51 +63,79 @@ class TestVerifyMetaWebhookSignature:
 
 
 class TestWhatsAppActionMetaConfig:
-    def test_is_configured_meta_requires_cloud_credentials(self, monkeypatch):
+    def test_is_configured_meta_requires_yaml_and_env(self, monkeypatch):
         monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "https://example.com")
-        monkeypatch.setenv("WHATSAPP_PHONE_NUMBER_ID", "123")
-        monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "token")
-        monkeypatch.setenv("WHATSAPP_APP_SECRET", "secret")
-        monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", "verify-me")
+        monkeypatch.setenv("WHATSAPP_APP_SECRET", APP_SECRET)
 
-        action = WhatsAppAction(id="n.WhatsAppAction.meta1", provider="meta")
+        action = _meta_action()
         assert action.is_configured() is True
         assert action.is_meta_provider() is True
 
-    def test_is_configured_meta_missing_verify_token(self, monkeypatch):
+    def test_is_configured_meta_without_yaml_phone_id(self, monkeypatch):
         monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "https://example.com")
+        monkeypatch.setenv("WHATSAPP_APP_SECRET", APP_SECRET)
         monkeypatch.setenv("WHATSAPP_PHONE_NUMBER_ID", "123")
         monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "token")
-        monkeypatch.setenv("WHATSAPP_APP_SECRET", "secret")
-        monkeypatch.delenv("WHATSAPP_VERIFY_TOKEN", raising=False)
 
-        action = WhatsAppAction(id="n.WhatsAppAction.meta2", provider="meta")
+        action = _meta_action(phone_number_id="", access_token="")
+        assert action.is_configured() is True
+
+    def test_is_configured_meta_missing_phone_and_env(self, monkeypatch):
+        monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "https://example.com")
+        monkeypatch.setenv("WHATSAPP_APP_SECRET", APP_SECRET)
+        monkeypatch.delenv("WHATSAPP_PHONE_NUMBER_ID", raising=False)
+
+        action = _meta_action(phone_number_id="")
         assert action.is_configured() is False
 
-    def test_parse_webhook_verify_success(self, monkeypatch):
-        monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", "my-verify-token")
-        action = WhatsAppAction(id="n.WhatsAppAction.meta3", provider="meta")
+    def test_is_configured_meta_without_env_app_secret(self, monkeypatch):
+        monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "https://example.com")
+        monkeypatch.delenv("WHATSAPP_APP_SECRET", raising=False)
+        monkeypatch.delenv("FACEBOOK_APP_SECRET", raising=False)
+
+        action = _meta_action()
+        assert action.is_configured() is False
+
+    def test_parse_webhook_verify_success_derived_token(self, monkeypatch):
+        monkeypatch.setenv("WHATSAPP_APP_SECRET", APP_SECRET)
+        action = _meta_action()
+        token = derive_meta_verify_token(AGENT_ID, APP_SECRET)
         result = action.parse_webhook_verify(
             {
                 "hub.mode": "subscribe",
-                "hub.verify_token": "my-verify-token",
+                "hub.verify_token": token,
                 "hub.challenge": "1234567890",
-            }
+            },
+            agent_id=AGENT_ID,
         )
         assert result == "1234567890"
 
     def test_parse_webhook_verify_failure(self, monkeypatch):
-        monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", "expected")
-        action = WhatsAppAction(id="n.WhatsAppAction.meta4", provider="meta")
+        monkeypatch.setenv("WHATSAPP_APP_SECRET", APP_SECRET)
+        action = _meta_action()
         result = action.parse_webhook_verify(
             {
                 "hub.mode": "subscribe",
                 "hub.verify_token": "wrong",
                 "hub.challenge": "1234567890",
-            }
+            },
+            agent_id=AGENT_ID,
         )
         assert isinstance(result, dict)
         assert result.get("code") == 403
+
+    def test_parse_webhook_verify_yaml_override(self, monkeypatch):
+        monkeypatch.setenv("WHATSAPP_APP_SECRET", APP_SECRET)
+        action = _meta_action(verify_token="custom-verify")
+        result = action.parse_webhook_verify(
+            {
+                "hub.mode": "subscribe",
+                "hub.verify_token": "custom-verify",
+                "hub.challenge": "999",
+            },
+            agent_id=AGENT_ID,
+        )
+        assert result == "999"
 
     def test_meta_callback_url_strips_api_key(self):
         url = "https://example.com/api/whatsapp/interact/webhook/agent1?api_key=jv_abc"
