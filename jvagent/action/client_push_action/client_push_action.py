@@ -64,7 +64,9 @@ class ClientPushAction(Action):
         """
         logger.info(
             "ClientPushAction tool: message=%s user_id=%s session_id=%s",
-            message, user_id, session_id,
+            message,
+            user_id,
+            session_id,
         )
         result = await self._dispatch(message, user_id=user_id, session_id=session_id)
         return json.dumps(result)
@@ -93,7 +95,9 @@ class ClientPushAction(Action):
         """
         logger.info(
             "ClientPushAction.send_message: %s (user=%s, session=%s)",
-            message, user_id, session_id,
+            message,
+            user_id,
+            session_id,
         )
         return await self._dispatch(message, user_id=user_id, session_id=session_id)
 
@@ -140,7 +144,8 @@ class ClientPushAction(Action):
                 )
                 logger.info(
                     "ClientPushAction: published to session %s: %s",
-                    session_id, message,
+                    session_id,
+                    message,
                 )
                 return {
                     "ok": True,
@@ -152,7 +157,8 @@ class ClientPushAction(Action):
             except Exception as e:
                 logger.warning(
                     "ClientPushAction: publish to session %s failed: %s",
-                    session_id, e,
+                    session_id,
+                    e,
                 )
                 return {
                     "ok": False,
@@ -177,7 +183,8 @@ class ClientPushAction(Action):
                     )
                     logger.info(
                         "ClientPushAction: published via visitor session %s: %s",
-                        visitor_session_id, message,
+                        visitor_session_id,
+                        message,
                     )
                     return {
                         "ok": True,
@@ -187,7 +194,8 @@ class ClientPushAction(Action):
                     }
                 except Exception as e:
                     logger.warning(
-                        "ClientPushAction: visitor bus publish failed: %s", e,
+                        "ClientPushAction: visitor bus publish failed: %s",
+                        e,
                     )
                     return {
                         "ok": False,

@@ -7,13 +7,14 @@ Provides:
   ``stream: false`` for a one-shot drain of queued messages.
 """
 
-
 import asyncio
 import logging
 from typing import Any, AsyncGenerator, Dict, Optional
 
 from fastapi import Request
 from fastapi.responses import StreamingResponse
+from jvspatial.api import endpoint
+from jvspatial.api.exceptions import ResourceNotFoundError
 
 from jvagent.action.response.streaming import (
     create_sse_response,
@@ -21,8 +22,6 @@ from jvagent.action.response.streaming import (
     stream_messages,
 )
 from jvagent.core.agent import Agent
-from jvspatial.api import endpoint
-from jvspatial.api.exceptions import ResourceNotFoundError
 
 from .client_push_action import ClientPushAction
 
@@ -64,9 +63,7 @@ def _authenticate(request: Request, agent_id: str) -> str:
     auth_header = request.headers.get("authorization") or ""
     parts = auth_header.split(None, 1)
     bearer_token = (
-        parts[1].strip()
-        if len(parts) == 2 and parts[0].lower() == "bearer"
-        else None
+        parts[1].strip() if len(parts) == 2 and parts[0].lower() == "bearer" else None
     )
 
     uid: Optional[str] = None
