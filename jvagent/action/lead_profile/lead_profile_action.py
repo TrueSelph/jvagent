@@ -616,9 +616,6 @@ class LeadProfileAction(Action):
                         days_since,
                     )
 
-        # --- Remove fulfilled items from requested_items ---
-        await self._remove_fulfilled_items(fields, profile_data)
-
         # --- Track when requested_items is updated (for auto-archive) ---
         for field in self.auto_update_fields:
             if field in fields and fields[field]:
