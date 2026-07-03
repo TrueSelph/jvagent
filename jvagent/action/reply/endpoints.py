@@ -1,38 +1,35 @@
-"""REST endpoints for ClientPushAction.
+"""REST endpoints for the ReplyAction publish+subscribe surface.
 
 Provides:
-- ``POST /agents/{agent_id}/client-push`` — publish a message to a session.
-- ``POST /agents/{agent_id}/client-push/subscribe`` — subscribe to messages
-  for a session. Pass ``stream: true`` for SSE (long-lived push), or
-  ``stream: false`` for a one-shot drain of queued messages.
+- ``POST /agents/{agent_id}/reply/publish`` — publish a message to a session.
+- ``POST /agents/{agent_id}/reply/subscribe`` — subscribe to messages for a
+  session. Pass ``stream: true`` for SSE (long-lived push), or
+  ``stream: false`` for a one-shot poll.
 """
 
-import asyncio
 import logging
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import Any, Optional
 
 from fastapi import Request
 from fastapi.responses import StreamingResponse
 from jvspatial.api import endpoint
 from jvspatial.api.exceptions import ResourceNotFoundError
 
+from jvagent.action.response.response_bus import ResponseBus
 from jvagent.action.response.streaming import (
     create_sse_response,
-    format_sse_chunk,
     stream_messages,
 )
 from jvagent.core.agent import Agent
 
-from .client_push_action import ClientPushAction
-
 logger = logging.getLogger(__name__)
 
 
-async def _get_action(agent_id: str) -> ClientPushAction:
-    """Load the agent and return its configured ``ClientPushAction``.
+async def _get_agent_and_bus(agent_id: str) -> tuple[Agent, ResponseBus]:
+    """Load the agent and return ``(agent, response_bus)``.
 
     Raises:
-        ResourceNotFoundError: If the agent or action is missing.
+        ResourceNotFoundError: If the agent is missing or has no bus.
     """
     agent = await Agent.get(agent_id)
     if not agent:
@@ -40,13 +37,13 @@ async def _get_action(agent_id: str) -> ClientPushAction:
             message=f"Agent with ID '{agent_id}' not found",
             details={"agent_id": agent_id},
         )
-    action: ClientPushAction = await agent.get_action_by_type("ClientPushAction")
-    if not action:
+    bus = await agent.get_response_bus()
+    if bus is None:
         raise ResourceNotFoundError(
-            message="ClientPushAction not found on agent",
+            message="ResponseBus not available on agent",
             details={"agent_id": agent_id},
         )
-    return action
+    return agent, bus
 
 
 def _authenticate(request: Request, agent_id: str) -> str:
@@ -92,63 +89,63 @@ def _authenticate(request: Request, agent_id: str) -> str:
 
 
 @endpoint(
-    "/agents/{agent_id}/client-push",
+    "/agents/{agent_id}/reply/publish",
     methods=["POST"],
     auth=True,
-    tags=["Client Push"],
+    tags=["Reply"],
 )
-async def client_push_endpoint(
+async def reply_publish_endpoint(
     agent_id: str,
-    message: str = "Hello from ClientPushAction!",
+    message: str = "Hello from ReplyAction!",
     user_id: Optional[str] = None,
     session_id: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Publish a message to a client session.
-
-    Invokes ``ClientPushAction`` to publish the message directly to the given
-    session via the agent's ``ResponseBus``.
+) -> dict[str, Any]:
+    """Publish a message to a client session through the agent's ResponseBus.
 
     Args:
-        agent_id:  The agent whose ``ClientPushAction`` to invoke.
+        agent_id:  The target agent.
         message:   The message text to deliver.
         user_id:   User identifier for adapter routing.
         session_id: Target session to deliver the message to.
 
     Returns:
-        Delivery status: ``{"ok": true, "delivery": "response_bus", …}``.
-
-    Example:
-        .. code-block:: bash
-
-            curl -X POST \\
-              'http://localhost:8000/api/agents/jvagent_orchestrator/client-push' \\
-              -H 'Content-Type: application/json' \\
-              -d '{
-                "message": "Hello, client!",
-                "user_id": "user_abc123",
-                "session_id": "session_xyz789"
-              }'
+        Delivery status.
     """
+    _, bus = await _get_agent_and_bus(agent_id)
+
     logger.info(
-        "client_push: agent=%s user=%s session=%s msg=%s",
+        "reply/publish: agent=%s user=%s session=%s msg=%s",
         agent_id,
         user_id,
         session_id,
         message,
     )
-    action = await _get_action(agent_id)
-    return await action.send_message(message, user_id=user_id, session_id=session_id)
+
+    msg = await bus.publish(
+        session_id=session_id or "",
+        content=message,
+        channel="default",
+        stream=False,
+        user_id=user_id,
+        streaming_complete=True,
+    )
+    return {
+        "ok": True,
+        "delivery": "response_bus",
+        "session_id": session_id,
+        "message_id": getattr(msg, "id", None),
+    }
 
 
 # ── Subscribe ────────────────────────────────────────────────────────────────
 
 
 @endpoint(
-    "/agents/{agent_id}/client-push/subscribe",
+    "/agents/{agent_id}/reply/subscribe",
     methods=["POST"],
-    tags=["Client Push"],
+    tags=["Reply"],
 )
-async def client_push_subscribe(
+async def reply_subscribe_endpoint(
     request: Request,
     agent_id: str,
     session_id: str,
@@ -182,26 +179,14 @@ async def client_push_subscribe(
     uid = _authenticate(request, agent_id)
 
     logger.info(
-        "client_push/subscribe: agent=%s session=%s stream=%s user=%s",
+        "reply/subscribe: agent=%s session=%s stream=%s user=%s",
         agent_id,
         session_id,
         stream,
         uid,
     )
 
-    agent = await Agent.get(agent_id)
-    if not agent:
-        raise ResourceNotFoundError(
-            message=f"Agent with ID '{agent_id}' not found",
-            details={"agent_id": agent_id},
-        )
-
-    bus = await agent.get_response_bus()
-    if bus is None:
-        raise ResourceNotFoundError(
-            message="ResponseBus not available on agent",
-            details={"agent_id": agent_id},
-        )
+    _, bus = await _get_agent_and_bus(agent_id)
 
     if stream:
         # ── SSE: long-lived push ──
