@@ -7,7 +7,7 @@ from typing import Any, Optional
 
 from livekit.agents import llm
 
-from .jvagent_bridge import interact, parse_dispatch_metadata, session_id_for_caller
+from .jvagent_bridge import interact, jvagent_base_url, parse_dispatch_metadata, session_id_for_caller
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,21 @@ class JvagentOrchestratorLLM(llm.LLM):
         self._whatsapp_call_id = whatsapp_call_id
 
     @classmethod
+    def from_call_context(cls, call_context: Dict[str, Any]) -> "JvagentOrchestratorLLM":
+        agent_id = str(call_context.get("jvagent_agent_id") or "").strip()
+        if not agent_id:
+            raise ValueError("jvagent_agent_id is required")
+        caller = str(call_context.get("caller_phone") or "unknown").strip() or "unknown"
+        call_id = str(call_context.get("whatsapp_call_id") or "").strip()
+        room_name = str(call_context.get("room_name") or "").strip()
+        return cls(
+            agent_id=agent_id,
+            user_id=caller,
+            room_name=room_name,
+            whatsapp_call_id=call_id,
+        )
+
+    @classmethod
     def from_dispatch_metadata(
         cls,
         metadata: Optional[str],
@@ -37,19 +52,9 @@ class JvagentOrchestratorLLM(llm.LLM):
         room_name: str = "",
     ) -> "JvagentOrchestratorLLM":
         meta = parse_dispatch_metadata(metadata)
-        agent_id = str(meta.get("jvagent_agent_id") or "").strip()
-        if not agent_id:
-            raise ValueError(
-                "jvagent_agent_id missing from LiveKit agent dispatch metadata"
-            )
-        caller = str(meta.get("caller_phone") or "unknown").strip() or "unknown"
-        call_id = str(meta.get("whatsapp_call_id") or "").strip()
-        return cls(
-            agent_id=agent_id,
-            user_id=caller,
-            room_name=room_name,
-            whatsapp_call_id=call_id,
-        )
+        if room_name:
+            meta["room_name"] = room_name
+        return cls.from_call_context(meta)
 
     def chat(
         self,
@@ -103,7 +108,12 @@ class JvagentOrchestratorLLMStream(llm.LLMStream):
                 whatsapp_call_id=self._llm._whatsapp_call_id,
             )
         except Exception as exc:
-            logger.error("jvagent interact failed: %s", exc, exc_info=True)
+            logger.error(
+                "jvagent interact failed (%s): %s",
+                f"{jvagent_base_url()}/api/agents/{self._llm._agent_id}/interact",
+                exc,
+                exc_info=True,
+            )
             response = (
                 "I'm having trouble reaching the assistant right now. "
                 "Please try again in a moment."

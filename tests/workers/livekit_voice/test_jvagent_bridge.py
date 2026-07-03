@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from workers.livekit_voice.jvagent_bridge import (
+    extract_interact_response_text,
     interact,
     parse_dispatch_metadata,
     session_id_for_caller,
@@ -28,19 +29,42 @@ class TestParseDispatchMetadata:
         assert parse_dispatch_metadata("not-json") == {}
 
 
+class TestExtractInteractResponseText:
+    def test_top_level_response(self):
+        body = {
+            "success": True,
+            "user_id": "u1",
+            "session_id": "s1",
+            "response": "Hello from orchestrator",
+        }
+        assert extract_interact_response_text(body) == "Hello from orchestrator"
+
+    def test_data_wrapped_response(self):
+        body = {
+            "success": True,
+            "data": {
+                "response": "Wrapped reply",
+                "user_id": "u1",
+            },
+        }
+        assert extract_interact_response_text(body) == "Wrapped reply"
+
+    def test_interaction_fallback(self):
+        body = {
+            "success": True,
+            "interaction": {"response": "From interaction object"},
+        }
+        assert extract_interact_response_text(body) == "From interaction object"
+
+
 @pytest.mark.asyncio
-async def test_interact_parses_wrapped_response():
+async def test_interact_parses_top_level_response():
     mock_response = MagicMock()
     mock_response.json.return_value = {
         "success": True,
-        "data": {
-            "success": True,
-            "data": {
-                "response": "Hello from orchestrator",
-                "user_id": "u1",
-                "session_id": "s1",
-            },
-        },
+        "user_id": "u1",
+        "session_id": "s1",
+        "response": "Hello from orchestrator",
     }
     mock_response.raise_for_status = MagicMock()
 

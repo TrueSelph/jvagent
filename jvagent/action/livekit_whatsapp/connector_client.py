@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -26,28 +27,27 @@ class LiveKitConnectorClient:
         self._url = url.rstrip("/")
         self._api_key = api_key
         self._api_secret = api_secret
-        self._api: Any = None
 
-    async def _get_api(self) -> Any:
-        if self._api is not None:
-            return self._api
+    @asynccontextmanager
+    async def _api_client(self) -> AsyncIterator[Any]:
         try:
             from livekit import api as lk_api
         except ImportError as exc:
             raise LiveKitConnectorError(
                 "livekit-api is not installed; pip install 'jvagent[livekit]'"
             ) from exc
-        self._api = lk_api.LiveKitAPI(
+        lk = lk_api.LiveKitAPI(
             url=self._url,
             api_key=self._api_key,
             api_secret=self._api_secret,
         )
-        return self._api
+        try:
+            yield lk
+        finally:
+            await lk.aclose()
 
     async def close(self) -> None:
-        if self._api is not None:
-            await self._api.aclose()
-            self._api = None
+        """No-op; each API call uses a short-lived client session."""
 
     async def accept_whatsapp_call(
         self,
@@ -67,11 +67,11 @@ class LiveKitConnectorClient:
         from livekit.protocol.agent_dispatch import RoomAgentDispatch
         from livekit.protocol.rtc import SessionDescription
 
-        lk = await self._get_api()
+        metadata_json = json.dumps(agent_metadata or {})
         agents: List[RoomAgentDispatch] = [
             RoomAgentDispatch(
                 agent_name=agent_name,
-                metadata=json.dumps(agent_metadata or {}),
+                metadata=metadata_json,
             )
         ]
         request = lk_api.AcceptWhatsAppCallRequest(
@@ -82,8 +82,10 @@ class LiveKitConnectorClient:
             sdp=SessionDescription(type=sdp_type or "offer", sdp=sdp),
             room_name=room_name,
             agents=agents,
+            participant_metadata=metadata_json,
         )
-        response = await lk.connector.accept_whatsapp_call(request)
+        async with self._api_client() as lk:
+            response = await lk.connector.accept_whatsapp_call(request)
         return {
             "room_name": getattr(response, "room_name", None) or room_name,
             "whatsapp_call_id": whatsapp_call_id,
@@ -99,15 +101,24 @@ class LiveKitConnectorClient:
         """Disconnect an active WhatsApp call and clean up LiveKit resources."""
         from livekit import api as lk_api
 
-        lk = await self._get_api()
         reason = (
             lk_api.DisconnectWhatsAppCallRequest.USER_INITIATED
             if user_initiated
             else lk_api.DisconnectWhatsAppCallRequest.BUSINESS_INITIATED
         )
-        request = lk_api.DisconnectWhatsAppCallRequest(
-            whatsapp_call_id=whatsapp_call_id,
-            whatsapp_api_key=whatsapp_api_key if not user_initiated else "",
-            disconnect_reason=reason,
-        )
-        await lk.connector.disconnect_whatsapp_call(request)
+        if user_initiated:
+            request = lk_api.DisconnectWhatsAppCallRequest(
+                whatsapp_call_id=whatsapp_call_id,
+                disconnect_reason=reason,
+            )
+        else:
+            request = lk_api.DisconnectWhatsAppCallRequest(
+                whatsapp_call_id=whatsapp_call_id,
+                whatsapp_api_key=whatsapp_api_key,
+                disconnect_reason=reason,
+            )
+        try:
+            async with self._api_client() as lk:
+                await lk.connector.disconnect_whatsapp_call(request)
+        except Exception as exc:
+            raise LiveKitConnectorError(str(exc)) from exc

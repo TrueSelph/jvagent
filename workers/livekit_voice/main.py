@@ -23,22 +23,18 @@ from pathlib import Path
 
 
 def _load_dotenv() -> None:
-    """Load env from cwd or examples/jvagent_app/.env when running locally."""
+    """Load env files; examples/jvagent_app/.env overrides repo-root .env."""
     try:
         from dotenv import load_dotenv
     except ImportError:
         return
-    load_dotenv()
-    if os.environ.get("LIVEKIT_URL"):
-        return
     repo_root = Path(__file__).resolve().parents[2]
-    candidates = (
-        repo_root / "examples" / "jvagent_app" / ".env",
+    for path in (
         repo_root / ".env",
-    )
-    for path in candidates:
+        repo_root / "examples" / "jvagent_app" / ".env",
+    ):
         if path.is_file():
-            load_dotenv(path, override=False)
+            load_dotenv(path, override=True)
 
 
 _load_dotenv()
@@ -46,6 +42,7 @@ _load_dotenv()
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
 from livekit.plugins import deepgram, elevenlabs, silero
 
+from .dispatch import resolve_call_context
 from .jvagent_llm import JvagentOrchestratorLLM
 
 logger = logging.getLogger(__name__)
@@ -60,14 +57,8 @@ async def entrypoint(ctx: JobContext) -> None:
     """Join a LiveKit room dispatched from WhatsApp Connector."""
     await ctx.connect()
 
-    metadata = ""
-    if ctx.job.agent_dispatch and ctx.job.agent_dispatch.metadata:
-        metadata = ctx.job.agent_dispatch.metadata
-
-    orchestrator = JvagentOrchestratorLLM.from_dispatch_metadata(
-        metadata,
-        room_name=ctx.room.name,
-    )
+    call_context = await resolve_call_context(ctx)
+    orchestrator = JvagentOrchestratorLLM.from_call_context(call_context)
 
     tts_kwargs: dict = {"model": _ELEVEN_MODEL}
     if _ELEVEN_VOICE:
@@ -100,6 +91,9 @@ def main() -> None:
             "examples/jvagent_app/.env (from your LiveKit Cloud project settings). "
             "Also set LIVEKIT_API_KEY and LIVEKIT_API_SECRET."
         )
+    from .jvagent_bridge import jvagent_base_url
+
+    logger.info("jvagent voice worker interact base URL: %s", jvagent_base_url())
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,

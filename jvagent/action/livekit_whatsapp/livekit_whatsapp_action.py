@@ -275,10 +275,11 @@ class LiveKitWhatsAppAction(Action):
                 event.call_id,
                 exc,
             )
+            # User hang-up cleanup is best-effort; LiveKit also auto-cleans stale rooms.
             return {
-                "status": "error",
+                "status": "disconnected",
                 "call_id": event.call_id,
-                "error": str(exc),
+                "warning": str(exc),
             }
 
     @tool
