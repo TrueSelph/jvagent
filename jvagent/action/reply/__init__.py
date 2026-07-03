@@ -13,3 +13,4 @@ from jvagent.action.reply.reply_action import ReplyAction
 __all__ = [
     "ReplyAction",
 ]
+from . import endpoints  # noqa: F401 — registers HTTP endpoints
