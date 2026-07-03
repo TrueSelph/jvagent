@@ -328,5 +328,16 @@ actions:
       phone_number_id: ""      # e.g. "102274452799236"
       access_token: ""         # Meta system user token for this WABA
 
+  - action: jvagent/livekit_whatsapp_action
+    context:
+      enabled: false
+      description: "WhatsApp voice calls via LiveKit Connector (requires LIVEKIT_* env)"
+      agent_name: "jvagent-voice"
+      cloud_api_version: "24.0"
 
-
+  - action: jvagent/elevenlabs_tts
+    context:
+      enabled: true
+      description: "Text-to-Speech action"
+      model: "eleven_turbo_v2"
+      voice: "Sarah"

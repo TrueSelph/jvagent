@@ -21,6 +21,7 @@ from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.exceptions import DatabaseError, ValidationError
 
 from jvagent.action.access_control.access_control_action import log_access_denied
+from jvagent.action.livekit_whatsapp.call_webhook import is_calls_webhook
 from jvagent.action.utils.meta_webhook import verify_meta_webhook_signature
 from jvagent.core.agent import Agent
 
@@ -553,6 +554,22 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             request_data = getattr(request.state, "parsed_payload", None)
             if request_data is None:
                 request_data = await request.json()
+
+        if whatsapp_action.is_meta_provider() and is_calls_webhook(request_data):
+            lk_action = await agent.get_action_by_type("LiveKitWhatsAppAction")
+            if not lk_action:
+                logger.warning(
+                    "Meta calls webhook for agent_id=%s but LiveKitWhatsAppAction "
+                    "is not registered",
+                    agent_id,
+                )
+                return {
+                    "status": "ignored",
+                    "response": "calls not configured",
+                }
+            return await lk_action.handle_call_webhook(
+                request_data, agent_id=agent_id
+            )
 
         try:
             wa = await whatsapp_action.api()

@@ -59,6 +59,7 @@ jvagent_db/
 # Logs
 *.log
 logs/
+logs.txt
 jvdb_logs/
 jvagent_logs/
 jvspatial_logs/

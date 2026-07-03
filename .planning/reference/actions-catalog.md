@@ -92,6 +92,7 @@ Bases: `InteractAction` — `interact/base.py:32`. See `.planning/architecture.m
 | jvagent/email_action | `EmailAction` | `Action` | Gmail / Outlook (OAuth) / SendGrid in/out |
 | jvagent/facebook_action | `FacebookAction` | `Action` | Facebook Pages + Messenger Graph API |
 | jvagent/whatsapp | `WhatsAppAction` | `Action` | WhatsApp Business API + webhooks |
+| jvagent/livekit_whatsapp_action | `LiveKitWhatsAppAction` | `Action` | WhatsApp voice calls via LiveKit Connector |
 | jvagent/sentdm_broadcast | `SentDMBroadcastAction` | `Action` | Sent.dm email-campaign broadcasts |
 | jvagent/postiz_action | `PostizAction` | `Action` | Social media scheduling (X, LinkedIn, IG…) |
 

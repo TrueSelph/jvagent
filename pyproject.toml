@@ -88,6 +88,19 @@ distributed-lock = [
     "boto3>=1.28.0",
 ]
 
+# Optional: LiveKit WhatsApp voice calls (Connector API in jvagent; worker is separate).
+livekit = [
+    "livekit-api>=1.0.0",
+]
+
+livekit-voice = [
+    "livekit-api>=1.0.0",
+    "livekit-agents>=1.0.0",
+    "livekit-plugins-deepgram>=1.0.0",
+    "livekit-plugins-elevenlabs>=1.0.0",
+    "livekit-plugins-silero>=1.0.0",
+]
+
 # Optional: same Docling stack as jvagent/action/pageindex/pageindex_action/info.yaml (manual / pre-baked images).
 pageindex = [
     "docling>=2.0.0",

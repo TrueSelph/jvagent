@@ -1,0 +1,17 @@
+package:
+  name: jvagent/livekit_whatsapp_action
+  author: V75 Inc.
+  archetype: LiveKitWhatsAppAction
+  version: 1.0.0
+  meta:
+    title: LiveKit WhatsApp Voice Calls
+    description: Accept WhatsApp voice calls via LiveKit Connector (Meta Cloud API)
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1
+    pip:
+      - livekit-api>=1.0.0

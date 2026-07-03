@@ -1,0 +1,9 @@
+# LiveKit voice worker — install with: pip install "jvagent[livekit-voice]"
+# See workers/livekit_voice/main.py for run instructions.
+
+livekit-api>=1.0.0
+livekit-agents>=1.0.0
+livekit-plugins-deepgram>=1.0.0
+livekit-plugins-elevenlabs>=1.0.0
+livekit-plugins-silero>=1.0.0
+httpx>=0.27.0
