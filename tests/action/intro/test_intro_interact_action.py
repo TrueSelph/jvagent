@@ -79,13 +79,11 @@ async def test_empty_directive_skips():
     assert visitor.unrecorded == 1
 
 
-def test_healthcheck_requires_directive():
+@pytest.mark.asyncio
+async def test_healthcheck_requires_directive():
     action = IntroInteractAction()
     assert action.directive  # default is set
 
     action.directive = ""
-    # healthcheck is async
-    import asyncio
-
-    result = asyncio.get_event_loop().run_until_complete(action.healthcheck())
+    result = await action.healthcheck()
     assert isinstance(result, dict) and result.get("status") is False
