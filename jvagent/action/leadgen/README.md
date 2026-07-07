@@ -7,7 +7,7 @@ Conversational lead capture for orchestrator agents — interview-style skill fo
 1. Enable `jvagent/leadgen` and `jvagent/mcp` in `agent.yaml`.
 2. Scaffold a skill: `jvagent skill create-leadgen jvagent/my_agent my_leads`
 3. Register the skill in orchestrator `skills:`.
-4. Configure `leadgen.sync.destinations` for Google Sheets, email MCP, etc.
+4. Configure `leadgen.sync.destinations` — any MCP server via the standard interface (flat file, spreadsheet, email, CRM, DB).
 
 ## Tools
 

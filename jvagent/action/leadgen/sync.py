@@ -14,7 +14,15 @@ LEGACY_DIGEST_KEY = "_lead_sync_mcp_DIGEST"
 
 
 def compute_digest(data: Dict[str, Any]) -> str:
-    canonical = json.dumps(data, sort_keys=True, separators=(",", ":"), default=str)
+    """Digest of the lead's real fields.
+
+    Internal, underscore-prefixed keys (notably the stored sync digest itself)
+    are excluded — otherwise the digest changes the moment it is written back
+    onto the profile, so the unchanged-data check never matches and every
+    capture re-syncs (duplicate rows on append-style destinations).
+    """
+    fields = {k: v for k, v in data.items() if not k.startswith("_")}
+    canonical = json.dumps(fields, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -23,9 +31,13 @@ def get_stored_digest(profile_data: Dict[str, Any]) -> Optional[str]:
 
 
 def substitute(val: Any, profile_data: Dict[str, Any], user_id: str) -> Any:
-    profile_json = json.dumps(profile_data, default=str)
-    profile_keys = sorted(k for k in profile_data if not k.startswith("_"))
-    profile_row = [str(profile_data.get(k, "")) for k in profile_keys]
+    # Exclude internal, underscore-prefixed keys (e.g. the stored sync digest)
+    # from every template — they are bookkeeping, not lead data, and must not
+    # leak into a synced destination. Matches profile_keys/profile_row.
+    public = {k: v for k, v in profile_data.items() if not k.startswith("_")}
+    profile_json = json.dumps(public, default=str)
+    profile_keys = sorted(public)
+    profile_row = [str(public.get(k, "")) for k in profile_keys]
 
     def _replace(s: str) -> str:
         s = s.replace("{user_id}", str(user_id))

@@ -34,11 +34,17 @@ class IntroInteractAction(InteractAction):
 
     directive: str = attribute(
         default=(
-            "Introduce yourself by name and briefly explain how you can help. "
-            "Do not mention any knowledge cutoff, training date, underlying "
-            "model, or provider."
+            "This is the visitor's first message: open your reply by briefly "
+            "introducing yourself by name and what you help with (one short "
+            "sentence), then continue naturally into the rest of your reply. Do "
+            "not mention any knowledge cutoff, training date, underlying model, "
+            "or provider."
         ),
-        description="Introductory message for first-time users",
+        description=(
+            "First-message self-introduction. Applied as a response-shaping "
+            "parameter (HOW) so the greeting is woven into the same reply as any "
+            "substantive answer, rather than emitted as a separate directive."
+        ),
     )
 
     description: str = attribute(
@@ -57,10 +63,14 @@ class IntroInteractAction(InteractAction):
     )
 
     async def execute(self, visitor: "InteractWalker") -> None:
-        """Execute intro action if user is first-time.
+        """Add a first-message self-introduction as a response-shaping parameter.
 
-        Checks if this is a first-time user interaction and adds
-        an introductory directive if so.
+        Runs at weight -300 (before the executive/router), so its parameter is on
+        the interaction before any downstream action queues an answer directive.
+        Contributing a *parameter* (HOW) rather than a *directive* (WHAT) lets the
+        single ReplyAction compose weave the greeting into the same reply as the
+        substantive answer, instead of emitting the intro as a separate mandated
+        section that reads as a second, disjoint blob.
 
         Args:
             visitor: The InteractWalker visiting this action
@@ -80,7 +90,7 @@ class IntroInteractAction(InteractAction):
                 await visitor.unrecord_action_execution()
                 return
 
-            # Validate prompt is configured
+            # Validate the intro text is configured
             if not self.directive:
                 logger.warning(
                     "IntroInteractAction: Directive not configured, skipping intro"
@@ -88,8 +98,11 @@ class IntroInteractAction(InteractAction):
                 await visitor.unrecord_action_execution()
                 return
 
-            # Add the directive via visitor so action_name is set and interaction is saved
-            await visitor.add_directive(self.directive)
+            # Contribute the intro as a response-shaping parameter (not a
+            # directive) so it modulates HOW the reply opens rather than adding a
+            # separate mandated content section. Interaction-scoped, so it only
+            # affects this first reply. add_parameter sets action_name + saves.
+            await visitor.add_parameter({"response": self.directive})
 
         except Exception as e:
             logger.error(

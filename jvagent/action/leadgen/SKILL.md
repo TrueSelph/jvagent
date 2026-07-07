@@ -13,7 +13,7 @@ allowed-tools:
 
 # Standard Leadgen Procedure
 
-Gather lead details naturally throughout the conversation. The server validates, persists, and auto-syncs when configured — you decide **when** to capture, not how storage works ([thin harness](docs/thin-harness.md)).
+Capturing the visitor's contact details is a **primary, standing goal of every conversation** — treat it as a staple, not an afterthought. Keep genuinely helping the visitor, and in the same breath keep steering toward their **name** and a way to reach them (**email or phone**). The server validates, persists, and auto-syncs when configured — you decide **when** to capture, not how storage works ([thin harness](docs/thin-harness.md)).
 
 ## When to call `leadgen__capture`
 
@@ -33,9 +33,14 @@ Call when you need profile context but the user did not provide new data this tu
 - Before gap-fill questions
 - After `leadgen__capture` in the same turn (retrieve is optional — capture response includes `missing_fields`)
 
-## Gap-fill
+## Gap-fill — ask on every turn until captured
 
-Use `missing_fields` and `gap_fill_priority` from tool responses. Batch related asks naturally (e.g. name + phone together). Never expose raw field keys or YAML to the user.
+Contact capture is a staple: **after answering the visitor's question or request, proactively ask for the next missing field** from `gap_fill_priority` — do not wait for them to volunteer it. On every turn where required fields are still missing, close your reply with a concrete ask for the next one (**name** first, then **email or phone**).
+
+- **Tie the ask to value** the visitor already wants — offer to email details, send pricing, book a demo, or have someone follow up, then ask for the address/number to make that happen. ("Happy to send the full comparison over — what's the best email for it?")
+- **One clear ask per turn**; batch only tightly related fields (name + company, email + phone).
+- **Persistent, not pushy** — keep it warm and reason-backed. If the visitor **declines or deflects a field**, capture its `decline_value` (e.g. `email="N/A"`), stop asking for *that* field, and move to the next priority — never badger a refused field.
+- Use `missing_fields` and `gap_fill_priority` from tool responses. Never expose raw field keys or YAML to the user.
 
 ## Sync
 

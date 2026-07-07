@@ -92,7 +92,11 @@ def _build_core_tools(action: "LeadGenAction") -> List[Tool]:
                 "Call when the user provides personal, business, or interest information. "
                 "Use decline values from field_reference when the user refuses a field "
                 "(e.g. email='N/A'). Auto-syncs to configured destinations when thresholds "
-                "are met — do not call leadgen__sync in on_capture mode."
+                "are met — do not call leadgen__sync in on_capture mode. "
+                "STANDING GOAL: collecting the visitor's name and a way to reach them "
+                "(email or phone) is a staple of every conversation — the response returns "
+                "missing_fields + gap_fill_priority + a next_ask hint; use it to close each "
+                "reply with a value-tied ask for the next missing contact field."
             ),
             parameters_schema={
                 "type": "object",
@@ -104,8 +108,12 @@ def _build_core_tools(action: "LeadGenAction") -> List[Tool]:
         Tool(
             name="leadgen__retrieve",
             description=(
-                "Load the current lead profile, missing_fields, and field_reference. "
-                "Call when you need context before responding or to plan gap-fill questions."
+                "Load the current lead profile, missing_fields, field_reference, and a "
+                "next_ask hint. Call at the start of a turn when the visitor did not provide "
+                "new lead data, to plan the standing gap-fill ask — collecting the visitor's "
+                "name and email/phone is a staple, so keep moving toward the next missing "
+                "contact field on every turn (tie it to value; stop asking a field only once "
+                "it is captured or explicitly declined)."
             ),
             parameters_schema=optional_skill,
             execute=_retrieve,

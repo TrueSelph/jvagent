@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
 
 from jvagent.tooling.tool_executor import get_dispatch_visitor
 
@@ -49,7 +49,7 @@ def resolve_spec(
 def merge_spec_with_action_defaults(
     action: "LeadGenAction", spec: Optional[LeadGenSpec]
 ) -> LeadGenSpec:
-    from .spec import FieldDef, LeadGenSpec, SyncDef
+    from .spec import FieldDef, LeadGenSpec, SyncDef, SyncMode
 
     if spec is not None:
         merged = spec
@@ -71,11 +71,19 @@ def merge_spec_with_action_defaults(
                 )
             )
 
+    # When the skill spec declares no sync destinations, the action-level sync
+    # config governs the whole sync (mode + thresholds + destinations) — this is
+    # what lets deployments keep sync entirely in agent.yaml. A skill that DOES
+    # declare its own destinations keeps full control of its sync block.
     if action.sync_destinations and not merged.sync.destinations:
+        raw_mode = action.sync_mode
+        if raw_mode not in ("on_capture", "on_complete", "manual"):
+            raw_mode = "on_capture"
+        mode = cast(SyncMode, raw_mode)
         merged.sync = SyncDef(
-            mode=merged.sync.mode,
-            min_fields=merged.sync.min_fields,
-            require_any=merged.sync.require_any,
+            mode=mode,
+            min_fields=list(action.sync_min_fields),
+            require_any=list(action.sync_require_any),
             destinations=list(action.sync_destinations),
         )
     return merged
@@ -129,6 +137,21 @@ async def validate_fields(
         else:
             validated[key] = str_val
     return validated, None
+
+
+def next_ask(spec: LeadGenSpec, missing_fields: List[str]) -> Optional[str]:
+    """The single next contact field to ask for, in gap-fill priority order.
+
+    Returns the highest-priority still-missing field so the model has an explicit
+    target for the standing gap-fill ask, or ``None`` when nothing is missing.
+    """
+    if not missing_fields:
+        return None
+    missing = set(missing_fields)
+    for key in spec.gap_fill.priority:
+        if key in missing:
+            return key
+    return missing_fields[0]
 
 
 def apply_merge_fields(
@@ -261,12 +284,14 @@ async def handle_capture(
     validated = apply_merge_fields(validated, profile_data, spec.merge_fields())
     changed = await record.update_yaml(validated)
 
+    missing_now = record.get_missing_fields()
     result: Dict[str, Any] = {
         "status": "updated" if changed else "no-op",
         "fields_saved": list(validated.keys()) if changed else [],
-        "missing_fields": record.get_missing_fields(),
+        "missing_fields": missing_now,
         "field_reference": fields_reference(spec),
         "gap_fill_priority": spec.gap_fill.priority,
+        "next_ask": next_ask(spec, missing_now),
     }
 
     if changed:
@@ -319,13 +344,15 @@ async def handle_retrieve(
     profile_data = record.get_yaml() or {}
     clean = {k: v for k, v in profile_data.items() if not k.startswith("_")}
 
+    missing = record.get_missing_fields()
     return json.dumps(
         {
             "status": "ok" if clean else "empty_profile",
             "fields": clean,
-            "missing_fields": record.get_missing_fields(),
+            "missing_fields": missing,
             "field_reference": fields_reference(spec),
             "gap_fill_priority": spec.gap_fill.priority,
+            "next_ask": next_ask(spec, missing),
             "score": record.score,
             "enrichment_status": record.enrichment_status,
         }

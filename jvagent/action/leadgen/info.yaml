@@ -6,8 +6,9 @@ package:
   meta:
     title: Leadgen Action
     description: >-
-      Conversational lead capture with spec-driven fields and auto-sync to MCP
-      destinations (Google Sheets, email, etc.).
+      Conversational lead capture with spec-driven fields and auto-sync to any
+      MCP destination via a standard interface (flat file, spreadsheet, email,
+      CRM, etc.).
     group: jvagent
     type: action
   dependencies:

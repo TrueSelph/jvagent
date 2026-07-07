@@ -52,15 +52,15 @@ leadgen:
     mode: on_capture
     min_fields: [name]
     require_any: [phone, email]
+    # Any MCP server + tool — a flat file, spreadsheet, email, CRM, or DB.
+    # Only server/tool/arguments change; the sync path is identical.
     destinations:
-      - server: google_sheets
+      - server: leadfile
         mode: mcp
-        tool: sheets_append_values
+        tool: write_file
         arguments:
-          spreadsheetId: "YOUR_SPREADSHEET_ID"
-          range: Leads
-          values:
-            - "{profile_row}"
+          path: "lead.json"
+          content: "Lead profile: {profile_json}"
   handlers:
     post_capture: enrich_from_channel
 ---

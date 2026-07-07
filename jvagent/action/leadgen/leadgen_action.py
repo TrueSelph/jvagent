@@ -37,8 +37,30 @@ class LeadGenAction(Action):
     sync_destinations: List[Dict[str, Any]] = attribute(
         default_factory=list,
         description=(
-            "Action-level MCP sync destinations (used when skill has none). "
-            "Each entry: {server, mode, tool, arguments}."
+            "Action-level MCP sync destinations (used when the skill spec "
+            "declares none). Each entry: {server, mode, tool, arguments}. When "
+            "set, the action-level sync_mode / sync_min_fields / sync_require_any "
+            "below govern the whole sync."
+        ),
+    )
+    sync_mode: str = attribute(
+        default="on_capture",
+        description=(
+            "Action-level sync mode (on_capture | on_complete | manual), applied "
+            "when the sync is driven by sync_destinations above."
+        ),
+    )
+    sync_min_fields: List[str] = attribute(
+        default_factory=lambda: ["name"],
+        description=(
+            "Fields that must all be present before an action-level sync fires."
+        ),
+    )
+    sync_require_any: List[str] = attribute(
+        default_factory=lambda: ["phone", "email"],
+        description=(
+            "At least one of these must be present before an action-level sync "
+            "fires."
         ),
     )
 

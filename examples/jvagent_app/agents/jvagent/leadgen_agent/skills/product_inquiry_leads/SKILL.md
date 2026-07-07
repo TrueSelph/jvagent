@@ -41,19 +41,9 @@ leadgen:
   gap_fill:
     batch: true
     priority: [name, phone, email, organization]
-  sync:
-    mode: on_capture
-    min_fields: [name]
-    require_any: [phone, email]
-    destinations:
-      - server: google_sheets
-        mode: mcp
-        tool: sheets_append_values
-        arguments:
-          spreadsheetId: "YOUR_SPREADSHEET_ID"
-          range: Leads
-          values:
-            - "{profile_row}"
+  # Sync config (mode, thresholds, destinations) lives in agent.yaml on the
+  # jvagent/leadgen action — it's deployment/infra, not skill semantics. The
+  # skill defines WHAT to capture; the agent defines WHERE it syncs.
   handlers:
     post_capture: enrich_from_channel
 ---

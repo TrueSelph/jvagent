@@ -32,14 +32,17 @@ leadgen:
     mode: on_capture       # on_capture | on_complete | manual
     min_fields: [name]
     require_any: [phone, email]
+    # Destination-agnostic: any MCP server + tool. Below is a flat file; a
+    # spreadsheet, email, CRM, or DB is the same shape (only server/tool/args
+    # change). Templates: {profile_json}, {profile_row}, {profile_keys},
+    # {user_id}, {<field>}.
     destinations:
-      - server: google_sheets
+      - server: leadfile          # any configured MCP server (see MCPAction)
         mode: mcp
-        tool: sheets_append_values
+        tool: write_file          # the server's write/append tool
         arguments:
-          spreadsheetId: "..."
-          range: Leads
-          values: ["{profile_row}"]
+          path: "lead.json"
+          content: "Lead profile: {profile_json}"
   handlers:
     post_capture: enrich_from_channel
     qualify: check_minimum_budget
