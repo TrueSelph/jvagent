@@ -6,18 +6,14 @@ defines the interface for actions that participate in the interact subsystem.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from jvspatial.api.exceptions import ValidationError
-from jvspatial.core import on_visit
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
 
 logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    from jvagent.action.interact.interact_walker import InteractWalker
 
 # Import InteractWalker for @on_visit decorator (needed at class definition time)
 # This import is safe because InteractWalker only imports InteractAction for type hints
@@ -295,7 +291,6 @@ class InteractAction(Action, ABC):
             - The walker performs routing checks before calling execute()
             - Top-level actions must explicitly route to children using visitor.visit()
         """
-        pass
 
     async def publish(
         self,

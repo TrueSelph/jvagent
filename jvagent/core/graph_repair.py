@@ -232,7 +232,7 @@ async def repair_agent_graph(
                             stale.id,
                             exc_info=True,
                         )
-                repair_state: Optional[RepairState] = all_states[-1]
+                repair_state = all_states[-1]
             elif all_states:
                 repair_state = all_states[0]
             else:
@@ -474,7 +474,6 @@ async def _reattach_interaction_orphans(
 ) -> int:
     """Reattach orphan Interaction nodes in started_at order per conversation."""
     from jvagent.memory.conversation import Conversation
-    from jvagent.memory.interaction import Interaction
 
     reattached = 0
     by_conv: Dict[str, list] = defaultdict(list)

@@ -64,7 +64,6 @@ def test_compose_interview_skill_body_with_custom():
 
 @pytest.mark.asyncio
 async def test_discover_skill_docs_uses_precomposed_body(monkeypatch):
-    standard = get_standard_interview_procedure()
     composed = compose_interview_skill_body("## Custom instructions\n\nBe friendly.")
 
     def _resolve(

@@ -17,7 +17,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 

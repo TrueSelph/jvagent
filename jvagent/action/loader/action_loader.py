@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Type
 
 import yaml
 
@@ -617,7 +617,7 @@ class ActionLoader:
             Set of all action references in "namespace/action_name" format
             (e.g., "jvagent/interact_router", "contrib/custom_action")
         """
-        required_actions = set()
+        required_actions: Set[str] = set()
         agents_path = self.base_path / "agents"
 
         if not agents_path.exists() or not agents_path.is_dir():

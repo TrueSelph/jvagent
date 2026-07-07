@@ -13,7 +13,7 @@ from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
 
 if TYPE_CHECKING:
-    from jvagent.memory.interaction import Interaction
+    pass
 
 logger = logging.getLogger(__name__)
 

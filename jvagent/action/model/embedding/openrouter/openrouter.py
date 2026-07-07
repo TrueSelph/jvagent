@@ -5,7 +5,7 @@ OpenRouter's API is OpenAI-compatible and supports OpenAI embedding models.
 """
 
 import logging
-from typing import List, Optional
+from typing import List
 
 import httpx
 from jvspatial.core.annotations import attribute

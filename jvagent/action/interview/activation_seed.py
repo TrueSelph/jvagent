@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from .session import ACTIVATION_UTTERANCE_KEY, InterviewSession
-from .spec import FieldDef, InterviewSpec
+from .spec import FieldDef
 
 SEED_FROM_ACTIVATION_KEY = "seed_from_activation"
 ALLOWED_ITEMS_KEY = "allowed_items"

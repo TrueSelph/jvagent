@@ -15,7 +15,6 @@ from dotenv import load_dotenv
 from jvspatial.env import env
 
 load_dotenv()
-import logging
 from pathlib import Path
 from types import SimpleNamespace as config
 

@@ -11,7 +11,6 @@ from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
 from jvspatial.logging.filter_utils import validate_log_filter
 
 from jvagent.core.agent import Agent
-from jvagent.memory.manager import Memory
 from jvagent.memory.services.long_memory_service import LongMemoryService
 from jvagent.memory.user import User
 

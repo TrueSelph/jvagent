@@ -363,7 +363,6 @@ async def validate_otp_code(ctx) -> Dict[str, Any]:
     """Validate OTP format and confirm via Zoon API."""
     value = ctx.value
     session = ctx.session
-    visitor = ctx.visitor
     interview_action = ctx.interview
 
     sctx = getattr(session, "context", None) if session else None

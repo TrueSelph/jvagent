@@ -150,4 +150,3 @@ class EmbeddingModelAction(BaseModelAction, ABC):
         Returns:
             Embedding vector as list of floats
         """
-        pass

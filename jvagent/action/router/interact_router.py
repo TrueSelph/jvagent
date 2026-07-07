@@ -42,7 +42,6 @@ from jvagent.core.cache import (
     set_interact_router_cache,
 )
 from jvagent.memory.conversation import Conversation
-from jvagent.memory.user_long_memory import UserLongMemory
 
 if TYPE_CHECKING:
     from jvagent.memory.interaction import Interaction

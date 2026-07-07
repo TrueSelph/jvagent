@@ -67,8 +67,8 @@ async def _make_conversation(memory: Memory, user: User) -> Conversation:
 async def test_total_users_zero_after_purge_all(test_db):
     """purge_user_memory should bring total_users to 0."""
     memory = await _setup_memory()
-    u1 = await _make_user(memory)
-    u2 = await _make_user(memory)
+    await _make_user(memory)
+    await _make_user(memory)
     assert memory.total_users == 2
 
     await memory.purge_user_memory()

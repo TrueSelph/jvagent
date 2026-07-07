@@ -10,8 +10,6 @@ from jvagent.memory.user_long_memory import DEFAULT_CATEGORIES, UserLongMemory
 class _LMStub:
     """Plain object: jvspatial Node forbids assigning arbitrary methods on instances."""
 
-    pass
-
 
 @pytest.mark.asyncio
 async def test_ensure_default_categories_short_circuit_when_all_present() -> None:

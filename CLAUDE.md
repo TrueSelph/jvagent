@@ -150,6 +150,8 @@ pytest tests/                  # or the affected slice(s) at minimum
   changes. Never commit with a hook still reporting changes.
 - If `pytest` has any failure, fix it or explicitly call it out; do not commit over
   red tests.
+- `pre-commit install` also installs a pre-push pytest hook (full suite on push);
+  the manual run above is still required before every commit.
 - Do not use `git commit --no-verify` to bypass the gate.
 - Applies on every branch, including hotfix/docs/chore branches.
 

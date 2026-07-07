@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from jvspatial.core.annotations import attribute
 
@@ -112,7 +112,7 @@ class LeadGenAction(Action):
     async def _handle_custom_tool(
         self, tdef: Any, spec: LeadGenSpec, **kwargs: Any
     ) -> str:
-        from .hooks import HookExecutionContext, call_hook
+        from .hooks import HookExecutionContext
 
         visitor = kwargs.pop("visitor", None)
         user, interaction = await engine.get_user_and_interaction(visitor)

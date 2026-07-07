@@ -21,7 +21,6 @@ from jvagent.action.interact.base import InteractAction
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
-    from jvagent.memory.interaction import Interaction
 
 
 logger = logging.getLogger(__name__)

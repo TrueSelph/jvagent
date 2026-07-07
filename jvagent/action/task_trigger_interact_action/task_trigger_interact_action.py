@@ -1,6 +1,6 @@
 import logging
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from jvspatial.core.annotations import attribute
 
@@ -11,8 +11,6 @@ from jvagent.memory.task_eligibility import pick_next_proactive_task
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
-    from jvagent.memory.conversation import Conversation
-    from jvagent.memory.interaction import Interaction
 
 logger = logging.getLogger(__name__)
 

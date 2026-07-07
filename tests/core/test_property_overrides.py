@@ -7,10 +7,7 @@ can be overridden through YAML descriptors using the context mechanism.
 import pytest
 
 from jvagent.action.actions import Actions
-from jvagent.action.base import Action
-from jvagent.core.agent import Agent
 from jvagent.core.agent_loader import AgentLoader
-from jvagent.core.agents import Agents
 
 
 class TestAgentPropertyOverrides:

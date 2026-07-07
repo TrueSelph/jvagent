@@ -9,7 +9,6 @@ import logging
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 from fastapi import Request
-from fastapi.responses import StreamingResponse
 from jvspatial import create_task, flush_deferred_entities
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
@@ -131,7 +130,7 @@ async def _run_background_actions_inner(walker: "InteractWalker") -> None:
             access_ok = await walker.enforce_interact_action_access(
                 action, stage="background"
             )
-        except Exception as access_exc:
+        except Exception:
             logger.error(
                 "Access check failed for background action %s; denying execution",
                 action_name,
@@ -207,7 +206,7 @@ async def _emit_interaction_log(
         logger.warning(f"Failed to log interaction: {e}")
 
 
-from jvagent.core.profiling import profile_enabled, profiled_request
+from jvagent.core.profiling import profiled_request
 
 # Import INTERACTION level to ensure it's registered and available for logging
 from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
@@ -961,7 +960,6 @@ async def _stream_interaction(
     from jvagent.core.profiling import (
         finalize_profile,
         get_or_create_profile,
-        profile_enabled,
         set_current_profile,
     )
 
@@ -998,7 +996,7 @@ async def _stream_interaction(
         if not walker.interaction:
             try:
                 await walk_task
-            except Exception as e:
+            except Exception:
                 logger.error(
                     "Stream walker failed before interaction: request_id=%s",
                     profile.request_id,

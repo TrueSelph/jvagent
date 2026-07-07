@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import List, Optional
+from typing import List
 
 from jvagent.webui import is_built, serve
 

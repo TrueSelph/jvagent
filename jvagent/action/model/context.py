@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 if TYPE_CHECKING:
-    from jvagent.memory.interaction import Interaction
+    pass
 
 # Maps BYOK provider slug to LanguageModelAction class name on the agent.
 PROVIDER_MODEL_ACTION_CLASSES: Dict[str, str] = {

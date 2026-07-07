@@ -450,8 +450,6 @@ class AppLoader:
             if not agents_manager:
                 return
 
-            from jvagent.core.agent import Agent
-
             all_agents = await Agent.find({})
             agents_manager.total_agents = len(all_agents)
             agents_manager.active_agents = sum(1 for a in all_agents if a.enabled)

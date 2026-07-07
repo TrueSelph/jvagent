@@ -26,7 +26,9 @@ from .utils.meta_webhook_verify import (
     dashboard_action_for_stale,
     find_stale_callbacks,
 )
-from .utils.typing_state_manager import TypingStateManager
+
+# Re-exported for consumers/tests that import it from this module.
+from .utils.typing_state_manager import TypingStateManager  # noqa: F401
 from .webhook_auth import get_or_create_system_user
 from .whatsapp_adapter import WhatsAppAdapter
 from .whatsapp_filter import WhatsAppFilter

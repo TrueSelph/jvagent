@@ -8,7 +8,6 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from jvagent.tooling.tool import Tool
 from jvagent.tooling.tool_observability import ToolExecutionEnvelope
 from jvagent.tooling.tool_registry import ToolRegistry
 from jvagent.tooling.tool_result import ToolResult

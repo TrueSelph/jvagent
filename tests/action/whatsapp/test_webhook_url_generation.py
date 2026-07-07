@@ -4,7 +4,7 @@ import pytest
 
 pytest.importorskip("filetype")
 try:
-    from jvspatial.api.auth.models import UserCreateAdmin
+    pass
 except ImportError:
     pytest.skip(
         "UserCreateAdmin not available in installed jvspatial", allow_module_level=True
@@ -141,7 +141,7 @@ async def test_get_webhook_url_with_ip_restriction(whatsapp_action, mock_agent):
 
         # Call get_webhook_url with IP restriction
         allowed_ip = "203.0.113.0"
-        webhook_url = await whatsapp_action.get_webhook_url(allowed_ip=allowed_ip)
+        await whatsapp_action.get_webhook_url(allowed_ip=allowed_ip)
 
         # Verify IP restriction was applied
         call_kwargs = mock_service.generate_key.call_args[1]

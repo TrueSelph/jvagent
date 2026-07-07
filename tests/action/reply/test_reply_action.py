@@ -271,7 +271,7 @@ async def test_tool_reply_accepts_text_aliases(monkeypatch):
     assert captured["text"] == "Hello via message"
     assert "replied" in str(out.content)
 
-    out2 = await ra._tool_reply(visitor=MagicMock(), content="via content")
+    await ra._tool_reply(visitor=MagicMock(), content="via content")
     assert captured["text"] == "via content"
 
 

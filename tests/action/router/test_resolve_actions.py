@@ -1,7 +1,5 @@
 """Tests for InteractRouter action resolution (descriptions -> keys)."""
 
-import pytest
-
 from jvagent.action.router.interact_router import InteractRouter
 
 

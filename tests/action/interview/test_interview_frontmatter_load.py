@@ -9,7 +9,6 @@ import pytest
 from jvagent.action.interview.spec import (
     InterviewRegistry,
     load_interview_spec_from_skill,
-    parse_interview_spec,
 )
 from tests.action.interview.conftest import SIGNUP_INTERVIEW_SKILL_DIR as _SIGNUP
 

@@ -60,4 +60,3 @@ class BaseWebSearchAction(Action, ABC):
         Returns:
             List of result dicts, each with keys: title, link, snippet
         """
-        pass

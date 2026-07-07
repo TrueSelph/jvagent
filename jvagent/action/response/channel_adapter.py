@@ -103,4 +103,3 @@ class ChannelAdapter(ABC):
         Returns:
             True if message was sent successfully, False otherwise
         """
-        pass

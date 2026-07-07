@@ -18,7 +18,7 @@ Read-path (search):
 
 import hashlib
 import logging
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set
 
 from jvspatial.db import get_database_manager
 

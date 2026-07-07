@@ -11,7 +11,6 @@ import logging
 from typing import Any, Optional
 
 from fastapi import Request
-from fastapi.responses import StreamingResponse
 from jvspatial.api import endpoint
 from jvspatial.api.exceptions import ResourceNotFoundError
 

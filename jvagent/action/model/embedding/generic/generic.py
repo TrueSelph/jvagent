@@ -5,7 +5,7 @@ Supports configurable request/response formats for integrating with various APIs
 """
 
 import logging
-from typing import Any, List, Optional
+from typing import Any, List
 
 import httpx
 from jvspatial.core.annotations import attribute

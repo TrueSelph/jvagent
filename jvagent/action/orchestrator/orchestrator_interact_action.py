@@ -2262,7 +2262,6 @@ class OrchestratorInteractAction(InteractAction):
                         active_skill_doc = doc
                         break
 
-        locked_pending_directive: Optional[str] = None
         if active_skill_doc is not None:
             prep_obs_before = len(observations)
             tools, visible, skills_section = await self._apply_active_task_lock_skill(

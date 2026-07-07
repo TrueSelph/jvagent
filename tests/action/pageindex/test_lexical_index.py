@@ -7,7 +7,7 @@ pytest.importorskip("tiktoken")
 pytest.importorskip("litellm")
 pytest.importorskip("PyPDF2")
 
-from jvspatial.db import get_database_manager, unregister_database
+from jvspatial.db import unregister_database
 
 from jvagent.action.pageindex.adapter import persist_structure
 from jvagent.action.pageindex.config import (
@@ -23,7 +23,6 @@ from jvagent.action.pageindex.config import (
 from jvagent.action.pageindex.documents import (
     assimilate_document,
     delete_document,
-    get_document_root,
 )
 from jvagent.action.pageindex.lexical_index import (
     index_node,

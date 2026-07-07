@@ -1,7 +1,5 @@
 """Tests for PageIndex named collections and metadata."""
 
-import os
-
 import pytest
 
 pytest.importorskip("openai")
@@ -9,11 +7,9 @@ pytest.importorskip("tiktoken")
 pytest.importorskip("litellm")
 pytest.importorskip("PyPDF2")
 
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from jvspatial.api.exceptions import ValidationError
-from jvspatial.core.context import get_default_context, set_default_context
 from jvspatial.db import get_database_manager, unregister_database
 
 from jvagent.action.pageindex.adapter import persist_structure
@@ -32,7 +28,6 @@ from jvagent.action.pageindex.document_walker import DocumentWalker
 from jvagent.action.pageindex.documents import (
     _build_metadata_query,
     assimilate_document,
-    delete_document,
     enrich_structure_titles,
     export_documents,
     get_document_root,
@@ -1215,7 +1210,6 @@ def test_jvforge_response_missing_roots_raises():
     yield a no-op success."""
     import asyncio
 
-    import httpx
     from jvspatial.api.exceptions import ValidationError
 
     from jvagent.action.pageindex.jvforge_assimilate import assimilate_via_jvforge

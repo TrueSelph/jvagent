@@ -12,7 +12,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     AsyncGenerator,
-    Callable,
     Dict,
     List,
     Optional,
@@ -24,7 +23,7 @@ from jvspatial.core.annotations import attribute
 from jvagent.action.model.base import BaseModelAction
 
 if TYPE_CHECKING:
-    from jvagent.memory.interaction import Interaction
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -416,7 +415,6 @@ class LanguageModelAction(BaseModelAction, ABC):
         Returns:
             ModelActionResult with complete response
         """
-        pass
 
     @abstractmethod
     async def _query_stream(
@@ -438,7 +436,6 @@ class LanguageModelAction(BaseModelAction, ABC):
         Returns:
             ModelActionResult with streaming generator
         """
-        pass
 
     # ============================================================================
     # Programmatic Interface (Public API)
@@ -895,7 +892,6 @@ class LanguageModelAction(BaseModelAction, ABC):
                     """Stream wrapper that estimates tokens after completion."""
                     import time
 
-                    stream_start_time = time.time()
                     chunks = []
                     try:
                         async for chunk in original_stream:

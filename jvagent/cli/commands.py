@@ -26,7 +26,6 @@ from jvagent.core.bootstrap_update_mode import (
 from jvagent.core.config import (
     effective_log_db_type,
     get_config_value,
-    is_development_mode,
     load_app_config,
     normalize_empty,
     resolve_db_path,

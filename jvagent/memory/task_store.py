@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------
 
 TASK_STATUSES = frozenset({"pending", "active", "completed", "failed", "cancelled"})
+StepStatus = Literal["pending", "in_progress", "done", "failed", "skipped"]
 STEP_STATUSES = frozenset({"pending", "in_progress", "done", "failed", "skipped"})
 
 _TASK_TERMINAL = frozenset({"completed", "failed", "cancelled"})
@@ -66,7 +67,7 @@ def _new_id(prefix: str = "") -> str:
 
 
 # Map loose, model-supplied step statuses onto the canonical STEP_STATUSES.
-_STEP_STATUS_ALIASES = {
+_STEP_STATUS_ALIASES: Dict[str, StepStatus] = {
     "todo": "pending",
     "pending": "pending",
     "not_started": "pending",
@@ -87,7 +88,7 @@ _STEP_STATUS_ALIASES = {
 }
 
 
-def normalize_step_status(raw: Any, default: str = "pending") -> str:
+def normalize_step_status(raw: Any, default: StepStatus = "pending") -> StepStatus:
     """Coerce a loose status string to a canonical STEP_STATUSES value."""
     key = str(raw or "").strip().lower().replace(" ", "_")
     return _STEP_STATUS_ALIASES.get(
@@ -1117,7 +1118,7 @@ class _TaskTrackingContext:
         completion_result: Optional[str] = None,
     ):
         self._store = store
-        self._kwargs = {
+        self._kwargs: Dict[str, Any] = {
             "title": title,
             "description": description,
             "owner_action": owner_action,

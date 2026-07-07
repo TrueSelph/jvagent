@@ -280,7 +280,6 @@ class BaseWhatsAppAPI(ABC):
         use_full_url: bool = False,
     ) -> dict:
         """Generic async HTTP request to API. Must be implemented by subclass."""
-        pass
 
     # Common HTTP request helper
     async def _make_request(

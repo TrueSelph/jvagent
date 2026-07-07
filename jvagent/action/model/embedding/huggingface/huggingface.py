@@ -4,7 +4,7 @@ Provides integration with HuggingFace's Inference API for generating vector embe
 """
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import httpx
 from jvspatial.core.annotations import attribute

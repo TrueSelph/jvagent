@@ -334,7 +334,6 @@ class Memory(Node):
             Total number of interactions removed across all conversations.
         """
         from jvagent.memory.conversation import Conversation
-        from jvagent.memory.user import User
 
         total = 0
         for user in await self.users_scoped_to_this_memory():
@@ -383,7 +382,6 @@ class Memory(Node):
 
     async def _resolve_user(self, user_id: str, *, create: bool = True) -> "User":
         """Get or create a User, raising RuntimeError on failure."""
-        from jvagent.memory.user import User
 
         user = await self.get_user(user_id, create_if_missing=create)
         if not user:
@@ -578,7 +576,6 @@ class Memory(Node):
             List of purged users, or None if no users found
         """
         from jvagent.memory.conversation import Conversation
-        from jvagent.memory.user import User
 
         users = await self.users_scoped_to_this_memory()
         if user_id:
@@ -749,7 +746,7 @@ class Memory(Node):
         }
         """
         from jvagent.memory.conversation import Conversation
-        from jvagent.memory.interaction import Interaction, interaction_sort_key
+        from jvagent.memory.interaction import Interaction
 
         users = await self.users_scoped_to_this_memory()
         conversations: list = []
@@ -922,14 +919,12 @@ class Memory(Node):
         Skips users already connected to any Memory so another agent's users
         are never stolen. Sets memory_id to this Memory before connecting.
         """
-        from jvagent.memory.conversation import Conversation
         from jvagent.memory.user import User
 
         connected = await self.nodes(node=User)
         connected_ids = {u.id for u in connected}
 
         all_users = await User.find({"context.memory_id": self.id})
-        context = await self.get_context()
         reconnected = 0
         for user in all_users:
             if user.id in connected_ids:
@@ -1037,7 +1032,6 @@ class Memory(Node):
         from jvspatial.core import get_default_context
 
         from jvagent.core.app import App
-        from jvagent.memory.conversation import Conversation
         from jvagent.memory.interaction import Interaction
 
         app = await App.get()
@@ -1141,7 +1135,6 @@ class Memory(Node):
         """
         from jvagent.memory.conversation import Conversation
         from jvagent.memory.interaction import Interaction
-        from jvagent.memory.user import User
 
         users = await self.users_scoped_to_this_memory()
         if user_id:

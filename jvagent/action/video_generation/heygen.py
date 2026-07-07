@@ -1,7 +1,7 @@
 """HeyGen video generation action implementation."""
 
 import logging
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
 
 import requests
 from httpx import AsyncClient, Timeout

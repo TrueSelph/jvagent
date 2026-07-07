@@ -8,7 +8,6 @@ utterance as fallback) and composes a structured directive for PersonaAction.
 import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from jvspatial.core import on_visit
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
@@ -173,7 +172,9 @@ class RetrievalInteractAction(InteractAction):
         """
         # Try to get by type if specified
         if self.vectorstore_action_type:
-            vectorstore = await self.get_action(self.vectorstore_action_type)
+            vectorstore: Optional[Any] = await self.get_action(
+                self.vectorstore_action_type
+            )
             if vectorstore:
                 return vectorstore
 

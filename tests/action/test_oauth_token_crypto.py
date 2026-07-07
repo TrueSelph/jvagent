@@ -7,8 +7,6 @@ import base64
 import os
 from unittest.mock import patch
 
-import pytest
-
 from jvagent.action.utils.oauth_token_crypto import (
     CIPHER_PREFIX_V1,
     decrypt_token_from_storage,

@@ -15,7 +15,7 @@ Graph structure:
 """
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute, compound_index

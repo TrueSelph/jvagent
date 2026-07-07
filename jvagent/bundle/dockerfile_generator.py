@@ -37,8 +37,6 @@ def discover_action_dependencies(app_root: Path) -> Dict[str, List[str]]:
         if not namespace_dir.is_dir():
             continue
 
-        namespace = namespace_dir.name
-
         # Iterate through agent directories
         for agent_dir in namespace_dir.iterdir():
             if not agent_dir.is_dir():

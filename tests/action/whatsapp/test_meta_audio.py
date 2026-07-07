@@ -2,8 +2,6 @@
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from jvagent.action.whatsapp.utils.meta_audio import transcode_mp3_to_ogg_opus
 
 

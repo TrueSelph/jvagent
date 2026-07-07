@@ -69,7 +69,7 @@ class User(Node):
             "back-compat; new writes go to ``memory`` (markdown-keyed)."
         ),
     )
-    memory: Dict[str, str] = attribute(
+    memory: Dict[str, Any] = attribute(
         default_factory=dict,
         description=(
             "General-purpose user-scoped memory: a flat key→markdown map. "

@@ -8,8 +8,6 @@ question (not earlier questions), and accurately assesses conversational state.
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import pytest
-
 from jvagent.action.router.formatting import format_interaction_history
 
 # Resolve prompts.py path relative to project (works in CI and locally)

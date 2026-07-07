@@ -23,7 +23,7 @@ from typing import (
 )
 
 if TYPE_CHECKING:
-    from jvagent.action.orchestrator.skills import SkillDoc
+    pass
 
 logger = logging.getLogger(__name__)
 

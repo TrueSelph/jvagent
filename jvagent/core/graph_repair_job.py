@@ -17,7 +17,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from inspect import isawaitable
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -878,7 +878,6 @@ async def _tick_sync_prepare(
     regardless of graph size.
     """
     from jvagent.core.repair_scratch import (
-        SCRATCH_COLLECTION,
         ensure_scratch_indexes,
         scratch_upsert_bulk,
     )

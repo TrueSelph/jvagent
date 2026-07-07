@@ -5,8 +5,8 @@ it just talks to a running jvagent server over HTTP.
 
 Usage::
 
-    python jvagent/action/sentdm_broadcast/test_cli.py
-    python jvagent/action/sentdm_broadcast/test_cli.py --env-file path/to/.env
+    python jvagent/action/sentdm_broadcast/broadcast_tester.py
+    python jvagent/action/sentdm_broadcast/broadcast_tester.py --env-file path/to/.env
 
 The script will:
 
@@ -77,7 +77,7 @@ ACTION_ID_PREFIX = "n.SentDMBroadcastAction."
 AUTO_MODE: bool = False
 
 # Default .env for local dev: examples/jvagent_app/.env (repo root is three
-# levels above this file: jvagent/action/sentdm_broadcast/test_cli.py).
+# levels above this file: jvagent/action/sentdm_broadcast/broadcast_tester.py).
 _DEFAULT_EXAMPLE_APP_DOTENV = (
     Path(__file__).resolve().parents[3] / "examples" / "jvagent_app" / ".env"
 )

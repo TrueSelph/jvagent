@@ -22,12 +22,9 @@ from jvagent.core.cache import cache_actions, get_cached_actions
 from jvagent.memory.interaction import Interaction
 
 if TYPE_CHECKING:
-    from jvagent.action.actions import Actions
     from jvagent.core.agent import Agent
     from jvagent.memory.conversation import Conversation
-    from jvagent.memory.manager import Memory
     from jvagent.memory.task_store import TaskStore
-    from jvagent.memory.user import User
 else:
     # Import at runtime for Pydantic model_rebuild
     from jvagent.memory.conversation import Conversation
@@ -711,7 +708,7 @@ class InteractWalker(Walker):
             session_id = self.session_id
             user_id = self.user_id
 
-            logger.error(
+            logger.error(  # type: ignore[call-arg]  # details= via _logging_compat
                 f"Error processing InteractAction {here.label}: {e}",
                 exc_info=True,
                 details={

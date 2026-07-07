@@ -15,7 +15,6 @@ from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.exceptions import DatabaseError, ValidationError
 
 from jvagent.action.interact.interact_walker import InteractWalker
-from jvagent.core.agent import Agent
 from jvagent.core.app import App
 from jvagent.core.public_url import get_public_base_url
 from jvagent.memory.conversation import Conversation
