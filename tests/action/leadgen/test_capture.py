@@ -20,7 +20,9 @@ def leadgen_action_with_spec():
         name="test_leads",
         fields=[
             FieldDef(key="name", required=True, validator="person_name"),
-            FieldDef(key="email", required=True, validator="email", decline_value="N/A"),
+            FieldDef(
+                key="email", required=True, validator="email", decline_value="N/A"
+            ),
         ],
         sync=SyncDef(mode="manual"),
     )

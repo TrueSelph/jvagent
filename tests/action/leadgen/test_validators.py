@@ -2,9 +2,9 @@
 
 from jvagent.action.leadgen.validators import (
     validate_email,
+    validate_person_name,
     validate_phone_e164,
     validate_phone_gy,
-    validate_person_name,
 )
 
 
