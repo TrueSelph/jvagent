@@ -68,9 +68,9 @@ Bases:
 | jvagent/orchestrator | `OrchestratorInteractAction` | `InteractAction` | -200 | Single orchestrator (Orchestrator pattern). One `execute()` per turn: deterministic continuation check, then a bounded think-act-observe loop over a unified tool surface (routing = tool selection). ADR-0012/0013/0014/0015/0016. See [`../docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) |
 | jvagent/interact_router | `InteractRouter` | `InteractAction` | -200 | Intent classifier → routes to InteractActions (Rails pattern; alternative to the Orchestrator) |
 | jvagent/converse | `ConverseInteractAction` | `InteractAction` | (late) | Smalltalk fallback |
-| jvagent/intro | `IntroInteractAction` | `InteractAction` | early | Initial greeting / first-interaction flow |
+| jvagent/intro | `IntroInteractAction` | `InteractAction` | -300 | First-message self-introduction. Contributes a response-shaping *parameter* (not a directive) so ReplyAction weaves the greeting into the same reply as the answer (coexists with the executive; fires on `visitor.new_user`) |
 | jvagent/interview | `InterviewAction` | `Action` | — | Interview tool bundle (`interview__*` tools). Base SOP at action-root `SKILL.md` (extends target, not discovered). Agent interview skills: `agents/.../skills/<name>/` with `extends: action:jvagent/interview` + `interview:` frontmatter (ADR-0023) |
-| jvagent/leadgen | `LeadGenAction` | `Action` | — | Conversational lead capture (`leadgen__*` tools) with spec-driven fields and auto-sync to MCP destinations. Base SOP at action-root `SKILL.md`; agent skills use `extends: action:jvagent/leadgen` + `leadgen:` frontmatter |
+| jvagent/leadgen | `LeadGenAction` | `Action` | — | Conversational lead capture (`leadgen__*` tools) with spec-driven fields, proactive contact gap-fill, and destination-agnostic auto-sync via the standard MCP interface (sync configured on the action in agent.yaml, or a skill `sync:` block). Base SOP at action-root `SKILL.md`; agent skills use `extends: action:jvagent/leadgen` + `leadgen:` frontmatter |
 | jvagent/handoff | `HandoffInteractAction` | `InteractAction` | mid | Transfer to human (provides contact details) |
 | jvagent/retrieval | `RetrievalInteractAction` | `InteractAction` | mid | Base retrieval orchestrator |
 

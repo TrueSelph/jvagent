@@ -69,6 +69,36 @@ allowed-tools: []
 
 `{user_id}`, `{profile_json}`, `{profile_keys}`, `{profile_row}`, `{<field_key>}`
 
-## Action-level overrides
+## Sync location: skill frontmatter vs the action
 
-`LeadGenAction` attributes `default_fields` and `sync_destinations` apply when the skill omits them.
+The `sync:` block above is **optional** in the skill. Sync is more often
+configured on the `jvagent/leadgen` **action** in `agent.yaml` — destinations are
+deployment/infra, so the skill defines *what* to capture and the agent defines
+*where* it syncs:
+
+```yaml
+# agent.yaml
+- action: jvagent/leadgen
+  context:
+    enabled: true
+    sync_mode: on_capture           # on_capture | on_complete | manual
+    sync_min_fields: [name]
+    sync_require_any: [phone, email]
+    sync_destinations:
+      - server: leadfile            # any configured MCP server
+        mode: mcp
+        tool: write_file
+        arguments:
+          path: "lead.json"
+          content: "Lead profile: {profile_json}"
+```
+
+Precedence: if the **skill** declares sync destinations, its `sync:` block governs
+in full. Otherwise the **action-level** sync config
+(`sync_mode` / `sync_min_fields` / `sync_require_any` / `sync_destinations`)
+governs the whole sync. `LeadGenAction.default_fields` likewise supplies fields
+when the skill declares none.
+
+> Internal, underscore-prefixed keys (e.g. the stored sync digest) are excluded
+> from every template and from the change-detection digest, so they never sync out
+> and unchanged profiles are not re-synced.

@@ -16,6 +16,13 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   `jvagent skill create-leadgen` scaffolding. Reference agent:
   `examples/jvagent_app/agents/jvagent/leadgen_agent/`.
 
+- **Storefront demo (`leadgen_agent`).** The leadgen reference agent is now a
+  multi-skill storefront: leadgen coexists with a FAQ skill (`product_faq`) and a
+  product-search skill (`product_search`) over a mock `contrib/storefront` action
+  (dummy FAQ + catalog), plus a first-message intro. Demonstrates skill
+  coexistence, return-visit retrieval, and end-to-end sync to a creds-free
+  flat-file MCP server.
+
 - **Interview declarative activation seeding (I-INT-SEED-01).** Fields may declare
   `validator_args.seed_from_activation` (canonical value → trigger phrases) and use
   built-in pre_processor `seed_field_from_activation`. Matching engine in
@@ -78,6 +85,25 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   and multi-directive merge helpers moved to `directive_compose.py` to shrink the
   tool-handler module.
 
+- **Leadgen sync is destination-agnostic and configured on the action.** Sync now
+  goes through the standard MCP interface (server + tool + arguments) with no
+  Google-Sheets-specific coupling — a flat file, spreadsheet, email, CRM, or DB
+  are the same shape. Sync config moved to the `jvagent/leadgen` action
+  (`sync_mode` / `sync_min_fields` / `sync_require_any` / `sync_destinations`) in
+  `agent.yaml`; a skill may still self-contain sync via its own `sync:` block
+  (skill wins when it declares destinations).
+
+- **Leadgen captures contact details as a standing goal.** The `leadgen__capture`
+  / `retrieve` tool descriptions carry a STANDING GOAL and the tool results add a
+  `next_ask` hint, so the agent proactively asks for the next missing field
+  (name → email/phone) tied to value each turn, easing off once required fields
+  are in.
+
+- **`IntroInteractAction` contributes a parameter, not a directive.** The
+  first-message greeting is now a response-shaping parameter so `ReplyAction`
+  weaves it into the same reply as the substantive answer, instead of emitting a
+  second, disjoint paragraph — the intro and the executive coexist in one reply.
+
 ### Fixed
 
 - **`for_each` expansion no longer wiped on a failed parent correction.** The engine
@@ -91,6 +117,14 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   handler now also suppresses the matching parent's per-item records in the summary.
 - **`field_sort_order` no longer raises** when a `for_each` parent key is absent from
   the top-level field list (defensive `next()` lookup instead of `list.index`).
+- **Leadgen sync no longer re-syncs unchanged profiles.** `compute_digest` hashed
+  the whole profile including the stored `_leadgen_sync_digest`, so the digest
+  changed the moment it was written back and the unchanged-data check never
+  matched — every capture re-synced (duplicate rows on append-style
+  destinations). The digest now excludes underscore-prefixed internal keys.
+- **Leadgen sync no longer leaks internal keys.** `{profile_json}` included
+  `_`-prefixed bookkeeping keys (unlike `{profile_row}` / `{profile_keys}`); all
+  templates now exclude them, so internal state never reaches a destination.
 
 ### Removed
 

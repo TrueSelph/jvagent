@@ -1,199 +1,61 @@
 # IntroInteractAction
 
-Introductory action for welcoming first-time users with a customizable introduction message.
+Welcomes a first-time visitor by folding a short self-introduction into their
+first reply.
 
-## Overview
+## What it does
 
-The `IntroInteractAction` detects first-time users and adds an introductory directive that PersonaAction includes in the response. This ensures new users receive a proper welcome and important information on their first interaction.
+On a new user's first message, `IntroInteractAction` contributes its intro text
+as a **response-shaping parameter** (a "HOW" rule), not a standalone directive.
+The single reply egress (`ReplyAction`) then weaves the greeting into the *same*
+reply as whatever the rest of the turn produced — so a new visitor who opens with
+a real question gets **one coherent answer that also introduces the agent**,
+rather than a canned greeting stacked on top of a second, separate answer.
 
-## Features
+- **First-message only** — runs when `visitor.new_user` is true; skips returning
+  users.
+- **Coexists with the orchestrator** — because the greeting is a phrasing rule,
+  the orchestrator's answer stays the single unit of content; the intro just
+  makes the reply open with a brief self-introduction.
+- **Runs before the executive** — `weight = -300`, `always_execute = True`, so its
+  parameter is on the interaction before any downstream action queues a reply.
 
-- **First-Time Detection**: Automatically identifies first-time users using the InteractWalker's `is_new_user()` method
-- **Directive Pattern**: Adds introductory message as a directive for PersonaAction to incorporate
-- **Customizable Prompt**: Configurable introduction message via agent.yaml
-- **One-Time Execution**: Only runs on the first interaction, subsequent interactions skip it
-- **Health Check**: Validates configuration on startup
- - **Routing Exception**: Marked with `always_execute=True` so InteractRouter always allows it to execute (it is treated as a routing exception).
-
-## Installation
-
-### 1. Add to agent.yaml
-
-Add the IntroInteractAction to your agent's configuration (core action form):
+## Configure (agent.yaml)
 
 ```yaml
 actions:
   - action: jvagent/intro_interact_action
     context:
       enabled: true
-      description: "Introductory interact action for first-time users"
-      # Weight is defined in the action (default: -75)
-      # The action is marked always_execute=True so InteractRouter treats it
-      # as a routing exception and always allows it to run when applicable.
+      # Phrasing rule applied to the first reply. Written as a lead-in ("open
+      # your reply by …, then continue"), not a standalone message.
+      directive: >-
+        This is the visitor's first message: open your reply by briefly
+        introducing yourself by name and what you help with (one short
+        sentence), then continue naturally into the rest of your reply.
 ```
 
-### 2. Restart jvagent
-
-```bash
-cd examples/jvagent_app
-jvagent run
-```
-
-## Configuration
-
-### Attributes
+## Attributes
 
 | Attribute        | Type | Default | Description |
 |------------------|------|---------|-------------|
-| `directive`      | str  | Default intro message | Introductory message for first-time users |
-| `weight`         | int  | -75     | Execution order (lower = earlier) |
-| `anchors`        | list | []      | Routing anchors (empty for conditional execution) |
-| `always_execute` | bool | True    | If true, InteractRouter always allows this action to execute (routing exception) |
+| `directive`      | str  | built-in lead-in intro | First-message self-introduction, applied as a response parameter |
+| `weight`         | int  | `-300`  | Runs before the router/executive (`-200`) |
+| `always_execute` | bool | `True`  | Executes regardless of routing (gated internally by `new_user`) |
 
-### Execution Order
-
-The action's weight of `-50` ensures it runs:
--  **After** InteractRouter (weight: -100)
-- ✅ **Before** PersonaAction (weight: 0)
-
-This allows the intro directive to be included in the persona's response.
-
-## How It Works
-
-```mermaid
-graph LR
-    A[New User Message] --> B[InteractRouter]
-    B --> C[IntroInteractAction]
-    C --> D{First Time?}
-    D -->|Yes| E[Add Intro Directive]
-    D -->|No| F[Skip]
-    E --> G[PersonaAction]
-    F --> G
-    G --> H[Response with Intro]
-```
-
-1. **Detection**: Checks if `interaction.is_new_user()` returns `True`
-2. **Directive**: Adds the configured prompt as a directive
-3. **Delegation**: PersonaAction incorporates the directive into its response
-4. **One-Time**: Subsequent interactions skip this action
-
-## Example Usage
-
-### First Interaction
+## Flow
 
 ```
-User: "Hello"
-
-[IntroInteractAction executes]
-→ Adds directive: "Introduce yourself and mention privacy policy"
-
-PersonaAction generates:
-"Hi! I'm JvAgent, your helpful AI assistant. Before we continue, please
-review our AI policy at https://platform.trueselph.com/policy which contains
-our privacy policy. How can I help you today?"
+new user's first message
+  → IntroInteractAction (weight -300): visitor.add_parameter({response: directive})
+  → orchestrator / other actions queue the answer directive
+  → ReplyAction: renders ONE reply — greeting woven in per the parameter, answer per the directive
+returning user
+  → IntroInteractAction: skips (visitor.new_user is False)
 ```
 
-### Subsequent Interactions
+## Files
 
-```
-User: "What can you do?"
-
-[IntroInteractAction skips - not first time]
-
-PersonaAction generates:
-"I can help you with various tasks such as..."
-```
-
-## Customization
-
-### Custom Introduction Message
-
-Modify the `prompt` in agent.yaml:
-
-```yaml
-context:
-  prompt: |
-    Welcome! I'm your AI assistant.
-    Before we begin, please note:
-    - I'm here to help with your questions
-    - All conversations are private
-    - Learn more at https://yourcompany.com/about-ai
-```
-
-### Different Execution Order
-
-Change the `weight` to adjust when it runs:
-
-```yaml
-context:
-  weight: -75  # Run earlier (closer to InteractRouter)
-```
-
-## Technical Details
-
-### Directive Pattern
-
-The action uses the simplified API to pass directives and parameters directly to `respond()`:
-
-```python
-# Generate response via PersonaAction with directive and parameters (simplified API)
-await self.respond(
-    visitor,
-    directives=[self.directive],
-    parameters=self.parameters if self.parameters else None
-)
-```
-
-**Key Benefits:**
-- **Simplified API**: Pass directives and parameters directly to `respond()` instead of adding them separately
-- **Automatic Saving**: The interaction is automatically saved after adding directives/parameters
-- **Bulk Operations**: Multiple directives and parameters are added efficiently with a single save operation
-
-PersonaAction automatically incorporates all directives and parameters when generating responses.
-
-### First-Time User Detection
-
-Uses the Interaction class's built-in method:
-
-```python
-def is_new_user(self) -> bool:
-    """Check if this is a new user interaction."""
-    return len(self.actions) == 0 and len(self.events) == 0
-```
-
-This checks if there are no prior actions or events in the interaction.
-
-## Health Check
-
-The action includes a health check that validates configuration:
-
-```python
-async def healthcheck(self) -> bool | dict:
-    if not self.prompt:
-        return {
-            "status": False,
-            "message": "Prompt is not set",
-            "severity": "error",
-        }
-    return True
-```
-
-## Comparison with Jac Version
-
-This Python implementation replicates the functionality of the original `intro_interact_action.jac`:
-
-| Feature | Jac Version | Python Version |
-|---------|-------------|----------------|
-| First-time detection | `visitor.interaction_node.is_new_user()` | `visitor.new_user` or `interaction.is_new_user()` |
-| Directive | `visitor.interaction_node.add_directive()` | `await self.respond(visitor, directives=[...])` |
-| Parameters | N/A | `await self.respond(visitor, parameters=[...])` |
-| Bulk operations | N/A | `await visitor.add_directives([...])` or `await visitor.add_parameters([...])` |
-| Health check | ✅ | ✅ |
-| Configurable prompt | ✅ | ✅ |
-| Execution control | `touch()` method | Conditional in `execute()` |
-
-## Files Created
-
-- `intro_interact_action.py` - Main action class
-- `__init__.py` - Package init
-- `info.yaml` - Package metadata
+- `intro_interact_action.py` — the action class
+- `__init__.py` — package init
+- `info.yaml` — package metadata
