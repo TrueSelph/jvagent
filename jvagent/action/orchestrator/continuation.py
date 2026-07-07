@@ -42,6 +42,29 @@ def _store(conversation: Any) -> Optional[Any]:
         return None
 
 
+def _updated_at_sort_key(raw: Any) -> str:
+    """Comparable key for task ``updated_at`` values.
+
+    Timestamps are ISO-8601 strings written by ``TaskStore`` (UTC, same
+    format), so string comparison is chronological for well-formed values;
+    a missing/empty value sorts as epoch so it never beats a real one, and a
+    parseable datetime is normalized so naive/aware or offset-bearing values
+    from external writers still order correctly.
+    """
+    text = str(raw or "").strip()
+    if not text:
+        return "0000-00-00T00:00:00+00:00"
+    try:
+        from datetime import datetime, timezone
+
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat()
+    except ValueError:
+        return text
+
+
 def active_flow_owner(
     visitor: Any,
     *,
@@ -77,8 +100,9 @@ def active_flow_owner(
         owner_str = str(owner)
         if names and owner_str not in names:
             continue
-        updated_at = str(getattr(th, "updated_at", "") or "")
-        candidates.append((updated_at, owner_str))
+        candidates.append(
+            (_updated_at_sort_key(getattr(th, "updated_at", None)), owner_str)
+        )
     if not candidates:
         return None
     # When multiple flows are active, prefer the most recently updated task.
@@ -110,8 +134,7 @@ def active_plan(visitor: Any, *, owner: Optional[str] = None) -> Optional[Any]:
             continue
         if owner and str(getattr(th, "owner_action", "") or "") != owner:
             continue
-        updated_at = str(getattr(th, "updated_at", "") or "")
-        candidates.append((updated_at, th))
+        candidates.append((_updated_at_sort_key(getattr(th, "updated_at", None)), th))
     if not candidates:
         return None
     candidates.sort(key=lambda item: item[0], reverse=True)

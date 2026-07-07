@@ -23,7 +23,7 @@ def load_schema() -> Dict[str, Any]:
 
 
 def load_use_case(path: Union[str, Path]) -> Dict[str, Any]:
-    """Load a CUCS YAML file and validate schema URI + required keys."""
+    """Load a CUCS YAML file and validate it against the v1 JSON schema."""
     p = Path(path)
     data = yaml.safe_load(p.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
@@ -35,6 +35,16 @@ def load_use_case(path: Union[str, Path]) -> Dict[str, Any]:
             raise ValueError(f"{p}: missing required key {key!r}")
     if not data["turns"]:
         raise ValueError(f"{p}: turns must be non-empty")
+    # Full structural validation — the checks above give friendlier messages
+    # for the common misses, but the schema is the contract.
+    try:
+        import jsonschema
+    except ImportError:  # pragma: no cover - optional in minimal installs
+        return data
+    try:
+        jsonschema.validate(data, load_schema())
+    except jsonschema.ValidationError as exc:
+        raise ValueError(f"{p}: schema validation failed: {exc.message}") from exc
     return data
 
 

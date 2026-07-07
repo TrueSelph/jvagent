@@ -24,10 +24,10 @@ It does **not** own: per-user state (that's `memory/`), action plugins (that's `
 
 | File | Purpose |
 |---|---|
-| `app.py:19` | `App` node — singleton, file storage, timezone, update_mode |
+| `app.py:21` | `App` node — singleton, file storage, timezone, update_mode |
 | `app.py:97-117` | Per-event-loop lock pattern (use this verbatim for any node singleton) |
-| `app.py:537` | `set_app_update_mode` — example of mutating a `protected=True` field |
-| `agent.py:18` | `Agent` node + `Agent.get(agent_id)` cached fetch |
+| `app.py:596` | `set_app_update_mode` — example of mutating a `protected=True` field |
+| `agent.py:30` | `Agent` node + `Agent.get(agent_id)` cached fetch |
 | `agent.py:62-83` | Cache-aware fetch via `cache_manager.get_agent()` |
 | `agent.py:199-205` | `Agent.get_memory()` — resolves attached `Memory` node |
 | `agent.py:211-224` | `Agent.get_response_bus()` — lazy per-agent `ResponseBus` singleton |
