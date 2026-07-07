@@ -8,7 +8,39 @@ from jvagent.memory.task_proactive import (
     PROACTIVE_TASK_TYPE,
     SPEC_VERSION,
     ProactiveTaskSpec,
+    coerce_priority,
 )
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (5, 5),
+        (5.9, 5),
+        ("7", 7),
+        ("high", 10),
+        ("HIGH", 10),
+        ("  Medium ", 5),
+        ("low", 1),
+        (None, 0),
+        ("", 0),
+        ("bogus", 0),
+        (True, 0),
+    ],
+)
+def test_coerce_priority(value, expected):
+    """A model may pass priority='high' (or any non-int); coercion must never
+    raise and must map named levels sensibly. Regression for the queue_task
+    crash `invalid literal for int() with base 10: 'high'`."""
+    assert coerce_priority(value) == expected
+
+
+def test_from_data_coerces_string_priority():
+    """A legacy/corrupt stored priority string must not blow up on read."""
+    data = ProactiveTaskSpec(directive="x").to_data()
+    data["priority"] = "high"
+    spec = ProactiveTaskSpec.from_data(data)
+    assert spec.priority == 10
 
 
 def test_to_data_includes_spec_version():

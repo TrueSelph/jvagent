@@ -10,6 +10,40 @@ SPEC_VERSION = 2
 
 TriggerOn = Literal["schedule", "user_message", "keyword", "mood", "any"]
 
+_PRIORITY_WORDS = {
+    "highest": 20,
+    "urgent": 20,
+    "critical": 20,
+    "high": 10,
+    "medium": 5,
+    "med": 5,
+    "normal": 5,
+    "default": 5,
+    "low": 1,
+    "none": 0,
+}
+
+
+def coerce_priority(value: Any) -> int:
+    """Best-effort priority → int, never raising.
+
+    Accepts ints/floats, numeric strings, and named levels ("high", "medium",
+    "low", ...). Anything unrecognized maps to 0. A model that supplies
+    ``priority="high"`` (a natural, common mistake) must not crash task queuing
+    or corrupt the stored payload so later ``int()`` reads blow up.
+    """
+    if value is None or isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        return int(value)
+    text = str(value).strip().lower()
+    if not text:
+        return 0
+    try:
+        return int(text)
+    except ValueError:
+        return _PRIORITY_WORDS.get(text, 0)
+
 
 @dataclass
 class ProactiveTaskSpec:
@@ -57,6 +91,8 @@ class ProactiveTaskSpec:
             kwargs["pinned_tools"] = []
         if kwargs.get("requires_tasks") is None:
             kwargs["requires_tasks"] = []
+        if "priority" in kwargs:
+            kwargs["priority"] = coerce_priority(kwargs["priority"])
         spec = cls(**kwargs)  # type: ignore[arg-type]
         spec.validate()
         return spec
