@@ -1026,3 +1026,86 @@ async def test_auto_start_applies_session_ensure_after_use_skill(
         o for o in spied[0]["observations"] if o.get("tool") == "interview__next_field"
     ]
     assert len(next_q_obs) == 1
+
+
+async def test_locked_flow_repeated_errors_cancel_control_task(
+    make_orchestrator, make_visitor, flow_stub_cls
+):
+    """A locked flow whose execute keeps raising must not trap the user
+    forever: after two consecutive locked-flow errors the owning control-task
+    is cancelled so the next turn runs the normal loop again."""
+
+    class BrokenIA(flow_stub_cls):
+        anchors = ["sign up for training"]
+        description = "Signup interview."
+
+        async def execute(self, visitor):
+            raise RuntimeError("boom")
+
+    ia = BrokenIA()
+    ex = make_orchestrator(actions=[ia], action_registry={"BrokenIA": ia})
+    v = _capture_visitor(make_visitor, utterance="hi")
+    conversation = v.conversation
+    conversation.tasks = [
+        {
+            "id": "task_1",
+            "title": "BrokenIA",
+            "description": "signup flow",
+            "owner_action": "BrokenIA",
+            "status": "active",
+        }
+    ]
+
+    # First failure: clarify reply, flow stays active (transient errors get
+    # another chance).
+    await ex.execute(v)
+    assert conversation.tasks[0]["status"] == "active"
+
+    # Second consecutive failure (fresh interaction, same conversation — as a
+    # real next turn): the flow is abandoned so the user escapes.
+    v2 = _capture_visitor(make_visitor, utterance="hi again")
+    v2.conversation = conversation
+    await ex.execute(v2)
+    assert conversation.tasks[0]["status"] == "cancelled"
+
+
+async def test_locked_flow_success_resets_error_streak(
+    make_orchestrator, make_visitor, flow_stub_cls
+):
+    """An error followed by a successful (emitting) run resets the streak —
+    a later single error must not cancel the flow."""
+    fail = {"on": True}
+
+    class WobblyIA(flow_stub_cls):
+        anchors = ["sign up for training"]
+        description = "Signup interview."
+
+        async def execute(self, visitor):
+            if fail["on"]:
+                raise RuntimeError("boom")
+            visitor.interaction.response = "next question?"
+
+    ia = WobblyIA()
+    ex = make_orchestrator(actions=[ia], action_registry={"WobblyIA": ia})
+    v = _capture_visitor(make_visitor, utterance="hi")
+    conversation = v.conversation
+    conversation.tasks = [
+        {
+            "id": "task_1",
+            "title": "WobblyIA",
+            "description": "signup flow",
+            "owner_action": "WobblyIA",
+            "status": "active",
+        }
+    ]
+
+    await ex.execute(v)  # error #1
+    fail["on"] = False
+    v2 = _capture_visitor(make_visitor, utterance="answer")
+    v2.conversation = conversation
+    await ex.execute(v2)  # success — resets the streak
+    fail["on"] = True
+    v3 = _capture_visitor(make_visitor, utterance="hm")
+    v3.conversation = conversation
+    await ex.execute(v3)  # error #1 again (not #2)
+    assert conversation.tasks[0]["status"] == "active"

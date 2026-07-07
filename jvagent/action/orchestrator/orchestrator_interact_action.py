@@ -49,6 +49,8 @@ from jvagent.action.orchestrator.continuation import (
     active_flow_note,
     active_flow_owner,
     active_plan,
+    clear_locked_flow_error,
+    note_locked_flow_error,
     plan_resume_note,
 )
 from jvagent.action.orchestrator.core_tools import (
@@ -2190,13 +2192,21 @@ class OrchestratorInteractAction(InteractAction):
                         "You don't currently have access to continue this. Let "
                         "me know if there's something else I can help with.",
                     )
-                else:
-                    ended = (
-                        "locked_error"
-                        if res.startswith("(flow error")
-                        else ("locked_silent")
-                    )
+                elif res.startswith("(flow error") or res.startswith("(tool error"):
+                    # A persistently-throwing locked flow would trap the user
+                    # behind the turn-lock forever (every turn dead-ends in
+                    # clarify). Tolerate one failure (transient), then abandon
+                    # the owning control-task so the next turn runs the loop.
+                    ended = "locked_error"
+                    if await note_locked_flow_error(visitor, flow_owner):
+                        ended = "locked_error_escape"
                     await self._emit_reply(visitor, self.clarify_text)
+                else:
+                    ended = "locked_silent"
+                    await self._emit_reply(visitor, self.clarify_text)
+            else:
+                # A working flow resets the failure streak.
+                await clear_locked_flow_error(visitor, flow_owner)
             await self._record_orchestrator_activation(
                 visitor,
                 continuation_mode="locked",
@@ -2359,6 +2369,7 @@ class OrchestratorInteractAction(InteractAction):
         ticks = 0
         ended_via = "budget"
         last_sig: Optional[tuple] = None
+        last_obs: str = ""
         repeats = 0
         # Directive contract: a tool result carries the authoritative next step.
         # ``pending_chain`` holds a tool the model MUST call before it can finalize
@@ -2628,6 +2639,39 @@ class OrchestratorInteractAction(InteractAction):
                             }
                         )
                         continue
+                    # Repeat guard (pre-dispatch): a model that re-issues the
+                    # SAME call (tool + args) makes no progress, and re-running
+                    # a side-effecting tool (queue a task, POST to an API)
+                    # would duplicate its effects — so the duplicate is never
+                    # dispatched. One re-dispatch is allowed when the prior
+                    # attempt errored/timed out (transient failures deserve a
+                    # retry); a third identical call ends the turn.
+                    sig = (tool_name, str(args))
+                    repeats = repeats + 1 if sig == last_sig else 0
+                    last_sig = sig
+                    if repeats >= 2:
+                        ended_via = "repeat_guard"
+                        return
+                    if repeats == 1:
+                        prior_errored = (
+                            last_obs.startswith("(tool error:")
+                            or " timed out after " in last_obs
+                        )
+                        if not prior_errored:
+                            observations.append(
+                                {
+                                    "tool": "(guard)",
+                                    "args": {},
+                                    "observation": (
+                                        f"(You have already called {tool_name} "
+                                        "with this exact input; its result is "
+                                        "above. Do NOT repeat the call — use a "
+                                        "different tool, change the arguments, "
+                                        'or finish with action "final".)'
+                                    ),
+                                }
+                            )
+                            continue
                     tool = tools.get(tool_name)
                     if tool is None:
                         # Genuinely unknown name (often a hallucinated tool) —
@@ -2691,6 +2735,7 @@ class OrchestratorInteractAction(InteractAction):
                     observations.append(
                         {"tool": tool_name, "args": args, "observation": obs}
                     )
+                    last_obs = obs if isinstance(obs, str) else str(obs)
                     if tool_name == "use_skill":
                         skill_name = ((args or {}).get("name") or "").strip()
                         prep_obs_before = len(observations)
@@ -2810,28 +2855,6 @@ class OrchestratorInteractAction(InteractAction):
                     # toward escalation to the heavy model.
                     if tool is not None and tool_name not in _NON_SUBSTANTIVE_TOOLS:
                         substantive_tool_calls += 1
-                    # Repeat guard: a model that keeps choosing the same tool with
-                    # the same args makes no progress (e.g. re-activating a skill).
-                    # Nudge once, then break before the budget is wasted.
-                    sig = (tool_name, str(args))
-                    repeats = repeats + 1 if sig == last_sig else 0
-                    last_sig = sig
-                    if repeats == 2:
-                        observations.append(
-                            {
-                                "tool": "(guard)",
-                                "args": {},
-                                "observation": (
-                                    f"(You have already called {tool_name} with "
-                                    "this input and got the same result. Do NOT "
-                                    "repeat it — use a different tool or finish "
-                                    'with action "final".)'
-                                ),
-                            }
-                        )
-                    elif repeats >= 3:
-                        ended_via = "repeat_guard"
-                        return
                     # End the turn once the user has been addressed: a persona
                     # reply (by name) or a terminal IA-tool that owns its own
                     # output. This also stops a model that keeps choosing the

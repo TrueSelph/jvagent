@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import random
+import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -66,8 +67,14 @@ class CacheManager:
         # Locks are created lazily per running event loop. Module-import locks
         # break on serverless warm starts where each invocation gets a fresh
         # loop; deferring creation to first ``async with`` keeps each loop
-        # paired with its own primitive.
+        # paired with its own primitive. ``_locks_guard`` keeps dict access
+        # safe across worker threads, and ``_lock_loops`` retains each loop so
+        # entries from closed loops can be evicted (one lock set per
+        # invocation would otherwise accumulate forever — the same leak
+        # ``App._get_lock`` guards against).
         self._loop_locks: Dict[Tuple[int, str], asyncio.Lock] = {}
+        self._lock_loops: Dict[int, Any] = {}
+        self._locks_guard = threading.Lock()
 
         self._config: Dict[str, Any] = {}
         self._load_defaults()
@@ -75,11 +82,26 @@ class CacheManager:
     def _lock(self, name: str) -> asyncio.Lock:
         """Return a lock for *name* bound to the current running loop."""
         loop = asyncio.get_running_loop()
-        key = (id(loop), name)
-        lock = self._loop_locks.get(key)
-        if lock is None:
-            lock = asyncio.Lock()
-            self._loop_locks[key] = lock
+        loop_id = id(loop)
+        key = (loop_id, name)
+        with self._locks_guard:
+            lock = self._loop_locks.get(key)
+            if lock is None:
+                lock = asyncio.Lock()
+                self._loop_locks[key] = lock
+                self._lock_loops[loop_id] = loop
+            # Evict entries whose loops have closed (serverless warm starts).
+            # Holding the loop reference keeps its id from being reused while
+            # the entry exists, so the id-keyed check stays sound.
+            stale_ids = [
+                lid
+                for lid, lp in self._lock_loops.items()
+                if lid != loop_id and lp.is_closed()
+            ]
+            for lid in stale_ids:
+                self._lock_loops.pop(lid, None)
+                for k in [k for k in self._loop_locks if k[0] == lid]:
+                    self._loop_locks.pop(k, None)
         return lock
 
     @property

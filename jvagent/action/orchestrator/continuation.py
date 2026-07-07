@@ -165,6 +165,87 @@ def active_flow_note(tool_name: str) -> str:
     )
 
 
+# Consecutive locked-flow dispatch failures tolerated before the owning
+# control-task is abandoned. One failure gets a retry (transient errors);
+# repeated failure means the flow is broken and would otherwise trap the
+# user behind the turn-lock every turn.
+LOCKED_FLOW_ERROR_LIMIT = 2
+_ERROR_STREAK_KEY = "_locked_flow_error_streaks"
+
+
+async def note_locked_flow_error(
+    visitor: Any, flow_owner: str, *, limit: int = LOCKED_FLOW_ERROR_LIMIT
+) -> bool:
+    """Record a locked-flow dispatch failure; escape after ``limit`` in a row.
+
+    Returns ``True`` when the streak reached ``limit`` and the owning
+    control-task(s) were cancelled — the turn-lock releases and the next turn
+    runs the normal loop. Below the limit the streak is persisted on
+    ``conversation.context`` and ``False`` is returned.
+    """
+    conversation = getattr(visitor, "conversation", None)
+    if conversation is None or not flow_owner:
+        return False
+    ctx = getattr(conversation, "context", None)
+    if not isinstance(ctx, dict):
+        return False
+    streaks = ctx.get(_ERROR_STREAK_KEY)
+    if not isinstance(streaks, dict):
+        streaks = {}
+    streak = int(streaks.get(flow_owner, 0) or 0) + 1
+    streaks[flow_owner] = streak
+    ctx[_ERROR_STREAK_KEY] = streaks
+    if streak < limit:
+        try:
+            await conversation.save()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("continuation: streak persist failed: %s", exc)
+        return False
+    streaks.pop(flow_owner, None)
+    store = _store(conversation)
+    cancelled = False
+    if store is not None:
+        try:
+            for th in store.list(status="active") or []:
+                if str(getattr(th, "owner_action", "") or "") == flow_owner:
+                    await th.cancel(
+                        reason=(
+                            f"flow {flow_owner} failed {streak} consecutive "
+                            "turns under turn-lock"
+                        )
+                    )
+                    cancelled = True
+        except Exception as exc:
+            logger.warning(
+                "continuation: abandoning failing flow %s failed: %s",
+                flow_owner,
+                exc,
+            )
+    if not cancelled:
+        try:
+            await conversation.save()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("continuation: streak persist failed: %s", exc)
+    return cancelled
+
+
+async def clear_locked_flow_error(visitor: Any, flow_owner: str) -> None:
+    """Reset the error streak after a successful locked-flow run."""
+    conversation = getattr(visitor, "conversation", None)
+    if conversation is None or not flow_owner:
+        return
+    ctx = getattr(conversation, "context", None)
+    if not isinstance(ctx, dict):
+        return
+    streaks = ctx.get(_ERROR_STREAK_KEY)
+    if isinstance(streaks, dict) and flow_owner in streaks:
+        streaks.pop(flow_owner, None)
+        try:
+            await conversation.save()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("continuation: streak reset persist failed: %s", exc)
+
+
 async def cancel_orphan_flow_tasks(
     visitor: Any,
     *,
@@ -216,4 +297,7 @@ __all__ = [
     "plan_resume_note",
     "PLAN_TASK_TYPE",
     "cancel_orphan_flow_tasks",
+    "note_locked_flow_error",
+    "clear_locked_flow_error",
+    "LOCKED_FLOW_ERROR_LIMIT",
 ]
