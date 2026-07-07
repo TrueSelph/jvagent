@@ -4,6 +4,9 @@ repos:
     hooks:
       - id: check-yaml
         args: [--allow-multiple-documents]
+        # Auto-generated lockfiles aren't hand-authored YAML; pnpm's format can
+        # carry duplicate keys that trip the strict parser (harmless to pnpm).
+        exclude: "(^|/)pnpm-lock\\.yaml$"
       - id: check-json
       - id: trailing-whitespace
         exclude: "^venv/"

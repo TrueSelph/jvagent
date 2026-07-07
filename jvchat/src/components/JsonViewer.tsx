@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import { useCallback, useMemo, useState } from "react";
 import { JsonCodeEditor } from "./JsonCodeEditor";
 import { computeInitiallyExpanded } from "./jsonViewerCollapse";
