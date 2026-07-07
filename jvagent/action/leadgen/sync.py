@@ -84,6 +84,17 @@ async def sync_to_destinations(
     if digest == last_digest:
         return {"_digest": "unchanged"}, False
 
+    # Resolve the MCP gateway once. A missing/disabled MCPAction, or a
+    # destination that names an unregistered server, degrades to a graceful
+    # skip rather than an error — leadgen never blocks the conversation on an
+    # unconfigured connector.
+    try:
+        mcp_action = await action.get_action("MCPAction")
+    except Exception as exc:
+        logger.debug("leadgen sync: MCPAction lookup failed: %s", exc)
+        mcp_action = None
+    configured = set(mcp_action.get_server_names()) if mcp_action else set()
+
     results: Dict[str, str] = {}
     any_success = False
 
@@ -95,7 +106,10 @@ async def sync_to_destinations(
         if mode != "mcp":
             results[server_name] = f"Unknown mode '{mode}'"
             continue
-        ok, msg = await _sync_mcp(action, entry, profile_data, user_id)
+        if server_name not in configured:
+            results[server_name] = "skipped: connector not configured"
+            continue
+        ok, msg = await _sync_mcp(mcp_action, entry, profile_data, user_id)
         results[server_name] = "ok" if ok else msg
         if ok:
             any_success = True
@@ -104,7 +118,7 @@ async def sync_to_destinations(
 
 
 async def _sync_mcp(
-    action: Any,
+    mcp_action: Any,
     entry: Dict[str, Any],
     profile_data: Dict[str, Any],
     uid: str,
@@ -115,14 +129,6 @@ async def _sync_mcp(
 
     if not tool_name:
         return False, f"Missing 'tool' for MCP entry '{server_name}'."
-
-    try:
-        mcp_action = await action.get_action("MCPAction")
-    except Exception as exc:
-        return False, f"MCPAction not found: {exc}"
-
-    if mcp_action is None:
-        return False, "MCPAction is not enabled on this agent."
 
     resolved_args = substitute(raw_args, profile_data, uid)
 

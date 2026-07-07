@@ -22,6 +22,7 @@ leadgen:
     - key: organization
       required: false
       guidance: Company name (use decline_value Personal for personal inquiries)
+      aliases: [company, employer, business]
       decline_value: Personal
     - key: email
       required: true
@@ -35,6 +36,7 @@ leadgen:
     - key: interested_products
       required: false
       guidance: Products or services of interest
+      aliases: [interest, interests, product, products]
       merge: true
   gap_fill:
     batch: true
