@@ -71,8 +71,6 @@ async def test_non_object_filter_raises_validation_error():
 async def test_valid_filter_passes_through_validator():
     svc = _service()
     with patch("jvagent.logging.endpoints.get_logging_service", return_value=svc):
-        await get_logs_by_agent(
-            "agent_1", filter='{"context.log_data.user_id": "123"}'
-        )
+        await get_logs_by_agent("agent_1", filter='{"context.log_data.user_id": "123"}')
     kwargs = svc.get_error_logs.await_args.kwargs
     assert kwargs["filter_query"] == {"context.log_data.user_id": "123"}

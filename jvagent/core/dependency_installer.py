@@ -165,7 +165,12 @@ def install_action_dependencies(metadata: Dict[str, Any], action_name: str) -> b
 
 
 def check_pip_dependency_installed(package_spec: str) -> bool:
-    """Check if a pip package is installed.
+    """Check if a pip package is installed and satisfies the version spec.
+
+    Uses ``importlib.metadata`` — no import of the probed package (imports
+    have side effects and are slow) and no ``pip list`` subprocess per
+    package at boot. Version specifiers are honored; a spec that cannot be
+    parsed falls back to a name-presence check.
 
     Args:
         package_spec: Package specification (e.g., "requests>=2.25.0" or "numpy")
@@ -173,38 +178,35 @@ def check_pip_dependency_installed(package_spec: str) -> bool:
     Returns:
         True if package is installed and meets requirements, False otherwise
     """
-    # Extract package name (remove version specifiers)
-    package_name = (
-        package_spec.split(">=")[0]
-        .split("==")[0]
-        .split("!=")[0]
-        .split("<=")[0]
-        .split(">")[0]
-        .split("<")[0]
-        .strip()
-    )
+    from importlib import metadata
 
     try:
-        # Try importing the package to check if it's installed
-        # This is a simple check - for more robust checking, use pkg_resources
-        __import__(package_name.replace("-", "_"))
-        return True
-    except ImportError:
-        # Package not installed or import name differs
-        # Use pip list to check more accurately
-        try:
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "list", "--format=json"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            import json
+        from packaging.requirements import Requirement
 
-            installed_packages = json.loads(result.stdout)
-            for pkg in installed_packages:
-                if pkg["name"].lower() == package_name.lower():
-                    return True
-            return False
-        except Exception:
-            return False
+        req: Any = Requirement(package_spec.strip())
+        name = req.name
+        specifier = req.specifier
+    except Exception:
+        # Unparseable spec — fall back to a bare distribution-name probe.
+        name = (
+            package_spec.split(">=")[0]
+            .split("==")[0]
+            .split("!=")[0]
+            .split("<=")[0]
+            .split(">")[0]
+            .split("<")[0]
+            .split("[")[0]
+            .strip()
+        )
+        specifier = None
+
+    try:
+        installed_version = metadata.version(name)
+    except metadata.PackageNotFoundError:
+        return False
+    if specifier is None or not str(specifier):
+        return True
+    try:
+        return installed_version in specifier
+    except Exception:
+        return True

@@ -57,6 +57,22 @@ class Memory(Node):
         default=None, description="Timestamp of last cleanup operation"
     )
 
+    # Skip the last_seen write when the stored value is younger than this —
+    # get_user runs on every inbound message, and a full user.save() per
+    # message just to bump a timestamp is write amplification.
+    LAST_SEEN_DEBOUNCE_SECONDS: int = 60
+
+    async def _touch_last_seen(self, user: "User", now: datetime) -> None:
+        """Bump ``user.last_seen`` at most once per debounce window."""
+        prev = getattr(user, "last_seen", None)
+        if isinstance(prev, datetime):
+            prev_cmp = prev if prev.tzinfo else prev.replace(tzinfo=timezone.utc)
+            now_cmp = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
+            if (now_cmp - prev_cmp).total_seconds() < self.LAST_SEEN_DEBOUNCE_SECONDS:
+                return
+        user.last_seen = now
+        await user.save()
+
     async def get_user(
         self, user_id: str, create_if_missing: bool = True
     ) -> Optional["User"]:
@@ -94,8 +110,7 @@ class Memory(Node):
         # cross-context contamination) would silently win.
         user = await self.node(node=User, memory_id=self.id, user_id=user_id)
         if user:
-            user.last_seen = now
-            await user.save()
+            await self._touch_last_seen(user, now)
             return user
 
         # Reconnect-on-create fallback: search the compound index. ALWAYS
@@ -119,8 +134,7 @@ class Memory(Node):
             else:
                 if not await self.is_connected_to(scoped):
                     await self.connect(scoped)
-                scoped.last_seen = now
-                await scoped.save()
+                await self._touch_last_seen(scoped, now)
                 return scoped
 
         if create_if_missing:

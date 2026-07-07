@@ -796,10 +796,9 @@ class OrchestratorInteractAction(InteractAction):
             app = None
 
         seen: Set[Tuple[str, int]] = set()
-        written = 0
-        seeds: List[str] = []
+        selected: List[Tuple[int, Any]] = []
         for idx, item in enumerate(items):
-            if written >= _MAX_UPLOADS_PER_TURN:
+            if len(selected) >= _MAX_UPLOADS_PER_TURN:
                 logger.debug(
                     "ingest_uploads: capped at %d files", _MAX_UPLOADS_PER_TURN
                 )
@@ -808,7 +807,27 @@ class OrchestratorInteractAction(InteractAction):
             if dedup in seen:
                 continue
             seen.add(dedup)
+            selected.append((idx, item))
 
+        # Interpret concurrently — each image interpretation is a model
+        # round-trip, and running them serially blocked the loop start for
+        # the whole batch. Failures degrade to "" per item.
+        async def _interp(one: Any) -> str:
+            try:
+                return await self._interpret_upload(visitor, one)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("ingest_uploads: interpret failed: %s", exc)
+                return ""
+
+        interpretations: List[str] = (
+            list(await asyncio.gather(*(_interp(it) for _, it in selected)))
+            if selected
+            else []
+        )
+
+        written = 0
+        seeds: List[str] = []
+        for (idx, item), interpretation in zip(selected, interpretations):
             # Persist bytes to the per-user slice (lean graph: path, not blob).
             path = ""
             if item.raw is not None and app is not None:
@@ -821,9 +840,6 @@ class OrchestratorInteractAction(InteractAction):
                         path = candidate
                 except Exception as exc:  # pragma: no cover - defensive
                     logger.debug("ingest_uploads: save failed for %s: %s", safe, exc)
-
-            # Derived understanding enriches the SAME artifact (consolidation).
-            interpretation = await self._interpret_upload(visitor, item)
             tags = ["upload", item.kind, item.filename]
             if interpretation:
                 payload = interpretation

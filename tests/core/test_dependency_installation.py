@@ -183,3 +183,29 @@ class TestActionLoaderDependencyInstallation:
             )
 
             mock_install.assert_called_once_with(data, "test_action")
+
+
+class TestCheckDependencyVersionAware:
+    """check_pip_dependency_installed must honor version specifiers and must
+    not import the probed package (imports have side effects and are slow)."""
+
+    def test_installed_package_passes(self):
+        assert check_pip_dependency_installed("pytest") is True
+
+    def test_missing_package_fails(self):
+        assert check_pip_dependency_installed("definitely-not-a-real-pkg-xyz") is False
+
+    def test_satisfied_version_spec_passes(self):
+        assert check_pip_dependency_installed("pytest>=1.0") is True
+
+    def test_unsatisfiable_version_spec_fails(self):
+        """An installed package at a lower version than required must fail —
+        previously version specifiers were ignored entirely."""
+        assert check_pip_dependency_installed("pytest>=9999.0") is False
+
+    def test_probe_does_not_import_package(self):
+        import sys as _sys
+
+        _sys.modules.pop("this", None)
+        assert isinstance(check_pip_dependency_installed("this"), bool)
+        assert "this" not in _sys.modules  # probe must not import

@@ -607,43 +607,31 @@ class Conversation(DeferredSaveMixin, Node):
     async def get_interactions(
         self, limit: int = 0, reverse: bool = False
     ) -> List["Interaction"]:
-        """Get Interactions by traversing the chain in chronological order.
+        """Get Interactions for this conversation in chronological order.
+
+        Batch-loads by ``conversation_id`` (one query, served by the
+        ``conv_timestamp`` compound index) and orders in memory via
+        ``_interaction_sort_key`` — the previous node-by-node chain walk cost
+        N sequential DB fetches per call on the per-turn history hot path.
 
         Args:
-            limit: Maximum number of interactions to return (0 for all)
+            limit: Maximum number of interactions to return (0 for all).
+                Forward order keeps the OLDEST ``limit``; ``reverse=True``
+                keeps the NEWEST ``limit`` — matching the old walk semantics.
             reverse: If True, return in reverse chronological order (newest first)
 
         Returns:
             List of Interaction nodes in chronological order (oldest first by default)
         """
-        from jvagent.memory.interaction import Interaction
+        from jvagent.memory.interaction import Interaction, interaction_sort_key
 
-        interactions: List[Interaction] = []
-
+        found = await Interaction.find({"context.conversation_id": self.id})
+        ordered = sorted(found or [], key=interaction_sort_key)
         if reverse:
-            # Start from last interaction and traverse backward
-            current = await self.get_last_interaction()
-            while current:
-                interactions.append(current)
-                # Strictly enforce limit: break immediately when limit is reached
-                if limit > 0 and len(interactions) >= limit:
-                    break
-                current = await current.get_previous_interaction()
-        else:
-            # Start from first interaction and traverse forward
-            current = await self.get_first_interaction()
-            while current:
-                interactions.append(current)
-                # Strictly enforce limit: break immediately when limit is reached
-                if limit > 0 and len(interactions) >= limit:
-                    break
-                current = await current.get_next_interaction()
-
-        # Invariant: never exceed limit (defensive)
-        if limit > 0 and len(interactions) > limit:
-            interactions = interactions[:limit]
-
-        return interactions
+            ordered.reverse()
+        if limit > 0:
+            ordered = ordered[:limit]
+        return ordered
 
     @staticmethod
     async def truncate_statement(
