@@ -1,0 +1,14 @@
+package:
+  name: jvagent/leadgen
+  author: V75 Inc.
+  archetype: LeadGenAction
+  version: 1.0.0
+  meta:
+    title: Leadgen Action
+    description: >-
+      Conversational lead capture with spec-driven fields and auto-sync to MCP
+      destinations (Google Sheets, email, etc.).
+    group: jvagent
+    type: action
+  dependencies:
+    jvagent: ~0.0.1

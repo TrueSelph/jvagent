@@ -76,3 +76,5 @@ config:
 agents:
   # Orchestrator reference agent (ADR-0012). See agents/jvagent/orchestrator_agent/README.md.
   - jvagent/orchestrator_agent
+  # Leadgen reference agent — conversational lead capture + MCP sync.
+  - jvagent/leadgen_agent

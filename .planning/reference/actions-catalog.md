@@ -70,6 +70,7 @@ Bases:
 | jvagent/converse | `ConverseInteractAction` | `InteractAction` | (late) | Smalltalk fallback |
 | jvagent/intro | `IntroInteractAction` | `InteractAction` | early | Initial greeting / first-interaction flow |
 | jvagent/interview | `InterviewAction` | `Action` | — | Interview tool bundle (`interview__*` tools). Base SOP at action-root `SKILL.md` (extends target, not discovered). Agent interview skills: `agents/.../skills/<name>/` with `extends: action:jvagent/interview` + `interview:` frontmatter (ADR-0023) |
+| jvagent/leadgen | `LeadGenAction` | `Action` | — | Conversational lead capture (`leadgen__*` tools) with spec-driven fields and auto-sync to MCP destinations. Base SOP at action-root `SKILL.md`; agent skills use `extends: action:jvagent/leadgen` + `leadgen:` frontmatter |
 | jvagent/handoff | `HandoffInteractAction` | `InteractAction` | mid | Transfer to human (provides contact details) |
 | jvagent/retrieval | `RetrievalInteractAction` | `InteractAction` | mid | Base retrieval orchestrator |
 

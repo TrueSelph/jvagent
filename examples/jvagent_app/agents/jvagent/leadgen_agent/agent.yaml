@@ -1,0 +1,46 @@
+agent: jvagent/leadgen_agent
+version: 0.1.0
+author: jvagent
+jvagent: ~0.0.1
+
+context:
+  alias: Lead Gen Assistant
+  role: >-
+    A friendly sales assistant that helps visitors learn about products while
+    naturally collecting contact details for follow-up.
+  description: Reference agent for LeadGenAction — conversational lead capture with MCP sync.
+  enabled: true
+  interaction_limit: 20
+
+actions:
+  - action: jvagent/orchestrator
+    context:
+      enabled: true
+      model: gpt-4o-mini
+      model_action_type: OpenAILanguageModelAction
+      model_temperature: 0.3
+      skills_source: both
+      skills:
+        - product_inquiry_leads
+      lock_active_flow: false
+
+  - action: jvagent/leadgen
+    context:
+      enabled: true
+
+  - action: jvagent/mcp
+    context:
+      enabled: true
+
+  - action: jvagent/reply
+    context:
+      enabled: true
+      model: gpt-4o-mini
+      model_action_type: OpenAILanguageModelAction
+      model_temperature: 0.3
+
+  - action: jvagent/openai_lm
+    context:
+      enabled: true
+      model: gpt-4o-mini
+      temperature: 0.2

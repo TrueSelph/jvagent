@@ -10,6 +10,12 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Added
 
+- **LeadGenAction (`jvagent/leadgen`).** Unified conversational lead capture with
+  spec-driven `leadgen:` frontmatter, `leadgen__capture` / `retrieve` / `status` /
+  `sync` tools, server-side auto-sync to MCP destinations on capture, and
+  `jvagent skill create-leadgen` scaffolding. Reference agent:
+  `examples/jvagent_app/agents/jvagent/leadgen_agent/`.
+
 - **Interview declarative activation seeding (I-INT-SEED-01).** Fields may declare
   `validator_args.seed_from_activation` (canonical value → trigger phrases) and use
   built-in pre_processor `seed_field_from_activation`. Matching engine in
@@ -55,6 +61,13 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   `pre_processor` hooks can seed the first field from the user's original request
   on gated task-lock resume without relying on the model re-extracting from an
   aged observation. Key constant: `ACTIVATION_UTTERANCE_KEY` in `session.py`.
+
+### Removed
+
+- **`jvagent/lead_profile_action` and `jvagent/lead_sync_action`.** Superseded by
+  `jvagent/leadgen`. Use `leadgen__capture`, `leadgen__retrieve`, and auto-sync
+  (or `leadgen__sync` in manual mode). Library skills `lead_profile` and `lead_sync`
+  also removed.
 
 ### Changed
 
