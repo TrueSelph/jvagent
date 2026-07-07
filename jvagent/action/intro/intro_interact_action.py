@@ -23,12 +23,13 @@ class IntroInteractAction(InteractAction):
 
     IntroInteractAction:
     1. Checks if the user is a first-time user (no prior actions/events)
-    2. Adds an introductory directive for PersonaAction to include in response
+    2. Adds an introductory response-shaping parameter for the responder
+       (ReplyAction) to weave into the reply
     3. Only executes once per conversation (first interaction only)
 
     Attributes:
         prompt: Introductory message template for first-time users
-        weight: Execution weight (default: -300, runs before InteractRouter and BridgeInteractAction at -200)
+        weight: Execution weight (default: -300, runs before the Orchestrator at -200)
         anchors: Routing anchors (empty list - this runs conditionally based on user status)
     """
 
@@ -54,7 +55,7 @@ class IntroInteractAction(InteractAction):
 
     weight: int = attribute(
         default=-300,
-        description="Execution weight (runs before InteractRouter and BridgeInteractAction at -200)",
+        description="Execution weight (runs before the Orchestrator at -200)",
     )
 
     always_execute: bool = attribute(

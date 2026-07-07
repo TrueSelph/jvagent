@@ -18,8 +18,7 @@ they are available before the action module is imported.
 import logging
 import subprocess
 import sys
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +26,6 @@ logger = logging.getLogger(__name__)
 def install_pip_dependencies(
     dependencies: List[str],
     action_name: str,
-    action_path: Optional[Path] = None,
     upgrade: bool = False,
     skip_if_installed: bool = True,
 ) -> bool:
@@ -36,7 +34,6 @@ def install_pip_dependencies(
     Args:
         dependencies: List of pip package specifications (e.g., ["requests>=2.25.0", "numpy"])
         action_name: Name of the action (for logging)
-        action_path: Optional path to the action directory (for logging)
         upgrade: If True, upgrade packages if already installed
         skip_if_installed: If True, check if packages are already installed before attempting install
 
@@ -119,9 +116,7 @@ def install_pip_dependencies(
         return False
 
 
-def install_action_dependencies(
-    metadata: Dict[str, Any], action_name: str, action_path: Path
-) -> bool:
+def install_action_dependencies(metadata: Dict[str, Any], action_name: str) -> bool:
     """Install dependencies for an action from its metadata.
 
     Extracts pip dependencies from the dependencies.pip field in the action's
@@ -134,7 +129,6 @@ def install_action_dependencies(
     Args:
         metadata: Action metadata dictionary (from info.yaml)
         action_name: Name of the action (for logging)
-        action_path: Path to the action directory (for logging)
 
     Returns:
         True if installation succeeded or no dependencies, False otherwise
@@ -167,7 +161,7 @@ def install_action_dependencies(
         return False
 
     # Install pip dependencies
-    return install_pip_dependencies(pip_deps, action_name, action_path)
+    return install_pip_dependencies(pip_deps, action_name)
 
 
 def check_pip_dependency_installed(package_spec: str) -> bool:

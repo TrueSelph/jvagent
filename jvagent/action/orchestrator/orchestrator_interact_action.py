@@ -675,9 +675,9 @@ class OrchestratorInteractAction(InteractAction):
 
         An IA emits either by setting ``interaction.response`` OR by queuing a
         directive (the directive-based publishing pattern, rendered by
-        ``_finalize_directives`` after the loop). The locked path uses this so it
-        doesn't mistake directive-based publishing for silence and echo the
-        IA-as-tool status sentinel.
+        ``_egress`` after the loop). The locked path uses this so it doesn't
+        mistake directive-based publishing for silence and echo the IA-as-tool
+        status sentinel.
         """
         if interaction is None:
             return False
@@ -704,42 +704,6 @@ class OrchestratorInteractAction(InteractAction):
         await self._send_reply(visitor)
         if not interaction.has_emitted():
             await self._send_reply(visitor, self.clarify_text)
-
-    async def _finalize_directives(self, visitor: "InteractWalker") -> None:
-        """Render any unrendered ``interaction.directives`` through the responder.
-
-        Rails IAs deliver via the directive pattern (``visitor.add_directive``)
-        rather than publishing. When an IA-tool runs and leaves directives
-        without setting a response, this renders them through the responder
-        (ReplyAction or PersonaAction fallback; ADR-0014).
-        """
-        interaction = getattr(visitor, "interaction", None)
-        if interaction is None:
-            return
-        if interaction.has_emitted():
-            return  # already delivered this turn
-        try:
-            unexecuted = interaction.get_unexecuted_directives()
-        except Exception:
-            unexecuted = None
-        if not unexecuted:
-            return
-        responder = await self.get_responder()
-        if responder is None:
-            return
-        # The directive already carries any divergence / stay-on-script guidance:
-        # the interview injects its own ``active_task_description`` into the
-        # question directive on a diverged turn (see InterviewAction /
-        # interview/engine), so the host just renders whatever was queued. No
-        # host-side active-task injection here.
-        #
-        # The executive's response params are already on interaction.parameters
-        # (seeded at loop start), so the responder renders them from the subsystem
-        # — no need to pass them explicitly here.
-        try:
-            await responder.respond(interaction, visitor=visitor)
-        except Exception as exc:
-            logger.warning("orchestrator: directive finalize failed: %s", exc)
 
     async def _resolve_action(self, name: str) -> Optional[Any]:
         try:
@@ -1467,26 +1431,6 @@ class OrchestratorInteractAction(InteractAction):
         ctx = getattr(conversation, "context", None) or {}
         return bool(ctx.get("new_user"))
 
-    async def _has_runnable_work(self, visitor: Any) -> bool:
-        """Engagement state (ADR-0026 invariant 7): a task the orchestrator can drain
-        is runnable right now. Used so the turn does not finalize idle while runnable
-        work remains. Scoped to drainable types (SKILL + registered runners)."""
-        from jvagent.action.orchestrator.skill_tasks import task_store_for_conversation
-        from jvagent.action.orchestrator.task_runners import runnable_task_types
-        from jvagent.memory.task_graph import pick_top_runnable
-
-        store = getattr(visitor, "tasks", None) or task_store_for_conversation(
-            getattr(visitor, "conversation", None)
-        )
-        if store is None:
-            return False
-        try:
-            return (
-                pick_top_runnable(store, task_types=runnable_task_types()) is not None
-            )
-        except Exception:
-            return False
-
     async def _drain_runnable_tasks(
         self, visitor: Any, observations: List[Dict[str, Any]]
     ) -> Optional[str]:
@@ -2172,7 +2116,7 @@ class OrchestratorInteractAction(InteractAction):
             locked_result = (await tools[flow_owner].run({})) or ""
             interaction = getattr(visitor, "interaction", None)
             # The locked IA "emits" either by setting a response OR by queuing a
-            # directive (the directive-based publishing pattern — `_finalize_directives`
+            # directive (the directive-based publishing pattern — `_egress`
             # renders it after the loop). Checking only `interaction.response`
             # missed the directive path, so the orchestrator mistook a publishing
             # IA for a silent one and echoed the IA-as-tool status sentinel

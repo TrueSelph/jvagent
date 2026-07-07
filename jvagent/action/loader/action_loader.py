@@ -114,7 +114,7 @@ class ActionLoader:
         try:
             from jvagent.core.dependency_installer import install_action_dependencies
 
-            install_action_dependencies(data, action_name, action_dir)
+            install_action_dependencies(data, action_name)
         except Exception as e:
             logger.warning(f"Error installing dependencies for {action_name}: {e}")
 

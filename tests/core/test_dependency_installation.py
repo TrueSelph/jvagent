@@ -2,7 +2,6 @@
 
 import logging
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -115,12 +114,10 @@ class TestDependencyInstallation:
             "jvagent.core.dependency_installer.install_pip_dependencies"
         ) as mock_install:
             mock_install.return_value = True
-            result = install_action_dependencies(
-                metadata, "test_action", Path("/tmp/test")
-            )
+            result = install_action_dependencies(metadata, "test_action")
             assert result is True
             mock_install.assert_called_once_with(
-                ["requests>=2.25.0", "numpy"], "test_action", Path("/tmp/test")
+                ["requests>=2.25.0", "numpy"], "test_action"
             )
 
     def test_install_action_dependencies_no_pip_deps(self):
@@ -130,9 +127,7 @@ class TestDependencyInstallation:
         with patch(
             "jvagent.core.dependency_installer.install_pip_dependencies"
         ) as mock_install:
-            result = install_action_dependencies(
-                metadata, "test_action", Path("/tmp/test")
-            )
+            result = install_action_dependencies(metadata, "test_action")
             assert result is True
             mock_install.assert_not_called()
 
@@ -148,9 +143,7 @@ class TestDependencyInstallation:
             "jvagent.core.dependency_installer.install_pip_dependencies"
         ) as mock_install:
             with patch("jvspatial.env.env", return_value="true"):
-                result = install_action_dependencies(
-                    metadata, "test_action", Path("/tmp/test")
-                )
+                result = install_action_dependencies(metadata, "test_action")
                 assert result is False
                 mock_install.assert_not_called()
 
@@ -191,6 +184,4 @@ class TestActionLoaderDependencyInstallation:
                 data, "test_action", tmp_path / "test_action"
             )
 
-            mock_install.assert_called_once_with(
-                data, "test_action", tmp_path / "test_action"
-            )
+            mock_install.assert_called_once_with(data, "test_action")
