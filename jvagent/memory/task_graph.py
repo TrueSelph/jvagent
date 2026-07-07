@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Collection, List, Optional
 
+from jvagent.memory.task_proactive import coerce_priority
+
 if TYPE_CHECKING:
     from jvagent.memory.task_store import TaskHandle, TaskStore
 
@@ -75,7 +77,7 @@ def has_outstanding_work(
 
 def _runnable_sort_key(handle: "TaskHandle") -> tuple:
     data = getattr(handle, "data", {}) or {}
-    priority = int(data.get("priority") or 0)
+    priority = coerce_priority(data.get("priority"))
     order = int(getattr(handle, "order", 0) or 0)
     task = getattr(handle, "_task", None)
     created = str(getattr(task, "created_at", "") or "") if task else ""

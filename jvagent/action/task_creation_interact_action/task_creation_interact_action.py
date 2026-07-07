@@ -7,7 +7,7 @@ from jvspatial.core.annotations import attribute
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.task_creation_interact_action.prompts import TASK_SCHEDULER_PROMPT
 from jvagent.core.app import App, app_now_aware_utc
-from jvagent.memory.task_proactive import ProactiveTaskSpec
+from jvagent.memory.task_proactive import ProactiveTaskSpec, coerce_priority
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -314,13 +314,7 @@ class TaskCreationInteractAction(InteractAction):
         if trigger_mood.lower() in ("none", ""):
             trigger_mood = None
 
-        priority = 0
-        raw_priority = task.get("priority")
-        if raw_priority:
-            try:
-                priority = int(raw_priority)
-            except (TypeError, ValueError):
-                priority = 0
+        priority = coerce_priority(task.get("priority"))
 
         return ProactiveTaskSpec(
             directive=task["description"],

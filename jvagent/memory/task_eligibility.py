@@ -10,6 +10,7 @@ from jvagent.memory.task_proactive import (
     PROACTIVE_TASK_TYPE,
     SPEC_VERSION,
     ProactiveTaskSpec,
+    coerce_priority,
 )
 
 if TYPE_CHECKING:
@@ -115,7 +116,7 @@ def conversation_has_blockers(store: "TaskStore") -> bool:
 
 def _queue_sort_key(handle: Any) -> tuple:
     data = getattr(handle, "data", {}) or {}
-    priority = int(data.get("priority") or 0)
+    priority = coerce_priority(data.get("priority"))
     task = getattr(handle, "_task", None)
     created = str(getattr(task, "created_at", "") or "") if task else ""
     return (-priority, created)
