@@ -218,7 +218,7 @@ falls back to a sibling env var when its primary key is unset:
 - `LIVEKIT_AGENT_NAME` — worker registration name on jvvoice (default `jvvoice`; must match `WhatsAppVoiceAction.agent_name`)
 - `JVVOICE_API_PORT` — connector API listen port on jvvoice (default `8080`)
 - `DEEPGRAM_STT_MODEL` — optional STT model for jvvoice (default `nova-3`)
-- `ELEVENLABS_TTS_MODEL` — optional TTS model for jvvoice (default `eleven_turbo_v2_5`)
+- `ELEVENLABS_TTS_MODEL` — optional TTS model for jvvoice (default `eleven_flash_v2_5`)
 - `ELEVENLABS_VOICE_ID` — optional ElevenLabs voice ID for jvvoice TTS
 
 ### Facebook / Messenger
