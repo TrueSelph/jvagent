@@ -25,10 +25,18 @@ class OrchestratorWalkPathMixin:
         curate = getattr(visitor, "curate_walk_path", None)
         if not callable(curate):
             return
+        # Lazy import to avoid the module-load cycle (this file is imported by
+        # the module that defines OrchestratorInteractAction). By the time this
+        # runs mid-turn the parent module is fully loaded. isinstance keeps the
+        # subclass-aware check consistent with _assemble_tools.
+        from jvagent.action.orchestrator.orchestrator_interact_action import (
+            OrchestratorInteractAction,
+        )
+
         agent = await self._safe_agent()
         keep: List[Any] = [self]
         for action in await self._enabled_interact_actions(agent):
-            if action is self or type(action).__name__ == "OrchestratorInteractAction":
+            if action is self or isinstance(action, OrchestratorInteractAction):
                 continue
             if getattr(action, "always_execute", False):
                 keep.append(action)

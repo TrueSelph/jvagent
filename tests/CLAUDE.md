@@ -18,7 +18,6 @@ tests/
 │   ├── pageindex/
 │   ├── postiz_action/
 │   ├── response/
-│   ├── router/
 │   ├── task_creation_interact_action/
 │   ├── task_monitor/
 │   ├── whatsapp/
@@ -29,7 +28,7 @@ tests/
 │   ├── test_action_loader.py
 │   ├── test_action_endpoints.py
 │   ├── test_plugin_system.py
-│   ├── test_persona*.py
+│   ├── test_no_persona_imports.py, test_reply*.py
 │   ├── test_secrets.py
 │   ├── test_vision*.py
 │   └── ...

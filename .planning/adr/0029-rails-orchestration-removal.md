@@ -2,7 +2,7 @@
 
 **Status**: Accepted
 **Date**: 2026-07-08
-**Supersedes**: [0028-rails-orchestration-deprecation.md](0028-rails-orchestration-deprecation.md)
+**Supersedes**: [0030-rails-orchestration-deprecation.md](0030-rails-orchestration-deprecation.md)
 
 ---
 

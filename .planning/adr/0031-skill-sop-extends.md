@@ -1,4 +1,4 @@
-# ADR 0020 — Skill SOP inheritance (`extends`) and action-backed placement
+# ADR 0031 — Skill SOP inheritance (`extends`) and action-backed placement
 
 **Status**: Accepted
 **Date**: 2026-06-07

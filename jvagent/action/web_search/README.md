@@ -15,10 +15,10 @@ The `web_search` package provides the core abstractions and concrete implementat
 
 ## Architecture
 
-The web search functionality is split into two distinct packages:
-
-*   **`jvagent/web_search`** (this package): Contains the base search actions and provider-specific implementations. These are plain `Action` classes focused solely on executing searches.
-*   **`jvagent/web_search_retrieval_interact_action`**: An `InteractAction` that uses a configured `BaseWebSearchAction` to perform searches based on user input and inject the results into the conversation.
+This package provides web search as plain `Action` classes (a base action plus
+provider-specific implementations). The Orchestrator calls the search tool
+directly (pair it with `jvagent/web_fetch` to read the top results); there is no
+separate retrieval `InteractAction`.
 
 ## Configuration
 

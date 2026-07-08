@@ -36,7 +36,7 @@ The model is the pilot. Tools are the controls. Skills are the flight plan. ([so
 ### 2. Long-running autonomous agents
 - Tasks created mid-conversation persist on the `Conversation`/`Interaction` node and survive process restarts.
 - `run_in_background` `InteractAction`s execute *after* the user response is sent, isolating slow work from request latency.
-- The Executive's frame-stack control loop (one model call per tick, working memory on `visitor._executive_wm`) re-derives the per-step concerns — stream commits, access control, recording — at loop level inside a single `execute()` call.
+- The Orchestrator's think-act-observe loop (one model call per tick, per-turn observations + activation budget) re-derives the per-step concerns — stream commits, access control, recording — at loop level inside a single `execute()` call.
 - Example: research agents, multi-step task executors, scheduled outreach.
 
 ---
@@ -115,6 +115,6 @@ In-flight planning lives at [`EXECUTIVE-ROADMAP.md`](archive/EXECUTIVE-ROADMAP.m
 This document and its siblings are *agent-maintained*. They succeed when:
 
 - A fresh AI agent dropped into the repo can answer *"what is jvagent for?"* by reading this file alone.
-- A fresh AI agent dropped into a subsystem (`jvagent/core/`, `jvagent/action/executive/`, etc.) can do correct local work by reading the local `CLAUDE.md` alone.
+- A fresh AI agent dropped into a subsystem (`jvagent/core/`, `jvagent/action/orchestrator/`, etc.) can do correct local work by reading the local `CLAUDE.md` alone.
 - Every claim about runtime behavior in [`SPEC.md`](SPEC.md) cites a file:line in the source.
 - Every load-bearing design decision is captured in an [`adr/`](adr/).

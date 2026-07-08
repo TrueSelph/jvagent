@@ -41,7 +41,7 @@ actions:
 | Attribute        | Type | Default | Description |
 |------------------|------|---------|-------------|
 | `directive`      | str  | built-in lead-in intro | First-message self-introduction, applied as a response parameter |
-| `weight`         | int  | `-300`  | Runs before the router/executive (`-200`) |
+| `weight`         | int  | `-300`  | Runs before the Orchestrator (`-200`) |
 | `always_execute` | bool | `True`  | Executes regardless of routing (gated internally by `new_user`) |
 
 ## Flow

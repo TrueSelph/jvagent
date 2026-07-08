@@ -26,7 +26,7 @@ Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email /
 | **Navigate the design docs** | [`.planning/README.md`](.planning/README.md) (folder index) |
 | **Get the big picture** | [`.planning/PROJECT.md`](.planning/PROJECT.md) |
 | **Look up normative semantics** (invariants, contracts) | [`.planning/SPEC.md`](.planning/SPEC.md) |
-| **Choose a deployment pattern** (Rails / Orchestrator) | [`.planning/PATTERNS.md`](.planning/PATTERNS.md) |
+| **Choose a deployment pattern** (Orchestrator) | [`.planning/PATTERNS.md`](.planning/PATTERNS.md) |
 | **See diagrams** (boot, interact, executive, pruning) | [`.planning/architecture.md`](.planning/architecture.md) |
 | **Define a term** | [`.planning/GLOSSARY.md`](.planning/GLOSSARY.md) |
 | **Build a new action** | [`.planning/reference/action-authoring.md`](.planning/reference/action-authoring.md) |
@@ -62,9 +62,9 @@ Root → App → Agents → Agent ─┬─ Actions → Action(s) → [InteractA
 Source anchors:
 - App: [`jvagent/core/app.py:21`](jvagent/core/app.py)
 - Agent: [`jvagent/core/agent.py:30`](jvagent/core/agent.py)
-- Action base: [`jvagent/action/base.py:48`](jvagent/action/base.py)
-- InteractAction: [`jvagent/action/interact/base.py:32`](jvagent/action/interact/base.py)
-- InteractWalker: `jvagent/action/interact/interact_walker.py:50+`
+- Action base: [`jvagent/action/base.py:49`](jvagent/action/base.py)
+- InteractAction: [`jvagent/action/interact/base.py:27`](jvagent/action/interact/base.py)
+- InteractWalker: `jvagent/action/interact/interact_walker.py:47`
 - Orchestrator: [`jvagent/action/orchestrator/orchestrator_interact_action.py`](jvagent/action/orchestrator/orchestrator_interact_action.py) + supporting modules ([`continuation.py`](jvagent/action/orchestrator/continuation.py), [`tools.py`](jvagent/action/orchestrator/tools.py), [`core_tools.py`](jvagent/action/orchestrator/core_tools.py), [`catalog.py`](jvagent/action/orchestrator/catalog.py), [`skills.py`](jvagent/action/orchestrator/skills.py))
 - Conversation + pruning: `jvagent/memory/conversation.py:235` (`add_interaction`) + `:490` (`_prune_old_interactions`)
 
@@ -163,7 +163,7 @@ pytest tests/                  # or the affected slice(s) at minimum
 - **Cite file:line** in commit messages and PR descriptions when fixing bugs — `core/app.py:124` beats "fixed the App singleton".
 
 ### When editing docs
-- **Reference, don't duplicate.** New docs link to the existing 12 `docs/*.md` rather than rewriting them.
+- **Reference, don't duplicate.** New docs link to the existing `docs/*.md` rather than rewriting them.
 - **File:line refs for every claim** about runtime behavior.
 - **Update [`.planning/GLOSSARY.md`](.planning/GLOSSARY.md)** when introducing a new term used in 2+ places.
 - **ADRs are immutable** once accepted. To change a decision, write a new ADR that supersedes the old one.

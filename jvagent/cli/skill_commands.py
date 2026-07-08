@@ -4,7 +4,6 @@ import argparse
 import logging
 import os
 import shutil
-import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
@@ -395,49 +394,6 @@ def _handle_skill_show_command(args: List[str], app_root: str = None) -> None:
         print("\n--- SKILL.md content ---\n")
         print(content)
     print()
-
-
-def handle_bundle_command(args: List[str], app_root: str = None) -> None:
-    """Handle bundle command - generates Dockerfile in app directory.
-
-    Supports both:
-    - jvagent /path/to/app bundle
-    - jvagent bundle /path/to/app
-    - jvagent bundle (uses current working directory)
-
-    Args:
-        args: Command arguments (may contain app root path)
-        app_root: Path to the app root directory. If None, checks args or uses current working directory.
-    """
-    # If app_root not provided, check if first arg is a path
-    if app_root is None:
-        if args and args[0]:
-            potential_path = Path(args[0]).expanduser().resolve()
-            if potential_path.exists() and potential_path.is_dir():
-                app_root = str(potential_path)
-                logger.debug(f"Using app root from command argument: {app_root}")
-            else:
-                app_root = os.getcwd()
-                logger.debug(
-                    f"Argument '{args[0]}' is not a valid path, using current working directory"
-                )
-        else:
-            app_root = os.getcwd()
-            logger.debug(f"Using current working directory as app root: {app_root}")
-
-    # Create bundler
-    from jvagent.bundle import Bundler
-
-    bundler = Bundler(app_root=app_root)
-
-    # Generate Dockerfile
-    success = bundler.generate_dockerfile()
-
-    if not success:
-        logger.error("Dockerfile generation failed")
-        sys.exit(1)
-
-    print(f"\n✓ Dockerfile generated successfully in {app_root}")
 
 
 def _handle_skill_validate_command(args: List[str], app_root: str = None) -> None:

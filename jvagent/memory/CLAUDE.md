@@ -127,4 +127,4 @@ pytest tests/memory/ tests/test_comprehensive_pruning.py -v
 
 - Action plugins: see `jvagent/action/CLAUDE.md`.
 - The Executive's Skills center memory tools wrap this layer.
-- PageIndex (long-memory document index): see `jvagent/action/pageindex/`.
+- PageIndex (document index): see `jvagent/action/pageindex/`.

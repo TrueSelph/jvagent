@@ -52,7 +52,7 @@ Path convention: `jvagent/action/{dir}/`. Implementation file is `{dir}/{name}.p
 
 Bases:
 - `BaseModelAction` — `model/base.py:26`
-- `LanguageModelAction` — `model/language/base.py:24` (includes retry config: `max_retries`, `retry_backoff_multiplier`, `retry_on_status_codes`). See [`../docs/language-models.md`](../../docs/language-models.md).
+- `LanguageModelAction` — `model/language/base.py:345` (includes retry config: `max_retries`, `retry_backoff_multiplier`, `retry_on_status_codes`). See [`../docs/language-models.md`](../../docs/language-models.md).
 
 ### 1.2 Interaction routing / pipeline
 
@@ -64,7 +64,7 @@ Bases:
 | jvagent/leadgen | `LeadGenAction` | `Action` | — | Conversational lead capture (`leadgen__*` tools) with spec-driven fields, proactive contact gap-fill, and destination-agnostic auto-sync via the standard MCP interface (sync configured on the action in agent.yaml, or a skill `sync:` block). Base SOP at action-root `SKILL.md`; agent skills use `extends: action:jvagent/leadgen` + `leadgen:` frontmatter |
 | jvagent/handoff | `HandoffInteractAction` | `InteractAction` | mid | Transfer to human (provides contact details) |
 
-Bases: `InteractAction` — `interact/base.py:32`. See `.planning/architecture.md` §3 for traversal order.
+Bases: `InteractAction` — `interact/base.py:27`. See `.planning/architecture.md` §3 for traversal order.
 
 ### 1.3 Memory / knowledge
 
@@ -131,7 +131,6 @@ See [`../docs/task-tracking.md`](../../docs/task-tracking.md).
 | Action | Class | Base | Purpose |
 |---|---|---|---|
 | jvagent/reply | `ReplyAction` | `Action` | Orchestrator-native egress (ADR-0014). Tools `reply` (slim publish), `respond` (identity-voiced single model call), `publish`. Identity comes from the Agent (`alias` + `role`) |
-| jvagent/persona | `PersonaAction` | `Action` | Apply agent personality; aggregate capabilities; respond() entry-point. Legacy/Rails responder (Orchestrator uses `jvagent/reply`) |
 | jvagent/vision | `VisionAction` | `Action` | Multimodal image interpretation with its **own** model (`model_action_type`/`model` — must be vision-capable) and its **own** default prompt (`interpretation_prompt`, overridable in `agent.yaml`; a per-call prompt wins). Self-contained: prompt constants in `vision/prompts.py`, builders + model call in `vision/multimodal.py`. Produces a text description and exposes an `interpret_images` tool. Gated by `vision: true`. With upload ingestion on (default), the Orchestrator calls it **per image** and consolidates the description into that image's `source="upload"` artifact (one artifact = file + interpretation, queryable via `list_artifacts`/`get_artifact` — no re-upload for follow-ups); a standalone pre-loop reflex storing a separate `source="vision"` artifact is the fallback when `ingest_uploads` is off. Suppress per-turn with `visitor.data["image_interpretation"] = False`. ADR-0021 (S2/S4) |
 | jvagent/avatar_action | `AvatarAction` | `Action` | Store/retrieve base64 profile images |
 | jvagent/video_generation | `HeygenVideoAction` | `Action` | Heygen AI video |
@@ -172,7 +171,7 @@ These ship inside `jvagent/action/` but are not pluggable on their own — they 
 | `response/` | `ResponseBus`, channel adapters, channel filters |
 | `loader/` | Action loader, registry, plugin discovery |
 | `utils/` | Shared utilities (webhook auth, system user mgmt) |
-| `orchestrator/` | Orchestrator + supporting modules: `continuation.py` (active-flow resume), `tools.py` / `core_tools.py` (tool surface), `catalog.py` (find_tool/load_tool + lean surfacing, ADR-0018), `skills.py` (skill discovery — JV + Claude specs, ADR-0017), `prompts.py` |
+| `orchestrator/` | Orchestrator + supporting modules: `orchestrator_interact_action.py` (entry), `loop.py` / `loop_helpers.py` (think-act-observe loop), `continuation.py` (active-flow surfacing), `walk_path.py` (walk-path curation), `egress.py` (reply/respond egress), `uploads.py` (inbound attachments), `constants.py` (shared constants), `access.py` / `preconditions.py` (AC gating), `proactive_tools.py` / `skill_tasks.py` / `skill_providers.py` / `task_runners.py` (skill + task plumbing), `tools.py` / `core_tools.py` (tool surface), `catalog.py` (find_tool/load_tool + lean surfacing, ADR-0018), `skills.py` (skill discovery — JV + Claude specs, ADR-0017), `prompts.py` |
 
 ---
 
@@ -180,7 +179,7 @@ These ship inside `jvagent/action/` but are not pluggable on their own — they 
 
 | Metric | Value |
 |---|---|
-| Top-level action directories | 43 |
+| Top-level action directories | 40 |
 | Action packages with `info.yaml` | 30 |
 | Main Action implementations (.py with class) | 23 |
 | Total `@endpoint`-decorated routes across the library | ~183 |
@@ -215,7 +214,7 @@ Both paths are currently functional. AUDIT-actions XC-6 verified.
 | `OrchestratorInteractAction` | `ReplyAction` (egress), a `LanguageModelAction` (heavy + optional light gear), all enabled actions' `get_tools()`, `MCPAction` (via `tool_servers`), `CodeExecutionAction` (stages/runs Claude skills), skills (JV + Claude specs) |
 | `ReplyAction` | the Agent's identity (`alias` + `role`), a `LanguageModelAction` (voicing) |
 | `WebFetchAction` | none (httpx + bs4 + markdownify; SSRF guard) |
-| `HandoffInteractAction` | `PersonaAction` (polish), `WhatsAppAction` (contact routing) |
+| `HandoffInteractAction` | `ReplyAction` (polish), `WhatsAppAction` (contact routing) |
 | `TaskCreationInteractAction` | `WhatsAppAction` (context), `ReplyAction` (formatting) |
 | Any channel adapter | `ResponseBus` (per-agent, via `Agent.get_response_bus()`) |
 
