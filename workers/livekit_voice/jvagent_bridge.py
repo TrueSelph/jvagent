@@ -42,8 +42,14 @@ def extract_interact_response_text(body: Any) -> Optional[str]:
     return None
 
 
-def jvagent_base_url() -> str:
-    """Base URL for jvagent interact API (no trailing slash)."""
+def jvagent_base_url(override: Optional[str] = None) -> str:
+    """Base URL for jvagent interact API (no trailing slash).
+
+    Per-call ``override`` from dispatch metadata wins over worker env defaults.
+    """
+    custom = (override or "").strip().rstrip("/")
+    if custom:
+        return custom
     for key in (
         "JVAGENT_BASE_URL",
         "JVAGENT_INTERNAL_BASE_URL",
@@ -68,9 +74,11 @@ async def interact(
     whatsapp_call_id: str = "",
     call_active: bool = True,
     timeout: float = 120.0,
+    jvagent_base_url_override: str = "",
 ) -> str:
     """POST to jvagent /agents/{id}/interact and return the response text."""
-    url = f"{jvagent_base_url()}/api/agents/{agent_id}/interact"
+    base = jvagent_base_url(jvagent_base_url_override)
+    url = f"{base}/api/agents/{agent_id}/interact"
     logger.debug("jvagent interact POST %s", url)
     data_payload: Dict[str, Any] = {
         "livekit_room": room_name,

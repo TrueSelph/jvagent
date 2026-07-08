@@ -62,6 +62,13 @@ class LiveKitWhatsAppAction(Action):
         default="whatsapp-call",
         description="Prefix for LiveKit room names created per call",
     )
+    jvagent_base_url: str = attribute(
+        default="",
+        description=(
+            "jvagent base URL for voice worker /interact callbacks; "
+            "when empty, JVAGENT_BASE_URL / JVAGENT_PUBLIC_BASE_URL env is used"
+        ),
+    )
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -80,6 +87,19 @@ class LiveKitWhatsAppAction(Action):
     def _env_livekit_api_secret() -> str:
         return (env("LIVEKIT_API_SECRET") or "").strip()
 
+    @staticmethod
+    def _env_jvagent_base_url() -> str:
+        for key in (
+            "JVAGENT_BASE_URL",
+            "JVAGENT_INTERNAL_BASE_URL",
+            "JVAGENT_PUBLIC_BASE_URL",
+            "JVFORGE_PUBLIC_BASE_URL",
+        ):
+            value = (env(key) or "").strip()
+            if value:
+                return value.rstrip("/")
+        return ""
+
     def _resolved_livekit_url(self) -> str:
         return (self.livekit_url or self._env_livekit_url()).strip()
 
@@ -88,6 +108,9 @@ class LiveKitWhatsAppAction(Action):
 
     def _resolved_livekit_api_secret(self) -> str:
         return (self.livekit_api_secret or self._env_livekit_api_secret()).strip()
+
+    def _resolved_jvagent_base_url(self) -> str:
+        return (self.jvagent_base_url or self._env_jvagent_base_url()).strip().rstrip("/")
 
     def is_configured(self) -> bool:
         """Return True when LiveKit credentials and dispatch name are set."""
@@ -211,12 +234,15 @@ class LiveKitWhatsAppAction(Action):
             )
 
         room_name = self._room_name_for_call(event.call_id)
-        agent_metadata = {
+        agent_metadata: Dict[str, Any] = {
             "jvagent_agent_id": agent_id,
             "caller_phone": event.from_number,
             "caller_name": event.contact_name,
             "whatsapp_call_id": event.call_id,
         }
+        base_url = self._resolved_jvagent_base_url()
+        if base_url:
+            agent_metadata["jvagent_base_url"] = base_url
 
         try:
             client = await self._connector_client()

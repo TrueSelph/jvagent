@@ -7,6 +7,7 @@ import pytest
 from jvagent_bridge import (
     extract_interact_response_text,
     interact,
+    jvagent_base_url,
     parse_dispatch_metadata,
     session_id_for_caller,
 )
@@ -55,6 +56,46 @@ class TestExtractInteractResponseText:
             "interaction": {"response": "From interaction object"},
         }
         assert extract_interact_response_text(body) == "From interaction object"
+
+
+class TestJvagentBaseUrl:
+    def test_override_wins(self, monkeypatch):
+        monkeypatch.setenv("JVAGENT_BASE_URL", "https://default.example.com")
+        assert jvagent_base_url("https://tenant.example.com") == "https://tenant.example.com"
+
+    def test_env_fallback_when_no_override(self, monkeypatch):
+        monkeypatch.setenv("JVAGENT_BASE_URL", "https://default.example.com")
+        assert jvagent_base_url() == "https://default.example.com"
+
+
+@pytest.mark.asyncio
+async def test_interact_uses_per_call_base_url():
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "success": True,
+        "response": "Hello from tenant",
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch(
+        "jvagent_bridge.httpx.AsyncClient",
+        return_value=mock_client,
+    ):
+        text = await interact(
+            agent_id="n.Agent.test",
+            utterance="Hi",
+            user_id="16315553601",
+            session_id="whatsapp-call:16315553601",
+            jvagent_base_url_override="https://tenant-a.example.com",
+        )
+    assert text == "Hello from tenant"
+    posted_url = mock_client.post.await_args.args[0]
+    assert posted_url == "https://tenant-a.example.com/api/agents/n.Agent.test/interact"
 
 
 @pytest.mark.asyncio

@@ -28,6 +28,7 @@ async def resolve_call_context(ctx: JobContext) -> Dict[str, Any]:
     caller_phone = str(meta.get("caller_phone") or "").strip()
     whatsapp_call_id = str(meta.get("whatsapp_call_id") or "").strip()
     agent_id = str(meta.get("jvagent_agent_id") or "").strip()
+    jvagent_base = str(meta.get("jvagent_base_url") or "").strip()
 
     if not agent_id:
         agent_id = (os.environ.get("JVAGENT_AGENT_ID") or "").strip()
@@ -45,12 +46,15 @@ async def resolve_call_context(ctx: JobContext) -> Dict[str, Any]:
             identity = (participant.identity or "").strip()
             if identity and not identity.startswith("whatsapp-call"):
                 caller_phone = identity
-        if participant.metadata and not meta:
-            meta = parse_dispatch_metadata(participant.metadata)
-            agent_id = agent_id or str(meta.get("jvagent_agent_id") or "").strip()
-            caller_phone = caller_phone or str(meta.get("caller_phone") or "").strip()
+        if participant.metadata:
+            pmeta = parse_dispatch_metadata(participant.metadata)
+            agent_id = agent_id or str(pmeta.get("jvagent_agent_id") or "").strip()
+            caller_phone = caller_phone or str(pmeta.get("caller_phone") or "").strip()
             whatsapp_call_id = whatsapp_call_id or str(
-                meta.get("whatsapp_call_id") or ""
+                pmeta.get("whatsapp_call_id") or ""
+            ).strip()
+            jvagent_base = jvagent_base or str(
+                pmeta.get("jvagent_base_url") or ""
             ).strip()
 
     if not agent_id:
@@ -63,6 +67,7 @@ async def resolve_call_context(ctx: JobContext) -> Dict[str, Any]:
 
     return {
         "jvagent_agent_id": agent_id,
+        "jvagent_base_url": jvagent_base,
         "caller_phone": caller_phone,
         "whatsapp_call_id": whatsapp_call_id,
         "room_name": ctx.room.name,

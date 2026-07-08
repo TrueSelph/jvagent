@@ -32,18 +32,26 @@ python main.py dev
 | `LIVEKIT_API_SECRET` | Yes | LiveKit API secret |
 | `DEEPGRAM_API_KEY` | Yes | Deepgram STT |
 | `ELEVENLABS_API_KEY` | Yes | ElevenLabs TTS |
-| `JVAGENT_BASE_URL` | Yes | Base URL of your jvagent server (no trailing slash) |
+| `JVAGENT_BASE_URL` | Fallback | Default jvagent URL when dispatch metadata omits `jvagent_base_url` |
 | `JVAGENT_AGENT_ID` | Fallback | Used when LiveKit job metadata omits `jvagent_agent_id` |
 | `JVAGENT_VOICE_AGENT_NAME` | No | Worker name (default `jvagent-voice`; must match jvagent action) |
 | `DEEPGRAM_STT_MODEL` | No | Default `nova-3` |
 | `ELEVENLABS_TTS_MODEL` | No | Default `eleven_turbo_v2_5` |
 | `ELEVENLABS_VOICE_ID` | No | ElevenLabs voice id |
 
-After deploying jvagent, set `JVAGENT_BASE_URL` to its public URL (e.g. `https://desk8800.example.com`). The worker calls:
+After deploying jvagent, each jvagent instance sends its own `jvagent_base_url` in LiveKit dispatch metadata (from `JVAGENT_PUBLIC_BASE_URL` or action config). Set `JVAGENT_BASE_URL` on the worker only as a fallback for calls missing metadata.
 
 ```
-{JVAGENT_BASE_URL}/api/agents/{agent_id}/interact
+{jvagent_base_url}/api/agents/{agent_id}/interact
 ```
+
+### Multiple jvagent hosts (shared worker)
+
+One deployed worker can serve many jvagent instances with different base URLs. Each jvagent's `LiveKitWhatsAppAction` includes `jvagent_base_url` in dispatch metadata when accepting a call. The worker routes each call to the correct host automatically — no per-tenant worker deployment required.
+
+Requirements:
+- All jvagent instances use the **same LiveKit project** and dispatch to the **same `agent_name`**
+- Each jvagent has `JVAGENT_PUBLIC_BASE_URL` (or `jvagent_base_url` in action context) set to a URL the worker can reach
 
 ## Docker
 
@@ -62,7 +70,7 @@ The Dockerfile runs `python main.py download-files` at build time to bake Silero
 3. Set environment variables in Dokploy (same as `.env.example`). At minimum:
    - `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`
    - `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`
-   - `JVAGENT_BASE_URL` → your deployed jvagent URL
+   - `JVAGENT_BASE_URL` → fallback jvagent URL (optional if all jvagents send per-call URLs)
 4. Ensure `JVAGENT_VOICE_AGENT_NAME` matches `agent_name` on `jvagent/livekit_whatsapp_action` in your jvagent app.
 5. Deploy. The worker registers with LiveKit Cloud and accepts jobs dispatched from jvagent when WhatsApp calls connect.
 

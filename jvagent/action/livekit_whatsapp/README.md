@@ -48,8 +48,8 @@ Voicenotes (PTT) still use `DeepgramSTTAction` / `ElevenLabsTTSAction` on the me
 | `LIVEKIT_URL` | Yes | LiveKit server WebSocket URL |
 | `LIVEKIT_API_KEY` | Yes | LiveKit API key |
 | `LIVEKIT_API_SECRET` | Yes | LiveKit API secret |
-| `JVAGENT_PUBLIC_BASE_URL` | Yes | Public jvagent URL (Meta webhooks) |
-| `JVAGENT_BASE_URL` | Worker | jvagent URL for worker → `/interact` (set on standalone voice worker) |
+| `JVAGENT_PUBLIC_BASE_URL` | Yes | Public jvagent URL (Meta webhooks; sent to voice worker as `jvagent_base_url`) |
+| `JVAGENT_BASE_URL` | Worker fallback | Default jvagent URL on worker when dispatch metadata omits per-call URL |
 | `JVAGENT_INTERNAL_BASE_URL` | No | Legacy worker URL fallback |
 | `JVAGENT_VOICE_AGENT_NAME` | No | Worker dispatch name (default `jvagent-voice`) |
 | `DEEPGRAM_API_KEY` | Worker | Streaming STT |
@@ -77,6 +77,10 @@ python main.py dev
 ```
 
 For production, deploy via Docker (`docker compose up`) or Dokploy. Full instructions: [`workers/livekit_voice/README.md`](../../../workers/livekit_voice/README.md).
+
+### Shared voice worker across multiple jvagent hosts
+
+Each jvagent instance sends its own `jvagent_base_url` in LiveKit dispatch metadata (resolved from action `jvagent_base_url` or `JVAGENT_BASE_URL` / `JVAGENT_PUBLIC_BASE_URL` env). One shared worker can route calls to many jvagent hosts automatically.
 
 ## Install jvagent LiveKit extra
 

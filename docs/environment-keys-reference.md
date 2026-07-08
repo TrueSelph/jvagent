@@ -212,7 +212,7 @@ falls back to a sibling env var when its primary key is unset:
 - `LIVEKIT_API_SECRET` — LiveKit API secret
 - `JVAGENT_VOICE_AGENT_NAME` — LiveKit agent dispatch name (default `jvagent-voice`; must match `LiveKitWhatsAppAction.agent_name`)
 - `JVAGENT_AGENT_ID` — optional fallback for the voice worker when job metadata is empty (agent node id, e.g. `n.Agent.xxxx`)
-- `JVAGENT_BASE_URL` — primary base URL for the standalone voice worker → jvagent `/interact` (set after deploy)
+- `JVAGENT_BASE_URL` — primary fallback for the standalone voice worker → jvagent `/interact` (per-call `jvagent_base_url` in dispatch metadata overrides this)
 - `JVAGENT_INTERNAL_BASE_URL` — legacy fallback for worker → jvagent interact
 - `DEEPGRAM_STT_MODEL` — optional STT model for voice worker (default `nova-3`)
 - `ELEVENLABS_TTS_MODEL` — optional TTS model for voice worker (default `eleven_turbo_v2_5`)

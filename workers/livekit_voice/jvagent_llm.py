@@ -22,12 +22,14 @@ class JvagentOrchestratorLLM(llm.LLM):
         user_id: str,
         room_name: str = "",
         whatsapp_call_id: str = "",
+        jvagent_base_url_override: str = "",
     ) -> None:
         super().__init__()
         self._agent_id = agent_id
         self._user_id = user_id
         self._room_name = room_name
         self._whatsapp_call_id = whatsapp_call_id
+        self._jvagent_base_url = jvagent_base_url_override
 
     @classmethod
     def from_call_context(cls, call_context: Dict[str, Any]) -> "JvagentOrchestratorLLM":
@@ -37,11 +39,13 @@ class JvagentOrchestratorLLM(llm.LLM):
         caller = str(call_context.get("caller_phone") or "unknown").strip() or "unknown"
         call_id = str(call_context.get("whatsapp_call_id") or "").strip()
         room_name = str(call_context.get("room_name") or "").strip()
+        base_url = str(call_context.get("jvagent_base_url") or "").strip()
         return cls(
             agent_id=agent_id,
             user_id=caller,
             room_name=room_name,
             whatsapp_call_id=call_id,
+            jvagent_base_url_override=base_url,
         )
 
     @classmethod
@@ -106,11 +110,13 @@ class JvagentOrchestratorLLMStream(llm.LLMStream):
                 session_id=session_id_for_caller(self._llm._user_id),
                 room_name=self._llm._room_name,
                 whatsapp_call_id=self._llm._whatsapp_call_id,
+                jvagent_base_url_override=self._llm._jvagent_base_url,
             )
         except Exception as exc:
+            base = jvagent_base_url(self._llm._jvagent_base_url)
             logger.error(
                 "jvagent interact failed (%s): %s",
-                f"{jvagent_base_url()}/api/agents/{self._llm._agent_id}/interact",
+                f"{base}/api/agents/{self._llm._agent_id}/interact",
                 exc,
                 exc_info=True,
             )

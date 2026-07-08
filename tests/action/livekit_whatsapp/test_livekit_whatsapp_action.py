@@ -51,6 +51,7 @@ def _action_stub(**overrides: object) -> SimpleNamespace:
         "agent_name": "jvagent-voice",
         "cloud_api_version": "24.0",
         "room_name_prefix": "whatsapp-call",
+        "jvagent_base_url": "",
         "enabled": True,
         "_active_calls": {},
         "_connector": None,
@@ -66,10 +67,12 @@ def _action_stub(**overrides: object) -> SimpleNamespace:
         "_handle_connect",
         "_handle_terminate",
         "_room_name_for_call",
+        "_resolved_jvagent_base_url",
         "handle_call_webhook",
     ):
         method = getattr(LiveKitWhatsAppAction, method_name)
         setattr(action, method_name, method.__get__(action, LiveKitWhatsAppAction))
+    action._env_jvagent_base_url = lambda: ""
     return action
 
 
@@ -92,6 +95,23 @@ async def test_handle_connect_calls_livekit():
     assert call_kwargs["agent_name"] == "jvagent-voice"
     assert call_kwargs["agent_metadata"]["jvagent_agent_id"] == "n.Agent.test"
     assert call_kwargs["agent_metadata"]["caller_phone"] == "16315553601"
+
+
+@pytest.mark.asyncio
+async def test_handle_connect_includes_jvagent_base_url_in_metadata():
+    action = _action_stub()
+    action._resolved_jvagent_base_url = lambda: "https://jv.example.com"
+    mock_client = AsyncMock()
+    mock_client.accept_whatsapp_call = AsyncMock(
+        return_value={"room_name": "whatsapp-call-ago6V", "whatsapp_call_id": "x"}
+    )
+    action._meta_credentials = AsyncMock(return_value=("436666719526789", "meta-token"))
+    action._connector_client = AsyncMock(return_value=mock_client)
+
+    await action.handle_call_webhook(_CONNECT_PAYLOAD, agent_id="n.Agent.test")
+
+    call_kwargs = mock_client.accept_whatsapp_call.await_args.kwargs
+    assert call_kwargs["agent_metadata"]["jvagent_base_url"] == "https://jv.example.com"
 
 
 @pytest.mark.asyncio
