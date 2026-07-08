@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from jvagent.action.interview.interview_action import InterviewAction
-from jvagent.action.interview.session import save_session
 from jvagent.action.interview.spec import (
     load_interview_spec_from_skill,
 )

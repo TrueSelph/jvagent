@@ -9,9 +9,9 @@ replaces ad-hoc resolver functions with a consistent, self-documenting interface
 
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Generic, Literal, Optional, TypeVar
+from typing import Any, Callable, ClassVar, Dict, Generic, Literal, Optional, TypeVar
 
 from jvagent.core.app_yaml_validator import warn_app_yaml_config
 from jvagent.core.env_resolver import resolve_env_placeholders
@@ -113,12 +113,12 @@ class ConfigKey(Generic[T]):
             try:
                 return int(raw)  # type: ignore[return-value]
             except ValueError:
-                return self.default
+                return self.default  # type: ignore[return-value]
         if isinstance(self.default, float):
             try:
                 return float(raw)  # type: ignore[return-value]
             except ValueError:
-                return self.default
+                return self.default  # type: ignore[return-value]
         pb = parse_env_bool(raw)
         if pb is not None:
             return pb  # type: ignore[return-value]
@@ -139,7 +139,7 @@ class ConfigKey(Generic[T]):
             try:
                 return type(self.default)(value)  # type: ignore[return-value]
             except (TypeError, ValueError):
-                return self.default
+                return self.default  # type: ignore[return-value]
         return value  # type: ignore[return-value]
 
 
@@ -159,11 +159,11 @@ class ConfigSchema:
         print(cfg.db_type)  # "json"
     """
 
+    _keys: ClassVar[Dict[str, "ConfigKey[Any]"]] = {}
+
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
-        cls._keys: dict[str, ConfigKey[Any]] = {
-            k: v for k, v in vars(cls).items() if isinstance(v, ConfigKey)
-        }
+        cls._keys = {k: v for k, v in vars(cls).items() if isinstance(v, ConfigKey)}
 
     @classmethod
     def resolve(cls, app_config: dict, *, app_root: Optional[str] = None) -> Any:

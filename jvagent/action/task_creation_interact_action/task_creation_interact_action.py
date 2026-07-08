@@ -161,10 +161,8 @@ class TaskCreationInteractAction(InteractAction):
                 limit=5, formatted=True
             )
         else:
-            # Fallback for generic Nodes
-            raw_history = await conversation.nodes(direction="out", limit=5)
-            # Re-traverse to ensure chronological order and format manually if needed
-            # For now, we'll try a simple format or assume missing history is okay for extraction
+            # Fallback for generic Nodes: assume missing history is okay for
+            # extraction rather than re-traversing for chronological order.
             history = []
 
         history_str = "\n".join([f"{m['role']}: {m['content']}" for m in history])

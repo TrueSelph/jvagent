@@ -233,7 +233,7 @@ class InterviewAction(Action):
         collected/skipped) as a server-prep observation keeps key selection
         grounded without re-running ``use_skill``.
         """
-        from jvagent.action.orchestrator.skill_tasks import TaskLockPrep
+        from jvagent.action.skill_spec.task_lock import TaskLockPrep
 
         if not await self._has_ready_session(skill_name, visitor):
             return TaskLockPrep()

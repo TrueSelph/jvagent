@@ -30,7 +30,7 @@ def test_validate_agent_yaml_keeps_custom_action_payload_flexible():
         "context": {"alias": "Example", "custom_agent_property": "ok"},
         "actions": [
             {
-                "action": "jvagent/interact_router",
+                "action": "jvagent/orchestrator",
                 "context": {"custom_context_key": "value", "enabled": True},
                 "config": {"custom_config_key": {"nested": True}},
             }
@@ -49,7 +49,7 @@ def test_validate_agent_yaml_warns_unexpected_action_entry_key():
         "agent": "jvagent/example_agent",
         "actions": [
             {
-                "action": "jvagent/interact_router",
+                "action": "jvagent/orchestrator",
                 "unexpected": "x",
             }
         ],
@@ -57,6 +57,17 @@ def test_validate_agent_yaml_warns_unexpected_action_entry_key():
     warnings = validate_agent_yaml(payload)
     paths = {w.path for w in warnings}
     assert "actions[0].unexpected" in paths
+
+
+def test_validate_agent_yaml_warns_removed_actions():
+    from jvagent.core.agent_yaml_validator import validate_agent_yaml
+
+    payload = {
+        "agent": "jvagent/legacy_agent",
+        "actions": [{"action": "jvagent/interact_router"}],
+    }
+    warnings = validate_agent_yaml(payload)
+    assert any("Removed in jvagent 0.1.1" in w.message for w in warnings)
 
 
 def test_agent_loader_emits_validation_warning(tmp_path, caplog):
@@ -73,7 +84,7 @@ def test_agent_loader_emits_validation_warning(tmp_path, caplog):
             [
                 "agent: jvagent/example_agent",
                 "actions:",
-                "  - action: jvagent/interact_router",
+                "  - action: jvagent/orchestrator",
                 "    unexpected: true",
             ]
         ),
@@ -86,8 +97,7 @@ def test_agent_loader_emits_validation_warning(tmp_path, caplog):
     assert "actions[0].unexpected" in caplog.text
 
 
-def test_exclusion_check_ignores_non_orchestrator_actions():
-    """A Orchestrator composition validates clean."""
+def test_orchestrator_composition_validates_clean():
     from jvagent.core.agent_yaml_validator import validate_agent_yaml
 
     payload = {
@@ -95,26 +105,26 @@ def test_exclusion_check_ignores_non_orchestrator_actions():
         "actions": [
             {"action": "jvagent/orchestrator"},
             {"action": "jvagent/openai_lm"},
-            {"action": "jvagent/persona"},
+            {"action": "jvagent/reply"},
             {"action": "jvagent/intro_interact_action"},
         ],
     }
     warnings = validate_agent_yaml(payload)
-    assert not any("mutually exclusive" in w.message for w in warnings)
+    assert not any("Removed in jvagent 0.1.1" in w.message for w in warnings)
 
 
-def test_validate_agent_yaml_warns_dual_orchestrators():
+def test_validate_agent_yaml_warns_multiple_orchestrators():
     from jvagent.core.agent_yaml_validator import validate_agent_yaml
 
     payload = {
         "agent": "jvagent/conflict_agent",
         "actions": [
             {"action": "jvagent/orchestrator"},
-            {"action": "jvagent/interact_router"},
+            {"action": "jvagent/orchestrator"},
         ],
     }
     warnings = validate_agent_yaml(payload)
-    assert any("Mutually exclusive orchestrators" in w.message for w in warnings)
+    assert any("Multiple orchestrators" in w.message for w in warnings)
 
 
 def test_action_loader_scan_emits_validation_warning(tmp_path, caplog):
@@ -131,7 +141,7 @@ def test_action_loader_scan_emits_validation_warning(tmp_path, caplog):
             [
                 "agent: jvagent/example_agent",
                 "actions:",
-                "  - action: jvagent/interact_router",
+                "  - action: jvagent/orchestrator",
                 "    extra_field: value",
             ]
         ),
@@ -140,5 +150,5 @@ def test_action_loader_scan_emits_validation_warning(tmp_path, caplog):
 
     loader = ActionLoader(str(tmp_path))
     required = loader._scan_required_actions([("jvagent", "example_agent")])
-    assert "jvagent/interact_router" in required
+    assert "jvagent/orchestrator" in required
     assert "actions[0].extra_field" in caplog.text

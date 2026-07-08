@@ -1,7 +1,7 @@
 """HeyGen video generation action implementation."""
 
 import logging
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
 
 import requests
 from httpx import AsyncClient, Timeout
@@ -172,6 +172,12 @@ class HeygenVideoAction(Action):
         - Prevents duplicates for the exact URL
         - Deletes stale endpoints (scoped by `manage_prefix` or `manage_suffix`)
         """
+        import asyncio
+
+        from jvagent.action.utils.webhook_reconcile import (
+            reconcile_webhook_endpoint as _reconcile_webhook_endpoint,
+        )
+
         desired_norm = self._normalize_url(desired_url)
         if not desired_norm:
             raise ValueError("HeygenVideoAction: desired_url is empty")
@@ -182,68 +188,34 @@ class HeygenVideoAction(Action):
             events if events is not None else getattr(self, "webhook_events", None)
         )
 
-        # The _webhook_* helpers use sync `requests`. Run them in worker
-        # threads so the event loop is not stalled. AUDIT-actions XC-3.
-        import asyncio
+        def _is_stale(ep_url: str) -> bool:
+            if prefix_norm and ep_url.startswith(prefix_norm):
+                return True
+            if isinstance(suffix_norm, str) and ep_url.endswith(suffix_norm):
+                return True
+            return False
 
-        endpoints = await asyncio.to_thread(self._webhook_list)
+        async def _list_webhooks() -> List[Dict[str, Any]]:
+            return await asyncio.to_thread(self._webhook_list)
 
-        exact_matches: List[Dict[str, Any]] = []
-        stale_matches: List[Dict[str, Any]] = []
-
-        for ep in endpoints:
-            ep_url = self._normalize_url(str(ep.get("url") or ""))
-            if not ep_url:
-                continue
-            if ep_url == desired_norm:
-                exact_matches.append(ep)
-            elif prefix_norm and ep_url.startswith(prefix_norm):
-                stale_matches.append(ep)
-            elif isinstance(suffix_norm, str):
-                if ep_url.endswith(suffix_norm):
-                    stale_matches.append(ep)
-
-        deleted: List[str] = []
-        for ep in stale_matches:
-            endpoint_id = str(ep.get("endpoint_id") or "")
-            if endpoint_id:
-                try:
-                    await asyncio.to_thread(self._webhook_delete, endpoint_id)
-                    deleted.append(endpoint_id)
-                except Exception as exc:
-                    logger.warning(
-                        "HeygenVideoAction: failed deleting stale webhook %s: %s",
-                        endpoint_id,
-                        exc,
-                    )
-
-        # If duplicates exist for exact URL, keep one and delete the rest.
-        kept: Optional[Dict[str, Any]] = None
-        if exact_matches:
-            kept = exact_matches[0]
-            for ep in exact_matches[1:]:
-                endpoint_id = str(ep.get("endpoint_id") or "")
-                if endpoint_id:
-                    try:
-                        await asyncio.to_thread(self._webhook_delete, endpoint_id)
-                        deleted.append(endpoint_id)
-                    except Exception as exc:
-                        logger.warning(
-                            "HeygenVideoAction: failed deleting duplicate webhook %s: %s",
-                            endpoint_id,
-                            exc,
-                        )
-
-        created: Optional[Dict[str, Any]] = None
-        if not kept:
-            created = await asyncio.to_thread(
+        result = await _reconcile_webhook_endpoint(
+            desired_url=desired_norm,
+            list_endpoints=_list_webhooks,
+            get_endpoint_url=lambda ep: self._normalize_url(str(ep.get("url") or "")),
+            get_endpoint_id=lambda ep: str(ep.get("endpoint_id") or ""),
+            is_stale=_is_stale,
+            delete_endpoint=lambda endpoint_id: asyncio.to_thread(
+                self._webhook_delete, endpoint_id
+            ),
+            create_endpoint=lambda: asyncio.to_thread(
                 self._webhook_add, desired_norm, effective_events
-            )
-            kept = created
+            ),
+            provider_label="HeygenVideoAction",
+        )
 
-        # Surface relevant info to callers (and logs)
-        endpoint_id = str((kept or {}).get("endpoint_id") or "")
-        secret = str((kept or {}).get("secret") or "")
+        kept = result.get("webhook") or {}
+        endpoint_id = str(kept.get("endpoint_id") or "")
+        secret = str(kept.get("secret") or "")
         if secret:
             logger.info(
                 "HeygenVideoAction: webhook endpoint ready (endpoint_id=%s). "
@@ -252,10 +224,10 @@ class HeygenVideoAction(Action):
             )
 
         return {
-            "desired_url": desired_norm,
-            "endpoint": kept or {},
-            "created": created is not None,
-            "deleted_endpoint_ids": deleted,
+            "desired_url": result.get("desired_url", desired_norm),
+            "endpoint": kept,
+            "created": result.get("created", False),
+            "deleted_endpoint_ids": result.get("deleted_webhook_ids", []),
         }
 
     async def create_video(

@@ -42,7 +42,6 @@ class BaseSTTAction(Action, ABC):
         Returns:
             Text transcript of audio or None if failed
         """
-        pass
 
     @abstractmethod
     async def invoke_base64(
@@ -59,7 +58,6 @@ class BaseSTTAction(Action, ABC):
         Returns:
             Text transcript of audio or None if failed
         """
-        pass
 
     async def invoke_file(
         self, audio_content: bytes, audio_type: str = "audio/mp3"
@@ -87,4 +85,3 @@ class BaseSTTAction(Action, ABC):
         Returns:
             True if healthy, False or error dict if unhealthy
         """
-        pass

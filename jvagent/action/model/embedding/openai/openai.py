@@ -4,7 +4,7 @@ Provides integration with OpenAI's Embeddings API for generating vector embeddin
 """
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import httpx
 from jvspatial.core.annotations import attribute

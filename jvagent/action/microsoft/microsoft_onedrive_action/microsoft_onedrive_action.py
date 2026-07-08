@@ -1,5 +1,4 @@
 import base64
-import io
 import json
 import logging
 from typing import Annotated, Any, ClassVar, Dict, List, Optional

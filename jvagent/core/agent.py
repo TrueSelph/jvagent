@@ -152,7 +152,7 @@ class Agent(Node):
         needing to know the specific ID or label.
 
         Args:
-            entity_type: Entity type name (e.g., "OpenAILanguageModelAction", "PersonaAction")
+            entity_type: Entity type name (e.g., "OpenAILanguageModelAction", "ReplyAction")
 
         Returns:
             Action instance if found, None otherwise

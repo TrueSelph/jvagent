@@ -18,7 +18,6 @@ from jvagent.core.app import App
 from jvagent.core.sandbox import (
     absolute_under_files_root,
     is_local_file_interface,
-    normalize_sandbox_dir_prefix,
     provision_sandbox_dir,
     resolve_agent_user,
     resolve_sandbox_root,

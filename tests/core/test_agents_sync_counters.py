@@ -27,11 +27,14 @@ async def test_sync_counters_no_drift_does_not_save():
     ]
 
     save_mock = AsyncMock()
-    with patch.object(
-        Agents,
-        "get_connected_agents",
-        new=AsyncMock(return_value=fake_connected),
-    ), patch.object(Agents, "save", new=save_mock):
+    with (
+        patch.object(
+            Agents,
+            "get_connected_agents",
+            new=AsyncMock(return_value=fake_connected),
+        ),
+        patch.object(Agents, "save", new=save_mock),
+    ):
         result = await agents.sync_counters()
 
     assert result == {
@@ -55,11 +58,14 @@ async def test_sync_counters_with_drift_does_save():
     ]
 
     save_mock = AsyncMock()
-    with patch.object(
-        Agents,
-        "get_connected_agents",
-        new=AsyncMock(return_value=fake_connected),
-    ), patch.object(Agents, "save", new=save_mock):
+    with (
+        patch.object(
+            Agents,
+            "get_connected_agents",
+            new=AsyncMock(return_value=fake_connected),
+        ),
+        patch.object(Agents, "save", new=save_mock),
+    ):
         result = await agents.sync_counters()
 
     assert result["total_agents"] == 2

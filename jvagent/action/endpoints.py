@@ -385,7 +385,7 @@ async def list_agent_actions(
     Dictionary with paginated list of actions and pagination metadata
     """
     # Build entity-centric filters
-    filters = {"context.agent_id": agent_id}
+    filters: Dict[str, Any] = {"context.agent_id": agent_id}
     if enabled_only:
         filters["context.enabled"] = True
 

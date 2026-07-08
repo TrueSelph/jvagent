@@ -89,18 +89,15 @@ async def my_method(self, query):
     return results
 ```
 
-### Via Retrieval Interact Action
+### Via Orchestrator skills
 
-The preferred way to use web search in an agent is via `WebSearchRetrievalInteractAction`.
+Register a provider action (e.g. `jvagent/serper_web_search`) and call its tool from an Orchestrator skill:
 
 ```yaml
-- action: jvagent/web_search_retrieval_interact_action
+- action: jvagent/serper_web_search
   context:
     enabled: true
-    web_search_action_type: SerperWebSearchAction
-    anchors:
-      - "User asks about current events"
-      - "User wants to search the web for..."
+    description: Web search via Serper (SERPER_API_KEY in .env)
 ```
 
 ## Metrics

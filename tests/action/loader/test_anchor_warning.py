@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 from unittest.mock import MagicMock
 
-import pytest
-
 from jvagent.action.loader.action_loader import _warn_if_anchorless_routable_ia
 from jvagent.action.manifest import Manifest
 

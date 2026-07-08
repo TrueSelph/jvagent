@@ -1,6 +1,6 @@
 """Prompts for BrainAction (task scheduling only).
 
-Mood detection and tone directives are handled by InteractRouter.
+Mood detection and tone directives are handled by Orchestrator skills.
 BrainAction is responsible only for identifying and scheduling
 future follow-up tasks that require proactive action.
 """

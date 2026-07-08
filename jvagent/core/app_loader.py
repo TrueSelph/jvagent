@@ -345,7 +345,7 @@ class AppLoader:
             app = await App.create(**app_data)
             logger.debug(f"Created App node: {app.id}")
 
-            App._cached_app = app
+            App._set_cached_app(app)
             return app
         except Exception as e:
             logger.error(f"Error in _ensure_app_node: {e}", exc_info=True)
@@ -449,8 +449,6 @@ class AppLoader:
             agents_manager = await app.node(node="Agents")
             if not agents_manager:
                 return
-
-            from jvagent.core.agent import Agent
 
             all_agents = await Agent.find({})
             agents_manager.total_agents = len(all_agents)

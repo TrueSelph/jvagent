@@ -333,3 +333,77 @@ def test_get_task_returns_none_when_task_completed():
     ]
     t = conv.get_task(owner_action="SignupInterviewSkill", status="active")
     assert t is None
+
+
+@pytest.mark.asyncio
+async def test_set_plan_persists_steps_into_conversation_tasks(test_db):
+    """set_plan must write the new steps back into conversation.tasks.
+
+    Regression: set_plan mutated the parsed Task (detached from the raw
+    dicts in conversation.tasks) and then issued a bare save, so the plan
+    was silently lost on reload.
+    """
+    conv = await Conversation.create(
+        session_id=_unique_session_id(),
+        user_id="user1",
+        channel="default",
+    )
+    try:
+        store = TaskStore(conv)
+        handle = await store.create(
+            title="Research",
+            description="Research task",
+            owner_action="Orchestrator",
+        )
+        await handle.set_plan(["gather sources", "draft summary"])
+
+        raw = conv.tasks[0]
+        assert [s["description"] for s in raw.get("steps", [])] == [
+            "gather sources",
+            "draft summary",
+        ]
+        assert raw["steps"][0]["status"] == "in_progress"
+
+        # A fresh parse (as the next turn would do) must see the plan too.
+        fresh = TaskStore(conv).get(handle.id)
+        assert fresh is not None
+        assert [s.description for s in fresh.steps] == [
+            "gather sources",
+            "draft summary",
+        ]
+    finally:
+        await conv.delete(cascade=True)
+
+
+@pytest.mark.asyncio
+async def test_step_handle_mutation_persists_from_fresh_handle(test_db):
+    """A StepHandle transition must persist into conversation.tasks.
+
+    Regression: _persist_step ignored its step argument and re-serialised
+    the parent task from the stale raw dicts, dropping the mutation.
+    """
+    conv = await Conversation.create(
+        session_id=_unique_session_id(),
+        user_id="user1",
+        channel="default",
+    )
+    try:
+        store = TaskStore(conv)
+        handle = await store.create(
+            title="Research",
+            description="Research task",
+            owner_action="Orchestrator",
+        )
+        await handle.add_step("gather sources")
+
+        # Fresh handle = fresh parse, as any later turn would obtain it.
+        fresh = TaskStore(conv).get(handle.id)
+        assert fresh is not None
+        step = fresh.list_steps()[0]
+        await step.complete(result="3 sources found")
+
+        raw_step = conv.tasks[0]["steps"][0]
+        assert raw_step["status"] == "done"
+        assert raw_step["result"] == "3 sources found"
+    finally:
+        await conv.delete(cascade=True)

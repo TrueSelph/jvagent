@@ -123,8 +123,6 @@ class DocumentContentEdge(Edge):
     Direction: parent (source) -> child (target).
     """
 
-    pass
-
 
 def node_to_result(
     node: DocumentNode, excerpt_source: Optional[str] = None

@@ -211,8 +211,6 @@ def _build_app_dict(ctx: "CreateAppContext") -> Dict[str, Any]:
                 "action_cache_ttl": 60,
                 "enable_deferred_saves": True,
                 "cache_cleanup_probability": 0.1,
-                "enable_interact_router_cache": False,
-                "interact_router_cache_ttl": 45,
             },
         },
         "agents": agents_list,

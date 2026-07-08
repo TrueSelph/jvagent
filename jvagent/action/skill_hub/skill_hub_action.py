@@ -412,10 +412,10 @@ class SkillHubAction(Action):
         """Search the skills.sh ecosystem for available skill bundles. Returns matching skills with name, source, and install count. Use this when the user asks for new capabilities or says "find a skill for X"."""  # noqa: E501
         import json
 
-        from jvagent.tooling.tool_executor import get_dispatch_visitor
+        from jvagent.tooling.tool_executor import get_tool_visitor
 
         arguments: Dict[str, Any] = {"query": query, "top_k": top_k}
-        visitor = get_dispatch_visitor()
+        visitor = get_tool_visitor()
         result = await self.search_registry(arguments, visitor=visitor)
         return result if isinstance(result, str) else json.dumps(result)
 
@@ -437,14 +437,14 @@ class SkillHubAction(Action):
         """Download and install a skill from the skills.sh ecosystem. The source is a GitHub repo (owner/repo) and the skill is a specific skill name within that repo. If the skill contains executable code (.py tool files), you MUST set confirmed=True only after the user has explicitly approved. For SOP-only skills (no .py files), confirmed may be True without prior approval."""  # noqa: E501
         import json
 
-        from jvagent.tooling.tool_executor import get_dispatch_visitor
+        from jvagent.tooling.tool_executor import get_tool_visitor
 
         arguments: Dict[str, Any] = {
             "source": source,
             "skill": skill,
             "confirmed": confirmed,
         }
-        visitor = get_dispatch_visitor()
+        visitor = get_tool_visitor()
         result = await self.install_skill(arguments, visitor=visitor)
         return result if isinstance(result, str) else json.dumps(result)
 
@@ -453,10 +453,10 @@ class SkillHubAction(Action):
         """List skill bundles currently installed for this agent. Shows both built-in and app-local skills with their names, descriptions, and whether they contain tool modules."""  # noqa: E501
         import json
 
-        from jvagent.tooling.tool_executor import get_dispatch_visitor
+        from jvagent.tooling.tool_executor import get_tool_visitor
 
         arguments: Dict[str, Any] = {}
-        visitor = get_dispatch_visitor()
+        visitor = get_tool_visitor()
         result = await self.list_installed(arguments, visitor=visitor)
         return result if isinstance(result, str) else json.dumps(result)
 
@@ -473,12 +473,12 @@ class SkillHubAction(Action):
         """Remove an installed skill bundle from this agent. Deletes the skill directory, updates agent.yaml, and hot-unloads the skill from the current session. Cannot remove built-in skills. Requires confirmed=True — you must ask the user for explicit confirmation before removing a skill."""  # noqa: E501
         import json
 
-        from jvagent.tooling.tool_executor import get_dispatch_visitor
+        from jvagent.tooling.tool_executor import get_tool_visitor
 
         arguments: Dict[str, Any] = {
             "skill_name": skill_name,
             "confirmed": confirmed,
         }
-        visitor = get_dispatch_visitor()
+        visitor = get_tool_visitor()
         result = await self.remove_skill(arguments, visitor=visitor)
         return result if isinstance(result, str) else json.dumps(result)

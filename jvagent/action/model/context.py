@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 if TYPE_CHECKING:
-    from jvagent.memory.interaction import Interaction
+    pass
 
 # Maps BYOK provider slug to LanguageModelAction class name on the agent.
 PROVIDER_MODEL_ACTION_CLASSES: Dict[str, str] = {
@@ -87,7 +87,7 @@ def set_calling_action_name(action_name: Optional[str]) -> None:
     """Set the current calling action name in context.
 
     Args:
-        action_name: Action name (camelCase class name) to set (e.g., "PersonaAction", "ExampleInteractAction")
+        action_name: Action name (camelCase class name) to set (e.g., "ReplyAction", "ExampleInteractAction")
     """
     current_action_name.set(action_name)
 

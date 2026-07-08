@@ -7,14 +7,13 @@ corruption.
 
 import asyncio
 import time
-from typing import Any, Dict, List
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 pytest.importorskip("filetype")
 try:
-    from jvspatial.api.auth.models import UserCreateAdmin
+    pass
 except ImportError:
     pytest.skip(
         "UserCreateAdmin not available in installed jvspatial", allow_module_level=True
@@ -23,9 +22,6 @@ except ImportError:
 from jvagent.action.whatsapp.utils.endpoint_helpers import (
     ConversationLockManager,
     MediaBatchManager,
-    _batch_manager,
-    _conversation_lock_manager,
-    get_conversation_with_lock,
 )
 from jvagent.action.whatsapp.whatsapp_action import TypingStateManager, WhatsAppAction
 
@@ -488,7 +484,7 @@ class TestConnectionPoolStress:
 
         # Request 100 sessions concurrently
         tasks = [get_session() for _ in range(100)]
-        sessions = await asyncio.gather(*tasks)
+        await asyncio.gather(*tasks)
 
         # All requests should get the same session (connection reuse)
         unique_sessions = set(session_ids)

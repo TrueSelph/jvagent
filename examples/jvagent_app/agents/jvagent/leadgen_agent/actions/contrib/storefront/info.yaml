@@ -1,0 +1,16 @@
+package:
+  name: contrib/storefront
+  author: jvagent
+  archetype: StorefrontAction
+  version: 1.0.0
+  meta:
+    title: Storefront Action (mock)
+    description: >-
+      Mock storefront tools backed by in-memory dummy data: a product-FAQ
+      lookup and a product-catalog search. Ships with the leadgen reference
+      agent so the FAQ and product-search skills have real tools to call
+      alongside conversational lead capture. Not for production use.
+    group: contrib
+    type: action
+  dependencies:
+    jvagent: ~0.0.1

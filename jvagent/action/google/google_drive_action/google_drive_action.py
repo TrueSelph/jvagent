@@ -3,7 +3,6 @@ import logging
 from typing import Annotated, Any, ClassVar, Dict, List, Optional
 
 from googleapiclient.http import MediaIoBaseDownload
-from jvspatial.core.annotations import attribute
 from jvspatial.env import env
 
 from jvagent.tooling.tool_decorator import tool
@@ -188,9 +187,6 @@ class GoogleDriveAction(GoogleAction):
         while not done:
             # Standard google-api-client execute() is synchronous
             status, done = downloader.next_chunk()
-            if status:
-                progress = int(status.progress() * 100)
-                # logger.debug(f"Download progress for {file_id}: {progress}%")
 
         # 4. Return the bytes
         return fh.getvalue()

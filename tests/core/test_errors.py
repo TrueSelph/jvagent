@@ -14,6 +14,7 @@ from jvagent.core.errors import (
     TransientError,
     classify_exception,
     is_transient,
+    retry_if_transient,
 )
 
 
@@ -61,3 +62,27 @@ def test_unknown_exception_defaults_to_integration() -> None:
 def test_cancelled_error_is_re_raised_not_classified() -> None:
     with pytest.raises(asyncio.CancelledError):
         classify_exception(asyncio.CancelledError())
+
+
+@pytest.mark.asyncio
+async def test_retry_if_transient_retries_then_succeeds() -> None:
+    attempts = {"n": 0}
+
+    async def flaky() -> str:
+        attempts["n"] += 1
+        if attempts["n"] < 2:
+            raise ConnectionError("reset")
+        return "ok"
+
+    result = await retry_if_transient(flaky, max_attempts=3, initial_delay=0.01)
+    assert result == "ok"
+    assert attempts["n"] == 2
+
+
+@pytest.mark.asyncio
+async def test_retry_if_transient_does_not_retry_logic_errors() -> None:
+    async def bad() -> None:
+        raise ValueError("bug")
+
+    with pytest.raises(ValueError):
+        await retry_if_transient(bad, max_attempts=3, initial_delay=0.01)

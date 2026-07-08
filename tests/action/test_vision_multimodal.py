@@ -1,6 +1,6 @@
 """Unit tests for generate_image_interpretation in multimodal.py."""
 
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

@@ -67,8 +67,8 @@ async def _make_conversation(memory: Memory, user: User) -> Conversation:
 async def test_total_users_zero_after_purge_all(test_db):
     """purge_user_memory should bring total_users to 0."""
     memory = await _setup_memory()
-    u1 = await _make_user(memory)
-    u2 = await _make_user(memory)
+    await _make_user(memory)
+    await _make_user(memory)
     assert memory.total_users == 2
 
     await memory.purge_user_memory()
@@ -445,3 +445,33 @@ async def test_purge_user_memory_syncs_instance_counters_from_db(test_db):
     assert memory.total_users == 0
     users_left = await memory.nodes(node=User)
     assert len(users_left) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_user_debounces_last_seen_writes(test_db):
+    """A get_user within the debounce window must not rewrite last_seen —
+    previously every inbound message paid a full user.save() just to bump
+    the timestamp."""
+    memory = await _setup_memory()
+    user = await memory.get_user("debounce-user", create_if_missing=True)
+    first_seen = user.last_seen
+
+    again = await memory.get_user("debounce-user")
+    assert again is not None
+    assert again.last_seen == first_seen
+
+
+@pytest.mark.asyncio
+async def test_get_user_bumps_stale_last_seen(test_db):
+    """Once last_seen is older than the debounce window it is refreshed."""
+    from datetime import datetime, timedelta, timezone
+
+    memory = await _setup_memory()
+    user = await memory.get_user("stale-user", create_if_missing=True)
+    stale = datetime.now(timezone.utc) - timedelta(hours=1)
+    user.last_seen = stale
+    await user.save()
+
+    again = await memory.get_user("stale-user")
+    assert again is not None
+    assert again.last_seen != stale

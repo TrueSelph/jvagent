@@ -4,15 +4,3 @@ actions:
     context:
       enabled: true
       description: Web search via Serper (SERPER_API_KEY in .env)
-
-  - action: jvagent/web_search_retrieval_interact_action
-    context:
-      enabled: true
-      description: Injects web search results for the agent
-      weight: -75
-      web_search_action_type: SerperWebSearchAction
-      anchors:
-        - User asks a question that needs current web information
-        - User wants research or fact-checking from the internet
-    config:
-      top_k: 5

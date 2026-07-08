@@ -375,9 +375,6 @@ async def md_to_tree(
 
 
 if __name__ == "__main__":
-    import json
-    import os
-
     # MD_NAME = 'Detect-Order-Construct'
     MD_NAME = "cognitive-load"
     MD_PATH = os.path.join(

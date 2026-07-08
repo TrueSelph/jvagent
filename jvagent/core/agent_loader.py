@@ -17,7 +17,6 @@ from jvagent.action.actions import Actions
 from jvagent.action.base import Action
 from jvagent.core.agent import Agent
 from jvagent.core.agent_yaml_validator import warn_agent_yaml
-from jvagent.core.agents import Agents
 from jvagent.core.app import App
 from jvagent.memory import Memory
 
@@ -610,11 +609,6 @@ class AgentLoader:
             1 for ok in results.values() if ok and update_mode is not None
         )
         failed_count = sum(1 for ok in results.values() if not ok)
-        removed_count = (
-            max(0, len(kept_map) - sum(results.values()))
-            if update_mode is not None
-            else 0
-        )
 
         for label, success in results.items():
             if not success:

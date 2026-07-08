@@ -15,6 +15,7 @@ from jvagent.action.orchestrator.task_runners import (
     runnable_task_types,
 )
 from jvagent.memory.conversation import Conversation
+from jvagent.memory.task_graph import pick_top_runnable
 from jvagent.memory.task_store import TaskStore
 
 
@@ -95,7 +96,7 @@ async def test_drain_dispatches_nonskill_runner_until_drained(
         assert store2.get(t1.id).status == "completed"
         assert store2.get(t2.id).status == "completed"
         # Invariant 7: nothing runnable remains.
-        assert await ex._has_runnable_work(visitor) is False
+        assert pick_top_runnable(store2, task_types=runnable_task_types()) is None
     finally:
         clear_task_runners()
         await conv.delete(cascade=True)
@@ -124,7 +125,10 @@ async def test_drain_yields_egress_when_runner_blocks(make_orchestrator, test_db
         assert directive == "Tell the user: need input"
         assert TaskStore(conv).get(t.id).status == "active"  # still engaged
         # Still runnable → invariant 7 keeps the orchestrator engaged.
-        assert await ex._has_runnable_work(visitor) is True
+        assert (
+            pick_top_runnable(TaskStore(conv), task_types=runnable_task_types())
+            is not None
+        )
     finally:
         clear_task_runners()
         await conv.delete(cascade=True)
@@ -146,7 +150,10 @@ async def test_drain_leaves_skill_tasks_to_the_skill_path(make_orchestrator, tes
         assert directive is None
         assert TaskStore(conv).get(sk.id).status == "active"  # untouched
         # A SKILL task is runnable work (the skill path engages it).
-        assert await ex._has_runnable_work(visitor) is True
+        assert (
+            pick_top_runnable(TaskStore(conv), task_types=runnable_task_types())
+            is not None
+        )
     finally:
         clear_task_runners()
         await conv.delete(cascade=True)

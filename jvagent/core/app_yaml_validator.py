@@ -77,8 +77,6 @@ _ALLOWED_PERFORMANCE_KEYS = {
     "action_cache_ttl",
     "enable_deferred_saves",
     "cache_cleanup_probability",
-    "enable_interact_router_cache",
-    "interact_router_cache_ttl",
 }
 
 
@@ -294,9 +292,8 @@ def validate_app_yaml_config(config: Dict[str, Any]) -> List[AppYamlWarning]:
             "enable_agent_cache",
             "enable_action_cache",
             "enable_deferred_saves",
-            "enable_interact_router_cache",
         )
-        int_keys = ("agent_cache_ttl", "action_cache_ttl", "interact_router_cache_ttl")
+        int_keys = ("agent_cache_ttl", "action_cache_ttl")
         for k in bool_keys:
             _expect_type(warnings, f"config.performance.{k}", perf.get(k), (bool,))
         for k in int_keys:

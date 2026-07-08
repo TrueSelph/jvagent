@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------
 
 TASK_STATUSES = frozenset({"pending", "active", "completed", "failed", "cancelled"})
+StepStatus = Literal["pending", "in_progress", "done", "failed", "skipped"]
 STEP_STATUSES = frozenset({"pending", "in_progress", "done", "failed", "skipped"})
 
 _TASK_TERMINAL = frozenset({"completed", "failed", "cancelled"})
@@ -66,7 +67,7 @@ def _new_id(prefix: str = "") -> str:
 
 
 # Map loose, model-supplied step statuses onto the canonical STEP_STATUSES.
-_STEP_STATUS_ALIASES = {
+_STEP_STATUS_ALIASES: Dict[str, StepStatus] = {
     "todo": "pending",
     "pending": "pending",
     "not_started": "pending",
@@ -87,7 +88,7 @@ _STEP_STATUS_ALIASES = {
 }
 
 
-def normalize_step_status(raw: Any, default: str = "pending") -> str:
+def normalize_step_status(raw: Any, default: StepStatus = "pending") -> StepStatus:
     """Coerce a loose status string to a canonical STEP_STATUSES value."""
     key = str(raw or "").strip().lower().replace(" ", "_")
     return _STEP_STATUS_ALIASES.get(
@@ -532,7 +533,9 @@ class TaskHandle:
         if self._task.steps:
             self._task.steps[0].status = "in_progress"
         self._task._touch()
-        await self._store._persist()
+        # Write the mutated task back into ``conversation.tasks`` by id (not a
+        # bare save) so the new steps actually persist.
+        await self._store._persist_task(self._task)
         return [StepHandle(self._store, self._task.id, s) for s in self._task.steps]
 
     async def sync_plan(self, items: List[Dict[str, Any]]) -> List[StepHandle]:
@@ -725,19 +728,29 @@ class TaskStore:
         await self._persist()
 
     async def _persist_step(self, step: Step, task_id: str) -> None:
-        """Persist a mutated step by updating its parent task in the list."""
+        """Persist a mutated step by writing it into its parent task entry.
+
+        The passed ``step`` is the source of truth — handles mutate parsed
+        ``Step`` objects that are detached from the raw dicts, so the raw
+        entry must be updated from the step, never re-parsed from itself.
+        """
         idx = self._find_task_index(task_id)
         if idx is not None:
             raw = list(getattr(self._conversation, "tasks", []) or [])
-            raw[idx] = self._task_to_dict_with_steps(task_id)
+            entry = dict(raw[idx])
+            step_dict = step.to_dict()
+            steps = list(entry.get("steps") or [])
+            for s_idx, existing in enumerate(steps):
+                if isinstance(existing, dict) and existing.get("id") == step.id:
+                    steps[s_idx] = step_dict
+                    break
+            else:
+                steps.append(step_dict)
+            entry["steps"] = steps
+            entry["updated_at"] = step.updated_at
+            raw[idx] = entry
             self._conversation.tasks = raw
         await self._persist()
-
-    def _task_to_dict_with_steps(self, task_id: str) -> Dict[str, Any]:
-        for t in self._load_tasks():
-            if t.id == task_id:
-                return t.to_dict()
-        return {}
 
     def _load_tasks(self) -> List[Task]:
         raw = getattr(self._conversation, "tasks", None) or []
@@ -1105,7 +1118,7 @@ class _TaskTrackingContext:
         completion_result: Optional[str] = None,
     ):
         self._store = store
-        self._kwargs = {
+        self._kwargs: Dict[str, Any] = {
             "title": title,
             "description": description,
             "owner_action": owner_action,

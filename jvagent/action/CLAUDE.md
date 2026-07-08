@@ -25,7 +25,7 @@ The plugin-loadable extension surface of jvagent:
 | `base.py:272` | `get_tools()` — default discovers `@tool`-decorated methods via `collect_tools` |
 | `jvagent/tooling/tool_decorator.py` | `@tool` decorator + `collect_tools` — preferred way to publish tools |
 | `jvagent/tooling/signature_schema.py` | signature → JSON Schema deriver used by `@tool` |
-| `base.py:180` | `get_capabilities()` — for PersonaAction prompt aggregation |
+| `base.py:180` | `get_capabilities()` — for ReplyAction prompt aggregation |
 | `base.py:225` | `delete(cascade=True)` — walks outgoing edges and cascade-deletes children |
 | `base.py:256-348` | Lifecycle hook contracts (`on_register`, `on_reload`, `post_register`, `on_startup`, `on_enable`, `on_disable`, `on_deregister`, `pulse`, `healthcheck`) |
 | `base.py:354-460` | Endpoint discovery + unregistration (relies on `/actions/{action_id}/` path prefix) |

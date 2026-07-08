@@ -31,7 +31,6 @@ from jvagent.core.repair_state import RepairState
 from jvagent.memory.conversation import Conversation
 from jvagent.memory.interaction import Interaction
 from jvagent.memory.manager import Memory
-from jvagent.memory.user import User
 
 MAX_REPAIR_STATE_BYTES = 64 * 1024  # 64 KB
 
@@ -115,7 +114,7 @@ class TestRepairStateSize:
     async def test_repair_state_bounded_on_medium_graph(self, temp_dir, test_db):
         """RepairState cursor JSON stays under 64 KB during repair of a 50-user graph."""
         await Root.get()
-        memory = await _seed_graph(temp_dir, n_users=50, interactions_per_conv=3)
+        await _seed_graph(temp_dir, n_users=50, interactions_per_conv=3)
         app = await App.get()
         assert app is not None
 
@@ -178,7 +177,6 @@ class TestCounterCorrectness:
         await _run_all_waves(max_seconds=5.0)
 
         # Reload memory to get persisted counters.
-        context = get_default_context()
         fresh_memory = await Memory.get(memory.id)
         assert fresh_memory is not None
 
@@ -198,8 +196,6 @@ class TestOrphanCleanup:
     @pytest.mark.asyncio
     async def test_orphaned_interactions_deleted(self, temp_dir, test_db):
         """Orphaned interactions (conversation deleted) are removed during repair."""
-        from jvspatial.core import get_default_context
-
         await Root.get()
         memory = await _seed_graph(temp_dir, n_users=5, interactions_per_conv=3)
 
@@ -212,15 +208,11 @@ class TestOrphanCleanup:
         orphan_conv_id = orphan_conv.id
         await orphan_conv.delete(cascade=False)  # leave orphan Interaction nodes
 
-        db = get_default_context().database
-        orphan_count_before = await db.count(
-            "node",
-            {"entity": "Interaction", "context.conversation_id": orphan_conv_id},
-        )
         # orphan_count_before may be 0 if cascade=False didn't leave any
         # (SQLite's cascade behaviour); just verify the full repair passes.
         await _run_all_waves(max_seconds=5.0)
 
+        db = get_default_context().database
         orphan_count_after = await db.count(
             "node",
             {"entity": "Interaction", "context.conversation_id": orphan_conv_id},

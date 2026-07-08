@@ -14,9 +14,7 @@ from __future__ import annotations
 
 import ast
 import os
-from typing import Any, List, Tuple
-
-import pytest
+from typing import List, Tuple
 
 from jvagent.tooling.tool_schema_validator import validate_parameters_schema
 

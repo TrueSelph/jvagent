@@ -152,7 +152,7 @@ async def _resolve_agent(raw: Optional[str]) -> Agent:
 
 
 async def execute_stress_seed_graph(config: StressSeedConfig) -> dict:
-    """Write stress users, UserLongMemoryNode rows, and Interaction chains into the current graph.
+    """Write stress users and Interaction chains into the current graph.
 
     Call this only after the process has set up :class:`jvspatial` default context
     (e.g. after ``create_server_from_config`` and ``pre_startup_bootstrap``). Does not
@@ -162,8 +162,6 @@ async def execute_stress_seed_graph(config: StressSeedConfig) -> dict:
         Summary dict with keys ``agent`` (str), ``user_memory_nodes``, ``total_interactions``,
         ``elapsed_s``, ``ok`` (True).
     """
-    from jvagent.memory.user_long_memory import UserLongMemory
-
     if config.user_memory_nodes < 1:
         raise ValueError("user_memory_nodes must be at least 1")
     if config.interactions_per_user_memory_node < 1:
@@ -194,11 +192,8 @@ async def execute_stress_seed_graph(config: StressSeedConfig) -> dict:
         if user is None:
             raise SystemExit(f"Could not get or create user {ext_user_id!r}")
 
-        ulm = await UserLongMemory.get_or_create_for_user(user)
-        await ulm.get_or_create_category(
-            f"stress_seed_{i:08d}",
-            title=f"Stress seed {i}",
-        )
+        user.memory.setdefault("stress_seed", {})["node_index"] = i
+        await user.save()
 
         session_id = f"stress_sess_{prefix}_{i:08d}"
         conv = await user.create_conversation(

@@ -642,7 +642,6 @@ class Actions(Node):
         Returns:
             Flat list of Tool instances.
         """
-        from jvagent.tooling.tool import Tool
 
         all_tools: List[Any] = []
         all_actions = await self.get_all_actions(enabled_only=enabled_only)
@@ -699,12 +698,12 @@ class Actions(Node):
             Dictionary mapping action IDs to pulse results
         """
         actions = await self.get_actions(enabled_only=True)
-        results = {}
+        results: Dict[str, Any] = {}
 
         for action in actions:
             try:
-                result = await action.pulse()
-                results[action.id] = result
+                await action.pulse()
+                results[action.id] = None
             except Exception as e:
                 results[action.id] = {"error": str(e)}
 

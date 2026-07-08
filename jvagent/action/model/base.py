@@ -328,7 +328,7 @@ class BaseModelAction(Action, ABC):
                     usage_estimated = getattr(result, "_usage_estimated", False)
 
             # Get model from result if available (actual model used), otherwise fall back to self.model
-            # This ensures we report the actual model used (e.g., from PersonaAction override)
+            # This ensures we report the actual model used (e.g., from ReplyAction override)
             # rather than the LanguageModelAction's default model
             model = ""
             if result and hasattr(result, "model") and result.model:

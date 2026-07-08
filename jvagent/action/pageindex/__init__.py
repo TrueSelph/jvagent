@@ -28,7 +28,6 @@ from .documents import (
 )
 from .models import DocumentContentEdge, DocumentNode, DocumentRootNode, node_to_result
 from .pageindex_action import PageIndexAction
-from .pageindex_retrieval_interact_action import PageIndexRetrievalInteractAction
 from .retrieval import search_documents
 
 __all__ = [
@@ -46,7 +45,6 @@ __all__ = [
     "search_documents",
     "DocumentWalker",
     "PageIndexAction",
-    "PageIndexRetrievalInteractAction",
     "export_documents",
     "import_documents",
 ]

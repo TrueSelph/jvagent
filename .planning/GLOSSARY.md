@@ -23,7 +23,7 @@ Declarative configuration file at the app root. Defines app-level settings: app_
 Declarative configuration file per agent (under `agents/{namespace}/{agent_name}/agent.yaml`). Defines the agent's actions and per-action `context:` overrides. Read by `agent_loader`.
 
 ### Anchor
-Short statement an `InteractAction` publishes to advertise when it should be selected. Defined as `anchors: List[str]` attribute on `InteractAction` ([`interact/base.py:99`](../jvagent/action/interact/base.py)); can be dynamic via `get_anchors()`. Consumed by the Rails `InteractRouter`. Under the Orchestrator there is no separate anchor router — an IA furnishes its routing metadata via `get_tools()`, whose description is built from the **manifest** (`purpose` + `activates_on`, via `InteractAction.routing_triggers()`), so the model routes on intent (tool selection). Routing deliberately uses the manifest entry intents, not the runtime-merged continuation anchors.
+Short statement an `InteractAction` publishes to advertise when it should be selected. Defined as `anchors: List[str]` on `InteractAction` ([`interact/base.py`](../jvagent/action/interact/base.py)); can be dynamic via `get_anchors()`. Under Orchestrator, IAs surface via `get_tools()` — description built from manifest `purpose` + `activates_on` (`InteractAction.routing_triggers()`).
 
 ### Background action
 An `InteractAction` with `run_in_background=True` ([`interact/base.py:88`](../jvagent/action/interact/base.py)). Queued by the walker and executed as a fire-and-forget asyncio task **after** the user-facing response is sent. Failures are isolated.
@@ -64,8 +64,8 @@ The rolling-window size for a `Conversation`. Set on `Agent.interaction_limit` (
 ### `InteractAction`
 Subclass of `Action` participating in the interact pipeline. Source: [`jvagent/action/interact/base.py:32`](../jvagent/action/interact/base.py). Implements `execute(walker)`. Has `weight`, `run_in_background`, `always_execute`, `anchors`, `parameters`.
 
-### `InteractRouter`
-Rails-pattern router (weight `-200`) that classifies user intent on a fast model and curates the walk path so anchored IAs run only when relevant. Optional; used by the Rails pattern. Source: [`jvagent/action/router/interact_router.py`](../jvagent/action/router/interact_router.py).
+### `InteractRouter` (removed 0.1.1)
+Former Rails-pattern router (weight `-200`). Removed in favor of `OrchestratorInteractAction`. See ADR-0029.
 
 ### `InteractWalker`
 jvspatial `Walker` subclass that drives the interact subsystem. Source: `jvagent/action/interact/interact_walker.py:50+`. Bootstraps `User` / `Conversation` / `Interaction` and visits each top-level `InteractAction` in `weight` order.
@@ -92,7 +92,7 @@ An InteractAction marked with `manifest.pattern_orchestrator: true` (today: `Orc
 Boolean field on `Manifest` (default `False`). Marks an InteractAction as a pattern orchestrator (today: the Orchestrator). Pattern orchestrators are weight-routed and excluded from the tool surface.
 
 ### Posture
-Rails-`InteractRouter` classification of an utterance: `RESPOND`, `SUPPRESS`, or `DEFER`. Surfaces on the legacy `jvagent.action.router.routing_result.RoutingResult` shape and on `Interaction.response_posture` for historical-turn observability.
+Legacy classification of an utterance: `RESPOND`, `SUPPRESS`, or `DEFER`. Optional field on `Interaction.response_posture` for historical-turn observability (Rails pattern removed 0.1.1).
 
 ### Proactive message / Proactive interaction
 An `Interaction` recorded in conversation history that originates from the agent (or owning code) without an inbound user utterance. Shape: `utterance == ""`, `response == <agent text>`, tagged via `Interaction.parameters` with `{"is_proactive": True, "action_name": <source>, ...metadata}`. Sent programmatically via [`Agent.send_proactive_message`](../jvagent/core/agent.py) ([`agent.py:226-319`](../jvagent/core/agent.py)) — see [`../docs/proactive-messages.md`](../docs/proactive-messages.md). In LLM history serialization the empty-utterance `user` role is suppressed ([`conversation.py:553-566`](../jvagent/memory/conversation.py)), so the entry shows as a standalone `assistant` turn.

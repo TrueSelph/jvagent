@@ -12,7 +12,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     AsyncGenerator,
-    Callable,
     Dict,
     List,
     Optional,
@@ -24,7 +23,7 @@ from jvspatial.core.annotations import attribute
 from jvagent.action.model.base import BaseModelAction
 
 if TYPE_CHECKING:
-    from jvagent.memory.interaction import Interaction
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -416,7 +415,6 @@ class LanguageModelAction(BaseModelAction, ABC):
         Returns:
             ModelActionResult with complete response
         """
-        pass
 
     @abstractmethod
     async def _query_stream(
@@ -438,7 +436,6 @@ class LanguageModelAction(BaseModelAction, ABC):
         Returns:
             ModelActionResult with streaming generator
         """
-        pass
 
     # ============================================================================
     # Programmatic Interface (Public API)
@@ -484,7 +481,7 @@ class LanguageModelAction(BaseModelAction, ABC):
             raise ValueError("interaction is required when response_bus is provided")
 
         # Ensure interaction is in context for track_usage (observability_metrics)
-        # Callers like PersonaAction pass interaction when streaming; others rely on
+        # Callers like ReplyAction pass interaction when streaming; others rely on
         # walker's set_interaction. Setting here guarantees observability when we have it.
         if interaction:
             from jvagent.action.model.context import set_interaction
@@ -668,7 +665,7 @@ class LanguageModelAction(BaseModelAction, ABC):
 
         # Merge kwargs with instance defaults
         # Explicitly check if model is in kwargs (even if None/empty) to ensure overrides work
-        # This ensures PersonaAction's model override takes precedence over LanguageModelAction's default
+        # This ensures ReplyAction's model override takes precedence over LanguageModelAction's default
         if "model" in kwargs:
             # Model was explicitly passed (even if empty/None) - use it
             model_param = (
@@ -895,7 +892,6 @@ class LanguageModelAction(BaseModelAction, ABC):
                     """Stream wrapper that estimates tokens after completion."""
                     import time
 
-                    stream_start_time = time.time()
                     chunks = []
                     try:
                         async for chunk in original_stream:

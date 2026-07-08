@@ -5,11 +5,10 @@ loading templates from action package directories.
 """
 
 import logging
-import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from jinja2 import Environment, FileSystemLoader, Template, TemplateNotFound
+from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 
 if TYPE_CHECKING:
     from jvagent.action.model.language.base import LanguageModelAction

@@ -36,8 +36,8 @@ def test_parse_agent_spec() -> None:
 def test_resolve_minimal_profile() -> None:
     actions = resolve_profile_actions(None, "minimal")
     ids = {x["action"] for x in actions}
-    assert "jvagent/interact_router" in ids
-    assert "jvagent/converse_interact_action" in ids
+    assert "jvagent/orchestrator" in ids
+    assert "jvagent/reply" in ids
 
 
 def test_resolve_conversational_extends(tmp_path: Path) -> None:
