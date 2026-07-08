@@ -28,9 +28,9 @@ class LiveKitWhatsAppAction(Action):
     come from action attributes or ``LIVEKIT_URL`` / ``LIVEKIT_API_KEY`` /
     ``LIVEKIT_API_SECRET`` environment variables.
 
-    A separate LiveKit Agent worker process (see ``workers/livekit_voice/``) must
-    be running and registered under ``agent_name`` to handle realtime audio and bridge
-    utterances to the jvagent Orchestrator.
+    A separate standalone LiveKit voice worker (see ``workers/livekit_voice/README.md``)
+    must be running and registered under ``agent_name`` to handle realtime audio and
+    bridge utterances to the jvagent Orchestrator.
     """
 
     livekit_url: str = attribute(

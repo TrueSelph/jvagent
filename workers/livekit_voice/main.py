@@ -1,15 +1,14 @@
 """LiveKit voice worker: bridges WhatsApp call audio to jvagent Orchestrator.
 
-Run separately from the jvagent FastAPI server::
+Run as a standalone service (this directory is the project root)::
 
-    pip install "jvagent[livekit-voice]"
-    export LIVEKIT_URL=wss://your-project.livekit.cloud
-    export LIVEKIT_API_KEY=...
-    export LIVEKIT_API_SECRET=...
-    export DEEPGRAM_API_KEY=...
-    export ELEVENLABS_API_KEY=...
-    export JVAGENT_PUBLIC_BASE_URL=https://your-jvagent-host
-    python -m workers.livekit_voice.main dev
+    pip install -r requirements.txt
+    cp .env.example .env   # fill in keys
+    python main.py dev
+
+Production / Docker::
+
+    python main.py start
 
 The worker registers under ``JVAGENT_VOICE_AGENT_NAME`` (default ``jvagent-voice``),
 matching ``LiveKitWhatsAppAction.agent_name`` on the jvagent agent.
@@ -23,18 +22,14 @@ from pathlib import Path
 
 
 def _load_dotenv() -> None:
-    """Load env files; examples/jvagent_app/.env overrides repo-root .env."""
+    """Load ``.env`` from this directory when present (no-op in Docker)."""
     try:
         from dotenv import load_dotenv
     except ImportError:
         return
-    repo_root = Path(__file__).resolve().parents[2]
-    for path in (
-        repo_root / ".env",
-        repo_root / "examples" / "jvagent_app" / ".env",
-    ):
-        if path.is_file():
-            load_dotenv(path, override=True)
+    env_path = Path(__file__).resolve().parent / ".env"
+    if env_path.is_file():
+        load_dotenv(env_path, override=True)
 
 
 _load_dotenv()
@@ -42,8 +37,8 @@ _load_dotenv()
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
 from livekit.plugins import deepgram, elevenlabs, silero
 
-from .dispatch import resolve_call_context
-from .jvagent_llm import JvagentOrchestratorLLM
+from dispatch import resolve_call_context
+from jvagent_llm import JvagentOrchestratorLLM
 
 logger = logging.getLogger(__name__)
 
@@ -85,15 +80,19 @@ async def entrypoint(ctx: JobContext) -> None:
 
 
 def main() -> None:
-    if not os.environ.get("LIVEKIT_URL"):
-        raise SystemExit(
-            "LIVEKIT_URL is required. Set it in your environment or in "
-            "examples/jvagent_app/.env (from your LiveKit Cloud project settings). "
-            "Also set LIVEKIT_API_KEY and LIVEKIT_API_SECRET."
-        )
-    from .jvagent_bridge import jvagent_base_url
+    import sys
 
-    logger.info("jvagent voice worker interact base URL: %s", jvagent_base_url())
+    command = sys.argv[1] if len(sys.argv) > 1 else ""
+    if command != "download-files":
+        if not os.environ.get("LIVEKIT_URL"):
+            raise SystemExit(
+                "LIVEKIT_URL is required. Set it in your environment or in "
+                ".env (from your LiveKit Cloud project settings). "
+                "Also set LIVEKIT_API_KEY and LIVEKIT_API_SECRET."
+            )
+        from jvagent_bridge import jvagent_base_url
+
+        logger.info("jvagent voice worker interact base URL: %s", jvagent_base_url())
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,

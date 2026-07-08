@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from workers.livekit_voice.jvagent_bridge import (
+from jvagent_bridge import (
     extract_interact_response_text,
     interact,
     parse_dispatch_metadata,
@@ -74,7 +74,7 @@ async def test_interact_parses_top_level_response():
     mock_client.__aexit__ = AsyncMock(return_value=None)
 
     with patch(
-        "workers.livekit_voice.jvagent_bridge.httpx.AsyncClient",
+        "jvagent_bridge.httpx.AsyncClient",
         return_value=mock_client,
     ):
         text = await interact(

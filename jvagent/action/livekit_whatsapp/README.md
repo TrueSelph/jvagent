@@ -6,7 +6,7 @@ Bridge inbound WhatsApp voice calls to jvagent's Orchestrator via [LiveKit's Wha
 
 1. **jvagent** (`LiveKitWhatsAppAction`) receives Meta `field=calls` webhooks on the existing WhatsApp callback URL and calls LiveKit `AcceptWhatsAppCall`.
 2. **LiveKit** creates a room and dispatches the voice worker (`agent_name`, default `jvagent-voice`).
-3. **Voice worker** (`workers/livekit_voice/`) streams audio through Deepgram STT and ElevenLabs TTS; each user turn is sent to `POST /api/agents/{id}/interact` (Orchestrator).
+3. **Voice worker** (standalone repo under `workers/livekit_voice/`) streams audio through Deepgram STT and ElevenLabs TTS; each user turn is sent to `POST /api/agents/{id}/interact` (Orchestrator). See [`workers/livekit_voice/README.md`](../../../workers/livekit_voice/README.md).
 4. On call end, Meta sends `terminate` → jvagent calls `DisconnectWhatsAppCall`.
 
 Voicenotes (PTT) still use `DeepgramSTTAction` / `ElevenLabsTTSAction` on the messaging path — not this worker.
@@ -49,7 +49,8 @@ Voicenotes (PTT) still use `DeepgramSTTAction` / `ElevenLabsTTSAction` on the me
 | `LIVEKIT_API_KEY` | Yes | LiveKit API key |
 | `LIVEKIT_API_SECRET` | Yes | LiveKit API secret |
 | `JVAGENT_PUBLIC_BASE_URL` | Yes | Public jvagent URL (Meta webhooks) |
-| `JVAGENT_INTERNAL_BASE_URL` | No | Worker → jvagent URL if different from public |
+| `JVAGENT_BASE_URL` | Worker | jvagent URL for worker → `/interact` (set on standalone voice worker) |
+| `JVAGENT_INTERNAL_BASE_URL` | No | Legacy worker URL fallback |
 | `JVAGENT_VOICE_AGENT_NAME` | No | Worker dispatch name (default `jvagent-voice`) |
 | `DEEPGRAM_API_KEY` | Worker | Streaming STT |
 | `ELEVENLABS_API_KEY` | Worker | Streaming TTS |
@@ -58,21 +59,24 @@ Voicenotes (PTT) still use `DeepgramSTTAction` / `ElevenLabsTTSAction` on the me
 
 ## Run the voice worker
 
+The voice worker is a **standalone project** in `workers/livekit_voice/` (designed to be its own repo and deployed separately, e.g. on Dokploy).
+
 ```bash
-pip install "jvagent[livekit-voice]"
-# or: pip install -r workers/livekit_voice/requirements.txt
+cd workers/livekit_voice
+pip install -r requirements.txt
+cp .env.example .env   # fill in keys
 
 export LIVEKIT_URL=wss://your-project.livekit.cloud
 export LIVEKIT_API_KEY=...
 export LIVEKIT_API_SECRET=...
 export DEEPGRAM_API_KEY=...
 export ELEVENLABS_API_KEY=...
-export JVAGENT_PUBLIC_BASE_URL=https://your-jvagent-host
+export JVAGENT_BASE_URL=https://your-jvagent-host
 
-python -m workers.livekit_voice.main dev
+python main.py dev
 ```
 
-For production, deploy the worker to LiveKit Cloud agent hosting or your own VM/K8s with the same env vars.
+For production, deploy via Docker (`docker compose up`) or Dokploy. Full instructions: [`workers/livekit_voice/README.md`](../../../workers/livekit_voice/README.md).
 
 ## Install jvagent LiveKit extra
 
@@ -80,10 +84,10 @@ For production, deploy the worker to LiveKit Cloud agent hosting or your own VM/
 pip install "jvagent[livekit]"
 ```
 
-This adds `livekit-api` for `LiveKitWhatsAppAction` only. The voice worker needs `[livekit-voice]`.
+This adds `livekit-api` for `LiveKitWhatsAppAction` only. The voice worker is a separate standalone project — see `workers/livekit_voice/`.
 
 ## Troubleshooting
 
 - **Call not answered within 60s**: ensure jvagent is reachable from Meta and `AcceptWhatsAppCall` runs in the webhook handler (not deferred).
 - **No audio / no agent**: confirm the voice worker is running and `agent_name` matches `LiveKitWhatsAppAction.agent_name`.
-- **Empty agent replies**: check `JVAGENT_INTERNAL_BASE_URL` from the worker and Orchestrator logs for `/interact` errors.
+- **Empty agent replies**: check `JVAGENT_BASE_URL` on the voice worker and Orchestrator logs for `/interact` errors.

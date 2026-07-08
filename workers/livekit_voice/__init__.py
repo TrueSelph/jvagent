@@ -1,1 +1,0 @@
-"""LiveKit voice worker package."""

@@ -204,7 +204,7 @@ falls back to a sibling env var when its primary key is unset:
 - `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE` — when `false`, skip Meta webhook override on action reload (default subscribe on reload)
 - `WHATSAPP_META_WAMID_DEDUP_TTL_SECONDS` — in-process wamid dedup TTL for meta webhooks (default `86400`)
 - `WHATSAPP_META_WAMID_DEDUP_MAX` — max wamid dedup cache entries (default `10000`)
-- **Voice calls (LiveKit)**: subscribe Meta webhook field `calls` on the same callback URL; enable Calling API on the phone number. Requires `jvagent/livekit_whatsapp_action` plus `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and a running voice worker (`workers/livekit_voice/`). See [`.planning/runbooks/livekit-whatsapp-calls.md`](../.planning/runbooks/livekit-whatsapp-calls.md).
+- **Voice calls (LiveKit)**: subscribe Meta webhook field `calls` on the same callback URL; enable Calling API on the phone number. Requires `jvagent/livekit_whatsapp_action` plus `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and a running standalone voice worker ([`workers/livekit_voice/README.md`](../workers/livekit_voice/README.md)). See [`.planning/runbooks/livekit-whatsapp-calls.md`](../.planning/runbooks/livekit-whatsapp-calls.md).
 
 ### LiveKit (WhatsApp voice calls)
 - `LIVEKIT_URL` — LiveKit server WebSocket URL (`wss://…`)
@@ -212,7 +212,8 @@ falls back to a sibling env var when its primary key is unset:
 - `LIVEKIT_API_SECRET` — LiveKit API secret
 - `JVAGENT_VOICE_AGENT_NAME` — LiveKit agent dispatch name (default `jvagent-voice`; must match `LiveKitWhatsAppAction.agent_name`)
 - `JVAGENT_AGENT_ID` — optional fallback for the voice worker when job metadata is empty (agent node id, e.g. `n.Agent.xxxx`)
-- `JVAGENT_INTERNAL_BASE_URL` — optional base URL for the voice worker → jvagent interact (defaults to `JVAGENT_PUBLIC_BASE_URL`)
+- `JVAGENT_BASE_URL` — primary base URL for the standalone voice worker → jvagent `/interact` (set after deploy)
+- `JVAGENT_INTERNAL_BASE_URL` — legacy fallback for worker → jvagent interact
 - `DEEPGRAM_STT_MODEL` — optional STT model for voice worker (default `nova-3`)
 - `ELEVENLABS_TTS_MODEL` — optional TTS model for voice worker (default `eleven_turbo_v2_5`)
 - `ELEVENLABS_VOICE_ID` — optional ElevenLabs voice ID for voice worker TTS

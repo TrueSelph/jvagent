@@ -9,7 +9,7 @@ from typing import Any, Dict
 from livekit import rtc
 from livekit.agents import JobContext
 
-from .jvagent_bridge import parse_dispatch_metadata
+from jvagent_bridge import parse_dispatch_metadata
 
 logger = logging.getLogger(__name__)
 

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from livekit.agents import llm
 
-from .jvagent_bridge import interact, jvagent_base_url, parse_dispatch_metadata, session_id_for_caller
+from jvagent_bridge import interact, jvagent_base_url, parse_dispatch_metadata, session_id_for_caller
 
 logger = logging.getLogger(__name__)
 

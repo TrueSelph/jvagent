@@ -54,20 +54,24 @@ pip install "jvagent[livekit]"
 
 ## 4. Voice worker
 
-The worker is a **separate process** (not the jvagent HTTP server).
+The worker is a **standalone project** in `workers/livekit_voice/` (separate repo / Dokploy deploy — not the jvagent HTTP server).
 
 ```bash
-pip install "jvagent[livekit-voice]"
+cd workers/livekit_voice
+pip install -r requirements.txt
+cp .env.example .env
 
 export LIVEKIT_URL=...
 export LIVEKIT_API_KEY=...
 export LIVEKIT_API_SECRET=...
 export DEEPGRAM_API_KEY=...
 export ELEVENLABS_API_KEY=...
-export JVAGENT_PUBLIC_BASE_URL=https://your-jvagent-host
+export JVAGENT_BASE_URL=https://your-jvagent-host
 
-python -m workers.livekit_voice.main dev
+python main.py dev
 ```
+
+Or deploy with Docker: `docker compose up -d`. See [`workers/livekit_voice/README.md`](../../workers/livekit_voice/README.md).
 
 `agent_name` must match `LiveKitWhatsAppAction.agent_name` (default `jvagent-voice`).
 
@@ -84,7 +88,7 @@ python -m workers.livekit_voice.main dev
 |---------|--------|
 | Call rings then "Not Answered" | jvagent unreachable from Meta; accept must complete within ~60s |
 | Call connects, silence | Voice worker not running or `agent_name` mismatch |
-| Agent speaks but wrong brain | Worker `JVAGENT_INTERNAL_BASE_URL` must reach jvagent `/interact` |
+| Agent speaks but wrong brain | Worker `JVAGENT_BASE_URL` must reach jvagent `/interact` |
 | Voicenotes broken | Unrelated — still use `stt_action` / `tts_action` on WhatsAppAction |
 
 Further detail: [`jvagent/action/livekit_whatsapp/README.md`](../../jvagent/action/livekit_whatsapp/README.md).

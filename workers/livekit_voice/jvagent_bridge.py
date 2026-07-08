@@ -45,6 +45,7 @@ def extract_interact_response_text(body: Any) -> Optional[str]:
 def jvagent_base_url() -> str:
     """Base URL for jvagent interact API (no trailing slash)."""
     for key in (
+        "JVAGENT_BASE_URL",
         "JVAGENT_INTERNAL_BASE_URL",
         "JVAGENT_PUBLIC_BASE_URL",
         "JVFORGE_PUBLIC_BASE_URL",
