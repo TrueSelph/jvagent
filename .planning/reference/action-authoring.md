@@ -68,7 +68,7 @@ keep paths short (so `package.name=jvagent/whatsapp_action` lives in
 **Naming**: snake_case dir + snake_case Python file. The Python file may be
 `{name}.py` or `{name}_interact_action.py` (the latter is convention for
 `InteractAction`s — see `interview_interact_action.py`,
-`converse_interact_action.py`, etc.).
+`task_creation_interact_action.py`, etc.).
 
 ---
 

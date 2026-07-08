@@ -18,7 +18,6 @@ tests/
 │   ├── pageindex/
 │   ├── postiz_action/
 │   ├── response/
-│   ├── router/
 │   ├── task_creation_interact_action/
 │   ├── task_monitor/
 │   ├── whatsapp/

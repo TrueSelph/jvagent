@@ -1,4 +1,4 @@
-# ADR 0028 — Rails orchestration deprecation
+# ADR 0030 — Rails orchestration deprecation
 
 **Status**: Superseded by [0029-rails-orchestration-removal.md](0029-rails-orchestration-removal.md) (removed in 0.1.1)
 **Date**: 2026-07-07

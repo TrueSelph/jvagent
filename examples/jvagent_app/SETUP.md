@@ -218,8 +218,6 @@ Tips for cost reduction:
 
 - Core action docs: `jvagent/action/model/language/openai/README.md`
 - Core action docs: `jvagent/action/model/embedding/openai/README.md`
-- Core action docs: `jvagent/action/router/README.md`
-- Core action docs: `jvagent/action/retrieval/README.md`
 - Core action docs: `jvagent/action/vectorstore/typesense/README.md`
 - Main jvagent README: `../../README.md`
 

@@ -76,8 +76,6 @@ See [Integration environment variables](integrations-environment.md#jvforge-page
 - `JVAGENT_ACTION_CACHE_TTL` - Action cache TTL.
 - `JVAGENT_ENABLE_DSPY_CACHE` - Enables DSPy cache.
 - `JVAGENT_CACHE_CLEANUP_PROBABILITY` - Cache cleanup probability.
-- `JVAGENT_ENABLE_INTERACT_ROUTER_CACHE` - Enables interact router cache.
-- `JVAGENT_INTERACT_ROUTER_CACHE_TTL` - Interact router cache TTL.
 
 ## 2) Relevant jvspatial Keys Used by jvagent (`JVSPATIAL_*`)
 

@@ -5,7 +5,7 @@ package:
   version: 0.0.1
   meta:
     title: PageIndex Action
-    description: Core PageIndex — ingest, search, and manage documents (use with pageindex_retrieval_interact_action for chat RAG)
+    description: Core PageIndex — ingest, search, and manage documents for chat RAG
     group: jvagent
     type: action
   config:
