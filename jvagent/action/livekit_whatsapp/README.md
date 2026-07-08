@@ -1,31 +1,31 @@
 # LiveKit WhatsApp Voice Calls
 
-Bridge inbound WhatsApp voice calls to jvagent's Orchestrator via [LiveKit's WhatsApp Connector](https://docs.livekit.io/telephony/connectors/whatsapp/).
+Bridge inbound WhatsApp voice calls to jvagent's Orchestrator via [jvvoice](https://github.com/your-org/jvvoice) and [LiveKit's WhatsApp Connector](https://docs.livekit.io/telephony/connectors/whatsapp/).
 
 ## Architecture
 
-1. **jvagent** (`LiveKitWhatsAppAction`) receives Meta `field=calls` webhooks on the existing WhatsApp callback URL and calls LiveKit `AcceptWhatsAppCall`.
-2. **LiveKit** creates a room and dispatches **jvvoice** (`agent_name`, default `jvvoice`).
-3. **jvvoice** (standalone project under `workers/jvvoice/`) streams audio through Deepgram STT and ElevenLabs TTS; each user turn is sent to `POST /api/agents/{id}/interact` (Orchestrator). See [`workers/jvvoice/README.md`](../../../workers/jvvoice/README.md).
-4. On call end, Meta sends `terminate` → jvagent calls `DisconnectWhatsAppCall`.
+1. **jvagent** (`LiveKitWhatsAppAction`) receives Meta `field=calls` webhooks and delegates to **jvvoice** (`POST /api/calls/accept`).
+2. **jvvoice** calls LiveKit `AcceptWhatsAppCall` (holds `LIVEKIT_*` secrets) and dispatches the voice worker.
+3. **jvvoice worker** streams audio; each user turn is sent to `POST /api/agents/{id}/interact` on jvagent.
+4. On call end, jvagent delegates `POST /api/calls/disconnect` to jvvoice.
 
-Voicenotes (PTT) still use `DeepgramSTTAction` / `ElevenLabsTTSAction` on the messaging path — not jvvoice.
+jvagent does **not** need LiveKit credentials — only `JVVOICE_BASE_URL` and `JVVOICE_API_KEY`.
 
 ## Prerequisites
 
-### LiveKit
+### jvvoice (separate deploy)
 
-- **LiveKit Cloud** (required for WhatsApp Connector today): create a project at [livekit.io](https://livekit.io) and note `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`.
-- **Self-hosted**: the jvvoice runtime can connect to a self-hosted `wss://` endpoint, but the WhatsApp Connector API is Cloud-only as of 2026.
+- Running jvvoice with connector API exposed (port 8080) and LiveKit worker registered as `jvvoice`.
+- See the jvvoice repo README for Dokploy setup.
 
 ### Meta / WhatsApp
 
 - Existing Meta Cloud API setup (`provider: meta` on `WhatsAppAction`).
-- Subscribe to the **`calls`** webhook field on the same callback URL as messages.
-- Enable **Calling API** on the business phone number and configure call hours.
-- Cloud API version **23.0** or **24.0** (set on `LiveKitWhatsAppAction.cloud_api_version`).
+- Subscribe to **`calls`** on the same webhook URL as messages.
+- Enable **Calling API** on the business phone number.
+- Cloud API version **23.0** or **24.0**.
 
-### jvagent
+### jvagent agent.yaml
 
 ```yaml
 - action: jvagent/whatsapp_action
@@ -37,60 +37,32 @@ Voicenotes (PTT) still use `DeepgramSTTAction` / `ElevenLabsTTSAction` on the me
 - action: jvagent/livekit_whatsapp_action
   context:
     enabled: true
+    jvvoice_base_url: "${JVVOICE_BASE_URL}"
+    jvvoice_api_key: "${JVVOICE_API_KEY}"
     agent_name: jvvoice
     cloud_api_version: "24.0"
 ```
 
 ## Environment variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `LIVEKIT_URL` | Yes | LiveKit server WebSocket URL |
-| `LIVEKIT_API_KEY` | Yes | LiveKit API key |
-| `LIVEKIT_API_SECRET` | Yes | LiveKit API secret |
-| `JVAGENT_PUBLIC_BASE_URL` | Yes | Public jvagent URL (Meta webhooks; sent to jvvoice as `jvagent_base_url` when action `jvagent_base_url` is empty) |
-| `LIVEKIT_AGENT_NAME` | jvvoice | LiveKit registration name on jvvoice (must match `agent_name` above) |
-| `DEEPGRAM_API_KEY` | jvvoice | Streaming STT |
-| `ELEVENLABS_API_KEY` | jvvoice | Streaming TTS |
-| `ELEVENLABS_VOICE_ID` | No | ElevenLabs voice ID (optional) |
-| `WHATSAPP_*` | Yes | Same as messaging (phone_number_id, access_token, app_secret) |
+| Variable | Side | Required | Description |
+|----------|------|----------|-------------|
+| `JVVOICE_BASE_URL` | jvagent | Yes | Public URL of jvvoice connector API |
+| `JVVOICE_API_KEY` | both | Yes | Shared secret (`Authorization: Bearer`) |
+| `JVAGENT_PUBLIC_BASE_URL` | jvagent | Yes | Sent to jvvoice as `jvagent_base_url` for `/interact` callbacks |
+| `LIVEKIT_*` | jvvoice only | Yes | LiveKit Cloud credentials |
+| `DEEPGRAM_API_KEY` | jvvoice | Yes | STT |
+| `ELEVENLABS_API_KEY` | jvvoice | Yes | TTS |
+| `WHATSAPP_*` | jvagent | Yes | Meta messaging/calling credentials |
 
-## Run jvvoice
+## Install jvagent
 
-jvvoice is a **standalone project** in `workers/jvvoice/` (designed to be its own repo and deployed separately, e.g. on Dokploy).
-
-```bash
-cd workers/jvvoice
-pip install -r requirements.txt
-cp .env.example .env
-
-export LIVEKIT_URL=wss://your-project.livekit.cloud
-export LIVEKIT_API_KEY=...
-export LIVEKIT_API_SECRET=...
-export DEEPGRAM_API_KEY=...
-export ELEVENLABS_API_KEY=...
-export LIVEKIT_AGENT_NAME=jvvoice
-
-python main.py dev
-```
-
-jvvoice does not take a jvagent host env var: each call carries its own `jvagent_base_url` in dispatch metadata. For production, deploy via Docker (`docker compose up`) or Dokploy. Full instructions: [`workers/jvvoice/README.md`](../../../workers/jvvoice/README.md).
-
-### Shared jvvoice across multiple jvagent hosts
-
-Each jvagent instance sends its own `jvagent_base_url` in LiveKit dispatch metadata (resolved from action `jvagent_base_url` or `JVAGENT_PUBLIC_BASE_URL` env). One shared jvvoice deployment routes calls to many jvagent hosts automatically. A call whose metadata omits `jvagent_base_url` or `jvagent_agent_id` is rejected.
-
-## Install jvagent LiveKit extra
-
-```bash
-pip install "jvagent[livekit]"
-```
-
-This adds `livekit-api` for `LiveKitWhatsAppAction` only. jvvoice is a separate standalone project — see `workers/jvvoice/`.
+jvagent no longer needs `pip install "jvagent[livekit]"` for voice calls — delegation uses httpx only. The `[livekit]` extra remains optional for other tooling.
 
 ## Troubleshooting
 
-- **Call not answered within 60s**: ensure jvagent is reachable from Meta and `AcceptWhatsAppCall` runs in the webhook handler (not deferred).
-- **No audio / no agent**: confirm jvvoice is running and `agent_name` / `LIVEKIT_AGENT_NAME` match.
-- **Call rejected / "missing jvagent dispatch metadata"**: the accept step didn't send `jvagent_base_url` / `jvagent_agent_id` — set `JVAGENT_PUBLIC_BASE_URL` (or the action's `jvagent_base_url`) on the jvagent agent.
-- **Empty agent replies**: check the jvagent host in dispatch metadata is reachable from jvvoice and inspect Orchestrator logs for `/interact` errors.
+- **Call not answered within 60s**: jvagent must reach jvvoice API; accept must complete quickly.
+- **401 from jvvoice**: `JVVOICE_API_KEY` mismatch between jvagent and jvvoice.
+- **No audio / no agent**: jvvoice worker not running or `agent_name` / `LIVEKIT_AGENT_NAME` mismatch.
+- **Call rejected on worker**: jvagent didn't send `jvagent_base_url` — set `JVAGENT_PUBLIC_BASE_URL`.
+- **Empty agent replies**: jvvoice cannot reach jvagent `/interact` — check `JVAGENT_PUBLIC_BASE_URL` is reachable from jvvoice.

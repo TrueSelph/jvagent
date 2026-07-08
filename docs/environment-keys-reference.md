@@ -204,14 +204,19 @@ falls back to a sibling env var when its primary key is unset:
 - `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE` — when `false`, skip Meta webhook override on action reload (default subscribe on reload)
 - `WHATSAPP_META_WAMID_DEDUP_TTL_SECONDS` — in-process wamid dedup TTL for meta webhooks (default `86400`)
 - `WHATSAPP_META_WAMID_DEDUP_MAX` — max wamid dedup cache entries (default `10000`)
-- **Voice calls (LiveKit)**: subscribe Meta webhook field `calls` on the same callback URL; enable Calling API on the phone number. Requires `jvagent/livekit_whatsapp_action` plus `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and a running **jvvoice** agent ([`workers/jvvoice/README.md`](../workers/jvvoice/README.md)). See [`.planning/runbooks/livekit-whatsapp-calls.md`](../.planning/runbooks/livekit-whatsapp-calls.md).
+- **Voice calls (LiveKit)**: subscribe Meta webhook field `calls`; enable Calling API. Requires `jvagent/livekit_whatsapp_action` with `JVVOICE_BASE_URL` + `JVVOICE_API_KEY`, plus a deployed **jvvoice** service (holds `LIVEKIT_*`). See [`.planning/runbooks/livekit-whatsapp-calls.md`](../.planning/runbooks/livekit-whatsapp-calls.md).
 
-### LiveKit (WhatsApp voice calls)
-- `LIVEKIT_URL` — LiveKit server WebSocket URL (`wss://…`)
-- `LIVEKIT_API_KEY` — LiveKit API key (Connector + jvvoice)
-- `LIVEKIT_API_SECRET` — LiveKit API secret
-- `LIVEKIT_AGENT_NAME` — LiveKit agent registration name on jvvoice (default `jvvoice`; must match `LiveKitWhatsAppAction.agent_name`). Startup-only registration value.
-- `JVAGENT_PUBLIC_BASE_URL` — used on the **jvagent** side to populate `jvagent_base_url` in dispatch metadata when the action's `jvagent_base_url` context is empty. jvvoice reads `jvagent_base_url` and `jvagent_agent_id` per call from dispatch metadata and rejects calls missing either.
+### jvvoice delegation (WhatsApp voice calls)
+- `JVVOICE_BASE_URL` — **jvagent**: public URL of jvvoice connector API (`POST /api/calls/accept`)
+- `JVVOICE_API_KEY` — **both**: shared bearer token for jvvoice connector API
+- `JVAGENT_PUBLIC_BASE_URL` — **jvagent**: sent to jvvoice as `jvagent_base_url` for `/interact` callbacks
+
+### LiveKit (jvvoice only)
+- `LIVEKIT_URL` — LiveKit server WebSocket URL (`wss://…`); set on jvvoice only
+- `LIVEKIT_API_KEY` — LiveKit API key (jvvoice only)
+- `LIVEKIT_API_SECRET` — LiveKit API secret (jvvoice only)
+- `LIVEKIT_AGENT_NAME` — LiveKit worker registration name on jvvoice (default `jvvoice`; must match `LiveKitWhatsAppAction.agent_name`)
+- `JVVOICE_API_PORT` — connector API listen port on jvvoice (default `8080`)
 - `DEEPGRAM_STT_MODEL` — optional STT model for jvvoice (default `nova-3`)
 - `ELEVENLABS_TTS_MODEL` — optional TTS model for jvvoice (default `eleven_turbo_v2_5`)
 - `ELEVENLABS_VOICE_ID` — optional ElevenLabs voice ID for jvvoice TTS

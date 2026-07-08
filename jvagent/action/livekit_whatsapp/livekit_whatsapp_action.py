@@ -13,7 +13,7 @@ from jvagent.action.base import Action
 from jvagent.tooling.tool_decorator import tool
 
 from .call_webhook import WhatsAppCallEvent, parse_calls_webhook
-from .connector_client import LiveKitConnectorClient, LiveKitConnectorError
+from .jvvoice_client import JvvoiceClient, JvvoiceClientError
 
 logger = logging.getLogger(__name__)
 
@@ -21,33 +21,28 @@ _CALL_ID_SAFE = re.compile(r"[^a-zA-Z0-9_-]+")
 
 
 class LiveKitWhatsAppAction(Action):
-    """Accept and manage WhatsApp voice calls via LiveKit Connector.
+    """Accept and manage WhatsApp voice calls via jvvoice delegation.
 
     Requires a sibling ``WhatsAppAction`` with ``provider: meta`` on the same agent
-    for Meta credentials (phone_number_id, access_token). LiveKit server credentials
-    come from action attributes or ``LIVEKIT_URL`` / ``LIVEKIT_API_KEY`` /
-    ``LIVEKIT_API_SECRET`` environment variables.
+    for Meta credentials (phone_number_id, access_token). LiveKit credentials live
+    on the jvvoice deployment only — jvagent calls jvvoice's connector HTTP API using
+    ``jvvoice_base_url`` and ``jvvoice_api_key``.
 
-    A separate standalone jvvoice agent (see ``workers/jvvoice/README.md``)
-    must be running and registered under ``agent_name`` to handle realtime audio and
-    bridge utterances to the jvagent Orchestrator.
+    A standalone jvvoice agent must be running and registered under ``agent_name``
+    to handle realtime audio and bridge utterances to the jvagent Orchestrator.
     """
 
-    livekit_url: str = attribute(
+    jvvoice_base_url: str = attribute(
         default="",
-        description="LiveKit server URL (wss://…); when empty, LIVEKIT_URL env is used",
+        description="jvvoice connector API base URL; when empty, JVVOICE_BASE_URL env is used",
     )
-    livekit_api_key: str = attribute(
+    jvvoice_api_key: str = attribute(
         default="",
-        description="LiveKit API key; when empty, LIVEKIT_API_KEY env is used",
-    )
-    livekit_api_secret: str = attribute(
-        default="",
-        description="LiveKit API secret; when empty, LIVEKIT_API_SECRET env is used",
+        description="jvvoice API key; when empty, JVVOICE_API_KEY env is used",
     )
     agent_name: str = attribute(
         default="jvvoice",
-        description="LiveKit agent dispatch name for jvvoice",
+        description="LiveKit agent dispatch name on jvvoice",
     )
     cloud_api_version: str = attribute(
         default="24.0",
@@ -66,26 +61,22 @@ class LiveKitWhatsAppAction(Action):
         default="",
         description=(
             "jvagent base URL for jvvoice /interact callbacks; "
-            "when empty, JVAGENT_BASE_URL / JVAGENT_PUBLIC_BASE_URL env is used"
+            "when empty, JVAGENT_PUBLIC_BASE_URL env is used"
         ),
     )
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._active_calls: Dict[str, str] = {}
-        self._connector: Optional[LiveKitConnectorClient] = None
+        self._jvvoice: Optional[JvvoiceClient] = None
 
     @staticmethod
-    def _env_livekit_url() -> str:
-        return (env("LIVEKIT_URL") or "").strip()
+    def _env_jvvoice_base_url() -> str:
+        return (env("JVVOICE_BASE_URL") or "").strip().rstrip("/")
 
     @staticmethod
-    def _env_livekit_api_key() -> str:
-        return (env("LIVEKIT_API_KEY") or "").strip()
-
-    @staticmethod
-    def _env_livekit_api_secret() -> str:
-        return (env("LIVEKIT_API_SECRET") or "").strip()
+    def _env_jvvoice_api_key() -> str:
+        return (env("JVVOICE_API_KEY") or "").strip()
 
     @staticmethod
     def _env_jvagent_base_url() -> str:
@@ -100,24 +91,20 @@ class LiveKitWhatsAppAction(Action):
                 return value.rstrip("/")
         return ""
 
-    def _resolved_livekit_url(self) -> str:
-        return (self.livekit_url or self._env_livekit_url()).strip()
+    def _resolved_jvvoice_base_url(self) -> str:
+        return (self.jvvoice_base_url or self._env_jvvoice_base_url()).strip().rstrip("/")
 
-    def _resolved_livekit_api_key(self) -> str:
-        return (self.livekit_api_key or self._env_livekit_api_key()).strip()
-
-    def _resolved_livekit_api_secret(self) -> str:
-        return (self.livekit_api_secret or self._env_livekit_api_secret()).strip()
+    def _resolved_jvvoice_api_key(self) -> str:
+        return (self.jvvoice_api_key or self._env_jvvoice_api_key()).strip()
 
     def _resolved_jvagent_base_url(self) -> str:
         return (self.jvagent_base_url or self._env_jvagent_base_url()).strip().rstrip("/")
 
     def is_configured(self) -> bool:
-        """Return True when LiveKit credentials and dispatch name are set."""
+        """Return True when jvvoice delegation URL, API key, and agent name are set."""
         return bool(
-            self._resolved_livekit_url()
-            and self._resolved_livekit_api_key()
-            and self._resolved_livekit_api_secret()
+            self._resolved_jvvoice_base_url()
+            and self._resolved_jvvoice_api_key()
             and (self.agent_name or "").strip()
         )
 
@@ -157,21 +144,16 @@ class LiveKitWhatsAppAction(Action):
             )
         return phone_number_id, access_token
 
-    async def _connector_client(self) -> LiveKitConnectorClient:
-        if self._connector is None:
-            url = self._resolved_livekit_url()
-            api_key = self._resolved_livekit_api_key()
-            api_secret = self._resolved_livekit_api_secret()
-            if not url or not api_key or not api_secret:
-                raise LiveKitConnectorError(
-                    "LiveKit URL, API key, and API secret must be configured"
+    async def _jvvoice_client(self) -> JvvoiceClient:
+        if self._jvvoice is None:
+            base_url = self._resolved_jvvoice_base_url()
+            api_key = self._resolved_jvvoice_api_key()
+            if not base_url or not api_key:
+                raise JvvoiceClientError(
+                    "jvvoice_base_url and jvvoice_api_key must be configured"
                 )
-            self._connector = LiveKitConnectorClient(
-                url=url,
-                api_key=api_key,
-                api_secret=api_secret,
-            )
-        return self._connector
+            self._jvvoice = JvvoiceClient(base_url=base_url, api_key=api_key)
+        return self._jvvoice
 
     async def handle_call_webhook(
         self,
@@ -233,33 +215,42 @@ class LiveKitWhatsAppAction(Action):
                 phone_number_id,
             )
 
+        base_url = self._resolved_jvagent_base_url()
+        if not base_url:
+            return {
+                "status": "error",
+                "call_id": event.call_id,
+                "error": "jvagent_base_url is not configured (JVAGENT_PUBLIC_BASE_URL)",
+            }
+
         room_name = self._room_name_for_call(event.call_id)
-        agent_metadata: Dict[str, Any] = {
+        payload = {
             "jvagent_agent_id": agent_id,
+            "jvagent_base_url": base_url,
             "caller_phone": event.from_number,
             "caller_name": event.contact_name,
             "whatsapp_call_id": event.call_id,
+            "phone_number_id": phone_number_id,
+            "whatsapp_api_key": access_token,
+            "cloud_api_version": self.cloud_api_version,
+            "sdp": event.sdp,
+            "sdp_type": event.sdp_type or "offer",
+            "agent_name": self.agent_name,
+            "room_name": room_name,
         }
-        base_url = self._resolved_jvagent_base_url()
-        if base_url:
-            agent_metadata["jvagent_base_url"] = base_url
 
         try:
-            client = await self._connector_client()
-            result = await client.accept_whatsapp_call(
-                whatsapp_phone_number_id=phone_number_id,
-                whatsapp_api_key=access_token,
-                whatsapp_cloud_api_version=self.cloud_api_version,
-                whatsapp_call_id=event.call_id,
-                sdp=event.sdp,
-                sdp_type=event.sdp_type or "offer",
-                room_name=room_name,
-                agent_name=self.agent_name,
-                agent_metadata=agent_metadata,
-            )
+            client = await self._jvvoice_client()
+            result = await client.accept_call(payload)
+            if result.get("status") != "connected":
+                return {
+                    "status": "error",
+                    "call_id": event.call_id,
+                    "error": result.get("error") or "jvvoice accept failed",
+                }
             self._active_calls[event.call_id] = result.get("room_name") or room_name
             logger.info(
-                "Accepted WhatsApp call call_id=%s room=%s agent=%s",
+                "Delegated WhatsApp call accept call_id=%s room=%s agent=%s",
                 event.call_id,
                 self._active_calls[event.call_id],
                 self.agent_name,
@@ -269,9 +260,9 @@ class LiveKitWhatsAppAction(Action):
                 "call_id": event.call_id,
                 "room_name": self._active_calls[event.call_id],
             }
-        except (LiveKitConnectorError, ValueError) as exc:
+        except (JvvoiceClientError, ValueError) as exc:
             logger.error(
-                "Failed to accept WhatsApp call call_id=%s: %s",
+                "Failed to delegate WhatsApp call accept call_id=%s: %s",
                 event.call_id,
                 exc,
                 exc_info=True,
@@ -285,23 +276,28 @@ class LiveKitWhatsAppAction(Action):
     async def _handle_terminate(self, event: WhatsAppCallEvent) -> Dict[str, Any]:
         self._active_calls.pop(event.call_id, None)
         try:
-            client = await self._connector_client()
-            await client.disconnect_whatsapp_call(
+            client = await self._jvvoice_client()
+            result = await client.disconnect_call(
                 whatsapp_call_id=event.call_id,
                 user_initiated=True,
             )
             logger.info(
-                "Disconnected WhatsApp call call_id=%s (user initiated)",
+                "Delegated WhatsApp disconnect call_id=%s (user initiated)",
                 event.call_id,
             )
-            return {"status": "disconnected", "call_id": event.call_id}
-        except LiveKitConnectorError as exc:
+            response: Dict[str, Any] = {
+                "status": "disconnected",
+                "call_id": event.call_id,
+            }
+            if result.get("warning"):
+                response["warning"] = result["warning"]
+            return response
+        except JvvoiceClientError as exc:
             logger.warning(
-                "DisconnectWhatsAppCall failed for call_id=%s: %s",
+                "jvvoice disconnect failed for call_id=%s: %s",
                 event.call_id,
                 exc,
             )
-            # User hang-up cleanup is best-effort; LiveKit also auto-cleans stale rooms.
             return {
                 "status": "disconnected",
                 "call_id": event.call_id,
@@ -316,19 +312,19 @@ class LiveKitWhatsAppAction(Action):
             return {"ok": False, "error": "call_id is required"}
         _, access_token = await self._meta_credentials()
         try:
-            client = await self._connector_client()
-            await client.disconnect_whatsapp_call(
+            client = await self._jvvoice_client()
+            await client.disconnect_call(
                 whatsapp_call_id=call_id,
                 whatsapp_api_key=access_token,
                 user_initiated=False,
             )
             self._active_calls.pop(call_id, None)
             return {"ok": True, "call_id": call_id}
-        except (LiveKitConnectorError, ValueError) as exc:
+        except (JvvoiceClientError, ValueError) as exc:
             return {"ok": False, "error": str(exc), "call_id": call_id}
 
     async def on_deregister(self) -> None:
-        if self._connector is not None:
-            await self._connector.close()
-            self._connector = None
+        if self._jvvoice is not None:
+            await self._jvvoice.close()
+            self._jvvoice = None
         await super().on_deregister()

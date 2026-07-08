@@ -331,7 +331,9 @@ actions:
   - action: jvagent/livekit_whatsapp_action
     context:
       enabled: false
-      description: "WhatsApp voice calls via LiveKit Connector (requires LIVEKIT_* env)"
+      description: "WhatsApp voice calls via jvvoice delegation"
+      jvvoice_base_url: "${JVVOICE_BASE_URL}"
+      jvvoice_api_key: "${JVVOICE_API_KEY}"
       agent_name: "jvvoice"
       cloud_api_version: "24.0"
 

@@ -37,7 +37,7 @@ async def _get_livekit_action(action_id: str) -> LiveKitWhatsAppAction:
         data={
             "configured": ResponseField(
                 field_type=bool,
-                description="Whether LiveKit credentials are configured",
+                description="Whether jvvoice delegation is configured",
                 example=True,
             ),
             "agent_name": ResponseField(
