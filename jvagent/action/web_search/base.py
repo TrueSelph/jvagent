@@ -35,9 +35,9 @@ class BaseWebSearchAction(Action, ABC):
     Provider API keys are read from the environment (``.env``), not stored on the action.
 
     Usage (agent.yaml):
-        Register a concrete provider action at the agent level. Then point
-        ``WebSearchRetrievalInteractAction.web_search_action_type`` at its
-        class name (e.g., ``"SerperWebSearchAction"`` or ``"SerpAPIWebSearchAction"``).
+        Register a concrete provider action at the agent level (e.g.
+        ``jvagent/serper_web_search``). Surface via Orchestrator skills or
+        action tools (``serper__search``).
     """
 
     timeout: int = attribute(default=30, description="Request timeout in seconds", ge=1)
@@ -60,4 +60,3 @@ class BaseWebSearchAction(Action, ABC):
         Returns:
             List of result dicts, each with keys: title, link, snippet
         """
-        pass

@@ -4,7 +4,7 @@ Vectorless RAG for document indexing and retrieval. No embeddings, no vector sto
 
 ## Overview
 
-Unlike RetrievalInteractAction (which uses a vector store), PageIndex uses reasoning-based tree traversal and LLM selection of relevant nodes. Documents are parsed into a hierarchical structure, persisted to a jvspatial graph database, and retrieved via tree search, direct text filtering, or graph walker strategies.
+Unlike vector-store retrieval IAs (removed), PageIndex uses reasoning-based tree traversal and LLM selection of relevant nodes. Documents are parsed into a hierarchical structure, persisted to a jvspatial graph database, and retrieved via tree search, direct text filtering, or graph walker strategies.
 
 ## Key Features
 
@@ -22,7 +22,7 @@ Unlike RetrievalInteractAction (which uses a vector store), PageIndex uses reaso
 
 ```
 Ingestion: PDF -> PageIndex core `page_index`; Markdown -> `md_tree_enriched.md_to_tree` (outside core; hierarchy/content_type/enabled) -> tree_to_graph -> jvspatial + lexical index
-Retrieval: query -> lexical candidates (BM25) -> tree_search/direct/walker -> directive -> PersonaAction
+Retrieval: query -> lexical candidates (BM25) -> tree_search/direct/walker -> Orchestrator tools (pageindex__search)
 ```
 
 ### Two-Stage Retrieval
@@ -38,26 +38,18 @@ This scales to large document bases without full-corpus scans. When the lexical 
 
 - `assimilate_document()` – ingestion (programmatic); builds lexical index during persist
 - `search_documents()` – retrieval (programmatic)
-- `PageIndexAction` – core graph action: ingest, `search`, list, delete, **jvforge LLM webhook URL** (`get_webhook_url` / `handle_webhook_payload`; same public path as before)
-- `PageIndexRetrievalInteractAction` – interact action: directives, `user_groups`; calls `PageIndexAction.search`
+- `PageIndexAction` – core graph action: ingest, `search`, list, delete, **jvforge LLM webhook URL** (`get_webhook_url` / `handle_webhook_payload`; legacy webhook path preserved for jvforge clients)
 - `lexical_index` – inverted index (tokenizer, ranking, index CRUD)
 - REST endpoints under `/pageindex/`
+- Orchestrator tools: `pageindex__search`, `pageindex__assimilate`, etc.
 
 ## Configuration
 
-### PageIndexAction (core) and PageIndexRetrievalInteractAction (interact)
-
-Agents should include **`jvagent/pageindex_action`** (ingestion defaults, `search`, **jvforge callback webhook**) and **`jvagent/pageindex_retrieval_interact_action`** (chat RAG: anchors, directive, `user_groups`). The interact action resolves the core action via `get_action("PageIndexAction")` and delegates retrieval.
-
-**Context** on `PageIndexRetrievalInteractAction`: `doc_name`, `limit`, `weight`, `strategy`, `model`, `directive`, `parameters`, `user_groups`, etc.
-
-**Config** on `PageIndexAction`: ingestion (`node_summary`, `node_text`, …) and default search params. **Config** on `PageIndexRetrievalInteractAction`: interact-time overrides (`limit`, `strategy`, …).
-
 ### PageIndexAction (agent config)
 
-**Context** (attributes): on the **core** action, use `enabled`, `description`. Ingestion and search defaults live in **`config`** below.
+Agents should include **`jvagent/pageindex`** (ingestion defaults, `search`, **jvforge callback webhook**). Wire retrieval via Orchestrator skills calling `pageindex__search`.
 
-**Config block** (ingestion + retrieval defaults): Use the `config` section on **`jvagent/pageindex_action`**. Retrieval-only overrides can also live on **`jvagent/pageindex_retrieval_interact_action`**.
+**Context** (attributes): on the core action, use `enabled`, `description`. Ingestion and search defaults live in **`config`** below.
 
 | Config key | Type | Default | Description |
 |------------|------|---------|-------------|
@@ -87,7 +79,7 @@ Agents should include **`jvagent/pageindex_action`** (ingestion defaults, `searc
 | `limit` | int | 10 | Number of results to retrieve |
 | `retrieval_excerpt_source` | str | summary | `summary` or `text` — see config table |
 | `include_references` | bool | true | Render numbered source references in directive; set false to save tokens |
-| `weight` | int | -75 | Execution order (after InteractRouter) |
+| `weight` | int | n/a | N/A — PageIndexAction is not an InteractAction; use Orchestrator tool surfacing |
 | `strategy` | str | "tree_search" | "tree_search", "direct", or "walker" |
 | `model` | Optional[str] | None | LLM for tree_search (else PAGEINDEX_TREE_SEARCH_MODEL or gpt-4o-mini) |
 | `model_action_type` | str | "OpenAILanguageModelAction" | LanguageModelAction for observability |
@@ -208,7 +200,7 @@ When `include_references` is true (default), retrieval results include page numb
 - **Basic setup**: Ingest documents via API or `assimilate_document()`, add action to agent
 - **Query selection**: Uses `interaction.utterance` (preferred) or `interaction.interpretation`
 - **Directive format**: With `include_references: true`, numbered excerpts plus a References section (document name, page range, URL). With `include_references: false`, plain flat format. References section is omitted when no page/URL metadata exists
-- **Integration**: Runs after InteractRouter, adds directive for PersonaAction
+- **Integration**: Expose via Orchestrator skills; call `pageindex__search` tool for RAG
 
 ## Retrieval Strategies
 

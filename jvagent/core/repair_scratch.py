@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -166,17 +166,21 @@ async def scratch_page(
 
 
 async def scratch_count(db: Any, run_id: str, kind: str) -> int:
-    """Count scratch rows for (run_id, kind)."""
+    """Count scratch rows for (run_id, kind).
+
+    Uses the backend ``count`` — loading every row just to ``len()`` it
+    defeats the point of the scratch collection on large graphs.
+    """
+    query = {"id": {"$gte": f"{run_id}:{kind}:", "$lt": f"{run_id}:{kind}:~"}}
     try:
-        prefix_start = f"{run_id}:{kind}:"
-        rows = await db.find(
-            SCRATCH_COLLECTION,
-            {"id": {"$gte": prefix_start, "$lt": f"{run_id}:{kind}:~"}},
-            limit=0,
-        )
-        return len(rows) if rows else 0
+        return int(await db.count(SCRATCH_COLLECTION, query))
     except Exception:
-        return 0
+        # Backend without count support — fall back to the row scan.
+        try:
+            rows = await db.find(SCRATCH_COLLECTION, query, limit=0)
+            return len(rows) if rows else 0
+        except Exception:
+            return 0
 
 
 async def scratch_drop_run(db: Any, run_id: str) -> None:

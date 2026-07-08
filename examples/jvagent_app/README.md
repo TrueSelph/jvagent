@@ -94,7 +94,7 @@ After installing jvagent, you can run this example application:
 4. **Add your custom agents** to the `agents/` directory (see [Agents](#agents) below)
 
 5. **Configure actions** in each agent's `agent.yaml`:
-   - Use core actions directly (e.g., `jvagent/interact_router`)
+   - Use core actions directly (e.g., `jvagent/orchestrator`, `jvagent/reply`)
    - Add custom actions in `agents/{namespace}/{agent_name}/actions/` (see [Actions](#actions) below)
 
 6. **Update app.yaml** to include your agents in the agents list
@@ -198,7 +198,7 @@ Actions are discovered and loaded conditionally based on `agent.yaml` configurat
 
 ### Using Core Actions
 
-This example app demonstrates using core actions directly from the jvagent library. Core actions like `interact_router`, `openai_lm`, `openai_embedding`, `typesense_vectorstore`, and `retrieval_interact_action` are referenced in `agent.yaml` without requiring stub directories.
+This example app demonstrates using core actions directly from the jvagent library. Core actions like `orchestrator`, `openai_lm`, `pageindex`, and `reply` are referenced in `agent.yaml` without requiring stub directories.
 
 ### Action Structure
 
@@ -225,15 +225,13 @@ agents/
 
 #### Example App Actions
 
-**`jvagent/example_agent`** (default in `app.yaml`):
+**`jvagent/orchestrator_agent`** (reference in `app.yaml`):
 - **Core actions** (from the jvagent library):
-  - `jvagent/interact_router` — Posture + intent routing
+  - `jvagent/orchestrator` — Turn orchestration (tool selection loop)
   - `jvagent/openai_lm` — OpenAI language model
-  - `jvagent/openai_embedding` — Embeddings
+  - `jvagent/reply` — Egress voice
   - `jvagent/intro_interact_action` — First-time user intro
   - `jvagent/pageindex_action` — PageIndex RAG (install `jvagent[pageindex]`)
-  - `jvagent/persona` — Persona
-  - `jvagent/converse_interact_action` — Smalltalk fallback
 
 **`resolv/resolv_demo`**: custom `resolv/*` interview and API actions plus `jvagent/access_control_action` and `jvagent/whatsapp_action`; configure `RESOLV_TEST_*` in `.env` for `resolv/resolv_api_action`.
 
@@ -243,12 +241,19 @@ To use a core action, simply reference it in `agent.yaml`:
 
 ```yaml
 actions:
-  - action: jvagent/interact_router
+  - action: jvagent/orchestrator
     context:
       enabled: true
-      model_action_type: "OpenAILanguageModelAction"
-      history_limit: 3
-      enable_routing_cache: true  # Optional: skip LLM for repeated context (requires enable_interact_router_cache in app.yaml)
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      skills_source: both
+      skills: "-all"
+
+  - action: jvagent/reply
+    context:
+      enabled: true
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
 ```
 
 No stub directory needed - the action is automatically loaded from the core library when listed in `agent.yaml`.

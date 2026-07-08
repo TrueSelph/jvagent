@@ -1,6 +1,6 @@
 """Unit tests for ResponseBus incremental accumulation and finalization."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

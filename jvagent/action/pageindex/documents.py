@@ -830,7 +830,7 @@ async def delete_document(
         # Clean up lexical index before cascade-deleting graph nodes
         try:
             from .lexical_index import remove_document_nodes
-            from .models import DocumentContentEdge, DocumentNode
+            from .models import DocumentNode
 
             nodes = await DocumentNode.find(
                 {

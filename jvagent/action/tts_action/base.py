@@ -9,8 +9,6 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Union
 
-from jvspatial.core.annotations import attribute
-
 from jvagent.action.base import Action
 
 logger = logging.getLogger(__name__)
@@ -45,7 +43,6 @@ class BaseTTSAction(Action, ABC):
         Returns:
             Audio data as bytes, base64 string, URL, or None if failed
         """
-        pass
 
     @abstractmethod
     async def get_audio_as(
@@ -61,7 +58,6 @@ class BaseTTSAction(Action, ABC):
         Returns:
             Audio data as bytes, base64 string, URL, or None if failed
         """
-        pass
 
     @abstractmethod
     async def healthcheck(self) -> Union[bool, Dict[str, str]]:
@@ -70,7 +66,6 @@ class BaseTTSAction(Action, ABC):
         Returns:
             True if healthy, False or error dict if unhealthy
         """
-        pass
 
     async def get_voices(self) -> List[Dict[str, str]]:
         """Get all available voices. Override if provider supports it."""

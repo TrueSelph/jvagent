@@ -1,6 +1,5 @@
 """Tests for Meta WhatsApp webhook verification and WhatsAppAction meta config."""
 
-import pytest
 from jvspatial.api.integrations.webhooks.utils import generate_hmac_signature
 from starlette.requests import Request
 

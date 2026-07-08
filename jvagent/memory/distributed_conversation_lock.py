@@ -211,9 +211,13 @@ async def _dynamo_conversation_lock(
     lock_key = f"conversation:{conversation_id}"
     token = str(uuid.uuid4())
     region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+    # One client per acquisition — creating a boto3 client on every poll
+    # iteration (and again on release) pays full session/endpoint setup
+    # dozens of times under contention. boto3 clients are thread-safe, so
+    # sharing it across the to_thread hops below is fine.
+    client = boto3.client("dynamodb", region_name=region or None)
 
     def try_acquire() -> bool:
-        client = boto3.client("dynamodb", region_name=region or None)
         now = int(time.time())
         expires = now + ttl_sec
         try:
@@ -239,7 +243,6 @@ async def _dynamo_conversation_lock(
             return False
 
     def release() -> None:
-        client = boto3.client("dynamodb", region_name=region or None)
         try:
             client.delete_item(
                 TableName=table_name,

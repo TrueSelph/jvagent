@@ -119,4 +119,3 @@ class ChannelFilter(ABC):
         Args:
             message: ResponseMessage object to transform (modified in-place)
         """
-        pass

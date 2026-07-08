@@ -31,7 +31,7 @@ def access_control_action():
         user_groups={
             "default": {"admins": ["user_abc", "user_def"]},
         },
-        exceptions=["ConverseInteractAction"],
+        exceptions=["ReplyAction"],
         default_deny=True,  # Deny unless explicitly allowed
         action_aliases={"persona": "PersonaAction"},
     )
@@ -76,7 +76,7 @@ async def test_has_action_access_deny_non_admin(mock_save, access_control_action
 async def test_has_action_access_exception(mock_save, access_control_action):
     """Actions in exceptions list should always allow."""
     result = await access_control_action.has_action_access(
-        user_id="user_xyz", action_label="ConverseInteractAction", channel="default"
+        user_id="user_xyz", action_label="ReplyAction", channel="default"
     )
     assert result is True
 

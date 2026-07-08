@@ -1,7 +1,5 @@
 """Tests for PageIndex named collections and metadata."""
 
-import os
-
 import pytest
 
 pytest.importorskip("openai")
@@ -9,11 +7,9 @@ pytest.importorskip("tiktoken")
 pytest.importorskip("litellm")
 pytest.importorskip("PyPDF2")
 
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from jvspatial.api.exceptions import ValidationError
-from jvspatial.core.context import get_default_context, set_default_context
 from jvspatial.db import get_database_manager, unregister_database
 
 from jvagent.action.pageindex.adapter import persist_structure
@@ -32,7 +28,6 @@ from jvagent.action.pageindex.document_walker import DocumentWalker
 from jvagent.action.pageindex.documents import (
     _build_metadata_query,
     assimilate_document,
-    delete_document,
     enrich_structure_titles,
     export_documents,
     get_document_root,
@@ -988,35 +983,28 @@ async def test_assimilate_markdown_no_atx_headings_still_indexes(pageindex_temp_
     assert doc_chunk.get("end_index") == 3
 
 
-def test_docling_convert_requires_installed_package(tmp_path):
-    """Without a file, or missing docling, conversion fails predictably."""
+def test_docling_convert_missing_file_raises(tmp_path):
+    """Missing source file fails before any Docling import."""
     from jvagent.action.pageindex import docling_convert
 
     with pytest.raises(FileNotFoundError):
         docling_convert.convert_document_to_markdown_sync(tmp_path / "missing.pdf")
 
-    try:
-        import docling  # noqa: F401
-    except ImportError:
-        pytest.skip("docling not installed")
-    # Minimal PDF bytes (empty single page) — may still fail in some envs; skip on error
+
+def test_docling_convert_raises_when_docling_not_installed(tmp_path):
+    """When docling is absent, conversion fails with a clear ImportError."""
+    import importlib.util
+
+    if importlib.util.find_spec("docling") is not None:
+        pytest.skip("docling installed; install path covered by jvagent[pageindex]")
+
+    from jvagent.action.pageindex import docling_convert
+
     pdf_path = tmp_path / "one.pdf"
-    try:
-        from pypdf import PdfWriter
+    pdf_path.write_bytes(b"%PDF-1.0 minimal\n")
 
-        w = PdfWriter()
-        w.add_blank_page(width=72, height=72)
-        with open(pdf_path, "wb") as f:
-            w.write(f)
-    except Exception:
-        pytest.skip("could not write minimal PDF")
-
-    try:
-        md = docling_convert.convert_document_to_markdown_sync(pdf_path, ocr=False)
-    except Exception as e:
-        pytest.skip(f"docling convert failed in this environment: {e}")
-    assert isinstance(md, str)
-    assert len(md) >= 0
+    with pytest.raises(ImportError, match="Docling is required"):
+        docling_convert.convert_document_to_markdown_sync(pdf_path, ocr=False)
 
 
 def test_resolve_effective_jvforge_base_tri_state():
@@ -1215,7 +1203,6 @@ def test_jvforge_response_missing_roots_raises():
     yield a no-op success."""
     import asyncio
 
-    import httpx
     from jvspatial.api.exceptions import ValidationError
 
     from jvagent.action.pageindex.jvforge_assimilate import assimilate_via_jvforge

@@ -40,7 +40,6 @@ The compound unique index at `user.py:16-24` enforces `(memory_id, user_id)` uni
 |---|---|---|
 | `memory: Dict[str, str]` | dict[k → markdown blob] | cross-session, persistent |
 | `memory_tags: Dict[str, List[str]]` | tag → memory key list | cross-session |
-| `user_model` | str | **deprecated** — legacy compressed facts |
 | `usage` | dict | aggregate usage counters |
 | `name`, `display_name` | strings | display info |
 | `created_at`, `last_seen` | datetimes | timestamps |
@@ -214,9 +213,9 @@ Multi-process: see `memory/distributed_conversation_lock.py`. When enabled, lock
 
 Distinct from the rolling-window conversation memory:
 
-- `User.memory: Dict[str, str]` — cross-session key → markdown blob. The persona's `memory_update_user_model` tool writes here. Cross-conversation; survives pruning.
+- `User.memory: Dict[str, str]` — cross-session key → markdown blob. Orchestrator memory tools (`memory_set`, `memory_get`, …) write here. Cross-conversation; survives pruning.
 - `User.memory_tags` — tag index over `memory`.
-- **PageIndex-backed long memory** — see `jvagent/action/long_memory*/`. Vectorless RAG via LLM tree search; stored separately from conversation history. Useful for many-fact retention.
+- **Domain knowledge** — use `PageIndexAction` tools (`pageindex__search`, `pageindex__assimilate`) via Orchestrator skills, not per-user long-memory graph nodes (removed in 0.1.1).
 
 ---
 

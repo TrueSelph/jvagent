@@ -120,17 +120,9 @@ def discover_skill_docs(
     if cached_docs is not None:
         return list(cached_docs)
 
-    # Canonical sources: ``app`` (adjacent agents/<ns>/<agent>/skills),
-    # ``library`` (built-in jvagent/skills), or ``both``. Older values are kept
-    # working as aliases; ``registry`` is retired (no registry backend) and
-    # treated as ``library``.
+    # Canonical sources: ``app``, ``library``, or ``both``.
     raw = (skills_source or "both").strip().lower()
-    source = {"local": "app", "builtin": "library", "registry": "library"}.get(raw, raw)
-    if raw == "registry":
-        logger.warning(
-            "orchestrator.skills: skills_source='registry' is deprecated; "
-            "using 'library' (jvagent/skills)."
-        )
+    source = raw
     if source not in ("app", "library", "both"):
         logger.debug(
             "orchestrator.skills: unknown skills_source %r; defaulting to 'both'",

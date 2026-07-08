@@ -1,7 +1,6 @@
 """UltraMsg API Wrapper with WPPConnect-compatible interface (Async Version)."""
 
-import base64
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from .base import BaseWhatsAppAPI, MessagePayload
 

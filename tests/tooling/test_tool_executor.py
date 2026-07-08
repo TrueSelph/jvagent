@@ -14,7 +14,7 @@ from jvagent.tooling.tool_executor import (
     ToolExecutionEngine,
     bind_dispatch_context,
     get_dispatch_context,
-    get_dispatch_visitor,
+    get_tool_visitor,
 )
 from jvagent.tooling.tool_registry import ToolRegistry
 from jvagent.tooling.tool_result import ToolResult
@@ -105,7 +105,7 @@ async def test_dispatch_context_exposed_to_tool():
         ctx = get_dispatch_context()
         captured["agent_id"] = ctx.agent_id if ctx else None
         captured["user_id"] = ctx.user_id if ctx else None
-        captured["visitor"] = get_dispatch_visitor()
+        captured["visitor"] = get_tool_visitor()
         return "ok"
 
     visitor = SimpleNamespace(
@@ -125,7 +125,7 @@ async def test_dispatch_context_exposed_to_tool():
     assert captured["visitor"] is visitor
     # ContextVar is reset after dispatch — no leak to the caller.
     assert get_dispatch_context() is None
-    assert get_dispatch_visitor() is None
+    assert get_tool_visitor() is None
 
 
 async def test_bind_dispatch_context_sets_and_resets():
@@ -140,9 +140,9 @@ async def test_bind_dispatch_context_sets_and_resets():
     with bind_dispatch_context(visitor):
         ctx = get_dispatch_context()
         assert ctx is not None and ctx.agent_id == "a1" and ctx.user_id == "u1"
-        assert get_dispatch_visitor() is visitor
+        assert get_tool_visitor() is visitor
     assert get_dispatch_context() is None
-    assert get_dispatch_visitor() is None
+    assert get_tool_visitor() is None
 
 
 async def test_non_toolresult_return_is_wrapped():

@@ -61,7 +61,7 @@ class TestTaskStoreCreate:
     @pytest.mark.asyncio
     async def test_create_with_data(self):
         store, conv = _make_store()
-        handle = await store.create(
+        await store.create(
             title="t", description="t", data={"iterations": 0, "tools_called": []}
         )
         task = conv.tasks[0]

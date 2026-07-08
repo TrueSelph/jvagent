@@ -2,10 +2,7 @@
 
 import logging
 import sys
-from pathlib import Path
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from jvagent.action.loader import ActionLoader
 from jvagent.core.dependency_installer import (
@@ -115,12 +112,10 @@ class TestDependencyInstallation:
             "jvagent.core.dependency_installer.install_pip_dependencies"
         ) as mock_install:
             mock_install.return_value = True
-            result = install_action_dependencies(
-                metadata, "test_action", Path("/tmp/test")
-            )
+            result = install_action_dependencies(metadata, "test_action")
             assert result is True
             mock_install.assert_called_once_with(
-                ["requests>=2.25.0", "numpy"], "test_action", Path("/tmp/test")
+                ["requests>=2.25.0", "numpy"], "test_action"
             )
 
     def test_install_action_dependencies_no_pip_deps(self):
@@ -130,9 +125,7 @@ class TestDependencyInstallation:
         with patch(
             "jvagent.core.dependency_installer.install_pip_dependencies"
         ) as mock_install:
-            result = install_action_dependencies(
-                metadata, "test_action", Path("/tmp/test")
-            )
+            result = install_action_dependencies(metadata, "test_action")
             assert result is True
             mock_install.assert_not_called()
 
@@ -148,9 +141,7 @@ class TestDependencyInstallation:
             "jvagent.core.dependency_installer.install_pip_dependencies"
         ) as mock_install:
             with patch("jvspatial.env.env", return_value="true"):
-                result = install_action_dependencies(
-                    metadata, "test_action", Path("/tmp/test")
-                )
+                result = install_action_dependencies(metadata, "test_action")
                 assert result is False
                 mock_install.assert_not_called()
 
@@ -191,6 +182,30 @@ class TestActionLoaderDependencyInstallation:
                 data, "test_action", tmp_path / "test_action"
             )
 
-            mock_install.assert_called_once_with(
-                data, "test_action", tmp_path / "test_action"
-            )
+            mock_install.assert_called_once_with(data, "test_action")
+
+
+class TestCheckDependencyVersionAware:
+    """check_pip_dependency_installed must honor version specifiers and must
+    not import the probed package (imports have side effects and are slow)."""
+
+    def test_installed_package_passes(self):
+        assert check_pip_dependency_installed("pytest") is True
+
+    def test_missing_package_fails(self):
+        assert check_pip_dependency_installed("definitely-not-a-real-pkg-xyz") is False
+
+    def test_satisfied_version_spec_passes(self):
+        assert check_pip_dependency_installed("pytest>=1.0") is True
+
+    def test_unsatisfiable_version_spec_fails(self):
+        """An installed package at a lower version than required must fail —
+        previously version specifiers were ignored entirely."""
+        assert check_pip_dependency_installed("pytest>=9999.0") is False
+
+    def test_probe_does_not_import_package(self):
+        import sys as _sys
+
+        _sys.modules.pop("this", None)
+        assert isinstance(check_pip_dependency_installed("this"), bool)
+        assert "this" not in _sys.modules  # probe must not import

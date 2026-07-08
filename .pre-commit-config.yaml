@@ -1,3 +1,6 @@
+# `pre-commit install` also installs the pre-push hook (pytest below).
+default_install_hook_types: [pre-commit, pre-push]
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v2.3.0
@@ -62,8 +65,10 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
-        args: [tests/, -v, --tb=short]
-        stages: [manual]
+        args: [tests/, -q, --tb=short]
+        # Full suite runs on push (and via `pre-commit run pytest --hook-stage
+        # pre-push` or plain `pytest tests/`) — too slow for every commit.
+        stages: [pre-push, manual]
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.5.0
     hooks:

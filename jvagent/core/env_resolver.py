@@ -1,8 +1,10 @@
 """Environment variable resolution for YAML descriptors.
 
-Resolves ``${VAR_NAME}`` in YAML strings (missing vars become ``""``; debug log by default).
-Use ``${VAR_NAME:?}`` to emit a warning when the variable is unset or empty.
-Set ``JVAGENT_WARN_EMPTY_PLACEHOLDERS=true`` to warn on every empty ``${VAR}`` (not ``:?``).
+Resolves ``${VAR_NAME}`` in YAML strings (missing vars become ``""``; a
+WARNING is logged by default — a silently-empty credential is an ops footgun).
+Use ``${VAR_NAME:?}`` to always warn when the variable is unset or empty.
+Set ``JVAGENT_WARN_EMPTY_PLACEHOLDERS=false`` to demote plain ``${VAR}``
+misses back to debug level.
 """
 
 import logging
@@ -17,7 +19,8 @@ ENV_PLACEHOLDER_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(:\?)?\}")
 
 
 def _warn_all_empty_placeholders() -> bool:
-    raw = os.getenv("JVAGENT_WARN_EMPTY_PLACEHOLDERS", "")
+    """Warn on every unset ``${VAR}`` placeholder (default ON)."""
+    raw = os.getenv("JVAGENT_WARN_EMPTY_PLACEHOLDERS", "true")
     return str(raw).strip().lower() in ("true", "1", "yes", "on")
 
 

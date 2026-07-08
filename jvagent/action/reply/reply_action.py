@@ -434,13 +434,15 @@ class ReplyAction(Action):
         """
         interaction = getattr(visitor, "interaction", None)
         directive_items = self._directive_items(interaction)
-        if not directive_items:
-            return False
         channel = getattr(visitor, "channel", "default") or "default"
         has_params = bool(self._collect_parameters(None, interaction))
         has_format = self.apply_channel_format and bool(
             self.get_channel_format(channel)
         )
+        if not directive_items:
+            if has_params or has_format:
+                return bool(await self.respond(interaction, visitor=visitor))
+            return False
         first = directive_items[0]
         content = (
             (first.get("content") if isinstance(first, dict) else str(first)) or ""
@@ -532,11 +534,21 @@ class ReplyAction(Action):
         # NEVER answers the user's utterance on its own; with nothing passed or
         # queued, it emits nothing.
         content = base
-        # Nothing to relay → emit nothing. Parameters shape HOW to phrase, not WHAT
-        # to say, so they do not by themselves justify a compose: with no passed
-        # text and no queued directive content, ReplyAction stays silent.
+        # Parameters (and channel format) shape HOW to phrase. When no explicit
+        # message or directive is queued, fall back to the user's utterance so
+        # intro-style *contributed* parameters still reach compose.
         if not content and not directive_contents:
-            return ""
+            has_shaping = bool(
+                self._collect_parameters(parameters, interaction).strip()
+            )
+            if not has_shaping:
+                channel_pre = getattr(visitor, "channel", "default") or "default"
+                if self.apply_channel_format and self.get_channel_format(channel_pre):
+                    has_shaping = True
+            if has_shaping and interaction is not None:
+                content = (getattr(interaction, "utterance", "") or "").strip()
+            if not content and not directive_contents and not has_shaping:
+                return ""
         # Peak-attention layer: when there are directives, append a terse
         # reminder to the compose prompt itself so the obligation sits in the
         # user-turn slot the model weights most (PersonaAction's pattern).

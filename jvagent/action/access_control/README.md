@@ -56,7 +56,7 @@ actions:
         PersonaAction:
           reviewers: [user_xyz]
       exceptions:
-        - ConverseInteractAction
+        - ReplyAction
         - IntroInteractAction
 ```
 

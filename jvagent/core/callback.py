@@ -184,9 +184,7 @@ async def trigger_task_created_callback(
         # Check action config (more specific)
         dispatch_url = None
         try:
-            from jvagent.action.task_creation_interact_action.task_creation_interact_action import (
-                TaskCreationInteractAction,
-            )
+            pass
 
             scheduler = await agent.get_action_by_type("TaskCreationInteractAction")
             if scheduler:

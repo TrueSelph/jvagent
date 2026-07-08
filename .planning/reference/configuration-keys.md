@@ -182,7 +182,7 @@ See [`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) for the full pattern. H
 | `default_max_attempts` | `3` | default retry ceiling for `queue_task` when `max_attempts` is omitted |
 | `planning_prompt` | (built-in) | override the gated nudge appended when `planning` is on |
 | `clarify_text` | (fallback prompt) | reply when a turn ends with nothing emitted |
-| `skills_source` | `both` | skill discovery source (both specs): `app` (adjacent `skills/`), `library` (`jvagent/skills`), or `both`. Aliases: `local`→`app`, `builtin`→`library`; `registry` retired→`library` |
+| `skills_source` | `both` | skill discovery source: `app` (adjacent `skills/`), `library` (`jvagent/skills`), or `both`. Unknown values default to `both` (0.1.1 removed `registry`/`local`/`builtin` aliases) |
 | `skills` | `-all` | which skills to load: `-all`, or a finite list of names/fnmatch patterns (e.g. `[research, web_lookup]`) |
 | `denied_skills` | `[]` | skill names/patterns to exclude (subtracts from `skills`) |
 

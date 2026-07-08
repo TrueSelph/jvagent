@@ -15,6 +15,7 @@ from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
 from jvspatial.exceptions import ValidationError as SpatialValidationError
 
 from jvagent.action.access_control.access_control_action import log_access_denied
+from jvagent.action.utils.endpoint_helpers import require_typed_action
 from jvagent.core.agent import Agent
 
 from .canonical_send_builder import build_canonical_send_message
@@ -27,7 +28,6 @@ from .gmail_inbox import fetch_next_gmail_inbox_message
 from .inbound.sendgrid import parse_sendgrid_inbound
 from .modules.sendgrid import SendGridEmailProvider
 from .outlook_inbox import fetch_next_outlook_inbox_message
-from .utils.endpoint_helpers import get_email_action
 
 logger = logging.getLogger(__name__)
 
@@ -235,7 +235,12 @@ async def email_get_webhook_url(
     action_id: str, regenerate: bool = False
 ) -> Dict[str, Any]:
     """Return ``{ success, webhook_url }`` for admin to paste into the provider."""
-    action = await get_email_action(action_id)
+    action = await require_typed_action(
+        action_id,
+        EmailAction,
+        not_found_message=f"Email action not found: {action_id}",
+        wrong_type_message=f"Action is not an EmailAction: {action_id}",
+    )
     try:
         url = await action.get_webhook_url(regenerate=regenerate)
     except SpatialValidationError as e:
@@ -261,7 +266,12 @@ async def email_get_webhook_url(
     ),
 )
 async def email_health(action_id: str) -> Dict[str, Any]:
-    action = await get_email_action(action_id)
+    action = await require_typed_action(
+        action_id,
+        EmailAction,
+        not_found_message=f"Email action not found: {action_id}",
+        wrong_type_message=f"Action is not an EmailAction: {action_id}",
+    )
     h = await action.healthcheck()
     if h is True:
         return {"healthy": True, "details": None}
@@ -300,7 +310,12 @@ async def email_send(
     data: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Authenticated send using the canonical message or SendGrid raw mail."""
-    action = await get_email_action(action_id)
+    action = await require_typed_action(
+        action_id,
+        EmailAction,
+        not_found_message=f"Email action not found: {action_id}",
+        wrong_type_message=f"Action is not an EmailAction: {action_id}",
+    )
     if not action.is_configured():
         raise ValidationError(
             message="EmailAction is not configured",
@@ -399,7 +414,12 @@ async def email_send(
     ),
 )
 async def email_gmail_fetch_inbox_once(action_id: str) -> Dict[str, Any]:
-    action = await get_email_action(action_id)
+    action = await require_typed_action(
+        action_id,
+        EmailAction,
+        not_found_message=f"Email action not found: {action_id}",
+        wrong_type_message=f"Action is not an EmailAction: {action_id}",
+    )
     if not action.is_configured():
         raise ValidationError(
             message="EmailAction is not configured",
@@ -433,7 +453,12 @@ async def email_gmail_fetch_inbox_once(action_id: str) -> Dict[str, Any]:
     ),
 )
 async def email_outlook_fetch_inbox_once(action_id: str) -> Dict[str, Any]:
-    action = await get_email_action(action_id)
+    action = await require_typed_action(
+        action_id,
+        EmailAction,
+        not_found_message=f"Email action not found: {action_id}",
+        wrong_type_message=f"Action is not an EmailAction: {action_id}",
+    )
     if not action.is_configured():
         raise ValidationError(
             message="EmailAction is not configured",
@@ -463,7 +488,12 @@ async def email_register_inbound_webhook(
     data: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Provider-specific inbound registration (mostly a no-op for current providers)."""
-    action = await get_email_action(action_id)
+    action = await require_typed_action(
+        action_id,
+        EmailAction,
+        not_found_message=f"Email action not found: {action_id}",
+        wrong_type_message=f"Action is not an EmailAction: {action_id}",
+    )
     prov = (action.provider or "gmail").strip().lower()
     if prov in ("gmail", "outlook"):
         raise ValidationError(

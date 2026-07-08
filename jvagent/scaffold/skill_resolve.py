@@ -441,8 +441,8 @@ def action_overlay_skills_dir(
     return str(skills_root) if skills_root.is_dir() else None
 
 
-def legacy_agent_skills_dir(agent_base: Union[str, Path]) -> Optional[str]:
-    """Agent-level ``agents/.../skills`` co-location directory when present."""
+def agent_skills_dir(agent_base: Union[str, Path]) -> Optional[str]:
+    """Agent-level ``agents/.../skills`` directory when present."""
     skills_root = Path(agent_base) / "skills"
     return str(skills_root) if skills_root.is_dir() else None
 
@@ -453,14 +453,10 @@ def resolve_action_skill_scan_dirs(
     app_root: Optional[str] = None,
     agent_namespace: Optional[str] = None,
     agent_name: Optional[str] = None,
-    include_legacy_agent_skills: bool = True,
 ) -> List[str]:
     """Directories an action-backed runtime should scan for per-skill packages.
 
-    Order: action overlay ``skills/`` first, then legacy agent ``skills/``.
-    Overlay paths require loader metadata (``namespace`` + ``name`` from
-    ``info.yaml`` ``package.name``). Agent ``skills/`` is also scanned when
-    ``include_legacy_agent_skills`` is true (alternate co-location path).
+    Order: action overlay ``skills/`` first, then agent ``skills/``.
     """
     action_ref = action_ref_from_metadata(metadata)
     dirs: List[str] = []
@@ -486,8 +482,7 @@ def resolve_action_skill_scan_dirs(
     for base in agent_bases:
         if action_ref:
             _append(action_overlay_skills_dir(base, action_ref))
-        if include_legacy_agent_skills:
-            _append(legacy_agent_skills_dir(base))
+        _append(agent_skills_dir(base))
 
     return dirs
 

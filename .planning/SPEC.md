@@ -143,8 +143,8 @@ Node (jvspatial)
     ├── BaseSTTAction, BaseTTSAction, VectorStore (per provider)
     └── InteractAction          jvagent/action/interact/base.py:32
         ├── OrchestratorInteractAction
-        ├── InteractRouter
-        ├── ConverseInteractAction
+        ├── IntroInteractAction
+        ├── ReplyAction (egress tools)
         ├── InterviewAction
         └── ...(see actions-catalog.md)
 ```
@@ -246,7 +246,6 @@ Rationale: [`adr/0003-interaction-limit-pruning.md`](adr/0003-interaction-limit-
 |---|---|
 | `User.memory: Dict[str, str]` | Cross-session; per-user, persistent |
 | `User.memory_tags: Dict[str, List[str]]` | Cross-session; tag index |
-| `User.user_model` | **Deprecated**; legacy compressed facts |
 | `Conversation.context: Dict[str, Any]` | Per-session |
 | `Interaction.artifacts` | Per-interaction; pruned with the interaction |
 | `Interaction.parameters` | Per-interaction; behavioral guidance |

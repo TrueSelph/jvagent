@@ -8,7 +8,90 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ReplyAction.gather()` ignored intro-style parameters.** When the interaction
+  carried response-shaping parameters but no directives (first-engagement intro via
+  `IntroInteractAction`), `gather()` returned early without composing and
+  `respond()` treated parameters-only shaping as silent — so orchestrator
+  `_egress()` dropped the greeting. `gather()` now routes parameters-only (and
+  channel-format-only) shaping through `respond()`, which falls back to the user's
+  utterance when only shaping is present; `reply()` behavior is unchanged.
+  Orchestrator `_send_reply` also falls back to `respond()` when `gather()` does
+  not emit. Covered by `tests/action/reply/test_reply_action.py` and
+  `tests/action/intro/test_intro_orchestrator_egress.py`.
+
+### Changed
+- **Action modularization refactor** — shared channel helpers moved to `interact/webhook_pipeline.py`; OAuth to `action/oauth/`; spreadsheet range utils to `action/spreadsheet/`; `MediaManager` to `action/channels/media.py`; Meta verify/dedup canonical in `whatsapp/utils/`; `webhook_system_user_factory` collapses duplicate `webhook_auth` modules; Facebook gets own `webhook_auth`; handoff resolves notify channel via `handoff_notify_action_type`; `TaskLockPrep` in `skill_spec/task_lock.py`; public `mcp_action.normalize_call_result`. See `.planning/reference/action-modularization-audit.md`.
+- **Docling no longer in default test/dev deps.** Native PDF→Markdown still uses Docling when `convert_to_markdown` is on and ingest runs locally; install `jvagent[pageindex]` (or set `JVAGENT_JVFORGE_BASE_URL` to delegate conversion). Removed `docling`/`tabulate` from `[test]` and `requirements-dev.txt` — they pulled torch into every dev/CI install without being required for the core test suite.
+
+## [0.1.1] - 2026-07-08
+
+### Removed
+
+- **Rails orchestration** — `InteractRouter`, `ConverseInteractAction`, `RetrievalInteractAction`, `WebSearchRetrievalInteractAction`, `PageIndexRetrievalInteractAction`, `UserLongMemoryRetrievalInteractAction`, and related packages.
+- **UserLongMemory subsystem** — `UserLongMemory` / `UserLongMemoryNode` graph nodes, `UserLongMemoryInteractAction`, `UserLongMemoryStoreInteractAction`, `LongMemoryService`. Per-user durable memory is **`User.memory`** only.
+- **`User.user_model`** — use `User.memory`; one-time read migration from persisted context on user load.
+- **`get_dispatch_visitor()`** — use `get_tool_visitor()` or `get_dispatch_context()`.
+- **`skills_source='registry'`** (and `local` / `builtin` aliases) — use `app`, `library`, or `both`.
+- **`include_legacy_agent_skills`** — standard skill paths only.
+- **`enable_interact_router_cache`** / **`interact_router_cache_ttl`** app config keys.
+
+See [ADR-0029](.planning/adr/0029-rails-orchestration-removal.md) and [docs/deprecated-api-migration.md](docs/deprecated-api-migration.md).
+
+### Changed
+
+- **Builtin profiles** — `minimal` and `research` use Orchestrator + ReplyAction (Rails stack removed).
+- **Memory HTTP API** — `/memory/me` and admin content endpoints return `User.memory` dict.
+- **Orchestration docs** — [`docs/orchestration-modes.md`](docs/orchestration-modes.md) documents Orchestrator-only deployment.
+
+## [0.1.0rc15] - (prior)
+
 ### Added
+
+- **Orchestration mode guide** — [`docs/orchestration-modes.md`](docs/orchestration-modes.md)
+  documents Orchestrator vs Rails (legacy-compat) deployment patterns.
+
+- **Deprecated API migration guide** — [`docs/deprecated-api-migration.md`](docs/deprecated-api-migration.md)
+  with removal target **jvagent 0.1.1** for `User.user_model`,
+  `get_dispatch_visitor()`, `skills_source='registry'`, and
+  `include_legacy_agent_skills`.
+
+### Deprecated
+
+- **`User.user_model`** — use `User.memory`. `migrate_user_model_to_memory()`
+  helper copies legacy data. Removed in **0.1.1**.
+- **`get_dispatch_visitor()`** — use `get_tool_visitor()` or `get_dispatch_context()`. Removed in **0.1.1**.
+- **`skills_source='registry'`** (Orchestrator) — use default `both`/`app`/`library`.
+  Removed in **0.1.1**.
+- **`include_legacy_agent_skills=True`** — migrate to standard skill paths.
+  Removed in **0.1.1**.
+- **Rails orchestration** (`InteractRouter` + retrieval/converse IAs) —
+  legacy-compat; Orchestrator-only is the default for new agents. See
+  ADR-0028 and `docs/orchestration-modes.md`.
+
+### Changed
+
+- **PersonaAction references** in docstrings and READMEs updated to
+  ReplyAction/Orchestrator terminology (PersonaAction code was removed
+  previously; docs lagged).
+
+- **Dev tooling** — black `target-version` aligned to Python 3.10+;
+  `pytest-xdist` added to `[dev]` optional deps; consolidated test PDF
+  deps to `PyPDF2` only.
+
+- **LeadGenAction (`jvagent/leadgen`).** Unified conversational lead capture with
+  spec-driven `leadgen:` frontmatter, `leadgen__capture` / `retrieve` / `status` /
+  `sync` tools, server-side auto-sync to MCP destinations on capture, and
+  `jvagent skill create-leadgen` scaffolding. Reference agent:
+  `examples/jvagent_app/agents/jvagent/leadgen_agent/`.
+
+- **Storefront demo (`leadgen_agent`).** The leadgen reference agent is now a
+  multi-skill storefront: leadgen coexists with a FAQ skill (`product_faq`) and a
+  product-search skill (`product_search`) over a mock `contrib/storefront` action
+  (dummy FAQ + catalog), plus a first-message intro. Demonstrates skill
+  coexistence, return-visit retrieval, and end-to-end sync to a creds-free
+  flat-file MCP server.
 
 - **Interview declarative activation seeding (I-INT-SEED-01).** Fields may declare
   `validator_args.seed_from_activation` (canonical value → trigger phrases) and use
@@ -56,6 +139,13 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   on gated task-lock resume without relying on the model re-extracting from an
   aged observation. Key constant: `ACTIVATION_UTTERANCE_KEY` in `session.py`.
 
+### Removed
+
+- **`jvagent/lead_profile_action` and `jvagent/lead_sync_action`.** Superseded by
+  `jvagent/leadgen`. Use `leadgen__capture`, `leadgen__retrieve`, and auto-sync
+  (or `leadgen__sync` in manual mode). Library skills `lead_profile` and `lead_sync`
+  also removed.
+
 ### Changed
 
 - **Require `jvspatial==0.0.10`.** Pins the substrate floor for rc14 (orchestrator
@@ -64,6 +154,25 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 - **Interview directive composition extracted from `engine.py`.** Batch-failure
   and multi-directive merge helpers moved to `directive_compose.py` to shrink the
   tool-handler module.
+
+- **Leadgen sync is destination-agnostic and configured on the action.** Sync now
+  goes through the standard MCP interface (server + tool + arguments) with no
+  Google-Sheets-specific coupling — a flat file, spreadsheet, email, CRM, or DB
+  are the same shape. Sync config moved to the `jvagent/leadgen` action
+  (`sync_mode` / `sync_min_fields` / `sync_require_any` / `sync_destinations`) in
+  `agent.yaml`; a skill may still self-contain sync via its own `sync:` block
+  (skill wins when it declares destinations).
+
+- **Leadgen captures contact details as a standing goal.** The `leadgen__capture`
+  / `retrieve` tool descriptions carry a STANDING GOAL and the tool results add a
+  `next_ask` hint, so the agent proactively asks for the next missing field
+  (name → email/phone) tied to value each turn, easing off once required fields
+  are in.
+
+- **`IntroInteractAction` contributes a parameter, not a directive.** The
+  first-message greeting is now a response-shaping parameter so `ReplyAction`
+  weaves it into the same reply as the substantive answer, instead of emitting a
+  second, disjoint paragraph — the intro and the executive coexist in one reply.
 
 ### Fixed
 
@@ -78,6 +187,14 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   handler now also suppresses the matching parent's per-item records in the summary.
 - **`field_sort_order` no longer raises** when a `for_each` parent key is absent from
   the top-level field list (defensive `next()` lookup instead of `list.index`).
+- **Leadgen sync no longer re-syncs unchanged profiles.** `compute_digest` hashed
+  the whole profile including the stored `_leadgen_sync_digest`, so the digest
+  changed the moment it was written back and the unchanged-data check never
+  matched — every capture re-synced (duplicate rows on append-style
+  destinations). The digest now excludes underscore-prefixed internal keys.
+- **Leadgen sync no longer leaks internal keys.** `{profile_json}` included
+  `_`-prefixed bookkeeping keys (unlike `{profile_row}` / `{profile_keys}`); all
+  templates now exclude them, so internal state never reaches a destination.
 
 ### Removed
 

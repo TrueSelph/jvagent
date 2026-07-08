@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from jvagent.action.orchestrator.tools import SkillTool
 from jvagent.memory.task_proactive import ProactiveTaskSpec, coerce_priority

@@ -60,13 +60,13 @@ Root → App → Agents → Agent ─┬─ Actions → Action(s) → [InteractA
 - `Conversation.interaction_limit` controls rolling-window pruning; `0` disables.
 
 Source anchors:
-- App: [`jvagent/core/app.py:19`](jvagent/core/app.py)
-- Agent: [`jvagent/core/agent.py:18`](jvagent/core/agent.py)
+- App: [`jvagent/core/app.py:21`](jvagent/core/app.py)
+- Agent: [`jvagent/core/agent.py:30`](jvagent/core/agent.py)
 - Action base: [`jvagent/action/base.py:48`](jvagent/action/base.py)
 - InteractAction: [`jvagent/action/interact/base.py:32`](jvagent/action/interact/base.py)
 - InteractWalker: `jvagent/action/interact/interact_walker.py:50+`
 - Orchestrator: [`jvagent/action/orchestrator/orchestrator_interact_action.py`](jvagent/action/orchestrator/orchestrator_interact_action.py) + supporting modules ([`continuation.py`](jvagent/action/orchestrator/continuation.py), [`tools.py`](jvagent/action/orchestrator/tools.py), [`core_tools.py`](jvagent/action/orchestrator/core_tools.py), [`catalog.py`](jvagent/action/orchestrator/catalog.py), [`skills.py`](jvagent/action/orchestrator/skills.py))
-- Conversation + pruning: `jvagent/memory/conversation.py:250-367`
+- Conversation + pruning: `jvagent/memory/conversation.py:235` (`add_interaction`) + `:490` (`_prune_old_interactions`)
 
 ---
 
@@ -150,6 +150,8 @@ pytest tests/                  # or the affected slice(s) at minimum
   changes. Never commit with a hook still reporting changes.
 - If `pytest` has any failure, fix it or explicitly call it out; do not commit over
   red tests.
+- `pre-commit install` also installs a pre-push pytest hook (full suite on push);
+  the manual run above is still required before every commit.
 - Do not use `git commit --no-verify` to bypass the gate.
 - Applies on every branch, including hotfix/docs/chore branches.
 
@@ -191,7 +193,7 @@ pytest tests/                  # or the affected slice(s) at minimum
 | Trap | What goes wrong | Fix |
 |---|---|---|
 | Forgetting `from . import endpoints` in `__init__.py` | HTTP routes don't register | Add the import |
-| Mutating a `protected=True` field with `=` assignment | Silently dropped on some paths | Use `object.__setattr__` + `save()` (see [`app.py:537`](jvagent/core/app.py)) |
+| Mutating a `protected=True` field with `=` assignment | Silently dropped on some paths | Use `object.__setattr__` + `save()` (see `set_app_update_mode` at [`app.py:596`](jvagent/core/app.py)) |
 | Top-level `InteractAction` not routing to children | Children never execute | Call `await visitor.visit(child)` in `execute()` |
 | Setting `Agent.interaction_limit` very low after long history | Latency spike on next append | Pruning is capped per-call by `JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL` (default 100); see [`adr/0003`](.planning/adr/0003-interaction-limit-pruning.md) |
 | Caching jvspatial objects across event loops | `RuntimeError: attached to different loop` on serverless warm starts | Use the per-loop lock pattern from [`app.py:97-117`](jvagent/core/app.py) |

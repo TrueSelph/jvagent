@@ -23,6 +23,7 @@ from jvspatial.exceptions import DatabaseError, ValidationError
 from jvagent.action.access_control.access_control_action import log_access_denied
 from jvagent.action.utils.meta_webhook import verify_meta_webhook_signature
 from jvagent.core.agent import Agent
+from jvagent.core.errors import log_classified_exception
 
 from .utils.endpoint_helpers import (
     _batch_manager,
@@ -561,7 +562,12 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             logger.debug(f"Validation error parsing WhatsApp webhook request: {e}")
             raise HTTPException(status_code=400, detail=f"Invalid request format: {e}")
         except Exception as e:
-            logger.debug(f"Error parsing WhatsApp webhook request: {e}")
+            log_classified_exception(
+                logger,
+                e,
+                "Error parsing WhatsApp webhook request",
+                level=logging.DEBUG,
+            )
             data = None
 
         if not data or data.message_type in ["ignored"]:

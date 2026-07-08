@@ -495,3 +495,29 @@ async def on_register(self):
 | See a LanguageModelAction | [`anthropic`](../../jvagent/action/model/language/anthropic/) |
 | See a channel adapter | [`whatsapp`](../../jvagent/action/whatsapp/whatsapp_action.py) |
 | See a background InteractAction | grep `run_in_background = attribute(default=True)` |
+
+---
+
+## 15. Modularization contract
+
+Action packages must stay **self-contained**. Shared code belongs in intentional modules,
+not a junk-drawer `action/utils`.
+
+1. **Action package boundary** — `jvagent/action/{name}/` owns its Action class, endpoints,
+   action-local `utils/`, and `info.yaml`. No imports from sibling action packages except
+   through [shared modules](../../jvagent/action/README.md#shared-modules-import-these-across-action-families).
+2. **Shared modules** — code moves to a shared path only when **2+ unrelated action families**
+   consume it OR it is vendor-neutral infrastructure (Meta signature verify, typed endpoint
+   loader, webhook reconcile loop).
+3. **No graph entities in `utils/`** — persisted `Node`/`Object` types live in the action
+   package or a named subsystem package (`oauth/`, `channels/`).
+4. **No re-export shims** — one canonical import path; deprecate duplicates in one release
+   cycle.
+5. **Public channel helpers** — interact webhook pipeline helpers are public under
+   `interact/webhook_pipeline.py` (no `_`-prefixed imports from `interact/endpoints.py`).
+6. **Endpoints pattern** — HTTP handlers use `require_typed_action` from
+   `jvagent.action.utils.endpoint_helpers`; action-specific validation stays in action
+   class methods.
+
+CI guard: `tests/action/test_action_import_guard.py`.
+Audit snapshot: [action-modularization-audit.md](action-modularization-audit.md).

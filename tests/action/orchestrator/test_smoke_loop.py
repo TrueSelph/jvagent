@@ -6,7 +6,7 @@ only the model decision (``_run_model``) and the leaf publishes are mocked.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 

@@ -10,7 +10,6 @@ and have relationships with other components.
 
 import logging
 import os
-import traceback
 from datetime import datetime
 from typing import (
     TYPE_CHECKING,
@@ -209,7 +208,7 @@ class Action(Node):
     def get_class_name(self) -> str:
         """Get the class name of this action.
 
-        Returns the class name (e.g., "InteractRouter", "PersonaAction", "OpenAILanguageModelAction").
+        Returns the class name (e.g., "OrchestratorInteractAction", "ReplyAction", "OpenAILanguageModelAction").
         This is a convenience method to avoid using __class__.__name__ throughout the codebase.
 
         Returns:
@@ -340,7 +339,6 @@ class Action(Node):
         method, you can add additional error handling, but basic error logging
         is already provided.
         """
-        pass
 
     async def on_reload(self) -> None:
         """Called when action is reloaded (e.g., after update).
@@ -352,7 +350,6 @@ class Action(Node):
         when called through reload(). If you override this method, you can add
         additional error handling, but basic error logging is already provided.
         """
-        pass
 
     async def post_register(self) -> None:
         """Called after all actions are registered.
@@ -365,7 +362,6 @@ class Action(Node):
         when called through the Actions manager. If you override this method, you
         can add additional error handling, but basic error logging is already provided.
         """
-        pass
 
     async def on_enable(self) -> None:
         """Called when action is enabled.
@@ -378,7 +374,6 @@ class Action(Node):
         when called through enable(). If you override this method, you can add
         additional error handling, but basic error logging is already provided.
         """
-        pass
 
     async def on_startup(self) -> None:
         """Called when app starts and action is loaded from database.
@@ -392,7 +387,6 @@ class Action(Node):
 
         Note: Errors in this method are automatically logged by the base system.
         """
-        pass
 
     async def on_disable(self) -> None:
         """Called when action is disabled.
@@ -405,7 +399,6 @@ class Action(Node):
         when called through disable(). If you override this method, you can add
         additional error handling, but basic error logging is already provided.
         """
-        pass
 
     async def on_deregister(self) -> None:
         """Called when action is deregistered from the Actions manager.
@@ -421,7 +414,6 @@ class Action(Node):
         called through the Actions manager. If you override this method, you
         can add additional error handling, but basic error logging is already provided.
         """
-        pass
 
     # ============================================================================
     # Deregistration Cleanup Helpers
@@ -682,7 +674,6 @@ class Action(Node):
         cache cleanup, or background processing. The frequency is determined
         by the Actions manager.
         """
-        pass
 
     async def healthcheck(self) -> Union[bool, Dict[str, Any]]:
         """Perform health check for this action.
@@ -715,7 +706,7 @@ class Action(Node):
                 await self.save()
             except Exception as e:
                 # Log to console (database logging handled automatically by DBLogHandler)
-                logger.error(
+                logger.error(  # type: ignore[call-arg]  # details= via _logging_compat
                     f"Error enabling {self.get_class_name()}: {e}",
                     exc_info=True,
                     details={
@@ -744,7 +735,7 @@ class Action(Node):
                 await self.save()
             except Exception as e:
                 # Log to console (database logging handled automatically by DBLogHandler)
-                logger.error(
+                logger.error(  # type: ignore[call-arg]  # details= via _logging_compat
                     f"Error disabling {self.get_class_name()}: {e}",
                     exc_info=True,
                     details={
@@ -770,7 +761,7 @@ class Action(Node):
             await self.on_reload()
         except Exception as e:
             # Log to console (database logging handled automatically by DBLogHandler)
-            logger.error(
+            logger.error(  # type: ignore[call-arg]  # details= via _logging_compat
                 f"Error reloading {self.get_class_name()}: {e}",
                 exc_info=True,
                 details={
@@ -790,7 +781,6 @@ class Action(Node):
         Override this method to perform tasks after the action has been updated,
         such as reinitializing connections or refreshing caches.
         """
-        pass
 
     # ============================================================================
     # Graph Navigation
@@ -965,7 +955,7 @@ class Action(Node):
 
         # Try to get by type if specified
         if model_action_type:
-            model_action = await self.get_action(model_action_type)
+            model_action: Optional[Action] = await self.get_action(model_action_type)
             if model_action and isinstance(model_action, LanguageModelAction):
                 return model_action
 
@@ -1073,8 +1063,6 @@ class Action(Node):
 
     async def resolve_skill_scan_dirs(
         self,
-        *,
-        include_legacy_agent_skills: bool = True,
     ) -> List[str]:
         """Filesystem directories to scan for action-backed skill packages.
 
@@ -1109,7 +1097,6 @@ class Action(Node):
             app_root=app_root,
             agent_namespace=agent_ns,
             agent_name=agent_name,
-            include_legacy_agent_skills=include_legacy_agent_skills,
         )
 
     async def get_type(self) -> str:

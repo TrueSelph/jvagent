@@ -4,7 +4,7 @@ import pytest
 
 pytest.importorskip("filetype")
 try:
-    from jvspatial.api.auth.models import UserCreateAdmin
+    pass
 except ImportError:
     pytest.skip(
         "UserCreateAdmin not available in installed jvspatial", allow_module_level=True

@@ -147,16 +147,20 @@ author: Test
         """Dry run does not invoke memory repair or pruning ticks."""
         await Root.get()
 
-        with patch(
-            "jvagent.core.graph_repair_job._tick_memory_counters",
-            new_callable=AsyncMock,
-        ) as mock_memory_counters, patch(
-            "jvagent.core.graph_repair_job._tick_memory_agents",
-            new_callable=AsyncMock,
-        ) as mock_memory_agents, patch(
-            "jvagent.core.graph_repair_job._tick_prune_agents",
-            new_callable=AsyncMock,
-        ) as mock_prune:
+        with (
+            patch(
+                "jvagent.core.graph_repair_job._tick_memory_counters",
+                new_callable=AsyncMock,
+            ) as mock_memory_counters,
+            patch(
+                "jvagent.core.graph_repair_job._tick_memory_agents",
+                new_callable=AsyncMock,
+            ) as mock_memory_agents,
+            patch(
+                "jvagent.core.graph_repair_job._tick_prune_agents",
+                new_callable=AsyncMock,
+            ) as mock_prune,
+        ):
             result = await _repair_to_completion(dry_run=True)
 
         mock_memory_counters.assert_not_called()
@@ -232,15 +236,19 @@ agents: []
             call_order.append("prune")
             return await real_tick_prune(state, limits)
 
-        with patch(
-            "jvagent.core.graph_repair_job._tick_memory_counters",
-            side_effect=patched_tick_memory_counters,
-        ), patch(
-            "jvagent.core.graph_repair_job._tick_dead_edges",
-            side_effect=patched_tick_dead_edges,
-        ), patch(
-            "jvagent.core.graph_repair_job._tick_prune_agents",
-            side_effect=patched_tick_prune,
+        with (
+            patch(
+                "jvagent.core.graph_repair_job._tick_memory_counters",
+                side_effect=patched_tick_memory_counters,
+            ),
+            patch(
+                "jvagent.core.graph_repair_job._tick_dead_edges",
+                side_effect=patched_tick_dead_edges,
+            ),
+            patch(
+                "jvagent.core.graph_repair_job._tick_prune_agents",
+                side_effect=patched_tick_prune,
+            ),
         ):
             await _repair_to_completion(dry_run=False)
 
@@ -403,15 +411,17 @@ agents: []
         async def reachable(_, node):
             return density_by_id[node.id]
 
-        with patch(
-            "jvagent.core.app.App.find",
-            new=AsyncMock(return_value=[app_a, app_b, app_c]),
-        ), patch(
-            "jvagent.core.graph_repair._compute_reachable_nodes_excluding_root",
-            side_effect=reachable,
-        ), patch(
-            "jvagent.core.app.App.clear_cache"
-        ) as mock_clear_cache:
+        with (
+            patch(
+                "jvagent.core.app.App.find",
+                new=AsyncMock(return_value=[app_a, app_b, app_c]),
+            ),
+            patch(
+                "jvagent.core.graph_repair._compute_reachable_nodes_excluding_root",
+                side_effect=reachable,
+            ),
+            patch("jvagent.core.app.App.clear_cache") as mock_clear_cache,
+        ):
             out = await graph_repair_job._tick_schema_app_dedupe(context, state, limits)
 
         assert out is True
@@ -447,16 +457,20 @@ agents: []
         async def get_agent(agent_id):
             return {keep.id: keep, drop.id: drop}.get(agent_id)
 
-        with patch(
-            "jvagent.core.graph_repair_job._entity_count", new=AsyncMock(return_value=3)
-        ), patch(
-            "jvagent.core.agent.Agent.find",
-            new=AsyncMock(return_value=[keep, drop, other]),
-        ), patch(
-            "jvagent.core.agent.Agent.get", side_effect=get_agent
-        ), patch(
-            "jvagent.core.graph_repair._compute_reachable_nodes_below",
-            side_effect=density,
+        with (
+            patch(
+                "jvagent.core.graph_repair_job._entity_count",
+                new=AsyncMock(return_value=3),
+            ),
+            patch(
+                "jvagent.core.agent.Agent.find",
+                new=AsyncMock(return_value=[keep, drop, other]),
+            ),
+            patch("jvagent.core.agent.Agent.get", side_effect=get_agent),
+            patch(
+                "jvagent.core.graph_repair._compute_reachable_nodes_below",
+                side_effect=density,
+            ),
         ):
             out = await graph_repair_job._tick_schema_agent_dedupe(state, limits)
 
@@ -495,9 +509,10 @@ agents: []
 
         agent = FakeAgent()
 
-        with patch(
-            "jvagent.core.agent.Agent.find", new=AsyncMock(return_value=[agent])
-        ), patch("jvagent.core.agent.Agent.get", new=AsyncMock(return_value=agent)):
+        with (
+            patch("jvagent.core.agent.Agent.find", new=AsyncMock(return_value=[agent])),
+            patch("jvagent.core.agent.Agent.get", new=AsyncMock(return_value=agent)),
+        ):
             out_actions = await graph_repair_job._tick_schema_actions_dedupe(
                 state, limits
             )
@@ -539,13 +554,13 @@ agents: []
             return {"n.1", "n.2", "n.3"} if node.id == keep.id else {"n.1"}
 
         agent = FakeAgent()
-        with patch(
-            "jvagent.core.agent.Agent.find", new=AsyncMock(return_value=[agent])
-        ), patch(
-            "jvagent.core.agent.Agent.get", new=AsyncMock(return_value=agent)
-        ), patch(
-            "jvagent.core.graph_repair._compute_reachable_nodes_below",
-            side_effect=density,
+        with (
+            patch("jvagent.core.agent.Agent.find", new=AsyncMock(return_value=[agent])),
+            patch("jvagent.core.agent.Agent.get", new=AsyncMock(return_value=agent)),
+            patch(
+                "jvagent.core.graph_repair._compute_reachable_nodes_below",
+                side_effect=density,
+            ),
         ):
             out = await graph_repair_job._tick_schema_memory_dedupe(state, limits)
 
@@ -614,14 +629,14 @@ agents: []
             "dry_run": False,
         }
 
-        with patch(
-            "jvagent.core.agent.Agent.find", new=AsyncMock(return_value=[agent])
-        ), patch(
-            "jvagent.core.agent.Agent.get", new=AsyncMock(return_value=agent)
-        ), patch(
-            "jvagent.action.base.Action.get", new=AsyncMock(return_value=action)
-        ), patch(
-            "jvspatial.core.entities.node.Node.get", new=AsyncMock(return_value=None)
+        with (
+            patch("jvagent.core.agent.Agent.find", new=AsyncMock(return_value=[agent])),
+            patch("jvagent.core.agent.Agent.get", new=AsyncMock(return_value=agent)),
+            patch("jvagent.action.base.Action.get", new=AsyncMock(return_value=action)),
+            patch(
+                "jvspatial.core.entities.node.Node.get",
+                new=AsyncMock(return_value=None),
+            ),
         ):
             out_live = await graph_repair_job._tick_schema_singleton_actions(
                 context, live_state, limits
@@ -639,14 +654,14 @@ agents: []
             "dry_run": True,
         }
         manager.deregister_action.reset_mock()
-        with patch(
-            "jvagent.core.agent.Agent.find", new=AsyncMock(return_value=[agent])
-        ), patch(
-            "jvagent.core.agent.Agent.get", new=AsyncMock(return_value=agent)
-        ), patch(
-            "jvagent.action.base.Action.get", new=AsyncMock(return_value=action)
-        ), patch(
-            "jvspatial.core.entities.node.Node.get", new=AsyncMock(return_value=None)
+        with (
+            patch("jvagent.core.agent.Agent.find", new=AsyncMock(return_value=[agent])),
+            patch("jvagent.core.agent.Agent.get", new=AsyncMock(return_value=agent)),
+            patch("jvagent.action.base.Action.get", new=AsyncMock(return_value=action)),
+            patch(
+                "jvspatial.core.entities.node.Node.get",
+                new=AsyncMock(return_value=None),
+            ),
         ):
             out_dry = await graph_repair_job._tick_schema_singleton_actions(
                 context, dry_state, limits

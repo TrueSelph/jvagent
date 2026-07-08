@@ -2,7 +2,7 @@
 
 import pytest
 
-from jvagent.action.model import ModelAction, ModelActionResult
+from jvagent.action.model import ModelActionResult
 from jvagent.action.model.language.base import LanguageModelAction
 
 

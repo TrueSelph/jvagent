@@ -326,9 +326,9 @@ async def pre_alert_complete(ctx) -> Dict[str, Any]:
 
     if visitor is None:
         try:
-            from jvagent.tooling.tool_executor import get_dispatch_visitor
+            from jvagent.tooling.tool_executor import get_tool_visitor
 
-            visitor = get_dispatch_visitor()
+            visitor = get_tool_visitor()
         except Exception:
             visitor = None
 

@@ -17,7 +17,7 @@ InteractActions serve as **modular points of execution** that may exist in a pre
 
 ### Walker Traversal
 
-The InteractWalker is designed to traverse and execute the modular pipeline of interact actions. Core actions like InteractRouter, when employed, provide additional logic which alters or curates the walker's walk path or traversal, allowing specific actions to be executed based on the nature of the input.
+The InteractWalker traverses and executes the modular pipeline of interact actions. Orchestrator (weight -200) curates tool surfacing; other top-level actions run in weight order.
 
 ### Top-Level Action Routing
 
@@ -86,7 +86,7 @@ The `/agents/{agent_id}/interact` endpoint response format varies based on envir
     "id": "int_123",
     "utterance": "Hello",
     "response": "Hello! How can I help you today?",
-    "actions": ["InteractRouter", "ConverseInteractAction"],
+    "actions": ["OrchestratorInteractAction", "ReplyAction"],
     "directives": [],
     "tasks": [
       {
@@ -433,29 +433,21 @@ await self.respond(visitor, parameters=[self.parameters])  # ❌ Creates nested 
 - [InteractAction Base Class](base.py)
 - [InteractWalker](interact_walker.py)
 - [IntroInteractAction README](../intro/README.md)
-- [RetrievalInteractAction README](../retrieval/README.md)
+- [Orchestrator](../../docs/ORCHESTRATOR.md)
 
-## Routing Hints and Exceptions
+## Surfacing hints and exceptions
 
-InteractActions participate in routing via **anchors** and an optional
-**always_execute** flag:
+InteractActions participate in Orchestrator lean surfacing via **anchors** and **always_execute**:
 
 - `anchors: List[str]`
-  Describe when the action should be used. `InteractRouter` collects these and
-  uses them in its LLM prompt.
+  Describe when the action should be used. Orchestrator collects these for tool-selection hints.
 
 - `always_execute: bool`
-  If `True`, the action is treated as a **routing exception** and is always
-  allowed to execute, even if it is not explicitly selected by routing.
-  `InteractRouter` will automatically include the class name of such actions in
-  `interaction.anchors`, so `InteractWalker` will not skip them.
+  If `True`, the action always runs regardless of surfacing hints (e.g. intro, reply egress).
 
 Examples:
 
-- `IntroInteractAction` sets `always_execute=True` to ensure first‑time user
-  handling can run regardless of routing.
-- `ConverseInteractAction` sets `always_execute=True` so it can act as a
-  last‑resort smalltalk fallback when no other action has produced a response.
+- `IntroInteractAction` sets `always_execute=True` for first-time user handling.
+- `ReplyAction` is egress — always available via Orchestrator tools.
 
-See the [InteractRouter README](../router/README.md) for details on how
-dynamic routing exceptions are computed.
+See [Orchestrator](../../../docs/ORCHESTRATOR.md) for tool surfacing and lean-surfacing behavior.

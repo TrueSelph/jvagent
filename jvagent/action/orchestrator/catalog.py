@@ -16,10 +16,60 @@ body as an observation so it persists for the rest of the loop.
 
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
+import hashlib
+from dataclasses import dataclass, field
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
 
 from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.action.orchestrator.tools import SkillTool
+
+
+# Per-agent assembled tool surface cache. Keyed by agent_id; invalidated on
+# action reload when the orchestrator's config hash changes.
+@dataclass
+class _ToolSurfaceCacheEntry:
+    config_hash: str
+    action_tools: Dict[str, Tuple[Any, bool, Tuple[str, ...], bool]] = field(
+        default_factory=dict
+    )
+    # action_tool_name -> (raw Tool, is_flow, triggers, binds_to_visitor)
+    mcp_tools: Dict[str, Any] = field(default_factory=dict)
+    skill_docs: Tuple[SkillDoc, ...] = ()
+    longtail: frozenset[str] = frozenset()
+
+
+_TOOL_SURFACE_CACHE: Dict[str, _ToolSurfaceCacheEntry] = {}
+
+
+def compute_tool_surface_config_hash(orch: Any, enabled_action_ids: List[str]) -> str:
+    """Stable hash of orchestrator surfacing config + enabled action set."""
+    parts = [
+        str(getattr(orch, "tool_tier", "")),
+        str(getattr(orch, "lean_tool_threshold", "")),
+        str(getattr(orch, "lean_presurface_k", "")),
+        str(getattr(orch, "planning", "")),
+        str(getattr(orch, "vision", "")),
+        str(getattr(orch, "pinned_tools", "") or ""),
+        ",".join(sorted(enabled_action_ids)),
+    ]
+    digest = hashlib.sha256("|".join(parts).encode()).hexdigest()
+    return digest[:16]
+
+
+def get_tool_surface_cache(agent_id: str) -> Optional[_ToolSurfaceCacheEntry]:
+    return _TOOL_SURFACE_CACHE.get(agent_id)
+
+
+def set_tool_surface_cache(agent_id: str, entry: _ToolSurfaceCacheEntry) -> None:
+    _TOOL_SURFACE_CACHE[agent_id] = entry
+
+
+def invalidate_tool_surface_cache(agent_id: Optional[str] = None) -> None:
+    """Drop cached tool surfaces for one agent or the entire process."""
+    if agent_id is None:
+        _TOOL_SURFACE_CACHE.clear()
+    else:
+        _TOOL_SURFACE_CACHE.pop(agent_id, None)
 
 
 def build_catalog_tools(
@@ -176,4 +226,11 @@ def build_skill_meta_tools(
     }
 
 
-__all__ = ["build_catalog_tools", "build_skill_meta_tools"]
+__all__ = [
+    "build_catalog_tools",
+    "build_skill_meta_tools",
+    "compute_tool_surface_config_hash",
+    "get_tool_surface_cache",
+    "set_tool_surface_cache",
+    "invalidate_tool_surface_cache",
+]

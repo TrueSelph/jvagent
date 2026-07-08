@@ -139,15 +139,15 @@ per deployment if you need them concurrently.
 ## Interactive test CLI
 
 A standalone, dependency-light CLI for exercising the endpoints lives at
-[test_cli.py](test_cli.py). It does not import any jvagent code — it just
+[broadcast_tester.py](broadcast_tester.py). It does not import any jvagent code — it just
 talks to a running jvagent server over HTTP.
 
 ```bash
-python jvagent/action/sentdm_broadcast/test_cli.py
-python jvagent/action/sentdm_broadcast/test_cli.py --env-file path/to/.env
-python jvagent/action/sentdm_broadcast/test_cli.py --no-env   # ignore .env files
-python jvagent/action/sentdm_broadcast/test_cli.py --prompt   # force interactive auth
-python jvagent/action/sentdm_broadcast/test_cli.py -y         # explicit auto-mode
+python jvagent/action/sentdm_broadcast/broadcast_tester.py
+python jvagent/action/sentdm_broadcast/broadcast_tester.py --env-file path/to/.env
+python jvagent/action/sentdm_broadcast/broadcast_tester.py --no-env   # ignore .env files
+python jvagent/action/sentdm_broadcast/broadcast_tester.py --prompt   # force interactive auth
+python jvagent/action/sentdm_broadcast/broadcast_tester.py -y         # explicit auto-mode
 ```
 
 By default the CLI runs in **auto-mode** whenever the resolved env supplies

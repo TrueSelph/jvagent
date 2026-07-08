@@ -134,31 +134,6 @@ class PageIndexAction(Action):
         description="Template for formatting the directive in plain text. Placeholder: {results}",
     )
 
-    async def _maybe_migrate_legacy_webhook_from_retrieval(self) -> None:
-        """Copy webhook URL from PageIndexRetrievalInteractAction if still stored there."""
-        if (self.webhook_url or "").strip() and "?api_key=" in (self.webhook_url or ""):
-            return
-        agent = await self.get_agent()
-        retrieval = await agent.get_action_by_type("PageIndexRetrievalInteractAction")
-        if not retrieval:
-            return
-        legacy_url = getattr(retrieval, "webhook_url", None) or ""
-        if not legacy_url or "?api_key=" not in legacy_url:
-            return
-        agent_id = str(agent.id)
-        base_url = (get_public_base_url() or "").strip().rstrip("/")
-        if not base_url.startswith(("http://", "https://")):
-            return
-        expected_url_base = (
-            f"{base_url}/api/{PAGEINDEX_WEBHOOK_ROUTE_PREFIX}/{agent_id}"
-        )
-        if not legacy_url.startswith(expected_url_base):
-            return
-        legacy_key_id = getattr(retrieval, "webhook_api_key_id", None)
-        self.webhook_url = legacy_url
-        self.webhook_api_key_id = legacy_key_id
-        await self.save()
-
     async def get_webhook_url(
         self, allowed_ip: Optional[str] = None, regenerate: bool = False
     ) -> str:
@@ -171,7 +146,6 @@ class PageIndexAction(Action):
             )
 
         try:
-            await self._maybe_migrate_legacy_webhook_from_retrieval()
             agent = await self.get_agent()
             agent_id = str(agent.id)
             expected_url_base = (
@@ -583,14 +557,14 @@ class PageIndexAction(Action):
         """Search the internal knowledge base for documents matching a query."""
         import json
 
-        from jvagent.tooling.tool_executor import get_dispatch_visitor
+        from jvagent.tooling.tool_executor import get_tool_visitor
 
         query = query or kwargs.get("q") or kwargs.get("text") or ""
         if not query:
             return json.dumps(
                 {"error": "no query provided: pass it in 'query'"}, indent=2
             )
-        visitor = get_dispatch_visitor()
+        visitor = get_tool_visitor()
         logger.debug(
             "PageIndex _t_search: visitor=%s user_id=%s session_id=%s access_control=%s",
             type(visitor).__name__ if visitor else "None",
@@ -696,12 +670,12 @@ class PageIndexAction(Action):
         ``code_execution__bash`` and ``file_interface__*`` use.
         """
         from jvagent.action.file_interface import _core
-        from jvagent.tooling.tool_executor import get_dispatch_visitor
+        from jvagent.tooling.tool_executor import get_tool_visitor
 
         from ..documents import DOC_TEXT_EXTENSIONS
 
         rel = rel_path.strip()
-        visitor = get_dispatch_visitor()
+        visitor = get_tool_visitor()
         if visitor is None:
             return None, (
                 f"{rel!r} looks like a file path but there is no execution "
