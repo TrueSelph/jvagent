@@ -220,6 +220,7 @@ falls back to a sibling env var when its primary key is unset:
 - `DEEPGRAM_STT_MODEL` — optional STT model for jvvoice (default `nova-3`)
 - `ELEVENLABS_TTS_MODEL` — optional TTS model for jvvoice (default `eleven_flash_v2_5`)
 - `ELEVENLABS_VOICE_ID` — optional ElevenLabs voice ID for jvvoice TTS
+- `JVVOICE_INTERACT_STREAM` — stream jvagent `/interact` SSE into voice TTS on jvvoice (default `true`)
 
 ### Facebook / Messenger
 - `FACEBOOK_API_URL`
