@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
+
 def _build_skill_stub(skill_name: str, description: str) -> str:
     return f"""---
 name: {skill_name}
@@ -65,8 +66,6 @@ def _handle_skill_add_command(args: List[str], app_root: str = None) -> None:
 
 def _handle_skill_create_leadgen_command(args: List[str], app_root: str = None) -> None:
     """Scaffold a LeadGenAction skill from the example_leadgen template."""
-    import shutil
-
     if app_root is None:
         app_root = os.getcwd()
 
@@ -141,8 +140,6 @@ def _handle_skill_create_interview_command(
     args: List[str], app_root: str = None
 ) -> None:
     """Scaffold an InterviewAction skill from the example_interview template."""
-    import shutil
-
     if app_root is None:
         app_root = os.getcwd()
 

@@ -1,7 +1,7 @@
 # ADR 0028 — Rails orchestration deprecation
 
-**Status**: Superseded by [0029-rails-orchestration-removal.md](0029-rails-orchestration-removal.md) (removed in 0.1.1)  
-**Date**: 2026-07-07  
+**Status**: Superseded by [0029-rails-orchestration-removal.md](0029-rails-orchestration-removal.md) (removed in 0.1.1)
+**Date**: 2026-07-07
 **Related**: [0012-skill-executive-architecture.md](0012-skill-executive-architecture.md), [docs/orchestration-modes.md](../../docs/orchestration-modes.md)
 
 ---

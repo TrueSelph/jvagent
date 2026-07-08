@@ -33,6 +33,7 @@ from jvagent.core.config import (
 
 logger = logging.getLogger(__name__)
 
+
 def load_app_env(app_root: str = None) -> None:
     """Load .env file from the app root directory.
 
@@ -346,6 +347,8 @@ class StartupLogCounter(logging.Handler):
             "critical": self.critical_count,
             "total": self.warning_count + self.error_count + self.critical_count,
         }
+
+
 def run_server(
     update_mode: Optional[str] = None,
     debug: bool = False,

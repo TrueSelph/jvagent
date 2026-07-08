@@ -8,7 +8,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from jvagent.core.repair_phases.types import (
     PH_MEMORY_AGENTS,
-    PH_MEMORY_COUNTERS,
     PH_SCHEMA_APP_DEDUPE,
     RepairLimits,
     repair_checkpoint,

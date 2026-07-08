@@ -46,4 +46,3 @@ class OrchestratorWalkPathMixin:
             await curate(keep)
         except Exception as exc:
             logger.debug("orchestrator: curate_walk_path failed: %s", exc)
-

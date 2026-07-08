@@ -115,9 +115,11 @@ async def interact(
     # in environments that haven't called `bootstrap()` yet.
     from jvspatial import flush_deferred_entities
 
-    from jvagent.action.interact.webhook_pipeline import finalize_usage as _finalize_usage
     from jvagent.action.interact.interact_walker import InteractWalker
     from jvagent.action.interact.response_builder import build_interact_response
+    from jvagent.action.interact.webhook_pipeline import (
+        finalize_usage as _finalize_usage,
+    )
     from jvagent.action.model.context import set_interaction
     from jvagent.core.cache import get_cached_agent
     from jvagent.core.channel import normalize_channel
@@ -327,9 +329,11 @@ async def interact_stream(
 
     from jvspatial import create_task, flush_deferred_entities
 
-    from jvagent.action.interact.webhook_pipeline import finalize_usage as _finalize_usage
     from jvagent.action.interact.interact_walker import InteractWalker
     from jvagent.action.interact.response_builder import build_interact_response
+    from jvagent.action.interact.webhook_pipeline import (
+        finalize_usage as _finalize_usage,
+    )
     from jvagent.action.model.context import set_interaction
     from jvagent.core.cache import get_cached_agent
     from jvagent.core.channel import normalize_channel

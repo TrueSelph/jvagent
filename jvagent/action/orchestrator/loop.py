@@ -7,15 +7,9 @@ import json
 import logging
 import time
 import uuid
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
-from jvagent.action.orchestrator import continuation
-from jvagent.action.orchestrator.constants import (
-    _DECISION_RESERVED_KEYS,
-    _NON_SUBSTANTIVE_TOOLS,
-    _STEER_EXEMPT,
-    _TEXT_KEYS,
-)
+from jvagent.action.orchestrator.constants import _NON_SUBSTANTIVE_TOOLS
 from jvagent.action.orchestrator.loop_helpers import text_candidate as _text_candidate
 from jvagent.action.orchestrator.prompts import (
     render_capabilities_section,
@@ -26,7 +20,6 @@ from jvagent.action.parameters import (
     render_parameters,
     reply_core_parameters,
 )
-from jvagent.tooling.tool_executor import bind_dispatch_context
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -152,10 +145,6 @@ class OrchestratorLoopMixin:
             return
 
         if flow_owner and flow_owner not in tools:
-            from jvagent.action.orchestrator.continuation import (
-                cancel_orphan_flow_tasks,
-            )
-
             # Locked-in skill tasks use the skill name as owner_action — they
             # are not routable IA tools, so exempt them from the orphan sweep.
             _locked_skill_names: Set[str] = {
@@ -168,7 +157,9 @@ class OrchestratorLoopMixin:
                 routable_tool_names=set(tools.keys()),
                 locked_skill_names=_locked_skill_names,
             )
-            flow_owner = _orch().active_flow_owner(visitor, flow_tool_names=flow_tool_names)
+            flow_owner = _orch().active_flow_owner(
+                visitor, flow_tool_names=flow_tool_names
+            )
 
         flow_note = _orch().active_flow_note(flow_owner) if flow_owner else ""
 
@@ -178,7 +169,9 @@ class OrchestratorLoopMixin:
         # model creates *this* turn doesn't need a resume note). Soft, like the
         # flow note — never a hard lock.
         plan_note = (
-            _orch().plan_resume_note(_orch().active_plan(visitor, owner=self.get_class_name()))
+            _orch().plan_resume_note(
+                _orch().active_plan(visitor, owner=self.get_class_name())
+            )
             if self.planning
             else ""
         )
@@ -872,6 +865,3 @@ class OrchestratorLoopMixin:
                 ticks_light=ticks_light,
                 ticks_heavy=ticks_heavy,
             )
-
-
-

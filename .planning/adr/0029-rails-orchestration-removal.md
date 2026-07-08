@@ -1,7 +1,7 @@
 # ADR 0029 — Rails orchestration and long memory removal
 
-**Status**: Accepted  
-**Date**: 2026-07-08  
+**Status**: Accepted
+**Date**: 2026-07-08
 **Supersedes**: [0028-rails-orchestration-deprecation.md](0028-rails-orchestration-deprecation.md)
 
 ---

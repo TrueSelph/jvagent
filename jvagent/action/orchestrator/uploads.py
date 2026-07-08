@@ -6,7 +6,7 @@ import asyncio
 import base64
 import logging
 import re
-from typing import TYPE_CHECKING, Any, List, Optional, Set, Tuple
+from typing import Any, List, Optional, Set, Tuple
 
 from jvagent.action.interact.utils.uploads import (
     DEFAULT_UPLOAD_KEYS,
@@ -14,9 +14,6 @@ from jvagent.action.interact.utils.uploads import (
     decode_text,
     human_size,
 )
-
-if TYPE_CHECKING:
-    from jvagent.action.interact.interact_walker import InteractWalker
 
 logger = logging.getLogger(__name__)
 
@@ -292,4 +289,3 @@ class OrchestratorUploadsMixin:
             if text:
                 chunks.append(text[:_RECALL_MAX_CHARS])
         return "\n\n---\n\n".join(chunks)
-

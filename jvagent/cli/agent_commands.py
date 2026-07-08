@@ -12,6 +12,7 @@ from jvagent.cli.server_config import _set_db_env_from_config
 
 logger = logging.getLogger(__name__)
 
+
 def _handle_agent_create_command(args: List[str], app_root: str = None) -> None:
     """Scaffold a new agent directory and register it in app.yaml."""
     if app_root is None:
@@ -78,6 +79,8 @@ def _handle_agent_create_command(args: List[str], app_root: str = None) -> None:
     print(
         "Run: jvagent bootstrap --update   (or jvagent --update) to load the new agent."
     )
+
+
 def handle_bundle_command(args: List[str], app_root: str = None) -> None:
     """Handle bundle command - generates Dockerfile in app directory.
 
@@ -173,6 +176,8 @@ def handle_agent_command(args: List[str], app_root: str = None) -> None:
         print(
             "      To install agents, add them to app.yaml and run 'jvagent' or 'jvagent bootstrap'."
         )
+
+
 def handle_action_command(args: List[str], app_root: str = None) -> None:
     """Handle action management commands.
 

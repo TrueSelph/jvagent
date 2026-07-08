@@ -6,6 +6,7 @@ from typing import List
 
 logger = logging.getLogger(__name__)
 
+
 def run_validate(app_root: str) -> int:
     """Validate ``app.yaml`` and discovered ``agent.yaml`` files.
 
