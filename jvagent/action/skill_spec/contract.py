@@ -45,9 +45,7 @@ def validate_functions_in_custom_tools(
     text: Optional[str] = None
     if resolver is None:
         if not module_path.is_file():
-            return [
-                f"Missing scripts/custom_tools.py for hooks: {sorted(set(names))}"
-            ]
+            return [f"Missing scripts/custom_tools.py for hooks: {sorted(set(names))}"]
         text = module_path.read_text(encoding="utf-8")
 
     builtin_set = builtins or set()

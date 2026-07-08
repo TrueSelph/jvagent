@@ -51,8 +51,8 @@ def get_dispatch_context() -> Optional[ToolDispatchContext]:
     return _dispatch_context_var.get()
 
 
-def get_dispatch_visitor() -> Optional[Any]:
-    """Return the live visitor (deprecated; prefer :func:`get_dispatch_context`)."""
+def get_tool_visitor() -> Optional[Any]:
+    """Return the live InteractWalker for the current tool dispatch batch."""
     return _dispatch_visitor_var.get()
 
 
@@ -126,7 +126,7 @@ class ToolExecutionEngine:
         self.sanitize_errors = sanitize_errors
         self.envelopes: List[ToolExecutionEnvelope] = []
         # Visitor (e.g. InteractWalker) shared across all tool calls in this
-        # engine instance; surfaced to tool closures via ``get_dispatch_visitor``
+        # engine instance; surfaced to tool closures via ``get_tool_visitor``
         # so per-user routing (MCP filesystem subprocess, etc.) works without
         # changing the Tool API.
         self._visitor = visitor

@@ -20,7 +20,7 @@ It:
 
 1. Calls `database.drop_deprecated_indexes(DEPRECATED_INDEXES)` — a small map of MongoDB collection → index names that are no longer defined in code (see `index_bootstrap.py`).
 2. Clears jvspatial’s in-process `_ensured_indexes` cache so every entity class is re-evaluated.
-3. Calls `ensure_indexes` for jvagent’s core entity types (Agent, Action, Conversation, Interaction, User, UserLongMemory, UserLongMemoryNode, RepairState, `DBLog`, optional OAuth token types).
+3. Calls `ensure_indexes` for jvagent’s core entity types (Agent, Action, Conversation, Interaction, User, RepairState, `DBLog`, optional OAuth token types).
 
 ### Why
 

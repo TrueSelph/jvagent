@@ -80,12 +80,15 @@ class TestConnectionPoolEventLoop:
         mock_pool.get_session = AsyncMock(return_value=mock_session)
         mock_pool.close_session = AsyncMock()
 
-        with patch(
-            "jvagent.action.whatsapp.modules.base.get_connection_pool",
-            return_value=mock_pool,
-        ), patch(
-            "jvagent.action.whatsapp.modules.base.aiohttp.ClientSession"
-        ) as mock_client_cls:
+        with (
+            patch(
+                "jvagent.action.whatsapp.modules.base.get_connection_pool",
+                return_value=mock_pool,
+            ),
+            patch(
+                "jvagent.action.whatsapp.modules.base.aiohttp.ClientSession"
+            ) as mock_client_cls,
+        ):
             # Fresh session for retry
             fresh_mock = MagicMock()
             fresh_mock.request = mock_request

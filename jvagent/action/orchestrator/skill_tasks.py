@@ -9,7 +9,6 @@ from __future__ import annotations
 import fnmatch
 import inspect
 import logging
-from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -24,6 +23,9 @@ from typing import (
 
 if TYPE_CHECKING:
     pass
+
+from jvagent.action.skill_spec.task_lock import TaskLockPrep  # noqa: F401 — re-export
+from jvagent.core.errors import log_classified_exception, retry_if_transient
 
 logger = logging.getLogger(__name__)
 
@@ -346,10 +348,11 @@ async def resolve_active_task_lock_skill(
             ):
                 return result
         except Exception as exc:
-            logger.warning(
-                "skill_tasks: resolve_task_lock_skill failed on %s: %s",
-                type(action).__name__,
+            log_classified_exception(
+                logger,
                 exc,
+                "skill_tasks: resolve_task_lock_skill failed on %s",
+                type(action).__name__,
             )
 
     doc = _task_lock_skill_from_task_store(conversation, skill_by_name)
@@ -373,18 +376,23 @@ async def ensure_task_lock_task(visitor: Any, doc: Any) -> None:
     if has_active_skill_task(store, doc.name):
         return
     try:
-        handle = await store.create(
-            title=doc.name,
-            description=doc.description or f"Executing skill {doc.name}",
-            owner_action=doc.name,
-            task_type="SKILL",
-        )
-        await handle.start()
+
+        async def _create_and_start() -> None:
+            handle = await store.create(
+                title=doc.name,
+                description=doc.description or f"Executing skill {doc.name}",
+                owner_action=doc.name,
+                task_type="SKILL",
+            )
+            await handle.start()
+
+        await retry_if_transient(_create_and_start, max_attempts=2)
     except Exception as exc:
-        logger.warning(
-            "skill_tasks: failed to create task for task-lock skill %s: %s",
-            doc.name,
+        log_classified_exception(
+            logger,
             exc,
+            "skill_tasks: failed to create task for task-lock skill %s",
+            doc.name,
         )
 
 
@@ -480,8 +488,12 @@ async def push_unmet_prerequisites(
             already.add(when)
             await gated.update(_pushed_preconditions=sorted(already))
         except Exception as exc:
-            logger.warning(
-                "push: failed to push prerequisite %s for %s: %s", push, doc.name, exc
+            log_classified_exception(
+                logger,
+                exc,
+                "push: failed to push prerequisite %s for %s",
+                push,
+                doc.name,
             )
             return None
         return push  # one detour at a time
@@ -528,11 +540,12 @@ async def push_followon_prerequisite(
             if parent is not None:
                 await parent.add_blocker(prereq.id)
     except Exception as exc:
-        logger.warning(
-            "skill_tasks: failed to push follow-on %s after %s: %s",
+        log_classified_exception(
+            logger,
+            exc,
+            "skill_tasks: failed to push follow-on %s after %s",
             to_skill,
             from_skill,
-            exc,
         )
         return None
     return to_skill
@@ -562,11 +575,12 @@ def compose_skill_activate_hooks(
                 if note:
                     notes.append(note)
             except Exception as exc:
-                logger.warning(
-                    "skill_tasks: on_skill_activate failed for %s via %s: %s",
+                log_classified_exception(
+                    logger,
+                    exc,
+                    "skill_tasks: on_skill_activate failed for %s via %s",
                     doc.name,
                     type(bound).__name__,
-                    exc,
                 )
                 notes.append(f"(skill activation error: {exc})")
 
@@ -701,22 +715,14 @@ async def ensure_task_lock_session(
             )
         return note
     except Exception as exc:
-        logger.warning(
-            "skill_tasks: ensure_task_lock_session failed for %s via %s: %s",
+        log_classified_exception(
+            logger,
+            exc,
+            "skill_tasks: ensure_task_lock_session failed for %s via %s",
             doc.name,
             type(bound).__name__,
-            exc,
         )
     return None
-
-
-@dataclass
-class TaskLockPrep:
-    """Optional bound-action output when a task-lock skill turn starts."""
-
-    observations: List[Dict[str, Any]] = field(default_factory=list)
-    runtime_ready: Optional[bool] = None
-    pending_directive: Optional[str] = None
 
 
 def task_lock_section_text(

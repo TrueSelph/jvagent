@@ -21,7 +21,7 @@ class VectorStore(Action, ABC):
 
     VectorStore provides a standard interface for storing documents with embeddings
     and performing semantic similarity search. This enables semantic search capabilities
-    for PersonaAction components like parameters, flows, canned responses, and glossary terms.
+    for ReplyAction components like parameters, flows, canned responses, and glossary terms.
 
     Subclasses should implement the abstract methods to provide specific vector database
     backend implementations (e.g., Typesense, Pinecone, Weaviate).

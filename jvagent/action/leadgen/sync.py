@@ -155,9 +155,9 @@ async def _sync_mcp(
 
     try:
         call_result = await client.call_tool(tool_name, resolved_args)
-        from jvagent.action.mcp.mcp_action import _normalize_call_result
+        from jvagent.action.mcp.mcp_action import normalize_call_result
 
-        norm = _normalize_call_result(call_result, tool_name)
+        norm = normalize_call_result(call_result, tool_name)
         if norm.is_error:
             return False, f"MCP error: {norm.text}"
         return True, "ok"

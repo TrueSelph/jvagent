@@ -516,9 +516,9 @@ async def verify_phone_number(ctx) -> str:
     session = ctx.session
 
     if visitor is None:
-        from jvagent.tooling.tool_executor import get_dispatch_visitor
+        from jvagent.tooling.tool_executor import get_tool_visitor
 
-        visitor = get_dispatch_visitor()
+        visitor = get_tool_visitor()
 
     phone = (ctx.args.get("phone") or "").strip()
     if not phone and session:
@@ -763,9 +763,9 @@ async def process_id_card(ctx) -> str:
     session = ctx.session
 
     if visitor is None:
-        from jvagent.tooling.tool_executor import get_dispatch_visitor
+        from jvagent.tooling.tool_executor import get_tool_visitor
 
-        visitor = get_dispatch_visitor()
+        visitor = get_tool_visitor()
 
     image_urls = _get_image_urls(visitor)
     if not image_urls:
@@ -908,9 +908,9 @@ async def reset_onboarding(ctx) -> str:
 
     if visitor is None:
         try:
-            from jvagent.tooling.tool_executor import get_dispatch_visitor
+            from jvagent.tooling.tool_executor import get_tool_visitor
 
-            visitor = get_dispatch_visitor()
+            visitor = get_tool_visitor()
         except Exception:
             visitor = None
 
@@ -1030,9 +1030,9 @@ async def complete_onboarding(ctx) -> Dict[str, Any]:
 
     if visitor is None:
         try:
-            from jvagent.tooling.tool_executor import get_dispatch_visitor
+            from jvagent.tooling.tool_executor import get_tool_visitor
 
-            visitor = get_dispatch_visitor()
+            visitor = get_tool_visitor()
         except Exception:
             visitor = None
 

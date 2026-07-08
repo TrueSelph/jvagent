@@ -208,7 +208,7 @@ class Action(Node):
     def get_class_name(self) -> str:
         """Get the class name of this action.
 
-        Returns the class name (e.g., "InteractRouter", "PersonaAction", "OpenAILanguageModelAction").
+        Returns the class name (e.g., "OrchestratorInteractAction", "ReplyAction", "OpenAILanguageModelAction").
         This is a convenience method to avoid using __class__.__name__ throughout the codebase.
 
         Returns:
@@ -1063,8 +1063,6 @@ class Action(Node):
 
     async def resolve_skill_scan_dirs(
         self,
-        *,
-        include_legacy_agent_skills: bool = True,
     ) -> List[str]:
         """Filesystem directories to scan for action-backed skill packages.
 
@@ -1099,7 +1097,6 @@ class Action(Node):
             app_root=app_root,
             agent_namespace=agent_ns,
             agent_name=agent_name,
-            include_legacy_agent_skills=include_legacy_agent_skills,
         )
 
     async def get_type(self) -> str:

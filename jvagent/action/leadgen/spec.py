@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union
 
 from jvagent.action.skill_spec.base import (
-    SKILL_MD,
     SkillToolDef,
     load_frontmatter_block_from_skill,
     parse_handlers_mapping,

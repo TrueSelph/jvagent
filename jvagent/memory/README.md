@@ -66,12 +66,13 @@ branch node under the `Conversation`; each `Artifact` is also connected from the
 - **Events**: `interaction.events`, `get_events_by_action()`
 - **Response**: `set_response()`, `has_response()`, `close_interaction()`
 - **Vision**: image interpretations are no longer stored on the interaction. When vision is enabled the orchestrator runs a pre-loop reflex (VisionAction) and stores the description as a conversation **artifact** (see Artifacts above), reachable for follow-ups without re-sending images. (ADR-0021.)
-- **Routing (from InteractRouter)**: `interpretation`, `anchors`, `intent_type`, `response_posture` (RESPOND | SUPPRESS | DEFER)
+- **Intent metadata (optional history)**: `interpretation`, `anchors`, `intent_type`, `response_posture` (RESPOND | SUPPRESS | DEFER)
 
 ### User
 
 - **Conversations**: `create_conversation()`, `get_conversation_by_session()`, `list_conversations()`, `get_active_conversation()`
-- **Profile**: `set_name()`, `set_display_name()`, `get_display_name()`, `update_user_model()`, `get_user_model()`
+- **Profile**: `set_name()`, `set_display_name()`, `get_display_name()`
+- **Durable memory**: `User.memory` dict + `User.memory_tags` (Orchestrator memory tools; `/memory/me` HTTP)
 
 ### Memory (Manager)
 

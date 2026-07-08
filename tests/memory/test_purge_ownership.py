@@ -32,13 +32,16 @@ async def test_purge_conversation_id_belongs_to_other_memory_refused():
     in_scope = SimpleNamespace(id="user_in_memory")
     other_owners_conv = _FakeConversation(owner_id="user_in_other_memory")
 
-    with patch.object(
-        Memory,
-        "users_scoped_to_this_memory",
-        new=AsyncMock(return_value=[in_scope]),
-    ), patch(
-        "jvagent.memory.conversation.Conversation.get",
-        new=AsyncMock(return_value=other_owners_conv),
+    with (
+        patch.object(
+            Memory,
+            "users_scoped_to_this_memory",
+            new=AsyncMock(return_value=[in_scope]),
+        ),
+        patch(
+            "jvagent.memory.conversation.Conversation.get",
+            new=AsyncMock(return_value=other_owners_conv),
+        ),
     ):
         result = await memory.purge_conversations(conversation_id="conv_x")
 
@@ -52,13 +55,16 @@ async def test_purge_conversation_id_belongs_to_this_memory_succeeds():
     in_scope = SimpleNamespace(id="user_in_memory")
     legit_conv = _FakeConversation(owner_id="user_in_memory")
 
-    with patch.object(
-        Memory,
-        "users_scoped_to_this_memory",
-        new=AsyncMock(return_value=[in_scope]),
-    ), patch(
-        "jvagent.memory.conversation.Conversation.get",
-        new=AsyncMock(return_value=legit_conv),
+    with (
+        patch.object(
+            Memory,
+            "users_scoped_to_this_memory",
+            new=AsyncMock(return_value=[in_scope]),
+        ),
+        patch(
+            "jvagent.memory.conversation.Conversation.get",
+            new=AsyncMock(return_value=legit_conv),
+        ),
     ):
         result = await memory.purge_conversations(conversation_id="conv_x")
 
@@ -69,13 +75,16 @@ async def test_purge_conversation_id_belongs_to_this_memory_succeeds():
 @pytest.mark.asyncio
 async def test_purge_missing_conversation_returns_none():
     memory = Memory()
-    with patch.object(
-        Memory,
-        "users_scoped_to_this_memory",
-        new=AsyncMock(return_value=[]),
-    ), patch(
-        "jvagent.memory.conversation.Conversation.get",
-        new=AsyncMock(return_value=None),
+    with (
+        patch.object(
+            Memory,
+            "users_scoped_to_this_memory",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch(
+            "jvagent.memory.conversation.Conversation.get",
+            new=AsyncMock(return_value=None),
+        ),
     ):
         result = await memory.purge_conversations(conversation_id="missing")
     assert result is None

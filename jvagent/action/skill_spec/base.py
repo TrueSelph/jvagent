@@ -125,7 +125,5 @@ def load_frontmatter_block_from_skill(
     if not block_data:
         return None, default_name, skill_file
     if not isinstance(block_data, dict):
-        raise ValueError(
-            f"Frontmatter '{block_key}' must be a mapping in {skill_file}"
-        )
+        raise ValueError(f"Frontmatter '{block_key}' must be a mapping in {skill_file}")
     return block_data, default_name, skill_file

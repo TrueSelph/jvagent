@@ -12,8 +12,9 @@ reply as whatever the rest of the turn produced — so a new visitor who opens w
 a real question gets **one coherent answer that also introduces the agent**,
 rather than a canned greeting stacked on top of a second, separate answer.
 
-- **First-message only** — runs when `visitor.new_user` is true; skips returning
-  users.
+- **First engagement only** — runs when `visitor.new_user` is true (first time this
+  user appears under the agent's Memory). Skips returning users, session resumes,
+  and new conversations for an already-known `user_id`.
 - **Coexists with the orchestrator** — because the greeting is a phrasing rule,
   the orchestrator's answer stays the single unit of content; the intro just
   makes the reply open with a brief self-introduction.

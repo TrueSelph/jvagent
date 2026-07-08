@@ -10,25 +10,26 @@ import logging
 import re
 from typing import Any, Dict, Optional, Tuple
 
-from jvspatial import flush_deferred_entities
 from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.exceptions import DatabaseError, ValidationError
 
+from jvagent.action.channels.media import MediaManager
 from jvagent.action.interact.interact_walker import InteractWalker
-from jvagent.core.app import App
+from jvagent.action.interact.webhook_pipeline import (
+    build_utterance_with_quoted_context,
+    finalize_interaction_from_webhook,
+    get_conversation_with_lock,
+)
 from jvagent.core.public_url import get_public_base_url
-from jvagent.memory.conversation import Conversation
 
 from ..whatsapp_action import WhatsAppAction
 from .conversation_lock_manager import ConversationLockManager
 from .media_batch_manager import MediaBatchManager
-from .media_manager import MediaManager
 
 logger = logging.getLogger(__name__)
 
 # Global instances
 _batch_manager = MediaBatchManager()
-_conversation_lock_manager = ConversationLockManager()
 
 
 async def get_whatsapp_action(action_id: str) -> WhatsAppAction:
@@ -68,51 +69,16 @@ def normalize_result(
     return result
 
 
-def _extract_quoted_text(quoted_message: Optional[Dict[str, Any]]) -> Optional[str]:
-    """Extract text from quoted message dict (provider-agnostic).
-
-    Args:
-        quoted_message: Raw quoted message dict from webhook (e.g. quotedMsg)
-
-    Returns:
-        Stripped text string or None if not found/empty
-    """
-    if not quoted_message or not isinstance(quoted_message, dict):
-        return None
-    for key in ("body", "content", "text"):
-        val = quoted_message.get(key)
-        if isinstance(val, str) and val.strip():
-            return val.strip()
-    nested = quoted_message.get("message") or {}
-    if isinstance(nested, dict):
-        for key in ("body", "content", "text"):
-            val = nested.get(key)
-            if isinstance(val, str) and val.strip():
-                return val.strip()
-    return None
-
-
 def _extract_quoted_image(
     quoted_message: Optional[Dict[str, Any]]
 ) -> Optional[Dict[str, str]]:
-    """Extract base64 image from quoted message when user replies to an image.
-
-    Provider-agnostic: handles whatsapp-web.js, WPPConnect, UltraMsg, etc.
-    Strips data: URI prefix if present; create_multimodal_content adds it.
-
-    Args:
-        quoted_message: Raw quoted message dict from webhook (e.g. quotedMsg)
-
-    Returns:
-        {"base64": "..."} or None if no image found
-    """
+    """Extract base64 image from quoted message when user replies to an image."""
     if not quoted_message or not isinstance(quoted_message, dict):
         return None
 
     msg_type = (quoted_message.get("type") or "").lower()
     nested = quoted_message.get("message") or {}
 
-    # Check if quoted message is an image (top-level or nested)
     is_image = msg_type in ("image", "img")
     if not is_image and isinstance(nested, dict):
         nested_type = (nested.get("type") or "").lower()
@@ -122,7 +88,6 @@ def _extract_quoted_image(
     if not is_image:
         return None
 
-    # Extract base64 from common locations
     raw = None
     for key in ("body", "data", "media"):
         val = quoted_message.get(key)
@@ -148,7 +113,6 @@ def _extract_quoted_image(
     if not raw or not raw.strip():
         return None
 
-    # Strip data: URI prefix if present
     s = raw.strip()
     if "," in s and s.lower().startswith("data:"):
         s = s.split(",", 1)[1]
@@ -158,64 +122,8 @@ def _extract_quoted_image(
     return {"base64": s}
 
 
-def _build_utterance_with_quoted_context(
-    quoted_message: Optional[Dict[str, Any]],
-    base_utterance: Optional[str],
-) -> Optional[str]:
-    """Augment utterance with quoted message context when user replies to a message.
-
-    Args:
-        quoted_message: Raw quoted message dict (caller extracts from data)
-        base_utterance: Existing utterance (body, caption, or transcript)
-
-    Returns:
-        Augmented utterance string, or base_utterance unchanged if no quoted text
-    """
-    quoted_text = _extract_quoted_text(quoted_message)
-    if not quoted_text:
-        return base_utterance
-    user_utterance = (
-        base_utterance.strip() if base_utterance else "(no additional message)"
-    )
-    return f'User replied to: "{quoted_text}" with "{user_utterance}"'
-
-
-async def get_conversation_with_lock(
-    sender: str, agent_id: Optional[str] = None
-) -> Optional[Any]:
-    """Get conversation for user with proper locking to prevent duplicates.
-
-    This function ensures that only one request at a time can look up or
-    create a conversation for a given user, preventing race conditions.
-
-    Args:
-        sender: User ID / phone number
-        agent_id: When set, only conversations under that agent's Memory are considered.
-
-    Returns:
-        Conversation object if found, None otherwise
-    """
-    lock = await _conversation_lock_manager.acquire_lock(sender)
-
-    async with lock:
-        try:
-            if agent_id:
-                from jvagent.core.agent import Agent
-                from jvagent.memory.user import User
-
-                agent = await Agent.get(agent_id)
-                if agent:
-                    memory = await agent.get_memory()
-                    if memory:
-                        for user in await memory.nodes(node=User, user_id=sender):
-                            active = await user.get_active_conversation()
-                            if active:
-                                return active
-                return None
-            return await Conversation.find_one({"context.user_id": sender})
-        except DatabaseError as e:
-            logger.error(f"Database error finding conversation for user {sender}: {e}")
-            return None
+# Backward-compatible alias for WhatsApp-local imports
+_build_utterance_with_quoted_context = build_utterance_with_quoted_context
 
 
 async def create_whatsapp_walker(
@@ -275,67 +183,8 @@ async def finalize_whatsapp_interaction(
     agent_id: str,
     sender: str,
 ) -> None:
-    """Finalize a WhatsApp interaction after walker execution.
-
-    Handles response bus finalization, interaction closing, saving, and logging.
-
-    Args:
-        walker: The executed InteractWalker
-        agent_id: Agent ID for logging
-        sender: User ID for error logging
-    """
-    interaction = walker.interaction
-    if not interaction:
-        return
-
-    try:
-        await interaction.close_interaction()
-
-        # Flush deferred saves (interaction and conversation)
-        await flush_deferred_entities(interaction, walker.conversation, strict=True)
-
-        # Trigger background-deferred actions (like the Proactive Scheduler)
-        from jvagent.action.interact.endpoints import _run_background_actions
-
-        await _run_background_actions(walker)
-
-        # Compute usage after flush so all model_call events are present
-        from jvagent.action.interact.endpoints import _finalize_usage
-
-        await _finalize_usage(interaction)
-
-        # Log interaction
-        try:
-            from jvagent.action.interact.endpoints import _build_interaction_log_data
-            from jvagent.action.interact.response_builder import (
-                _consolidated_tasks_for_interaction,
-            )
-            from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
-
-            app = await App.get()
-            app_id = app.id if app else ""
-            tasks = []
-            if walker.conversation:
-                active = walker.conversation.get_tasks(status="active")
-                tasks = _consolidated_tasks_for_interaction(
-                    interaction, walker.conversation, active
-                )
-            log_data, message = _build_interaction_log_data(
-                interaction,
-                app_id,
-                agent_id,
-                tasks=tasks,
-                visitor_data=walker.data,
-            )
-            logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
-        except Exception as log_err:
-            logger.debug(f"Failed to log WhatsApp interaction: {log_err}")
-
-    except DatabaseError as e:
-        logger.error(f"Database error finalizing interaction for user {sender}: {e}")
-        raise
-    except Exception as e:
-        logger.error(f"Error finalizing interaction for user {sender}: {e}")
+    """Finalize a WhatsApp interaction after walker execution."""
+    await finalize_interaction_from_webhook(walker, agent_id, sender)
 
 
 async def _clear_whatsapp_typing(
@@ -790,3 +639,14 @@ async def is_directed_message(action_node: WhatsAppAction, data: Any) -> bool:
                 return True
 
     return False
+
+
+__all__ = [
+    "ConversationLockManager",
+    "MediaBatchManager",
+    "create_whatsapp_walker",
+    "finalize_whatsapp_interaction",
+    "get_conversation_with_lock",
+    "get_whatsapp_action",
+    "normalize_result",
+]

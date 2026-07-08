@@ -176,18 +176,22 @@ class TestProcessPersistentBatchJsonDB:
                     "agent_id": "agent1",
                 },
             )
-            with patch.object(
-                media_batch_manager_mod,
-                "get_prime_database",
-                return_value=db,
-            ), patch.object(
-                media_batch_manager_mod,
-                "is_serverless_mode",
-                return_value=True,
-            ), patch.object(
-                MediaBatchManager,
-                "_process_batch_internal",
-                new_callable=AsyncMock,
+            with (
+                patch.object(
+                    media_batch_manager_mod,
+                    "get_prime_database",
+                    return_value=db,
+                ),
+                patch.object(
+                    media_batch_manager_mod,
+                    "is_serverless_mode",
+                    return_value=True,
+                ),
+                patch.object(
+                    MediaBatchManager,
+                    "_process_batch_internal",
+                    new_callable=AsyncMock,
+                ),
             ):
                 ok = await media_batch_manager_mod.process_persistent_batch(
                     "sender1",

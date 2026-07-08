@@ -7,7 +7,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
 
-from jvagent.tooling.tool_executor import get_dispatch_visitor
+from jvagent.tooling.tool_executor import get_tool_visitor
 
 from . import sync as sync_mod
 from .hooks import HookExecutionContext, call_hook
@@ -25,7 +25,7 @@ _CAPTURE_DEDUP_TTL = 30.0
 
 
 async def get_user_and_interaction(visitor: Any = None):
-    visitor = visitor or get_dispatch_visitor()
+    visitor = visitor or get_tool_visitor()
     interaction = getattr(visitor, "interaction", None)
     if not interaction:
         return None, None

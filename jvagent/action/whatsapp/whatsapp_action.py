@@ -17,6 +17,7 @@ from jvagent.action.base import Action
 from jvagent.core.public_url import get_public_base_url
 
 from .modules.meta_api import MetaWhatsAppAPI
+from .modules.registry import get_provider_factory
 from .modules.ultramsg import UltraMsgAPI
 from .modules.wppconnect import WPPConnectAPI
 from .modules.wwebjs_api import WWebJSAPI
@@ -281,7 +282,7 @@ class WhatsAppAction(Action):
         return True
 
     def get_capabilities(self) -> List[str]:
-        """Return WhatsApp capabilities for PersonaAction when enabled."""
+        """Return WhatsApp capabilities for ReplyAction prompt aggregation when enabled."""
         if not self.enabled:
             return []
         if self.is_meta_provider():
@@ -761,7 +762,10 @@ class WhatsAppAction(Action):
                 phone_id = self._env_phone_number_id()
                 agent = await self.get_agent()
                 agent_id = str(agent.id) if agent else ""
-                return MetaWhatsAppAPI(
+                factory = get_provider_factory("meta")
+                if factory is None:
+                    raise ValidationError(f"Unsupported provider: {self.provider}")
+                return factory(
                     api_url=self._meta_graph_api_url(),
                     session=phone_id,
                     token=self._env_access_token(),
@@ -780,33 +784,16 @@ class WhatsAppAction(Action):
                 )
 
             api_url = self._whatsapp_api_url()
-
-            if self.provider == "wppconnect":
-                return WPPConnectAPI(
-                    api_url=api_url,
-                    session=session,
-                    token=self._env_token(),
-                    secret_key=self._env_api_key(),
-                    timeout=timeout,
-                )
-            elif self.provider == "wwebjs":
-                return WWebJSAPI(
-                    api_url=api_url,
-                    session=session,
-                    token=self._env_token(),
-                    secret_key=self._env_api_key(),
-                    timeout=timeout,
-                )
-            elif self.provider == "ultramsg":
-                return UltraMsgAPI(
-                    api_url=api_url,
-                    session=session,
-                    token=self._env_token(),
-                    secret_key=self._env_api_key(),
-                    timeout=timeout,
-                )
-            else:
+            factory = get_provider_factory(self.provider)
+            if factory is None:
                 raise ValidationError(f"Unsupported provider: {self.provider}")
+            return factory(
+                api_url=api_url,
+                session=session,
+                token=self._env_token(),
+                secret_key=self._env_api_key(),
+                timeout=timeout,
+            )
         except ValidationError:
             raise
         except Exception as e:

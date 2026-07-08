@@ -31,8 +31,6 @@ Plus the locking, pruning, and persistence helpers that keep this graph consiste
 | `interaction.py:47` | `Interaction` node — utterance, response, actions, directives, events, parameters |
 | `lock_manager.py` | Per-`(memory_id, user_id)` async lock to prevent duplicate User creation |
 | `distributed_conversation_lock.py` | Cross-process conversation lock (when configured) |
-| `user_long_memory.py` | Helpers for the long-memory PageIndex pattern |
-| `long_memory_retrieval_utils.py` | Utilities for vectorless RAG retrieval |
 | `task_store.py` | Task node CRUD on Conversation/Interaction |
 | `evidence_log.py` | Evidence / citation logging for memory |
 | `services/` | Memory-related service helpers |
@@ -49,7 +47,21 @@ Plus the locking, pruning, and persistence helpers that keep this graph consiste
 4. **Pruning is bounded per call** by `JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL` (default 100, [`conversation.py:317-323`](conversation.py)). The remainder happens on subsequent appends or via `Memory.apply_interaction_limit_pruning_for_connected_users`.
 5. **`Agent.interaction_limit = 0` disables pruning entirely.** Code paths MUST early-return when limit is `0`.
 6. **`Conversation.interaction_count` and `last_interaction_at`** are written together with the edge insert in `add_interaction()` ([`conversation.py:272-277`](conversation.py)). Don't update one without the other.
-7. **`User.user_model` is deprecated.** New code should use `User.memory` (dict) + `User.memory_tags`.
+7. **Durable user state** lives in `User.memory` + `User.memory_tags`. One-time read migration copies legacy `context.user_model` into `memory["user_model"]` on user load.
+
+---
+
+## 3a. Canonical memory fields (audit)
+
+| Field | Scope | Shape | Use for |
+|---|---|---|---|
+| `User.memory` | Cross-session, per user | `dict[str, Any]` — markdown-keyed flat map | Orchestrator `memory_set` / `memory_get` / `memory_append` / `memory_search`; durable user facts and preferences |
+| `User.memory_tags` | Per user | `dict[str, list[str]]` | Tag metadata keyed by `User.memory` keys |
+| `Conversation.context` | Per session | `dict[str, Any]` | Ephemeral turn state: routing buffers (`deferred_fragments`), flow flags, interview session handles — not long-term user memory |
+| `Conversation.memory` | Per session | `dict[str, str]` | Session-scoped markdown map (same tool surface as user memory but scoped to one conversation) |
+| `Conversation.memory_tags` | Per session | `dict[str, list[str]]` | Tags for `Conversation.memory` keys |
+
+**Rule of thumb:** durable cross-session state → `User.memory`; session-only scratch → `Conversation.context` or `Conversation.memory`.
 
 ---
 
@@ -99,7 +111,7 @@ pytest tests/memory/ tests/test_comprehensive_pruning.py -v
 | Adding fields without `attribute()` | Not persisted | Use `attribute(...)` |
 | Spawning a Walker over a long Conversation without limits | Walker `max_steps` (10000) trips | Either bound the traversal or paginate manually |
 | Deleting an Interaction mid-chain manually | Leaves dangling bidirectional edges | Use the pruning routine or rewire both sides |
-| Touching `User.user_model` | Deprecated path | Move new state into `User.memory` + tags |
+| Legacy `context.user_model` on load | One-time migration | Copied into `User.memory["user_model"]` automatically |
 
 ---
 

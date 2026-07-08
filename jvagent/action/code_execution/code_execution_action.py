@@ -36,7 +36,7 @@ from jvagent.core.sandbox import (
     resolve_agent_user,
 )
 from jvagent.tooling.tool_decorator import tool
-from jvagent.tooling.tool_executor import get_dispatch_visitor
+from jvagent.tooling.tool_executor import get_tool_visitor
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +160,7 @@ class CodeExecutionAction(Action):
         cmd = (command or "").strip()
         if not cmd:
             return "(no command)"
-        visitor = get_dispatch_visitor()
+        visitor = get_tool_visitor()
         if visitor is None:
             return "(no execution context — cannot resolve the per-user sandbox)"
         try:

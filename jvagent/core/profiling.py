@@ -371,7 +371,7 @@ def record_lm_call(label: str, duration: float) -> None:
     profiling is disabled.
 
     Args:
-        label: Label for the LM call (e.g., "lm:PersonaAction")
+        label: Label for the LM call (e.g., "lm:ReplyAction")
         duration: Duration of the call in seconds
     """
     if not ENABLE_PROFILING:

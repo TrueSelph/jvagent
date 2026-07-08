@@ -1,7 +1,8 @@
 """IntroInteractAction for welcoming first-time users.
 
 This module provides IntroInteractAction, an InteractAction that detects
-first-time users and adds an introductory directive to guide the persona response.
+first-time users and adds an introductory response-shaping parameter for
+ReplyAction to weave into the first reply.
 """
 
 import logging
@@ -22,10 +23,11 @@ class IntroInteractAction(InteractAction):
     """InteractAction that welcomes first-time users with an introductory message.
 
     IntroInteractAction:
-    1. Checks if the user is a first-time user (no prior actions/events)
+    1. Checks if the user is a first-time visitor to this agent (``visitor.new_user``)
     2. Adds an introductory response-shaping parameter for the responder
        (ReplyAction) to weave into the reply
-    3. Only executes once per conversation (first interaction only)
+    3. Only runs on first engagement with this agent (memory-scoped ``new_user``;
+       skipped when resuming a session or when the user already exists under Memory)
 
     Attributes:
         prompt: Introductory message template for first-time users

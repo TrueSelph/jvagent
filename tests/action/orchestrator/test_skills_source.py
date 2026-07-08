@@ -69,18 +69,10 @@ async def test_source_library_returns_only_builtin(monkeypatch):
     assert _names(docs) == ["research"]
 
 
-async def test_aliases_map_to_canonical_sources(monkeypatch):
+async def test_unknown_source_defaults_to_both(monkeypatch):
     _stub_resolver(monkeypatch)
-    assert _names(
-        discover_skill_docs(_AGENT, skills_source="local", selector="-all")
-    ) == ["web_lookup"]
-    assert _names(
-        discover_skill_docs(_AGENT, skills_source="builtin", selector="-all")
-    ) == ["research"]
-    # registry is retired → treated as library
-    assert _names(
-        discover_skill_docs(_AGENT, skills_source="registry", selector="-all")
-    ) == ["research"]
+    docs = discover_skill_docs(_AGENT, skills_source="registry", selector="-all")
+    assert _names(docs) == ["research", "web_lookup"]
 
 
 async def test_finite_list_selector_by_name(monkeypatch):

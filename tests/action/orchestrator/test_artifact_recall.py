@@ -10,11 +10,13 @@ from types import SimpleNamespace
 import pytest
 
 from jvagent.action.orchestrator.orchestrator_interact_action import (
-    _RECALL_MAX_ARTIFACTS,
-    _RECALL_MAX_CHARS,
     OrchestratorInteractAction,
 )
 from jvagent.action.orchestrator.prompts import MEMORY_PROMPT
+from jvagent.action.orchestrator.uploads import (
+    _RECALL_MAX_ARTIFACTS,
+    _RECALL_MAX_CHARS,
+)
 
 pytestmark = pytest.mark.asyncio
 

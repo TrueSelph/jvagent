@@ -1,7 +1,7 @@
 """InteractWalker for traversing InteractActions in the interact subsystem.
 
 This module provides the InteractWalker that serves as the common entry point
-for agent interactions, replacing the PersonaAction interact endpoint.
+for agent interactions, replacing the legacy monolithic interact endpoint.
 """
 
 from __future__ import annotations
@@ -57,9 +57,8 @@ class InteractWalker(Walker):
     Architecture:
         InteractActions serve as modular points of execution that may exist in a
         prescribed chain of interact actions. The InteractWalker traverses and executes
-        this modular pipeline of interact actions. Core actions like InteractRouter, when
-        employed, provide additional logic which alters or curates the walker's walk path
-        or traversal, allowing specific actions to be executed based on the nature of the input.
+        this modular pipeline of interact actions. Orchestrator (weight -200) may
+        curate which actions surface as tools; other top-level actions run in weight order.
 
         While interact actions may have branches of other interact actions, the top-level
         interact actions (that is, the actions directly connected to the Actions branch node)
@@ -558,7 +557,7 @@ class InteractWalker(Walker):
 
         Gets all connected InteractActions, filters to enabled ones, sorts by weight
         (weight is only considered at this top tier), and queues them for traversal.
-        The InteractRouter (if present) will curate the walk path after it executes.
+        Orchestrator may curate surfacing after it executes.
 
         Note:
             Top-level InteractActions (those directly connected to the Actions node)
@@ -598,7 +597,7 @@ class InteractWalker(Walker):
         else:
             # Cache miss - query database
             # Get all enabled InteractActions (forward direction from Actions node)
-            # Use class type instead of string to match by isinstance() (includes subclasses like InteractRouter)
+            # Use class type instead of string to match by isinstance()
             # Filter by enabled=True directly in the query using kwargs
             enabled_actions = await here.nodes(node=InteractAction, enabled=True)
             # Cache the result for future requests
@@ -682,7 +681,7 @@ class InteractWalker(Walker):
             self._skip_current_action_record = False
 
             # Record action execution BEFORE execution to ensure it appears before
-            # any actions it calls (like PersonaAction). This preserves the call order
+            # any actions it calls (like ReplyAction). This preserves the call order
             # in the actions list - the calling action appears before the called action.
             if self.interaction and not self._skip_current_action_record:
                 await self.record_action_execution()

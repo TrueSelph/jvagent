@@ -773,7 +773,7 @@ async def test_apply_locked_skill_rebootstraps_missing_session_into_observations
             return await self._interview_ready(visitor)
 
         async def prepare_task_lock_turn(self, skill_name, visitor=None):
-            from jvagent.action.orchestrator.skill_tasks import TaskLockPrep
+            from jvagent.action.skill_spec.task_lock import TaskLockPrep
 
             if not await self.task_lock_runtime_ready(skill_name, visitor):
                 return TaskLockPrep(runtime_ready=False)
@@ -937,7 +937,7 @@ async def test_auto_start_applies_session_ensure_after_use_skill(
             return await self._interview_ready(visitor)
 
         async def prepare_task_lock_turn(self, skill_name, visitor=None):
-            from jvagent.action.orchestrator.skill_tasks import TaskLockPrep
+            from jvagent.action.skill_spec.task_lock import TaskLockPrep
 
             if not await self.task_lock_runtime_ready(skill_name, visitor):
                 return TaskLockPrep(runtime_ready=False)

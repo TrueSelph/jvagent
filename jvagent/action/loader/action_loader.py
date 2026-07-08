@@ -11,6 +11,7 @@ import yaml
 from jvagent.action.base import Action
 from jvagent.core.agent_yaml_validator import warn_agent_yaml
 from jvagent.core.env_resolver import resolve_env_placeholders
+from jvagent.core.errors import log_classified_exception
 
 from . import core_discovery, factory
 from . import importer as _importer_module
@@ -116,7 +117,12 @@ class ActionLoader:
 
             install_action_dependencies(data, action_name)
         except Exception as e:
-            logger.warning(f"Error installing dependencies for {action_name}: {e}")
+            log_classified_exception(
+                logger,
+                e,
+                "Error installing dependencies for %s",
+                action_name,
+            )
 
     def _load_action_module(
         self,
@@ -330,7 +336,12 @@ class ActionLoader:
             registry.action_metadata[action_ref] = metadata
 
         except Exception as e:
-            logger.warning(f"Error resolving dependencies for {action_ref}: {e}")
+            log_classified_exception(
+                logger,
+                e,
+                "Error resolving dependencies for %s",
+                action_ref,
+            )
             # Still mark as resolved to avoid infinite loops
             registry.resolved_actions.add(action_ref)
         finally:
@@ -348,7 +359,7 @@ class ActionLoader:
 
         Args:
             namespace: Namespace of the action (should be "jvagent")
-            action_name: Name of the action (e.g., "interact_router")
+            action_name: Name of the action (e.g., "orchestrator")
 
         Returns:
             ActionMetadata if found, None otherwise
@@ -595,8 +606,11 @@ class ActionLoader:
                                     imported_count += 1
 
                             except Exception as e:
-                                logger.warning(
-                                    f"Error pre-importing action from {action_dir}: {e}"
+                                log_classified_exception(
+                                    logger,
+                                    e,
+                                    "Error pre-importing action from %s",
+                                    action_dir,
                                 )
                                 continue
 
@@ -615,7 +629,7 @@ class ActionLoader:
 
         Returns:
             Set of all action references in "namespace/action_name" format
-            (e.g., "jvagent/interact_router", "contrib/custom_action")
+            (e.g., "jvagent/orchestrator", "contrib/custom_action")
         """
         required_actions: Set[str] = set()
         agents_path = self.base_path / "agents"
@@ -735,9 +749,11 @@ class ActionLoader:
                     discovered.append(metadata)
 
                 except Exception as e:
-                    # Log error but continue discovering other actions
-                    logger.warning(
-                        f"Error loading action metadata from {info_file}: {e}"
+                    log_classified_exception(
+                        logger,
+                        e,
+                        "Error loading action metadata from %s",
+                        info_file,
                     )
                     continue
 
@@ -787,7 +803,7 @@ class ActionLoader:
         """Import core action module conditionally.
 
         Args:
-            action_name: Core action name (e.g., "whatsapp", "interact_router")
+            action_name: Core action name (e.g., "whatsapp", "orchestrator")
             registry: ActionRegistry instance
 
         Returns:
@@ -941,7 +957,7 @@ class ActionLoader:
                     pass
 
             # Import the module using the core module path
-            # e.g., "jvagent.action.router.interact_router"
+            # e.g., "jvagent.action.orchestrator.orchestrator_interact_action"
             # This will also trigger parent package imports if not already imported
             module = importlib.import_module(metadata.core_module_path)
 
@@ -1144,8 +1160,12 @@ class ActionLoader:
             return action
 
         except Exception as e:
-            logger.error(
-                f"Error creating action instance for {metadata.name}: {e}",
+            log_classified_exception(
+                logger,
+                e,
+                "Error creating action instance for %s",
+                metadata.name,
+                level=logging.ERROR,
                 exc_info=True,
             )
             return None

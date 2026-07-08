@@ -314,7 +314,7 @@ async def test_reground_parent_lock_returns_to_parent(monkeypatch):
     from unittest.mock import MagicMock
 
     from jvagent.action.orchestrator import skill_tasks
-    from jvagent.action.orchestrator.skill_tasks import TaskLockPrep
+    from jvagent.action.skill_spec.task_lock import TaskLockPrep
 
     ex = OrchestratorInteractAction()
     parent = SkillDoc(

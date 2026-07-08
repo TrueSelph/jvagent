@@ -87,7 +87,7 @@ def set_calling_action_name(action_name: Optional[str]) -> None:
     """Set the current calling action name in context.
 
     Args:
-        action_name: Action name (camelCase class name) to set (e.g., "PersonaAction", "ExampleInteractAction")
+        action_name: Action name (camelCase class name) to set (e.g., "ReplyAction", "ExampleInteractAction")
     """
     current_action_name.set(action_name)
 

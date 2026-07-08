@@ -6,7 +6,6 @@ from a full ``docs.google.com`` URL or a raw spreadsheet id via :func:`resolve_s
 
 import json
 import logging
-import re
 from typing import Annotated, Any, ClassVar, Dict, List, Optional, Tuple
 
 from googleapiclient.discovery import build
@@ -18,55 +17,10 @@ from ..google_action import GoogleAction
 
 logger = logging.getLogger(__name__)
 
-_SPREADSHEET_URL_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9-_]+)")
-
-
-def resolve_spreadsheet_id(spreadsheet_url_or_id: str) -> str:
-    """Extract the spreadsheet id from input, accepting either a URL or a raw id string.
-
-    Args:
-        spreadsheet_url_or_id: Full Google Sheets URL (``.../spreadsheets/d/<id>/...``)
-            or a spreadsheet id alone.
-
-    Returns:
-        The spreadsheet id substring.
-
-    Raises:
-        ValueError: If the string looks like a Sheets URL but the id cannot be parsed.
-    """
-    s = spreadsheet_url_or_id.strip()
-    if "docs.google.com/spreadsheets/d/" in s:
-        m = _SPREADSHEET_URL_RE.search(s)
-        if not m:
-            raise ValueError(f"Could not parse spreadsheet id from URL: {s!r}")
-        return m.group(1)
-    return s
-
-
-def qualify_sheet_title(title: str) -> str:
-    """Return an A1-safe sheet title token (quote when required by Sheets rules).
-
-    Args:
-        title: Worksheet (tab) title.
-
-    Returns:
-        Either the title unchanged or wrapped in single quotes with embedded ``'``
-        doubled (e.g. ``O'Brien`` → ``'O''Brien'``).
-
-    Raises:
-        None from this helper; an empty title is returned unchanged.
-    """
-    if not title:
-        return title
-    needs_quote = (
-        " " in title
-        or "'" in title
-        or any(not (c.isalnum() or c == "_") for c in title)
-        or title[0].isdigit()
-    )
-    if needs_quote:
-        return "'" + title.replace("'", "''") + "'"
-    return title
+from jvagent.action.spreadsheet.range_utils import (
+    compose_a1_range,
+    resolve_spreadsheet_id,
+)
 
 
 def col_letters_to_index(letters: str) -> int:
@@ -193,35 +147,6 @@ def split_qualified_a1(qualified: str) -> Tuple[str, str]:
     if not sheet or not rest:
         raise ValueError(f"Invalid qualified range {qualified!r}")
     return sheet, rest
-
-
-def compose_a1_range(
-    worksheet_title: str,
-    range_name: Optional[str],
-) -> str:
-    """Build a single range string for ``values.get`` / ``values.update`` / ``values.append``.
-
-    If ``range_name`` already contains ``!``, it is treated as fully qualified and returned
-    unchanged. If ``range_name`` is empty or ``None``, only the qualified worksheet title
-    is returned (entire tab). Otherwise the result is ``<qualified_title>!<range_name>``.
-
-    Args:
-        worksheet_title: Tab name used when ``range_name`` is not qualified.
-        range_name: Local A1 fragment, full ``Sheet!A1`` string, or empty/``None`` for whole tab.
-
-    Returns:
-        A range string accepted by the Sheets API.
-
-    Raises:
-        None; an empty ``worksheet_title`` with a local ``range_name`` still produces
-        a valid ``!`` suffix (callers should ensure the tab exists).
-    """
-    if range_name and "!" in range_name:
-        return range_name
-    qt = qualify_sheet_title(worksheet_title)
-    if not range_name:
-        return qt
-    return f"{qt}!{range_name}"
 
 
 class GoogleSheetsAction(GoogleAction):

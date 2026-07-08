@@ -40,7 +40,7 @@ Pluggable components that:
 - Have lifecycle hooks
 - Maintain their own state
 
-Core actions include InteractRouter, PersonaAction, model actions (e.g. OpenAI), and **MCPAction** (`jvagent/mcp`) for fulfilling natural language commands via an MCP server. See the main [README](../../README.md) for available actions; MCP usage is documented in the jvagent package under `jvagent/action/mcp/README.md`.
+Core actions include Orchestrator, ReplyAction, model actions (e.g. OpenAI), and **MCPAction** (`jvagent/mcp`) for fulfilling natural language commands via an MCP server. See the main [README](../../README.md) for available actions; MCP usage is documented in the jvagent package under `jvagent/action/mcp/README.md`.
 
 ### Memory System
 

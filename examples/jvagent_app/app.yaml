@@ -68,8 +68,6 @@ config:
     action_cache_ttl: 60
     enable_deferred_saves: true
     cache_cleanup_probability: 0.1
-    enable_interact_router_cache: true
-    interact_router_cache_ttl: 45
 
 # Agents
 # Agents are discovered from agents/{namespace}/{agent_name}/ and installed from this list.

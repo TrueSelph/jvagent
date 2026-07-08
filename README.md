@@ -254,8 +254,7 @@ jvagent resolves configuration by precedence (highest first):
 
 ### Action modules
 
-- [Orchestrator source layout](https://github.com/TrueSelph/jvagent/blob/main/docs/ORCHESTRATOR.md) · [InteractRouter](https://github.com/TrueSelph/jvagent/blob/main/jvagent/action/router/README.md)
-- [RetrievalInteractAction](https://github.com/TrueSelph/jvagent/blob/main/jvagent/action/retrieval/README.md) · [IntroInteractAction](https://github.com/TrueSelph/jvagent/blob/main/jvagent/action/intro/README.md) · [Converse](https://github.com/TrueSelph/jvagent/blob/main/jvagent/action/converse/README.md)
+- [Orchestrator source layout](https://github.com/TrueSelph/jvagent/blob/main/docs/ORCHESTRATOR.md) · [IntroInteractAction](https://github.com/TrueSelph/jvagent/blob/main/jvagent/action/intro/README.md)
 - [InterviewAction](https://github.com/TrueSelph/jvagent/blob/main/jvagent/action/interview/README.md) · [ReplyAction](https://github.com/TrueSelph/jvagent/blob/main/jvagent/action/reply/reply_action.py) · [Response](https://github.com/TrueSelph/jvagent/blob/main/jvagent/action/response/README.md)
 - [Model Actions](https://github.com/TrueSelph/jvagent/blob/main/jvagent/action/model/README.md) · [MCPAction](https://github.com/TrueSelph/jvagent/blob/main/jvagent/action/mcp/README.md) · [PageIndex](https://github.com/TrueSelph/jvagent/blob/main/jvagent/action/pageindex/README.md)
 - [WhatsApp](https://github.com/TrueSelph/jvagent/blob/main/jvagent/action/whatsapp/README.md) · [TTS](https://github.com/TrueSelph/jvagent/blob/main/jvagent/action/tts_action/README.md) · [STT](https://github.com/TrueSelph/jvagent/blob/main/jvagent/action/stt_action/README.md)

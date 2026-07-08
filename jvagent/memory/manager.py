@@ -110,6 +110,9 @@ class Memory(Node):
         # cross-context contamination) would silently win.
         user = await self.node(node=User, memory_id=self.id, user_id=user_id)
         if user:
+            from jvagent.memory.user import migrate_legacy_user_model_from_context
+
+            await migrate_legacy_user_model_from_context(user)
             await self._touch_last_seen(user, now)
             return user
 

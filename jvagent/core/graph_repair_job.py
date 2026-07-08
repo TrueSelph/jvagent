@@ -15,43 +15,80 @@ import json
 import logging
 import time
 from collections import deque
-from dataclasses import dataclass
 from inspect import isawaitable
 from typing import Any, Dict, List, Optional, Set, Tuple
+
+from jvagent.core.repair_phases.memory import (
+    tick_memory_agents,
+    tick_memory_counters,
+)
+
+# Backward-compatible private aliases for tests and external patch targets.
+_tick_memory_counters = tick_memory_counters
+_tick_memory_agents = tick_memory_agents
+from jvagent.core.repair_phases.types import (
+    PH_DEAD_EDGES,
+    PH_DONE,
+    PH_DUP_APPLY,
+    PH_DUP_PREPARE,
+    PH_MEMORY_AGENTS,
+    PH_MEMORY_COUNTERS,
+    PH_ORPHANS_BFS,
+    PH_ORPHANS_DELETE,
+    PH_ORPHANS_INTERACTION,
+    PH_ORPHANS_LIST_NODES,
+    PH_ORPHANS_REATTACH,
+    PH_PRUNE_AGENTS,
+    PH_SCHEMA_ACTIONS_DEDUPE,
+    PH_SCHEMA_AGENT_DEDUPE,
+    PH_SCHEMA_APP_DEDUPE,
+    PH_SCHEMA_MEMORY_DEDUPE,
+    PH_SCHEMA_SINGLETON_ACTIONS,
+    PH_SYNC_APPLY,
+    PH_SYNC_PREPARE,
+    STATE_VERSION,
+    RepairLimits,
+    repair_checkpoint,
+)
 
 logger = logging.getLogger(__name__)
 
 SORT_ID_ASC: List[Tuple[str, int]] = [("id", 1)]
-STATE_VERSION = 3
 
-# Phases (ordered)
-PH_MEMORY_COUNTERS = "memory_counters"
-PH_MEMORY_AGENTS = "memory_agents"
-PH_SCHEMA_APP_DEDUPE = "schema_app_dedupe"
-PH_SCHEMA_AGENT_DEDUPE = "schema_agent_dedupe"
-PH_SCHEMA_ACTIONS_DEDUPE = "schema_actions_dedupe"
-PH_SCHEMA_MEMORY_DEDUPE = "schema_memory_dedupe"
-PH_SCHEMA_SINGLETON_ACTIONS = "schema_singleton_actions"
-PH_DEAD_EDGES = "dead_edges"
-PH_SYNC_PREPARE = "sync_prepare"
-PH_SYNC_APPLY = "sync_apply"
-PH_ORPHANS_LIST_NODES = "orphans_list_nodes"
-PH_ORPHANS_BFS = "orphans_bfs"
-PH_ORPHANS_REATTACH = "orphans_reattach"
-PH_ORPHANS_INTERACTION = "orphans_interaction_reattach"
-PH_ORPHANS_DELETE = "orphans_delete"
-PH_DUP_PREPARE = "dup_prepare"
-PH_DUP_APPLY = "dup_apply"
-PH_PRUNE_AGENTS = "prune_agents"
-PH_DONE = "done"
+# Full-graph orphan/dup/prune phases run after edge sync (post-listen). When
+# JVAGENT_DEFER_REPAIR=1 these are skipped so cold start can return faster;
+# schedule POST /graph/repair (or the repair scheduler) to run them later.
+_OPTIONAL_POST_LISTEN_PHASES = frozenset(
+    {
+        PH_ORPHANS_LIST_NODES,
+        PH_ORPHANS_BFS,
+        PH_ORPHANS_REATTACH,
+        PH_ORPHANS_INTERACTION,
+        PH_ORPHANS_DELETE,
+        PH_DUP_PREPARE,
+        PH_DUP_APPLY,
+        PH_PRUNE_AGENTS,
+    }
+)
 
 
-@dataclass
-class RepairLimits:
-    """Bounds for one repair step (one phase tick); work inside the tick is batched."""
+def _defer_noncritical_repair() -> bool:
+    import os
 
-    batch_size: int
-    max_seconds: Optional[float]
+    return os.getenv("JVAGENT_DEFER_REPAIR", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def _apply_deferred_phase_skip(state: Dict[str, Any]) -> None:
+    """Jump optional post-listen phases to done when defer env is set."""
+    if not _defer_noncritical_repair():
+        return
+    if state.get("phase") in _OPTIONAL_POST_LISTEN_PHASES:
+        state["phase"] = PH_DONE
+        state["cursor"] = {}
 
 
 def _repair_result_is_pristine(result: Optional[Dict[str, Any]]) -> bool:
@@ -167,15 +204,8 @@ def state_from_dict(
 
 
 async def _repair_checkpoint(state: Dict[str, Any]) -> None:
-    """If ``state['_checkpoint']`` is set (by :func:`repair_agent_graph`), flush it.
-
-    Long-running phase ticks (e.g. per-agent memory repair) can exceed HTTP client
-    timeouts; persisting the cursor after each sub-step prevents stuck ``agent_index``
-    and allows resume even when the request is cancelled mid-tick.
-    """
-    fn = state.get("_checkpoint")
-    if fn is not None and callable(fn):
-        await fn(state)
+    """Backward-compatible alias for :func:`repair_phases.types.repair_checkpoint`."""
+    await repair_checkpoint(state)
 
 
 async def _find_edges_page(
@@ -198,248 +228,6 @@ async def _find_nodes_page(
     else:
         q = {}
     return await db.find("node", q, limit=batch_size, sort=SORT_ID_ASC)
-
-
-async def _tick_memory_counters(state: Dict[str, Any], limits: RepairLimits) -> bool:
-    """Paged memory counter reconciliation with deadline awareness.
-
-    Processes at most ``batch_size`` Memory nodes per tick instead of running
-    the full _reconcile_all_memory_counters in a single unbounded call.
-
-    The persisted cursor is advanced **before** the slow ``_recalculate_counters``
-    call and flushed via :func:`_repair_checkpoint` so that a client disconnect
-    (or any ``asyncio.CancelledError``) cannot strand the whole wave on the same
-    Memory id forever.
-    """
-    from jvagent.memory.manager import Memory
-
-    cur = state["cursor"]
-    if cur.get("mc_memory_ids") is None:
-        memories = await Memory.find({})
-        cur["mc_memory_ids"] = [m.id for m in memories]
-        cur["mc_index"] = 0
-
-    memory_ids: List[str] = cur["mc_memory_ids"]
-    idx = int(cur.get("mc_index", 0))
-    batch = limits.batch_size
-    deadline = time.monotonic() + (limits.max_seconds or 1e9)
-    fixed = 0
-    processed = 0
-
-    while idx < len(memory_ids) and processed < batch:
-        if limits.max_seconds and time.monotonic() >= deadline:
-            break
-
-        memory_id = memory_ids[idx]
-        idx += 1
-        processed += 1
-        cur["mc_index"] = idx
-        await _repair_checkpoint(state)
-
-        try:
-            mem = await Memory.get(memory_id)
-            if mem:
-                fixed += await mem._recalculate_counters()
-        except Exception:
-            logger.warning(
-                "repair_tick memory_counters: skipped %s (error)",
-                memory_id,
-                exc_info=True,
-            )
-
-    state["result"]["counters_fixed"] = state["result"].get("counters_fixed", 0) + fixed
-
-    if idx >= len(memory_ids):
-        state["phase"] = PH_MEMORY_AGENTS
-        state["cursor"] = {"agent_index": 0, "agent_ids": None}
-    return True
-
-
-# Ordered sub-steps of Memory.repair_memory used by the repair engine.
-#
-# Each entry is ``(step_key, result_counters)``.  ``step_key`` drives dispatch
-# in ``_tick_memory_agents``; ``result_counters`` names the fields in
-# ``state["result"]`` that the step can write to.  All four sub-steps are
-# idempotent, so a wave that gets cancelled mid-step can safely re-run it.
-_MEMORY_AGENT_STEPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
-    ("cleanup_orphans", ("orphaned_interactions_deleted",)),
-    (
-        "repair_chain",
-        (
-            "dual_edges_removed",
-            "conversation_first_edges_restored",
-            "conversation_branch_edges_removed",
-        ),
-    ),
-    ("reconnect_users", ("orphaned_users_reconnected",)),
-    ("recalc_counters", ("counters_fixed",)),
-)
-
-# Max times we'll attempt the same (agent_index, step_idx) across waves before
-# skipping the step.  Prevents a single slow sub-step from blocking global progress
-# when the HTTP client timeout is shorter than the step's runtime.
-_MEMORY_AGENT_STEP_MAX_ATTEMPTS = 3
-
-
-async def _run_memory_agent_step(
-    memory: Any, step_key: str, recent_minutes: Optional[int]
-) -> Dict[str, int]:
-    """Execute a single sub-step of :meth:`Memory.repair_memory`.
-
-    Returns a mapping of ``state["result"]`` counters to their delta.
-    """
-    if step_key == "cleanup_orphans":
-        deleted = await memory._cleanup_orphaned_interactions(recent_minutes)
-        return {"orphaned_interactions_deleted": int(deleted or 0)}
-    if step_key == "repair_chain":
-        dual, first, branch = await memory._repair_interaction_chain_invariants()
-        return {
-            "dual_edges_removed": int(dual or 0),
-            "conversation_first_edges_restored": int(first or 0),
-            "conversation_branch_edges_removed": int(branch or 0),
-        }
-    if step_key == "reconnect_users":
-        reconnected = await memory._reconnect_orphaned_users()
-        return {"orphaned_users_reconnected": int(reconnected or 0)}
-    if step_key == "recalc_counters":
-        fixed = await memory._recalculate_counters()
-        return {"counters_fixed": int(fixed or 0)}
-    return {}
-
-
-async def _tick_memory_agents(state: Dict[str, Any], limits: RepairLimits) -> bool:
-    """Repair per-agent ``Memory`` graphs with fine-grained resume support.
-
-    Each agent's ``repair_memory`` is decomposed into the four idempotent
-    sub-steps defined in :data:`_MEMORY_AGENT_STEPS`.  The cursor tracks the
-    current agent (``agent_index``) **and** which sub-step within that agent
-    (``agent_step``) is next, plus ``step_attempts`` for how many waves have
-    tried the current sub-step.
-
-    The cursor's ``agent_step`` is advanced **only** after the sub-step's work
-    returns, but ``step_attempts`` is incremented and checkpointed **before**
-    running the step.  So:
-
-    * If a sub-step completes, we advance to the next one.
-    * If a wave is cancelled mid sub-step, the next wave retries **the same**
-      sub-step (they are idempotent), with ``step_attempts`` now incremented.
-    * Once ``step_attempts`` reaches :data:`_MEMORY_AGENT_STEP_MAX_ATTEMPTS`
-      we skip the offending sub-step so global repair can still finish; the
-      skip is logged.
-
-    Fatal exceptions from a single sub-step are logged and treated like a
-    successful step (i.e. we advance) so one broken agent/memory cannot block
-    the wider repair.
-    """
-    from jvagent.core.agent import Agent
-
-    cur = state["cursor"]
-    if cur.get("agent_ids") is None:
-        agents = await Agent.find({})
-        cur["agent_ids"] = [a.id for a in agents]
-    agent_ids: List[str] = cur["agent_ids"]
-    idx = int(cur.get("agent_index", 0))
-    step_idx = int(cur.get("agent_step", 0))
-    step_attempts = int(cur.get("step_attempts", 0))
-    batch = limits.batch_size
-    deadline = time.monotonic() + (limits.max_seconds or 1e9)
-    processed_steps = 0
-    res = state["result"]
-
-    while idx < len(agent_ids):
-        if limits.max_seconds and time.monotonic() >= deadline:
-            break
-        if processed_steps >= batch:
-            break
-
-        agent_id = agent_ids[idx]
-
-        if step_idx >= len(_MEMORY_AGENT_STEPS):
-            # All sub-steps completed for this agent – advance to the next agent.
-            if _agent_had_repair_activity(res, cur):
-                res["memory_repair_agents"] = res.get("memory_repair_agents", 0) + 1
-            cur.pop("_agent_deltas", None)
-            idx += 1
-            step_idx = 0
-            step_attempts = 0
-            cur["agent_index"] = idx
-            cur["agent_step"] = step_idx
-            cur["step_attempts"] = step_attempts
-            await _repair_checkpoint(state)
-            continue
-
-        step_key, _ = _MEMORY_AGENT_STEPS[step_idx]
-
-        if step_attempts >= _MEMORY_AGENT_STEP_MAX_ATTEMPTS:
-            logger.warning(
-                "repair_tick memory_agents: skipping step %s on agent %s after %d failed attempts",
-                step_key,
-                agent_id,
-                step_attempts,
-            )
-            step_idx += 1
-            step_attempts = 0
-            cur["agent_step"] = step_idx
-            cur["step_attempts"] = step_attempts
-            await _repair_checkpoint(state)
-            continue
-
-        # Record an attempt for this (agent, step) BEFORE awaiting the work so
-        # a cancellation leaves the attempt counter incremented.
-        step_attempts += 1
-        cur["step_attempts"] = step_attempts
-        await _repair_checkpoint(state)
-
-        deltas: Dict[str, int] = {}
-        try:
-            agent = await Agent.get(agent_id)
-            if not agent:
-                step_idx = len(_MEMORY_AGENT_STEPS)
-            else:
-                memory = await agent.get_memory()
-                if not memory:
-                    step_idx = len(_MEMORY_AGENT_STEPS)
-                else:
-                    deltas = await _run_memory_agent_step(
-                        memory, step_key, state.get("recent_minutes")
-                    )
-        except Exception:
-            logger.warning(
-                "repair_tick memory_agents: step %s failed on agent %s (advancing)",
-                step_key,
-                agent_id,
-                exc_info=True,
-            )
-            deltas = {}
-
-        for key, delta in deltas.items():
-            if delta:
-                res[key] = res.get(key, 0) + delta
-                agent_deltas = cur.setdefault("_agent_deltas", {})
-                agent_deltas[key] = agent_deltas.get(key, 0) + delta
-
-        # Sub-step (or its error path) completed – advance past it.
-        # Note: the "agent/memory missing" branches above set step_idx to
-        # len(_MEMORY_AGENT_STEPS) directly so the next loop iteration will
-        # advance the agent; do not double-increment in that case.
-        if step_idx < len(_MEMORY_AGENT_STEPS):
-            step_idx += 1
-        step_attempts = 0
-        cur["agent_step"] = step_idx
-        cur["step_attempts"] = step_attempts
-        processed_steps += 1
-        await _repair_checkpoint(state)
-
-    if idx >= len(agent_ids):
-        state["phase"] = PH_SCHEMA_APP_DEDUPE
-        state["cursor"] = {}
-    return True
-
-
-def _agent_had_repair_activity(res: Dict[str, Any], cur: Dict[str, Any]) -> bool:
-    """Return True iff the just-finished agent produced any non-zero counters."""
-    deltas = cur.get("_agent_deltas") or {}
-    return any(v > 0 for v in deltas.values())
 
 
 async def _entity_count(context: Any, entity: str) -> int:
@@ -1578,6 +1366,8 @@ async def run_repair_session(
     stall_count: int = int(state.get("stall_count", 0))
 
     phase = state.get("phase", PH_DONE)
+    _apply_deferred_phase_skip(state)
+    phase = state.get("phase", PH_DONE)
     if phase == PH_DONE:
         state["stall_count"] = stall_count
         return state
@@ -1674,5 +1464,6 @@ async def run_repair_session(
     else:
         stall_count = 0
 
+    _apply_deferred_phase_skip(state)
     state["stall_count"] = stall_count
     return state

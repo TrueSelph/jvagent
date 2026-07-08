@@ -50,9 +50,7 @@ class BaseSkillRegistry(Generic[TSpec]):
                 if spec is None or not name:
                     continue
                 self._specs[name] = spec
-                logger.info(
-                    "Loaded %s spec: %s from %s", self._label, name, skill_dir
-                )
+                logger.info("Loaded %s spec: %s from %s", self._label, name, skill_dir)
         return self._specs
 
     def get(self, name: str) -> Optional[TSpec]:

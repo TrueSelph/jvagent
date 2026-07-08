@@ -25,7 +25,11 @@ exception's identity (helpful when wrapping third-party calls).
 from __future__ import annotations
 
 import asyncio
-from typing import Type
+import logging
+from typing import Awaitable, Callable, Type, TypeVar
+
+T = TypeVar("T")
+logger = logging.getLogger(__name__)
 
 
 class JvAgentError(Exception):
@@ -104,6 +108,74 @@ def is_transient(exc: BaseException) -> bool:
         raise
 
 
+def exception_bucket_name(exc: BaseException) -> str:
+    """Return the taxonomy bucket class name for logging (``TransientError``, …)."""
+    try:
+        return classify_exception(exc).__name__
+    except asyncio.CancelledError:
+        raise
+
+
+def log_classified_exception(
+    log: logging.Logger,
+    exc: BaseException,
+    msg: str,
+    *args: object,
+    level: int = logging.WARNING,
+    exc_info: bool = False,
+) -> None:
+    """Log *exc* with its taxonomy bucket appended to *msg*."""
+    bucket = exception_bucket_name(exc)
+    log.log(
+        level,
+        "%s [%s: %s]",
+        msg % args if args else msg,
+        bucket,
+        exc,
+        exc_info=exc_info,
+    )
+
+
+async def retry_if_transient(
+    fn: Callable[[], Awaitable[T]],
+    *,
+    max_attempts: int = 3,
+    initial_delay: float = 0.25,
+    backoff: float = 2.0,
+    max_delay: float = 8.0,
+) -> T:
+    """Call async *fn* up to *max_attempts* times when failures are transient.
+
+    Non-transient failures propagate immediately. ``asyncio.CancelledError`` is
+    never retried.
+    """
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be >= 1")
+
+    delay = initial_delay
+    last_exc: BaseException | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await fn()
+        except asyncio.CancelledError:
+            raise
+        except BaseException as exc:
+            last_exc = exc
+            if attempt >= max_attempts or not is_transient(exc):
+                raise
+            logger.debug(
+                "retry_if_transient: attempt %d/%d failed (%s); retrying in %.2fs",
+                attempt,
+                max_attempts,
+                exception_bucket_name(exc),
+                delay,
+            )
+            await asyncio.sleep(delay)
+            delay = min(delay * backoff, max_delay)
+    assert last_exc is not None
+    raise last_exc
+
+
 __all__ = [
     "ConfigError",
     "IntegrationError",
@@ -111,5 +183,8 @@ __all__ = [
     "LogicError",
     "TransientError",
     "classify_exception",
+    "exception_bucket_name",
     "is_transient",
+    "log_classified_exception",
+    "retry_if_transient",
 ]

@@ -12,7 +12,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from jvagent.tooling.tool_executor import get_dispatch_visitor
+from jvagent.tooling.tool_executor import get_tool_visitor
 
 from . import tasks
 from .directive_compose import (
@@ -103,7 +103,7 @@ _EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 
 async def get_conversation(visitor: Any = None):
     if visitor is None:
-        visitor = get_dispatch_visitor()
+        visitor = get_tool_visitor()
     if visitor is None:
         return None
     if getattr(visitor, "conversation", None) is not None:
@@ -1794,7 +1794,7 @@ async def handle_custom_tool(
     if not func:
         return json.dumps({"error": f"Function '{tdef.function}' not found"})
     try:
-        visitor = kwargs.pop("visitor", None) or get_dispatch_visitor()
+        visitor = kwargs.pop("visitor", None) or get_tool_visitor()
         session = await action._get_session(visitor)
         # The LLM-provided tool arguments become ctx.args (visitor already popped —
         # it is ctx.visitor, not a tool argument).

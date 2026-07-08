@@ -80,6 +80,13 @@ def _visitor_with(directives=None, parameters=None):
         side_effect=lambda: [p for p in params if not p.get("executed")]
     )
     inter.set_to_executed = MagicMock(side_effect=_set_executed)
+
+    def _set_response(content):
+        inter.response = content
+        return True
+
+    inter.set_response = _set_response
+    inter.save = AsyncMock()
     return v
 
 
@@ -469,6 +476,34 @@ async def test_fast_path_strips_invitation_closer():
         v,
     )
     assert v.interaction.response == "Classes begin Monday at 9 AM."
+
+
+async def test_gather_compose_on_parameters_only(monkeypatch):
+    """Intro-style parameters with no directives must still compose via gather()."""
+    ra = ReplyAction()
+    _patch_agent(monkeypatch)
+    model = MagicMock()
+    model.generate = AsyncMock(return_value="Hi, I'm Ada. How can I help you today?")
+
+    async def _ma(self, required=False):
+        return model
+
+    monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
+    monkeypatch.setattr(ReplyAction, "_compose_model_action", _ma)
+    intro_param = {
+        "response": (
+            "Open your reply by briefly introducing yourself by name, "
+            "then continue naturally."
+        ),
+        "executed": False,
+        "action_name": "IntroInteractAction",
+    }
+    v = _visitor_with(parameters=[intro_param])
+    v.interaction.utterance = "hello"
+    assert await ra.gather(v) is True
+    assert v.interaction.response == "Hi, I'm Ada. How can I help you today?"
+    sysprompt = model.generate.call_args.kwargs["system"]
+    assert "introducing yourself" in sysprompt.lower()
 
 
 async def test_n1_relay_drops_model_only_guidance():

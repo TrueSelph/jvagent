@@ -13,7 +13,6 @@ tests/
 │   ├── orchestrator/     # Orchestrator loop
 │   ├── interact/            # walker bootstrap + visit semantics
 │   ├── interview/           # branching, convergence, pruning
-│   ├── long_memory/
 │   ├── mcp/
 │   ├── model/
 │   ├── pageindex/

@@ -41,8 +41,6 @@ def validate_leadgen_skill_dir(skill_dir: Path) -> Tuple[bool, List[str]]:
             declared_hooks.append(t.function)
 
     if declared_hooks:
-        issues.extend(
-            validate_functions_in_custom_tools(skill_dir, declared_hooks)
-        )
+        issues.extend(validate_functions_in_custom_tools(skill_dir, declared_hooks))
 
     return len(issues) == 0, issues

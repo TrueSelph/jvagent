@@ -107,7 +107,7 @@ def test_canonicalize_aliases():
 @pytest.mark.asyncio
 async def test_capture_no_interaction(leadgen_action_with_spec):
     action, _ = leadgen_action_with_spec
-    with patch("jvagent.action.leadgen.engine.get_dispatch_visitor") as gv:
+    with patch("jvagent.action.leadgen.engine.get_tool_visitor") as gv:
         gv.return_value = SimpleNamespace(interaction=None)
         result = json.loads(await handle_capture(action, name="Jane"))
     assert "error" in result
