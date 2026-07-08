@@ -5,7 +5,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from jvagent.action.livekit_whatsapp.jvvoice_client import JvvoiceClient, JvvoiceClientError
+from jvagent.action.whatsapp_voice.jvvoice_client import (
+    JvvoiceClient,
+    JvvoiceClientError,
+)
 
 
 @pytest.mark.asyncio
@@ -20,7 +23,7 @@ async def test_accept_call_posts_bearer_token():
     mock_client.__aexit__ = AsyncMock(return_value=None)
 
     with patch(
-        "jvagent.action.livekit_whatsapp.jvvoice_client.httpx.AsyncClient",
+        "jvagent.action.whatsapp_voice.jvvoice_client.httpx.AsyncClient",
         return_value=mock_client,
     ):
         client = JvvoiceClient(
@@ -51,7 +54,7 @@ async def test_accept_call_raises_on_http_error():
     mock_client.__aexit__ = AsyncMock(return_value=None)
 
     with patch(
-        "jvagent.action.livekit_whatsapp.jvvoice_client.httpx.AsyncClient",
+        "jvagent.action.whatsapp_voice.jvvoice_client.httpx.AsyncClient",
         return_value=mock_client,
     ):
         client = JvvoiceClient(base_url="https://jvvoice.example.com", api_key="secret")

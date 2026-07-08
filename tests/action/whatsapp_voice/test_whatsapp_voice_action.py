@@ -1,13 +1,11 @@
-"""Tests for LiveKitWhatsAppAction call handling."""
+"""Tests for WhatsAppVoiceAction call handling."""
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
-from jvagent.action.livekit_whatsapp.livekit_whatsapp_action import (
-    LiveKitWhatsAppAction,
-)
+from jvagent.action.whatsapp_voice.whatsapp_voice_action import WhatsAppVoiceAction
 
 _CONNECT_PAYLOAD = {
     "object": "whatsapp_business_account",
@@ -49,7 +47,6 @@ def _action_stub(**overrides: object) -> SimpleNamespace:
         "jvvoice_api_key": "secret",
         "agent_name": "jvvoice",
         "cloud_api_version": "24.0",
-        "room_name_prefix": "whatsapp-call",
         "jvagent_base_url": "",
         "enabled": True,
         "_active_calls": {},
@@ -60,15 +57,14 @@ def _action_stub(**overrides: object) -> SimpleNamespace:
     for method_name in (
         "_handle_connect",
         "_handle_terminate",
-        "_room_name_for_call",
         "_resolved_jvagent_base_url",
         "_resolved_jvvoice_base_url",
         "_resolved_jvvoice_api_key",
         "handle_call_webhook",
         "is_configured",
     ):
-        method = getattr(LiveKitWhatsAppAction, method_name)
-        setattr(action, method_name, method.__get__(action, LiveKitWhatsAppAction))
+        method = getattr(WhatsAppVoiceAction, method_name)
+        setattr(action, method_name, method.__get__(action, WhatsAppVoiceAction))
     action._env_jvagent_base_url = lambda: ""
     action._env_jvvoice_base_url = lambda: ""
     action._env_jvvoice_api_key = lambda: ""
@@ -100,6 +96,7 @@ async def test_handle_connect_delegates_to_jvvoice():
     assert payload["jvagent_agent_id"] == "n.Agent.test"
     assert payload["jvagent_base_url"] == "https://jv.example.com"
     assert payload["caller_phone"] == "16315553601"
+    assert "room_name" not in payload
 
 
 @pytest.mark.asyncio
@@ -139,6 +136,6 @@ async def test_handle_terminate_delegates_to_jvvoice():
 
 def test_is_configured_requires_jvvoice_credentials():
     action = _action_stub()
-    assert LiveKitWhatsAppAction.is_configured(action) is True
+    assert WhatsAppVoiceAction.is_configured(action) is True
     action.jvvoice_api_key = ""
-    assert LiveKitWhatsAppAction.is_configured(action) is False
+    assert WhatsAppVoiceAction.is_configured(action) is False

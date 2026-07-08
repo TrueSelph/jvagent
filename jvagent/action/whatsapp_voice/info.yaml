@@ -1,0 +1,15 @@
+package:
+  name: jvagent/whatsapp_voice_action
+  author: V75 Inc.
+  archetype: WhatsAppVoiceAction
+  version: 1.0.0
+  meta:
+    title: WhatsApp Voice Calls (via jvvoice)
+    description: Accept WhatsApp voice calls via jvvoice delegation (Meta Cloud API)
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.0.1

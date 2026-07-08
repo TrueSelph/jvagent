@@ -1,9 +1,8 @@
-"""LiveKit WhatsApp voice call action."""
+"""WhatsApp voice call action (jvvoice delegation)."""
 
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
@@ -17,18 +16,15 @@ from .jvvoice_client import JvvoiceClient, JvvoiceClientError
 
 logger = logging.getLogger(__name__)
 
-_CALL_ID_SAFE = re.compile(r"[^a-zA-Z0-9_-]+")
 
-
-class LiveKitWhatsAppAction(Action):
+class WhatsAppVoiceAction(Action):
     """Accept and manage WhatsApp voice calls via jvvoice delegation.
 
     Requires a sibling ``WhatsAppAction`` with ``provider: meta`` on the same agent
-    for Meta credentials (phone_number_id, access_token). LiveKit credentials live
-    on the jvvoice deployment only — jvagent calls jvvoice's connector HTTP API using
-    ``jvvoice_base_url`` and ``jvvoice_api_key``.
+    for Meta credentials (phone_number_id, access_token). jvagent calls jvvoice's
+    connector HTTP API using ``jvvoice_base_url`` and ``jvvoice_api_key``.
 
-    A standalone jvvoice agent must be running and registered under ``agent_name``
+    A standalone jvvoice deployment must be running and registered under ``agent_name``
     to handle realtime audio and bridge utterances to the jvagent Orchestrator.
     """
 
@@ -42,20 +38,16 @@ class LiveKitWhatsAppAction(Action):
     )
     agent_name: str = attribute(
         default="jvvoice",
-        description="LiveKit agent dispatch name on jvvoice",
+        description="jvvoice worker registration name",
     )
     cloud_api_version: str = attribute(
         default="24.0",
-        description="WhatsApp Cloud API version for LiveKit Connector (23.0 or 24.0)",
+        description="WhatsApp Cloud API version forwarded to jvvoice (23.0 or 24.0)",
         pattern=r"^(23\.0|24\.0)$",
     )
     whatsapp_action: str = attribute(
         default="WhatsAppAction",
         description="Class name of the sibling WhatsAppAction for Meta credentials",
-    )
-    room_name_prefix: str = attribute(
-        default="whatsapp-call",
-        description="Prefix for LiveKit room names created per call",
     )
     jvagent_base_url: str = attribute(
         default="",
@@ -92,13 +84,17 @@ class LiveKitWhatsAppAction(Action):
         return ""
 
     def _resolved_jvvoice_base_url(self) -> str:
-        return (self.jvvoice_base_url or self._env_jvvoice_base_url()).strip().rstrip("/")
+        return (
+            (self.jvvoice_base_url or self._env_jvvoice_base_url()).strip().rstrip("/")
+        )
 
     def _resolved_jvvoice_api_key(self) -> str:
         return (self.jvvoice_api_key or self._env_jvvoice_api_key()).strip()
 
     def _resolved_jvagent_base_url(self) -> str:
-        return (self.jvagent_base_url or self._env_jvagent_base_url()).strip().rstrip("/")
+        return (
+            (self.jvagent_base_url or self._env_jvagent_base_url()).strip().rstrip("/")
+        )
 
     def is_configured(self) -> bool:
         """Return True when jvvoice delegation URL, API key, and agent name are set."""
@@ -113,23 +109,19 @@ class LiveKitWhatsAppAction(Action):
         if not self.enabled or not self.is_configured():
             return []
         return [
-            "Answer inbound WhatsApp voice calls via LiveKit",
+            "Answer inbound WhatsApp voice calls via jvvoice",
             "Conduct realtime voice conversations bridged to the agent Orchestrator",
         ]
 
-    def _room_name_for_call(self, call_id: str) -> str:
-        suffix = _CALL_ID_SAFE.sub("-", call_id)[-24:].strip("-") or "call"
-        return f"{self.room_name_prefix}-{suffix}"
-
     async def _get_whatsapp_action(self) -> Any:
-        wa = await self.get_action(self.whatsapp_action)
+        wa: Any = await self.get_action(self.whatsapp_action)
         if wa is None:
             raise ValueError(
                 f"Sibling {self.whatsapp_action!r} not found on this agent"
             )
         if not getattr(wa, "is_meta_provider", lambda: False)():
             raise ValueError(
-                f"{self.whatsapp_action} must use provider 'meta' for LiveKit calls"
+                f"{self.whatsapp_action} must use provider 'meta' for voice calls"
             )
         return wa
 
@@ -223,7 +215,6 @@ class LiveKitWhatsAppAction(Action):
                 "error": "jvagent_base_url is not configured (JVAGENT_PUBLIC_BASE_URL)",
             }
 
-        room_name = self._room_name_for_call(event.call_id)
         payload = {
             "jvagent_agent_id": agent_id,
             "jvagent_base_url": base_url,
@@ -236,7 +227,6 @@ class LiveKitWhatsAppAction(Action):
             "sdp": event.sdp,
             "sdp_type": event.sdp_type or "offer",
             "agent_name": self.agent_name,
-            "room_name": room_name,
         }
 
         try:
@@ -248,18 +238,21 @@ class LiveKitWhatsAppAction(Action):
                     "call_id": event.call_id,
                     "error": result.get("error") or "jvvoice accept failed",
                 }
-            self._active_calls[event.call_id] = result.get("room_name") or room_name
+            room_name = str(result.get("room_name") or "").strip()
+            self._active_calls[event.call_id] = room_name
             logger.info(
                 "Delegated WhatsApp call accept call_id=%s room=%s agent=%s",
                 event.call_id,
-                self._active_calls[event.call_id],
+                room_name or "(none)",
                 self.agent_name,
             )
-            return {
+            response: Dict[str, Any] = {
                 "status": "connected",
                 "call_id": event.call_id,
-                "room_name": self._active_calls[event.call_id],
             }
+            if room_name:
+                response["room_name"] = room_name
+            return response
         except (JvvoiceClientError, ValueError) as exc:
             logger.error(
                 "Failed to delegate WhatsApp call accept call_id=%s: %s",

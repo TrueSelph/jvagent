@@ -328,7 +328,7 @@ actions:
       phone_number_id: ""      # e.g. "102274452799236"
       access_token: ""         # Meta system user token for this WABA
 
-  - action: jvagent/livekit_whatsapp_action
+  - action: jvagent/whatsapp_voice_action
     context:
       enabled: false
       description: "WhatsApp voice calls via jvvoice delegation"

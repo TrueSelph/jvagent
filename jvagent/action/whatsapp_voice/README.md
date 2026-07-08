@@ -1,21 +1,20 @@
-# LiveKit WhatsApp Voice Calls
+# WhatsApp Voice Calls (via jvvoice)
 
-Bridge inbound WhatsApp voice calls to jvagent's Orchestrator via [jvvoice](https://github.com/your-org/jvvoice) and [LiveKit's WhatsApp Connector](https://docs.livekit.io/telephony/connectors/whatsapp/).
+Bridge inbound WhatsApp voice calls to jvagent's Orchestrator via [jvvoice](https://github.com/your-org/jvvoice).
 
 ## Architecture
 
-1. **jvagent** (`LiveKitWhatsAppAction`) receives Meta `field=calls` webhooks and delegates to **jvvoice** (`POST /api/calls/accept`).
-2. **jvvoice** calls LiveKit `AcceptWhatsAppCall` (holds `LIVEKIT_*` secrets) and dispatches the voice worker.
-3. **jvvoice worker** streams audio; each user turn is sent to `POST /api/agents/{id}/interact` on jvagent.
-4. On call end, jvagent delegates `POST /api/calls/disconnect` to jvvoice.
+1. **jvagent** (`WhatsAppVoiceAction`) receives Meta `field=calls` webhooks and delegates to **jvvoice** (`POST /api/calls/accept`).
+2. **jvvoice** accepts the call, runs the voice worker, and bridges each user turn to `POST /api/agents/{id}/interact` on jvagent.
+3. On call end, jvagent delegates `POST /api/calls/disconnect` to jvvoice.
 
-jvagent does **not** need LiveKit credentials — only `JVVOICE_BASE_URL` and `JVVOICE_API_KEY`.
+jvagent needs only `JVVOICE_BASE_URL` and `JVVOICE_API_KEY` — no voice-backend credentials on the jvagent host.
 
 ## Prerequisites
 
 ### jvvoice (separate deploy)
 
-- Running jvvoice with connector API exposed (port 8080) and LiveKit worker registered as `jvvoice`.
+- Running jvvoice with connector API exposed (port 8080) and worker registered as `jvvoice`.
 - See the jvvoice repo README for Dokploy setup.
 
 ### Meta / WhatsApp
@@ -34,7 +33,7 @@ jvagent does **not** need LiveKit credentials — only `JVVOICE_BASE_URL` and `J
     phone_number_id: "..."
     access_token: "..."
 
-- action: jvagent/livekit_whatsapp_action
+- action: jvagent/whatsapp_voice_action
   context:
     enabled: true
     jvvoice_base_url: "${JVVOICE_BASE_URL}"
@@ -50,19 +49,22 @@ jvagent does **not** need LiveKit credentials — only `JVVOICE_BASE_URL` and `J
 | `JVVOICE_BASE_URL` | jvagent | Yes | Public URL of jvvoice connector API |
 | `JVVOICE_API_KEY` | both | Yes | Shared secret (`Authorization: Bearer`) |
 | `JVAGENT_PUBLIC_BASE_URL` | jvagent | Yes | Sent to jvvoice as `jvagent_base_url` for `/interact` callbacks |
-| `LIVEKIT_*` | jvvoice only | Yes | LiveKit Cloud credentials |
-| `DEEPGRAM_API_KEY` | jvvoice | Yes | STT |
-| `ELEVENLABS_API_KEY` | jvvoice | Yes | TTS |
 | `WHATSAPP_*` | jvagent | Yes | Meta messaging/calling credentials |
 
-## Install jvagent
+Voice-backend credentials (`LIVEKIT_*`, speech API keys, etc.) belong on **jvvoice only** — see the jvvoice repo.
 
-jvagent no longer needs `pip install "jvagent[livekit]"` for voice calls — delegation uses httpx only. The `[livekit]` extra remains optional for other tooling.
+## Status endpoint
+
+`GET /api/actions/{action_id}/voice/status` — returns `configured`, `agent_name`, `active_calls`.
 
 ## Troubleshooting
 
 - **Call not answered within 60s**: jvagent must reach jvvoice API; accept must complete quickly.
 - **401 from jvvoice**: `JVVOICE_API_KEY` mismatch between jvagent and jvvoice.
-- **No audio / no agent**: jvvoice worker not running or `agent_name` / `LIVEKIT_AGENT_NAME` mismatch.
+- **No audio / no agent**: jvvoice worker not running or `agent_name` mismatch.
 - **Call rejected on worker**: jvagent didn't send `jvagent_base_url` — set `JVAGENT_PUBLIC_BASE_URL`.
 - **Empty agent replies**: jvvoice cannot reach jvagent `/interact` — check `JVAGENT_PUBLIC_BASE_URL` is reachable from jvvoice.
+
+## jvvoice implementation (today)
+
+jvvoice currently uses [LiveKit's WhatsApp Connector](https://docs.livekit.io/telephony/connectors/whatsapp/) for call accept/disconnect and realtime audio. That is an implementation detail inside jvvoice — jvagent does not depend on LiveKit.

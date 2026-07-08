@@ -1,35 +1,34 @@
-"""HTTP endpoints for LiveKit WhatsApp call action."""
+"""HTTP endpoints for WhatsApp voice call action."""
 
 import logging
 from typing import Any, Dict
 
-from fastapi import HTTPException
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
 from jvspatial.api.exceptions import ResourceNotFoundError
 
-from .livekit_whatsapp_action import LiveKitWhatsAppAction
+from .whatsapp_voice_action import WhatsAppVoiceAction
 
 logger = logging.getLogger(__name__)
 
 
-async def _get_livekit_action(action_id: str) -> LiveKitWhatsAppAction:
-    action = await LiveKitWhatsAppAction.get(action_id)
+async def _get_voice_action(action_id: str) -> WhatsAppVoiceAction:
+    action = await WhatsAppVoiceAction.get(action_id)
     if not action:
         raise ResourceNotFoundError(
             message=f"Action with ID '{action_id}' not found",
             details={"action_id": action_id},
         )
-    if not isinstance(action, LiveKitWhatsAppAction):
+    if not isinstance(action, WhatsAppVoiceAction):
         raise ResourceNotFoundError(
-            message="Action is not a LiveKitWhatsAppAction",
+            message="Action is not a WhatsAppVoiceAction",
             details={"action_id": action_id},
         )
     return action
 
 
 @endpoint(
-    "/actions/{action_id}/livekit/status",
+    "/actions/{action_id}/voice/status",
     methods=["GET"],
     auth=True,
     tags=["Action"],
@@ -42,7 +41,7 @@ async def _get_livekit_action(action_id: str) -> LiveKitWhatsAppAction:
             ),
             "agent_name": ResponseField(
                 field_type=str,
-                description="LiveKit agent dispatch name",
+                description="jvvoice worker registration name",
                 example="jvvoice",
             ),
             "active_calls": ResponseField(
@@ -53,9 +52,9 @@ async def _get_livekit_action(action_id: str) -> LiveKitWhatsAppAction:
         }
     ),
 )
-async def livekit_whatsapp_status(action_id: str) -> Dict[str, Any]:
-    """Return LiveKit WhatsApp call configuration status."""
-    action = await _get_livekit_action(action_id)
+async def whatsapp_voice_status(action_id: str) -> Dict[str, Any]:
+    """Return WhatsApp voice call configuration status."""
+    action = await _get_voice_action(action_id)
     return {
         "configured": action.is_configured(),
         "agent_name": action.agent_name,

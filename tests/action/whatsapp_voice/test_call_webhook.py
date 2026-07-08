@@ -1,6 +1,6 @@
 """Tests for Meta WhatsApp call webhook parsing."""
 
-from jvagent.action.livekit_whatsapp.call_webhook import (
+from jvagent.action.whatsapp_voice.call_webhook import (
     is_calls_webhook,
     parse_calls_webhook,
 )
