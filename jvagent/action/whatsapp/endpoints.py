@@ -21,8 +21,8 @@ from jvspatial.api.exceptions import ResourceNotFoundError
 from jvspatial.exceptions import DatabaseError, ValidationError
 
 from jvagent.action.access_control.access_control_action import log_access_denied
+from jvagent.action.utils.meta_calls_webhook import is_calls_webhook
 from jvagent.action.utils.meta_webhook import verify_meta_webhook_signature
-from jvagent.action.whatsapp_voice.call_webhook import is_calls_webhook
 from jvagent.core.agent import Agent
 
 from .utils.endpoint_helpers import (
