@@ -6,7 +6,7 @@ This guide documents the API for InteractAction and related methods for adding d
 
 InteractAction provides a simplified API for:
 - Adding directives and parameters to interactions
-- Generating responses via PersonaAction
+- Generating responses via ReplyAction
 - Managing interaction state efficiently
 
 ## Architecture
@@ -161,7 +161,7 @@ The environment variable is case-insensitive. Defaults to `development` if unset
 
 ## respond() Method
 
-The `respond()` method is the primary way to generate responses via PersonaAction. It supports passing directives and parameters directly, eliminating the need for separate method calls.
+The `respond()` method is the primary way to generate responses via ReplyAction. It supports passing directives and parameters directly, eliminating the need for separate method calls.
 
 ### Signature
 

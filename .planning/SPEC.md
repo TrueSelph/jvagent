@@ -41,28 +41,28 @@ Root (jvspatial)
 | Node | File | Purpose |
 |---|---|---|
 | `Root` | jvspatial `core/entities/root.py` | jvspatial singleton, anchor for everything. |
-| `App` | [`jvagent/core/app.py:19`](../jvagent/core/app.py) | Root application node; singleton via `App.get()` cache ([`app.py:124`](../jvagent/core/app.py)). |
+| `App` | [`jvagent/core/app.py:21`](../jvagent/core/app.py) | Root application node; singleton via `App.get()` cache ([`app.py:126`](../jvagent/core/app.py)). |
 | `Agents` | `jvagent/core/agents.py:17` | Structural branchpoint; aggregates agent stats. |
-| `Agent` | [`jvagent/core/agent.py:18`](../jvagent/core/agent.py) | One agent; cached fetch via `Agent.get(agent_id)` ([`agent.py:63`](../jvagent/core/agent.py)). |
+| `Agent` | [`jvagent/core/agent.py:30`](../jvagent/core/agent.py) | One agent; cached fetch via `Agent.get(agent_id)` ([`agent.py:89`](../jvagent/core/agent.py)). |
 | `Actions` | `jvagent/action/actions.py` | Branchpoint for an agent's action set. |
-| `Action` | [`jvagent/action/base.py:48`](../jvagent/action/base.py) | Base for all action plugins. |
-| `InteractAction` | [`jvagent/action/interact/base.py:32`](../jvagent/action/interact/base.py) | Subclass of `Action` participating in the interact pipeline. |
+| `Action` | [`jvagent/action/base.py:49`](../jvagent/action/base.py) | Base for all action plugins. |
+| `InteractAction` | [`jvagent/action/interact/base.py:27`](../jvagent/action/interact/base.py) | Subclass of `Action` participating in the interact pipeline. |
 | `Memory` | `jvagent/memory/manager.py:18` | Branchpoint for an agent's per-user state. |
 | `User` | `jvagent/memory/user.py:25` | Identity scoped by `(memory_id, user_id)`; compound index enforced. |
 | `Conversation` | `jvagent/memory/conversation.py:39` | Session-keyed conversation; chained `Interaction`s. |
-| `Interaction` | `jvagent/memory/interaction.py:47` | Single exchange; bidirectional edges to prior/next. |
+| `Interaction` | `jvagent/memory/interaction.py:51` | Single exchange; bidirectional edges to prior/next. |
 
 ### 2.1 Singleton invariants
 
-- **Exactly one `App` per process** ([`app.py:88`](../jvagent/core/app.py): `_cached_app` class var, `_get_lock` per-event-loop lock for serverless safety).
-- **Exactly one `Agents` and one `Memory` per agent** (implied by the `await agent.node(node="Actions")` / `await agent.node(node="Memory")` lookups at [`agent.py:95`](../jvagent/core/agent.py), [`agent.py:179`](../jvagent/core/agent.py)).
+- **Exactly one `App` per process** ([`app.py:90`](../jvagent/core/app.py): `_cached_app` class var, `_get_lock` per-event-loop lock for serverless safety).
+- **Exactly one `Agents` and one `Memory` per agent** (implied by the `await agent.node(node="Actions")` / `await agent.node(node="Memory")` lookups at [`agent.py:132`](../jvagent/core/agent.py), [`agent.py:250`](../jvagent/core/agent.py)).
 - **Exactly one `User` per `(memory_id, user_id)`** (compound index at `memory/user.py:16-24`; lock manager at `memory/lock_manager.py` enforces concurrent-create safety).
 - **Exactly one `Conversation` per `session_id`** per user (enforced at `Memory.get_user()` + conversation lookup).
 
 ### 2.2 Edge contract
 
-- `Conversation → Interaction` edges are **directional** at first (`direction="out"` at [`conversation.py:272`](../jvagent/memory/conversation.py)) and become **bidirectional** when the next `Interaction` is appended ([`conversation.py:270`](../jvagent/memory/conversation.py): `await last_interaction.connect(interaction, direction="both")`).
-- An `Action`'s outgoing edges to child nodes are **cascade-deleted** when the action is deleted ([`base.py:225`](../jvagent/action/base.py)). Implementations that attach child state (e.g., caches) MUST connect via outgoing edges.
+- `Conversation → Interaction` edges are **directional** at first (`direction="out"` at [`conversation.py:317`](../jvagent/memory/conversation.py)) and become **bidirectional** when the next `Interaction` is appended ([`conversation.py:315`](../jvagent/memory/conversation.py): `await last_interaction.connect(interaction, direction="both")`).
+- An `Action`'s outgoing edges to child nodes are **cascade-deleted** when the action is deleted ([`base.py:300`](../jvagent/action/base.py)). Implementations that attach child state (e.g., caches) MUST connect via outgoing edges.
 
 ---
 
@@ -70,11 +70,11 @@ Root (jvspatial)
 
 ### 3.1 Request → response sequence
 
-1. **HTTP entry**: `POST /agents/{agent_id}/interact` is registered in `jvagent/action/interact/endpoints.py:174+`.
-2. **Walker spawn**: `InteractWalker` is constructed with payload, then spawned on the `Agent` node. Walker source: `jvagent/action/interact/interact_walker.py:50+`.
-3. **Bootstrap**: `InteractWalker._bootstrap_interaction()` (`interact_walker.py:277-450`) resolves or creates `User`, `Conversation`, and `Interaction`.
-4. **Visit InteractActions**: walker visits each top-level `InteractAction` connected to the agent's `Actions` node, **in ascending `weight` order** ([`interact/base.py:64`](../jvagent/action/interact/base.py)).
-5. **Execute**: walker's `on_interact_action()` callback calls `await action.execute(walker)` if routing checks pass. Background actions are queued, not executed inline ([`endpoints.py:65-109`](../jvagent/action/interact/endpoints.py)).
+1. **HTTP entry**: `POST /agents/{agent_id}/interact` is registered in `jvagent/action/interact/endpoints.py:209`.
+2. **Walker spawn**: `InteractWalker` is constructed with payload, then spawned on the `Agent` node. Walker source: `jvagent/action/interact/interact_walker.py:47`.
+3. **Bootstrap**: `InteractWalker._bootstrap_interaction()` (`interact_walker.py:267`) resolves or creates `User`, `Conversation`, and `Interaction`.
+4. **Visit InteractActions**: walker visits each top-level `InteractAction` connected to the agent's `Actions` node, **in ascending `weight` order** ([`interact/base.py:59`](../jvagent/action/interact/base.py)).
+5. **Execute**: walker's `on_interact_action()` callback calls `await action.execute(walker)` if routing checks pass. Background actions are queued, not executed inline (`run_background_actions` in [`webhook_pipeline.py:53`](../jvagent/action/interact/webhook_pipeline.py), invoked from `endpoints.py:561`).
 6. **Response build**: `build_interact_response()` constructs JSON or SSE stream.
 7. **Post-response background**: `_run_background_actions(walker)` fires the queued `run_in_background` actions as fire-and-forget asyncio tasks. Each is isolated in try/except — failures do not block others.
 
@@ -83,13 +83,13 @@ Root (jvspatial)
 The `InteractWalker` MUST:
 - Initialize `walker.interaction`, `walker.conversation`, `walker.user_id`, `walker.session_id`, `walker.channel`, `walker.response_bus`, `walker.stream` before visiting any `InteractAction`. There is no `walker.user` (the full User node); use `Memory.get_user(walker.user_id)` when the node is needed.
 - Visit top-level `InteractAction`s in ascending `weight` order. Sub-`InteractAction`s connected as children are traversed only via explicit `visitor.visit()` calls from the parent's `execute()` ([`interact/base.py:47-54`](../jvagent/action/interact/base.py)).
-- Respect `run_in_background=True`: defer to the background queue, do not execute inline ([`interact/base.py:88`](../jvagent/action/interact/base.py)).
-- Honor `always_execute=True`: bypass routing exclusion for that action ([`interact/base.py:78`](../jvagent/action/interact/base.py)).
-- Enforce access control at each visit (`enforce_interact_action_access()` at `interact_walker.py:231`).
+- Respect `run_in_background=True`: defer to the background queue, do not execute inline ([`interact/base.py:81`](../jvagent/action/interact/base.py)).
+- Honor `always_execute=True`: bypass routing exclusion for that action ([`interact/base.py:71`](../jvagent/action/interact/base.py)).
+- Enforce access control at each visit (`enforce_interact_action_access()` at `interact_walker.py:221`).
 
 The `InteractAction.execute()` contract:
 - Receives the walker; reads state via `walker.interaction`, `walker.conversation`, `walker.user_id` (no `walker.user` field exists).
-- MUST perform its own evaluation checks at the start and return early if not applicable ([`interact/base.py:147-191`](../jvagent/action/interact/base.py)).
+- MUST perform its own evaluation checks at the start and return early if not applicable ([`interact/base.py:249`](../jvagent/action/interact/base.py)).
 - Top-level actions with child `InteractAction`s MUST explicitly route via `visitor.visit(child)` — the walker does not auto-traverse.
 - MAY emit responses via `await self.publish(...)`, `self.publish_thought(...)`, or `self.respond(...)`.
 - MUST NOT block the loop; long operations belong in `run_in_background` actions or in tasks.
@@ -118,7 +118,7 @@ In both modes a flow's only orchestrator-facing modification is being exposed vi
 6. **Access control gates tool dispatch** (`tool:*`), including IA-as-tool execution (`tool:delegate:{name}` preserved).
 7. **Walk-path curation.** Because the Orchestrator coexists with the interact pipeline, a routable IA is still a top-level `InteractAction` the walker would execute every turn. Each turn the orchestrator curates the remaining walk path (`visitor.curate_walk_path`) to drop tool-exposed (routable) IAs — reached only by tool selection — keeping itself, `always_execute` IAs, and non-routable IAs.
 
-The tool surface is assembled in [`orchestrator/orchestrator_interact_action.py`](../jvagent/action/orchestrator/orchestrator_interact_action.py); egress tools come from `Action.get_responder()` → `ReplyAction.get_tools()` (preferred) or `PersonaAction.get_tools()` (fallback), each IA furnishes its own tool via `InteractAction.get_tools()` (the orchestrator binds the visitor + AC), and progressive disclosure (`find_tool`/`load_tool`, `find_skill`/`use_skill`) comes from [`orchestrator/catalog.py`](../jvagent/action/orchestrator/catalog.py) and [`orchestrator/skills.py`](../jvagent/action/orchestrator/skills.py).
+The tool surface is assembled in [`orchestrator/orchestrator_interact_action.py`](../jvagent/action/orchestrator/orchestrator_interact_action.py); egress tools come from `Action.get_responder()` → `ReplyAction.get_tools()` (the sole responder; `get_responder()` returns `None` if no `ReplyAction` is enabled), each IA furnishes its own tool via `InteractAction.get_tools()` (the orchestrator binds the visitor + AC), and progressive disclosure (`find_tool`/`load_tool`, `find_skill`/`use_skill`) comes from [`orchestrator/catalog.py`](../jvagent/action/orchestrator/catalog.py) and [`orchestrator/skills.py`](../jvagent/action/orchestrator/skills.py).
 
 Rationale and consequences: [`adr/0012-skill-executive-architecture.md`](adr/0012-skill-executive-architecture.md) (supersedes [`adr/0010-executive-centers-architecture.md`](adr/0010-executive-centers-architecture.md)). Milestones: [`.planning/archive/EXECUTIVE-ROADMAP.md`](archive/EXECUTIVE-ROADMAP.md).
 
@@ -132,41 +132,41 @@ Harness design contract (thin server, thick SOP): [`docs/thin-harness.md`](../do
 
 ```
 Node (jvspatial)
-└── Action                     jvagent/action/base.py:48
+└── Action                     jvagent/action/base.py:49
     ├── BaseModelAction        jvagent/action/model/base.py:26
-    │   └── LanguageModelAction  jvagent/action/model/language/base.py:24
+    │   └── LanguageModelAction  jvagent/action/model/language/base.py:345
     │       ├── AnthropicLanguageModelAction
     │       ├── OpenAILanguageModelAction
     │       ├── OpenRouterLanguageModelAction
     │       └── OllamaLanguageModelAction
     ├── BaseWebSearchAction
     ├── BaseSTTAction, BaseTTSAction, VectorStore (per provider)
-    └── InteractAction          jvagent/action/interact/base.py:32
+    ├── ReplyAction (egress tools; extends Action, not InteractAction)
+    ├── InterviewAction
+    └── InteractAction          jvagent/action/interact/base.py:27
         ├── OrchestratorInteractAction
         ├── IntroInteractAction
-        ├── ReplyAction (egress tools)
-        ├── InterviewAction
         └── ...(see actions-catalog.md)
 ```
 
 ### 4.2 Required attributes
 
 Every `Action` MUST persist:
-- `agent_id: str` ([`base.py:125`](../jvagent/action/base.py))
-- `enabled: bool` ([`base.py:131`](../jvagent/action/base.py))
-- `namespace: str` ([`base.py:136`](../jvagent/action/base.py))
-- `label: str` ([`base.py:139`](../jvagent/action/base.py))
-- `description: str` ([`base.py:144`](../jvagent/action/base.py))
-- `metadata: Dict[str, Any]` populated from `info.yaml` ([`base.py:147`](../jvagent/action/base.py))
-- `module_path: str` ([`base.py:151`](../jvagent/action/base.py))
+- `agent_id: str` ([`base.py:126`](../jvagent/action/base.py))
+- `enabled: bool` ([`base.py:132`](../jvagent/action/base.py))
+- `namespace: str` ([`base.py:137`](../jvagent/action/base.py))
+- `label: str` ([`base.py:140`](../jvagent/action/base.py))
+- `description: str` ([`base.py:145`](../jvagent/action/base.py))
+- `metadata: Dict[str, Any]` populated from `info.yaml` ([`base.py:148`](../jvagent/action/base.py))
+- `module_path: str` ([`base.py:152`](../jvagent/action/base.py))
+- `parameters: List[Dict[str, Any]]` — scoped behavioural params, on the `Action` base ([`base.py:170`](../jvagent/action/base.py))
 
 `InteractAction` adds:
-- `weight: int` (default 0; ordering applies only to top-tier) ([`interact/base.py:64`](../jvagent/action/interact/base.py))
-- `always_execute: bool` ([`interact/base.py:78`](../jvagent/action/interact/base.py))
-- `run_in_background: bool` ([`interact/base.py:88`](../jvagent/action/interact/base.py))
-- `anchors: List[str]` ([`interact/base.py:99`](../jvagent/action/interact/base.py))
-- `parameters: List[Dict[str, Any]]` ([`interact/base.py:108`](../jvagent/action/interact/base.py))
-- `deny_access_directive: str` ([`interact/base.py:117`](../jvagent/action/interact/base.py))
+- `weight: int` (default 0; ordering applies only to top-tier) ([`interact/base.py:59`](../jvagent/action/interact/base.py))
+- `always_execute: bool` ([`interact/base.py:71`](../jvagent/action/interact/base.py))
+- `run_in_background: bool` ([`interact/base.py:81`](../jvagent/action/interact/base.py))
+- `anchors: List[str]` ([`interact/base.py:92`](../jvagent/action/interact/base.py))
+- `deny_access_directive: str` ([`interact/base.py:103`](../jvagent/action/interact/base.py))
 
 ### 4.3 Lifecycle hooks
 
@@ -174,28 +174,28 @@ Implementations MAY override:
 
 | Hook | When called | Source |
 |---|---|---|
-| `on_register()` | First-time set-up | [`base.py:256`](../jvagent/action/base.py) |
-| `on_reload()` | After update | [`base.py:269`](../jvagent/action/base.py) |
-| `post_register()` | After all actions registered (for cross-action wiring) | [`base.py:281`](../jvagent/action/base.py) |
-| `on_startup()` | When the action is loaded from DB on app start | [`base.py:307`](../jvagent/action/base.py) |
-| `on_enable()` | When transitioned to enabled | [`base.py:294`](../jvagent/action/base.py) |
-| `on_disable()` | When transitioned to disabled | [`base.py:321`](../jvagent/action/base.py) |
-| `on_deregister()` | When removed from the agent | [`base.py:334`](../jvagent/action/base.py) |
-| `pulse()` | Periodic maintenance | [`base.py:544`](../jvagent/action/base.py) |
-| `healthcheck()` | Health probe | [`base.py:553`](../jvagent/action/base.py) |
+| `on_register()` | First-time set-up | [`base.py:331`](../jvagent/action/base.py) |
+| `on_reload()` | After update | [`base.py:343`](../jvagent/action/base.py) |
+| `post_register()` | After all actions registered (for cross-action wiring) | [`base.py:469`](../jvagent/action/base.py) |
+| `on_startup()` | When the action is loaded from DB on app start | [`base.py:378`](../jvagent/action/base.py) |
+| `on_enable()` | When transitioned to enabled | [`base.py:366`](../jvagent/action/base.py) |
+| `on_disable()` | When transitioned to disabled | [`base.py:391`](../jvagent/action/base.py) |
+| `on_deregister()` | When removed from the agent | [`base.py:403`](../jvagent/action/base.py) |
+| `pulse()` | Periodic maintenance | [`base.py:670`](../jvagent/action/base.py) |
+| `healthcheck()` | Health probe | [`base.py:678`](../jvagent/action/base.py) |
 
-Errors raised by these hooks are logged automatically by the action's `enable()` / `disable()` / `reload()` wrappers ([`base.py:569+`](../jvagent/action/base.py)). Implementations MUST NOT swallow errors silently — let them propagate so the wrapper records them.
+Errors raised by these hooks are logged automatically by the action's `enable()` / `disable()` / `reload()` wrappers ([`base.py:694+`](../jvagent/action/base.py)). Implementations MUST NOT swallow errors silently — let them propagate so the wrapper records them.
 
 ### 4.4 Tools and capabilities
 
-- `get_tools() -> List[Tool]` ([`base.py:192`](../jvagent/action/base.py)) — every `Action` MAY expose tools to the agentic loop (e.g. the Orchestrator's think-act-observe loop). Each tool wraps a callable with a JSON Schema for arguments; they are registered with an `action__` prefix in the tool registry. `InteractAction.get_tools()` forwards to `execute(visitor)` and builds the tool description from the manifest (`purpose` + `activates_on`, via `routing_triggers()`).
-- `get_capabilities() -> List[str]` ([`base.py:180`](../jvagent/action/base.py)) — short capability strings aggregated by `PersonaAction` for system-prompt injection.
+- `get_tools() -> List[Tool]` ([`base.py:259`](../jvagent/action/base.py)) — every `Action` MAY expose tools to the agentic loop (e.g. the Orchestrator's think-act-observe loop). Each tool wraps a callable with a JSON Schema for arguments; they are registered with an `action__` prefix in the tool registry. `InteractAction.get_tools()` forwards to `execute(visitor)` and builds the tool description from the manifest (`purpose` + `activates_on`, via `routing_triggers()`).
+- `get_capabilities() -> List[str]` ([`base.py:180`](../jvagent/action/base.py)) — short capability strings aggregated by `ReplyAction` for reply-prompt injection.
 
 ### 4.5 Action discovery
 
-- `Action.get_action(class_or_name, enabled_only=True)` ([`base.py:710`](../jvagent/action/base.py)) is `O(1)` via a cached `class_name → action_id` index maintained at register/deregister time.
-- `Action.get_action_by_base_class(base_class)` ([`base.py:766`](../jvagent/action/base.py)) is `O(n)` (isinstance scan).
-- `Action.get_model_action(required=False)` ([`base.py:796`](../jvagent/action/base.py)) is the canonical path for actions needing a LLM. Honors a `model_action_type` attribute when present.
+- `Action.get_action(class_or_name, enabled_only=True)` ([`base.py:834`](../jvagent/action/base.py)) is `O(1)` via a cached `class_name → action_id` index maintained at register/deregister time.
+- `Action.get_action_by_base_class(base_class)` ([`base.py:890`](../jvagent/action/base.py)) is `O(n)` (isinstance scan).
+- `Action.get_model_action(required=False)` ([`base.py:920`](../jvagent/action/base.py)) is the canonical path for actions needing a LLM. Honors a `model_action_type` attribute when present.
 
 ### 4.6 Namespace rules
 
@@ -223,19 +223,19 @@ See [`adr/0004-namespace-isolation.md`](adr/0004-namespace-isolation.md) and [`a
 
 ### 5.2 Conversation chaining
 
-- A new `Interaction` is appended via `Conversation.add_interaction()` ([`conversation.py:199`](../jvagent/memory/conversation.py)).
+- A new `Interaction` is appended via `Conversation.add_interaction()` ([`conversation.py:235`](../jvagent/memory/conversation.py)).
 - The first `Interaction` is connected to the `Conversation` directly with `direction="out"`.
 - Subsequent `Interaction`s connect to the previous one with `direction="both"` (bidirectional chain).
 - `Conversation.last_interaction_id` is updated atomically with the count and timestamp.
-- `Interaction.utterance` defaults to `""` ([`interaction.py:92`](../jvagent/memory/interaction.py)). An empty utterance denotes a **proactive (agent-initiated)** entry — see §7.1 and [`docs/proactive-messages.md`](../docs/proactive-messages.md). `Conversation._format_interactions` ([`conversation.py:553-566`](../jvagent/memory/conversation.py)) skips the `role: "user"` entry when the utterance is empty/whitespace, so proactive entries appear as standalone `assistant` turns in LLM history.
+- `Interaction.utterance` defaults to `""` ([`interaction.py:91`](../jvagent/memory/interaction.py)). An empty utterance denotes a **proactive (agent-initiated)** entry — see §7.1 and [`docs/proactive-messages.md`](../docs/proactive-messages.md). `Conversation._format_interactions` ([`conversation.py:553-566`](../jvagent/memory/conversation.py)) skips the `role: "user"` entry when the utterance is empty/whitespace, so proactive entries appear as standalone `assistant` turns in LLM history.
 
 ### 5.3 Rolling-window pruning
 
-- The default pruning window is `Agent.interaction_limit` ([`agent.py:50`](../jvagent/core/agent.py); `0` = disabled).
+- The default pruning window is `Agent.interaction_limit` ([`agent.py:72`](../jvagent/core/agent.py); `0` = disabled).
 - A `Conversation` may override with its own `interaction_limit`.
-- On every `add_interaction()`, if `interaction_count > interaction_limit`, `_prune_old_interactions()` runs ([`conversation.py:289-293`](../jvagent/memory/conversation.py)).
-- **Per-call bound**: `_prune_old_interactions` caps removals at `JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL` (default 100, [`conversation.py:317-323`](../jvagent/memory/conversation.py)). Any remaining excess is removed on subsequent appends or by `Memory.apply_interaction_limit_pruning_for_connected_users`.
-- Pruning **never** removes the most recent `Interaction` — it stops if there is no next interaction ([`conversation.py:333-336`](../jvagent/memory/conversation.py)).
+- On every `add_interaction()`, if `interaction_count > interaction_limit`, `_prune_old_interactions()` runs ([`conversation.py:337-340`](../jvagent/memory/conversation.py)).
+- **Per-call bound**: `_prune_old_interactions` caps removals at `JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL` (default 100, [`conversation.py:511-526`](../jvagent/memory/conversation.py)). Any remaining excess is removed on subsequent appends or by `Memory.apply_interaction_limit_pruning_for_connected_users`.
+- Pruning **never** removes the most recent `Interaction` — it stops if there is no next interaction ([`conversation.py:541-543`](../jvagent/memory/conversation.py)).
 - After pruning, `last_interaction_id` is reverified and the count decremented.
 
 Rationale: [`adr/0003-interaction-limit-pruning.md`](adr/0003-interaction-limit-pruning.md). User-facing detail: [`memory-and-pruning.md`](reference/memory-and-pruning.md).
@@ -280,7 +280,7 @@ Rationale: [`adr/0003-interaction-limit-pruning.md`](adr/0003-interaction-limit-
 | `merge` | Apply a **narrow** merge from `app.yaml` to the `App` node — only `version` and `app_id` are refreshed ([`app_loader.py:308-317`](../jvagent/core/app_loader.py)). Other App-level fields, action installs, and per-agent state are **untouched**. The agent-level loader still runs in `merge` mode for action install/upgrade — see [`agent_loader.py`](../jvagent/core/agent_loader.py). |
 | `source` | **Destructive**. YAML is the source of truth; full App fields are overwritten and conflicting graph nodes are reset to YAML state ([`app_loader.py:288-307`](../jvagent/core/app_loader.py)). |
 
-CLI flags `--update` / `--merge` / `--source` override the persisted value for that process only. After a successful `bootstrap` or `run`, the persisted mode is reset to `run` by [`reset_app_update_mode_after_successful_bootstrap()`](../jvagent/core/bootstrap_update_mode.py) (called from `cli/commands.py:577` for `bootstrap` and `cli/server_config.py:556` for `run_server`) so cold restarts do not repeat a one-shot operation. The reset uses [`set_app_update_mode()`](../jvagent/core/app.py) (`object.__setattr__` + `await app.save()`) — `Object.save()` writes the full document via `model_dump`, so the change persists despite `update_mode` being a `protected=True` attribute.
+CLI flags `--update` / `--merge` / `--source` override the persisted value for that process only. After a successful `bootstrap` or `run`, the persisted mode is reset to `run` by [`reset_app_update_mode_after_successful_bootstrap()`](../jvagent/core/bootstrap_update_mode.py) (called from `cli/server.py:407` for `bootstrap` and `cli/server_config.py:613` for `run_server`) so cold restarts do not repeat a one-shot operation. The reset uses [`set_app_update_mode()`](../jvagent/core/app.py) (`object.__setattr__` + `await app.save()`) — `Object.save()` writes the full document via `model_dump`, so the change persists despite `update_mode` being a `protected=True` attribute.
 
 `--source` and `--merge` REQUIRE `--update` ([`cli/main.py:167-172`](../jvagent/cli/main.py)). They are mutually exclusive.
 
@@ -290,16 +290,16 @@ See [`adr/0005-app-yaml-agent-yaml-split.md`](adr/0005-app-yaml-agent-yaml-split
 
 ## 7. Response bus
 
-The response bus ([`jvagent/action/response/response_bus.py`](../jvagent/action/response/response_bus.py)) is **per-agent**. Each `Agent` lazily constructs one via `Agent.get_response_bus()` ([`agent.py:185`](../jvagent/core/agent.py)).
+The response bus ([`jvagent/action/response/response_bus.py`](../jvagent/action/response/response_bus.py)) is **per-agent**. Each `Agent` lazily constructs one via `Agent.get_response_bus()` ([`agent.py:256`](../jvagent/core/agent.py)).
 
 - Channel adapters (`EmailAction`, `WhatsAppAction`, `FacebookAction`, etc.) register with the bus and translate messages to channel-specific transports.
 - Filters can drop, transform, or duplicate messages per channel.
-- `InteractAction.publish()` ([`interact/base.py:193`](../jvagent/action/interact/base.py)) is the canonical emit path **from within the walker pipeline**.
+- `InteractAction.publish()` ([`interact/base.py:293`](../jvagent/action/interact/base.py)) is the canonical emit path **from within the walker pipeline**.
 - Stream mode defaults to `visitor.stream`; pass `stream=False` for non-streaming publishes.
 
 ### 7.1 Proactive (agent-initiated) sends
 
-For messages that originate from code outside an inbound webhook (scheduled outreach, integration callbacks, admin actions), use **`Agent.send_proactive_message(user_id, content, channel, ...)`** ([`agent.py:226-319`](../jvagent/core/agent.py)) — the canonical programmatic entrypoint. It:
+For messages that originate from code outside an inbound webhook (scheduled outreach, integration callbacks, admin actions), use **`Agent.send_proactive_message(user_id, content, channel, ...)`** ([`agent.py:271`](../jvagent/core/agent.py)) — the canonical programmatic entrypoint. It:
 
 - resolves the `User` (via `Memory.get_user(create_if_missing=True)`) and the active `Conversation` (or creates one);
 - creates an `Interaction` with `utterance=""` and tags origin under `Interaction.parameters` (`{"is_proactive": True, "action_name": <source_action>, ...metadata}`);
@@ -312,7 +312,7 @@ Do NOT publish to the bus directly from outside the walker pipeline — bypassin
 ## 8. Logging and observability
 
 - Logging service: [`jvagent/logging/service.py`](../jvagent/logging/service.py) — registers the `INTERACTION` log level.
-- HTTP query: `GET /logs/agents/{agent_id}` ([`jvagent/logging/endpoints.py:39-113`](../jvagent/logging/endpoints.py)).
+- HTTP query: `GET /logs/agents/{agent_id}` ([`jvagent/logging/endpoints.py:21`](../jvagent/logging/endpoints.py)).
 - Logs are stored in a **separate database** named `logs` (jvspatial `get_logging_service(database_name="logs")`).
 - `Interaction.observability_metrics` aggregates per-interaction events (model calls, embeddings, tools, errors).
 - `Interaction.usage` aggregates token counts and per-model call tallies.
@@ -323,15 +323,15 @@ See [`observability.md`](reference/observability.md) for the unified index over 
 
 ## 9. Boot sequence
 
-1. `python -m jvagent` → `jvagent/__main__.py:5` → `jvagent.cli.main.main()` ([`cli/main.py:118`](../jvagent/cli/main.py)).
-2. Parse args; extract app root via `_first_app_root_path` ([`cli/main.py:58`](../jvagent/cli/main.py)). Default to `os.getcwd()` if no path token.
-3. Load `.env` via `load_app_env(app_root)` ([`cli/main.py:130`](../jvagent/cli/main.py)).
-4. Set app root in `core/app_context` ([`cli/main.py:132-134`](../jvagent/cli/main.py)).
+1. `python -m jvagent` → `jvagent/__main__.py:5` → `jvagent.cli.main.main()` ([`cli/main.py:119`](../jvagent/cli/main.py)).
+2. Parse args; extract app root via `_first_app_root_path` ([`cli/main.py:59`](../jvagent/cli/main.py)). Default to `os.getcwd()` if no path token.
+3. Load `.env` via `load_app_env(app_root)` ([`cli/main.py:131`](../jvagent/cli/main.py)).
+4. Set app root in `core/app_context` ([`cli/main.py:133`](../jvagent/cli/main.py)).
 5. Reload performance + profiling config from env.
 6. Apply `--serverless`, `--debug`, `--update`/`--source`/`--merge` flags.
 7. Dispatch:
    - Subcommand (status / agent / action / skill / bootstrap / bundle / app / validate / stress-seed): handled inline.
-   - Default: `run_server(update_mode, debug, app_root, stress_seed)` ([`cli/main.py:239`](../jvagent/cli/main.py)).
+   - Default: `run_server(update_mode, debug, app_root, stress_seed)` ([`cli/main.py:244`](../jvagent/cli/main.py)).
 8. `run_server` → `cli/server_config.create_server_from_config()` → `bootstrap_application_graph()` → uvicorn.
 
 ---
@@ -341,7 +341,7 @@ See [`observability.md`](reference/observability.md) for the unified index over 
 `InteractAction.run_in_background=True` defers execution until after the user-facing response is sent. Background actions:
 
 - Are collected by the walker during traversal (`walker.background_actions` list).
-- Fire after `await response` resolves, in `_run_background_actions(walker)` ([`endpoints.py:65-109`](../jvagent/action/interact/endpoints.py)).
+- Fire after `await response` resolves, in `run_background_actions(walker)` ([`webhook_pipeline.py:53`](../jvagent/action/interact/webhook_pipeline.py), invoked from `endpoints.py:561`).
 - Are dispatched as fire-and-forget asyncio tasks. Each is wrapped in try/except — failures do not block siblings.
 - Use cases: analytics, model updates, follow-up notifications, task scheduling.
 
@@ -358,7 +358,7 @@ There is **no external task queue** (no Celery / RQ). Long-lived autonomous work
 5. `Action.metadata` is the authoritative source for `info.yaml` data. Implementations MUST NOT shadow it.
 6. `Agent.interaction_limit = 0` means **disabled**. Implementations MUST NOT prune when limit is `0` or unset.
 7. `App.update_mode` MUST reset to `run` after a successful sync; otherwise cold restarts will repeat the merge/source pass.
-8. Action endpoints registered via `@endpoint` MUST be discoverable by `_discover_action_endpoints()` ([`base.py:354`](../jvagent/action/base.py)) so deregister can clean them up. Use `/actions/{action_id}/...` path prefixes.
+8. Action endpoints registered via `@endpoint` MUST be discoverable by `_discover_action_endpoints()` ([`base.py:469`](../jvagent/action/base.py)) so deregister can clean them up. Use `/actions/{action_id}/...` path prefixes.
 9. The Orchestrator is the single pattern orchestrator at `weight=-200`. It runs at most one model call per tick, bounded by an activation budget. See §3.3.
 10. Flow continuation is configurable via `lock_active_flow` ([ADR-0013](adr/0013-togglable-deterministic-turn-lock.md)). When on (default), the active flow's IA tool is dispatched with no model round-trip; when off, the flow is surfaced as routable context and the model decides. See §3.3 invariants 2–3.
 11. Routing is tool selection. There is no separate router or capability registry; IAs (as tools), persona, core services, and skills are all tools. A flow's control-task (turn-lock) is persisted on the conversation `TaskStore`; the active flow is surfaced as a routable tool and continued by model tool selection next turn. See §3.3 invariant 4.
@@ -369,7 +369,7 @@ There is **no external task queue** (no Celery / RQ). Long-lived autonomous work
 ## 12. Versioning
 
 - jvagent's own version: `jvagent/version.py`.
-- Required jvspatial version: `pyproject.toml` line containing `jvspatial>=X.Y.Z`. Current pin: `>=0.0.7`; tested with `0.0.8`. See [`adr/0006-jvspatial-dependency.md`](adr/0006-jvspatial-dependency.md).
+- Required jvspatial version: `pyproject.toml` line containing `jvspatial>=X.Y.Z`. Current pin: `==0.0.12`. See [`adr/0006-jvspatial-dependency.md`](adr/0006-jvspatial-dependency.md).
 
 ---
 

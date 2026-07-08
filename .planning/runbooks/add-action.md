@@ -52,7 +52,7 @@ package:
   dependencies:
     jvagent: ~0.0.1
     actions:
-      - jvagent/persona
+      - jvagent/reply
     pip:
       - slack-sdk>=3.27
 ```

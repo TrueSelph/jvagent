@@ -1,6 +1,6 @@
 # Orchestrator Architecture
 
-The **Orchestrator** pattern is a brain-shaped, additive deployment pattern: a single model-driven orchestrator runs the whole turn over one unified tool surface. When a turn-spanning flow is in progress it surfaces that flow as a tool and lets the model decide whether to continue it, then runs a think-act-observe loop. It ships as a peer to the Rails pattern — the harness is unchanged. See [`adr/0012-skill-executive-architecture.md`](../.planning/adr/0012-skill-executive-architecture.md) for the decision record (it supersedes ADR-0010) and [`EXECUTIVE-ROADMAP.md`](../.planning/archive/EXECUTIVE-ROADMAP.md) for the build. Two later ADRs refine the surface: [ADR-0017](../.planning/adr/0017-two-skill-specs-code-execution-substrate.md) (two skill specs + a multitenant code-execution substrate) and [ADR-0018](../.planning/adr/0018-lean-tool-surfacing.md) (lean tool surfacing).
+The **Orchestrator** pattern is a brain-shaped, additive deployment pattern: a single model-driven orchestrator runs the whole turn over one unified tool surface. When a turn-spanning flow is in progress it surfaces that flow as a tool and lets the model decide whether to continue it, then runs a think-act-observe loop. The harness is unchanged. See [`adr/0012-skill-executive-architecture.md`](../.planning/adr/0012-skill-executive-architecture.md) for the decision record (it supersedes ADR-0010) and [`EXECUTIVE-ROADMAP.md`](../.planning/archive/EXECUTIVE-ROADMAP.md) for the build. Two later ADRs refine the surface: [ADR-0017](../.planning/adr/0017-two-skill-specs-code-execution-substrate.md) (two skill specs + a multitenant code-execution substrate) and [ADR-0018](../.planning/adr/0018-lean-tool-surfacing.md) (lean tool surfacing).
 
 ## Overview
 
@@ -116,7 +116,7 @@ Identity and egress are split along two axes:
 
 - **Identity lives on the Agent node** — `alias` (display name) + `role` (purpose). The Orchestrator injects *"You are {alias}, {role}."* at the head of its system prompt (`render_identity_section`), so the model reasons and writes **as the agent** from the first token. The same fields are read by the egress responder — one source, no duplication.
 - **Egress is a `ReplyAction`** (`jvagent/reply`) — the agent's *mouth* and the Orchestrator's send path. `reply` delivers the user's message: **slim** (a thin literal publish, no model call) by default, but when there's shaping to apply it composes via `respond` — pending **directives** (mandatory instructions), **parameters** (conditional rules), and channel **formatting**. Channel formats live in `CHANNEL_FORMATS` (overridable per channel via the `channel_formats` attribute); the default/web channel carries none, so ordinary turns stay slim for token efficiency, while voice/SMS/social channels get plain-text or channel-specific markup. `publish` is the egress primitive.
-- **Resolution is `Action.get_responder()`** — resolves `ReplyAction` only (ADR-0025); returns `None` if no `ReplyAction` is enabled, so every agent must enable one. The Orchestrator resolves the responder for its `reply`/`respond` tools and for the post-loop `_egress` (which renders queued rails-IA directives through `respond`).
+- **Resolution is `Action.get_responder()`** — resolves `ReplyAction` only (ADR-0025); returns `None` if no `ReplyAction` is enabled, so every agent must enable one. The Orchestrator resolves the responder for its `reply`/`respond` tools and for the post-loop `_egress` (which renders queued IA directives through `respond`).
 
 The reference agents enable `jvagent/reply`. `PersonaAction` was retired in ADR-0025; `ReplyAction` is jvagent's single output contract.
 
@@ -236,12 +236,23 @@ Agent-level identity (ADR-0014) lives in the agent context: `alias` (display nam
 
 ```
 jvagent/action/orchestrator/
-  ├─ orchestrator_interact_action.py  # orchestrator: walk-path curation + tool-surface assembly + loop
-  ├─ continuation.py                     # active-flow surfacing (active_flow_owner + active_flow_note)
+  ├─ orchestrator_interact_action.py  # entry action: tool-surface assembly + turn dispatch
+  ├─ loop.py                             # think-act-observe loop (_run_loop)
+  ├─ loop_helpers.py                     # loop support helpers
+  ├─ egress.py                           # post-loop egress (_egress / _pipe_response)
+  ├─ uploads.py                          # inbound upload ingestion (_ingest_uploads)
+  ├─ walk_path.py                        # walk-path curation (_curate_walk_path)
+  ├─ continuation.py                     # active-flow surfacing + plan_resume_note
   ├─ tools.py                            # SkillTool primitives + wrap/parse/render helpers
   ├─ core_tools.py                       # built-in orchestrator core tools
+  ├─ proactive_tools.py                  # proactive-message tools
   ├─ catalog.py                          # tool catalog (find_tool/load_tool) + lean surfacing
   ├─ skills.py                           # skill discovery (JV + Claude specs) + find_skill/use_skill
+  ├─ skill_providers.py                  # host skill providers (register_host_skill_provider)
+  ├─ skill_tasks.py                      # skill task-lock wiring
+  ├─ task_runners.py                     # task runner plumbing
+  ├─ preconditions.py                    # precondition checks
+  ├─ constants.py                        # shared constants
   ├─ prompts.py                          # orchestrator + loop prompts
   ├─ access.py                           # tool:* / tool:delegate AC
   └─ info.yaml                           # package metadata
@@ -266,7 +277,7 @@ A skill is **judgment over capability, not capability** (ADR-0011). Tools answer
 
 See [`jvagent/skills/README.md`](../jvagent/skills/README.md) for the full placement standard.
 
-Aliases `local`→`app` and `builtin`→`library` are accepted; `registry` is retired (treated as `library`).
+Only `app`, `library`, and `both` are recognized; any other value (including the former `local`/`builtin`/`registry` aliases) falls back to `both`.
 
 **Host skill providers (embedded deployments)** — after filesystem discovery, [`skill_providers.py`](../jvagent/action/orchestrator/skill_providers.py) merges skills from registered host callables (`register_host_skill_provider`). Integral uses this for per-workspace App-bundled skill overlays; filesystem/app-local skills win on name collision. Host providers run regardless of `skills_source`.
 
@@ -291,5 +302,5 @@ actions:
 ## Known follow-ups
 
 - Both skill specs are wired: JV skills (SOP coordinating actions-as-tools) and **Claude skills** (`SKILL.md` + bundled scripts run in the multitenant `code_execution` sandbox, ADR-0017). The subprocess executor backend is a pragmatic default, not a hard jail — untrusted/third-party skills want an isolating backend (container/bubblewrap/nsjail); object-storage sandboxes need a materialize/sync layer (local file storage only for now).
-- First-entry routing accuracy now depends on model tool-selection (anchors-in-description + a routing nudge + tests mitigate this); trivial-turn latency, since every non-flow turn enters the loop (mitigated by lean tool surfacing — ADR-0018 — and a `converse` fast-reply skill). Both measured at rollout.
+- First-entry routing accuracy now depends on model tool-selection (anchors-in-description + a routing nudge + tests mitigate this); trivial-turn latency, since every non-flow turn enters the loop (mitigated by lean tool surfacing — ADR-0018 — and a fast-reply path). Both measured at rollout.
 - Live-provider smoke + a performance ledger entry (the in-tree smoke mocks leaf model calls).

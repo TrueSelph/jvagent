@@ -7,7 +7,7 @@
 ## 1. Where jvspatial lives
 
 - **Source**: `/Users/eldonmarks/Briefcase/dev/jv/jvspatial` (sibling directory in this workspace).
-- **Pip install**: declared in [`pyproject.toml`](../../pyproject.toml) as `jvspatial>=0.0.7`. Tested against `0.0.8`.
+- **Pip install**: declared in [`pyproject.toml`](../../pyproject.toml) as `jvspatial==0.0.12`.
 - **Own docs**: jvspatial has its own [`README.md`](../../../jvspatial/README.md) and [`SPEC.md`](../../../jvspatial/SPEC.md). Treat those as authoritative for anything below.
 
 ---
@@ -59,7 +59,7 @@ class MyNode(Node):
 ```
 
 - `@attribute(...)` — declares a typed persisted field with default, indexing, validation hints.
-- `@compound_index([(...)])` — DB-level compound index declaration (e.g., `jvagent/action/base.py:37-47`).
+- `@compound_index([(...)])` — DB-level compound index declaration (e.g., `jvagent/action/base.py:38-48`).
 - `@on_visit(WalkerType)` — registers a Node method as a visit callback for a specific walker class.
 
 ### 2.4 Endpoints
@@ -160,7 +160,7 @@ Things jvagent **owns**:
 - The `Action` / `InteractAction` contract.
 - The `App` / `Agent` / `Agents` / `Memory` / `User` / `Conversation` / `Interaction` node types.
 - The interact subsystem (`InteractWalker`, response bus, channel adapters).
-- The Executive pattern (control loop + capability registry + centers).
+- The Orchestrator pattern (think-act-observe loop over a unified tool surface).
 - Action discovery, plugin loading, namespace resolution.
 - Per-interaction observability + interaction-level logging.
 
@@ -168,7 +168,7 @@ Things jvagent **owns**:
 
 ## 5. Version policy
 
-- Minimum required jvspatial: pinned in [`pyproject.toml`](../../pyproject.toml) as `jvspatial>=X.Y.Z`. Current: `>=0.0.7`.
+- Minimum required jvspatial: pinned in [`pyproject.toml`](../../pyproject.toml) as `jvspatial==X.Y.Z`. Current: `==0.0.12`.
 - When jvspatial introduces breaking changes (e.g., walker API rename, persistence shape change), bump the pin and update this section.
 - When adding a new dependency on a jvspatial feature, document the symbol + version it was introduced in. Helps downstream consumers know the floor.
 - Rationale: [`adr/0006-jvspatial-dependency.md`](../adr/0006-jvspatial-dependency.md).
@@ -181,9 +181,9 @@ Things jvagent **owns**:
 |---|---|
 | Forgetting `await self.save()` after mutating a Node property | jvspatial only persists `.create()` results automatically. Property changes need explicit `save()`. |
 | Calling `Object.count(query)` | Does not exist on all entity types. Use `len(await Entity.find(query))`. |
-| Using `entity.field = X` on a `protected=True` field | Blocked silently in some paths. Use the explicit setter (e.g., `set_app_update_mode`, [`app.py:537`](../../jvagent/core/app.py)) — those use `object.__setattr__`. |
+| Using `entity.field = X` on a `protected=True` field | Blocked silently in some paths. Use the explicit setter (e.g., `set_app_update_mode`, [`app.py:596`](../../jvagent/core/app.py)) — those use `object.__setattr__`. |
 | Spawning a Walker outside an HTTP request | No default `GraphContext`. Wrap your job in `GraphContext(database=...)` or use jvspatial's `create_task`. |
-| Caching jvspatial objects across event loops | Locks/contexts are per-loop. See `App._get_lock()` ([`app.py:97-117`](../../jvagent/core/app.py)) for the pattern. |
+| Caching jvspatial objects across event loops | Locks/contexts are per-loop. See `App._get_lock()` ([`app.py:100-124`](../../jvagent/core/app.py)) for the pattern. |
 | Long-running Walker without `await asyncio.sleep(0)` | The walker is synchronous-feeling but cooperatively scheduled. Yield occasionally for fairness. |
 
 ---

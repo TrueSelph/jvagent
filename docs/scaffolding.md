@@ -190,7 +190,7 @@ the `jvagent/orchestrator` action via:
 
 - `skills`: `-all` or a list of names/globs (default unset = expose none)
 - `denied_skills`: optional subtractive names/globs
-- `skills_source`: `library` (alias `builtin`), `app` (alias `local`), or `both`
+- `skills_source`: `library`, `app`, or `both`
 
 ### Skill commands
 

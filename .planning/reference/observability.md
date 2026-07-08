@@ -13,8 +13,8 @@
 | Per-interaction events (turn-level) | `INTERACTION` level → separate `logs` DB | [`/docs/interaction-logging.md`](../../docs/interaction-logging.md) |
 | Per-interaction error rollup | `Interaction.observability_metrics` (dict on the Interaction node) | [`/docs/error-logging.md`](../../docs/error-logging.md) |
 | Token usage + model-call tallies | `Interaction.usage` (dict on the Interaction node) | [`/docs/interaction-logging.md`](../../docs/interaction-logging.md) |
-| HTTP query API for logs | `GET /logs/agents/{agent_id}` ([`jvagent/logging/endpoints.py:39-113`](../../jvagent/logging/endpoints.py)) | [`/docs/logging.md`](../../docs/logging.md) |
-| Action lifecycle errors | auto-logged by `enable()`/`disable()`/`reload()` wrappers ([`action/base.py:569+`](../../jvagent/action/base.py)) | [`/docs/error-logging.md`](../../docs/error-logging.md) |
+| HTTP query API for logs | `GET /logs/agents/{agent_id}` ([`jvagent/logging/endpoints.py:21-113`](../../jvagent/logging/endpoints.py)) | [`/docs/logging.md`](../../docs/logging.md) |
+| Action lifecycle errors | auto-logged by `enable()`/`disable()`/`reload()` wrappers ([`action/base.py:694-752`](../../jvagent/action/base.py)) | [`/docs/error-logging.md`](../../docs/error-logging.md) |
 | Profiling (request latency) | `core/profiling.py` decorators | (no dedicated doc — see source) |
 | Per-action telemetry | up to each action; typically merges into `Interaction.observability_metrics` | per-action source |
 | Channel adapter delivery logs | per channel adapter | per-channel action source |
@@ -77,7 +77,7 @@ To raise verbosity for a single run:
 JVSPATIAL_LOG_LEVEL=DEBUG jvagent /path/to/app --debug
 ```
 
-`--debug` ALSO drops the root logger + every handler to DEBUG and forces `jvagent` namespace to DEBUG ([`cli/main.py:152-159`](../../jvagent/cli/main.py)).
+`--debug` ALSO drops the root logger + every handler to DEBUG and forces `jvagent` namespace to DEBUG ([`cli/main.py:154-160`](../../jvagent/cli/main.py)).
 
 ---
 
@@ -88,7 +88,7 @@ curl -H "Authorization: Bearer $TOKEN" \
   "http://localhost:8000/logs/agents/$AGENT_ID?limit=100&since=2026-05-17T00:00:00Z"
 ```
 
-Endpoint: `GET /logs/agents/{agent_id}`. Filters: time range, level, query (Mongo-style). Source: [`jvagent/logging/endpoints.py:39-113`](../../jvagent/logging/endpoints.py).
+Endpoint: `GET /logs/agents/{agent_id}`. Filters: time range, level, query (Mongo-style). Source: [`jvagent/logging/endpoints.py:21-113`](../../jvagent/logging/endpoints.py).
 
 Full detail: [`/docs/logging.md`](../../docs/logging.md).
 
@@ -108,7 +108,7 @@ If you add one of these, document it here and in [`/docs/logging.md`](../../docs
 
 | Tier | Retention knob |
 |---|---|
-| `logs` DB records | `App.log_retention_days` (default `60`, [`core/app.py:63`](../../jvagent/core/app.py)) |
+| `logs` DB records | `App.log_retention_days` (default `60`, [`core/app.py:65`](../../jvagent/core/app.py)) |
 | Per-Interaction metrics | bounded by `Conversation.interaction_limit` (pruned with the interaction) |
 | stderr / file logs | external — depends on your hosting |
 

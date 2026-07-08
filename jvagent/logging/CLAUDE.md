@@ -20,7 +20,7 @@ It does **not** own: per-interaction observability metrics (those live on `Inter
 |---|---|
 | `__init__.py` | Module init |
 | `service.py` | Registers the `INTERACTION` log level + jvspatial logging service bridge |
-| `endpoints.py:39-113` | `GET /logs/agents/{agent_id}` — filter by agent_id, time range, query |
+| `endpoints.py:21-113` | `GET /logs/agents/{agent_id}` — filter by agent_id, time range, query |
 
 ---
 
@@ -43,7 +43,7 @@ It does **not** own: per-interaction observability metrics (those live on `Inter
 1. **Logs DB is separate from main DB.** Always: `get_logging_service(database_name="logs")`. Don't accidentally use the main jvspatial context.
 2. **`INTERACTION` level must be registered before any module that emits at that level imports.** `service.py` handles this; don't reorder.
 3. **`Interaction.observability_metrics` is the per-interaction aggregator.** Other code SHOULD merge events into it rather than emit standalone log records, so they're recoverable per interaction.
-4. **Log retention is configured via `App.log_retention_days`** ([`core/app.py:63`](../core/app.py)) — default 60 days. Long-running deploys should set this lower to bound storage.
+4. **Log retention is configured via `App.log_retention_days`** ([`core/app.py:65`](../core/app.py)) — default 60 days. Long-running deploys should set this lower to bound storage.
 
 ---
 

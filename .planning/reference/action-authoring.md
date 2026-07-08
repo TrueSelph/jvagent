@@ -97,7 +97,7 @@ package:
   dependencies:
     jvagent: ~0.0.1                        # jvagent version constraint
     actions:                               # other actions this one needs
-      - jvagent/persona
+      - jvagent/reply
     pip:                                   # PyPI packages (auto-installed unless
       - requests>=2.28                     # JVAGENT_DISABLE_RUNTIME_PIP_INSTALL=true)
 
@@ -114,7 +114,7 @@ package:
 
 ### Pattern compatibility
 
-The `manifest:` block surfaces metadata that is consumed by deployment patterns at runtime. It is informational for **Rails** and orchestration-relevant for the **Orchestrator**:
+The `manifest:` block surfaces metadata that is consumed by deployment patterns at runtime. It is orchestration-relevant for the **Orchestrator**:
 
 - `purpose` — the tool-surface summary the model sees when the IA is exposed as a routable tool.
 - `activates_on` — intent-explicit entry triggers; the Orchestrator routes to this IA's tool when the turn matches one (first entry). Falls back to the static class `anchors` when no manifest is declared.
@@ -131,9 +131,8 @@ Real examples to copy from:
 
 | Action | File | Notes |
 |---|---|---|
-| Persona | [`jvagent/action/persona/info.yaml`](../../jvagent/action/persona/info.yaml) | `singleton: true`, no deps |
+| Reply | [`jvagent/action/reply/info.yaml`](../../jvagent/action/reply/info.yaml) | `singleton: true`, the agent's egress responder |
 | Orchestrator | [`jvagent/action/orchestrator/info.yaml`](../../jvagent/action/orchestrator/info.yaml) | `weight: -200`, `pattern_orchestrator: true`, unified tool surface |
-| Router | [`jvagent/action/router/info.yaml`](../../jvagent/action/router/info.yaml) | `weight: -200`, no deps (Rails) |
 | Email | [`jvagent/action/email_action/info.yaml`](../../jvagent/action/email_action/info.yaml) | pip deps |
 
 ---
@@ -382,8 +381,8 @@ Inside your action, get another action by class:
 
 ```python
 # By exact class type — O(1), uses cached index
-from jvagent.action.persona.persona_action import PersonaAction
-persona = await self.get_action(PersonaAction)
+from jvagent.action.reply.reply_action import ReplyAction
+reply = await self.get_action(ReplyAction)
 
 # By class-name string — O(1)
 llm = await self.get_action("OpenAILanguageModelAction")
@@ -490,7 +489,7 @@ async def on_register(self):
 
 | Want to ... | Read |
 |---|---|
-| See a minimal Action | [`persona`](../../jvagent/action/persona/persona_action.py) |
+| See a minimal Action | [`reply`](../../jvagent/action/reply/reply_action.py) |
 | See an InteractAction with children | [`interview_action`](../../jvagent/action/interview/interview_action.py) |
 | See a LanguageModelAction | [`anthropic`](../../jvagent/action/model/language/anthropic/) |
 | See a channel adapter | [`whatsapp`](../../jvagent/action/whatsapp/whatsapp_action.py) |
