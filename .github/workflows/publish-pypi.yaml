@@ -3,7 +3,7 @@ name: Publish jvagent to PyPI
 # Build sdist + wheel and publish via PyPI Trusted Publishing (OIDC — no API
 # token secret is stored in this repo).
 #
-# Trigger: pushing a version tag.
+# Trigger: pushing a version tag, or manual workflow_dispatch (retry).
 #   - Pre-release tags (e.g. v0.1.0rc1) publish to TestPyPI.
 #   - Final tags        (e.g. v0.1.0)    publish to PyPI.
 #
@@ -13,7 +13,7 @@ name: Publish jvagent to PyPI
 #       Owner:        TrueSelph
 #       Repository:   jvagent
 #       Workflow:     publish-pypi.yaml
-#       Environment:  pypi
+#       Environment:  (leave blank — production job does not use a GitHub env)
 #   TestPyPI (https://test.pypi.org/manage/account/publishing/): same, but
 #       Environment:  testpypi
 # See RELEASING.md for the full release runbook.
@@ -22,6 +22,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build and publish (e.g. v0.1.1)'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -35,6 +41,8 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -57,11 +65,16 @@ jobs:
       - name: Verify tag matches version and classify pre-release
         id: classify
         run: |
-          TAG="${GITHUB_REF_NAME#v}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            REF="${{ inputs.tag }}"
+          else
+            REF="${GITHUB_REF_NAME}"
+          fi
+          TAG="${REF#v}"
           PKG=$(grep -oP '__version__\s*=\s*"\K[^"]+' jvagent/version.py)
-          echo "tag=$TAG package=$PKG"
+          echo "tag=$TAG package=$PKG ref=$REF"
           if [ "$TAG" != "$PKG" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match jvagent/version.py ($PKG)"
+            echo "::error::Tag $REF does not match jvagent/version.py ($PKG)"
             exit 1
           fi
           PRE=$(python -c "from packaging.version import Version; print('true' if Version('$PKG').is_prerelease else 'false')")
@@ -105,7 +118,6 @@ jobs:
     needs: build
     if: needs.build.outputs.prerelease == 'false'
     runs-on: ubuntu-latest
-    environment: pypi
     permissions:
       id-token: write
     steps:
