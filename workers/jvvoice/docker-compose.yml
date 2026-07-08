@@ -1,5 +1,5 @@
 services:
-  voice-worker:
+  jvvoice:
     build: .
     restart: unless-stopped
     env_file:

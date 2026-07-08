@@ -1,4 +1,4 @@
-# LiveKit voice worker — standalone project
+# jvvoice — standalone LiveKit agent for jvagent WhatsApp calls
 # Install: pip install -r requirements.txt
 # Run: python main.py dev
 

@@ -1,6 +1,6 @@
-"""LiveKit voice worker: bridges WhatsApp call audio to jvagent Orchestrator.
+"""jvvoice: bridges WhatsApp call audio to jvagent Orchestrator.
 
-Run as a standalone service (this directory is the project root)::
+Run as a standalone service (this directory is the project / repo root)::
 
     pip install -r requirements.txt
     cp .env.example .env   # fill in keys
@@ -10,7 +10,7 @@ Production / Docker::
 
     python main.py start
 
-The worker registers under ``JVAGENT_VOICE_AGENT_NAME`` (default ``jvagent-voice``),
+Registers with LiveKit under ``LIVEKIT_AGENT_NAME`` (default ``jvvoice``),
 matching ``LiveKitWhatsAppAction.agent_name`` on the jvagent agent.
 """
 
@@ -42,7 +42,7 @@ from jvagent_llm import JvagentOrchestratorLLM
 
 logger = logging.getLogger(__name__)
 
-_AGENT_NAME = os.environ.get("JVAGENT_VOICE_AGENT_NAME", "jvagent-voice")
+_AGENT_NAME = os.environ.get("LIVEKIT_AGENT_NAME", "jvvoice")
 _ELEVEN_VOICE = os.environ.get("ELEVENLABS_VOICE_ID", "")
 _ELEVEN_MODEL = os.environ.get("ELEVENLABS_TTS_MODEL", "eleven_turbo_v2_5")
 _DEEPGRAM_MODEL = os.environ.get("DEEPGRAM_STT_MODEL", "nova-3")
@@ -97,7 +97,7 @@ def main() -> None:
                 "Also set LIVEKIT_API_KEY and LIVEKIT_API_SECRET."
             )
         logger.info(
-            "jvagent voice worker registering as agent_name=%s "
+            "jvvoice registering as LIVEKIT_AGENT_NAME=%s "
             "(jvagent host resolved per call from dispatch metadata)",
             _AGENT_NAME,
         )

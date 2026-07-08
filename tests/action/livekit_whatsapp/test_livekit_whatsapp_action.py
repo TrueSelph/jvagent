@@ -48,7 +48,7 @@ def _action_stub(**overrides: object) -> SimpleNamespace:
         "livekit_url": "wss://test.livekit.cloud",
         "livekit_api_key": "key",
         "livekit_api_secret": "secret",
-        "agent_name": "jvagent-voice",
+        "agent_name": "jvvoice",
         "cloud_api_version": "24.0",
         "room_name_prefix": "whatsapp-call",
         "jvagent_base_url": "",
@@ -92,7 +92,7 @@ async def test_handle_connect_calls_livekit():
     assert "wacid" in result["call_id"]
     mock_client.accept_whatsapp_call.assert_awaited_once()
     call_kwargs = mock_client.accept_whatsapp_call.await_args.kwargs
-    assert call_kwargs["agent_name"] == "jvagent-voice"
+    assert call_kwargs["agent_name"] == "jvvoice"
     assert call_kwargs["agent_metadata"]["jvagent_agent_id"] == "n.Agent.test"
     assert call_kwargs["agent_metadata"]["caller_phone"] == "16315553601"
 

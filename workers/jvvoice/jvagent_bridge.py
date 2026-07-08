@@ -1,4 +1,4 @@
-"""HTTP bridge from LiveKit voice worker to jvagent Orchestrator."""
+"""HTTP bridge from jvvoice to jvagent Orchestrator."""
 
 from __future__ import annotations
 

@@ -28,7 +28,7 @@ class LiveKitWhatsAppAction(Action):
     come from action attributes or ``LIVEKIT_URL`` / ``LIVEKIT_API_KEY`` /
     ``LIVEKIT_API_SECRET`` environment variables.
 
-    A separate standalone LiveKit voice worker (see ``workers/livekit_voice/README.md``)
+    A separate standalone jvvoice agent (see ``workers/jvvoice/README.md``)
     must be running and registered under ``agent_name`` to handle realtime audio and
     bridge utterances to the jvagent Orchestrator.
     """
@@ -46,8 +46,8 @@ class LiveKitWhatsAppAction(Action):
         description="LiveKit API secret; when empty, LIVEKIT_API_SECRET env is used",
     )
     agent_name: str = attribute(
-        default="jvagent-voice",
-        description="LiveKit agent dispatch name for the voice worker",
+        default="jvvoice",
+        description="LiveKit agent dispatch name for jvvoice",
     )
     cloud_api_version: str = attribute(
         default="24.0",
@@ -65,7 +65,7 @@ class LiveKitWhatsAppAction(Action):
     jvagent_base_url: str = attribute(
         default="",
         description=(
-            "jvagent base URL for voice worker /interact callbacks; "
+            "jvagent base URL for jvvoice /interact callbacks; "
             "when empty, JVAGENT_BASE_URL / JVAGENT_PUBLIC_BASE_URL env is used"
         ),
     )

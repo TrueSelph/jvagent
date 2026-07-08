@@ -43,7 +43,7 @@ async def _get_livekit_action(action_id: str) -> LiveKitWhatsAppAction:
             "agent_name": ResponseField(
                 field_type=str,
                 description="LiveKit agent dispatch name",
-                example="jvagent-voice",
+                example="jvvoice",
             ),
             "active_calls": ResponseField(
                 field_type=int,

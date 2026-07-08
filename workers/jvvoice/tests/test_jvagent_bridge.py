@@ -1,4 +1,4 @@
-"""Tests for jvagent voice worker HTTP bridge."""
+"""Tests for jvvoice HTTP bridge."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 

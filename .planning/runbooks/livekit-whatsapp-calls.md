@@ -8,12 +8,16 @@ Enable inbound WhatsApp voice calls bridged to jvagent's Orchestrator via [LiveK
 
 1. Create a project at [livekit.io](https://livekit.io).
 2. Copy **URL**, **API key**, and **API secret** from project settings.
-3. Set env vars on jvagent and the voice worker:
+3. Set env vars on jvagent and jvvoice:
    - `LIVEKIT_URL=wss://your-project.livekit.cloud`
    - `LIVEKIT_API_KEY=...`
    - `LIVEKIT_API_SECRET=...`
 
-### Option B — Self-hosted
+### Option B — Self-hosted (jvvoice runtime only)
+
+The jvvoice agent runtime can connect to a self-hosted LiveKit `wss://` endpoint. **WhatsApp Connector** (`AcceptWhatsAppCall` on jvagent) remains **LiveKit Cloud only** today — inbound WhatsApp calls require Option A.
+
+For self-hosted SFU setup (non-WhatsApp use cases):
 
 1. Run the official Docker generator: `docker run --rm -it -v$PWD:/output livekit/generate`
 2. Use a public domain with TLS (Let's Encrypt).
@@ -42,7 +46,7 @@ Enable inbound WhatsApp voice calls bridged to jvagent's Orchestrator via [LiveK
 - action: jvagent/livekit_whatsapp_action
   context:
     enabled: true
-    agent_name: jvagent-voice
+    agent_name: jvvoice
     cloud_api_version: "24.0"
 ```
 
@@ -52,12 +56,12 @@ Install LiveKit Connector support on jvagent:
 pip install "jvagent[livekit]"
 ```
 
-## 4. Voice worker
+## 4. jvvoice
 
-The worker is a **standalone project** in `workers/livekit_voice/` (separate repo / Dokploy deploy — not the jvagent HTTP server).
+jvvoice is a **standalone project** in `workers/jvvoice/` (separate repo / Dokploy deploy — not the jvagent HTTP server).
 
 ```bash
-cd workers/livekit_voice
+cd workers/jvvoice
 pip install -r requirements.txt
 cp .env.example .env
 
@@ -66,19 +70,20 @@ export LIVEKIT_API_KEY=...
 export LIVEKIT_API_SECRET=...
 export DEEPGRAM_API_KEY=...
 export ELEVENLABS_API_KEY=...
+export LIVEKIT_AGENT_NAME=jvvoice
 
 python main.py dev
 ```
 
-Or deploy with Docker: `docker compose up -d`. See [`workers/livekit_voice/README.md`](../../workers/livekit_voice/README.md).
+Or deploy with Docker: `docker compose up -d`. See [`workers/jvvoice/README.md`](../../workers/jvvoice/README.md).
 
-`agent_name` must match `LiveKitWhatsAppAction.agent_name` (default `jvagent-voice`). The jvagent host and agent id are not worker env vars — they arrive per call in dispatch metadata (set `JVAGENT_PUBLIC_BASE_URL` on the jvagent side).
+`agent_name` / `LIVEKIT_AGENT_NAME` must match (default `jvvoice`). The jvagent host and agent id are not jvvoice env vars — they arrive per call in dispatch metadata (set `JVAGENT_PUBLIC_BASE_URL` on the jvagent side).
 
 ## 5. Verify
 
 1. `GET /api/actions/{livekit_action_id}/livekit/status` — `configured: true`
 2. Place a test call to the WhatsApp business number.
-3. Check jvagent logs for `Accepted WhatsApp call` and worker logs for room join.
+3. Check jvagent logs for `Accepted WhatsApp call` and jvvoice logs for room join.
 4. On hangup, logs should show `DisconnectWhatsAppCall`.
 
 ## 6. Troubleshooting
@@ -86,7 +91,7 @@ Or deploy with Docker: `docker compose up -d`. See [`workers/livekit_voice/READM
 | Symptom | Check |
 |---------|--------|
 | Call rings then "Not Answered" | jvagent unreachable from Meta; accept must complete within ~60s |
-| Call connects, silence | Voice worker not running or `agent_name` mismatch |
+| Call connects, silence | jvvoice not running or `agent_name` / `LIVEKIT_AGENT_NAME` mismatch |
 | Call rejected ("missing jvagent dispatch metadata") | jvagent didn't send `jvagent_base_url` / `jvagent_agent_id`; set `JVAGENT_PUBLIC_BASE_URL` (or action `jvagent_base_url`) |
 | Agent speaks but wrong brain | jvagent host in dispatch metadata must reach jvagent `/interact` |
 | Voicenotes broken | Unrelated — still use `stt_action` / `tts_action` on WhatsAppAction |

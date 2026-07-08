@@ -332,7 +332,7 @@ actions:
     context:
       enabled: false
       description: "WhatsApp voice calls via LiveKit Connector (requires LIVEKIT_* env)"
-      agent_name: "jvagent-voice"
+      agent_name: "jvvoice"
       cloud_api_version: "24.0"
 
   - action: jvagent/elevenlabs_tts
