@@ -98,18 +98,24 @@ def _make_preexec(req: ExecRequest):
     if _resource is None:  # pragma: no cover - non-POSIX
         return None
 
+    setsid = getattr(os, "setsid", None)
+    setrlimit = getattr(_resource, "setrlimit", None)
+
     def _pre() -> None:
-        try:
-            os.setsid()  # own process group so we can kill the whole tree
-        except OSError:
-            pass
+        if setsid is not None:
+            try:
+                setsid()  # own process group so we can kill the whole tree
+            except OSError:
+                pass
 
         def _set(name: str, soft: int) -> None:
+            if setrlimit is None:
+                return
             res = getattr(_resource, name, None)
             if res is None:
                 return
             try:
-                _resource.setrlimit(res, (soft, soft))
+                setrlimit(res, (soft, soft))
             except (ValueError, OSError):
                 pass
 
@@ -210,14 +216,19 @@ class SubprocessExecutor:
 def _kill_tree(proc: "asyncio.subprocess.Process") -> None:
     import signal
 
-    try:
-        pgid = os.getpgid(proc.pid)
-        os.killpg(pgid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError, OSError):
+    getpgid = getattr(os, "getpgid", None)
+    killpg = getattr(os, "killpg", None)
+    sigkill = getattr(signal, "SIGKILL", None)
+    if getpgid is not None and killpg is not None and sigkill is not None:
         try:
-            proc.kill()
-        except ProcessLookupError:  # pragma: no cover
+            killpg(getpgid(proc.pid), sigkill)
+            return
+        except (ProcessLookupError, PermissionError, OSError):
             pass
+    try:
+        proc.kill()
+    except ProcessLookupError:  # pragma: no cover
+        pass
 
 
 __all__ = ["ExecRequest", "ExecResult", "Executor", "SubprocessExecutor"]
