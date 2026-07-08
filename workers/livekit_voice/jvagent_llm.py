@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 
 from livekit.agents import llm
 
-from jvagent_bridge import interact, jvagent_base_url, parse_dispatch_metadata, session_id_for_caller
+from jvagent_bridge import interact, parse_dispatch_metadata, session_id_for_caller
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ class JvagentOrchestratorLLMStream(llm.LLMStream):
                 jvagent_base_url_override=self._llm._jvagent_base_url,
             )
         except Exception as exc:
-            base = jvagent_base_url(self._llm._jvagent_base_url)
+            base = (self._llm._jvagent_base_url or "<unset>").rstrip("/")
             logger.error(
                 "jvagent interact failed (%s): %s",
                 f"{base}/api/agents/{self._llm._agent_id}/interact",

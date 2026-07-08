@@ -66,14 +66,13 @@ export LIVEKIT_API_KEY=...
 export LIVEKIT_API_SECRET=...
 export DEEPGRAM_API_KEY=...
 export ELEVENLABS_API_KEY=...
-export JVAGENT_BASE_URL=https://your-jvagent-host
 
 python main.py dev
 ```
 
 Or deploy with Docker: `docker compose up -d`. See [`workers/livekit_voice/README.md`](../../workers/livekit_voice/README.md).
 
-`agent_name` must match `LiveKitWhatsAppAction.agent_name` (default `jvagent-voice`).
+`agent_name` must match `LiveKitWhatsAppAction.agent_name` (default `jvagent-voice`). The jvagent host and agent id are not worker env vars — they arrive per call in dispatch metadata (set `JVAGENT_PUBLIC_BASE_URL` on the jvagent side).
 
 ## 5. Verify
 
@@ -88,7 +87,8 @@ Or deploy with Docker: `docker compose up -d`. See [`workers/livekit_voice/READM
 |---------|--------|
 | Call rings then "Not Answered" | jvagent unreachable from Meta; accept must complete within ~60s |
 | Call connects, silence | Voice worker not running or `agent_name` mismatch |
-| Agent speaks but wrong brain | Worker `JVAGENT_BASE_URL` must reach jvagent `/interact` |
+| Call rejected ("missing jvagent dispatch metadata") | jvagent didn't send `jvagent_base_url` / `jvagent_agent_id`; set `JVAGENT_PUBLIC_BASE_URL` (or action `jvagent_base_url`) |
+| Agent speaks but wrong brain | jvagent host in dispatch metadata must reach jvagent `/interact` |
 | Voicenotes broken | Unrelated — still use `stt_action` / `tts_action` on WhatsAppAction |
 
 Further detail: [`jvagent/action/livekit_whatsapp/README.md`](../../jvagent/action/livekit_whatsapp/README.md).

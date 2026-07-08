@@ -48,9 +48,7 @@ Voicenotes (PTT) still use `DeepgramSTTAction` / `ElevenLabsTTSAction` on the me
 | `LIVEKIT_URL` | Yes | LiveKit server WebSocket URL |
 | `LIVEKIT_API_KEY` | Yes | LiveKit API key |
 | `LIVEKIT_API_SECRET` | Yes | LiveKit API secret |
-| `JVAGENT_PUBLIC_BASE_URL` | Yes | Public jvagent URL (Meta webhooks; sent to voice worker as `jvagent_base_url`) |
-| `JVAGENT_BASE_URL` | Worker fallback | Default jvagent URL on worker when dispatch metadata omits per-call URL |
-| `JVAGENT_INTERNAL_BASE_URL` | No | Legacy worker URL fallback |
+| `JVAGENT_PUBLIC_BASE_URL` | Yes | Public jvagent URL (Meta webhooks; also sent to the voice worker as `jvagent_base_url` when the action's `jvagent_base_url` context is empty) |
 | `JVAGENT_VOICE_AGENT_NAME` | No | Worker dispatch name (default `jvagent-voice`) |
 | `DEEPGRAM_API_KEY` | Worker | Streaming STT |
 | `ELEVENLABS_API_KEY` | Worker | Streaming TTS |
@@ -71,16 +69,15 @@ export LIVEKIT_API_KEY=...
 export LIVEKIT_API_SECRET=...
 export DEEPGRAM_API_KEY=...
 export ELEVENLABS_API_KEY=...
-export JVAGENT_BASE_URL=https://your-jvagent-host
 
 python main.py dev
 ```
 
-For production, deploy via Docker (`docker compose up`) or Dokploy. Full instructions: [`workers/livekit_voice/README.md`](../../../workers/livekit_voice/README.md).
+The worker does not take a jvagent host env var: each call carries its own `jvagent_base_url` in dispatch metadata. For production, deploy via Docker (`docker compose up`) or Dokploy. Full instructions: [`workers/livekit_voice/README.md`](../../../workers/livekit_voice/README.md).
 
 ### Shared voice worker across multiple jvagent hosts
 
-Each jvagent instance sends its own `jvagent_base_url` in LiveKit dispatch metadata (resolved from action `jvagent_base_url` or `JVAGENT_BASE_URL` / `JVAGENT_PUBLIC_BASE_URL` env). One shared worker can route calls to many jvagent hosts automatically.
+Each jvagent instance sends its own `jvagent_base_url` in LiveKit dispatch metadata (resolved from action `jvagent_base_url` or `JVAGENT_PUBLIC_BASE_URL` env). One shared worker routes calls to many jvagent hosts automatically. A call whose metadata omits `jvagent_base_url` or `jvagent_agent_id` is rejected by the worker.
 
 ## Install jvagent LiveKit extra
 
@@ -94,4 +91,5 @@ This adds `livekit-api` for `LiveKitWhatsAppAction` only. The voice worker is a 
 
 - **Call not answered within 60s**: ensure jvagent is reachable from Meta and `AcceptWhatsAppCall` runs in the webhook handler (not deferred).
 - **No audio / no agent**: confirm the voice worker is running and `agent_name` matches `LiveKitWhatsAppAction.agent_name`.
-- **Empty agent replies**: check `JVAGENT_BASE_URL` on the voice worker and Orchestrator logs for `/interact` errors.
+- **Call rejected / "missing jvagent dispatch metadata"**: the accept step didn't send `jvagent_base_url` / `jvagent_agent_id` — set `JVAGENT_PUBLIC_BASE_URL` (or the action's `jvagent_base_url`) on the jvagent agent.
+- **Empty agent replies**: check the jvagent host in dispatch metadata is reachable from the worker and inspect Orchestrator logs for `/interact` errors.

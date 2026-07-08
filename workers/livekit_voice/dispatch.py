@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any, Dict
 
 from livekit import rtc
@@ -12,6 +11,10 @@ from livekit.agents import JobContext
 from jvagent_bridge import parse_dispatch_metadata
 
 logger = logging.getLogger(__name__)
+
+
+class MissingDispatchMetadata(ValueError):
+    """Raised when a call arrives without the required jvagent dispatch metadata."""
 
 
 def job_dispatch_metadata(ctx: JobContext) -> str:
@@ -29,9 +32,6 @@ async def resolve_call_context(ctx: JobContext) -> Dict[str, Any]:
     whatsapp_call_id = str(meta.get("whatsapp_call_id") or "").strip()
     agent_id = str(meta.get("jvagent_agent_id") or "").strip()
     jvagent_base = str(meta.get("jvagent_base_url") or "").strip()
-
-    if not agent_id:
-        agent_id = (os.environ.get("JVAGENT_AGENT_ID") or "").strip()
 
     try:
         participant = await ctx.wait_for_participant(
@@ -58,8 +58,17 @@ async def resolve_call_context(ctx: JobContext) -> Dict[str, Any]:
             ).strip()
 
     if not agent_id:
-        raise ValueError(
-            "jvagent_agent_id missing from job metadata and JVAGENT_AGENT_ID is unset"
+        raise MissingDispatchMetadata(
+            "jvagent_agent_id missing from LiveKit dispatch metadata; "
+            "ensure the jvagent LiveKitWhatsAppAction is accepting the call and "
+            "sending agent metadata"
+        )
+
+    if not jvagent_base:
+        raise MissingDispatchMetadata(
+            "jvagent_base_url missing from LiveKit dispatch metadata; "
+            "set JVAGENT_PUBLIC_BASE_URL (or jvagent_base_url) on the jvagent agent "
+            "so the worker knows which host to call"
         )
 
     if not caller_phone:

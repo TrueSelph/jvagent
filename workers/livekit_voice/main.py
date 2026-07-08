@@ -37,7 +37,7 @@ _load_dotenv()
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
 from livekit.plugins import deepgram, elevenlabs, silero
 
-from dispatch import resolve_call_context
+from dispatch import MissingDispatchMetadata, resolve_call_context
 from jvagent_llm import JvagentOrchestratorLLM
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,13 @@ async def entrypoint(ctx: JobContext) -> None:
     """Join a LiveKit room dispatched from WhatsApp Connector."""
     await ctx.connect()
 
-    call_context = await resolve_call_context(ctx)
+    try:
+        call_context = await resolve_call_context(ctx)
+    except MissingDispatchMetadata as exc:
+        logger.error("Rejecting call: %s", exc)
+        ctx.shutdown(reason="missing jvagent dispatch metadata")
+        return
+
     orchestrator = JvagentOrchestratorLLM.from_call_context(call_context)
 
     tts_kwargs: dict = {"model": _ELEVEN_MODEL}
@@ -90,9 +96,11 @@ def main() -> None:
                 ".env (from your LiveKit Cloud project settings). "
                 "Also set LIVEKIT_API_KEY and LIVEKIT_API_SECRET."
             )
-        from jvagent_bridge import jvagent_base_url
-
-        logger.info("jvagent voice worker interact base URL: %s", jvagent_base_url())
+        logger.info(
+            "jvagent voice worker registering as agent_name=%s "
+            "(jvagent host resolved per call from dispatch metadata)",
+            _AGENT_NAME,
+        )
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,

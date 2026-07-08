@@ -210,10 +210,8 @@ falls back to a sibling env var when its primary key is unset:
 - `LIVEKIT_URL` — LiveKit server WebSocket URL (`wss://…`)
 - `LIVEKIT_API_KEY` — LiveKit API key (Connector + worker)
 - `LIVEKIT_API_SECRET` — LiveKit API secret
-- `JVAGENT_VOICE_AGENT_NAME` — LiveKit agent dispatch name (default `jvagent-voice`; must match `LiveKitWhatsAppAction.agent_name`)
-- `JVAGENT_AGENT_ID` — optional fallback for the voice worker when job metadata is empty (agent node id, e.g. `n.Agent.xxxx`)
-- `JVAGENT_BASE_URL` — primary fallback for the standalone voice worker → jvagent `/interact` (per-call `jvagent_base_url` in dispatch metadata overrides this)
-- `JVAGENT_INTERNAL_BASE_URL` — legacy fallback for worker → jvagent interact
+- `JVAGENT_VOICE_AGENT_NAME` — LiveKit agent dispatch name (default `jvagent-voice`; must match `LiveKitWhatsAppAction.agent_name`). Startup-only registration value; not a per-call value.
+- `JVAGENT_PUBLIC_BASE_URL` — used on the **jvagent** side to populate `jvagent_base_url` in dispatch metadata when the action's `jvagent_base_url` context is empty. The standalone voice worker takes no jvagent host / agent id env var: it reads `jvagent_base_url` and `jvagent_agent_id` per call from dispatch metadata and rejects calls missing either.
 - `DEEPGRAM_STT_MODEL` — optional STT model for voice worker (default `nova-3`)
 - `ELEVENLABS_TTS_MODEL` — optional TTS model for voice worker (default `eleven_turbo_v2_5`)
 - `ELEVENLABS_VOICE_ID` — optional ElevenLabs voice ID for voice worker TTS

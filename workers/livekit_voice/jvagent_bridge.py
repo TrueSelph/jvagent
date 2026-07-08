@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any, Dict, Optional
 
 import httpx
@@ -45,23 +44,18 @@ def extract_interact_response_text(body: Any) -> Optional[str]:
 def jvagent_base_url(override: Optional[str] = None) -> str:
     """Base URL for jvagent interact API (no trailing slash).
 
-    Per-call ``override`` from dispatch metadata wins over worker env defaults.
+    Resolved per call from dispatch metadata (``jvagent_base_url``). There is no
+    env fallback: each jvagent instance sends its own base URL when accepting a
+    call, so a missing value is a configuration error rather than something to
+    guess at.
     """
     custom = (override or "").strip().rstrip("/")
-    if custom:
-        return custom
-    for key in (
-        "JVAGENT_BASE_URL",
-        "JVAGENT_INTERNAL_BASE_URL",
-        "JVAGENT_PUBLIC_BASE_URL",
-        "JVFORGE_PUBLIC_BASE_URL",
-    ):
-        value = (os.environ.get(key) or "").strip()
-        if value:
-            return value.rstrip("/")
-    host = (os.environ.get("JVAGENT_HOST") or "127.0.0.1").strip() or "127.0.0.1"
-    port = (os.environ.get("JVAGENT_PORT") or "8800").strip() or "8800"
-    return f"http://{host}:{port}"
+    if not custom:
+        raise ValueError(
+            "jvagent_base_url is required (per-call dispatch metadata); "
+            "set JVAGENT_PUBLIC_BASE_URL (or jvagent_base_url) on the jvagent agent"
+        )
+    return custom
 
 
 async def interact(

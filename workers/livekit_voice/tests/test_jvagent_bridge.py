@@ -59,13 +59,17 @@ class TestExtractInteractResponseText:
 
 
 class TestJvagentBaseUrl:
-    def test_override_wins(self, monkeypatch):
-        monkeypatch.setenv("JVAGENT_BASE_URL", "https://default.example.com")
-        assert jvagent_base_url("https://tenant.example.com") == "https://tenant.example.com"
+    def test_uses_per_call_override(self):
+        assert (
+            jvagent_base_url("https://tenant.example.com/")
+            == "https://tenant.example.com"
+        )
 
-    def test_env_fallback_when_no_override(self, monkeypatch):
+    def test_missing_override_raises(self, monkeypatch):
+        # No env fallback: a missing per-call URL is a hard error.
         monkeypatch.setenv("JVAGENT_BASE_URL", "https://default.example.com")
-        assert jvagent_base_url() == "https://default.example.com"
+        with pytest.raises(ValueError):
+            jvagent_base_url()
 
 
 @pytest.mark.asyncio
@@ -123,5 +127,17 @@ async def test_interact_parses_top_level_response():
             utterance="Hi",
             user_id="16315553601",
             session_id="whatsapp-call:16315553601",
+            jvagent_base_url_override="https://tenant-a.example.com",
         )
     assert text == "Hello from orchestrator"
+
+
+@pytest.mark.asyncio
+async def test_interact_missing_base_url_raises():
+    with pytest.raises(ValueError):
+        await interact(
+            agent_id="n.Agent.test",
+            utterance="Hi",
+            user_id="16315553601",
+            session_id="whatsapp-call:16315553601",
+        )
