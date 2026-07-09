@@ -131,13 +131,13 @@ class VisionAction(Action):
         **kwargs: Any,
     ) -> Any:
         """Describe the image(s) attached to the current message. Returns an extensive text interpretation you can use to answer the user's question about them."""  # noqa: E501
-        from jvagent.tooling.tool_executor import get_dispatch_visitor
+        from jvagent.tooling.tool_executor import get_tool_visitor
         from jvagent.tooling.tool_result import ToolResult
 
         # ``visitor`` may be passed explicitly by a caller/executor; otherwise
         # resolve it from the dispatch context. (``**kwargs`` keeps it out of
         # the derived schema — the model only sees ``prompt``.)
-        visitor = kwargs.get("visitor") or get_dispatch_visitor()
+        visitor = kwargs.get("visitor") or get_tool_visitor()
         text = await self.describe(visitor=visitor, prompt=prompt)
         if not text:
             return ToolResult(content="(no images on the current message to interpret)")

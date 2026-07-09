@@ -17,7 +17,7 @@ from typing import Annotated, Optional
 from jvagent.action.base import Action
 from jvagent.action.file_interface import _core
 from jvagent.tooling.tool_decorator import tool
-from jvagent.tooling.tool_executor import get_dispatch_visitor
+from jvagent.tooling.tool_executor import get_tool_visitor
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class FileInterfaceAction(Action):
     @tool(name="file_interface__describe_write_workspace")
     async def _t_describe_write_workspace(self) -> str:
         """First step for file interface work in a task. Returns top-level directories and files, recommended relative path prefixes, and what is writable under the user sandbox. Does not read or write user file content."""  # noqa: E501
-        visitor = get_dispatch_visitor()
+        visitor = get_tool_visitor()
         if visitor is None:
             return _NO_CONTEXT
         try:
@@ -49,7 +49,7 @@ class FileInterfaceAction(Action):
         tail: Annotated[Optional[int], "If set, return only the last N lines."] = None,
     ) -> str:
         """Read a text file from the current agent's user-scoped storage (jvspatial file interface: local or S3). Path is relative to the sandbox root. Optional head/tail limit lines returned. Follow the file interface workflow: call file_interface__describe_write_workspace first when starting file work in a task, then use this tool."""  # noqa: E501
-        visitor = get_dispatch_visitor()
+        visitor = get_tool_visitor()
         if visitor is None:
             return _NO_CONTEXT
         path = str(path or "").strip()
@@ -78,7 +78,7 @@ class FileInterfaceAction(Action):
         content: Annotated[str, "Full file content as UTF-8 text."],
     ) -> str:
         """Create or overwrite a file with UTF-8 text in the current user's sandbox (jvspatial storage). Parent path segments are created as needed. Follow the file interface workflow: call file_interface__describe_write_workspace first when starting file work in a task, then use this tool."""  # noqa: E501
-        visitor = get_dispatch_visitor()
+        visitor = get_tool_visitor()
         if visitor is None:
             return _NO_CONTEXT
         path = str(path or "").strip()
@@ -103,7 +103,7 @@ class FileInterfaceAction(Action):
         content_b64: Annotated[str, "File bytes as a standard base64 string."],
     ) -> str:
         """Write binary data to a path in the user sandbox. Pass content as base64-encoded ASCII (standard for JSON tools). Follow the file interface workflow: call file_interface__describe_write_workspace first when starting file work in a task, then use this tool."""  # noqa: E501
-        visitor = get_dispatch_visitor()
+        visitor = get_tool_visitor()
         if visitor is None:
             return _NO_CONTEXT
         path = str(path or "").strip()
@@ -126,7 +126,7 @@ class FileInterfaceAction(Action):
         ] = "",
     ) -> str:
         """List immediate files and subdirectories under a relative path in the user sandbox. Use path '' for the workspace root. Follow the file interface workflow: call file_interface__describe_write_workspace first when starting file work in a task, then use this tool."""  # noqa: E501
-        visitor = get_dispatch_visitor()
+        visitor = get_tool_visitor()
         if visitor is None:
             return _NO_CONTEXT
         path = str(path or "").strip()
@@ -144,7 +144,7 @@ class FileInterfaceAction(Action):
         path: Annotated[str, "Relative directory path."],
     ) -> str:
         """Create a directory (or ensure it exists) under the user sandbox. Follow the file interface workflow: call file_interface__describe_write_workspace first when starting file work in a task, then use this tool."""  # noqa: E501
-        visitor = get_dispatch_visitor()
+        visitor = get_tool_visitor()
         if visitor is None:
             return _NO_CONTEXT
         path = str(path or "").strip()
@@ -160,7 +160,7 @@ class FileInterfaceAction(Action):
         path: Annotated[str, "Relative file path."],
     ) -> str:
         """Delete a file at a path relative to the user sandbox. Follow the file interface workflow: call file_interface__describe_write_workspace first when starting file work in a task, then use this tool."""  # noqa: E501
-        visitor = get_dispatch_visitor()
+        visitor = get_tool_visitor()
         if visitor is None:
             return _NO_CONTEXT
         path = str(path or "").strip()
@@ -176,7 +176,7 @@ class FileInterfaceAction(Action):
         path: Annotated[str, "Relative path."],
     ) -> str:
         """Return whether a file or marker exists at the given relative path. Follow the file interface workflow: call file_interface__describe_write_workspace first when starting file work in a task, then use this tool."""  # noqa: E501
-        visitor = get_dispatch_visitor()
+        visitor = get_tool_visitor()
         if visitor is None:
             return _NO_CONTEXT
         path = str(path or "").strip()

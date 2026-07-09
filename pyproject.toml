@@ -10,7 +10,7 @@ name = "jvagent"
 dynamic = ["version"]
 description = "A modular, pluggable agentive platform built on jvspatial"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     {name = "TrueSelph Inc.", email = "adminh@trueselph.com"},
@@ -20,8 +20,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -33,19 +31,22 @@ classifiers = [
 dependencies = [
     "aiohttp>=3.9.0",
     # CI records the resolved jvspatial version after install (see .github/workflows/test-jvagent.yaml).
-    "jvspatial==0.0.10",
+    "jvspatial==0.0.12",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0.0",
     "httpx>=0.27.0",
     "jinja2>=3.1.0",
     "pymupdf>=1.24.0",
-    # MCP stdio client + jvspatial_fs_server (Python 3.10+); jvagent Python 3.8 uses MCP without mcp if unpinned
-    "mcp>=1.0.0; python_version>='3.10'",
+    # Version-spec parsing for dependency probing (core/dependency_installer)
+    "packaging>=21.0",
+    # MCP stdio client + jvspatial_fs_server
+    "mcp>=1.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
+    "pytest-xdist>=3.0.0",
     "pytest-asyncio>=0.21.0",
     "httpx>=0.24.0",
     "pre-commit>=3.0.0",
@@ -73,10 +74,6 @@ test = [
     "tiktoken>=0.5.0",
     "litellm>=1.82.0",
     "PyPDF2>=3.0.1",
-    "pypdf>=4.0.0",
-    # PageIndex Docling tests (same stack as jvagent/action/pageindex/pageindex_action/info.yaml)
-    "docling>=2.0.0",
-    "tabulate>=0.9.0",
     # web_fetch tests (same stack as jvagent/action/web_fetch/info.yaml)
     "beautifulsoup4",
     "markdownify",
@@ -168,14 +165,14 @@ filterwarnings = [
 
 [tool.black]
 line-length = 88
-target-version = ["py38", "py39", "py310", "py311", "py312"]
+target-version = ["py310", "py311", "py312"]
 
 [tool.isort]
 profile = "black"
 line_length = 88
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 warn_return_any = false
 warn_unused_configs = true
 disallow_untyped_defs = false
@@ -217,30 +214,28 @@ module = [
 ]
 ignore_missing_imports = true
 
+# Provider/integration clusters still exempt from strict checking — shrink
+# this list as each cluster is annotated (platform kernel, framework core,
+# and all other action families are enforced).
 [[tool.mypy.overrides]]
 module = [
     "jvagent.action.model.*",
-    "jvagent.action.persona.*",
     "jvagent.action.whatsapp.*",
     "jvagent.action.stt_action.*",
     "jvagent.action.tts_action.*",
     "jvagent.action.pageindex.*",
-    "jvagent.action.response.*",
-    "jvagent.action.router.*",
     "jvagent.action.vectorstore.*",
-    "jvagent.action.base",
-    "jvagent.action.actions",
-    "jvagent.action.loader.action_loader",
-    "jvagent.action.endpoints",
-    "jvagent.action.interact.*",
-    "jvagent.action.retrieval.*",
-    "jvagent.action.intro.*",
-    "jvagent.action.mcp.*",
-    "jvagent.core.*",
-    "jvagent.memory.*",
-    "jvagent.cli",
 ]
 ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+    "jvagent.action.orchestrator.loop",
+    "jvagent.action.orchestrator.walk_path",
+    "jvagent.action.orchestrator.uploads",
+    "jvagent.action.orchestrator.egress",
+]
+disable_error_code = ["attr-defined"]
 
 [tool.coverage.run]
 source = ["jvagent"]

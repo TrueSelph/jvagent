@@ -6,18 +6,14 @@ defines the interface for actions that participate in the interact subsystem.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from jvspatial.api.exceptions import ValidationError
-from jvspatial.core import on_visit
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
 
 logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    from jvagent.action.interact.interact_walker import InteractWalker
 
 # Import InteractWalker for @on_visit decorator (needed at class definition time)
 # This import is safe because InteractWalker only imports InteractAction for type hints
@@ -36,8 +32,8 @@ class InteractAction(Action, ABC):
     execution that may exist in a prescribed chain of interact actions.
 
     The execute() method is automatically invoked by InteractWalker when it visits
-    an InteractAction node. The walker performs routing checks first (if InteractRouter
-    has executed), then automatically calls execute() if the action should run.
+    an InteractAction node. The walker calls execute() when the action should run
+    (weight order, access control, Orchestrator lean surfacing).
 
     Implementations should perform evaluation checks at the start of execute()
     and return early if conditions aren't met. This allows flexible, custom
@@ -71,14 +67,12 @@ class InteractAction(Action, ABC):
     )
     description: str = attribute(default_factory=str, description="Action description")
 
-    # Routing behavior hint: if True, this InteractAction should always be
-    # allowed to execute regardless of routing results. InteractRouter will
-    # treat such actions as dynamic routing exceptions.
+    # If True, this InteractAction should always run (e.g. intro, reply egress).
     always_execute: bool = attribute(
         default=False,
         description=(
             "If True, this InteractAction must always be allowed to execute "
-            "regardless of routing results (treated as a routing exception)."
+            "regardless of other surfacing hints."
         ),
     )
 
@@ -94,12 +88,12 @@ class InteractAction(Action, ABC):
         ),
     )
 
-    # Anchors for routing (published by InteractRouter)
+    # Anchors for Orchestrator lean surfacing (relevance hints for tool selection).
     anchors: List[str] = attribute(
         default_factory=list,
         description=(
-            "Anchor statements for routing. List of statements describing when this action should be used. "
-            "The action's class/entity name is automatically used as the key when collected by InteractRouter."
+            "Anchor statements for surfacing. List of statements describing when this action should be used. "
+            "The action's class/entity name is used as the key when collected by Orchestrator."
         ),
     )
 
@@ -126,7 +120,7 @@ class InteractAction(Action, ABC):
         """Return dynamic anchors for this action, or None to use static self.anchors.
 
         Override this in subclasses that need user-specific or runtime-derived anchors
-        (e.g. fetching memory category titles/keywords to inform the InteractRouter LLM).
+        (e.g. runtime-derived anchors for Orchestrator lean surfacing).
 
         Args:
             conversation: Current Conversation node (may be None).
@@ -295,7 +289,6 @@ class InteractAction(Action, ABC):
             - The walker performs routing checks before calling execute()
             - Top-level actions must explicitly route to children using visitor.visit()
         """
-        pass
 
     async def publish(
         self,
@@ -417,7 +410,7 @@ class InteractAction(Action, ABC):
         directives: Optional[List[str]] = None,
         parameters: Optional[List[Dict[str, Any]]] = None,
         *,
-        # Defaults match PersonaAction.respond() defaults
+        # Defaults match ReplyAction.respond() defaults
         use_history: bool = True,
         history_limit: int = 3,
         with_utterance: bool = True,
@@ -456,7 +449,7 @@ class InteractAction(Action, ABC):
                 If provided, these are added in addition to any existing parameters.
 
         Returns:
-            Generated response string, or None if PersonaAction not found or error occurred
+            Generated response string, or None if ReplyAction not found or error occurred
 
         Examples:
             # Basic response generation
@@ -514,7 +507,7 @@ class InteractAction(Action, ABC):
             responder = await self.get_responder()
             if not responder:
                 logger.debug(
-                    "InteractAction.respond: no responder (ReplyAction/PersonaAction); "
+                    "InteractAction.respond: no responder (ReplyAction); "
                     "skipping response generation"
                 )
                 return None

@@ -60,11 +60,13 @@ from .pageindex_action import (
     ensure_ingestion_config_for_agent,
 )
 from .retrieval import search_documents
+
+# Re-exported for tests/back-compat (the guard's canonical home is url_guard).
 from .url_guard import (
     MAX_UPLOAD_BYTES,
 )
 from .url_guard import fetch_url_bytes_capped as _fetch_url_bytes_capped
-from .url_guard import ssrf_guard_url as _ssrf_guard_url
+from .url_guard import ssrf_guard_url as _ssrf_guard_url  # noqa: F401,E402
 
 logger = logging.getLogger(__name__)
 

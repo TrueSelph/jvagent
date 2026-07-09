@@ -24,12 +24,19 @@ Configure trusted publishers before the first publish:
    - Owner: `TrueSelph`
    - Repository name: `jvagent`
    - Workflow name: `publish-pypi.yaml`
-   - Environment name: `pypi`
+   - Environment name: **(leave blank)** — the production publish job does not use a
+     GitHub environment (OIDC `sub` is `repo:TrueSelph/jvagent`, same pattern as
+     `jvspatial`’s `publish.yml`). A blank environment on PyPI is required; setting
+     `pypi` here while the workflow omits `environment:` causes
+     `invalid-publisher` on first final release.
 2. **TestPyPI** → https://test.pypi.org/manage/account/publishing/ → same, with
-   Environment name: `testpypi`.
-3. In the GitHub repo, create two
-   [environments](https://github.com/TrueSelph/jvagent/settings/environments)
-   named `pypi` and `testpypi` (optionally add required reviewers to `pypi`).
+   Environment name: `testpypi` (the pre-release job uses GitHub environment
+   `testpypi`).
+3. In the GitHub repo, create a
+   [environment](https://github.com/TrueSelph/jvagent/settings/environments)
+   named `testpypi` (required for TestPyPI OIDC). The optional `pypi` GitHub
+   environment is not used by the workflow; you may delete it or keep it for
+   future approval gates.
 4. **`RELEASE_PAT` secret** (for the auto-tag workflow). Add a repo
    [secret](https://github.com/TrueSelph/jvagent/settings/secrets/actions)
    `RELEASE_PAT` — a fine-grained PAT (or GitHub App token) with `contents:
@@ -71,6 +78,15 @@ Configure trusted publishers before the first publish:
    ```
 
 7. Create a GitHub Release from the tag, pasting the CHANGELOG section.
+
+## Retry a failed publish
+
+If the build succeeded but Trusted Publishing failed (e.g. pending publisher not
+yet configured), fix the PyPI publisher (see **One-time setup**), then re-run
+without re-tagging:
+
+1. Actions → **Publish jvagent to PyPI** → **Run workflow**
+2. Enter the tag (e.g. `v0.1.1`) → Run
 
 ## Local build check (no publish)
 

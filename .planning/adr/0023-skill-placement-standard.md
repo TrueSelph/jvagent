@@ -2,7 +2,7 @@
 
 **Status**: Accepted
 **Date**: 2026-06-08
-**Relation**: Supersedes the placement rules in [ADR-0020](0020-skill-sop-extends.md) §2.1 (deprecation warning and “pure SOP only” agent-folder constraint). Preserves ADR-0020 `extends` composition and discovery merge order.
+**Relation**: Supersedes the placement rules in [ADR-0031](0031-skill-sop-extends.md) §2.1 (deprecation warning and “pure SOP only” agent-folder constraint). Preserves ADR-0031 `extends` composition and discovery merge order.
 
 ---
 

@@ -24,6 +24,9 @@ from jvspatial.env import env
 from jvspatial.exceptions import DatabaseError, ValidationError
 
 from jvagent.action.base import Action
+from jvagent.action.utils.webhook_reconcile import (
+    reconcile_webhook_endpoint as _reconcile_webhook_endpoint,
+)
 from jvagent.core.public_url import get_public_base_url
 
 from .models import SentDMBroadcastRecord
@@ -298,7 +301,7 @@ class SentDMBroadcastAction(Action):
         return issues
 
     def get_capabilities(self) -> List[str]:
-        """Return broadcast capabilities for PersonaAction when enabled."""
+        """Return broadcast capabilities for ReplyAction prompt aggregation when enabled."""
         if not self.enabled or not self.is_configured():
             return []
         return [
@@ -1448,74 +1451,33 @@ class SentDMBroadcastAction(Action):
             }
 
         desired_url = await self.get_webhook_url()
+        base_url = get_public_base_url()
 
-        try:
-            existing = await self._sentdm_webhook_list()
-        except Exception as exc:
-            logger.warning("SentDM webhook list failed: %s", exc)
-            return {"status": "error", "message": f"webhook list failed: {exc}"}
-
-        exact_matches: List[Dict[str, Any]] = []
-        stale_matches: List[Dict[str, Any]] = []
-        for ep in existing:
-            ep_url = _sentdm_webhook_endpoint_url(ep)
-            if not ep_url:
-                continue
-            if _sentdm_webhook_urls_equivalent(ep_url, desired_url):
-                exact_matches.append(ep)
-            elif _sentdm_webhook_url_on_public_origin(
-                ep_url, base_url
-            ) and not _sentdm_webhook_urls_equivalent(ep_url, desired_url):
-                stale_matches.append(ep)
-
-        deleted: List[str] = []
-        for ep in stale_matches:
+        async def _on_kept(ep: Mapping[str, Any]) -> None:
             wid = _sentdm_webhook_record_id(ep)
-            if not wid:
-                logger.warning(
-                    "SentDM reconcile: skipping stale webhook with no id (url=%s)",
-                    _sentdm_webhook_endpoint_url(ep) or "?",
-                )
-                continue
-            try:
-                await self._sentdm_webhook_delete(wid)
-                deleted.append(wid)
-            except Exception as exc:
-                logger.warning("SentDM: failed deleting stale webhook %s: %s", wid, exc)
-
-        kept: Optional[Dict[str, Any]] = None
-        if exact_matches:
-            kept = exact_matches[0]
-            for ep in exact_matches[1:]:
-                wid = _sentdm_webhook_record_id(ep)
-                if not wid:
-                    continue
-                try:
-                    await self._sentdm_webhook_delete(wid)
-                    deleted.append(wid)
-                except Exception as exc:
-                    logger.warning(
-                        "SentDM: failed deleting duplicate webhook %s: %s", wid, exc
-                    )
-
-        created: Optional[Dict[str, Any]] = None
-        if kept:
-            wid = _sentdm_webhook_record_id(kept)
             if wid and wid != (self.sentdm_webhook_id or ""):
                 self.sentdm_webhook_id = wid
                 await self.save()
-        else:
-            try:
-                created = await self._sentdm_webhook_create(desired_url)
-                kept = created
-            except Exception as exc:
-                logger.error("SentDM: webhook create failed: %s", exc)
-                return {
-                    "status": "error",
-                    "message": f"webhook create failed: {exc}",
-                    "desired_url": desired_url,
-                    "deleted_webhook_ids": deleted,
-                }
+
+        result = await _reconcile_webhook_endpoint(
+            desired_url=desired_url,
+            list_endpoints=self._sentdm_webhook_list,
+            get_endpoint_url=_sentdm_webhook_endpoint_url,
+            get_endpoint_id=_sentdm_webhook_record_id,
+            is_stale=lambda url: bool(
+                base_url
+                and _sentdm_webhook_url_on_public_origin(url, base_url)
+                and not _sentdm_webhook_urls_equivalent(url, desired_url)
+            ),
+            delete_endpoint=self._sentdm_webhook_delete,
+            create_endpoint=lambda: self._sentdm_webhook_create(desired_url),
+            urls_equivalent=_sentdm_webhook_urls_equivalent,
+            on_kept=_on_kept,
+            provider_label="SentDM",
+        )
+
+        if result.get("status") != "ok":
+            return result
 
         if not self.sentdm_webhook_secret:
             logger.warning(
@@ -1526,10 +1488,10 @@ class SentDMBroadcastAction(Action):
 
         return {
             "status": "ok",
-            "desired_url": desired_url,
-            "webhook": kept or {},
-            "created": created is not None,
-            "deleted_webhook_ids": deleted,
+            "desired_url": result.get("desired_url", desired_url),
+            "webhook": result.get("webhook", {}),
+            "created": result.get("created", False),
+            "deleted_webhook_ids": result.get("deleted_webhook_ids", []),
         }
 
     # --- lifecycle hooks ---------------------------------------------------

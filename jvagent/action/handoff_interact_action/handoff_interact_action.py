@@ -3,14 +3,13 @@
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
 from jvagent.action.reply.reply_action import ReplyAction
-from jvagent.action.whatsapp.whatsapp_action import WhatsAppAction
 from jvagent.memory import Interaction
 
 logger = logging.getLogger(__name__)
@@ -134,7 +133,7 @@ class HandoffInteractAction(InteractAction):
             "User says they need further assistance from a human.",
             "User indicates the issue is not resolved and wants escalation.",
         ],
-        description="Anchor statements for InteractRouter (handoff intent detection).",
+        description="Anchor statements for Orchestrator tool surfacing (handoff intent).",
     )
 
     model_action_type: str = attribute(
@@ -201,6 +200,14 @@ class HandoffInteractAction(InteractAction):
         description="Office hours phrase rendered into DIRECT_CONTACT_PROMPT.",
     )
 
+    handoff_notify_action_type: str = attribute(
+        default="WhatsAppAction",
+        description=(
+            "Action class name used to notify staff on escalation/callback "
+            "(must expose ``api()`` with ``send_message``)."
+        ),
+    )
+
     ########################################################################################
     # CUSTOM FUNCTIONS
     ########################################################################################
@@ -225,7 +232,7 @@ class HandoffInteractAction(InteractAction):
             user_prompt: Primary user-side prompt text.
             system_prompt: System instructions.
             json_response: If True, parse the model output as a JSON object.
-            use_history: If True, load history via PersonaAction.
+            use_history: If True, load history via ReplyAction.
             interaction: Current interaction (needed when ``use_history`` is True).
             history_limit: Number of past turns to include.
             with_utterance: Include user utterances in history.
@@ -359,10 +366,13 @@ class HandoffInteractAction(InteractAction):
         emails = contact_info.get("emails", [])
         phone = self.handoff_number
 
-        whatsapp_action = await self.get_action(WhatsAppAction)
-        whatsapp_api = (
-            await whatsapp_action.api() if whatsapp_action is not None else None
+        agent = await self.get_agent()
+        notify_action = (
+            await agent.get_action_by_type(self.handoff_notify_action_type)
+            if agent
+            else None
         )
+        notify_api = await notify_action.api() if notify_action is not None else None
 
         # Handle the handoff mode
         if handoff_mode == "direct_contact":
@@ -417,8 +427,8 @@ class HandoffInteractAction(InteractAction):
                         "executed": False,
                     }
                 ]
-                if whatsapp_api:
-                    await whatsapp_api.send_message(phone=phone, message=message)
+                if notify_api:
+                    await notify_api.send_message(phone=phone, message=message)
         elif handoff_mode == "scheduled_callback":
             if not phone_numbers and not emails:
                 # ask for contact info if missing
@@ -438,7 +448,7 @@ class HandoffInteractAction(InteractAction):
                     }
                 ]
 
-                if whatsapp_api:
-                    await whatsapp_api.send_message(phone=phone, message=message)
+                if notify_api:
+                    await notify_api.send_message(phone=phone, message=message)
 
         return

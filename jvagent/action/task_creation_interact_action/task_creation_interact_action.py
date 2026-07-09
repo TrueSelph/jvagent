@@ -7,7 +7,7 @@ from jvspatial.core.annotations import attribute
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.task_creation_interact_action.prompts import TASK_SCHEDULER_PROMPT
 from jvagent.core.app import App, app_now_aware_utc
-from jvagent.memory.task_proactive import ProactiveTaskSpec
+from jvagent.memory.task_proactive import ProactiveTaskSpec, coerce_priority
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -161,10 +161,8 @@ class TaskCreationInteractAction(InteractAction):
                 limit=5, formatted=True
             )
         else:
-            # Fallback for generic Nodes
-            raw_history = await conversation.nodes(direction="out", limit=5)
-            # Re-traverse to ensure chronological order and format manually if needed
-            # For now, we'll try a simple format or assume missing history is okay for extraction
+            # Fallback for generic Nodes: assume missing history is okay for
+            # extraction rather than re-traversing for chronological order.
             history = []
 
         history_str = "\n".join([f"{m['role']}: {m['content']}" for m in history])
@@ -314,13 +312,7 @@ class TaskCreationInteractAction(InteractAction):
         if trigger_mood.lower() in ("none", ""):
             trigger_mood = None
 
-        priority = 0
-        raw_priority = task.get("priority")
-        if raw_priority:
-            try:
-                priority = int(raw_priority)
-            except (TypeError, ValueError):
-                priority = 0
+        priority = coerce_priority(task.get("priority"))
 
         return ProactiveTaskSpec(
             directive=task["description"],

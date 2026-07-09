@@ -16,9 +16,6 @@ from jvagent.action.email_action.inbound.gmail import gmail_raw_message_to_tuple
 
 if TYPE_CHECKING:
     from jvagent.action.email_action.email_action import EmailAction
-    from jvagent.action.google.google_gmail_action.google_gmail_action import (
-        GoogleGmailAction,
-    )
     from jvagent.core.agent import Agent
 
 logger = logging.getLogger(__name__)

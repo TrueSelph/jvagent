@@ -26,8 +26,9 @@ async def test_on_startup_rebuilds_server_registry():
     # Simulate post-rehydrate state before startup hook executes.
     assert action.get_server_names() == []
 
-    with patch.object(MCPAction, "get_agent", new=AsyncMock(return_value=None)), patch(
-        "jvagent.core.app.App.get", new=AsyncMock(return_value=None)
+    with (
+        patch.object(MCPAction, "get_agent", new=AsyncMock(return_value=None)),
+        patch("jvagent.core.app.App.get", new=AsyncMock(return_value=None)),
     ):
         await action.on_startup()
 

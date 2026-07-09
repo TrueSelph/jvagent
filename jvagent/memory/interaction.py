@@ -105,10 +105,10 @@ class Interaction(DeferredSaveMixin, Node):
         description="Agent response text (accumulated from stream chunks and ad hoc messages)",
     )
 
-    # Routing (from InteractRouter)
+    # Intent / surfacing metadata (optional; written by Orchestrator or legacy flows)
     interpretation: Optional[str] = attribute(
         default=None,
-        description="LLM-generated synopsis of user intent and posture justification (from InteractRouter)",
+        description="LLM-generated synopsis of user intent (optional debug/history field)",
     )
     intent_type: Optional[str] = attribute(
         default=None, description="Classified intent type"
@@ -118,7 +118,7 @@ class Interaction(DeferredSaveMixin, Node):
     )
     response_posture: Optional[str] = attribute(
         default=None,
-        description="Response posture: RESPOND | SUPPRESS | DEFER (from InteractRouter)",
+        description="Response posture: RESPOND | SUPPRESS | DEFER (optional history field)",
     )
 
     # Processing tracking

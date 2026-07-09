@@ -10,8 +10,10 @@ from jvagent.action.email_action.email_utterance import (
     build_email_interaction_utterance,
 )
 from jvagent.action.interact.interact_walker import InteractWalker
-from jvagent.action.whatsapp.utils.endpoint_helpers import get_conversation_with_lock
-from jvagent.core.app import App
+from jvagent.action.interact.webhook_pipeline import (
+    finalize_interaction_from_webhook,
+    get_conversation_with_lock,
+)
 
 __all__ = [
     "parse_inbound_payload",
@@ -116,57 +118,7 @@ async def finalize_email_interaction(
     sender: str,
 ) -> None:
     """Close interaction, flush, usage, log (Messenger parity)."""
-    interaction = walker.interaction
-    if not interaction:
-        return
-
-    try:
-        await interaction.close_interaction()
-        from jvspatial import flush_deferred_entities
-
-        await flush_deferred_entities(interaction, walker.conversation, strict=True)
-
-        from jvagent.action.interact.endpoints import (
-            _build_interaction_log_data,
-            _finalize_usage,
-        )
-        from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
-
-        await _finalize_usage(interaction)
-
-        try:
-            from jvagent.action.interact.response_builder import (
-                _consolidated_tasks_for_interaction,
-            )
-
-            app = await App.get()
-            app_id = app.id if app else ""
-            tasks = []
-            if walker.conversation:
-                active = walker.conversation.get_tasks(status="active")
-                tasks = _consolidated_tasks_for_interaction(
-                    interaction, walker.conversation, active
-                )
-            log_data, message = _build_interaction_log_data(
-                interaction,
-                app_id,
-                agent_id,
-                tasks=tasks,
-                visitor_data=walker.data,
-            )
-            logger.log(INTERACTION_LEVEL_NUMBER, message, extra=log_data)
-        except Exception as log_err:
-            logger.debug("Email interaction log failed: %s", log_err)
-
-    except DatabaseError as e:
-        logger.error(
-            "Database error finalizing email interaction for %s: %s",
-            sender,
-            e,
-        )
-        raise
-    except Exception as e:
-        logger.error("Error finalizing email interaction for %s: %s", sender, e)
+    await finalize_interaction_from_webhook(walker, agent_id, sender)
 
 
 async def process_email_interaction_async(

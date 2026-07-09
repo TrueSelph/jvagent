@@ -57,3 +57,12 @@ async def get_or_create_system_user_for_webhook(
     except Exception as e:
         logger.error("Failed to create system service user: %s", e)
         raise
+
+
+def webhook_system_user_factory(email: str, permission: str):
+    """Return a bound ``get_or_create_system_user`` for a channel webhook module."""
+
+    async def get_or_create_system_user() -> str:
+        return await get_or_create_system_user_for_webhook(email, permission)
+
+    return get_or_create_system_user

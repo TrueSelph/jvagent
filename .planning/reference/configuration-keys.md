@@ -12,7 +12,7 @@
 4. **`agent.yaml`** under `agents/{namespace}/{agent_name}/`
 5. **Action `attribute(default=...)`** in Python
 
-Code: [`jvagent/core/config.py:59-150`](../../jvagent/core/config.py) — `ConfigKey` / `ConfigSchema`. Env placeholders in YAML are expanded by [`jvagent/core/env_resolver.py`](../../jvagent/core/env_resolver.py).
+Code: [`jvagent/core/config.py:60-150`](../../jvagent/core/config.py) — `ConfigKey` / `ConfigSchema`. Env placeholders in YAML are expanded by [`jvagent/core/env_resolver.py`](../../jvagent/core/env_resolver.py).
 
 ---
 
@@ -21,8 +21,8 @@ Code: [`jvagent/core/config.py:59-150`](../../jvagent/core/config.py) — `Confi
 | Var | Default | Effect |
 |---|---|---|
 | `JVAGENT_ADMIN_PASSWORD` | (required for fresh installs) | Initial admin user password |
-| `JVAGENT_BASE_PATH` | `.` | Base path for action package resolution ([`action/base.py:900`](../../jvagent/action/base.py)) |
-| `JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL` | `100` | Cap on per-call pruning ([`memory/conversation.py:320`](../../jvagent/memory/conversation.py)) |
+| `JVAGENT_BASE_PATH` | `.` | Base path for action package resolution ([`action/base.py:1024`](../../jvagent/action/base.py)) |
+| `JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL` | `100` | Cap on per-call pruning ([`memory/conversation.py:514`](../../jvagent/memory/conversation.py)) |
 | `JVAGENT_INTERACT_PUBLIC_AUTH` | `off` | Public `interact` endpoint auth (ADR-0020): `off` (legacy, no guard), `log` (mint + verify but never reject — observe denials), `required` (enforce 401). Unknown → `off`. ([`action/interact/session_token.py`](../../jvagent/action/interact/session_token.py)) |
 | `JVAGENT_INTERACT_MAX_DATA_JSON_BYTES` | `262144` (256 KB) | Max serialized size of the **control** portion of the interact `data` payload — media keys (`image_urls`/`whatsapp_media`/`files`/`attachments`/`documents`) are validated separately. `none` disables. ([`action/interact/rate_limiter.py`](../../jvagent/action/interact/rate_limiter.py)) |
 | `JVAGENT_INTERACT_MAX_MEDIA_BYTES` | `20971520` (20 MB) | Max serialized size of the **media** portion of `data` (inline base64 uploads, total across media keys). Raise for larger uploads; `none` disables. ([`action/interact/rate_limiter.py`](../../jvagent/action/interact/rate_limiter.py)) |
@@ -30,7 +30,7 @@ Code: [`jvagent/core/config.py:59-150`](../../jvagent/core/config.py) — `Confi
 | `JVAGENT_INTERACT_TOKEN_TTL_SECONDS` | `604800` (7d) | Lifetime of a minted Mode B session capability token ([`action/interact/session_token.py`](../../jvagent/action/interact/session_token.py)). Requires `JVSPATIAL_JWT_SECRET_KEY`. |
 | `JVAGENT_DISABLE_RUNTIME_PIP_INSTALL` | unset / `false` | If `true`, do not pip-install action dependencies at load time |
 | `JVAGENT_ENVIRONMENT` | — | informational (`development` / `staging` / `production`) |
-| `SERVERLESS_MODE` | unset | Set to `true` by `--serverless` ([`cli/main.py:144`](../../jvagent/cli/main.py)) |
+| `SERVERLESS_MODE` | unset | Set to `true` by `--serverless` ([`cli/main.py:145`](../../jvagent/cli/main.py)) |
 | `AWS_LAMBDA_FUNCTION_NAME` | unset | Set by `--serverless` to a placeholder |
 
 Full list, including per-integration: [`docs/environment-keys-reference.md`](../../docs/environment-keys-reference.md).
@@ -121,9 +121,9 @@ agent:
   max_statement_length: 2000          # truncation cap for history
 
 actions:                               # ordered list
-  - action: jvagent/persona            # namespace/action_name
+  - action: jvagent/reply              # namespace/action_name
     context:
-      # override any `attribute(...)` on PersonaAction
+      # override any `attribute(...)` on ReplyAction
       system_prompt: "You are a support agent."
       max_iterations: 25
   - action: jvagent/orchestrator
@@ -182,7 +182,7 @@ See [`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) for the full pattern. H
 | `default_max_attempts` | `3` | default retry ceiling for `queue_task` when `max_attempts` is omitted |
 | `planning_prompt` | (built-in) | override the gated nudge appended when `planning` is on |
 | `clarify_text` | (fallback prompt) | reply when a turn ends with nothing emitted |
-| `skills_source` | `both` | skill discovery source (both specs): `app` (adjacent `skills/`), `library` (`jvagent/skills`), or `both`. Aliases: `local`→`app`, `builtin`→`library`; `registry` retired→`library` |
+| `skills_source` | `both` | skill discovery source: `app` (adjacent `skills/`), `library` (`jvagent/skills`), or `both`. Unknown values default to `both` (0.1.1 removed `registry`/`local`/`builtin` aliases) |
 | `skills` | `-all` | which skills to load: `-all`, or a finite list of names/fnmatch patterns (e.g. `[research, web_lookup]`) |
 | `denied_skills` | `[]` | skill names/patterns to exclude (subtracts from `skills`) |
 
@@ -394,7 +394,7 @@ URL and provision the key out-of-band. AUDIT-actions XC-15.
 
 ## 10. Trusting proxy headers
 
-`extract_client_ip` (`jvagent/action/interact/rate_limiter.py:177`)
+`extract_client_ip` (`jvagent/action/interact/rate_limiter.py:264`)
 consults `X-Forwarded-For` / `X-Real-IP` / `CF-Connecting-IP` before
 falling back to `request.client.host`. Behind a trusted reverse proxy
 this is correct; on a direct-internet listener it lets a client spoof

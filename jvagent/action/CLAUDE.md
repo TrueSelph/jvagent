@@ -8,8 +8,8 @@
 
 The plugin-loadable extension surface of jvagent:
 
-- **`Action` base** ([`base.py:48`](base.py)) — Node subclass with lifecycle hooks, attribute config, endpoint registration, child-cascade delete, tool exposure to the Executive's Skills center.
-- **`InteractAction`** ([`interact/base.py:32`](interact/base.py)) — see `interact/CLAUDE.md`.
+- **`Action` base** ([`base.py:49`](base.py)) — Node subclass with lifecycle hooks, attribute config, endpoint registration, child-cascade delete, tool exposure to the Orchestrator's tool surface.
+- **`InteractAction`** ([`interact/base.py:27`](interact/base.py)) — see `interact/CLAUDE.md`.
 - **Specialized bases**: `BaseModelAction`, `LanguageModelAction`, `BaseWebSearchAction`, `BaseSTTAction`, `BaseTTSAction`, `VectorStore`.
 - **Concrete plugins** organized by topic: language models, response/bus, Orchestrator, memory-related, channel adapters, productivity integrations, tasks. Catalog in [`/.planning/reference/actions-catalog.md`](../../.planning/reference/actions-catalog.md).
 - **Loader/registry** in `loader/`.
@@ -21,19 +21,19 @@ The plugin-loadable extension surface of jvagent:
 
 | File | Purpose |
 |---|---|
-| `base.py:48` | `Action` base class (canonical) |
-| `base.py:272` | `get_tools()` — default discovers `@tool`-decorated methods via `collect_tools` |
+| `base.py:49` | `Action` base class (canonical) |
+| `base.py:259` | `get_tools()` — default discovers `@tool`-decorated methods via `collect_tools` |
 | `jvagent/tooling/tool_decorator.py` | `@tool` decorator + `collect_tools` — preferred way to publish tools |
 | `jvagent/tooling/signature_schema.py` | signature → JSON Schema deriver used by `@tool` |
-| `base.py:180` | `get_capabilities()` — for PersonaAction prompt aggregation |
-| `base.py:225` | `delete(cascade=True)` — walks outgoing edges and cascade-deletes children |
-| `base.py:256-348` | Lifecycle hook contracts (`on_register`, `on_reload`, `post_register`, `on_startup`, `on_enable`, `on_disable`, `on_deregister`, `pulse`, `healthcheck`) |
-| `base.py:354-460` | Endpoint discovery + unregistration (relies on `/actions/{action_id}/` path prefix) |
-| `base.py:462-542` | Module unload safety (skips core + shared modules) |
-| `base.py:710-852` | `get_action()` / `get_action_by_base_class()` / `get_model_action()` — cross-action lookup |
-| `base.py:881-944` | Package metadata accessors (namespace, version, type) |
-| `base.py:946-1100` | File storage helpers (action-scoped paths) |
-| `interact/base.py:32` | `InteractAction` (see `interact/CLAUDE.md`) |
+| `base.py:180` | `get_capabilities()` — for ReplyAction prompt aggregation |
+| `base.py:300` | `delete(cascade=True)` — walks outgoing edges and cascade-deletes children |
+| `base.py:331-403` | Lifecycle hook contracts (`on_register`, `on_reload`, `post_register`, `on_startup`, `on_enable`, `on_disable`, `on_deregister`); `pulse`/`healthcheck` at `670`/`678` |
+| `base.py:469-587` | Endpoint discovery + unregistration (relies on `/actions/{action_id}/` path prefix) |
+| `base.py:588-667` | Module unload safety (skips core + shared modules) |
+| `base.py:834-981` | `get_action()` / `get_action_by_base_class()` / `get_model_action()` — cross-action lookup |
+| `base.py:982-1058` | Package metadata accessors (namespace, version, type) |
+| `base.py:1145-1230` | File storage helpers (action-scoped paths) |
+| `interact/base.py:27` | `InteractAction` (see `interact/CLAUDE.md`) |
 | `actions.py` | `Actions` manager node |
 | `endpoints.py` | Top-level action HTTP routes (~9 routes) |
 | `loader/` | Action loader, registry, plugin discovery |
@@ -45,12 +45,12 @@ The plugin-loadable extension surface of jvagent:
 ## 3. Contracts (don't break)
 
 1. **`Action` subclasses MUST set `archetype` in `info.yaml`** to match the Python class name. The loader uses it.
-2. **Action endpoints MUST live under `/actions/{action_id}/...`** ([`base.py:373`](base.py)). Deregister scans this prefix; non-conforming endpoints leak after `on_deregister`.
+2. **Action endpoints MUST live under `/actions/{action_id}/...`** ([`base.py:490`](base.py)). Deregister scans this prefix; non-conforming endpoints leak after `on_deregister`.
 3. **`get_action()` is `O(1)`; `get_action_by_base_class()` is `O(n)`.** Don't use the latter in hot paths.
-4. **Lifecycle hooks MUST not swallow exceptions** ([`base.py:569+`](base.py)). The framework's `enable()`/`disable()`/`reload()` wrappers log errors automatically with the action context — silencing them hides bugs.
+4. **Lifecycle hooks MUST not swallow exceptions** ([`base.py:694`](base.py)). The framework's `enable()`/`disable()`/`reload()` wrappers log errors automatically with the action context — silencing them hides bugs.
 5. **`Action.metadata` is owned by the loader.** Mutations to it are not persisted across restarts. Use `attribute(...)` fields for persistent state.
-6. **Child Nodes attached via outgoing edges are cascade-deleted** when the action is deleted ([`base.py:225`](base.py)). Always connect via `await self.connect(child, direction="out")`.
-7. **`is_singleton` default is `True`** ([`base.py:221`](base.py)). Override `config.singleton: false` in `info.yaml` if multiple instances per agent are allowed.
+6. **Child Nodes attached via outgoing edges are cascade-deleted** when the action is deleted ([`base.py:300`](base.py)). Always connect via `await self.connect(child, direction="out")`.
+7. **`is_singleton` default is `True`** ([`base.py:296`](base.py)). Override `config.singleton: false` in `info.yaml` if multiple instances per agent are allowed.
 8. **Thin harness** — Actions expose capabilities via `get_tools()`; they must not classify user intent, inject prep steering, auto-store extracted values, or inline multi-step workflows. Put judgment in skill SOPs and domain logic in skill extensions. See [`docs/thin-harness.md`](../../docs/thin-harness.md).
 9. **Prefer the `@tool` decorator over hand-built `Tool()`** — decorate an `async def` method with `@tool` ([`jvagent/tooling/tool_decorator.py`](../tooling/tool_decorator.py)) and the base `get_tools()` auto-publishes it. Name = `{action_name}__{method}` (override with `@tool(name=...)`); description = method docstring's first paragraph; JSON Schema = signature (use `Annotated[T, "desc"]` for per-arg docs). Hand-built `Tool()` and `get_tools()` overrides still work; only override when a tool can't be a decorated method (combine with `collect_tools(self)`).
 

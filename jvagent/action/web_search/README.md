@@ -15,10 +15,10 @@ The `web_search` package provides the core abstractions and concrete implementat
 
 ## Architecture
 
-The web search functionality is split into two distinct packages:
-
-*   **`jvagent/web_search`** (this package): Contains the base search actions and provider-specific implementations. These are plain `Action` classes focused solely on executing searches.
-*   **`jvagent/web_search_retrieval_interact_action`**: An `InteractAction` that uses a configured `BaseWebSearchAction` to perform searches based on user input and inject the results into the conversation.
+This package provides web search as plain `Action` classes (a base action plus
+provider-specific implementations). The Orchestrator calls the search tool
+directly (pair it with `jvagent/web_fetch` to read the top results); there is no
+separate retrieval `InteractAction`.
 
 ## Configuration
 
@@ -89,18 +89,15 @@ async def my_method(self, query):
     return results
 ```
 
-### Via Retrieval Interact Action
+### Via Orchestrator skills
 
-The preferred way to use web search in an agent is via `WebSearchRetrievalInteractAction`.
+Register a provider action (e.g. `jvagent/serper_web_search`) and call its tool from an Orchestrator skill:
 
 ```yaml
-- action: jvagent/web_search_retrieval_interact_action
+- action: jvagent/serper_web_search
   context:
     enabled: true
-    web_search_action_type: SerperWebSearchAction
-    anchors:
-      - "User asks about current events"
-      - "User wants to search the web for..."
+    description: Web search via Serper (SERPER_API_KEY in .env)
 ```
 
 ## Metrics

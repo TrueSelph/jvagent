@@ -84,7 +84,6 @@ class JvagentActionsImporter(importlib.abc.MetaPathFinder):
             action_dir = (
                 agents_path / parts[0] / parts[1] / "actions" / parts[2] / parts[3]
             )
-            submodule = ".".join(parts[4:])
             module_file = action_dir / f"{parts[4]}.py"
             if len(parts) == 5 and module_file.exists():
                 return importlib.util.spec_from_file_location(

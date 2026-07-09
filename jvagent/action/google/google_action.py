@@ -12,8 +12,8 @@ from jvspatial.core.annotations import attribute
 from jvspatial.env import env
 
 from jvagent.action.base import Action
-from jvagent.action.utils.oauth_audit import _audit_log_oauth_event
-from jvagent.action.utils.oauth_token_crypto import (
+from jvagent.action.oauth.audit import _audit_log_oauth_event
+from jvagent.action.oauth.token_crypto import (
     decrypt_token_from_storage,
     encrypt_token_for_storage,
 )
@@ -153,7 +153,7 @@ class GoogleAction(Action):
         at callback time — it is NEVER sent to the IdP or echoed back via
         the user's browser. AUDIT-actions XC-2.
         """
-        from jvagent.action.utils.oauth_state import create_oauth_state
+        from jvagent.action.oauth.state import create_oauth_state
 
         flow = self._create_flow()
         if code_verifier:

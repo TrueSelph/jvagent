@@ -61,15 +61,7 @@ class User(Node):
     display_name: Optional[str] = attribute(
         default=None, description="Formatted display name for addressing the user"
     )
-    user_model: Dict[str, Any] = attribute(
-        default_factory=dict,
-        description=(
-            "[DEPRECATED — use ``memory`` instead] Compressed collection of facts "
-            "and preferences about the user. Read paths still resolve here for "
-            "back-compat; new writes go to ``memory`` (markdown-keyed)."
-        ),
-    )
-    memory: Dict[str, str] = attribute(
+    memory: Dict[str, Any] = attribute(
         default_factory=dict,
         description=(
             "General-purpose user-scoped memory: a flat key→markdown map. "
@@ -244,61 +236,6 @@ class User(Node):
             return self.name
         return "user"
 
-    async def update_user_model(
-        self,
-        facts: Optional[List[str]] = None,
-        preferences: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Update the stored user model facts/preferences and timestamp.
-
-        ``user_model`` is deprecated in favor of ``User.memory``. This writer
-        dual-writes to both so back-compat readers and new readers see
-        consistent state. New callers should write to ``User.memory`` directly.
-        """
-        if not self.user_model:
-            self.user_model = {"facts": [], "preferences": {}, "last_updated": None}
-
-        if facts:
-            self.user_model["facts"].extend(facts)
-        if preferences:
-            self.user_model["preferences"].update(preferences)
-
-        from jvagent.core.app import App
-
-        app = await App.get()
-        self.user_model["last_updated"] = (
-            await app.now() if app else datetime.now(timezone.utc)
-        )
-
-        # Mirror into the canonical ``memory`` dict so new readers stay in sync.
-        if not isinstance(self.memory, dict):
-            self.memory = {}
-        um_mirror = self.memory.setdefault("user_model", {})
-        if not isinstance(um_mirror, dict):
-            um_mirror = {}
-            self.memory["user_model"] = um_mirror
-        if facts:
-            existing_facts = um_mirror.setdefault("facts", [])
-            if isinstance(existing_facts, list):
-                existing_facts.extend(facts)
-            else:
-                um_mirror["facts"] = list(facts)
-        if preferences:
-            existing_prefs = um_mirror.setdefault("preferences", {})
-            if isinstance(existing_prefs, dict):
-                existing_prefs.update(preferences)
-            else:
-                um_mirror["preferences"] = dict(preferences)
-        um_mirror["last_updated"] = self.user_model["last_updated"]
-
-        await self.save()
-
-    def get_user_model(self) -> Dict[str, Any]:
-        """Return the current user model with sensible defaults."""
-        if not self.user_model:
-            return {"facts": [], "preferences": {}, "last_updated": None}
-        return self.user_model
-
     async def add_usage_from_interaction(self, usage: Dict[str, Any]) -> None:
         """Increment cumulative usage stats from an interaction's usage.
 
@@ -369,3 +306,24 @@ class User(Node):
                 "last_updated": None,
             }
         return self.usage
+
+
+async def migrate_legacy_user_model_from_context(user: "User") -> bool:
+    """One-time read migration: copy persisted ``context.user_model`` into ``memory``."""
+    try:
+        exported = await user.export(flat=True)
+    except Exception:
+        return False
+    ctx = exported.get("context") if isinstance(exported, dict) else None
+    if not isinstance(ctx, dict):
+        return False
+    legacy = ctx.get("user_model")
+    if not legacy or not isinstance(legacy, dict):
+        return False
+    if not isinstance(user.memory, dict):
+        user.memory = {}
+    if user.memory.get("user_model") == legacy:
+        return False
+    user.memory["user_model"] = dict(legacy)
+    await user.save()
+    return True

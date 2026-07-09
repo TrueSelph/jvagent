@@ -5,15 +5,19 @@ environment access. This module only contains jvagent-specific resolution
 helpers that are not shared by jvspatial.
 """
 
+import logging
 import os
 from typing import Optional
 
+logger = logging.getLogger(__name__)
 
-def get_jvagent_app_id() -> Optional[str]:
-    """Return JVAGENT_APP_ID if set (from .env or os.environ), else None.
 
-    Uses dotenv_values for .env so it works in child processes (e.g. uvicorn --reload)
-    where load_dotenv may not have run.
+def _read_env_with_dotenv(key: str) -> Optional[str]:
+    """Read *key* from the app-root ``.env`` (then CWD ``.env``), then os.environ.
+
+    Uses ``dotenv_values`` so the value resolves in child processes (e.g.
+    ``uvicorn --reload``) where ``load_dotenv`` may not have run. Returns the
+    stripped value, or ``None`` when unset/blank.
     """
     try:
         from dotenv import dotenv_values
@@ -24,32 +28,22 @@ def get_jvagent_app_id() -> Optional[str]:
         for candidate in (os.path.join(root, ".env"), ".env"):
             if os.path.isfile(candidate):
                 values = dotenv_values(candidate)
-                val = values.get("JVAGENT_APP_ID") if values else None
+                val = values.get(key) if values else None
                 if val and str(val).strip():
                     return str(val).strip()
                 break
-    except Exception:
-        pass
-    val = os.getenv("JVAGENT_APP_ID")
+    except Exception as exc:
+        logger.debug("env: .env read for %s failed: %s", key, exc)
+    val = os.getenv(key)
     return str(val).strip() if val and str(val).strip() else None
+
+
+def get_jvagent_app_id() -> Optional[str]:
+    """Return JVAGENT_APP_ID if set (from .env or os.environ), else None."""
+    return _read_env_with_dotenv("JVAGENT_APP_ID")
 
 
 def get_jvagent_jvforge_base_url() -> Optional[str]:
     """Return JVAGENT_JVFORGE_BASE_URL if set (from .env or os.environ), else None."""
-    try:
-        from dotenv import dotenv_values
-
-        from jvagent.core.app_context import get_app_root
-
-        root = get_app_root()
-        for candidate in (os.path.join(root, ".env"), ".env"):
-            if os.path.isfile(candidate):
-                values = dotenv_values(candidate)
-                val = values.get("JVAGENT_JVFORGE_BASE_URL") if values else None
-                if val and str(val).strip():
-                    return str(val).strip().rstrip("/")
-                break
-    except Exception:
-        pass
-    val = os.getenv("JVAGENT_JVFORGE_BASE_URL")
-    return str(val).strip().rstrip("/") if val and str(val).strip() else None
+    val = _read_env_with_dotenv("JVAGENT_JVFORGE_BASE_URL")
+    return val.rstrip("/") if val else None

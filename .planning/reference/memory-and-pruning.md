@@ -15,10 +15,10 @@ Agent
 ```
 
 Files:
-- `memory/manager.py:18` — `Memory` node + `get_user()` (locks)
+- `memory/manager.py:18` — `Memory` node (`get_user()` at `manager.py:76`, locks)
 - `memory/user.py:25` — `User` node (compound index at lines 16–24)
 - `memory/conversation.py:39` — `Conversation` node
-- `memory/interaction.py:47` — `Interaction` node
+- `memory/interaction.py:51` — `Interaction` node
 - `memory/lock_manager.py` — per-`(memory_id, user_id)` async lock
 
 ---
@@ -32,7 +32,7 @@ A `User` is identified by **two fields together**:
 | `memory_id` | `Memory.id` of the agent's Memory node | Scopes the user to one agent's memory |
 | `user_id` | Caller-provided (often from auth, channel, or session) | The logical user identifier |
 
-The compound unique index at `user.py:16-24` enforces `(memory_id, user_id)` uniqueness. Concurrent creates with the same pair MUST go through `Memory.get_user()` ([`manager.py:60-80`](../../jvagent/memory/manager.py)), which acquires the per-pair lock before falling through to `_get_user_unlocked()`.
+The compound unique index at `user.py:16-24` enforces `(memory_id, user_id)` uniqueness. Concurrent creates with the same pair MUST go through `Memory.get_user()` ([`manager.py:76-97`](../../jvagent/memory/manager.py)), which acquires the per-pair lock before falling through to `_get_user_unlocked()`.
 
 ### What's on the User node
 
@@ -40,7 +40,6 @@ The compound unique index at `user.py:16-24` enforces `(memory_id, user_id)` uni
 |---|---|---|
 | `memory: Dict[str, str]` | dict[k → markdown blob] | cross-session, persistent |
 | `memory_tags: Dict[str, List[str]]` | tag → memory key list | cross-session |
-| `user_model` | str | **deprecated** — legacy compressed facts |
 | `usage` | dict | aggregate usage counters |
 | `name`, `display_name` | strings | display info |
 | `created_at`, `last_seen` | datetimes | timestamps |
@@ -85,7 +84,7 @@ When `I3` is appended:
 Conv ──out──> I1 <──both──> I2 <──both──> I3
 ```
 
-Source: [`conversation.py:267-272`](../../jvagent/memory/conversation.py). The first edge is `direction="out"`; subsequent edges are `direction="both"`.
+Source: [`conversation.py:315-317`](../../jvagent/memory/conversation.py). The first edge is `direction="out"`; subsequent edges are `direction="both"`.
 
 ---
 
@@ -116,14 +115,14 @@ One per user-message ⇄ agent-response exchange. Stores the full execution trac
 
 ### When it runs
 
-`Conversation.add_interaction()` ([`conversation.py:199`](../../jvagent/memory/conversation.py); locked variant `_add_interaction_unlocked` at 240) calls `_prune_old_interactions()` when:
+`Conversation.add_interaction()` ([`conversation.py:235`](../../jvagent/memory/conversation.py); locked variant `_add_interaction_unlocked` at 285) calls `_prune_old_interactions()` when:
 
 ```
 self.interaction_limit > 0
 AND self.interaction_count > self.interaction_limit
 ```
 
-If `Agent.interaction_limit` is set and differs from `Conversation.interaction_limit`, the conversation adopts the agent's value first ([`conversation.py:279-287`](../../jvagent/memory/conversation.py)). Setting `interaction_limit = 0` on either disables pruning entirely.
+If `Agent.interaction_limit` is set and differs from `Conversation.interaction_limit`, the conversation adopts the agent's value first ([`conversation.py:326-330`](../../jvagent/memory/conversation.py)). Setting `interaction_limit = 0` on either disables pruning entirely.
 
 ### How it runs
 
@@ -157,11 +156,11 @@ await self.save()
 return removed
 ```
 
-Source: [`conversation.py:297-367`](../../jvagent/memory/conversation.py).
+Source: [`conversation.py:490-575`](../../jvagent/memory/conversation.py).
 
 ### Invariants
 
-1. **Never delete the last `Interaction`** ([`conversation.py:333-336`](../../jvagent/memory/conversation.py)). If `nxt` is `None`, halt.
+1. **Never delete the last `Interaction`** ([`conversation.py:538-543`](../../jvagent/memory/conversation.py)). If `nxt` is `None`, halt.
 2. **Bounded per call** by `JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL` (default 100). Anything beyond runs on subsequent appends or via the manager.
 3. **Edge rewiring is atomic-ish per iteration** — disconnect then connect, then delete. Failure mid-iteration may leave a temporarily inconsistent edge set but `_find_last_interaction()` can recover.
 4. **`interaction_count` decrements with each removal.** Don't manually mutate it elsewhere.
@@ -214,9 +213,9 @@ Multi-process: see `memory/distributed_conversation_lock.py`. When enabled, lock
 
 Distinct from the rolling-window conversation memory:
 
-- `User.memory: Dict[str, str]` — cross-session key → markdown blob. The persona's `memory_update_user_model` tool writes here. Cross-conversation; survives pruning.
+- `User.memory: Dict[str, str]` — cross-session key → markdown blob. Orchestrator memory tools (`memory_set`, `memory_get`, …) write here. Cross-conversation; survives pruning.
 - `User.memory_tags` — tag index over `memory`.
-- **PageIndex-backed long memory** — see `jvagent/action/long_memory*/`. Vectorless RAG via LLM tree search; stored separately from conversation history. Useful for many-fact retention.
+- **Domain knowledge** — use `PageIndexAction` tools (`pageindex__search`, `pageindex__assimilate`) via Orchestrator skills, not per-user long-memory graph nodes (removed in 0.1.1).
 
 ---
 
@@ -237,9 +236,9 @@ pytest tests/test_comprehensive_pruning.py tests/test_pruning_fix.py tests/test_
 
 ## 11. Reading code in order
 
-1. `memory/manager.py:60-100` — `get_user()` entry.
-2. `memory/conversation.py:250-295` — append + chain.
-3. `memory/conversation.py:297-367` — prune.
+1. `memory/manager.py:76-135` — `get_user()` entry.
+2. `memory/conversation.py:235-330` — append + chain.
+3. `memory/conversation.py:490-575` — prune.
 4. `memory/lock_manager.py` — locking primitives.
 5. `memory/distributed_conversation_lock.py` — multi-process variant.
 6. `memory/interaction.py` — Interaction shape + helpers.

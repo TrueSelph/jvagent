@@ -21,7 +21,7 @@ class VectorStore(Action, ABC):
 
     VectorStore provides a standard interface for storing documents with embeddings
     and performing semantic similarity search. This enables semantic search capabilities
-    for PersonaAction components like parameters, flows, canned responses, and glossary terms.
+    for ReplyAction components like parameters, flows, canned responses, and glossary terms.
 
     Subclasses should implement the abstract methods to provide specific vector database
     backend implementations (e.g., Typesense, Pinecone, Weaviate).
@@ -90,7 +90,6 @@ class VectorStore(Action, ABC):
         - Initialize the client connection
         - Handle any initialization errors appropriately
         """
-        pass
 
     async def on_register(self) -> None:
         """Called when action is registered during installation.
@@ -119,7 +118,6 @@ class VectorStore(Action, ABC):
         - Release any allocated resources
         - Handle cleanup errors gracefully (log but don't raise)
         """
-        pass
 
     async def on_disable(self) -> None:
         """Called when action is disabled.
@@ -156,7 +154,6 @@ class VectorStore(Action, ABC):
             ValueError: If documents are invalid or collection doesn't exist
             RuntimeError: If storage operation fails
         """
-        pass
 
     @abstractmethod
     async def search(
@@ -185,7 +182,6 @@ class VectorStore(Action, ABC):
             ValueError: If collection doesn't exist or query is invalid
             RuntimeError: If search operation fails
         """
-        pass
 
     @abstractmethod
     async def delete_document(
@@ -202,7 +198,6 @@ class VectorStore(Action, ABC):
         Returns:
             True if all deletions succeeded, False otherwise
         """
-        pass
 
     async def create_collection(
         self,

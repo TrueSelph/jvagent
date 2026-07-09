@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from jvagent.action.orchestrator.tools import SkillTool
-from jvagent.memory.task_proactive import ProactiveTaskSpec
+from jvagent.memory.task_proactive import ProactiveTaskSpec, coerce_priority
+
+
+def _coerce_max_attempts(value: Any, default: int) -> int:
+    """Safe int for a model-supplied max_attempts; never raises. Falls back to
+    ``default`` for missing/non-numeric input (a model may pass 'three')."""
+    if value is None or value == "":
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def build_proactive_tools(action: Any, visitor: Any) -> List[SkillTool]:
@@ -23,16 +34,15 @@ def build_proactive_tools(action: Any, visitor: Any) -> List[SkillTool]:
             context=str(args.get("context") or ""),
             not_before=args.get("not_before"),
             not_after=args.get("not_after"),
-            priority=int(args.get("priority") or 0),
+            priority=coerce_priority(args.get("priority")),
             skill=(str(args.get("skill")).strip() if args.get("skill") else None),
             requires_tasks=list(args.get("requires_tasks") or []),
             trigger_on=args.get("trigger_on") or "schedule",
             trigger_keyword=args.get("trigger_keyword"),
             trigger_mood=args.get("trigger_mood"),
-            max_attempts=int(
-                args.get("max_attempts")
-                or getattr(_action, "default_max_attempts", 3)
-                or 3
+            max_attempts=_coerce_max_attempts(
+                args.get("max_attempts"),
+                getattr(_action, "default_max_attempts", 3) or 3,
             ),
         )
         store = getattr(visitor, "tasks", None)

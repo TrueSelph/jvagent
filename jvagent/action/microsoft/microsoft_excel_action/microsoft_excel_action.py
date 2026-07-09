@@ -9,7 +9,7 @@ from urllib.parse import quote
 import openpyxl
 from jvspatial.core.annotations import attribute
 
-from jvagent.action.google.google_sheets_action.google_sheets_action import (
+from jvagent.action.spreadsheet.range_utils import (
     compose_a1_range,
     qualify_sheet_title,
     resolve_spreadsheet_id,

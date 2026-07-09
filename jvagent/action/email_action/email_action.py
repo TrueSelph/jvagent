@@ -277,7 +277,7 @@ class EmailAction(Action):
         return None
 
     def get_capabilities(self) -> List[str]:
-        """Capabilities for PersonaAction when enabled."""
+        """Capabilities for ReplyAction prompt aggregation when enabled."""
         if not self.enabled:
             return []
         prov = (self.provider or "gmail").strip().lower()

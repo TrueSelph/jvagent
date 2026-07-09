@@ -4,7 +4,7 @@ import pytest
 
 pytest.importorskip("filetype")
 try:
-    from jvspatial.api.auth.models import UserCreateAdmin
+    pass
 except ImportError:
     pytest.skip(
         "UserCreateAdmin not available in installed jvspatial", allow_module_level=True
@@ -38,24 +38,30 @@ def whatsapp_action(mock_agent, monkeypatch):
     )
 
     # Patch get_agent and save at class level (instance patch fails with jvspatial Node)
-    with patch.object(
-        WhatsAppAction, "get_agent", new_callable=AsyncMock, return_value=mock_agent
-    ), patch.object(WhatsAppAction, "save", new_callable=AsyncMock):
+    with (
+        patch.object(
+            WhatsAppAction, "get_agent", new_callable=AsyncMock, return_value=mock_agent
+        ),
+        patch.object(WhatsAppAction, "save", new_callable=AsyncMock),
+    ):
         yield action
 
 
 @pytest.mark.asyncio
 async def test_get_webhook_url_generates_new_key(whatsapp_action, mock_agent):
     """Test that get_webhook_url generates a new API key when none exists."""
-    with patch(
-        "jvagent.action.whatsapp.whatsapp_action.get_or_create_system_user"
-    ) as mock_user, patch(
-        "jvagent.action.whatsapp.whatsapp_action.APIKeyService"
-    ) as mock_service_class, patch(
-        "jvagent.action.whatsapp.whatsapp_action.get_prime_database"
-    ) as mock_db, patch(
-        "jvagent.action.whatsapp.whatsapp_action.GraphContext"
-    ) as mock_context_class:
+    with (
+        patch(
+            "jvagent.action.whatsapp.whatsapp_action.get_or_create_system_user"
+        ) as mock_user,
+        patch(
+            "jvagent.action.whatsapp.whatsapp_action.APIKeyService"
+        ) as mock_service_class,
+        patch("jvagent.action.whatsapp.whatsapp_action.get_prime_database") as mock_db,
+        patch(
+            "jvagent.action.whatsapp.whatsapp_action.GraphContext"
+        ) as mock_context_class,
+    ):
 
         # Setup mocks
         mock_user.return_value = "o.User.system123"
@@ -108,15 +114,18 @@ async def test_get_webhook_url_generates_new_key(whatsapp_action, mock_agent):
 @pytest.mark.asyncio
 async def test_get_webhook_url_with_ip_restriction(whatsapp_action, mock_agent):
     """Test that get_webhook_url respects IP whitelisting."""
-    with patch(
-        "jvagent.action.whatsapp.whatsapp_action.get_or_create_system_user"
-    ) as mock_user, patch(
-        "jvagent.action.whatsapp.whatsapp_action.APIKeyService"
-    ) as mock_service_class, patch(
-        "jvagent.action.whatsapp.whatsapp_action.get_prime_database"
-    ) as mock_db, patch(
-        "jvagent.action.whatsapp.whatsapp_action.GraphContext"
-    ) as mock_context_class:
+    with (
+        patch(
+            "jvagent.action.whatsapp.whatsapp_action.get_or_create_system_user"
+        ) as mock_user,
+        patch(
+            "jvagent.action.whatsapp.whatsapp_action.APIKeyService"
+        ) as mock_service_class,
+        patch("jvagent.action.whatsapp.whatsapp_action.get_prime_database") as mock_db,
+        patch(
+            "jvagent.action.whatsapp.whatsapp_action.GraphContext"
+        ) as mock_context_class,
+    ):
 
         # Setup mocks
         mock_user.return_value = "o.User.system123"
@@ -141,7 +150,7 @@ async def test_get_webhook_url_with_ip_restriction(whatsapp_action, mock_agent):
 
         # Call get_webhook_url with IP restriction
         allowed_ip = "203.0.113.0"
-        webhook_url = await whatsapp_action.get_webhook_url(allowed_ip=allowed_ip)
+        await whatsapp_action.get_webhook_url(allowed_ip=allowed_ip)
 
         # Verify IP restriction was applied
         call_kwargs = mock_service.generate_key.call_args[1]
@@ -156,13 +165,15 @@ async def test_get_webhook_url_reuses_existing_url(whatsapp_action, mock_agent):
     whatsapp_action.webhook_url = existing_url
     whatsapp_action.webhook_api_key_id = "o.APIKey.existing123"
 
-    with patch(
-        "jvagent.action.whatsapp.whatsapp_action.get_or_create_system_user"
-    ) as mock_user, patch(
-        "jvagent.action.whatsapp.whatsapp_action.get_prime_database"
-    ) as mock_db, patch(
-        "jvagent.action.whatsapp.whatsapp_action.GraphContext"
-    ) as mock_context_class:
+    with (
+        patch(
+            "jvagent.action.whatsapp.whatsapp_action.get_or_create_system_user"
+        ) as mock_user,
+        patch("jvagent.action.whatsapp.whatsapp_action.get_prime_database") as mock_db,
+        patch(
+            "jvagent.action.whatsapp.whatsapp_action.GraphContext"
+        ) as mock_context_class,
+    ):
 
         # Setup mocks
         mock_user.return_value = "o.User.system123"
@@ -196,15 +207,18 @@ async def test_get_webhook_url_regenerates_on_request(whatsapp_action, mock_agen
     whatsapp_action.webhook_url = "http://localhost:8000/api/whatsapp/interact/webhook/n.Agent.test123?api_key=test_mock_old"
     whatsapp_action.webhook_api_key_id = "o.APIKey.old123"
 
-    with patch(
-        "jvagent.action.whatsapp.whatsapp_action.get_or_create_system_user"
-    ) as mock_user, patch(
-        "jvagent.action.whatsapp.whatsapp_action.APIKeyService"
-    ) as mock_service_class, patch(
-        "jvagent.action.whatsapp.whatsapp_action.get_prime_database"
-    ) as mock_db, patch(
-        "jvagent.action.whatsapp.whatsapp_action.GraphContext"
-    ) as mock_context_class:
+    with (
+        patch(
+            "jvagent.action.whatsapp.whatsapp_action.get_or_create_system_user"
+        ) as mock_user,
+        patch(
+            "jvagent.action.whatsapp.whatsapp_action.APIKeyService"
+        ) as mock_service_class,
+        patch("jvagent.action.whatsapp.whatsapp_action.get_prime_database") as mock_db,
+        patch(
+            "jvagent.action.whatsapp.whatsapp_action.GraphContext"
+        ) as mock_context_class,
+    ):
 
         # Setup mocks
         mock_user.return_value = "o.User.system123"
@@ -263,15 +277,18 @@ async def test_get_webhook_url_regenerates_on_ip_change(whatsapp_action, mock_ag
     whatsapp_action.webhook_url = "http://localhost:8000/api/whatsapp/interact/webhook/n.Agent.test123?api_key=test_mock_old"
     whatsapp_action.webhook_api_key_id = "o.APIKey.old123"
 
-    with patch(
-        "jvagent.action.whatsapp.whatsapp_action.get_or_create_system_user"
-    ) as mock_user, patch(
-        "jvagent.action.whatsapp.whatsapp_action.APIKeyService"
-    ) as mock_service_class, patch(
-        "jvagent.action.whatsapp.whatsapp_action.get_prime_database"
-    ) as mock_db, patch(
-        "jvagent.action.whatsapp.whatsapp_action.GraphContext"
-    ) as mock_context_class:
+    with (
+        patch(
+            "jvagent.action.whatsapp.whatsapp_action.get_or_create_system_user"
+        ) as mock_user,
+        patch(
+            "jvagent.action.whatsapp.whatsapp_action.APIKeyService"
+        ) as mock_service_class,
+        patch("jvagent.action.whatsapp.whatsapp_action.get_prime_database") as mock_db,
+        patch(
+            "jvagent.action.whatsapp.whatsapp_action.GraphContext"
+        ) as mock_context_class,
+    ):
 
         # Setup mocks
         mock_user.return_value = "o.User.system123"

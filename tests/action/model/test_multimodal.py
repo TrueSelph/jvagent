@@ -1,7 +1,5 @@
 """Tests for multimodal model action functionality."""
 
-import pytest
-
 from jvagent.action.model import ModelActionResult
 from jvagent.action.model.language.base import LanguageModelAction
 

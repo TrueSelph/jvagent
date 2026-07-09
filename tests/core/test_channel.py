@@ -1,7 +1,5 @@
 """Tests for channel normalization."""
 
-import pytest
-
 from jvagent.core.channel import normalize_channel
 
 

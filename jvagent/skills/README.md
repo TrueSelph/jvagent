@@ -60,7 +60,7 @@ agents/acme/bot/skills/         # ← all agent skills live here
 └── docx/                       # spec: claude
 ```
 
-Discovery tiers (merge order): builtin library → core action `skills/` → app `skills/` → app action overlays. See [ADR-0020](../../.planning/adr/0020-skill-sop-extends.md) for `extends` and [ADR-0023](../../.planning/adr/0023-skill-placement-standard.md) for placement.
+Discovery tiers (merge order): builtin library → core action `skills/` → app `skills/` → app action overlays. See [ADR-0031](../../.planning/adr/0031-skill-sop-extends.md) for `extends` and [ADR-0023](../../.planning/adr/0023-skill-placement-standard.md) for placement.
 
 ## SKILL.md anatomy
 

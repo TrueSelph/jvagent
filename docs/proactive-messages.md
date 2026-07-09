@@ -34,7 +34,7 @@ Single call. The bus dispatches `content` to the channel adapter (so the user re
 
 ## What it does
 
-1. **Resolves the `User`** via `Memory.get_user(user_id, create_if_missing=True)` ([`memory/manager.py:60`](../jvagent/memory/manager.py)). Lock-guarded to avoid duplicate creation.
+1. **Resolves the `User`** via `Memory.get_user(user_id, create_if_missing=True)` ([`memory/manager.py:76`](../jvagent/memory/manager.py)). Lock-guarded to avoid duplicate creation.
 2. **Resolves the `Conversation`** in this order:
    - If `session_id` is provided → `User.get_conversation_by_session(session_id)`.
    - Else → `User.get_active_conversation()`.
@@ -138,7 +138,7 @@ by_source = [
 
 ## How it appears in LLM history
 
-`Conversation._format_interactions` ([`conversation.py:553-566`](../jvagent/memory/conversation.py)) **skips** the `role: "user"` entry when the utterance is empty/whitespace. A proactive interaction therefore renders as a standalone `assistant` turn in the model's history, sitting cleanly between the surrounding user/assistant pairs.
+`Conversation._format_interactions` ([`conversation.py:674`](../jvagent/memory/conversation.py)) **skips** the `role: "user"` entry when the utterance is empty/whitespace. A proactive interaction therefore renders as a standalone `assistant` turn in the model's history, sitting cleanly between the surrounding user/assistant pairs.
 
 Example transcript fed to the LLM:
 
@@ -169,7 +169,7 @@ Example transcript fed to the LLM:
 
 - The message must be LLM-generated based on conversation state. Queue a `PROACTIVE` task (`enqueue_proactive`, `queue_task`, or `TaskCreationInteractAction`) and let `TaskMonitor` dispatch it through the full Orchestrator pipeline. See [`docs/task-tracking.md`](task-tracking.md) and ADR-0022.
 - You want to record a message that another system already delivered (e.g. the human owner of a WhatsApp account typed a reply directly via the WhatsApp UI). Publishing through this method would re-send the text. A record-only sibling helper is out of scope for now.
-- You are already inside an `InteractAction.execute(visitor)` and just want to send a reply for the current turn. Use `await self.publish(visitor, content)` / `await self.respond(visitor, ...)` — the canonical in-pipeline path ([`interact/base.py:193-274`](../jvagent/action/interact/base.py)).
+- You are already inside an `InteractAction.execute(visitor)` and just want to send a reply for the current turn. Use `await self.publish(visitor, content)` / `await self.respond(visitor, ...)` — the canonical in-pipeline path ([`interact/base.py:293`](../jvagent/action/interact/base.py)).
 
 ---
 
@@ -186,7 +186,7 @@ This means recording survives misconfiguration, but external delivery silently d
 
 ## Concurrency
 
-`Conversation.add_interaction` acquires the distributed `conversation_mutation_lock` ([`conversation.py:232-238`](../jvagent/memory/conversation.py)). Proactive sends serialize against inbound webhooks on the same conversation, so the chain never forks.
+`Conversation.add_interaction` acquires the distributed `conversation_mutation_lock` ([`conversation.py:277`](../jvagent/memory/conversation.py)). Proactive sends serialize against inbound webhooks on the same conversation, so the chain never forks.
 
 ---
 

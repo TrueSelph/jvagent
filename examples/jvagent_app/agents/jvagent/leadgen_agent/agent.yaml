@@ -1,0 +1,129 @@
+agent: jvagent/leadgen_agent
+version: 0.1.0
+author: jvagent
+jvagent: ~0.0.1
+
+context:
+  alias: Lead Gen Assistant
+  role: >-
+    A friendly sales assistant that helps visitors learn about products while
+    naturally collecting contact details for follow-up.
+  description: Reference agent for LeadGenAction — conversational lead capture with MCP sync.
+  enabled: true
+  interaction_limit: 20
+
+actions:
+  # ── Orchestrator — routes across three coexisting skills ──
+  # product_inquiry_leads (always-active leadgen capture), product_faq, and
+  # product_search share one tool surface. Model floor: gpt-4.1 — a weaker model
+  # (gpt-4o-mini) misroutes / stalls once a turn spans skills. See
+  # docs/ORCHESTRATOR.md "Model floor".
+  - action: jvagent/orchestrator
+    context:
+      enabled: true
+      model: gpt-4.1
+      model_action_type: OpenAILanguageModelAction
+      model_temperature: 0.3
+      skills_source: both
+      skills:
+        - product_inquiry_leads   # always-active leadgen capture (LeadGenAction)
+        - product_faq             # answer common product questions (StorefrontAction)
+        - product_search          # find / compare catalog products (StorefrontAction)
+      lock_active_flow: false
+      # Multi-intent + anti-confabulation nudge. Compound asks ("product X and
+      # free trial?") tempt the model to satisfy one intent and guess the rest —
+      # e.g. return the product but wrongly claim "no free trial" without calling
+      # storefront__faq. This makes it look up each fact before answering.
+      system_prompt_extra: >-
+        When the visitor asks about more than one thing in a single turn, handle
+        each part: make a separate tool call for each distinct need before you
+        answer. Never state a product, price, plan, free-trial, or policy detail
+        you have not just confirmed from a tool result — if you have not looked it
+        up this turn, call storefront__faq or storefront__search_products rather
+        than guessing or saying it is unavailable.
+
+  # ── LeadGenAction — conversational capture + sync ──
+  # Sync is configured here (not in the skill frontmatter): destinations are
+  # deployment/infra. The skill defines WHAT to capture; the agent defines WHERE
+  # it syncs. Destination-agnostic — any MCP server exposing a write/append tool
+  # (flat file, spreadsheet, email, CRM, DB); only server/tool/arguments change.
+  # Applies when the active leadgen skill declares no sync of its own.
+  - action: jvagent/leadgen
+    context:
+      enabled: true
+      sync_mode: on_capture          # on_capture | on_complete | manual
+      sync_min_fields: [name]        # all must be present before sync
+      sync_require_any: [phone, email]  # at least one must be present
+      sync_destinations:
+        - server: leadfile           # any configured MCP server (see MCPAction)
+          mode: mcp
+          tool: write_file
+          arguments:
+            path: "lead.json"
+            # Prefixed so the substituted value stays a STRING — a bare
+            # "{profile_json}" would be re-parsed into an object (that form is
+            # for structured args like {profile_row}), which write_file rejects.
+            content: "Lead profile: {profile_json}"
+
+  # ── Mock storefront (app-local, contrib/) — dummy-data FAQ + catalog tools ──
+  # Supplies storefront__faq and storefront__search_products, which the
+  # product_faq and product_search skills pin via allowed-tools.
+  - action: contrib/storefront
+    context:
+      enabled: true
+
+  # ── Intro opener — greets first-time visitors before the orchestrator runs ──
+  # weight -300, always_execute; fires only when visitor.new_user. Contributed as
+  # a response-shaping PARAMETER (HOW), so the greeting is woven into the same
+  # reply as any substantive answer instead of a separate blurb.
+  - action: jvagent/intro_interact_action
+    context:
+      enabled: true
+      directive: >-
+        This is the visitor's first message. Open your reply by warmly
+        introducing yourself by name as the Lead Gen Assistant, a friendly sales
+        assistant who can answer product questions (pricing, free trial,
+        onboarding, integrations) and help find the right product — in one short
+        sentence — then continue naturally into the rest of your reply. If they
+        have not asked anything specific yet, invite them to share what they're
+        working on. Do not mention any knowledge cutoff, training date,
+        underlying model, or provider.
+
+  # MCP gateway for leadgen sync. Leadgen syncs through the standard MCP
+  # interface (server + tool + arguments), so a destination is just config — a
+  # flat file, spreadsheet, email, CRM, or database all look the same. `leadfile`
+  # here is a creds-free sandboxed filesystem server (per user under
+  # <files_root>/<agent>/<user>/) that writes the captured profile to lead.json,
+  # so the sync path runs end-to-end without external accounts. Point it at any
+  # other MCP server for production — no code changes.
+  - action: jvagent/mcp
+    context:
+      enabled: true
+      sandbox_mode: true
+      sandbox_user_scoped: true
+      servers:
+        # type: jvspatial_fs → jvagent's built-in FileStorageInterface-backed fs
+        # server; logical paths resolve inside the per-user sandbox, so a bare
+        # "lead.json" lands in <files_root>/<agent>/<user>/ (no npx, no cwd/path
+        # mismatch).
+        - name: leadfile
+          enabled: true
+          type: jvspatial_fs
+          transport: stdio
+          mcp_connect_timeout: 30
+          mcp_call_timeout: 30
+          tools: "-all"
+          denied_tools: []
+
+  - action: jvagent/reply
+    context:
+      enabled: true
+      model: gpt-4o-mini
+      model_action_type: OpenAILanguageModelAction
+      model_temperature: 0.3
+
+  - action: jvagent/openai_lm
+    context:
+      enabled: true
+      model: gpt-4o-mini
+      temperature: 0.2

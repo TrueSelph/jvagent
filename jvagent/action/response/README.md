@@ -24,7 +24,7 @@ flowchart TB
 
     subgraph ActionLayer [Action Layer]
         A1["InteractAction.publish(stream=visitor.stream)"]
-        A2["PersonaAction.respond(stream=visitor.stream)"]
+        A2["ReplyAction.respond(stream=visitor.stream)"]
         A3["Model streaming(stream=visitor.stream)"]
     end
 

@@ -1,10 +1,9 @@
 """Caching layer for Agent, Memory, and Action nodes to reduce database I/O."""
 
 import asyncio
-import hashlib
-import json
 import logging
 import random
+import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -50,7 +49,7 @@ def _perf_config_value(
 
 
 class CacheManager:
-    """Encapsulated cache state and TTL-based expiration for agent, action, and router caches.
+    """Encapsulated cache state and TTL-based expiration for agent and action caches.
 
     Instantiated once as a module-level singleton. Config is reloaded from
     app.yaml via :meth:`reload_config`.
@@ -59,15 +58,20 @@ class CacheManager:
     def __init__(self) -> None:
         self._agent_cache: Dict[str, Tuple[Any, datetime]] = {}
         self._action_cache: Dict[str, Tuple[List[Any], datetime]] = {}
-        self._router_cache: Dict[str, Tuple[Dict[str, Any], datetime]] = {}
         # Action type index: {agent_id: {class_name: action_id}}
         self._action_type_index: Dict[str, Dict[str, str]] = {}
 
         # Locks are created lazily per running event loop. Module-import locks
         # break on serverless warm starts where each invocation gets a fresh
         # loop; deferring creation to first ``async with`` keeps each loop
-        # paired with its own primitive.
+        # paired with its own primitive. ``_locks_guard`` keeps dict access
+        # safe across worker threads, and ``_lock_loops`` retains each loop so
+        # entries from closed loops can be evicted (one lock set per
+        # invocation would otherwise accumulate forever — the same leak
+        # ``App._get_lock`` guards against).
         self._loop_locks: Dict[Tuple[int, str], asyncio.Lock] = {}
+        self._lock_loops: Dict[int, Any] = {}
+        self._locks_guard = threading.Lock()
 
         self._config: Dict[str, Any] = {}
         self._load_defaults()
@@ -75,11 +79,26 @@ class CacheManager:
     def _lock(self, name: str) -> asyncio.Lock:
         """Return a lock for *name* bound to the current running loop."""
         loop = asyncio.get_running_loop()
-        key = (id(loop), name)
-        lock = self._loop_locks.get(key)
-        if lock is None:
-            lock = asyncio.Lock()
-            self._loop_locks[key] = lock
+        loop_id = id(loop)
+        key = (loop_id, name)
+        with self._locks_guard:
+            lock = self._loop_locks.get(key)
+            if lock is None:
+                lock = asyncio.Lock()
+                self._loop_locks[key] = lock
+                self._lock_loops[loop_id] = loop
+            # Evict entries whose loops have closed (serverless warm starts).
+            # Holding the loop reference keeps its id from being reused while
+            # the entry exists, so the id-keyed check stays sound.
+            stale_ids = [
+                lid
+                for lid, lp in self._lock_loops.items()
+                if lid != loop_id and lp.is_closed()
+            ]
+            for lid in stale_ids:
+                self._lock_loops.pop(lid, None)
+                for k in [k for k in self._loop_locks if k[0] == lid]:
+                    self._loop_locks.pop(k, None)
         return lock
 
     @property
@@ -91,10 +110,6 @@ class CacheManager:
         return self._lock("action")
 
     @property
-    def _router_lock(self) -> asyncio.Lock:
-        return self._lock("router")
-
-    @property
     def _action_type_lock(self) -> asyncio.Lock:
         return self._lock("action_type")
 
@@ -103,8 +118,6 @@ class CacheManager:
         self.agent_cache_ttl: int = 300
         self.action_cache_enabled: bool = True
         self.action_cache_ttl: int = 60
-        self.router_cache_enabled: bool = False
-        self.router_cache_ttl: int = 45
         self.cleanup_probability: float = 0.1
 
     def reload_config(self) -> None:
@@ -133,25 +146,10 @@ class CacheManager:
             0.1,
             float,
         )
-        self.router_cache_enabled = _perf_config_value(
-            self._config,
-            "enable_interact_router_cache",
-            "JVAGENT_ENABLE_INTERACT_ROUTER_CACHE",
-            False,
-            bool,
-        )
-        self.router_cache_ttl = _perf_config_value(
-            self._config,
-            "interact_router_cache_ttl",
-            "JVAGENT_INTERACT_ROUTER_CACHE_TTL",
-            45,
-            int,
-        )
         logger.debug(
-            "Performance config reloaded: agent=%s action=%s router=%s",
+            "Performance config reloaded: agent=%s action=%s",
             self.agent_cache_enabled,
             self.action_cache_enabled,
-            self.router_cache_enabled,
         )
 
     # -- Agent cache ----------------------------------------------------------
@@ -255,61 +253,6 @@ class CacheManager:
             else:
                 self._action_type_index.clear()
 
-    # -- Router cache ---------------------------------------------------------
-
-    @staticmethod
-    def router_cache_key(
-        conversation_id: str,
-        utterance: str,
-        last_interaction_ids: Tuple[str, ...],
-        buffer_fingerprint: str,
-        active_task_fingerprint: str,
-        proactive_tasks_fingerprint: str = "",
-        user_id: str = "",
-    ) -> str:
-        # ``user_id`` is included so router-decision cache entries cannot
-        # bleed across users even if a future refactor reuses a single
-        # ``conversation_id`` across multiple Users (group chat / shared
-        # session). Routing decisions carry per-user interpretation text.
-        # AUDIT-interact HIGH-04.
-        payload = json.dumps(
-            {
-                "conversation_id": conversation_id,
-                "utterance": utterance,
-                "last_ids": last_interaction_ids,
-                "buffer": buffer_fingerprint,
-                "active_tasks": active_task_fingerprint,
-                "proactive_tasks": proactive_tasks_fingerprint,
-                "user_id": user_id,
-            },
-            sort_keys=True,
-        )
-        return hashlib.sha256(payload.encode()).hexdigest()
-
-    async def get_router(
-        self, cache_key: str, caller_enabled: bool = True
-    ) -> Optional[Dict[str, Any]]:
-        if not caller_enabled or not self.router_cache_enabled:
-            return None
-        async with self._router_lock:
-            entry = self._router_cache.get(cache_key)
-            if entry:
-                data, cached_at = entry
-                now = await _get_now()
-                if (now - cached_at).total_seconds() < self.router_cache_ttl:
-                    return data
-                del self._router_cache[cache_key]
-        return None
-
-    async def set_router(
-        self, cache_key: str, result: Dict[str, Any], caller_enabled: bool = True
-    ) -> None:
-        if not caller_enabled or not self.router_cache_enabled:
-            return
-        payload = {k: v for k, v in result.items() if k != "reasoning"}
-        async with self._router_lock:
-            self._router_cache[cache_key] = (payload, await _get_now())
-
     # -- Cleanup --------------------------------------------------------------
 
     async def cleanup_expired(self) -> bool:
@@ -334,16 +277,6 @@ class CacheManager:
             ]
             for k in expired:
                 del self._action_cache[k]
-            cleaned += len(expired)
-
-        async with self._router_lock:
-            expired = [
-                k
-                for k, (_, ts) in self._router_cache.items()
-                if (now - ts).total_seconds() >= self.router_cache_ttl
-            ]
-            for k in expired:
-                del self._router_cache[k]
             cleaned += len(expired)
 
         try:
@@ -381,9 +314,6 @@ class CacheManager:
                 for _, (_, ts) in self._action_cache.items()
                 if (now - ts).total_seconds() >= self.action_cache_ttl
             )
-        async with self._router_lock:
-            router_size = len(self._router_cache)
-
         return {
             "agent_cache": {
                 "enabled": self.agent_cache_enabled,
@@ -396,11 +326,6 @@ class CacheManager:
                 "size": len(self._action_cache),
                 "expired": action_expired,
                 "ttl_seconds": self.action_cache_ttl,
-            },
-            "interact_router_cache": {
-                "enabled": self.router_cache_enabled,
-                "size": router_size,
-                "ttl_seconds": self.router_cache_ttl,
             },
         }
 
@@ -459,38 +384,6 @@ async def cache_action_type_index(
 
 async def invalidate_action_type_index(agent_id: Optional[str] = None) -> None:
     await cache_manager.invalidate_action_type_index(agent_id)
-
-
-def interact_router_cache_key(
-    conversation_id: str,
-    utterance: str,
-    last_interaction_ids: Tuple[str, ...],
-    buffer_fingerprint: str,
-    active_task_fingerprint: str,
-    proactive_tasks_fingerprint: str = "",
-    user_id: str = "",
-) -> str:
-    return cache_manager.router_cache_key(
-        conversation_id,
-        utterance,
-        last_interaction_ids,
-        buffer_fingerprint,
-        active_task_fingerprint,
-        proactive_tasks_fingerprint,
-        user_id=user_id,
-    )
-
-
-async def get_interact_router_cache(
-    cache_key: str, caller_enabled: bool = True
-) -> Optional[Dict[str, Any]]:
-    return await cache_manager.get_router(cache_key, caller_enabled)
-
-
-async def set_interact_router_cache(
-    cache_key: str, result: Dict[str, Any], caller_enabled: bool = True
-) -> None:
-    await cache_manager.set_router(cache_key, result, caller_enabled)
 
 
 async def get_cache_stats() -> Dict[str, Any]:

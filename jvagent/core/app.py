@@ -2,10 +2,9 @@
 
 import asyncio
 import logging
-import os
 import threading
 from datetime import datetime, timezone
-from typing import Any, ClassVar, Dict, Optional, Type, Union
+from typing import Any, ClassVar, Dict, Optional, Type, Union, overload
 
 from jvspatial.api.constants import APIRoutes
 from jvspatial.api.context import get_current_server
@@ -243,6 +242,12 @@ class App(Node):
     # Datetime (App Timezone)
     # ============================================================================
 
+    @overload
+    async def now(self, fmt: None = None) -> datetime: ...
+
+    @overload
+    async def now(self, fmt: str) -> str: ...
+
     async def now(self, fmt: Optional[str] = None) -> Union[datetime, str]:
         """Current datetime in app timezone (or server local if unset).
 
@@ -284,11 +289,8 @@ class App(Node):
         """
         import logging
 
-        from jvagent.action.base import Action
-        from jvagent.core.agent import Agent
-
         logger = logging.getLogger(__name__)
-        results = {}
+        results: Dict[str, bool] = {}
 
         try:
             # Get all agents via App -> Agents -> Agent path

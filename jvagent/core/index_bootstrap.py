@@ -141,7 +141,6 @@ def _collect_entity_classes():
     from jvagent.memory.conversation import Conversation
     from jvagent.memory.interaction import Interaction
     from jvagent.memory.user import User
-    from jvagent.memory.user_long_memory import UserLongMemory, UserLongMemoryNode
 
     classes.extend(
         [
@@ -150,8 +149,6 @@ def _collect_entity_classes():
             Conversation,
             Interaction,
             User,
-            UserLongMemory,
-            UserLongMemoryNode,
             RepairState,
         ]
     )

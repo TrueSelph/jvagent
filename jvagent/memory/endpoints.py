@@ -11,12 +11,18 @@ from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
 from jvspatial.logging.filter_utils import validate_log_filter
 
 from jvagent.core.agent import Agent
-from jvagent.memory.manager import Memory
-from jvagent.memory.services.long_memory_service import LongMemoryService
 from jvagent.memory.user import User
 
 logger = logging.getLogger(__name__)
-_long_memory_service = LongMemoryService()
+
+
+def _user_memory_payload(user: User) -> Dict[str, Any]:
+    """Return the caller's durable ``User.memory`` dict (+ tags when set)."""
+    payload: Dict[str, Any] = dict(user.memory or {})
+    tags = user.memory_tags
+    if tags:
+        payload["_memory_tags"] = list(tags)
+    return payload
 
 
 def _user_context_matches(user: User, filter_query: Dict[str, Any]) -> bool:
@@ -27,7 +33,7 @@ def _user_context_matches(user: User, filter_query: Dict[str, Any]) -> bool:
         "user_id": user.user_id,
         "name": user.name,
         "display_name": user.display_name,
-        "user_model": user.user_model,
+        "memory": user.memory,
         "usage": user.usage,
         "created_at": user.created_at.isoformat() if user.created_at else None,
         "last_seen": user.last_seen.isoformat() if user.last_seen else None,
@@ -437,7 +443,7 @@ async def repair_memory(
         data={
             "memory": ResponseField(
                 field_type=dict,
-                description="Your long-term memory structured by category",
+                description="User.memory durable dict for the requesting user",
             ),
         }
     ),
@@ -447,10 +453,10 @@ async def get_my_memory(
     user_id: Optional[str] = None,
     current_user: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    """Get the current user's long-term memory for an agent.
+    """Get the current user's durable memory for an agent.
 
-    Returns memory categories for the requesting user. Any authenticated user
-    can call this endpoint to see their own stored profile data.
+    Returns ``User.memory`` (and ``_memory_tags`` when tags are set). Any
+    authenticated user can call this endpoint to see their own stored data.
 
     **Args:**
     - `agent_id`: Agent node ID
@@ -463,7 +469,7 @@ async def get_my_memory(
       input by a routing-layer regression.
 
     **Returns:**
-    - `memory`: { category_key: { title, content, updated_at } }
+    - `memory`: ``User.memory`` dict
     """
     # Prefer current_user (authenticated object) over user_id (string) so a
     # leak in the routing layer cannot drive cross-user reads.
@@ -493,7 +499,7 @@ async def get_my_memory(
     if not user:
         return {"memory": {}}
 
-    return {"memory": await _long_memory_service.get_memory_content(user)}
+    return {"memory": _user_memory_payload(user)}
 
 
 @endpoint(
@@ -506,7 +512,7 @@ async def get_my_memory(
         data={
             "memory": ResponseField(
                 field_type=dict,
-                description="User's long-term memory structured by category",
+                description="User.memory durable dict",
             ),
         }
     ),
@@ -515,16 +521,16 @@ async def get_user_memory_content(
     agent_id: str,
     user_id: str,
 ) -> Dict[str, Any]:
-    """Get a specific user's long-term memory for an agent (admin only).
+    """Get a specific user's durable memory for an agent (admin only).
 
-    Returns a dictionary mapping category titles to their markdown content.
+    Returns ``User.memory`` (and ``_memory_tags`` when tags are set).
 
     **Args:**
     - `agent_id`: Agent node ID
     - `user_id`: Target user's identifier
 
     **Returns:**
-    - `memory`: { category_title: content }
+    - `memory`: ``User.memory`` dict
     """
     agent = await Agent.get(agent_id)
     if not agent:
@@ -538,4 +544,4 @@ async def get_user_memory_content(
     if not user:
         raise ResourceNotFoundError(f"User '{user_id}' not found")
 
-    return {"memory": await _long_memory_service.get_memory_content(user)}
+    return {"memory": _user_memory_payload(user)}

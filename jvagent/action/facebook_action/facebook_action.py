@@ -18,7 +18,7 @@ from jvspatial.env import env
 from jvspatial.exceptions import DatabaseError, ValidationError
 
 from jvagent.action.base import Action
-from jvagent.action.whatsapp.webhook_auth import get_or_create_system_user
+from jvagent.action.facebook_action.webhook_auth import get_or_create_system_user
 from jvagent.core.public_url import get_public_base_url
 
 from .facebook_api import FacebookAPI

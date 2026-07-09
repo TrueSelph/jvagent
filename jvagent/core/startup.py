@@ -1,11 +1,17 @@
 """App startup coordinator for jvagent."""
 
 import logging
-from typing import Optional
+import time
 
 logger = logging.getLogger(__name__)
 
 _startup_completed = False
+# Monotonic timestamp of the last failed startup attempt. A failed attempt
+# backs off for ``_STARTUP_RETRY_SECONDS`` instead of re-running the full
+# action init on every call — otherwise a persistently-failing action turns
+# each request into a retry storm.
+_startup_last_failure: float = 0.0
+_STARTUP_RETRY_SECONDS: float = 30.0
 _repair_scheduler = None
 
 
@@ -119,10 +125,17 @@ async def run_app_startup() -> bool:
     Returns:
         True if startup succeeded, False otherwise
     """
-    global _startup_completed
+    global _startup_completed, _startup_last_failure
 
     if _startup_completed:
         return True
+    if (
+        _startup_last_failure
+        and (time.monotonic() - _startup_last_failure) < _STARTUP_RETRY_SECONDS
+    ):
+        # A recent attempt failed; don't re-run the full action init on every
+        # call — wait out the backoff window first.
+        return False
 
     try:
         from jvagent.core.app import App
@@ -130,6 +143,7 @@ async def run_app_startup() -> bool:
         app = await App.get()
         if not app:
             logger.warning("App not found during startup")
+            _startup_last_failure = time.monotonic()
             return False
 
         # Initialize all actions
@@ -140,10 +154,12 @@ async def run_app_startup() -> bool:
             logger.warning(
                 f"Startup completed with {failed_count} action(s) failing initialization"
             )
+            _startup_last_failure = time.monotonic()
             return False
         else:
             logger.info("App startup completed successfully")
             _startup_completed = True
+            _startup_last_failure = 0.0
 
             # Start the optional periodic repair scheduler (no-op if env var unset).
             await start_repair_scheduler()
@@ -152,4 +168,5 @@ async def run_app_startup() -> bool:
 
     except Exception as e:
         logger.error(f"Error during app startup: {e}", exc_info=True)
+        _startup_last_failure = time.monotonic()
         return False

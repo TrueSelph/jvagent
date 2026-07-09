@@ -74,12 +74,12 @@ This example app uses core actions from the jvagent library. All configuration i
 
 ### Available Core Actions
 
-- **`jvagent/interact_router`** - Unified posture classification + intent-based routing for InteractActions
+- **`jvagent/orchestrator`** — Orchestrator turn model (replaces removed `interact_router`)
 - **`jvagent/openai_lm`** - OpenAI language model (multimodal support)
 - **`jvagent/openai_embedding`** - OpenAI embedding model
 - **`jvagent/pageindex_action`** - PageIndex vectorless RAG (requires `jvagent[pageindex]`)
 - **`jvagent/typesense_vectorstore`** - Typesense vector store
-- **`jvagent/retrieval_interact_action`** - Context retrieval from vector stores
+- **`jvagent/reply`** - Egress voice (reply/respond tools)
 
 ### Using the Model Action
 
@@ -218,8 +218,6 @@ Tips for cost reduction:
 
 - Core action docs: `jvagent/action/model/language/openai/README.md`
 - Core action docs: `jvagent/action/model/embedding/openai/README.md`
-- Core action docs: `jvagent/action/router/README.md`
-- Core action docs: `jvagent/action/retrieval/README.md`
 - Core action docs: `jvagent/action/vectorstore/typesense/README.md`
 - Main jvagent README: `../../README.md`
 

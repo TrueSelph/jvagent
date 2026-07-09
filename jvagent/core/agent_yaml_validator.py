@@ -28,7 +28,18 @@ _SEEN_WARNING_KEYS: Set[str] = set()
 
 _ALLOWED_TOP_LEVEL = {"agent", "version", "author", "jvagent", "context", "actions"}
 _ALLOWED_ACTION_ENTRY_KEYS = {"action", "context", "config"}
-_ORCHESTRATOR_ACTIONS = frozenset({"jvagent/orchestrator", "jvagent/interact_router"})
+_REMOVED_ACTION_REFS = frozenset(
+    {
+        "jvagent/interact_router",
+        "jvagent/converse_interact_action",
+        "jvagent/retrieval_interact_action",
+        "jvagent/web_search_retrieval_interact_action",
+        "jvagent/long_memory_retrieval_interact_action",
+        "jvagent/pageindex_retrieval_interact_action",
+        "jvagent/long_memory_interact_action",
+        "jvagent/long_memory_store_interact_action",
+    }
+)
 
 
 def _mk(path: str, message: str, hint: str = "") -> AgentYamlWarning:
@@ -92,6 +103,7 @@ def validate_agent_yaml(data: Dict[str, Any]) -> List[AgentYamlWarning]:
         warnings.append(_mk("actions", f"Expected list, got {type(actions).__name__}"))
         return warnings
 
+    orchestrator_count = 0
     for idx, action_entry in enumerate(actions):
         path = f"actions[{idx}]"
         if not isinstance(action_entry, dict):
@@ -112,26 +124,29 @@ def validate_agent_yaml(data: Dict[str, Any]) -> List[AgentYamlWarning]:
                     "Expected namespace/action_name format",
                 )
             )
+        elif action_ref in _REMOVED_ACTION_REFS:
+            warnings.append(
+                _mk(
+                    f"{path}.action",
+                    f"Removed in jvagent 0.1.1: {action_ref}",
+                    hint=(
+                        "Use jvagent/orchestrator and tool-based actions "
+                        "(pageindex, skills, MCP) instead of Rails-era IAs."
+                    ),
+                )
+            )
+        elif action_ref == "jvagent/orchestrator":
+            orchestrator_count += 1
 
         _expect_type(warnings, f"{path}.context", action_entry.get("context"), (dict,))
         _expect_type(warnings, f"{path}.config", action_entry.get("config"), (dict,))
 
-    orchestrators = [
-        entry.get("action")
-        for entry in actions
-        if isinstance(entry, dict)
-        and isinstance(entry.get("action"), str)
-        and entry.get("action") in _ORCHESTRATOR_ACTIONS
-    ]
-    if len(orchestrators) > 1:
+    if orchestrator_count > 1:
         warnings.append(
             _mk(
                 "actions",
-                f"Mutually exclusive orchestrators installed: {orchestrators}",
-                hint=(
-                    "Use either jvagent/orchestrator or jvagent/interact_router, "
-                    "not both on the same agent."
-                ),
+                f"Multiple orchestrators installed ({orchestrator_count})",
+                hint="Install at most one jvagent/orchestrator action per agent.",
             )
         )
 

@@ -39,19 +39,19 @@ def mock_core_action_cache():
                 "package": {
                     "name": "jvagent/whatsapp",
                     "archetype": "WhatsAppAction",
-                    "dependencies": {"actions": ["jvagent/interact_router"]},
+                    "dependencies": {"actions": ["jvagent/reply"]},
                 }
             },
         },
-        "interact_router": {
-            "dir": Path("/mock/jvagent/action/router"),
-            "module_file": "router_action",
-            "class_name": "RouterAction",
-            "relative_path": "router",
+        "reply": {
+            "dir": Path("/mock/jvagent/action/reply"),
+            "module_file": "reply_action",
+            "class_name": "ReplyAction",
+            "relative_path": "reply",
             "data": {
                 "package": {
-                    "name": "jvagent/interact_router",
-                    "archetype": "RouterAction",
+                    "name": "jvagent/reply",
+                    "archetype": "ReplyAction",
                     "dependencies": {"actions": []},
                 }
             },
@@ -165,19 +165,19 @@ class TestActionLoaderDependencyResolution:
         """Test that simple dependencies are resolved correctly."""
         mock_build_cache.return_value = mock_core_action_cache
 
-        # Mock metadata for whatsapp (depends on interact_router)
+        # Mock metadata for whatsapp (depends on reply)
         whatsapp_metadata = MagicMock()
-        whatsapp_metadata.dependencies = {"actions": ["jvagent/interact_router"]}
+        whatsapp_metadata.dependencies = {"actions": ["jvagent/reply"]}
 
-        # Mock metadata for interact_router (no dependencies)
-        router_metadata = MagicMock()
-        router_metadata.dependencies = {"actions": []}
+        # Mock metadata for reply (no dependencies)
+        reply_metadata = MagicMock()
+        reply_metadata.dependencies = {"actions": []}
 
         def load_metadata_side_effect(action_ref, core_cache):
             if action_ref == "jvagent/whatsapp":
                 return whatsapp_metadata
-            elif action_ref == "jvagent/interact_router":
-                return router_metadata
+            elif action_ref == "jvagent/reply":
+                return reply_metadata
             return None
 
         mock_load_metadata.side_effect = load_metadata_side_effect
@@ -192,12 +192,12 @@ class TestActionLoaderDependencyResolution:
 
         # Should include both whatsapp and its dependency
         assert "jvagent/whatsapp" in resolved
-        assert "jvagent/interact_router" in resolved
+        assert "jvagent/reply" in resolved
         assert len(resolved) == 2
 
         # Both should be in resolved_actions
         assert "jvagent/whatsapp" in registry.resolved_actions
-        assert "jvagent/interact_router" in registry.resolved_actions
+        assert "jvagent/reply" in registry.resolved_actions
 
     @patch.object(ActionLoader, "_build_core_action_cache")
     @patch.object(ActionLoader, "_load_action_metadata_for_deps")
@@ -304,20 +304,20 @@ class TestActionLoaderDependencyResolution:
         mock_build_cache.return_value = mock_core_action_cache
 
         metadata = MagicMock()
-        metadata.dependencies = {"actions": ["jvagent/interact_router"]}
+        metadata.dependencies = {"actions": ["jvagent/reply"]}
 
         mock_load_metadata.return_value = metadata
 
         registry = ActionRegistry()
         registry.add_required_action("jvagent/whatsapp")
-        registry.resolved_actions.add("jvagent/interact_router")  # Already resolved
+        registry.resolved_actions.add("jvagent/reply")  # Already resolved
 
         # Resolve dependencies
         resolved = action_loader._resolve_action_dependencies(
             "jvagent/whatsapp", mock_core_action_cache, registry
         )
 
-        # Should only return whatsapp (interact_router already resolved)
+        # Should only return whatsapp (reply already resolved)
         assert "jvagent/whatsapp" in resolved
         assert len(resolved) == 1
 

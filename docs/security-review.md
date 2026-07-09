@@ -209,11 +209,11 @@ The server returns JSON responses. No HTML templating is done server-side for us
 
 **Files:** `jvagent/core/env_resolver.py`
 
-The `resolve_env_placeholders()` function replaces `${VAR_NAME}` in YAML config strings with `os.getenv(VAR_NAME, "")`. Missing vars become empty strings silently (debug log only, unless `${VAR_NAME:?}` syntax is used or `JVAGENT_WARN_EMPTY_PLACEHOLDERS=true`).
+The `resolve_env_placeholders()` function replaces `${VAR_NAME}` in YAML config strings with `os.getenv(VAR_NAME, "")`. Missing vars become empty strings and log a **WARNING by default** (set `JVAGENT_WARN_EMPTY_PLACEHOLDERS=false` to demote to debug); `${VAR_NAME:?}` always warns.
 
-**Finding (Low):** If an `agent.yaml` contains `${SECRET_KEY}` and the env var is not set, the action silently receives an empty string. For critical secrets (API keys, OAuth credentials), this could lead to confusing failures downstream. The `${VAR_NAME:?}` syntax provides a warning mechanism but is opt-in.
+**Finding (Low, mitigated):** If an `agent.yaml` contains `${SECRET_KEY}` and the env var is not set, the action still receives an empty string, but the miss is now visible in logs by default.
 
-**Recommendation:** Consider making `${VAR:?}` the default for secrets-related config keys or adding a `required: true` alternative syntax.
+**Recommendation:** For critical secrets consider a hard-fail `required` syntax in addition to the default warning.
 
 ### 4.2 No Hardcoded Secrets in Source (Good)
 

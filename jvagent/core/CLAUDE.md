@@ -24,20 +24,20 @@ It does **not** own: per-user state (that's `memory/`), action plugins (that's `
 
 | File | Purpose |
 |---|---|
-| `app.py:19` | `App` node — singleton, file storage, timezone, update_mode |
-| `app.py:97-117` | Per-event-loop lock pattern (use this verbatim for any node singleton) |
-| `app.py:537` | `set_app_update_mode` — example of mutating a `protected=True` field |
-| `agent.py:18` | `Agent` node + `Agent.get(agent_id)` cached fetch |
-| `agent.py:62-83` | Cache-aware fetch via `cache_manager.get_agent()` |
-| `agent.py:199-205` | `Agent.get_memory()` — resolves attached `Memory` node |
-| `agent.py:211-224` | `Agent.get_response_bus()` — lazy per-agent `ResponseBus` singleton |
-| `agent.py:226-319` | `Agent.send_proactive_message()` — programmatic, response-only message send; resolves User/Conversation, creates empty-utterance Interaction, publishes via `ResponseBus` (auto-records + auto-dispatches to channel adapter). See [`docs/proactive-messages.md`](../../docs/proactive-messages.md). |
+| `app.py:21` | `App` node — singleton, file storage, timezone, update_mode |
+| `app.py:90-124` | Per-event-loop lock pattern (use this verbatim for any node singleton) |
+| `app.py:596` | `set_app_update_mode` — example of mutating a `protected=True` field |
+| `agent.py:30` | `Agent` node + `Agent.get(agent_id)` cached fetch |
+| `agent.py:108-118` | Cache-aware fetch via `cache_manager.get_agent()` |
+| `agent.py:244` | `Agent.get_memory()` — resolves attached `Memory` node |
+| `agent.py:256` | `Agent.get_response_bus()` — lazy per-agent `ResponseBus` singleton |
+| `agent.py:271-358` | `Agent.send_proactive_message()` — programmatic, response-only message send; resolves User/Conversation, creates empty-utterance Interaction, publishes via `ResponseBus` (auto-records + auto-dispatches to channel adapter). See [`docs/proactive-messages.md`](../../docs/proactive-messages.md). |
 | `agents.py:17` | `Agents` branchpoint node |
 | `app_loader.py` | `app.yaml → App` translation |
 | `agent_loader.py` | `agent.yaml → Agent + Action graph` |
 | `app_yaml_validator.py` | Schema-level validation of `app.yaml` |
 | `agent_yaml_validator.py` | Same, for `agent.yaml` |
-| `config.py:59-150` | `ConfigKey` / `ConfigSchema` precedence resolution |
+| `config.py:60-150` | `ConfigKey` / `ConfigSchema` precedence resolution |
 | `env_resolver.py` | Expands `${ENV_VAR}` placeholders in config |
 | `cache.py` | Per-agent action-type index; `cache_manager` for `Agent.get()` |
 | `bootstrap_logger.py` | Startup logging context manager |
@@ -54,18 +54,18 @@ It does **not** own: per-user state (that's `memory/`), action plugins (that's `
 ## 3. Contracts (don't break)
 
 1. **`App` is a singleton.** Always go through `await App.get()` — never construct it directly.
-2. **`App._cached_app` and per-loop lock** ([`app.py:88-117`](app.py)) must be preserved exactly. Serverless warm-starts depend on it.
-3. **`Agent.save()` invalidates cache** ([`agent.py:200-227`](agent.py)). If you bypass `.save()`, also invalidate manually via `invalidate_agent_cache(agent.id)`.
-4. **`App.update_mode` resets to `run`** after a successful bootstrap (in `cli/commands.py:run_server` / `bootstrap_only`). Don't let one-shot merge/source operations persist.
+2. **`App._cached_app` and per-loop lock** ([`app.py:90-124`](app.py)) must be preserved exactly. Serverless warm-starts depend on it.
+3. **`Agent.save()` invalidates cache** ([`agent.py:408`](agent.py)). If you bypass `.save()`, also invalidate manually via `invalidate_agent_cache(agent.id)`.
+4. **`App.update_mode` resets to `run`** after a successful bootstrap (in `cli/server.py:run_server` / `bootstrap_only`). Don't let one-shot merge/source operations persist.
 5. **`protected=True` fields require `object.__setattr__` + `await save()`** (see [`set_app_update_mode`](app.py)). Plain assignment is dropped silently in bulk overwrite paths.
-6. **App.now() timezone semantics** ([`app.py:189`](app.py)):
+6. **App.now() timezone semantics** ([`app.py:251`](app.py)):
    - Returns `datetime` if `fmt` is `None`, else a formatted `str`.
    - If `App.timezone` (IANA name, e.g. `America/New_York`) is set, the
      returned `datetime` is **timezone-aware** in that zone.
    - If `App.timezone` is unset or invalid, returns `datetime.now()` —
      **naïve local time** (NOT UTC). Be careful with arithmetic against
      timezone-aware datetimes.
-   - `app_now_aware_utc(app)` ([`app.py:518`](app.py)) normalizes both
+   - `app_now_aware_utc(app)` ([`app.py:577`](app.py)) normalizes both
      branches into a `datetime` aware in UTC. Use it whenever you need to
      compare or subtract `App.now()` against another timestamp.
 
@@ -101,9 +101,9 @@ For bootstrap-flow regressions: `tests/test_stress_seed_graph.py` exercises a fu
 | Trap | Fix |
 |---|---|
 | Reading `app.file_storage_provider` before `App` is loaded | `await App.get()` first; it may be `None` during cold init. |
-| Calling `Agent.get()` with kwargs and an agent_id | The kwargs path bypasses cache. Pass only `agent_id` for cached lookups ([`agent.py:79`](agent.py)). |
+| Calling `Agent.get()` with kwargs and an agent_id | The kwargs path bypasses cache. Pass only `agent_id` for cached lookups ([`agent.py:89`](agent.py)). |
 | Forgetting to `await save()` after mutating a config key on the App node | Persists nothing. Add the `save()`. |
-| Manually constructing event-loop locks | Use the dict-keyed-by-`id(loop)` pattern from [`app.py:94-117`](app.py). |
+| Manually constructing event-loop locks | Use the dict-keyed-by-`id(loop)` pattern from [`app.py:90-124`](app.py). |
 | Skipping `agent_yaml_validator` after editing `agent_loader.py` | YAML schema drift. Update both. |
 
 ---

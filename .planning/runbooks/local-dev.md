@@ -151,7 +151,7 @@ jvagent examples/jvagent_app --update --source --debug
 
 ```bash
 pytest tests/                          # all (slow)
-pytest tests/action/executive/ -v      # subsystem
+pytest tests/action/orchestrator/ -v   # subsystem
 pytest -k pruning                      # keyword
 pytest --lf                            # last failed only
 ```

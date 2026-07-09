@@ -21,25 +21,25 @@ The HTTP-facing interaction pipeline:
 
 | File | Purpose |
 |---|---|
-| `base.py:32` | `InteractAction` abstract base |
-| `base.py:64` | `weight` attribute (top-tier ordering) |
-| `base.py:78` | `always_execute` flag |
-| `base.py:88` | `run_in_background` flag |
-| `base.py:99` | `anchors: List[str]` for routing |
-| `base.py:108` | `parameters: List[Dict]` for behavioral guidance |
-| `base.py:131-145` | `get_anchors(conversation)` — dynamic anchors override |
-| `base.py:147-191` | `execute(visitor)` — abstract contract |
-| `base.py:193-274` | `publish()` — direct write to response bus |
-| `base.py:276-305` | `publish_thought()` — thought-category emit |
-| `base.py:307-444` | `respond()` — generate via the agent egress responder (ReplyAction) |
-| `interact_walker.py:38-48` | `InteractionInitResult` dataclass |
-| `interact_walker.py:50-150` | `InteractWalker` core (state + properties) |
-| `interact_walker.py:231` | `enforce_interact_action_access()` — access control |
-| `interact_walker.py:277-450` | `_bootstrap_interaction()` — User / Conversation / Interaction resolve |
-| `interact_walker.py:600-650` | `on_interact_action()` — per-visit callback |
-| `endpoints.py:29-31` | `build_interact_response`, `create_sse_response`, `format_sse_chunk` |
-| `endpoints.py:65-109` | `_run_background_actions()` post-response runner |
-| `endpoints.py:174+` | `/interact` endpoint registration |
+| `base.py:27` | `InteractAction` abstract base |
+| `base.py:59` | `weight` attribute (top-tier ordering) |
+| `base.py:71` | `always_execute` flag |
+| `base.py:81` | `run_in_background` flag |
+| `base.py:92` | `anchors: List[str]` for routing |
+| `../base.py:170` | `parameters: List[Dict]` — behavioural params live on the `Action` base |
+| `base.py:117-132` | `get_anchors(conversation)` — dynamic anchors override |
+| `base.py:249-291` | `execute(visitor)` — abstract contract |
+| `base.py:293-374` | `publish()` — direct write to response bus |
+| `base.py:376-405` | `publish_thought()` — thought-category emit |
+| `base.py:407-543` | `respond()` — generate via the agent egress responder (ReplyAction) |
+| `interact_walker.py:36-45` | `InteractionInitResult` dataclass |
+| `interact_walker.py:47-150` | `InteractWalker` core (state + properties) |
+| `interact_walker.py:221` | `enforce_interact_action_access()` — access control |
+| `interact_walker.py:267-414` | `_bootstrap_interaction()` — User / Conversation / Interaction resolve |
+| `interact_walker.py:635` | `on_interact_action()` — per-visit callback |
+| `response_builder.py:178` | `build_interact_response` (SSE helpers imported from `action/response/streaming`) |
+| `webhook_pipeline.py:53` | `run_background_actions()` post-response runner (re-exported via `endpoints.py`) |
+| `endpoints.py:208` | `/interact` endpoint decorator (handler `interact_endpoint` at :296) |
 
 ---
 
@@ -50,8 +50,8 @@ The HTTP-facing interaction pipeline:
 3. **`run_in_background=True` defers execution.** The walker queues the action; `_run_background_actions(walker)` fires it after response is sent. Each background action is isolated in try/except — failures must not propagate.
 4. **`always_execute=True` bypasses routing exclusion** but does NOT bypass access control. The order is: access check → routing → execute.
 5. **`execute()` is called inside a walker `visiting()` context** — `visitor.here` is set to the action node. Don't break that contract by mutating the walker queue from inside without using `visitor.visit()` / `visitor.prepend()`.
-6. **`publish()` requires `visitor.response_bus` + `visitor.session_id`** ([`base.py:237-246`](base.py)). Early-return with a warning if either is missing.
-7. **`publish()` with `stream=None` defaults to `visitor.stream`** ([`base.py:255`](base.py)). For non-streaming channels (WhatsApp), this is set False on the walker.
+6. **`publish()` requires `visitor.response_bus` + `visitor.session_id`** ([`base.py:337-344`](base.py)). Early-return with a warning if either is missing.
+7. **`publish()` with `stream=None` defaults to `visitor.stream`** ([`base.py:320`](base.py)). For non-streaming channels (WhatsApp), this is set False on the walker.
 8. **Walker-revisit capability**: `visitor.prepend([self])` exists as a walker primitive — an action MAY enqueue itself (or another node) to be visited again. No shipped pattern currently relies on multi-visit turns; the Orchestrator runs its whole turn in a single `execute()` call (no revisit), carrying loop state locally inside `_run_loop`.
 
 ---
@@ -86,7 +86,7 @@ class MyInteractAction(InteractAction):
         ...
 ```
 
-Implementation lives at `endpoints.py:65-109`. Each background action is wrapped:
+Implementation lives in `webhook_pipeline.py:53` (`run_background_actions`). Each background action is wrapped:
 
 ```python
 try:

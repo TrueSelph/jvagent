@@ -5,16 +5,16 @@ Single-source definitions for terms used throughout jvagent. Whenever a defined 
 ---
 
 ### Action
-Pluggable component that extends an agent. Subclass of jvspatial `Node`. Source: [`jvagent/action/base.py:48`](../jvagent/action/base.py). Has lifecycle hooks (`on_register`, `on_enable`, etc.), attribute config, optional endpoints, optional tools (via `get_tools()`) for the agentic loop. Lives in a directory under `jvagent/action/{namespace}/{action_name}/`. See [`action-authoring.md`](reference/action-authoring.md).
+Pluggable component that extends an agent. Subclass of jvspatial `Node`. Source: [`jvagent/action/base.py:49`](../jvagent/action/base.py). Has lifecycle hooks (`on_register`, `on_enable`, etc.), attribute config, optional endpoints, optional tools (via `get_tools()`) for the agentic loop. Lives in a directory under `jvagent/action/{namespace}/{action_name}/`. See [`action-authoring.md`](reference/action-authoring.md).
 
 ### Actions (node)
-Branchpoint node connecting an `Agent` to its `Action` children. One per agent. Accessed via `await agent.get_actions_manager()` ([`agent.py:89`](../jvagent/core/agent.py)).
+Branchpoint node connecting an `Agent` to its `Action` children. One per agent. Accessed via `await agent.get_actions_manager()` ([`agent.py:126`](../jvagent/core/agent.py)).
 
 ### Agent
-Logical execution unit. One graph node per agent; many per app. Source: [`jvagent/core/agent.py:18`](../jvagent/core/agent.py). Owns an `Actions` subgraph and a `Memory` subgraph.
+Logical execution unit. One graph node per agent; many per app. Source: [`jvagent/core/agent.py:30`](../jvagent/core/agent.py). Owns an `Actions` subgraph and a `Memory` subgraph.
 
 ### App
-Singleton root node for the application. Source: [`jvagent/core/app.py:19`](../jvagent/core/app.py). Manages app-level settings (timezone, file storage, update mode) and is accessed as a singleton via `App.get()`.
+Singleton root node for the application. Source: [`jvagent/core/app.py:21`](../jvagent/core/app.py). Manages app-level settings (timezone, file storage, update mode) and is accessed as a singleton via `App.get()`.
 
 ### `app.yaml`
 Declarative configuration file at the app root. Defines app-level settings: app_id, name, version, file storage, database backend, logging. Read by `app_loader`. See [`configuration-keys.md`](reference/configuration-keys.md).
@@ -23,10 +23,10 @@ Declarative configuration file at the app root. Defines app-level settings: app_
 Declarative configuration file per agent (under `agents/{namespace}/{agent_name}/agent.yaml`). Defines the agent's actions and per-action `context:` overrides. Read by `agent_loader`.
 
 ### Anchor
-Short statement an `InteractAction` publishes to advertise when it should be selected. Defined as `anchors: List[str]` attribute on `InteractAction` ([`interact/base.py:99`](../jvagent/action/interact/base.py)); can be dynamic via `get_anchors()`. Consumed by the Rails `InteractRouter`. Under the Orchestrator there is no separate anchor router — an IA furnishes its routing metadata via `get_tools()`, whose description is built from the **manifest** (`purpose` + `activates_on`, via `InteractAction.routing_triggers()`), so the model routes on intent (tool selection). Routing deliberately uses the manifest entry intents, not the runtime-merged continuation anchors.
+Short statement an `InteractAction` publishes to advertise when it should be selected. Defined as `anchors: List[str]` on `InteractAction` ([`interact/base.py`](../jvagent/action/interact/base.py)); can be dynamic via `get_anchors()`. Under Orchestrator, IAs surface via `get_tools()` — description built from manifest `purpose` + `activates_on` (`InteractAction.routing_triggers()`).
 
 ### Background action
-An `InteractAction` with `run_in_background=True` ([`interact/base.py:88`](../jvagent/action/interact/base.py)). Queued by the walker and executed as a fire-and-forget asyncio task **after** the user-facing response is sent. Failures are isolated.
+An `InteractAction` with `run_in_background=True` ([`interact/base.py:81`](../jvagent/action/interact/base.py)). Queued by the walker and executed as a fire-and-forget asyncio task **after** the user-facing response is sent. Failures are isolated.
 
 ### `BaseModelAction`
 Base class for any model-using action (LLM, embedding, etc.). Source: `jvagent/action/model/base.py:26`. Provides retry config (`max_retries`, `retry_backoff_multiplier`, etc.).
@@ -44,7 +44,7 @@ Session-keyed node holding a chained sequence of `Interaction` nodes. Source: `j
 jvspatial-provided mixin used by `Conversation` and `Interaction` to batch writes for efficiency. Flushed after the walker completes.
 
 ### Endpoint
-HTTP route defined by the `@endpoint` decorator from jvspatial. Actions ship endpoints in `endpoints.py`. Registered at server bootstrap; auto-cleaned on action deregister ([`base.py:392`](../jvagent/action/base.py)).
+HTTP route defined by the `@endpoint` decorator from jvspatial. Actions ship endpoints in `endpoints.py`. Registered at server bootstrap; auto-cleaned on action deregister ([`base.py:403`](../jvagent/action/base.py)).
 
 ### Orchestrator
 The single orchestrator of the Orchestrator pattern. Implemented by [`OrchestratorInteractAction`](../jvagent/action/orchestrator/orchestrator_interact_action.py) at weight `-200`. Runs the whole turn inside one `execute()` call: when a turn-spanning flow has an active control-task on the conversation `TaskStore` it surfaces that flow as a tool and notes it, then runs a bounded think-act-observe loop over a unified tool surface (routing is tool selection) in which the model decides whether to continue the flow. No recruited centers, no reflex, no separate router. Supersedes the Executive + Centers pattern. See [`adr/0012-skill-executive-architecture.md`](adr/0012-skill-executive-architecture.md), [`../docs/ORCHESTRATOR.md`](../docs/ORCHESTRATOR.md), [`PATTERNS.md`](PATTERNS.md).
@@ -56,28 +56,28 @@ The mechanism by which a turn-spanning flow keeps (or releases) the turn under t
 Background reconciliation that detects and fixes stale or orphaned nodes. Source: `jvagent/core/graph_repair.py`, `core/graph_repair_job.py`. Triggered on startup and via `/graph-repair` endpoints.
 
 ### Interaction
-Single user-message ⇄ agent-response exchange. Source: `jvagent/memory/interaction.py:47`. Stores utterance, response, channel, actions taken, directives, events, parameters, usage, observability metrics. Bidirectionally chained to neighbor interactions.
+Single user-message ⇄ agent-response exchange. Source: `jvagent/memory/interaction.py:51`. Stores utterance, response, channel, actions taken, directives, events, parameters, usage, observability metrics. Bidirectionally chained to neighbor interactions.
 
 ### `interaction_limit`
-The rolling-window size for a `Conversation`. Set on `Agent.interaction_limit` ([`agent.py:50`](../jvagent/core/agent.py)) and inherited by `Conversation.interaction_limit`. `0` disables pruning. See [`memory-and-pruning.md`](reference/memory-and-pruning.md), [`adr/0003`](adr/0003-interaction-limit-pruning.md).
+The rolling-window size for a `Conversation`. Set on `Agent.interaction_limit` ([`agent.py:72`](../jvagent/core/agent.py)) and inherited by `Conversation.interaction_limit`. `0` disables pruning. See [`memory-and-pruning.md`](reference/memory-and-pruning.md), [`adr/0003`](adr/0003-interaction-limit-pruning.md).
 
 ### `InteractAction`
-Subclass of `Action` participating in the interact pipeline. Source: [`jvagent/action/interact/base.py:32`](../jvagent/action/interact/base.py). Implements `execute(walker)`. Has `weight`, `run_in_background`, `always_execute`, `anchors`, `parameters`.
+Subclass of `Action` participating in the interact pipeline. Source: [`jvagent/action/interact/base.py:27`](../jvagent/action/interact/base.py). Implements `execute(walker)`. Has `weight`, `run_in_background`, `always_execute`, `anchors`, `parameters`.
 
-### `InteractRouter`
-Rails-pattern router (weight `-200`) that classifies user intent on a fast model and curates the walk path so anchored IAs run only when relevant. Optional; used by the Rails pattern. Source: [`jvagent/action/router/interact_router.py`](../jvagent/action/router/interact_router.py).
+### `InteractRouter` (removed 0.1.1)
+Former Rails-pattern router (weight `-200`). Removed in favor of `OrchestratorInteractAction`. See ADR-0029.
 
 ### `InteractWalker`
-jvspatial `Walker` subclass that drives the interact subsystem. Source: `jvagent/action/interact/interact_walker.py:50+`. Bootstraps `User` / `Conversation` / `Interaction` and visits each top-level `InteractAction` in `weight` order.
+jvspatial `Walker` subclass that drives the interact subsystem. Source: `jvagent/action/interact/interact_walker.py:47+`. Bootstraps `User` / `Conversation` / `Interaction` and visits each top-level `InteractAction` in `weight` order.
 
 ### `LanguageModelAction`
-Subclass of `BaseModelAction` for LLM providers. Source: `jvagent/action/model/language/base.py:24`. Concrete subclasses: Anthropic, OpenAI, OpenRouter, Ollama.
+Subclass of `BaseModelAction` for LLM providers. Source: `jvagent/action/model/language/base.py:345`. Concrete subclasses: Anthropic, OpenAI, OpenRouter, Ollama.
 
 ### `latency_class`
 Manifest field on an `Action` package declaring expected wall-clock cost: `instant`, `quick` (sub-2s), `deliberate` (2–10s), `long` (>10s). Used by the orchestrator to decide whether activating a slow target warrants an ack lead-in. Source: [`jvagent/action/manifest.py`](../jvagent/action/manifest.py).
 
 ### Manifest
-Pattern-agnostic metadata block on an `Action` package descriptor. Declares `purpose`, `activates_on`, `terminates_when`, `latency_class`, `turn_lock`, `interrupt_phrases`, `can_interrupt`, `expected_duration_seconds`, `routable_by_anchor`, `pattern_orchestrator`. Read at package load via `Action.get_manifest()`. Consumed by the Orchestrator; informational for Rails. Source: [`jvagent/action/manifest.py`](../jvagent/action/manifest.py).
+Pattern-agnostic metadata block on an `Action` package descriptor. Declares `purpose`, `activates_on`, `terminates_when`, `latency_class`, `turn_lock`, `interrupt_phrases`, `can_interrupt`, `expected_duration_seconds`, `routable_by_anchor`, `pattern_orchestrator`. Read at package load via `Action.get_manifest()`. Consumed by the Orchestrator. Source: [`jvagent/action/manifest.py`](../jvagent/action/manifest.py).
 
 ### Memory (node)
 Branchpoint node connecting an `Agent` to its `User` graph. One per agent. Source: `jvagent/memory/manager.py:18`.
@@ -92,10 +92,10 @@ An InteractAction marked with `manifest.pattern_orchestrator: true` (today: `Orc
 Boolean field on `Manifest` (default `False`). Marks an InteractAction as a pattern orchestrator (today: the Orchestrator). Pattern orchestrators are weight-routed and excluded from the tool surface.
 
 ### Posture
-Rails-`InteractRouter` classification of an utterance: `RESPOND`, `SUPPRESS`, or `DEFER`. Surfaces on the legacy `jvagent.action.router.routing_result.RoutingResult` shape and on `Interaction.response_posture` for historical-turn observability.
+Legacy classification of an utterance: `RESPOND`, `SUPPRESS`, or `DEFER`. Optional field on `Interaction.response_posture` for historical-turn observability (Rails pattern removed 0.1.1).
 
 ### Proactive message / Proactive interaction
-An `Interaction` recorded in conversation history that originates from the agent (or owning code) without an inbound user utterance. Shape: `utterance == ""`, `response == <agent text>`, tagged via `Interaction.parameters` with `{"is_proactive": True, "action_name": <source>, ...metadata}`. Sent programmatically via [`Agent.send_proactive_message`](../jvagent/core/agent.py) ([`agent.py:226-319`](../jvagent/core/agent.py)) — see [`../docs/proactive-messages.md`](../docs/proactive-messages.md). In LLM history serialization the empty-utterance `user` role is suppressed ([`conversation.py:553-566`](../jvagent/memory/conversation.py)), so the entry shows as a standalone `assistant` turn.
+An `Interaction` recorded in conversation history that originates from the agent (or owning code) without an inbound user utterance. Shape: `utterance == ""`, `response == <agent text>`, tagged via `Interaction.parameters` with `{"is_proactive": True, "action_name": <source>, ...metadata}`. Sent programmatically via [`Agent.send_proactive_message`](../jvagent/core/agent.py) ([`agent.py:271-358`](../jvagent/core/agent.py)) — see [`../docs/proactive-messages.md`](../docs/proactive-messages.md). In LLM history serialization the empty-utterance `user` role is suppressed ([`conversation.py:741-752`](../jvagent/memory/conversation.py)), so the entry shows as a standalone `assistant` turn.
 
 ### Profile (scaffold)
 Built-in starter template for a new agent (`orchestrator`, `minimal`, `conversational`, `whatsapp_voice`, `research`). Selected via `jvagent app create --profile profile_name`. Default is `orchestrator`. See `docs/scaffolding.md`.
@@ -155,7 +155,7 @@ A slim index of the available tools that the Orchestrator carries in the prompt 
 Declares that an `InteractAction` owns the next turn end-to-end (e.g. interview, form, gated workflow). Under the Orchestrator turn-lock is realized as **flow continuation**, configurable via `lock_active_flow` (ADR-0013): the flow records a control-task on the conversation `TaskStore` while active. When `lock_active_flow=True` (default) the loop restricts its callable surface to the flow's IA tool and dispatches it with no model round-trip — a mechanistic lock; the IA owns interruption/cancel. When `False` the flow is surfaced as a tool and the lock is emergent — the model continues the flow by selecting its tool or routes an off-topic message elsewhere (interruptibility automatic). In both modes the flow's own session logic handles its steps. See *Sustained activation (turn-lock)* and *Flow continuation*.
 
 ### Update mode
-The bootstrap intent for the next start: `run` (don't re-sync YAML), `merge` (non-destructive merge), or `source` (destructive sync). Stored on `App.update_mode` ([`app.py:74`](../jvagent/core/app.py)). CLI flags `--update --merge` / `--update --source` override per-process. See [`adr/0005`](adr/0005-app-yaml-agent-yaml-split.md).
+The bootstrap intent for the next start: `run` (don't re-sync YAML), `merge` (non-destructive merge), or `source` (destructive sync). Stored on `App.update_mode` ([`app.py:76`](../jvagent/core/app.py)). CLI flags `--update --merge` / `--update --source` override per-process. See [`adr/0005`](adr/0005-app-yaml-agent-yaml-split.md).
 
 ### User (memory node)
 Identity in the memory subgraph, scoped by `(memory_id, user_id)`. Source: `jvagent/memory/user.py:25`. Holds cross-session memory dict and tags. Distinct from the **admin user** (authentication subject) — those live in jvspatial's auth tables.
@@ -164,7 +164,7 @@ Identity in the memory subgraph, scoped by `(memory_id, user_id)`. Source: `jvag
 jvspatial primitive that traverses the graph. `InteractWalker` is jvagent's main one. See jvspatial `SPEC.md` and [`jvspatial-integration.md`](reference/jvspatial-integration.md).
 
 ### Weight
-Integer attribute on `InteractAction` controlling top-tier execution order. Lower = earlier. Negative allowed (the Executive uses `-200`). Applies **only** to top-tier actions connected directly to the `Actions` node — sub-`InteractAction`s are traversed in graph arrangement order. Source: [`interact/base.py:64`](../jvagent/action/interact/base.py).
+Integer attribute on `InteractAction` controlling top-tier execution order. Lower = earlier. Negative allowed (the Orchestrator uses `-200`). Applies **only** to top-tier actions connected directly to the `Actions` node — sub-`InteractAction`s are traversed in graph arrangement order. Source: [`interact/base.py:59`](../jvagent/action/interact/base.py).
 
 ### Loop state (Orchestrator)
 The Orchestrator's per-turn state for the think-act-observe loop: the accumulated observations, the tool-call transcript, and the activation/model budget. It is transient and cleared after `execute()` returns. Turn-lock is NOT held here — a flow's control-task lives on the conversation `TaskStore` (see *Flow continuation*). Source: [`jvagent/action/orchestrator/orchestrator_interact_action.py`](../jvagent/action/orchestrator/orchestrator_interact_action.py).

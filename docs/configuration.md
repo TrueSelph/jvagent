@@ -112,8 +112,6 @@ Secrets (env only):
 | `config.performance.action_cache_ttl` | `JVAGENT_ACTION_CACHE_TTL` | 60 |
 | `config.performance.enable_deferred_saves` | `JVSPATIAL_ENABLE_DEFERRED_SAVES` | true |
 | `config.performance.cache_cleanup_probability` | `JVAGENT_CACHE_CLEANUP_PROBABILITY` | 0.1 |
-| `config.performance.enable_interact_router_cache` | `JVAGENT_ENABLE_INTERACT_ROUTER_CACHE` | false |
-| `config.performance.interact_router_cache_ttl` | `JVAGENT_INTERACT_ROUTER_CACHE_TTL` | 45 |
 
 ## Placeholder Resolution
 

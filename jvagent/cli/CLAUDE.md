@@ -29,7 +29,12 @@ It does **not** own: the actual graph node definitions (that's `core/`), HTTP se
 | `main.py:181-192` | `--purge` (dev-only) |
 | `main.py:205-226` | Subcommand dispatch |
 | `main.py:239-244` | Default → `run_server()` |
-| `commands.py` | `run_server`, `bootstrap_only`, `handle_*_command`, `purge_app_data`, `show_status`, `print_usage`, `run_validate`, `load_app_env` |
+| `commands.py` | Backward-compat re-export facade (re-exports the handlers below) |
+| `server.py` | `load_app_env`, `purge_app_data`, `run_server`, `show_status`, `bootstrap_only`, `StartupLogCounter` |
+| `agent_commands.py` | `handle_agent_command`, `handle_action_command`, `handle_bundle_command`, `list_agents`, `uninstall_agent` |
+| `skill_commands.py` | `handle_skill_command` |
+| `validate.py` | `run_validate`, `print_usage` |
+| `chat.py` | `handle_chat_command` (serves the jvchat UI) |
 | `server_config.py:59-180` | `create_server_from_config()` — reads app.yaml + env, builds jvspatial Server |
 | `server_config.py` | `_set_db_env_from_config`, `_import_core_endpoint_modules` |
 | `bootstrap.py` | `bootstrap_application_graph()` — orchestrates App + Agents + Actions creation |
@@ -83,7 +88,7 @@ FLAGS (apply to default + bootstrap):
 
 ## 5. Subcommand handler conventions
 
-Each `handle_*_command` in `commands.py`:
+Each `handle_*_command` (in `agent_commands.py` / `skill_commands.py`):
 
 - Receives `args` (post-subcommand) and `app_root`.
 - Uses `asyncio.run(...)` for async operations.
@@ -94,7 +99,7 @@ When adding a subcommand:
 
 1. Add the name to `DISPATCH` ([`main.py:42-55`](main.py)).
 2. Add a dispatch branch in the `if args[0] in DISPATCH:` block ([`main.py:205-226`](main.py)).
-3. Add the handler in `commands.py` (or a new sibling module).
+3. Add the handler in the relevant sibling module (`agent_commands.py`, `server.py`, `skill_commands.py`, `validate.py`); re-export it from `commands.py` for back-compat.
 4. Document in [`/.planning/runbooks/`](../../.planning/runbooks/) if non-trivial.
 
 ---

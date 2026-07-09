@@ -159,3 +159,105 @@ async def test_loop_repeat_guard_breaks_on_self_repeat(
     assert ev["data"]["ended_via"] == "repeat_guard"
     assert ev["data"]["tick_count"] <= 5  # broke far below the budget (16)
     assert "(guard)" in ev["data"]["tools_invoked"]  # nudge was injected
+
+
+async def test_repeat_guard_blocks_duplicate_side_effect_dispatch(
+    make_orchestrator, make_visitor
+):
+    """An identical tool call (same name + args) dispatches at most once.
+
+    Regression: the guard signature was computed AFTER dispatch, so a
+    side-effecting tool (queue a task, POST to an API) executed several
+    times before the guard broke the turn.
+    """
+    from jvagent.tooling.tool import Tool
+    from jvagent.tooling.tool_result import ToolResult
+
+    calls = {"n": 0}
+
+    class SideEffectStub:
+        enabled = True
+
+        def get_class_name(self):
+            return "SideEffectStub"
+
+        async def get_tools(self):
+            async def _run(**kwargs):
+                calls["n"] += 1
+                return ToolResult(content="queued")
+
+            return [
+                Tool(
+                    name="side_effect__queue",
+                    description="Queue a thing.",
+                    parameters_schema={"type": "object", "properties": {}},
+                    execute=lambda **k: _run(**k),
+                )
+            ]
+
+    ex = make_orchestrator(
+        actions=[SideEffectStub()],
+        decisions=[{"action": "tool", "tool": "side_effect__queue", "args": {"x": 1}}]
+        * 6,
+    )
+    v = make_visitor(utterance="queue it")
+    v.interaction.observability_metrics = []
+    v.interaction.save = AsyncMock()
+    await ex.execute(v)
+
+    assert calls["n"] == 1  # the duplicate never reached the tool
+    ev = next(
+        e
+        for e in v.interaction.observability_metrics
+        if e.get("event_type") == "orchestrator_activation"
+    )
+    assert ev["data"]["ended_via"] == "repeat_guard"
+
+
+async def test_repeat_guard_allows_one_retry_after_tool_error(
+    make_orchestrator, make_visitor
+):
+    """A retry of the SAME call is allowed once when the first attempt errored
+    (transient failures deserve one retry); a second identical failure ends
+    the turn."""
+    from jvagent.tooling.tool import Tool
+    from jvagent.tooling.tool_result import ToolResult
+
+    calls = {"n": 0}
+
+    class FlakyStub:
+        enabled = True
+
+        def get_class_name(self):
+            return "FlakyStub"
+
+        async def get_tools(self):
+            async def _run(**kwargs):
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    raise RuntimeError("transient")
+                return ToolResult(content="ok")
+
+            return [
+                Tool(
+                    name="flaky__op",
+                    description="Sometimes fails.",
+                    parameters_schema={"type": "object", "properties": {}},
+                    execute=lambda **k: _run(**k),
+                )
+            ]
+
+    ex = make_orchestrator(
+        actions=[FlakyStub()],
+        decisions=[
+            {"action": "tool", "tool": "flaky__op", "args": {}},
+            {"action": "tool", "tool": "flaky__op", "args": {}},
+            {"action": "final", "answer": "done"},
+        ],
+    )
+    v = make_visitor(utterance="do the op")
+    v.interaction.observability_metrics = []
+    v.interaction.save = AsyncMock()
+    await ex.execute(v)
+
+    assert calls["n"] == 2  # error retry dispatched, then succeeded

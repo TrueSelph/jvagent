@@ -17,7 +17,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -371,7 +371,7 @@ def record_lm_call(label: str, duration: float) -> None:
     profiling is disabled.
 
     Args:
-        label: Label for the LM call (e.g., "lm:PersonaAction")
+        label: Label for the LM call (e.g., "lm:ReplyAction")
         duration: Duration of the call in seconds
     """
     if not ENABLE_PROFILING:

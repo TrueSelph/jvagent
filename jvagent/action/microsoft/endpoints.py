@@ -257,7 +257,7 @@ async def microsoft_oauth_callback(code: str, state: str) -> HTMLResponse:
     if not code or not state:
         return _oauth_error_html("Missing code or state.", status_code=400)
 
-    from jvagent.action.utils.oauth_state import consume_oauth_state
+    from jvagent.action.oauth.state import consume_oauth_state
 
     record = await consume_oauth_state(state, provider="microsoft")
     if record is None:

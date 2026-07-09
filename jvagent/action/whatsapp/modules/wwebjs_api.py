@@ -1,11 +1,8 @@
 """WWebJS API Wrapper with WPPConnect-compatible interface (Async Version)."""
 
-import asyncio
 import base64
 import logging
 from typing import Any, Dict, List, Optional
-
-import aiohttp
 
 from .base import BaseWhatsAppAPI, MessagePayload
 

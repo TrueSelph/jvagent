@@ -34,7 +34,7 @@ from __future__ import annotations
 import inspect
 import re
 from dataclasses import dataclass
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from jvagent.tooling.signature_schema import build_parameters_schema
 from jvagent.tooling.tool import Tool
@@ -137,6 +137,49 @@ def _description(spec: ToolSpec, fn: Callable[..., Any]) -> str:
     return re.sub(r"\s+", " ", para)
 
 
+# Per-class discovery cache. Descriptions and parameter schemas are static
+# per class (signature/docstring introspection is the expensive part and the
+# orchestrator calls get_tools() on every enabled action each turn); only the
+# bound ``execute`` and the (possibly instance-derived) name prefix vary per
+# instance, so those are resolved per call in ``collect_tools``.
+_CLASS_TOOL_CACHE: Dict[type, List[Tuple[str, "ToolSpec", str, Dict[str, Any]]]] = {}
+
+
+def _discover_class_tools(
+    instance: Any,
+) -> List[Tuple[str, "ToolSpec", str, Dict[str, Any]]]:
+    cls = type(instance)
+    cached = _CLASS_TOOL_CACHE.get(cls)
+    if cached is not None:
+        return cached
+    entries: List[Tuple[str, "ToolSpec", str, Dict[str, Any]]] = []
+    # Walk the class MRO (not inspect.getmembers on the instance) so we never
+    # trigger arbitrary property getters / descriptors during discovery. The
+    # first definition wins, so a subclass override shadows a base method.
+    seen: set = set()
+    for klass in cls.__mro__:
+        for attr_name, raw in vars(klass).items():
+            if attr_name in seen:
+                continue
+            spec: Optional[ToolSpec] = getattr(raw, TOOL_MARKER, None)
+            if spec is None:
+                continue
+            seen.add(attr_name)
+            # Bound member: its signature excludes ``self``, which is what the
+            # schema must describe.
+            member = getattr(instance, attr_name)
+            entries.append(
+                (
+                    attr_name,
+                    spec,
+                    _description(spec, member),
+                    build_parameters_schema(member),
+                )
+            )
+    _CLASS_TOOL_CACHE[cls] = entries
+    return entries
+
+
 def collect_tools(instance: Any) -> List[Tool]:
     """Build a ``Tool`` for every ``@tool``-decorated method on *instance*.
 
@@ -146,37 +189,27 @@ def collect_tools(instance: Any) -> List[Tool]:
     tools: List[Tool] = []
     prefix = _action_name(instance)
 
-    # Walk the class MRO (not inspect.getmembers on the instance) so we never
-    # trigger arbitrary property getters / descriptors during discovery. The
-    # first definition wins, so a subclass override shadows a base method.
-    seen: set = set()
-    for klass in type(instance).__mro__:
-        for attr_name, raw in vars(klass).items():
-            if attr_name in seen:
-                continue
-            spec: Optional[ToolSpec] = getattr(raw, TOOL_MARKER, None)
-            if spec is None:
-                continue
-            seen.add(attr_name)
+    for attr_name, spec, description, schema in _discover_class_tools(instance):
+        member = getattr(instance, attr_name)  # bound method
+        func_name = getattr(member, "__name__", attr_name)
+        tool_name = spec.name or (f"{prefix}__{func_name}" if prefix else func_name)
 
-            member = getattr(instance, attr_name)  # bound method
-            func_name = getattr(member, "__name__", attr_name)
-            tool_name = spec.name or (f"{prefix}__{func_name}" if prefix else func_name)
-
-            built = Tool(
-                name=tool_name,
-                description=_description(spec, member),
-                parameters_schema=build_parameters_schema(member),
-                execute=member,
-            )
-            # Carry orchestrator wrap-step hints when supplied (no-ops otherwise).
-            if spec.access_label is not None:
-                built.access_label = spec.access_label
-            if spec.terminal is not None:
-                built.terminal = spec.terminal
-            if spec.binds_visitor is not None:
-                built.binds_visitor = spec.binds_visitor
-            tools.append(built)
+        built = Tool(
+            name=tool_name,
+            description=description,
+            # Shallow copy so a consumer mutating one instance's schema can't
+            # bleed into the class-level cache.
+            parameters_schema=dict(schema),
+            execute=member,
+        )
+        # Carry orchestrator wrap-step hints when supplied (no-ops otherwise).
+        if spec.access_label is not None:
+            built.access_label = spec.access_label
+        if spec.terminal is not None:
+            built.terminal = spec.terminal
+        if spec.binds_visitor is not None:
+            built.binds_visitor = spec.binds_visitor
+        tools.append(built)
 
     tools.sort(key=lambda t: t.name)
     return tools

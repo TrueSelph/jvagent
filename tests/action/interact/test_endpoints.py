@@ -7,11 +7,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from jvagent.action.interact.endpoints import _finalize_usage
 from jvagent.action.interact.response_builder import (
     build_interact_response,
     build_interaction_payload,
 )
+from jvagent.action.interact.webhook_pipeline import finalize_usage as _finalize_usage
 from jvagent.core.config import get_environment_mode, is_production_mode
 
 

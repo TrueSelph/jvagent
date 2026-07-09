@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -74,7 +74,9 @@ async def test_background_actions_bind_interaction_to_context_for_observability(
     walker.enforce_interact_action_access = AsyncMock(return_value=True)
 
     finalize = AsyncMock()
-    monkeypatch.setattr(endpoints, "_finalize_usage", finalize)
+    monkeypatch.setattr(
+        "jvagent.action.interact.webhook_pipeline.finalize_usage", finalize
+    )
 
     # Post-turn state: context already cleared by the interact/stream handler.
     set_interaction(None)

@@ -187,7 +187,7 @@ def _coerce_result_field(
     return default
 
 
-def _normalize_call_result(result: Any, tool_name: str) -> MCPFulfillResult:
+def normalize_call_result(result: Any, tool_name: str) -> MCPFulfillResult:
     """Convert MCP CallToolResult to MCPFulfillResult."""
     is_error = bool(_coerce_result_field(result, "isError", "is_error", False))
     content = _coerce_result_field(result, "content", "content", None) or []
@@ -688,7 +688,7 @@ class MCPAction(Action):
                 error_kind="tool_failed",
                 tool_name=tool_name,
             )
-        return _normalize_call_result(call_result, tool_name)
+        return normalize_call_result(call_result, tool_name)
 
     async def healthcheck(self, server_name: Optional[str] = None) -> bool:
         """Connect if needed and list_tools with timeout; return True if healthy."""
@@ -828,7 +828,7 @@ class MCPAction(Action):
                     subprocess only when no context is in scope (raw scripted
                     tool execution, tests).
                     """
-                    from jvagent.action.mcp.mcp_action import _normalize_call_result
+                    from jvagent.action.mcp.mcp_action import normalize_call_result
                     from jvagent.core.sandbox import effective_user_segment
                     from jvagent.tooling.tool_executor import get_dispatch_context
 
@@ -857,7 +857,7 @@ class MCPAction(Action):
                         client = action.get_client(sn)
 
                     result = await client.call_tool(tn, dict(kwargs))
-                    n = _normalize_call_result(result, tn)
+                    n = normalize_call_result(result, tn)
                     if n.is_error and n.text:
                         return f"Error: {n.text}"
                     return n.text
