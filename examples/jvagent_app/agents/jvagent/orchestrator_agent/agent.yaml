@@ -40,12 +40,12 @@ actions:
       # -- Model gearing (ADR-0016): a LIGHT completion model handles single-
       # dimensional turns (reply / one tool); the HEAVY model above takes over
       # once the turn is multi-step. Empty light_model = single-model.
-      # light_model: gpt-4.1-mini
-      # light_model_action_type: OpenAILanguageModelAction
-      # light_model_temperature: 0.2
-      # light_model_max_tokens: 1024
-      # escalate_after_tool_calls: 2       # heavy after this many substantive tool calls
-      # escalate_on_skill: true            # activating a skill escalates immediately
+      light_model: gpt-4.1-nano
+      light_model_action_type: OpenAILanguageModelAction
+      light_model_temperature: 0.2
+      light_model_max_tokens: 1024
+      escalate_after_tool_calls: 2       # heavy after this many substantive tool calls
+      escalate_on_skill: true            # activating a skill escalates immediately
 
       # HEAVY profile — the reasoning model, used once a turn proves multi-step.
       # MODEL FLOOR: the orchestrator is model-mediated — it keeps the loop going
@@ -98,7 +98,7 @@ actions:
 
       # -- Budgets (activation_budget caps ticks; these add wall-clock + length).
       max_duration_seconds: 0             # 0 disables the wall-clock cap
-      max_statement_length:               # soft reply-length cap (chars); blank = off
+      max_statement_length: 700           # soft reply-length cap (chars); blank = off
 
       # -- Prompt surface: every sub-prompt defaults to its constant in
       # jvagent/action/orchestrator/prompts.py and is overridable here
@@ -106,7 +106,9 @@ actions:
       # length_limit_prompt, finalize_prompt, no_skills_text). They are str.format
       # templates — keep the placeholders and double literal { } as {{ }}. The
       # simplest, safe knob is additive extra instructions:
-      # system_prompt_extra: "House style: warm, concise, never use emojis."
+      system_prompt_extra: >-
+        Keep replies brief and conversational; prefer 1-2 sentences unless
+        detail is explicitly requested.
 
       # -- Tooling / egress-UX.
       tool_tier: standard                 # minimal | standard | full
@@ -328,5 +330,18 @@ actions:
       phone_number_id: ""      # e.g. "102274452799236"
       access_token: ""         # Meta system user token for this WABA
 
+  - action: jvagent/whatsapp_voice_action
+    context:
+      enabled: false
+      description: "WhatsApp voice calls via jvvoice delegation"
+      jvvoice_base_url: "${JVVOICE_BASE_URL}"
+      jvvoice_api_key: "${JVVOICE_API_KEY}"
+      agent_name: "jvvoice"
+      cloud_api_version: "24.0"
 
-
+  - action: jvagent/elevenlabs_tts
+    context:
+      enabled: true
+      description: "Text-to-Speech action"
+      model: "eleven_turbo_v2"
+      voice: "Sarah"
