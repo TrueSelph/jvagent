@@ -534,6 +534,15 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         if whatsapp_action.is_meta_provider():
             app_secret = whatsapp_action._env_app_secret()
             if not app_secret:
+                if whatsapp_action.uses_jvconnect():
+                    raise HTTPException(
+                        status_code=500,
+                        detail=(
+                            "JVCONNECT_WEBHOOK_SECRET (or action.jvconnect_webhook_secret) "
+                            "is required after webhook/register; restart after registration "
+                            "or set the secret from jvconnect"
+                        ),
+                    )
                 raise HTTPException(
                     status_code=500,
                     detail="WHATSAPP_APP_SECRET (or FACEBOOK_APP_SECRET) is required for meta webhook POST",

@@ -55,7 +55,7 @@ actions:
       # Opus/Sonnet for any agent that runs multi-step skills/plans. The class
       # default (gpt-4o-mini) is for cheap single-step agents only. See
       # docs/ORCHESTRATOR.md "Model floor".
-      model: gpt-4.1
+      model: gpt-4.1-nano
       model_action_type: OpenAILanguageModelAction
       model_temperature: 0.2
       # Agentic/research headroom: each tick is one tool call, so multistep
@@ -171,7 +171,7 @@ actions:
     context:
       enabled: false
       model_action_type: OpenAILanguageModelAction
-      model: gpt-4o-mini
+      model: gpt-4.1-nano
       sandbox_mode: true
       sandbox_user_scoped: true
       servers:
@@ -199,7 +199,7 @@ actions:
     context:
       enabled: true
       model_action_type: OpenAILanguageModelAction
-      model: gpt-4o-mini
+      model: gpt-4.1-nano
       strategy: tree_search
       limit: 10
 
@@ -268,7 +268,7 @@ actions:
     context:
       enabled: true
       api_endpoint: https://api.openai.com/v1
-      model: gpt-4o-mini
+      model: gpt-4.1-nano
       temperature: 0.2
       max_tokens: 4096
       timeout: 60
@@ -291,7 +291,7 @@ actions:
     context:
       enabled: true
       model_action_type: OpenAILanguageModelAction
-      model: gpt-4o-mini
+      model: gpt-4.1-nano
       model_temperature: 0.3
 
   # Interview tool bundle — skills-v2 signup flow uses signup_interview skill.

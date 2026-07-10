@@ -193,6 +193,7 @@ falls back to a sibling env var when its primary key is unset:
 - `WHATSAPP_REQUEST_TIMEOUT`
 - Meta Cloud API (`provider: meta`) — **agent.yaml** (preferred): `waba_id`, `phone_number_id`, `access_token` on WhatsAppAction; **env fallback** when yaml empty: `WHATSAPP_WABA_ID`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`
 - Meta Cloud API — **env**: `WHATSAPP_APP_SECRET` (webhook signature; falls back to `FACEBOOK_APP_SECRET`), `WHATSAPP_APP_ID` (optional; falls back to `FACEBOOK_APP_ID`), `WHATSAPP_GRAPH_VERSION` (default `v25.0`)
+- **jvconnect proxy** (recommended for Tech Provider / shared Meta app): set `WHATSAPP_CREDENTIAL_SOURCE=jvconnect` (or `credential_source: jvconnect` on the action), `JVCONNECT_URL`, `JVCONNECT_API_KEY`, and `WHATSAPP_PHONE_NUMBER_ID`. Do **not** set `WHATSAPP_ACCESS_TOKEN` / `WHATSAPP_APP_SECRET`. After startup webhook registration, `JVCONNECT_WEBHOOK_SECRET` is persisted on the action (or set from jvconnect’s register response). Optional: `WHATSAPP_PROXY_URL` alias for `JVCONNECT_URL`, `WHATSAPP_WABA_ID` for scoped admin ops.
 - Meta verify token: auto-derived from agent id + app secret (optional `verify_token` on action to override)
 - After `jvagent --purge`, agent id changes — update Meta App Dashboard callback URL to match `GET .../meta/webhook-status` `expected_callback_url` (Graph override alone does not update the `application` layer)
 - Meta media/voice outbound requires `JVAGENT_PUBLIC_BASE_URL` (files fetched from jvagent before Graph upload)

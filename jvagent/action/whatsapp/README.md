@@ -259,6 +259,30 @@ Use the official WhatsApp Business Cloud API instead of a self-hosted bridge. Su
 
 Configure `stt_action` and `tts_action` on the WhatsApp action (same as bridge providers) for voice note transcription and voice replies.
 
+#### jvconnect credential proxy (recommended)
+
+When WhatsApp is onboarded through **jvconnect**, prefer proxying Cloud API calls so Meta access tokens and the app secret never land in jvagent `.env`:
+
+```yaml
+- action: jvagent/whatsapp_action
+  context:
+    provider: meta
+    credential_source: jvconnect
+    phone_number_id: "102274452799236"  # or WHATSAPP_PHONE_NUMBER_ID
+```
+
+```env
+WHATSAPP_CREDENTIAL_SOURCE=jvconnect
+JVCONNECT_URL=https://your-jvconnect.example.com
+JVCONNECT_API_KEY=jvk_...
+WHATSAPP_PHONE_NUMBER_ID=102274452799236
+JVAGENT_PUBLIC_BASE_URL=https://your-app.com
+```
+
+Create the API key on jvconnect → **API Credentials**. Startup calls jvconnect `POST /api/v1/whatsapp/webhook/register` (Meta → jvconnect → agent).
+
+#### Direct Graph credentials
+
 **Per-agent credentials** — prefer `agent.yaml`; empty fields fall back to `.env`:
 
 ```yaml
