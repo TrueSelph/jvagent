@@ -23,8 +23,8 @@ interview:
       guidance: One or more short alphanumeric IDs separated by commas.
       validator: validate_item_ids
       post_processor: expand_item_ids
+      for_each_prefix: item_id_prefix
       for_each:
-        prompt_prefix: "For item #{index} ({label}):"
         fields:
           - key: title
             prompt: What is the title for this item?

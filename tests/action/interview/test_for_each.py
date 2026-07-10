@@ -97,7 +97,7 @@ async def test_for_each_walk_three_items_two_required_subparts(for_each_action):
 
     nxt = await build_next_field(session, spec, load)
     assert nxt["key"] == "title"
-    assert "For item 1 (A):" in nxt["prompt"]
+    assert "For the first item id A:" in nxt["prompt"]
     assert nxt["for_each"]["total"] == 3
 
     await handle_set_fields(
@@ -115,7 +115,7 @@ async def test_for_each_walk_three_items_two_required_subparts(for_each_action):
     )
     nxt = await build_next_field(session, spec, load)
     assert nxt["key"] == "title"
-    assert "For item 2 (B):" in nxt["prompt"]
+    assert "For the second item id B:" in nxt["prompt"]
 
     await handle_set_fields(
         action, fields={"title": "Widget B", "quantity": "1"}, visitor=SimpleNamespace()
@@ -181,7 +181,7 @@ async def test_for_each_parent_correction_resets_records(for_each_action):
 
     nxt = await build_next_field(session, spec, _load_fn(spec))
     assert nxt["key"] == "title"
-    assert "X" in nxt["prompt"]
+    assert "For item id X:" in nxt["prompt"]
 
 
 @pytest.mark.asyncio
@@ -276,6 +276,62 @@ async def test_for_each_parent_correction_preserves_state_on_validation_failure(
     ), "for_each state must not be wiped on validation failure"
     assert state_after["status"] == STATUS_ACTIVE
     assert session.get_value("item_ids") == "A, B"
+
+
+@pytest.mark.asyncio
+async def test_for_each_staged_with_parent_in_same_set_fields_call(for_each_action):
+    """for_each_staged data sent in the same set_fields call as the parent field
+    that triggers the for_each expansion must be properly staged, not silently
+    dropped.
+
+    Previously, for_each_staged was processed BEFORE field storage and
+    post_processors ran. Since the parent field's post_processor creates the
+    for_each expansion, there was no active for_each at that point, and
+    for_each_staged data was silently lost. The fix defers for_each_staged
+    processing until after all fields have been stored and post_processors
+    have run.
+    """
+    action, spec = for_each_action
+    session = InterviewSession(interview_type=spec.name)
+    action._get_session_and_contract = AsyncMock(return_value=(session, spec))
+    action._save_session = AsyncMock()
+
+    # Send the parent field AND for_each_staged in the SAME set_fields call.
+    # The parent field's post_processor (expand_item_ids) creates the for_each
+    # expansion. The for_each_staged data must be applied after the expansion
+    # is created.
+    raw = await handle_set_fields(
+        action,
+        fields={"item_ids": "A, B"},
+        for_each_staged={
+            "1": {"title": "Widget A", "quantity": "2"},
+            "2": {"title": "Widget B", "quantity": "1"},
+        },
+        visitor=SimpleNamespace(),
+    )
+    payload = json.loads(raw)
+
+    # The parent field should be stored successfully.
+    assert payload["ok"] is True
+
+    # for_each expansion should be created with 2 items.
+    state = get_for_each_state(session, "item_ids")
+    assert state is not None
+    assert state["status"] == STATUS_ACTIVE
+    assert len(state["items"]) == 2
+
+    # Item A's staged data should have been applied to the session fields.
+    # (Notes is optional and not staged, so the item is not yet complete —
+    # the model still needs to fill or skip it.)
+    assert session.get_value("title") == "Widget A"
+    assert session.get_value("quantity") == "2"
+
+    # Item B's staged data should be waiting in _for_each_staged for when
+    # iteration reaches item B.
+    stage_store = session.context.get("_for_each_staged", {})
+    item_b_staged = stage_store.get("B", {})
+    assert item_b_staged.get("title") == "Widget B"
+    assert item_b_staged.get("quantity") == "1"
 
 
 @pytest.mark.asyncio

@@ -66,33 +66,72 @@ class GoogleDriveAction(GoogleAction):
         if not media:
             file_metadata["mimeType"] = "application/vnd.google-apps.folder"
             return (
-                service.files().create(body=file_metadata, fields="id, name").execute()
+                service.files()
+                .create(
+                    body=file_metadata,
+                    fields="id, name",
+                    supportsAllDrives=True,
+                )
+                .execute()
             )
 
         return (
             service.files()
-            .create(body=file_metadata, media_body=media, fields="id, name")
+            .create(
+                body=file_metadata,
+                media_body=media,
+                fields="id, name",
+                supportsAllDrives=True,
+            )
             .execute()
         )
 
     async def delete_file(self, file_id: str) -> bool:
         """Delete a file from Google Drive."""
         service = await self.get_service()
-        service.files().delete(fileId=file_id).execute()
+        service.files().delete(fileId=file_id, supportsAllDrives=True).execute()
         return True
 
     async def get_file_metadata(
         self, file_id: str, fields: str = "id, name, mimeType"
     ) -> Dict[str, Any]:
-        """Fetch Google Drive file or folder metadata by id."""
+        """Fetch Google Drive file or folder metadata by id.
+
+        Works with shared drives (formerly team drives) as well as My Drive.
+        """
         service = await self.get_service()
-        return service.files().get(fileId=file_id, fields=fields).execute()
+        return (
+            service.files()
+            .get(fileId=file_id, fields=fields, supportsAllDrives=True)
+            .execute()
+        )
+
+    async def get_shared_drive_metadata(self, drive_id: str) -> Dict[str, Any]:
+        """Fetch Google shared drive metadata by drive ID.
+
+        Prefer :meth:`get_file_metadata` for folders and for shared-drive roots
+        (the drive ID is also the top-level folder ID). Use this when
+        ``files().get`` returns 404 for a shared-drive root, or when you need
+        drive-level fields that are not on the file resource.
+        """
+        service = await self.get_service()
+        return service.drives().get(driveId=drive_id).execute()
 
     async def list_files(
-        self, folder_id: Optional[str] = None, with_link: bool = False, depth: int = 5
+        self,
+        folder_id: Optional[str] = None,
+        with_link: bool = False,
+        depth: int = 5,
+        drive_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """
-        List files and folders recursively up to a specified depth.
+        """List files and folders recursively up to a specified depth.
+
+        Args:
+            folder_id: Parent folder ID (defaults to env ``GOOGLE_DRIVE_PARENT_FOLDER_ID``).
+            with_link: Include ``webViewLink`` in results.
+            depth: Recursion depth for subfolders.
+            drive_id: Shared Drive ID. Pass this when ``folder_id`` belongs to
+                a shared drive so the API searches within that drive corpus.
         """
         if depth < 0:
             return []
@@ -107,9 +146,17 @@ class GoogleDriveAction(GoogleAction):
             + ")"
         )
 
-        # Note: .execute() is usually synchronous in the standard google-api-python-client.
-        # If using a wrapper like aiogoogle, ensure you await this call.
-        results = service.files().list(q=q, fields=f"nextPageToken, {fields}").execute()
+        list_kwargs: Dict[str, Any] = {
+            "q": q,
+            "fields": f"nextPageToken, {fields}",
+            "supportsAllDrives": True,
+            "includeItemsFromAllDrives": True,
+        }
+        if drive_id:
+            list_kwargs["corpora"] = "drive"
+            list_kwargs["driveId"] = drive_id
+
+        results = service.files().list(**list_kwargs).execute()
         files = results.get("files", [])
 
         for f in files:
@@ -120,9 +167,11 @@ class GoogleDriveAction(GoogleAction):
             # If it's a folder, look deeper
             if f["mimeType"] == "application/vnd.google-apps.folder":
                 if depth > 0:
-                    # Recursive call to get children
                     f["files"] = await self.list_files(
-                        folder_id=f["id"], with_link=with_link, depth=depth - 1
+                        folder_id=f["id"],
+                        with_link=with_link,
+                        depth=depth - 1,
+                        drive_id=drive_id,
                     )
                 else:
                     # If we hit depth limit, provide an empty list or omit
@@ -146,10 +195,16 @@ class GoogleDriveAction(GoogleAction):
         else:
             permission = {"type": "user", "role": role, "emailAddress": email}
 
-        service.permissions().create(fileId=file_id, body=permission).execute()
+        service.permissions().create(
+            fileId=file_id, body=permission, supportsAllDrives=True
+        ).execute()
 
         if share_type == "link":
-            file = service.files().get(fileId=file_id, fields="webViewLink").execute()
+            file = (
+                service.files()
+                .get(fileId=file_id, fields="webViewLink", supportsAllDrives=True)
+                .execute()
+            )
             return {"webViewLink": file.get("webViewLink")}
 
         return {"success": True}
@@ -163,21 +218,20 @@ class GoogleDriveAction(GoogleAction):
 
         # 1. Fetch metadata to determine if it's a Google Doc that needs exporting
         file_metadata = (
-            service.files().get(fileId=file_id, fields="name, mimeType").execute()
+            service.files()
+            .get(fileId=file_id, fields="name, mimeType", supportsAllDrives=True)
+            .execute()
         )
 
         mime_type = file_metadata.get("mimeType", "")
 
         # 2. Define the request based on file type
         if mime_type.startswith("application/vnd.google-apps."):
-            # Handle Google Docs by exporting to PDF by default
-            # You can change 'application/pdf' to other formats (e.g., docx, xlsx)
             request = service.files().export_media(
                 fileId=file_id, mimeType="application/pdf"
             )
         else:
-            # Standard binary download for images, PDFs, ZIPs, etc.
-            request = service.files().get_media(fileId=file_id)
+            request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
 
         # 3. Perform the download using a buffer
         fh = io.BytesIO()
@@ -305,6 +359,10 @@ class GoogleDriveAction(GoogleAction):
         depth: Annotated[
             Optional[int], "Recursion depth for subfolders (default: 5)."
         ] = None,
+        drive_id: Annotated[
+            Optional[str],
+            "Shared Drive ID. Required when folder_id belongs to a shared drive.",
+        ] = None,
     ) -> str:
         """List files and folders in a Google Drive folder."""
         import json
@@ -313,6 +371,7 @@ class GoogleDriveAction(GoogleAction):
             folder_id=(folder_id if folder_id is not None else "") or None,
             with_link=with_link if with_link is not None else False,
             depth=depth if depth is not None else 5,
+            drive_id=drive_id if drive_id is not None else None,
         )
         return json.dumps(results, indent=2)
 
@@ -359,6 +418,17 @@ class GoogleDriveAction(GoogleAction):
             file_id=file_id,
             fields=fields if fields is not None else "id, name, mimeType",
         )
+        return json.dumps(result, indent=2)
+
+    @tool(name="google_drive__get_shared_drive_metadata")
+    async def _t_get_shared_drive_metadata(
+        self,
+        drive_id: Annotated[str, "The ID of the shared drive."],
+    ) -> str:
+        """Get metadata for a Google shared drive (formerly team drive). Use this when the folder_id starts with '0A' — those are shared drive roots, not regular folders."""  # noqa: E501
+        import json
+
+        result = await self.get_shared_drive_metadata(drive_id=drive_id)
         return json.dumps(result, indent=2)
 
     @tool(name="google_drive__get_media")

@@ -15,6 +15,7 @@ import { JsonCodeEditor } from "./JsonCodeEditor";
 
 interface PageIndexDocumentsModalProps {
   agentId: string;
+  agentName?: string;
   onClose: () => void;
   isEmbedded?: boolean;
 }
@@ -300,6 +301,7 @@ type MergeDraft = {
 
 export function PageIndexDocumentsModal({
   agentId,
+  agentName,
   onClose,
   isEmbedded = true,
 }: PageIndexDocumentsModalProps) {
@@ -323,7 +325,7 @@ export function PageIndexDocumentsModal({
   const [doclingOcrEngine, setDoclingOcrEngine] =
     useState<DoclingOcrEngine>("rapidocr");
   const [normalizeBoldHeadings, setNormalizeBoldHeadings] = useState(false);
-  const [useJvforge, setUseJvforge] = useState(false);
+  const [useJvforge, setUseJvforge] = useState(true);
   const [purgeOnImport, setPurgeOnImport] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importText, setImportText] = useState("");
@@ -359,7 +361,7 @@ export function PageIndexDocumentsModal({
     useState<DoclingOcrEngine>("rapidocr");
   const [driveIngestNormalizeBold, setDriveIngestNormalizeBold] =
     useState(false);
-  const [driveIngestUseJvforge, setDriveIngestUseJvforge] = useState(false);
+  const [driveIngestUseJvforge, setDriveIngestUseJvforge] = useState(true);
   const [driveRemoveDeleted, setDriveRemoveDeleted] = useState(false);
   const [driveSkipExistingDocuments, setDriveSkipExistingDocuments] =
     useState(true);
@@ -905,7 +907,9 @@ export function PageIndexDocumentsModal({
       // 1. Get the raw name first
       let namePart =
         selectedDoc?.doc_name ||
-        (exportRootId ? exportRootId.split(".").pop() : "all");
+        (exportRootId
+          ? exportRootId.split(".").pop()
+          : `knowledge_${agentName || agentId}`);
 
       // 2. STRIP THE EXTENSION FIRST (Before cleaning/slicing)
       // This ensures we don't accidentally slice off the "." we need to find the extension.
@@ -1265,6 +1269,28 @@ export function PageIndexDocumentsModal({
     [selectedDriveFolder],
   );
 
+  const buildDriveIngestBody = (retryFailed: boolean) => {
+    if (!selectedDriveFolder) {
+      throw new Error("No Google Drive folder selected");
+    }
+    return {
+      google_drive_folders: [
+        {
+          folder_id: selectedDriveFolder.folder_id,
+          metadata: selectedDriveFolder.metadata ?? {},
+        },
+      ],
+      retry_failed_documents: retryFailed,
+      remove_deleted_documents: driveRemoveDeleted,
+      convert_to_markdown: driveIngestConvertMd,
+      ocr: driveIngestOcrEngine !== "none",
+      docling_ocr_engine: driveIngestOcrEngine,
+      normalize_bold_headings: driveIngestNormalizeBold,
+      skip_existing_documents: driveSkipExistingDocuments,
+      use_jvforge: driveIngestUseJvforge,
+    };
+  };
+
   useEffect(() => {
     if (!selectedDriveFolder) return;
     setDriveEditStatus(
@@ -1300,22 +1326,10 @@ export function PageIndexDocumentsModal({
     setDriveRetrying(true);
     setDriveError(null);
     try {
-      await apiClient.ingestGoogleDocuments(driveSyncActionId, {
-        google_drive_folders: [
-          {
-            folder_id: selectedDriveFolder.folder_id,
-            metadata: selectedDriveFolder.metadata ?? {},
-          },
-        ],
-        retry_failed_documents: true,
-        remove_deleted_documents: driveRemoveDeleted,
-        convert_to_markdown: driveIngestConvertMd,
-        ocr: driveIngestOcrEngine !== "none",
-        docling_ocr_engine: driveIngestOcrEngine,
-        normalize_bold_headings: driveIngestNormalizeBold,
-        skip_existing_documents: driveSkipExistingDocuments,
-        use_jvforge: driveIngestUseJvforge,
-      });
+      await apiClient.ingestGoogleDocuments(
+        driveSyncActionId,
+        buildDriveIngestBody(true),
+      );
       await refreshGoogleDriveList();
     } catch (e: unknown) {
       setDriveError(e instanceof Error ? e.message : "Retry failed");
@@ -1329,22 +1343,10 @@ export function PageIndexDocumentsModal({
     setDriveRetrying(true);
     setDriveError(null);
     try {
-      await apiClient.ingestGoogleDocuments(driveSyncActionId, {
-        google_drive_folders: [
-          {
-            folder_id: selectedDriveFolder.folder_id,
-            metadata: selectedDriveFolder.metadata ?? {},
-          },
-        ],
-        retry_failed_documents: false,
-        remove_deleted_documents: driveRemoveDeleted,
-        convert_to_markdown: driveIngestConvertMd,
-        ocr: driveIngestOcrEngine !== "none",
-        docling_ocr_engine: driveIngestOcrEngine,
-        normalize_bold_headings: driveIngestNormalizeBold,
-        skip_existing_documents: driveSkipExistingDocuments,
-        use_jvforge: driveIngestUseJvforge,
-      });
+      await apiClient.ingestGoogleDocuments(
+        driveSyncActionId,
+        buildDriveIngestBody(false),
+      );
       await refreshGoogleDriveList();
     } catch (e: unknown) {
       setDriveError(e instanceof Error ? e.message : "Ingest failed");
@@ -1417,22 +1419,10 @@ export function PageIndexDocumentsModal({
         res?.result as { prioritized_in?: string } | undefined
       )?.prioritized_in;
       const retryFailed = prioritizedIn === "failed";
-      await apiClient.ingestGoogleDocuments(driveSyncActionId, {
-        google_drive_folders: [
-          {
-            folder_id: selectedDriveFolder.folder_id,
-            metadata: selectedDriveFolder.metadata ?? {},
-          },
-        ],
-        retry_failed_documents: retryFailed,
-        remove_deleted_documents: driveRemoveDeleted,
-        convert_to_markdown: driveIngestConvertMd,
-        ocr: driveIngestOcrEngine !== "none",
-        docling_ocr_engine: driveIngestOcrEngine,
-        normalize_bold_headings: driveIngestNormalizeBold,
-        skip_existing_documents: driveSkipExistingDocuments,
-        use_jvforge: driveIngestUseJvforge,
-      });
+      await apiClient.ingestGoogleDocuments(
+        driveSyncActionId,
+        buildDriveIngestBody(retryFailed),
+      );
       await refreshGoogleDriveList();
       await refreshPageIndexData();
     } catch (e: unknown) {
@@ -2081,6 +2071,20 @@ export function PageIndexDocumentsModal({
                         </span>
                       </label>
                     </div>
+
+                    <p
+                      className={`text-xs ${dark ? "text-zinc-400" : "text-zinc-600"}`}
+                    >
+                      Processor:{" "}
+                      <span className="font-medium">
+                        {driveIngestUseJvforge
+                          ? "jvforge"
+                          : "native (system)"}
+                      </span>
+                      . These options apply to both{" "}
+                      <span className="font-medium">Run ingest</span> and{" "}
+                      <span className="font-medium">Retry failed</span>.
+                    </p>
 
                     <div className="flex flex-wrap gap-2">
                       <button

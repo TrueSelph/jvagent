@@ -113,11 +113,12 @@ def compose_directive(content: str) -> str:
 
 
 # Channel formatting (the "format" axis), keyed by normalized channel name. The
-# default channel (web) is deliberately absent → no directive → slim prompt;
-# only channels that genuinely need different markup carry one. Operators extend
-# or override per channel via the ``channel_formats`` descriptor attribute.
+# default channel (web / jvchat) renders full GFM markdown; only channels that
+# genuinely need different markup carry an override. Operators extend or override
+# per channel via the ``channel_formats`` descriptor attribute.
 _PLAIN = "Plain text only — no markdown, headings, or bullet symbols."
 CHANNEL_FORMATS: Dict[str, str] = {
+    "default": "Use markdown for formatting. Keep responses concise and well-structured.",
     "voice": (
         "Plain speech only — no markdown, lists, or symbols. Keep it brief and "
         "natural; write out anything that wouldn't be spoken aloud."
@@ -534,6 +535,26 @@ class ReplyAction(Action):
         # NEVER answers the user's utterance on its own; with nothing passed or
         # queued, it emits nothing.
         content = base
+        # Include the current user utterance so the compose model can adapt
+        # the directive naturally to the conversation context. Without this the
+        # model only sees past history — not what the user said this turn — so
+        # it can't acknowledge or adapt. Only added when composing directives;
+        # slim publishes skip the compose model entirely.
+        utterance = ""
+        if directive_contents:
+            raw = ""
+            if interaction is not None:
+                raw = getattr(interaction, "utterance", "") or ""
+            if not raw and visitor is not None:
+                raw = getattr(visitor, "utterance", "") or ""
+            if isinstance(raw, str):
+                utterance = raw.strip()
+        if utterance and directive_contents:
+            content = (
+                f"User message: {utterance}\n\n{content}"
+                if content
+                else f"User message: {utterance}"
+            )
         # Parameters (and channel format) shape HOW to phrase. When no explicit
         # message or directive is queued, fall back to the user's utterance so
         # intro-style *contributed* parameters still reach compose.

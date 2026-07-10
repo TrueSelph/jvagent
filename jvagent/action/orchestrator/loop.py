@@ -693,6 +693,27 @@ class OrchestratorLoopMixin:
                                 obs = json.dumps(
                                     {"response_directive": detour_directive}
                                 )
+                        elif (
+                            skill_name
+                            and isinstance(obs, str)
+                            and obs.startswith("Activated skill")
+                        ):
+                            # Non-task-lock: PROCEDURE lives in skills_section so
+                            # Steps taken this turn stays TOOL-only.
+                            from jvagent.action.orchestrator.skill_tasks import (
+                                activated_skill_section_text,
+                            )
+
+                            doc = next(
+                                (
+                                    d
+                                    for d in skill_docs
+                                    if getattr(d, "name", None) == skill_name
+                                ),
+                                None,
+                            )
+                            if doc is not None:
+                                skills_section = activated_skill_section_text(doc)
                     # Companion detour: a companion capability (tool or skill) was
                     # used while a parent skill holds the turn-lock. Re-ground the
                     # parent in place so the model returns to it as soon as the side

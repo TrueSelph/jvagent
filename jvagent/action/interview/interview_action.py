@@ -6,7 +6,10 @@ import json
 import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from jvspatial.core.annotations import attribute
+
 from jvagent.action.base import Action
+from jvagent.action.parameters import SCOPE_ORCHESTRATION, SCOPE_RESPONSE
 
 from . import engine, tasks
 from .hooks import clear_module_cache, load_hook_function
@@ -20,6 +23,44 @@ from .tools import build_tools
 
 logger = logging.getLogger(__name__)
 
+INTERVIEW_CORE_PARAMETERS = [
+    {
+        "scope": SCOPE_ORCHESTRATION,
+        "condition": (
+            "conducting an interview or asking the user questions on behalf of "
+            "a skill"
+        ),
+        "response": (
+            "Stay in the interview's persona and purpose; do not volunteer "
+            "information beyond what the interview prompts for, do not skip "
+            "or fabricate answers, and do not break out of the flow."
+        ),
+    },
+    {
+        "scope": SCOPE_RESPONSE,
+        "condition": "responding while an interview session is active",
+        "response": (
+            "Keep replies focused on the current interview question; do not "
+            "offer unrelated help or switch topics until the interview completes "
+            "or is cancelled."
+        ),
+    },
+    {
+        "scope": SCOPE_RESPONSE,
+        "condition": (
+            "the user refuses, hesitates, or says they don't want to provide a "
+            "required piece of information during an interview"
+        ),
+        "response": (
+            "Let the user know the detail is required to continue. On the "
+            "first refusal, just acknowledge and re-ask — don't mention cancel. "
+            "Only offer cancel as an option after the user has refused more than "
+            "once or seems stuck on the required question. Keep it light, don't "
+            "push cancel."
+        ),
+    },
+]
+
 
 class InterviewAction(Action):
     """Provides interview tools for LLM-driven multi-turn flows."""
@@ -30,6 +71,14 @@ class InterviewAction(Action):
         "the interview spec and SKILL.md procedure."
     )
     binds_tools_to_visitor: bool = True
+    parameters: List[Dict[str, Any]] = attribute(
+        default_factory=list,
+        description=(
+            "Interview-scoped parameters are injected dynamically when a "
+            "session is active (via _inject_spec_parameters), not accumulated "
+            "every turn by the orchestrator."
+        ),
+    )
 
     def get_capabilities(self) -> List[str]:
         return [self.description] if self.description else []
@@ -86,9 +135,12 @@ class InterviewAction(Action):
         self,
         fields: Optional[Dict[str, str]] = None,
         visitor: Any = None,
+        for_each_staged: Optional[Dict[str, Dict[str, str]]] = None,
         **kwargs: Any,
     ) -> str:
-        return await engine.handle_set_fields(self, fields, visitor, **kwargs)
+        return await engine.handle_set_fields(
+            self, fields, visitor, for_each_staged=for_each_staged, **kwargs
+        )
 
     async def _handle_next_field(self, visitor: Any = None) -> str:
         return await engine.handle_next_field(self, visitor)
@@ -225,13 +277,20 @@ class InterviewAction(Action):
     async def prepare_task_lock_turn(self, skill_name: str, visitor: Any = None):
         """Task-lock hook: re-ground the model each locked turn.
 
-        Activation surfaces ``field_reference`` once; on a resumed turn the lock
-        restricts the surface and the activation observation may have aged out of
-        history, so the model loses the field catalog and guesses keys (e.g.
-        ``full_name`` instead of ``user_name``) — failed extractions and
-        reprompting. Re-injecting the current status (catalog + pending field +
-        collected/skipped) as a server-prep observation keeps key selection
-        grounded without re-running ``use_skill``.
+        Activation surfaces ``field_reference`` once in the ``use_skill``
+        observation; PROCEDURE lives in system ``skills_section`` (not under
+        Steps taken this turn). On a resumed turn the lock restricts the surface
+        and the activation observation may have aged out of history, so the model
+        loses the field catalog and guesses keys (e.g. ``full_name`` instead of
+        ``user_name``) — failed extractions and reprompting. Re-injecting the
+        current status (catalog + pending field + collected/skipped) as a
+        server-prep observation keeps key selection grounded without re-running
+        ``use_skill``.
+
+        The orchestrator skips appending these prep observations when the same
+        turn already carries the activation catalog (``use_skill`` or
+        skill-session note), so ``interview_type`` / ``field_reference`` are not
+        duplicated under Steps taken this turn.
         """
         from jvagent.action.skill_spec.task_lock import TaskLockPrep
 

@@ -6,6 +6,7 @@ import threading
 from dataclasses import dataclass, replace
 from typing import Any, ClassVar, Dict, List, Optional, Set
 
+from googleapiclient.errors import HttpError
 from jvspatial.api.auth.api_key_service import APIKeyService
 from jvspatial.core.annotations import attribute
 from jvspatial.core.context import GraphContext
@@ -834,22 +835,71 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         """Phase A: list Drive trees, merge queues, persist ``GoogleDriveDocuments`` nodes."""
         for google_drive_folder in google_drive_folders:
             google_drive_folder_id = google_drive_folder.get("folder_id")
+            drive_id = google_drive_folder.get("drive_id")
+            looks_like_shared_drive_root = bool(
+                google_drive_folder_id
+                and (
+                    google_drive_folder_id.startswith("0A")
+                    or (drive_id and google_drive_folder_id == drive_id)
+                )
+            )
 
+            def _invalidate_drive_service() -> None:
+                # Drop cached httplib2 client after connection errors so
+                # list_files does not reuse a broken socket.
+                if hasattr(google_drive_action, "_built_service"):
+                    google_drive_action._built_service = None
+
+            # Prefer files().get (supportsAllDrives) — shared drive ID is also
+            # the top-level folder ID. Only fall back to drives().get on 404.
+            folder_name = ""
             try:
                 root_meta = await google_drive_action.get_file_metadata(
-                    google_drive_folder_id, fields="id, name"
+                    google_drive_folder_id, fields="id, name, driveId"
                 )
                 folder_name = str(root_meta.get("name") or "")
+                if not drive_id:
+                    drive_id = root_meta.get("driveId")
+            except HttpError as e:
+                status = getattr(e.resp, "status", None)
+                if status in (404, "404") and looks_like_shared_drive_root:
+                    try:
+                        drive_meta = (
+                            await google_drive_action.get_shared_drive_metadata(
+                                google_drive_folder_id
+                            )
+                        )
+                        folder_name = str(drive_meta.get("name") or "")
+                        drive_id = google_drive_folder_id
+                    except Exception:
+                        logger.warning(
+                            "Could not fetch Drive folder/drive name for "
+                            "folder_id=%s",
+                            google_drive_folder_id,
+                            exc_info=True,
+                        )
+                        _invalidate_drive_service()
+                        drive_id = drive_id or google_drive_folder_id
+                else:
+                    logger.warning(
+                        "Could not fetch Drive folder/drive name for " "folder_id=%s",
+                        google_drive_folder_id,
+                        exc_info=True,
+                    )
+                    _invalidate_drive_service()
             except Exception:
                 logger.warning(
-                    "Could not fetch Drive folder name for folder_id=%s",
+                    "Could not fetch Drive folder/drive name for folder_id=%s",
                     google_drive_folder_id,
                     exc_info=True,
                 )
-                folder_name = ""
+                _invalidate_drive_service()
+
+            if not drive_id and looks_like_shared_drive_root:
+                drive_id = google_drive_folder_id
 
             files = await google_drive_action.list_files(
-                with_link=True, folder_id=google_drive_folder_id
+                with_link=True, folder_id=google_drive_folder_id, drive_id=drive_id
             )
             metadata = google_drive_folder.get("metadata", {})
 
@@ -984,12 +1034,12 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             fd = google_drive_documents_node.failed_documents
             has_ingest = bool(ing["added"] or ing["modified"] or ing["removed"])
             has_failed = bool(fd["added"] or fd["modified"] or fd["removed"])
-            if has_ingest:
-                ingesting_documents = ing
-                ingest_source = "ingesting_documents"
-            elif retry_failed_documents and has_failed:
+            if retry_failed_documents and has_failed:
                 ingesting_documents = fd
                 ingest_source = "failed_documents"
+            elif has_ingest:
+                ingesting_documents = ing
+                ingest_source = "ingesting_documents"
             else:
                 continue
 
@@ -1133,8 +1183,19 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         ocr_eff, docling_eff = _drive_resolve_docling_ocr(docling_ocr_engine, ocr)
         initialize_pageindex_database(app_id=await _get_app_id_from_node())
         logger.info(
-            "PageIndex Google Drive Sync: starting ingestion for %d folder(s)",
+            "PageIndex Google Drive Sync: starting ingestion for %d folder(s) "
+            "(retry_failed=%s use_jvforge=%s convert_to_markdown=%s ocr=%s "
+            "docling_ocr_engine=%s normalize_bold_headings=%s "
+            "skip_existing=%s remove_deleted=%s)",
             len(google_drive_folders),
+            retry_failed_documents,
+            use_jvforge,
+            convert_to_markdown,
+            ocr_eff,
+            docling_eff,
+            normalize_bold_headings,
+            skip_existing_documents,
+            remove_deleted_documents,
         )
         document_ingested: Dict[str, List[str]] = {
             "added": [],

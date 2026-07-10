@@ -484,3 +484,84 @@ async def test_prune_added_skip_existing_noop_when_flag_off() -> None:
     mock_list.assert_not_called()
     assert len(node.ingesting_documents["added"]) == 1
     node.save.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_prefers_failed_queue_when_ingesting_also_has_work() -> None:
+    """retry_failed_documents=True must process failed_documents even if ingesting is non-empty."""
+    failed_file = {
+        "name": "failed.pdf",
+        "id": "file-failed",
+        "url": "https://example.com/failed.pdf",
+        "mimeType": "application/pdf",
+    }
+    ingest_file = {
+        "name": "pending.pdf",
+        "id": "file-pending",
+        "url": "https://example.com/pending.pdf",
+        "mimeType": "application/pdf",
+    }
+    node = SimpleNamespace(
+        folder_id="folder-1",
+        files=[failed_file, ingest_file],
+        ingesting_documents={
+            "added": [ingest_file],
+            "modified": [],
+            "removed": [],
+        },
+        failed_documents={"added": [failed_file], "modified": [], "removed": []},
+        active_document="",
+        status="failed",
+        save=AsyncMock(return_value=None),
+    )
+    action = PageIndexGoogleDriveSyncAction(document_timeout=600)
+    cfg = DriveIngestConfig(
+        collection_name="agent-1",
+        metadata={},
+        model=None,
+        model_action=None,
+        node_summary="no",
+        agent_id="agent-1",
+        page_index_action=SimpleNamespace(),
+        use_jvforge=True,
+    )
+    captured: dict = {}
+
+    async def _fake_process(**kwargs):
+        captured["source"] = kwargs.get("source")
+        captured["file_id"] = kwargs.get("file_info", {}).get("id")
+        captured["use_jvforge"] = kwargs.get("cfg").use_jvforge
+        return {
+            "success": True,
+            "skipped": False,
+            "doc_name": "failed.pdf",
+            "ingestion_message": "ok",
+        }
+
+    with (
+        patch.object(
+            PageIndexGoogleDriveSyncAction,
+            "node",
+            new_callable=AsyncMock,
+            return_value=node,
+        ),
+        patch.object(action, "_process_single_document", side_effect=_fake_process),
+    ):
+        out = await action._phase_pick_and_process_google_drive_document(
+            google_drive_folders=[{"folder_id": "folder-1", "metadata": {}}],
+            remove_deleted_documents=False,
+            retry_failed_documents=True,
+            google_drive_action=SimpleNamespace(),
+            cfg_template=cfg,
+            document_ingested={
+                "added": [],
+                "updated": [],
+                "removed": [],
+                "to_be_removed": [],
+            },
+        )
+
+    assert captured["source"] == "failed_documents"
+    assert captured["file_id"] == "file-failed"
+    assert captured["use_jvforge"] is True
+    assert out["documents_ingested"]["added"] == ["failed.pdf"]

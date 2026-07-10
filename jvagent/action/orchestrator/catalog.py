@@ -10,8 +10,11 @@ restricted to the *visible* set, so hidden tools must first be loaded via
 ``find_tool`` or surfaced by a skill.)
 
 ``find_skill`` / ``use_skill`` mirror this for native SOP skills: only names +
-descriptions are surfaced up front; ``use_skill`` returns the full procedure
-body as an observation so it persists for the rest of the loop.
+descriptions are surfaced up front. ``use_skill`` returns a short activation
+note (plus any activate-hook payload) as an observation — tool steps stay
+contiguous under "Steps taken this turn". The skill PROCEDURE body is surfaced
+via the system ``skills_section`` (task-lock or post-activation), not inside
+the observation.
 """
 
 from __future__ import annotations
@@ -139,7 +142,9 @@ def build_skill_meta_tools(
 
     ``activate_hook`` runs once on a skill's first activation (e.g. to stage a
     Claude skill's folder into the code-execution sandbox); a non-empty string
-    it returns is appended to the activation observation.
+    it returns is appended to the activation observation. The skill PROCEDURE
+    body is not embedded in the observation — the orchestrator surfaces it via
+    system ``skills_section`` so Steps taken this turn stays TOOL-only.
     """
     if not docs:
         return {}
@@ -161,8 +166,8 @@ def build_skill_meta_tools(
         present = [t for t in doc.requires_tools if t in available_tool_names]
         missing = [t for t in doc.requires_tools if t not in available_tool_names]
         # Idempotent: re-activating a skill already loaded this turn returns a
-        # short directive instead of re-dumping the SOP, so the model proceeds
-        # with the procedure instead of looping on use_skill.
+        # short directive instead of re-dumping activation, so the model proceeds
+        # with the procedure (in skills_section) instead of looping on use_skill.
         if name in activated:
             if visible is not None and present:
                 visible.update(present)
@@ -203,10 +208,9 @@ def build_skill_meta_tools(
         if visible is not None and present:
             visible.update(present)
         surfaced = f" Tools now callable: {', '.join(present)}." if present else ""
-        return (
-            f"Activated skill '{doc.name}'.{surfaced}{staged}"
-            f"\n\nPROCEDURE:\n{doc.body}{warn}"
-        )
+        # PROCEDURE lives in skills_section (system prompt), not here — keeps
+        # "Steps taken this turn" a contiguous list of TOOL lines.
+        return f"Activated skill '{doc.name}'.{surfaced}{staged}{warn}"
 
     return {
         "find_skill": SkillTool(

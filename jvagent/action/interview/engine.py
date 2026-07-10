@@ -34,14 +34,22 @@ from .flow import (
     resolve_next_field_name,
 )
 from .for_each import (
+    STATUS_COMPLETE,
     apply_default_expand_after_parent_store,
     apply_for_each_expand,
+    apply_for_each_staged_to_records,
+    auto_advance_staged_for_each,
+    build_for_each_metadata,
     field_sort_order,
+    find_child_field_parent,
     for_each_review_sections,
     get_active_for_each,
+    get_for_each_state,
+    get_for_each_store,
     is_for_each_child_key,
     maybe_advance_for_each,
     resolve_field_def,
+    update_for_each_record_field,
     wipe_parent_for_each,
 )
 from .hooks import (
@@ -87,6 +95,39 @@ from .spec import (
 )
 
 logger = logging.getLogger(__name__)
+
+_INTERVIEW_ACTION_NAME = "InterviewAction"
+
+
+def _inject_spec_parameters(spec: InterviewSpec, visitor: Any = None) -> None:
+    """Add interview core + per-skill parameters onto the interaction.
+
+    Injects the interview core parameters (stay-in-flow, cancel option, etc.)
+    and the spec's per-skill parameters onto the visitor's interaction so the
+    reply compose prompt picks them up. Only called when a session is active,
+    so interview params never appear in prompts outside an interview.
+    Deduplication in render_parameters prevents duplicates across turns.
+    """
+    from .interview_action import INTERVIEW_CORE_PARAMETERS
+
+    interaction = getattr(visitor, "interaction", None) if visitor else None
+    if interaction is None:
+        return
+    if not hasattr(interaction, "add_parameters"):
+        return
+    try:
+        if INTERVIEW_CORE_PARAMETERS:
+            interaction.add_parameters(
+                INTERVIEW_CORE_PARAMETERS, _INTERVIEW_ACTION_NAME
+            )
+    except Exception as exc:
+        logger.debug("_inject_spec_parameters core failed: %s", exc)
+    try:
+        if spec.parameters:
+            interaction.add_parameters(spec.parameters, _INTERVIEW_ACTION_NAME)
+    except Exception as exc:
+        logger.debug("_inject_spec_parameters spec failed: %s", exc)
+
 
 SET_FIELDS_ARGS_EXAMPLE = (
     '{"fields": {"user_name": "Jane Doe", "available_times": "Monday at 9"}}'
@@ -147,7 +188,10 @@ async def get_session_and_spec(
     session = await get_session(visitor)
     if not session:
         return None, None
-    return session, action._registry.get(session.interview_type)
+    spec = action._registry.get(session.interview_type)
+    if spec:
+        _inject_spec_parameters(spec, visitor)
+    return session, spec
 
 
 def _no_session_response() -> str:
@@ -461,6 +505,7 @@ async def handle_set_fields(
     action: Any,
     fields: Optional[Dict[str, str]] = None,
     visitor: Any = None,
+    for_each_staged: Optional[Dict[str, Dict[str, str]]] = None,
     **kwargs: Any,
 ) -> str:
     session, spec = await action._get_session_and_contract(visitor)
@@ -468,7 +513,8 @@ async def handle_set_fields(
         return _no_session_response()
 
     field_map = _normalize_field_map(fields, **kwargs)
-    if not field_map:
+
+    if not field_map and not for_each_staged:
         return interview_tool_response(
             ok=False,
             status="error",
@@ -654,12 +700,18 @@ async def handle_set_fields(
         # validation already passed — if we wiped before validation and validation
         # then failed, the old expansion would be gone but the old stored value
         # would remain, permanently blocking the children.
-        if (
-            fdef.for_each is not None
-            and session.has_field(fname)
-            and stored_value != str(session.get_value(fname))
-        ):
-            wipe_parent_for_each(session, spec, fname)
+        # When the for_each already has state (records from a prior expansion),
+        # skip the wipe so init_expansion can preserve matching records and only
+        # re-collect new/changed items.
+        if fdef.for_each is not None and session.has_field(fname):
+            existing_state = get_for_each_state(session, fname)
+            has_records = (
+                isinstance(existing_state, dict)
+                and isinstance(existing_state.get("records"), list)
+                and len(existing_state.get("records", [])) > 0
+            )
+            if stored_value != str(session.get_value(fname)) and not has_records:
+                wipe_parent_for_each(session, spec, fname)
         session.set_value(fname, stored_value)
         stored_any = True
         entry["stored"] = True
@@ -729,6 +781,8 @@ async def handle_set_fields(
             maybe_advance_for_each(session, spec, fname)
             if entry.get("stored"):
                 stored_for_each_child = True
+        elif entry.get("stored") and find_child_field_parent(spec, fname):
+            update_for_each_record_field(session, spec, fname, stored_value)
 
         results.append(entry)
 
@@ -738,6 +792,57 @@ async def handle_set_fields(
     if stored_any:
         pruned_all = prune_unreachable_fields(session, reachable)
         prune_orphan_for_each_states(session, spec, reachable)
+
+    # Process for_each_staged AFTER all fields have been stored and
+    # post_processors have run, so that parent field post_processors that
+    # create for_each expansions (e.g. check_tracking_statuses expanding
+    # tracking_numbers) have already created the for_each state. This
+    # allows for_each_staged data to be properly mapped to item IDs when
+    # the for_each expansion is created by a parent field in the same call.
+    staged_results: List[Dict[str, Any]] = []
+    if for_each_staged:
+        active_fe = get_active_for_each(session, spec)
+        if active_fe:
+            items = active_fe.state.get("items") or []
+            child_keys_set = set(active_fe.state.get("child_keys") or [])
+            if not isinstance(session.context, dict):
+                session.context = {}
+            stage_store = session.context.setdefault("_for_each_staged", {})
+            for idx_str, item_values in for_each_staged.items():
+                try:
+                    idx = int(idx_str) - 1
+                except (ValueError, TypeError):
+                    continue
+                if idx < 0 or idx >= len(items):
+                    continue
+                item_id = items[idx].get("id", "")
+                item_staged = stage_store.setdefault(item_id, {})
+                for ck, cv in item_values.items():
+                    if ck in child_keys_set:
+                        item_staged[ck] = str(cv)
+                        staged_results.append(
+                            {
+                                "field": f"for_each_staged[{idx_str}].{ck}",
+                                "stored": True,
+                                "staged": True,
+                                "value": cv,
+                            }
+                        )
+        else:
+            updated = apply_for_each_staged_to_records(session, spec, for_each_staged)
+            if updated:
+                for idx_str, item_values in for_each_staged.items():
+                    for ck in item_values:
+                        staged_results.append(
+                            {
+                                "field": f"for_each_staged[{idx_str}].{ck}",
+                                "stored": True,
+                                "updated_record": True,
+                                "value": item_values[ck],
+                            }
+                        )
+
+    auto_advance_staged_for_each(session, spec)
     active_key_set = set(reachable)
     spec_keys = set(spec.field_keys())
     ignored_fields = {
@@ -892,6 +997,27 @@ async def handle_set_fields(
             payload["response_directive"] = call_tool_directive(next_tool)
         if next_field:
             payload["next_field_key"] = next_field["key"]
+        fe_meta = None
+        fe_store = get_for_each_store(session)
+        for parent_key in fe_store:
+            meta = build_for_each_metadata(session, spec, parent_key)
+            if meta:
+                fe_meta = meta
+                break
+        if fe_meta:
+            payload["for_each"] = fe_meta
+        elif stored_for_each_child:
+            for parent_key in fe_store:
+                state = fe_store[parent_key]
+                if isinstance(state, dict) and state.get("status") == STATUS_COMPLETE:
+                    payload["for_each"] = {
+                        "parent": parent_key,
+                        "index": len(state.get("items") or []),
+                        "total": len(state.get("items") or []),
+                        "label": "",
+                        "complete": True,
+                    }
+                    break
         if not inline_question:
             # next_tool signals a CHAIN: the model MUST call it before finalizing.
             # The inline-question branch above is a terminal reply (the question is
@@ -909,6 +1035,41 @@ async def handle_set_fields(
                 f"{notes_text} {system_message}".strip()
                 if system_message
                 else notes_text
+            )
+        fe_payload = payload.get("for_each")
+        if fe_payload and not fe_payload.get("complete"):
+            remaining = fe_payload.get("total", 0) - fe_payload.get("index", 0)
+            if remaining > 0:
+                child_key = next_field["key"] if next_field else ""
+                nudge = (
+                    "for_each_staged: extract data for the remaining "
+                    + str(remaining)
+                    + " item(s) now if the user mentioned them. Keys are 1-based "
+                    + "indices (current="
+                    + str(fe_payload.get("index"))
+                    + ", total="
+                    + str(fe_payload.get("total"))
+                    + "). "
+                )
+                if child_key:
+                    nudge += (
+                        'Example: {"fields": {"' + child_key + '": "value"}, '
+                        '"for_each_staged": {"2": {"description": "phone", '
+                        '"invoice_value": "243"}}}'
+                    )
+                else:
+                    nudge += "Use 1-based indices matching for_each.index."
+                system_message = (
+                    f"{system_message} {nudge}".strip() if system_message else nudge
+                )
+        elif fe_payload and fe_payload.get("complete"):
+            nudge = (
+                "for_each_staged can update individual items during review. "
+                "Use 1-based indices, e.g. "
+                '{"2": {"invoice_value": "253"}}'
+            )
+            system_message = (
+                f"{system_message} {nudge}".strip() if system_message else nudge
             )
         if system_message:
             payload["system_message"] = system_message
@@ -1028,6 +1189,17 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
                 str(next_field.get("prompt") or ""),
                 fdef.hint if fdef else "",
             )
+
+    # For for_each children, the pre_processor directive uses the raw
+    # field prompt. Override it with the prefixed prompt from
+    # build_next_field, which incorporates prompt_prefix + label.
+    active_fe = get_active_for_each(session, spec)
+    if active_fe and next_field["key"] in set(active_fe.state.get("child_keys") or []):
+        directive = field_prompt_directive(
+            str(next_field.get("prompt") or ""),
+            fdef.hint if fdef else "",
+        )
+
     pre_tools_results = extras.get("pre_tools_results") or []
     if any(not r.get("ok", True) for r in pre_tools_results):
         return interview_tool_response(
@@ -1063,6 +1235,8 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
     }
     if extras.get("suggested_value") is not None:
         slim_next["suggested_value"] = extras["suggested_value"]
+    if "for_each" in next_field:
+        slim_next["for_each"] = next_field["for_each"]
 
     # Optional fields are skippable — tell the model the skip path so a decline
     # routes to interview__skip_field instead of stalling.
@@ -1076,6 +1250,25 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
     if pre_tools_results:
         await action._save_session(session, visitor)
 
+    fe_nudge = None
+    if "for_each" in next_field:
+        fe_meta = next_field["for_each"]
+        remaining = fe_meta.get("total", 0) - fe_meta.get("index", 0)
+        if remaining > 0:
+            fe_nudge = (
+                "for_each_staged: extract data for the remaining "
+                + str(remaining)
+                + " item(s) now if the user mentioned them. Use 1-based indices "
+                + "(current="
+                + str(fe_meta.get("index"))
+                + ", total="
+                + str(fe_meta.get("total"))
+                + '). Example: {"fields": {"'
+                + fdef.key
+                + '": "value"}, "for_each_staged": {"2": {"description": "phone", '
+                '"invoice_value": "243"}}}'
+            )
+
     return interview_tool_response(
         ok=True,
         status=session.status.value,
@@ -1083,6 +1276,7 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
         skipped_fields=sorted(session.skipped_fields) or None,
         pre_tools_results=pre_tools_results or None,
         response_directive=directive,
+        system_message=fe_nudge,
     )
 
 
@@ -1458,15 +1652,15 @@ async def handle_complete(action: Any, visitor: Any = None) -> str:
     if visitor:
         await tasks.close_task(visitor, status="completed", spec_name=spec.name)
 
+    parsed = coerce_hook_result(result)
     retain_keys: List[str] = []
-    if isinstance(result, dict):
-        raw_retain = result.get("retain_context_keys")
-        if isinstance(raw_retain, list):
-            retain_keys = [str(k) for k in raw_retain if k]
+    raw_retain = parsed.get("retain_context_keys")
+    if isinstance(raw_retain, list):
+        retain_keys = [str(k) for k in raw_retain if k]
     await action._clear_interview_session(visitor, retain_context_keys=retain_keys)
 
-    if isinstance(result, dict):
-        raw_directive = result.get("response_directive") or "Interview completed."
+    if parsed:
+        raw_directive = parsed.get("response_directive") or "Interview completed."
         stripped = raw_directive.strip()
         directive = (
             raw_directive
@@ -1479,7 +1673,7 @@ async def handle_complete(action: Any, visitor: Any = None) -> str:
             ok=True,
             status="completed",
             response_directive=directive,
-            completion_result=result,
+            completion_result=parsed,
             fields=fields_summary,
         )
     return interview_tool_response(
@@ -1658,14 +1852,18 @@ async def handle_get_status(action: Any, visitor: Any = None) -> str:
 async def interview_turn_status(action: Any, visitor: Any = None) -> Optional[str]:
     """Per-turn re-grounding for a locked interview.
 
-    Activation surfaces the full ``field_reference`` once, but that observation ages
-    out of history — and under task-driven turn-lock (ADR-0026) a skill entered as a
-    pushed prerequisite / resumed via the drain is delivered terminally, so the model
-    may never run the activation turn at all. Either way the model loses the field
-    catalog (valid keys + per-field guidance) it needs to extract values and
-    supplement prompts correctly. So this re-asserts the **full** ``field_reference``
-    (key, prompt, guidance, required) alongside the pending field and progress on
-    every locked turn. ``get_status`` remains the on-demand path for the same.
+    Activation surfaces the full ``field_reference`` once (in the ``use_skill``
+    observation; PROCEDURE is in system ``skills_section``), but that observation
+    ages out of history — and under task-driven turn-lock (ADR-0026) a skill
+    entered as a pushed prerequisite / resumed via the drain is delivered
+    terminally, so the model may never run the activation turn at all. Either way
+    the model loses the field catalog (valid keys + per-field guidance) it needs
+    to extract values and supplement prompts correctly. So this re-asserts the
+    **full** ``field_reference`` (key, prompt, guidance, required) alongside the
+    pending field and progress on locked turns that lack an in-turn activation
+    catalog. The orchestrator omits appending this payload when activation
+    already supplied it this turn. ``get_status`` remains the on-demand path for
+    the same.
     """
     session, spec = await action._get_session_and_contract(visitor)
     if not session or not spec:
@@ -1717,6 +1915,8 @@ async def handle_start(
             ),
             available_types=available,
         )
+
+    _inject_spec_parameters(spec, visitor)
 
     conversation = await action._get_conversation(visitor)
     existing = load_session(conversation) if conversation else None

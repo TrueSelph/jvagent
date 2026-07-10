@@ -176,3 +176,141 @@ async def test_apply_task_lock_turn_binds_interview_over_api_dependency():
 
     interview.prepare_task_lock_turn.assert_awaited_once()
     assert not observations
+
+
+async def test_apply_task_lock_turn_skips_prep_when_activation_catalog_present():
+    """Same-turn use_skill catalog must not be duplicated by prepare_task_lock_turn."""
+    skill = SkillDoc(
+        name="signup_interview",
+        description="d",
+        body="SOP body",
+        requires_tools=("interview__set_fields",),
+        requires_actions=("BoundAction",),
+        task_lock=True,
+    )
+
+    prep_mock = AsyncMock(
+        return_value=TaskLockPrep(
+            runtime_ready=True,
+            observations=[
+                {
+                    "tool": "interview__get_status",
+                    "args": {},
+                    "observation": (
+                        '{"ok": true, "interview_type": "signup_interview", '
+                        '"field_reference": []}'
+                    ),
+                    "kind": "server_prep",
+                }
+            ],
+        )
+    )
+
+    class BoundAction:
+        enabled = True
+
+        def get_class_name(self):
+            return "BoundAction"
+
+        async def needs_task_lock_rebootstrap(self, skill_name, visitor=None):
+            return False
+
+        async def task_lock_runtime_ready(self, skill_name, visitor=None):
+            return True
+
+        prepare_task_lock_turn = prep_mock
+
+    tools = {"interview__set_fields": MagicMock(), "reply": MagicMock()}
+    visible = set(tools)
+    observations = [
+        {
+            "tool": "use_skill",
+            "args": {"name": "signup_interview"},
+            "observation": (
+                "Activated skill 'signup_interview'. Tools now callable: "
+                "interview__set_fields.\n\n"
+                '{"ok": true, "status": "active", '
+                '"interview_type": "signup_interview", '
+                '"field_reference": [{"key": "user_name"}]}'
+            ),
+        }
+    ]
+
+    await apply_task_lock_turn(
+        skill,
+        [BoundAction()],
+        MagicMock(),
+        user_message="hi",
+        tools=tools,
+        visible=visible,
+        activated=["signup_interview"],
+        observations=observations,
+    )
+
+    prep_mock.assert_awaited_once()
+    assert all(o.get("tool") != "interview__get_status" for o in observations)
+    assert len(observations) == 1
+
+
+async def test_apply_task_lock_turn_injects_prep_without_activation():
+    """Resumed locked turns still get prepare_task_lock_turn status."""
+    skill = SkillDoc(
+        name="signup_interview",
+        description="d",
+        body="SOP body",
+        requires_tools=("interview__set_fields",),
+        requires_actions=("BoundAction",),
+        task_lock=True,
+    )
+
+    class BoundAction:
+        enabled = True
+
+        def get_class_name(self):
+            return "BoundAction"
+
+        async def needs_task_lock_rebootstrap(self, skill_name, visitor=None):
+            return False
+
+        async def task_lock_runtime_ready(self, skill_name, visitor=None):
+            return True
+
+        async def prepare_task_lock_turn(self, skill_name, visitor=None):
+            return TaskLockPrep(
+                runtime_ready=True,
+                observations=[
+                    {
+                        "tool": "interview__get_status",
+                        "args": {},
+                        "observation": (
+                            '{"ok": true, "interview_type": "signup_interview", '
+                            '"field_reference": [{"key": "user_name"}]}'
+                        ),
+                    }
+                ],
+            )
+
+    tools = {"interview__set_fields": MagicMock(), "reply": MagicMock()}
+    observations: list = []
+
+    await apply_task_lock_turn(
+        skill,
+        [BoundAction()],
+        MagicMock(),
+        user_message="hi",
+        tools=tools,
+        visible=set(tools),
+        activated=["signup_interview"],
+        observations=observations,
+    )
+
+    assert any(o.get("tool") == "interview__get_status" for o in observations)
+
+
+def test_activated_skill_section_text_surfaces_procedure():
+    from jvagent.action.orchestrator.skill_tasks import activated_skill_section_text
+
+    doc = SkillDoc(name="web_lookup", description="d", body="1. search\n2. summarize")
+    section = activated_skill_section_text(doc)
+    assert "ACTIVE SKILL: web_lookup" in section
+    assert "PROCEDURE:\n1. search" in section

@@ -33,21 +33,31 @@ async def test_render_tools_section_empty_and_full():
     assert "- t: does t" in out
 
 
-async def test_render_observations_section_preserves_use_skill_procedure():
+async def test_render_observations_section_keeps_tool_lines_contiguous():
+    """Steps taken this turn should be TOOL lines only — no PROCEDURE body."""
     out = render_observations_section(
         [
             {
                 "tool": "use_skill",
                 "args": {"name": "signup_interview"},
                 "observation": (
-                    "Activated skill 'signup_interview'.\n\n"
-                    "PROCEDURE:\n"
-                    "Line 1\nLine 2\nLine 3"
+                    "Activated skill 'signup_interview'. Tools now callable: "
+                    "interview__set_fields.\n\n"
+                    '{"ok": true, "interview_type": "signup_interview"}'
                 ),
-            }
+            },
+            {
+                "tool": "interview__set_fields",
+                "args": {"fields": {"user_name": "Eldon"}},
+                "observation": '{"ok": true, "status": "active"}',
+            },
         ]
     )
-    assert "PROCEDURE:\nLine 1" in out
+    assert "TOOL use_skill" in out
+    assert "TOOL interview__set_fields" in out
+    assert "PROCEDURE:" not in out
+    # Contiguous: second TOOL follows first observation without a SOP block.
+    assert out.index("TOOL use_skill") < out.index("TOOL interview__set_fields")
 
 
 async def test_render_observations_section_preserves_interview_payload_shape():
@@ -135,7 +145,9 @@ async def test_skill_meta_tools_progressive_disclosure_and_missing_warning():
     assert "web_lookup" in listing
 
     used = await meta["use_skill"].run({"name": "web_lookup"})
-    assert "PROCEDURE:" in used and "web_search__search" in used
+    assert "Activated skill 'web_lookup'" in used
+    assert "PROCEDURE:" not in used
+    assert "web_search__search" in used  # missing-tools warn still names it
     assert "not currently available" in used  # soft-dependency warning
     assert activated == ["web_lookup"]
 
@@ -163,7 +175,8 @@ async def test_use_skill_surfaces_allowed_tools_into_visible():
     assert "web_lookup" in activated
     assert "Tools now callable" in out and "web_search__search" in out
     assert "not currently available" in out  # missing tool warned
-    assert "SOP body" in out  # procedure delivered
+    assert "PROCEDURE:" not in out  # SOP is skills_section, not observation
+    assert "SOP body" not in out
 
 
 async def test_use_skill_without_visible_set_is_noop_on_surface():
@@ -293,7 +306,9 @@ async def test_use_skill_is_idempotent():
     tools = build_skill_meta_tools([doc], {"web_search__search"}, activated, visible)
 
     first = await tools["use_skill"].run({"name": "research"})
-    assert "FULL SOP BODY HERE" in first  # SOP delivered on first activation
+    assert "Activated skill 'research'" in first
+    assert "FULL SOP BODY HERE" not in first  # SOP is skills_section, not observation
+    assert "PROCEDURE:" not in first
     assert activated == ["research"]
 
     second = await tools["use_skill"].run({"name": "research"})
