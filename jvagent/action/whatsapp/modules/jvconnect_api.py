@@ -1,7 +1,7 @@
 """WhatsApp Cloud API via jvconnect Messaging API (credential proxy).
 
 Keeps Meta access tokens and app secrets on jvconnect. jvagent authenticates
-with ``JVCONNECT_API_KEY`` and calls purpose-built ``/api/v1/whatsapp/*`` routes.
+with ``JVCONNECT_API_KEY`` and calls purpose-built ``/api/v1/meta/whatsapp/*`` routes.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ class JvconnectWhatsAppAPI(MetaWhatsAppAPI):
         self._jvconnect_base = (api_url or "").rstrip("/")
 
     def _v1(self, path: str) -> str:
-        return f"{self._jvconnect_base}/api/v1/whatsapp/{path.lstrip('/')}"
+        return f"{self._jvconnect_base}/api/v1/meta/whatsapp/{path.lstrip('/')}"
 
     def _auth_headers(self, content_type: Optional[str] = "application/json") -> dict:
         headers: Dict[str, str] = {}

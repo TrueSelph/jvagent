@@ -534,7 +534,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         if whatsapp_action.is_meta_provider():
             app_secret = whatsapp_action._env_app_secret()
             if not app_secret:
-                if whatsapp_action.uses_jvconnect():
+                if whatsapp_action.is_meta_provider():
                     raise HTTPException(
                         status_code=500,
                         detail=(

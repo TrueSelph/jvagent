@@ -259,60 +259,55 @@ Use the official WhatsApp Business Cloud API instead of a self-hosted bridge. Su
 
 Configure `stt_action` and `tts_action` on the WhatsApp action (same as bridge providers) for voice note transcription and voice replies.
 
-#### jvconnect credential proxy (recommended)
+#### jvconnect credential proxy (required for `provider: meta`)
 
-When WhatsApp is onboarded through **jvconnect**, prefer proxying Cloud API calls so Meta access tokens and the app secret never land in jvagent `.env`:
+WhatsApp Cloud API traffic goes through **jvconnect** so Meta access tokens and the app secret never land in jvagent `.env`:
 
 ```yaml
 - action: jvagent/whatsapp_action
   context:
     provider: meta
-    credential_source: jvconnect
     phone_number_id: "102274452799236"  # or WHATSAPP_PHONE_NUMBER_ID
 ```
 
 ```env
-WHATSAPP_CREDENTIAL_SOURCE=jvconnect
 JVCONNECT_URL=https://your-jvconnect.example.com
 JVCONNECT_API_KEY=jvk_...
 WHATSAPP_PHONE_NUMBER_ID=102274452799236
 JVAGENT_PUBLIC_BASE_URL=https://your-app.com
 ```
 
-Create the API key on jvconnect → **API Credentials**. Startup calls jvconnect `POST /api/v1/whatsapp/webhook/register` (Meta → jvconnect → agent).
+Create the API key on jvconnect → **API Credentials**. Startup calls jvconnect `POST /api/v1/meta/whatsapp/webhook/register` (Meta → jvconnect → agent).
 
-#### Direct Graph credentials
+Bridge providers (`wwebjs`, `wppconnect`, `ultramsg`) are unchanged and do not use jvconnect.
 
-**Per-agent credentials** — prefer `agent.yaml`; empty fields fall back to `.env`:
+#### Legacy direct Graph fields
+
+`access_token` / `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_APP_SECRET` are unused for `provider: meta` (kept only for bridge / deprecated yaml). Prefer jvconnect:
 
 ```yaml
 - action: jvagent/whatsapp_action
   context:
     provider: meta
-    waba_id: "107732305578216"          # or WHATSAPP_WABA_ID
     phone_number_id: "102274452799236"  # or WHATSAPP_PHONE_NUMBER_ID
-    access_token: "EAAJ..."             # or WHATSAPP_ACCESS_TOKEN
+    waba_id: "107732305578216"          # optional; or WHATSAPP_WABA_ID
 ```
 
-**App-level env** (`.env`) — used when yaml fields above are empty, plus app secrets:
-
 ```env
-WHATSAPP_PHONE_NUMBER_ID=102274452799236   # fallback if phone_number_id unset in yaml
-WHATSAPP_ACCESS_TOKEN=EAAJ...              # fallback if access_token unset in yaml
-WHATSAPP_WABA_ID=107732305578216           # fallback if waba_id unset in yaml
-WHATSAPP_APP_SECRET=...                    # or FACEBOOK_APP_SECRET
-WHATSAPP_APP_ID=1837228823924621           # or FACEBOOK_APP_ID (optional)
-WHATSAPP_GRAPH_VERSION=v25.0               # optional; default v25.0
+JVCONNECT_URL=https://your-jvconnect.example.com
+JVCONNECT_API_KEY=jvk_...
+WHATSAPP_PHONE_NUMBER_ID=102274452799236
+WHATSAPP_WABA_ID=107732305578216
 JVAGENT_PUBLIC_BASE_URL=https://your-app.com
 ```
 
-**Verify token:** auto-derived from `agent_id` + `WHATSAPP_APP_SECRET` (no env/yaml). Optional `verify_token` on the action overrides derivation. After `jvagent --purge`, agent id changes → token changes → startup re-registers the override.
+**Verify token:** Meta verifies against jvconnect (`FB_VERIFY_TOKEN`). The agent webhook is signed with the jvconnect-issued `JVCONNECT_WEBHOOK_SECRET`.
 
 **Meta webhook callback** (automatic override on startup):
 
-On startup (meta provider), jvagent registers the Meta Graph **`override_callback_uri`** in a background task **after** uvicorn reports `Application startup complete` (optional `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS`, default **0**).
+On startup (meta provider), jvagent registers via jvconnect (`POST /api/v1/meta/whatsapp/webhook/register`) in a background task **after** uvicorn reports `Application startup complete` (optional `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS`, default **0**). Meta points at jvconnect; jvconnect forwards to this agent.
 
-**The Meta App Dashboard callback URL will not change automatically.** Dashboard shows the app default (`application` layer). jvagent registers **WABA** and **phone** overrides when both ids are configured; verify with `GET /api/actions/{action_id}/meta/webhook-status` (returns `expected_callback_url`, `stale_callbacks`, and Graph `subscribed_apps` / `webhook_configuration`).
+**The Meta App Dashboard callback URL will not change automatically.** Dashboard shows the app default (`application` layer). Verify with `GET /api/actions/{action_id}/meta/webhook-status`.
 
 #### Purge and callback URLs
 

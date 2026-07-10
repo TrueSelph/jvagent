@@ -74,15 +74,6 @@ class WhatsAppAction(Action):
         pattern=r"^(wppconnect|ultramsg|ts-whatsapp|wwebjs|meta)$",
     )
 
-    credential_source: str = attribute(
-        default="direct",
-        description=(
-            "For provider=meta: 'direct' uses Graph + WHATSAPP_ACCESS_TOKEN; "
-            "'jvconnect' proxies via JVCONNECT_URL + JVCONNECT_API_KEY"
-        ),
-        pattern=r"^(direct|jvconnect)$",
-    )
-
     jvconnect_url: str = attribute(
         default="",
         description="jvconnect base URL; when empty, JVCONNECT_URL / WHATSAPP_PROXY_URL env is used",
@@ -120,11 +111,11 @@ class WhatsAppAction(Action):
     )
     access_token: str = attribute(
         default="",
-        description="Meta Cloud API access token; when empty, WHATSAPP_ACCESS_TOKEN env is used",
+        description="Deprecated for provider=meta (jvconnect holds the token); unused",
     )
     app_secret: str = attribute(
         default="",
-        description="Meta app secret for webhook signature (bridge providers; meta uses env WHATSAPP_APP_SECRET)",
+        description="Meta app secret for webhook signature (bridge providers only; meta uses jvconnect)",
     )
     verify_token: Optional[str] = attribute(
         default=None,
@@ -195,20 +186,6 @@ class WhatsAppAction(Action):
     def is_meta_provider(self) -> bool:
         return (self.provider or "").strip() == "meta"
 
-    def uses_jvconnect(self) -> bool:
-        """True when Meta Cloud API credentials are proxied through jvconnect."""
-        if not self.is_meta_provider():
-            return False
-        src = (self.credential_source or "").strip().lower()
-        if src == "jvconnect":
-            return True
-        env_src = (
-            env("WHATSAPP_CREDENTIAL_SOURCE")
-            or os.environ.get("WHATSAPP_CREDENTIAL_SOURCE")
-            or ""
-        ).strip().lower()
-        return env_src == "jvconnect"
-
     # action configuration
 
     def _env_api_key(self) -> str:
@@ -273,24 +250,20 @@ class WhatsAppAction(Action):
         ).strip()
 
     def _env_app_secret(self) -> str:
-        if self.uses_jvconnect():
+        if self.is_meta_provider():
             # Inbound POSTs are signed by jvconnect with the per-agent webhook secret
             return self._env_jvconnect_webhook_secret()
-        if self.is_meta_provider():
-            return (
-                env("WHATSAPP_APP_SECRET") or env("FACEBOOK_APP_SECRET") or ""
-            ).strip()
         s = (self.app_secret or "").strip()
         if s:
             return s
         return (env("WHATSAPP_APP_SECRET") or env("FACEBOOK_APP_SECRET") or "").strip()
 
     def effective_verify_token(self, agent_id: str = "") -> str:
-        """Return Meta hub.verify_token (yaml override or derived from agent_id + app secret)."""
+        """Return Meta hub.verify_token (yaml override or derived)."""
         configured = self.verify_token
         if isinstance(configured, str) and configured.strip():
             return configured.strip()
-        if self.uses_jvconnect():
+        if self.is_meta_provider():
             # Meta verifies against jvconnect (FB_VERIFY_TOKEN), not this agent
             return "jvconnect"
         return derive_meta_verify_token(agent_id, self._env_app_secret())
@@ -338,15 +311,9 @@ class WhatsAppAction(Action):
         if self.is_meta_provider():
             if not self._env_phone_number_id():
                 return False
-            if self.uses_jvconnect():
-                if not self._env_jvconnect_url():
-                    return False
-                if not self._env_jvconnect_api_key():
-                    return False
-                return True
-            if not self._env_access_token():
+            if not self._env_jvconnect_url():
                 return False
-            if not self._env_app_secret():
+            if not self._env_jvconnect_api_key():
                 return False
             return True
 
@@ -391,26 +358,15 @@ class WhatsAppAction(Action):
                     "phone_number_id (action.phone_number_id or WHATSAPP_PHONE_NUMBER_ID) "
                     "is not configured"
                 )
-            if self.uses_jvconnect():
-                if not self._env_jvconnect_url():
-                    issues.append(
-                        "jvconnect_url (action.jvconnect_url or JVCONNECT_URL / "
-                        "WHATSAPP_PROXY_URL) is not configured"
-                    )
-                if not self._env_jvconnect_api_key():
-                    issues.append(
-                        "JVCONNECT_API_KEY is not configured "
-                        "(create a key in jvconnect API Credentials)"
-                    )
-                return issues
-            if not self._env_access_token():
+            if not self._env_jvconnect_url():
                 issues.append(
-                    "access_token (action.access_token or WHATSAPP_ACCESS_TOKEN) "
-                    "is not configured"
+                    "jvconnect_url (action.jvconnect_url or JVCONNECT_URL / "
+                    "WHATSAPP_PROXY_URL) is not configured"
                 )
-            if not self._env_app_secret():
+            if not self._env_jvconnect_api_key():
                 issues.append(
-                    "app_secret (WHATSAPP_APP_SECRET or FACEBOOK_APP_SECRET env) is not configured"
+                    "JVCONNECT_API_KEY is not configured "
+                    "(create a key in jvconnect API Credentials)"
                 )
             return issues
 
@@ -854,28 +810,14 @@ class WhatsAppAction(Action):
                 phone_id = self._env_phone_number_id()
                 agent = await self.get_agent()
                 agent_id = str(agent.id) if agent else ""
-                if self.uses_jvconnect():
-                    factory = get_provider_factory("jvconnect")
-                    if factory is None:
-                        raise ValidationError("jvconnect provider is not registered")
-                    return factory(
-                        api_url=self._env_jvconnect_url(),
-                        session=phone_id,
-                        token=self._env_jvconnect_api_key(),
-                        secret_key=self._env_jvconnect_webhook_secret(),
-                        timeout=timeout,
-                        phone_number_id=phone_id,
-                        waba_id=self._env_waba_id(),
-                        verify_token=self.effective_verify_token(agent_id),
-                    )
-                factory = get_provider_factory("meta")
+                factory = get_provider_factory("jvconnect")
                 if factory is None:
-                    raise ValidationError(f"Unsupported provider: {self.provider}")
+                    raise ValidationError("jvconnect provider is not registered")
                 return factory(
-                    api_url=self._meta_graph_api_url(),
+                    api_url=self._env_jvconnect_url(),
                     session=phone_id,
-                    token=self._env_access_token(),
-                    secret_key=self._env_app_secret(),
+                    token=self._env_jvconnect_api_key(),
+                    secret_key=self._env_jvconnect_webhook_secret(),
                     timeout=timeout,
                     phone_number_id=phone_id,
                     waba_id=self._env_waba_id(),
@@ -1024,7 +966,7 @@ class WhatsAppAction(Action):
             wa = await self.api()
             result = await wa.register_webhook_subscription(callback, verify)
             # Persist jvconnect-issued webhook HMAC secret for inbound verification
-            if self.uses_jvconnect() and isinstance(result, dict):
+            if self.is_meta_provider() and isinstance(result, dict):
                 secret = str(result.get("webhook_secret") or "").strip()
                 if secret:
                     object.__setattr__(self, "jvconnect_webhook_secret", secret)
@@ -1040,22 +982,12 @@ class WhatsAppAction(Action):
                 logger.warning(
                     "Meta WhatsApp webhook override Graph error: %s", err_msg
                 )
-                if self.uses_jvconnect():
+                if self.is_meta_provider():
                     logger.warning(
                         "jvconnect webhook registration failed. Ensure JVCONNECT_URL "
                         "and JVCONNECT_API_KEY are valid and APP_BASE_URL is set on "
                         "jvconnect so Meta can verify %s/api/webhooks",
                         self._env_jvconnect_url(),
-                    )
-                elif "502" in err_msg or "Callback verification" in err_msg:
-                    logger.warning(
-                        "Meta could not verify the callback URL. Ensure GET "
-                        "/api/whatsapp/interact/webhook/%s?hub.mode=subscribe&"
-                        "hub.verify_token=...&hub.challenge=... returns 200 before "
-                        "subscribing. Increase WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS "
-                        "or set WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true and "
-                        "call POST .../meta/webhook-register when the server is up.",
-                        agent_id,
                     )
                 return {
                     "status": "error",

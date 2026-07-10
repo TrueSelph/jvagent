@@ -1,6 +1,4 @@
-"""Tests for jvconnect credential_source on WhatsAppAction."""
-
-from unittest.mock import MagicMock
+"""Tests for jvconnect Meta WhatsApp transport on WhatsAppAction."""
 
 import pytest
 
@@ -13,30 +11,13 @@ def test_jvconnect_provider_registered():
     assert get_provider_factory("jvconnect") is JvconnectWhatsAppAPI
 
 
-def test_uses_jvconnect_from_attribute(monkeypatch):
-    monkeypatch.delenv("WHATSAPP_CREDENTIAL_SOURCE", raising=False)
-    action = WhatsAppAction()
-    object.__setattr__(action, "provider", "meta")
-    object.__setattr__(action, "credential_source", "jvconnect")
-    assert action.uses_jvconnect() is True
-
-
-def test_uses_jvconnect_from_env(monkeypatch):
-    monkeypatch.setenv("WHATSAPP_CREDENTIAL_SOURCE", "jvconnect")
-    action = WhatsAppAction()
-    object.__setattr__(action, "provider", "meta")
-    object.__setattr__(action, "credential_source", "direct")
-    assert action.uses_jvconnect() is True
-
-
-def test_jvconnect_config_issues_without_proxy(monkeypatch):
+def test_meta_config_issues_without_proxy(monkeypatch):
     monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "https://agent.example.com")
     monkeypatch.delenv("JVCONNECT_URL", raising=False)
     monkeypatch.delenv("JVCONNECT_API_KEY", raising=False)
     monkeypatch.delenv("WHATSAPP_PHONE_NUMBER_ID", raising=False)
     action = WhatsAppAction()
     object.__setattr__(action, "provider", "meta")
-    object.__setattr__(action, "credential_source", "jvconnect")
     object.__setattr__(action, "phone_number_id", "123")
     issues = action._config_issues()
     assert any("JVCONNECT_URL" in i or "jvconnect_url" in i for i in issues)
@@ -44,7 +25,7 @@ def test_jvconnect_config_issues_without_proxy(monkeypatch):
     assert action.is_configured() is False
 
 
-def test_jvconnect_configured_without_meta_token(monkeypatch):
+def test_meta_configured_with_jvconnect_only(monkeypatch):
     monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "https://agent.example.com")
     monkeypatch.setenv("JVCONNECT_URL", "https://connect.example.com")
     monkeypatch.setenv("JVCONNECT_API_KEY", "jvk_test")
@@ -52,7 +33,6 @@ def test_jvconnect_configured_without_meta_token(monkeypatch):
     monkeypatch.delenv("WHATSAPP_APP_SECRET", raising=False)
     action = WhatsAppAction()
     object.__setattr__(action, "provider", "meta")
-    object.__setattr__(action, "credential_source", "jvconnect")
     object.__setattr__(action, "phone_number_id", "123")
     assert action.is_configured() is True
     assert action._config_issues() == []
@@ -67,6 +47,7 @@ async def test_jvconnect_api_routes_messages(monkeypatch):
         phone_number_id="phone1",
         waba_id="waba1",
     )
+    assert "/api/v1/meta/whatsapp/" in api._v1("messages")
     called = {}
 
     async def fake_json(method, path, json_body=None, params=None):
@@ -91,6 +72,5 @@ def test_env_app_secret_uses_jvconnect_webhook_secret(monkeypatch):
     monkeypatch.delenv("WHATSAPP_APP_SECRET", raising=False)
     action = WhatsAppAction()
     object.__setattr__(action, "provider", "meta")
-    object.__setattr__(action, "credential_source", "jvconnect")
     object.__setattr__(action, "jvconnect_webhook_secret", "jvs_secret")
     assert action._env_app_secret() == "jvs_secret"
