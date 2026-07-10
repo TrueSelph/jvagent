@@ -113,12 +113,11 @@ def compose_directive(content: str) -> str:
 
 
 # Channel formatting (the "format" axis), keyed by normalized channel name. The
-# default channel (web / jvchat) renders full GFM markdown; only channels that
-# genuinely need different markup carry an override. Operators extend or override
-# per channel via the ``channel_formats`` descriptor attribute.
+# default channel (web) is deliberately absent → no directive → slim prompt;
+# only channels that genuinely need different markup carry one. Operators extend
+# or override per channel via the ``channel_formats`` descriptor attribute.
 _PLAIN = "Plain text only — no markdown, headings, or bullet symbols."
 CHANNEL_FORMATS: Dict[str, str] = {
-    "default": "Use markdown for formatting. Keep responses concise and well-structured.",
     "voice": (
         "Plain speech only — no markdown, lists, or symbols. Keep it brief and "
         "natural; write out anything that wouldn't be spoken aloud."
