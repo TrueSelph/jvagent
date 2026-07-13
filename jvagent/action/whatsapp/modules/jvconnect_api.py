@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlencode
 
 import aiohttp
@@ -71,7 +71,9 @@ class JvconnectWhatsAppAPI(MetaWhatsAppAPI):
     ) -> dict:
         url = self._v1(path)
         if params:
-            url = f"{url}?{urlencode({k: v for k, v in params.items() if v is not None})}"
+            url = (
+                f"{url}?{urlencode({k: v for k, v in params.items() if v is not None})}"
+            )
         headers = self._auth_headers()
         pool = await get_connection_pool()
         session = await pool.get_session(self._jvconnect_base, self.timeout)
@@ -229,3 +231,32 @@ class JvconnectWhatsAppAPI(MetaWhatsAppAPI):
 
     async def get_webhook_override_status(self) -> dict:
         return await self._jvconnect_json("GET", "webhook/register")
+
+    async def list_message_templates(self) -> dict:
+        """List sendable templates via jvconnect (key-bound WABA)."""
+        await self.ensure_account()
+        data = await self._jvconnect_json("GET", "templates")
+        if data.get("error") and not data.get("ok", True):
+            return {"ok": False, "error": data.get("error"), "raw": data}
+        templates = data.get("templates") or data.get("data") or []
+        if not isinstance(templates, list):
+            templates = []
+        return {
+            "ok": True,
+            "templates": templates,
+            "phone_number_id": data.get("phone_number_id") or self.phone_number_id,
+            "waba_id": data.get("waba_id") or self.waba_id,
+        }
+
+    async def send_template_message(
+        self,
+        phone: str,
+        template_name: str,
+        language: str = "en_US",
+        components: Optional[List[Dict[str, Any]]] = None,
+    ) -> dict:
+        """Send a Meta template through jvconnect ``POST .../messages``."""
+        await self.ensure_account()
+        return await MetaWhatsAppAPI.send_template_message(
+            self, phone, template_name, language=language, components=components
+        )

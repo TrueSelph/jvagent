@@ -4,7 +4,7 @@ import asyncio
 import hmac
 import logging
 import os
-from typing import Any, ClassVar, Dict, List, Optional, Union
+from typing import Annotated, Any, ClassVar, Dict, List, Optional, Union
 
 from jvspatial.api.auth.api_key_service import APIKeyService
 from jvspatial.core.annotations import attribute
@@ -15,6 +15,8 @@ from jvspatial.exceptions import DatabaseError, ValidationError
 
 from jvagent.action.base import Action
 from jvagent.core.public_url import get_public_base_url
+from jvagent.tooling.tool_decorator import tool
+from jvagent.tooling.tool_executor import get_dispatch_context, get_tool_visitor
 
 from .modules.jvconnect_api import JvconnectWhatsAppAPI
 from .modules.meta_api import MetaWhatsAppAPI
@@ -58,6 +60,9 @@ class WhatsAppAction(Action):
     The WhatsApp session name is resolved in order: ``WHATSAPP_SESSION`` env, then
     optional ``session`` on this action, then the current agent's name.
     """
+
+    # Stable tool prefix: whatsapp__list_templates / whatsapp__send_template
+    tool_namespace: ClassVar[str] = "whatsapp"
 
     # AUDIT-actions XC-4: declare non-conforming endpoint paths so deregister
     # cleanup unregisters them along with the standard /actions/{id}/ ones.
@@ -171,6 +176,20 @@ class WhatsAppAction(Action):
         description="Keywords to block: messages from senders or to receivers containing any keyword are ignored. Default includes status@broadcast to ignore WhatsApp status updates.",
     )
 
+    template_allowlist: List[str] = attribute(
+        default_factory=list,
+        description=(
+            "When non-empty, only these Meta template names may be sent/listed. "
+            "Empty means all approved templates from the WABA are allowed."
+        ),
+    )
+
+    default_template_language: str = attribute(
+        default="en_US",
+        description="Default language code for whatsapp__send_template when omitted",
+        max_length=20,
+    )
+
     stt_action: Optional[str] = attribute(
         default="DeepgramSTTAction",
         description="Label or Class used to transcribe voice messages or audio files",
@@ -228,18 +247,20 @@ class WhatsAppAction(Action):
         if u:
             return u.rstrip("/")
         return (
-            env("JVCONNECT_URL")
-            or env("WHATSAPP_PROXY_URL")
-            or os.environ.get("JVCONNECT_URL")
-            or os.environ.get("WHATSAPP_PROXY_URL")
-            or ""
-        ).strip().rstrip("/")
+            (
+                env("JVCONNECT_URL")
+                or env("WHATSAPP_PROXY_URL")
+                or os.environ.get("JVCONNECT_URL")
+                or os.environ.get("WHATSAPP_PROXY_URL")
+                or ""
+            )
+            .strip()
+            .rstrip("/")
+        )
 
     def _env_jvconnect_api_key(self) -> str:
         return (
-            env("JVCONNECT_API_KEY")
-            or os.environ.get("JVCONNECT_API_KEY")
-            or ""
+            env("JVCONNECT_API_KEY") or os.environ.get("JVCONNECT_API_KEY") or ""
         ).strip()
 
     def _env_jvconnect_webhook_secret(self) -> str:
@@ -1122,6 +1143,222 @@ class WhatsAppAction(Action):
             raise ValidationError(f"Session registration failed: {e}")
         except Exception as e:
             raise ValidationError(f"Session registration failed: {e}")
+
+    # ------------------------------------------------------------------
+    # Meta message templates (Orchestrator tools)
+    # ------------------------------------------------------------------
+
+    _TEMPLATE_CHANNEL_ERROR = "whatsapp_templates_require_inbound_whatsapp"
+
+    def _template_dispatch_gate(self) -> Optional[Dict[str, Any]]:
+        """Require inbound WhatsApp channel + user_id. Returns error envelope or None."""
+        ctx = get_dispatch_context()
+        if (
+            not ctx
+            or (ctx.channel or "").lower() != "whatsapp"
+            or not (ctx.user_id or "").strip()
+        ):
+            return {"ok": False, "error": self._TEMPLATE_CHANNEL_ERROR}
+        return None
+
+    def _template_allowlist_names(self) -> List[str]:
+        raw = self.template_allowlist or []
+        return [str(n).strip().lower() for n in raw if str(n).strip()]
+
+    def _filter_templates_by_allowlist(
+        self, templates: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        allowed = self._template_allowlist_names()
+        if not allowed:
+            return templates
+        return [
+            t
+            for t in templates
+            if isinstance(t, dict)
+            and str(t.get("name") or "").strip().lower() in allowed
+        ]
+
+    def _is_template_allowed(self, template_name: str) -> bool:
+        allowed = self._template_allowlist_names()
+        if not allowed:
+            return True
+        return (template_name or "").strip().lower() in allowed
+
+    async def _record_template_send(
+        self, template_name: str, language: str, to: str, result: Dict[str, Any]
+    ) -> None:
+        """Tag the current Interaction so history notes the HSM send."""
+        visitor = get_tool_visitor()
+        interaction = getattr(visitor, "interaction", None) if visitor else None
+        if interaction is None:
+            return
+        message_id = ""
+        messages = result.get("messages") if isinstance(result, dict) else None
+        if isinstance(messages, list) and messages:
+            first = messages[0]
+            if isinstance(first, dict):
+                message_id = str(first.get("id") or "")
+        try:
+            interaction.add_parameter(
+                {
+                    "name": "whatsapp_template_sent",
+                    "template_name": template_name,
+                    "language": language,
+                    "to": to,
+                    "message_id": message_id,
+                    "executed": True,
+                },
+                self.get_class_name(),
+            )
+            if hasattr(interaction, "save"):
+                await interaction.save()
+        except Exception:
+            logger.debug("Failed to record template send on interaction", exc_info=True)
+
+    @tool(name="whatsapp__list_templates")
+    async def list_templates(self) -> str:
+        """List approved WhatsApp message templates available to send on this inbound WhatsApp turn. Only works when the user messaged via WhatsApp."""
+        import json
+
+        gate = self._template_dispatch_gate()
+        if gate:
+            return json.dumps(gate)
+        if not self.is_configured() or not self.is_meta_provider():
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": "WhatsApp Meta/jvconnect provider is not configured",
+                }
+            )
+        try:
+            api = await self.api()
+            list_fn = getattr(api, "list_message_templates", None)
+            if not callable(list_fn):
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": "list_message_templates unsupported for this provider",
+                    }
+                )
+            result = await list_fn()
+            if not result.get("ok", True) or result.get("error"):
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": result.get("error") or "failed to list templates",
+                    }
+                )
+            templates = result.get("templates") or []
+            if not isinstance(templates, list):
+                templates = []
+            filtered = self._filter_templates_by_allowlist(
+                [t for t in templates if isinstance(t, dict)]
+            )
+            slim = [
+                {
+                    "name": t.get("name"),
+                    "language": t.get("language"),
+                    "status": t.get("status"),
+                    "category": t.get("category"),
+                }
+                for t in filtered
+            ]
+            return json.dumps({"ok": True, "templates": slim})
+        except Exception as e:
+            logger.exception("whatsapp__list_templates failed")
+            return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
+
+    @tool(name="whatsapp__send_template")
+    async def send_template(
+        self,
+        template_name: Annotated[
+            str,
+            "Exact Meta template name (e.g. signup). Must be allowlisted when allowlist is set.",
+        ],
+        language: Annotated[
+            Optional[str],
+            "Template language code (e.g. en_US). Defaults to action default_template_language.",
+        ] = None,
+        components: Annotated[
+            Optional[List[Dict[str, Any]]],
+            "Optional Meta template components array (header/body/button parameters).",
+        ] = None,
+    ) -> str:
+        """Send an approved WhatsApp template to the same phone that messaged this turn. Only works on inbound WhatsApp; recipient is fixed to the sender — do not invent a phone number."""
+        import json
+
+        gate = self._template_dispatch_gate()
+        if gate:
+            return json.dumps(gate)
+        ctx = get_dispatch_context()
+        assert ctx is not None  # gate passed
+        to = (ctx.user_id or "").strip()
+        name = (template_name or "").strip()
+        if not name:
+            return json.dumps({"ok": False, "error": "template_name is required"})
+        if not self._is_template_allowed(name):
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": f"template '{name}' is not on the agent allowlist",
+                    "allowlist": self._template_allowlist_names(),
+                }
+            )
+        if not self.is_configured() or not self.is_meta_provider():
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": "WhatsApp Meta/jvconnect provider is not configured",
+                }
+            )
+        lang = (
+            (language or "").strip()
+            or (self.default_template_language or "en_US").strip()
+            or "en_US"
+        )
+        try:
+            api = await self.api()
+            send_fn = getattr(api, "send_template_message", None)
+            if not callable(send_fn):
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": "send_template_message unsupported for this provider",
+                    }
+                )
+            result = await send_fn(to, name, language=lang, components=components or [])
+            if not result.get("ok", True) or result.get("error"):
+                err = result.get("error")
+                if isinstance(err, dict):
+                    err = err.get("message") or err.get("error_user_msg") or str(err)
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": err or "failed to send template",
+                        "raw": result,
+                    }
+                )
+            await self._record_template_send(name, lang, to, result)
+            messages = result.get("messages") or []
+            message_id = ""
+            if (
+                isinstance(messages, list)
+                and messages
+                and isinstance(messages[0], dict)
+            ):
+                message_id = str(messages[0].get("id") or "")
+            return json.dumps(
+                {
+                    "ok": True,
+                    "template_name": name,
+                    "language": lang,
+                    "to": to,
+                    "message_id": message_id,
+                }
+            )
+        except Exception as e:
+            logger.exception("whatsapp__send_template failed")
+            return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
 
     async def healthcheck(self) -> Union[bool, Dict[str, Any]]:
         """Perform health check for WhatsApp action."""

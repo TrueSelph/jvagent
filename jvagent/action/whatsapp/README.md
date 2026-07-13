@@ -255,7 +255,9 @@ WHATSAPP_TOKEN=your_token
 
 ### Meta Cloud API (`provider: meta`)
 
-Use the official WhatsApp Business Cloud API instead of a self-hosted bridge. Supports 1:1 text, images, documents, video, voice notes (inbound STT / outbound TTS), location, and typing indicators (within the 24-hour customer service window).
+Use the official WhatsApp Business Cloud API instead of a self-hosted bridge. Supports 1:1 text, images, documents, video, voice notes (inbound STT / outbound TTS), location, typing indicators (within the 24-hour customer service window), and **approved message templates (HSMs)** via Orchestrator tools `whatsapp__list_templates` / `whatsapp__send_template`.
+
+Template tools are hard-gated: they only run on inbound `channel=whatsapp` turns and always send to the inbound sender (`user_id`). Optional `template_allowlist` / `default_template_language` on the action bound which Meta templates may be sent. Listing goes through jvconnect `GET /api/v1/meta/whatsapp/templates`; send uses `POST /api/v1/meta/whatsapp/messages` with `type: template`.
 
 Configure `stt_action` and `tts_action` on the WhatsApp action (same as bridge providers) for voice note transcription and voice replies.
 

@@ -4,7 +4,7 @@ import base64
 import json
 import logging
 import re
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
 
@@ -705,6 +705,60 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         }
         if message_id:
             data["context"] = {"message_id": message_id}
+        return await self.send_rest_request(
+            self._messages_url(), method="POST", data=data, use_full_url=True
+        )
+
+    async def list_message_templates(self) -> dict:
+        """List sendable Meta message templates for the configured WABA.
+
+        Direct Graph access (non-jvconnect). Bridge providers should not call this.
+        """
+        waba = (self.waba_id or "").strip()
+        if not waba:
+            return {"ok": False, "error": "waba_id required to list templates"}
+        url = (
+            f"{self.api_url.rstrip('/')}/{waba}/message_templates"
+            f"?fields=name,language,status,components,category&limit=1000"
+        )
+        data = await self.send_rest_request(url, method="GET", use_full_url=True)
+        if data.get("error") and not data.get("ok", True):
+            return {"ok": False, "error": data.get("error"), "raw": data}
+        templates = data.get("data") or []
+        if not isinstance(templates, list):
+            templates = []
+        sendable = {"APPROVED", "QUALITY_PENDING"}
+        filtered = [
+            t
+            for t in templates
+            if isinstance(t, dict) and str(t.get("status") or "") in sendable
+        ]
+        return {"ok": True, "templates": filtered}
+
+    async def send_template_message(
+        self,
+        phone: str,
+        template_name: str,
+        language: str = "en_US",
+        components: Optional[List[Dict[str, Any]]] = None,
+    ) -> dict:
+        """Send an approved Meta template (HSM) to *phone*."""
+        to = self._normalize_recipient(phone)
+        name = (template_name or "").strip()
+        if not to or not name:
+            return {"ok": False, "error": "phone and template_name are required"}
+        lang = (language or "en_US").strip() or "en_US"
+        data: Dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to,
+            "type": "template",
+            "template": {
+                "name": name,
+                "language": {"code": lang},
+                "components": list(components or []),
+            },
+        }
         return await self.send_rest_request(
             self._messages_url(), method="POST", data=data, use_full_url=True
         )

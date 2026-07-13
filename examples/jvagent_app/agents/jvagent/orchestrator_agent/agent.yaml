@@ -156,6 +156,7 @@ actions:
         - triage          # library CLAUDE skill — sorts findings via code_execution
         - docx            # app-local CLAUDE skill (skills.sh / anthropics) — docx-js + OOXML scripts
         - signup_interview  # app-local interview skill (InterviewAction + SKILL.md interview:)
+        - whatsapp_templates  # Meta HSM send via WhatsAppAction (WhatsApp inbound only)
 
   # MCP gateway: a sandboxed filesystem server (npx). Its tools surface to the
   # executive (tool_servers above) as mcp_filesystem__<tool>, sandboxed per
@@ -329,6 +330,10 @@ actions:
       waba_id: ""              # optional; resolved from jvconnect /account
       phone_number_id: ""      # optional; resolved from jvconnect /account
       access_token: ""         # unused with jvconnect
+      # Meta HSMs: only these names may be sent via whatsapp__send_template
+      template_allowlist:
+        - signup
+      default_template_language: "en_US"
 
   - action: jvagent/whatsapp_voice_action
     context:
