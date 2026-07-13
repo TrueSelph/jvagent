@@ -18,34 +18,33 @@ def test_meta_config_issues_without_proxy(monkeypatch):
     monkeypatch.delenv("WHATSAPP_PHONE_NUMBER_ID", raising=False)
     action = WhatsAppAction()
     object.__setattr__(action, "provider", "meta")
-    object.__setattr__(action, "phone_number_id", "123")
+    object.__setattr__(action, "phone_number_id", "")
     issues = action._config_issues()
     assert any("JVCONNECT_URL" in i or "jvconnect_url" in i for i in issues)
     assert any("JVCONNECT_API_KEY" in i for i in issues)
     assert action.is_configured() is False
 
 
-def test_meta_configured_with_jvconnect_only(monkeypatch):
+def test_meta_configured_without_phone_id(monkeypatch):
     monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "https://agent.example.com")
     monkeypatch.setenv("JVCONNECT_URL", "https://connect.example.com")
     monkeypatch.setenv("JVCONNECT_API_KEY", "jvk_test")
+    monkeypatch.delenv("WHATSAPP_PHONE_NUMBER_ID", raising=False)
     monkeypatch.delenv("WHATSAPP_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("WHATSAPP_APP_SECRET", raising=False)
     action = WhatsAppAction()
     object.__setattr__(action, "provider", "meta")
-    object.__setattr__(action, "phone_number_id", "123")
+    object.__setattr__(action, "phone_number_id", "")
     assert action.is_configured() is True
     assert action._config_issues() == []
 
 
 @pytest.mark.asyncio
-async def test_jvconnect_api_routes_messages(monkeypatch):
+async def test_jvconnect_api_routes_messages_without_phone(monkeypatch):
     api = JvconnectWhatsAppAPI(
         api_url="https://connect.example.com",
-        session="phone1",
+        session="jvconnect",
         token="jvk_x",
-        phone_number_id="phone1",
-        waba_id="waba1",
     )
     assert "/api/v1/meta/whatsapp/" in api._v1("messages")
     called = {}
@@ -64,8 +63,60 @@ async def test_jvconnect_api_routes_messages(monkeypatch):
         use_full_url=True,
     )
     assert called["path"] == "messages"
-    assert called["json_body"]["phone_number_id"] == "phone1"
+    assert "phone_number_id" not in called["json_body"]
+    assert "waba_id" not in called["json_body"]
+    assert called["json_body"]["message"]["type"] == "text"
     assert result.get("ok") is True
+
+
+@pytest.mark.asyncio
+async def test_jvconnect_fetch_account(monkeypatch):
+    api = JvconnectWhatsAppAPI(
+        api_url="https://connect.example.com",
+        session="jvconnect",
+        token="jvk_x",
+    )
+
+    async def fake_json(method, path, json_body=None, params=None):
+        assert method == "GET"
+        assert path == "account"
+        return {
+            "phone_number_id": "phone1",
+            "waba_id": "waba1",
+            "display_phone_number": "+1555",
+        }
+
+    monkeypatch.setattr(api, "_jvconnect_json", fake_json)
+    data = await api.fetch_account()
+    assert data["ok"] is True
+    assert api.phone_number_id == "phone1"
+    assert api.waba_id == "waba1"
+
+
+@pytest.mark.asyncio
+async def test_jvconnect_webhook_register_callback_only(monkeypatch):
+    api = JvconnectWhatsAppAPI(
+        api_url="https://connect.example.com",
+        session="jvconnect",
+        token="jvk_x",
+    )
+    called = {}
+
+    async def fake_json(method, path, json_body=None, params=None):
+        called["json_body"] = json_body
+        return {
+            "webhook_secret": "jvs_x",
+            "phone_number_id": "phone1",
+            "waba_id": "waba1",
+        }
+
+    monkeypatch.setattr(api, "_jvconnect_json", fake_json)
+    result = await api.register_webhook_subscription(
+        "https://agent.example.com/hook", "ignored"
+    )
+    assert called["json_body"] == {"callback_url": "https://agent.example.com/hook"}
+    assert result.get("ok") is True
+    assert api.phone_number_id == "phone1"
 
 
 def test_env_app_secret_uses_jvconnect_webhook_secret(monkeypatch):

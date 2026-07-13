@@ -107,7 +107,10 @@ class WhatsAppAction(Action):
 
     phone_number_id: str = attribute(
         default="",
-        description="Meta Cloud API phone number ID; when empty, WHATSAPP_PHONE_NUMBER_ID env is used",
+        description=(
+            "Optional Meta phone number ID override; for provider=meta, phone is "
+            "resolved from the jvconnect API key (GET /account)"
+        ),
     )
     access_token: str = attribute(
         default="",
@@ -309,8 +312,6 @@ class WhatsAppAction(Action):
             return False
 
         if self.is_meta_provider():
-            if not self._env_phone_number_id():
-                return False
             if not self._env_jvconnect_url():
                 return False
             if not self._env_jvconnect_api_key():
@@ -353,11 +354,6 @@ class WhatsAppAction(Action):
             issues.append("base_url must be a valid HTTP/HTTPS URL")
 
         if self.is_meta_provider():
-            if not self._env_phone_number_id():
-                issues.append(
-                    "phone_number_id (action.phone_number_id or WHATSAPP_PHONE_NUMBER_ID) "
-                    "is not configured"
-                )
             if not self._env_jvconnect_url():
                 issues.append(
                     "jvconnect_url (action.jvconnect_url or JVCONNECT_URL / "
@@ -366,7 +362,7 @@ class WhatsAppAction(Action):
             if not self._env_jvconnect_api_key():
                 issues.append(
                     "JVCONNECT_API_KEY is not configured "
-                    "(create a key in jvconnect API Credentials)"
+                    "(create a phone-bound key in jvconnect API Credentials)"
                 )
             return issues
 
@@ -813,9 +809,9 @@ class WhatsAppAction(Action):
                 factory = get_provider_factory("jvconnect")
                 if factory is None:
                     raise ValidationError("jvconnect provider is not registered")
-                return factory(
+                client = factory(
                     api_url=self._env_jvconnect_url(),
-                    session=phone_id,
+                    session=phone_id or "jvconnect",
                     token=self._env_jvconnect_api_key(),
                     secret_key=self._env_jvconnect_webhook_secret(),
                     timeout=timeout,
@@ -823,6 +819,23 @@ class WhatsAppAction(Action):
                     waba_id=self._env_waba_id(),
                     verify_token=self.effective_verify_token(agent_id),
                 )
+                # Resolve phone/WABA from the phone-bound API key when not set locally
+                if not phone_id or not self._env_waba_id():
+                    try:
+                        account = await client.fetch_account()
+                        if account.get("ok") and account.get("phone_number_id"):
+                            resolved = str(account["phone_number_id"])
+                            object.__setattr__(self, "phone_number_id", resolved)
+                            if account.get("waba_id") and not self._env_waba_id():
+                                object.__setattr__(
+                                    self, "waba_id", str(account["waba_id"])
+                                )
+                    except Exception as acct_err:
+                        logger.warning(
+                            "jvconnect account lookup failed (will retry on use): %s",
+                            acct_err,
+                        )
+                return client
 
             session = await self._effective_whatsapp_session()
             if not session or not session.strip():

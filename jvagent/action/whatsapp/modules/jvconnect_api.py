@@ -1,7 +1,8 @@
 """WhatsApp Cloud API via jvconnect Messaging API (credential proxy).
 
 Keeps Meta access tokens and app secrets on jvconnect. jvagent authenticates
-with ``JVCONNECT_API_KEY`` and calls purpose-built ``/api/v1/meta/whatsapp/*`` routes.
+with ``JVCONNECT_API_KEY``; the phone number is resolved from the key on jvconnect
+(``GET /api/v1/meta/whatsapp/account``).
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ class JvconnectWhatsAppAPI(MetaWhatsAppAPI):
             verify_token=verify_token,
         )
         self._jvconnect_base = (api_url or "").rstrip("/")
+        self._account_loaded = False
 
     def _v1(self, path: str) -> str:
         return f"{self._jvconnect_base}/api/v1/meta/whatsapp/{path.lstrip('/')}"
@@ -80,7 +82,10 @@ class JvconnectWhatsAppAPI(MetaWhatsAppAPI):
             try:
                 data = json.loads(body.decode("utf-8")) if body else {}
             except (UnicodeDecodeError, json.JSONDecodeError):
-                data = {"ok": False, "error": body[:500].decode("utf-8", errors="replace")}
+                data = {
+                    "ok": False,
+                    "error": body[:500].decode("utf-8", errors="replace"),
+                }
             if not isinstance(data, dict):
                 data = {"ok": False, "error": "invalid response", "raw": data}
             if resp.status >= 400 and "error" not in data:
@@ -89,6 +94,27 @@ class JvconnectWhatsAppAPI(MetaWhatsAppAPI):
             elif "ok" not in data and "error" not in data:
                 data["ok"] = True
             return data
+
+    async def fetch_account(self) -> dict:
+        """Load phone_number_id / waba_id bound to this API key."""
+        data = await self._jvconnect_json("GET", "account")
+        if data.get("error"):
+            data["ok"] = False
+            return data
+        phone = str(data.get("phone_number_id") or "").strip()
+        waba = str(data.get("waba_id") or "").strip()
+        if phone:
+            self.phone_number_id = phone
+            self.session = phone
+        if waba:
+            self.waba_id = waba
+        self._account_loaded = True
+        data["ok"] = True
+        return data
+
+    async def ensure_account(self) -> None:
+        if not self._account_loaded or not self.phone_number_id:
+            await self.fetch_account()
 
     async def send_rest_request(
         self,
@@ -100,16 +126,16 @@ class JvconnectWhatsAppAPI(MetaWhatsAppAPI):
         json_body: bool = True,
         use_full_url: bool = False,
     ) -> dict:
-        """Route message POSTs through jvconnect; other Graph paths are not used."""
-        url = endpoint if use_full_url else f"{self.api_url.rstrip('/')}/{endpoint.lstrip('/')}"
+        """Route message POSTs through jvconnect; phone is resolved from the API key."""
+        url = (
+            endpoint
+            if use_full_url
+            else f"{self.api_url.rstrip('/')}/{endpoint.lstrip('/')}"
+        )
         if "/messages" in url and method.upper() == "POST":
-            payload = {
-                "phone_number_id": self.phone_number_id,
-                "message": data or {},
-            }
-            if self.waba_id:
-                payload["waba_id"] = self.waba_id
-            result = await self._jvconnect_json("POST", "messages", json_body=payload)
+            result = await self._jvconnect_json(
+                "POST", "messages", json_body={"message": data or {}}
+            )
             if result.get("ok", True) and "messaging_product" in result:
                 result["ok"] = True
             elif result.get("error") and "ok" not in result:
@@ -126,10 +152,7 @@ class JvconnectWhatsAppAPI(MetaWhatsAppAPI):
         mid = (media_id or "").strip()
         if not mid:
             return b"", ""
-        params = {"phone_number_id": self.phone_number_id, "download": "1"}
-        if self.waba_id:
-            params["waba_id"] = self.waba_id
-        url = self._v1(f"media/{mid}") + "?" + urlencode(params)
+        url = self._v1(f"media/{mid}") + "?download=1"
         headers = self._auth_headers(content_type=None)
         pool = await get_connection_pool()
         session = await pool.get_session(self._jvconnect_base, self.timeout)
@@ -151,9 +174,6 @@ class JvconnectWhatsAppAPI(MetaWhatsAppAPI):
         url = self._v1("media")
         clean_mime = (mime_type or "application/octet-stream").split(";")[0].strip()
         form = aiohttp.FormData()
-        form.add_field("phone_number_id", self.phone_number_id)
-        if self.waba_id:
-            form.add_field("waba_id", self.waba_id)
         form.add_field(
             "file",
             file_bytes,
@@ -187,25 +207,20 @@ class JvconnectWhatsAppAPI(MetaWhatsAppAPI):
         callback = self._strip_query(callback_url)
         if not callback:
             return {"ok": False, "error": "callback_url is required"}
-        if not self.phone_number_id:
-            return {"ok": False, "error": "phone_number_id required"}
-
-        payload: Dict[str, Any] = {
-            "phone_number_id": self.phone_number_id,
-            "callback_url": callback,
-        }
-        if self.waba_id:
-            payload["waba_id"] = self.waba_id
 
         result = await self._jvconnect_json(
-            "POST", "webhook/register", json_body=payload
+            "POST", "webhook/register", json_body={"callback_url": callback}
         )
+        if result.get("phone_number_id"):
+            self.phone_number_id = str(result["phone_number_id"])
+            self.session = self.phone_number_id
+        if result.get("waba_id"):
+            self.waba_id = str(result["waba_id"])
         if result.get("webhook_secret"):
-            # Expose for WhatsAppAction to persist
             result["ok"] = True
             logger.info(
                 "jvconnect webhook registered phone=%s -> %s",
-                self.phone_number_id,
+                self.phone_number_id or "(from key)",
                 callback,
             )
         elif result.get("error"):
@@ -213,12 +228,4 @@ class JvconnectWhatsAppAPI(MetaWhatsAppAPI):
         return result
 
     async def get_webhook_override_status(self) -> dict:
-        if not self.phone_number_id:
-            return {
-                "ok": False,
-                "error": "phone_number_id required on WhatsApp action",
-            }
-        params: Dict[str, str] = {"phone_number_id": self.phone_number_id}
-        if self.waba_id:
-            params["waba_id"] = self.waba_id
-        return await self._jvconnect_json("GET", "webhook/register", params=params)
+        return await self._jvconnect_json("GET", "webhook/register")

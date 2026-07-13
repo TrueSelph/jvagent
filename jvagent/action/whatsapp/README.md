@@ -261,45 +261,27 @@ Configure `stt_action` and `tts_action` on the WhatsApp action (same as bridge p
 
 #### jvconnect credential proxy (required for `provider: meta`)
 
-WhatsApp Cloud API traffic goes through **jvconnect** so Meta access tokens and the app secret never land in jvagent `.env`:
+WhatsApp Cloud API traffic goes through **jvconnect** so Meta access tokens and the app secret never land in jvagent `.env`. Each jvconnect API key is bound to one WhatsApp phone; jvagent does not need `WHATSAPP_PHONE_NUMBER_ID`.
 
 ```yaml
 - action: jvagent/whatsapp_action
   context:
     provider: meta
-    phone_number_id: "102274452799236"  # or WHATSAPP_PHONE_NUMBER_ID
 ```
 
 ```env
 JVCONNECT_URL=https://your-jvconnect.example.com
 JVCONNECT_API_KEY=jvk_...
-WHATSAPP_PHONE_NUMBER_ID=102274452799236
 JVAGENT_PUBLIC_BASE_URL=https://your-app.com
 ```
 
-Create the API key on jvconnect → **API Credentials**. Startup calls jvconnect `POST /api/v1/meta/whatsapp/webhook/register` (Meta → jvconnect → agent).
+Create a **phone-bound** API key on jvconnect → **API Credentials** (pick the connected number). On startup, jvagent calls `GET /api/v1/meta/whatsapp/account` to resolve the phone, then `POST /api/v1/meta/whatsapp/webhook/register` (Meta → jvconnect → agent).
 
 Bridge providers (`wwebjs`, `wppconnect`, `ultramsg`) are unchanged and do not use jvconnect.
 
-#### Legacy direct Graph fields
+#### Optional overrides
 
-`access_token` / `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_APP_SECRET` are unused for `provider: meta` (kept only for bridge / deprecated yaml). Prefer jvconnect:
-
-```yaml
-- action: jvagent/whatsapp_action
-  context:
-    provider: meta
-    phone_number_id: "102274452799236"  # or WHATSAPP_PHONE_NUMBER_ID
-    waba_id: "107732305578216"          # optional; or WHATSAPP_WABA_ID
-```
-
-```env
-JVCONNECT_URL=https://your-jvconnect.example.com
-JVCONNECT_API_KEY=jvk_...
-WHATSAPP_PHONE_NUMBER_ID=102274452799236
-WHATSAPP_WABA_ID=107732305578216
-JVAGENT_PUBLIC_BASE_URL=https://your-app.com
-```
+`phone_number_id` / `waba_id` on the action (or `WHATSAPP_PHONE_NUMBER_ID` / `WHATSAPP_WABA_ID`) are optional caches for inbound filtering; if unset, they are loaded from jvconnect `/account`. `access_token` / `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_APP_SECRET` are unused for `provider: meta`.
 
 **Verify token:** Meta verifies against jvconnect (`FB_VERIFY_TOKEN`). The agent webhook is signed with the jvconnect-issued `JVCONNECT_WEBHOOK_SECRET`.
 
