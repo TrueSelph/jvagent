@@ -297,9 +297,18 @@ class WhatsAppAction(Action):
         if isinstance(configured, str) and configured.strip():
             return configured.strip()
         if self.is_meta_provider():
-            # Meta verifies against jvconnect (FB_VERIFY_TOKEN), not this agent
+            # Meta verifies against jvconnect (FB_VERIFY_TOKEN), not this agent.
+            # Agent GET hub.challenge is unused for provider=meta+jvconnect.
             return "jvconnect"
         return derive_meta_verify_token(agent_id, self._env_app_secret())
+
+    def handle_flow_data_exchange(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Respond to jvconnect ``X-Jvconnect-Flow-Exchange`` without InteractWalker."""
+        from .utils.flow_data_exchange import build_flow_data_exchange_response
+
+        return build_flow_data_exchange_response(
+            payload if isinstance(payload, dict) else {}
+        )
 
     def _env_waba_id(self) -> str:
         w = (self.waba_id or "").strip()
@@ -1521,11 +1530,11 @@ class WhatsAppAction(Action):
         ] = "Open",
         flow_action: Annotated[
             Optional[str],
-            "Optional: navigate or data_exchange. Omit to use Meta entry screen.",
+            "Optional: omit or navigate for No data (open first screen); data_exchange for Request data (endpoint INIT). Prefer navigate/no-action for static Flows.",
         ] = None,
         screen: Annotated[
             Optional[str],
-            "Optional entry screen id when flow_action is navigate.",
+            "First screen id when using navigate / No data. Ignored for data_exchange.",
         ] = None,
         mode: Annotated[
             Optional[str],

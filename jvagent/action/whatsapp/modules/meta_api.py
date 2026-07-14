@@ -19,7 +19,8 @@ META_CAPTION_MAX_LENGTH = 1024
 _META_INBOUND_TYPES = frozenset(
     {"text", "image", "video", "document", "audio", "location"}
 )
-# Explicit non-user / unsupported types (logged and ignored)
+# Explicit non-user / unsupported types (logged and ignored).
+# ``interactive`` is handled specially: only ``nfm_reply`` (Flow completion) is admitted.
 _META_DENIED_TYPES = frozenset(
     {
         "system",
@@ -449,10 +450,36 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         )
 
     @staticmethod
+    def _flow_nfm_reply_body(msg: dict) -> Optional[str]:
+        """Extract utterance text from a Flow completion ``nfm_reply``, or None."""
+        if str(msg.get("type") or "").lower() != "interactive":
+            return None
+        interactive = msg.get("interactive") or {}
+        if not isinstance(interactive, dict):
+            return None
+        if str(interactive.get("type") or "").lower() != "nfm_reply":
+            return None
+        nfm = interactive.get("nfm_reply") or {}
+        if not isinstance(nfm, dict):
+            return None
+        response_json = nfm.get("response_json")
+        if isinstance(response_json, str) and response_json.strip():
+            return response_json.strip()
+        body = nfm.get("body")
+        if isinstance(body, str) and body.strip():
+            return body.strip()
+        try:
+            return json.dumps(nfm, separators=(",", ":"))
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
     def _jvagent_message_type(msg: dict) -> str:
         """Map Meta message type to jvagent MessagePayload.message_type."""
         msg_type = str(msg.get("type") or "").lower()
         if msg_type == "text":
+            return "chat"
+        if msg_type == "interactive" and MetaWhatsAppAPI._flow_nfm_reply_body(msg):
             return "chat"
         if msg_type == "audio":
             audio = msg.get("audio") or {}
@@ -558,8 +585,11 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
             if isinstance(context, dict) and context.get("id"):
                 quoted = {"id": context.get("id")}
 
+            nfm_body = self._flow_nfm_reply_body(msg)
             jv_type = self._jvagent_message_type(msg)
-            if msg_type in _META_DENIED_TYPES or msg_type not in _META_INBOUND_TYPES:
+            if nfm_body is None and (
+                msg_type in _META_DENIED_TYPES or msg_type not in _META_INBOUND_TYPES
+            ):
                 logger.debug(
                     "Meta inbound type %r ignored (non-user or unsupported message)",
                     msg_type,
@@ -576,7 +606,9 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
             body = ""
             caption = ""
             location: Dict[str, Any] = {}
-            if msg_type == "text":
+            if nfm_body is not None:
+                body = nfm_body
+            elif msg_type == "text":
                 text_obj = msg.get("text") or {}
                 body = (
                     (text_obj.get("body") or "").strip()

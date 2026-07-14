@@ -37,6 +37,7 @@ from .utils.endpoint_helpers import (
     is_directed_message,
     normalize_result,
 )
+from .utils.flow_data_exchange import is_flow_data_exchange_request
 from .utils.meta_webhook_dedup import remember_meta_wamid
 
 logger = logging.getLogger(__name__)
@@ -559,6 +560,8 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             except (UnicodeDecodeError, json.JSONDecodeError) as e:
                 logger.debug("Meta WhatsApp webhook JSON parse error: %s", e)
                 raise HTTPException(status_code=400, detail="Invalid JSON body")
+            if is_flow_data_exchange_request(request.headers, request_data):
+                return whatsapp_action.handle_flow_data_exchange(request_data)
         else:
             await _authenticate_bridge_webhook_api_key(request)
             request_data = getattr(request.state, "parsed_payload", None)

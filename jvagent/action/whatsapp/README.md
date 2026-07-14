@@ -261,6 +261,14 @@ Template tools are hard-gated: they only run on inbound `channel=whatsapp` turns
 
 **Flows:** `whatsapp__list_flows` / `whatsapp__send_flow` send interactive Flow messages (`type: interactive`, `interactive.type: flow`) with the same inbound-WhatsApp gate. Optional `flow_allowlist` (ids or names). Listing via jvconnect `GET /api/v1/meta/whatsapp/flows`. In the jvconnect **Flows** UI, the Send dialog can **Copy JSON** / **Copy jvconnect curl** for the Cloud API payload.
 
+**Flow inbound paths (distinct from chat webhooks):**
+
+| Path | Transport | Agent handling |
+|------|-----------|----------------|
+| User completed Flow | Meta `messages` webhook → jvconnect forward → agent POST | `interactive` / `nfm_reply` becomes a chat utterance (`response_json` as body) |
+| Request-data / INIT screens | Meta Flow runtime → jvconnect `/api/flows/data/{phoneId}` → agent POST with `X-Jvconnect-Flow-Exchange: 1` | Slim handler returns `{screen,data}` (or `endpoint_not_configured` for INIT). Prefer navigate Flows (“No data”) unless you implement INIT screens |
+| Agent GET hub.challenge | Unused when `provider=meta` via jvconnect | Meta verifies jvconnect only (`FB_VERIFY_TOKEN`) |
+
 Configure `stt_action` and `tts_action` on the WhatsApp action (same as bridge providers) for voice note transcription and voice replies.
 
 #### jvconnect credential proxy (required for `provider: meta`)
@@ -287,7 +295,7 @@ Bridge providers (`wwebjs`, `wppconnect`, `ultramsg`) are unchanged and do not u
 
 `phone_number_id` / `waba_id` on the action (or `WHATSAPP_PHONE_NUMBER_ID` / `WHATSAPP_WABA_ID`) are optional caches for inbound filtering; if unset, they are loaded from jvconnect `/account`. `access_token` / `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_APP_SECRET` are unused for `provider: meta`.
 
-**Verify token:** Meta verifies against jvconnect (`FB_VERIFY_TOKEN`). The agent webhook is signed with the jvconnect-issued `JVCONNECT_WEBHOOK_SECRET`.
+**Verify token:** Meta verifies against jvconnect (`FB_VERIFY_TOKEN`). The agent webhook is signed with the jvconnect-issued `JVCONNECT_WEBHOOK_SECRET`. The agent’s own GET hub.challenge endpoint is vestigial for `provider=meta` (Meta never challenges the agent URL).
 
 **Meta webhook callback** (automatic override on startup):
 
@@ -313,11 +321,11 @@ Avoid `--purge` on production unless you intentionally reset the database and ca
 2. **Verify token**: derived automatically; `GET .../meta/webhook-url` (admin) shows the active token for debugging.
 3. Subscribe to the **messages** field in the dashboard (one-time app setup).
 
-**Webhook field subscriptions (Meta dashboard):**
+**Webhook field subscriptions (Meta App Dashboard):**
 
-- On the WABA override for this agent endpoint, subscribe only **`messages`** for inbound user chat.
-- Do **not** route template alerts, account updates, or **`smb_message_echoes`** to the same agent callback URL unless you add separate handlers — jvagent ignores non-`messages` fields and status-only payloads (`statuses[]` with no `messages[]`).
-- Optional fields (`message_template_status_update`, `phone_number_quality_update`, etc.) belong on a different URL or are dropped.
+- Subscribe to **`messages`** only (one-time app setup). That covers chat and Flow completion (`nfm_reply`).
+- Add **`calls`** only if `WhatsAppVoiceAction` is enabled.
+- Do **not** subscribe `smb_message_echoes`, `message_template_status_update`, or account/quality fields for agent traffic — jvconnect filters agent forwards to `messages` + `calls`; other fields stay on the Inbox/Ably path only.
 
 **Retry idempotency (wamid dedup):**
 
