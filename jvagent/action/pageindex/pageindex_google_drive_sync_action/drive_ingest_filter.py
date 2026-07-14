@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from jvagent.action.pageindex.documents import PAGEINDEX_UPLOAD_EXTENSIONS
 
@@ -23,7 +23,9 @@ _GOOGLE_APPS_NON_DOCUMENT_MIMES = frozenset(
     }
 )
 
-_NON_INGESTIBLE_EXTENSIONS = frozenset(
+_GOOGLE_APPS_VIDEO_MIME = "application/vnd.google-apps.video"
+
+_VIDEO_EXTENSIONS = frozenset(
     {
         ".mp4",
         ".avi",
@@ -33,6 +35,12 @@ _NON_INGESTIBLE_EXTENSIONS = frozenset(
         ".flv",
         ".webm",
         ".m4v",
+    }
+)
+
+_NON_INGESTIBLE_EXTENSIONS = frozenset(
+    _VIDEO_EXTENSIONS
+    | {
         ".mp3",
         ".wav",
         ".aac",
@@ -106,3 +114,30 @@ def filter_drive_doc_queues_for_ingestible(docs: Dict[str, Any]) -> None:
     for key in ("added", "modified", "removed"):
         raw = list(docs.get(key) or [])
         docs[key] = [x for x in raw if _queue_item_ingestible(x, key)]
+
+
+def is_drive_file_video(name: str, mime_type: str) -> bool:
+    """Return True for Google Drive video items (Google Apps video mime or video file ext)."""
+    mt = (mime_type or "").strip()
+    if mt == _GOOGLE_APPS_VIDEO_MIME:
+        return True
+    ext = Path(name or "").suffix.lower()
+    return ext in _VIDEO_EXTENSIONS
+
+
+def mark_drive_video_files_disabled(files: List[Dict[str, Any]]) -> None:
+    """Set ``disable_ingestion=True`` on every video file in a nested Drive ``files`` tree.
+
+    Folders and shortcuts are skipped so traversal / nesting is not disrupted.
+    Mutates the tree in place; returns nothing.
+    """
+    for it in files:
+        if not isinstance(it, dict):
+            continue
+        mt = str(it.get("mimeType") or "")
+        if mt != _FOLDER_MIME and mt != _SHORTCUT_MIME:
+            if is_drive_file_video(str(it.get("name") or ""), mt):
+                it["disable_ingestion"] = True
+        nested = it.get("files")
+        if isinstance(nested, list):
+            mark_drive_video_files_disabled(nested)

@@ -39,6 +39,7 @@ from ..jvforge_routing import resolve_effective_jvforge_base
 from .drive_ingest_filter import (
     filter_drive_doc_queues_for_ingestible,
     is_drive_file_pageindex_ingestible,
+    mark_drive_video_files_disabled,
 )
 from .google_drive_documents import GoogleDriveDocuments
 from .webhook_auth import get_or_create_system_user
@@ -944,6 +945,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 if google_drive_documents_node:
                     old_files = google_drive_documents_node.files
                     _merge_disable_ingestion_from_old(old_files, files)
+                    mark_drive_video_files_disabled(files)
                     ingesting_documents = google_drive_action.compare_files(
                         old_files=old_files, new_files=files
                     )
@@ -997,6 +999,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     await google_drive_documents_node.save()
                 else:
                     _merge_disable_ingestion_from_old([], files)
+                    mark_drive_video_files_disabled(files)
                     ingesting_documents = google_drive_action.compare_files(
                         old_files=[], new_files=files
                     )
