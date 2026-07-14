@@ -12,7 +12,9 @@ from .constants import DEFERRED_TASK_TYPE
 logger = logging.getLogger(__name__)
 
 
-async def handle_conversation_health_ai_evaluate(payload: Dict[str, Any]) -> Dict[str, Any]:
+async def handle_conversation_health_ai_evaluate(
+    payload: Dict[str, Any]
+) -> Dict[str, Any]:
     """Run AI evaluation for a single interaction (POST /api/_internal/deferred)."""
     interaction_id = payload.get("interaction_id")
     agent_id = payload.get("agent_id")

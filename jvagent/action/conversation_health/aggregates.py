@@ -33,7 +33,7 @@ def empty_day_bucket(day: str) -> Dict[str, Any]:
         "day": day,
         "interaction_count": 0,
         "flagged_count": 0,
-        "dimension_sums": {d: 0 for d in DIMENSIONS},
+        "dimension_sums": dict.fromkeys(DIMENSIONS, 0),
         "issue_counts": {},
         "unflagged_eligible": 0,
         "unflagged_selected": 0,
@@ -45,9 +45,7 @@ def empty_day_bucket(day: str) -> Dict[str, Any]:
     }
 
 
-def ensure_day(
-    day_buckets: MutableMapping[str, Any], day: str
-) -> Dict[str, Any]:
+def ensure_day(day_buckets: MutableMapping[str, Any], day: str) -> Dict[str, Any]:
     b = day_buckets.get(day)
     if not isinstance(b, dict):
         b = empty_day_bucket(day)
@@ -57,7 +55,7 @@ def ensure_day(
         if k not in b:
             b[k] = v if not isinstance(v, dict) else dict(v)
     if not isinstance(b.get("dimension_sums"), dict):
-        b["dimension_sums"] = {d: 0 for d in DIMENSIONS}
+        b["dimension_sums"] = dict.fromkeys(DIMENSIONS, 0)
     if not isinstance(b.get("issue_counts"), dict):
         b["issue_counts"] = {}
     return b
@@ -79,7 +77,7 @@ def apply_contribution(
     if contribution.get("flagged"):
         b["flagged_count"] = max(0, int(b.get("flagged_count") or 0) + sign)
 
-    sums = b.setdefault("dimension_sums", {d: 0 for d in DIMENSIONS})
+    sums = b.setdefault("dimension_sums", dict.fromkeys(DIMENSIONS, 0))
     dims = contribution.get("dimensions") or {}
     for d in DIMENSIONS:
         try:
@@ -122,9 +120,7 @@ def bump_sampling_selected(
         b["b_selected"] = int(b.get("b_selected") or 0) + 1
 
 
-def prune_old_days(
-    day_buckets: MutableMapping[str, Any], keep_days: int = 30
-) -> None:
+def prune_old_days(day_buckets: MutableMapping[str, Any], keep_days: int = 30) -> None:
     """Drop buckets older than keep_days to bound document size."""
     if keep_days <= 0 or not day_buckets:
         return
@@ -141,7 +137,7 @@ def agent_reading_from_buckets(
     day_list = window_day_list(days)
     interaction_count = 0
     flagged_count = 0
-    dim_sums = {d: 0 for d in DIMENSIONS}
+    dim_sums = dict.fromkeys(DIMENSIONS, 0)
     issue_counts: Dict[str, int] = {}
     unflagged_eligible = 0
     unflagged_selected = 0
@@ -162,9 +158,7 @@ def agent_reading_from_buckets(
         unflagged_selected += int(b.get("unflagged_selected") or 0)
         day_avg = None
         if ic > 0:
-            day_avg = {
-                d: round(int(sums.get(d) or 0) / ic, 2) for d in DIMENSIONS
-            }
+            day_avg = {d: round(int(sums.get(d) or 0) / ic, 2) for d in DIMENSIONS}
         trend.append(
             {
                 "day": day,
@@ -177,28 +171,23 @@ def agent_reading_from_buckets(
     avg = None
     avg_score = None
     if interaction_count > 0:
-        avg = {
-            d: round(dim_sums[d] / interaction_count, 2) for d in DIMENSIONS
-        }
+        avg = {d: round(dim_sums[d] / interaction_count, 2) for d in DIMENSIONS}
         # Raw agent health score = equal-weight mean of dimension averages
         avg_score = round(sum(avg.values()) / len(DIMENSIONS), 2)
 
     ambient_rate = (
-        round(unflagged_selected / unflagged_eligible, 4)
-        if unflagged_eligible
-        else 0.0
+        round(unflagged_selected / unflagged_eligible, 4) if unflagged_eligible else 0.0
     )
 
-    top_issues = sorted(
-        issue_counts.items(), key=lambda x: (-x[1], x[0])
-    )[:10]
+    top_issues = sorted(issue_counts.items(), key=lambda x: (-x[1], x[0]))[:10]
 
     # Per-day composite on trend for sparklines
     for point in trend:
-        day_avg = point.get("avg_dimensions")
-        if day_avg:
+        day_avg_dims = point.get("avg_dimensions")
+        if isinstance(day_avg_dims, dict) and day_avg_dims:
             point["avg_score"] = round(
-                sum(float(day_avg[d]) for d in DIMENSIONS) / len(DIMENSIONS), 2
+                sum(float(day_avg_dims[d]) for d in DIMENSIONS) / len(DIMENSIONS),
+                2,
             )
         else:
             point["avg_score"] = None

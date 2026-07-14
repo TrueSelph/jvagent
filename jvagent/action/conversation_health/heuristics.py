@@ -201,7 +201,9 @@ def detect_idk(utterance: str, response: str) -> Optional[Dict[str, Any]]:
     )
 
 
-def detect_unanswered_question(utterance: str, response: str) -> Optional[Dict[str, Any]]:
+def detect_unanswered_question(
+    utterance: str, response: str
+) -> Optional[Dict[str, Any]]:
     u = (utterance or "").strip()
     r = (response or "").strip()
     if not u or not _QUESTION_RE.search(u):

@@ -11,7 +11,7 @@ def score_dimensions(
     issues: Sequence[Mapping[str, Any]],
 ) -> Dict[str, int]:
     """Penalty-from-100 per dimension from issue deductions."""
-    totals = {d: 0 for d in DIMENSIONS}
+    totals = dict.fromkeys(DIMENSIONS, 0)
     for issue in issues:
         dim = str(issue.get("dimension") or "")
         if dim not in totals:
@@ -68,9 +68,11 @@ def is_critical(
     for issue in issues:
         if str(issue.get("code") or "") in critical_codes:
             return True
-        if str(issue.get("severity") or "").lower() == "high" and float(
-            dimensions.get(str(issue.get("dimension") or ""), 100)
-        ) < flag_threshold:
+        if (
+            str(issue.get("severity") or "").lower() == "high"
+            and float(dimensions.get(str(issue.get("dimension") or ""), 100))
+            < flag_threshold
+        ):
             return True
     return False
 
@@ -107,13 +109,9 @@ def build_interaction_health(
     agent_id: str = "",
     ai_selected: bool = False,
 ) -> Dict[str, Any]:
-    dims = dict(dimensions or {d: 100 for d in DIMENSIONS})
+    dims = dict(dimensions or dict.fromkeys(DIMENSIONS, 100))
     iss = list(issues or [])
-    hs = (
-        health_score
-        if health_score is not None
-        else heuristic_health_score(dims)
-    )
+    hs = health_score if health_score is not None else heuristic_health_score(dims)
     return {
         "scored": scored,
         "skip_reason": skip_reason,
@@ -151,13 +149,13 @@ def recompute_conversation_rollup(
             "last_scored_at": None,
             "avg_score": None,
             "min_score": None,
-            "avg": {d: None for d in DIMENSIONS},
-            "min": {d: None for d in DIMENSIONS},
+            "avg": dict.fromkeys(DIMENSIONS, None),
+            "min": dict.fromkeys(DIMENSIONS, None),
             "issue_counts": {},
         }
 
-    sums = {d: 0.0 for d in DIMENSIONS}
-    mins = {d: 100 for d in DIMENSIONS}
+    sums = dict.fromkeys(DIMENSIONS, 0.0)
+    mins = dict.fromkeys(DIMENSIONS, 100)
     issue_counts: Dict[str, int] = {}
     flagged = False
     last_scored_at = None

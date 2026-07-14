@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from .constants import DEFAULT_SEVERITY_DEDUCTIONS, DIMENSIONS
 from .scoring import (

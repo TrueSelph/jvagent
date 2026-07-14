@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 
@@ -194,9 +194,7 @@ class ConversationHealthAction(InteractAction):
             latency_bands=bands,
         )
         dimensions = score_dimensions(issues)
-        flagged = is_flagged(
-            dimensions, issues, flag_threshold=self.flag_threshold
-        )
+        flagged = is_flagged(dimensions, issues, flag_threshold=self.flag_threshold)
         hs = heuristic_health_score(dimensions)
         bucket = assign_bucket(
             health_score=hs,
@@ -288,7 +286,10 @@ class ConversationHealthAction(InteractAction):
             ai_selected=ai_selected,
         )
         # Preserve completed AI if we had it and aren't forcing pure heuristic
-        if prev.get("ai_status") == "completed" and prev.get("evaluation_tier") == "heuristic+ai":
+        if (
+            prev.get("ai_status") == "completed"
+            and prev.get("evaluation_tier") == "heuristic+ai"
+        ):
             if not force_rescore:
                 health["ai_status"] = "completed"
                 health["evaluation_tier"] = prev.get("evaluation_tier")
@@ -301,7 +302,9 @@ class ConversationHealthAction(InteractAction):
         if conversation:
             await self._update_conversation_rollup(conversation, agent_id=agent_id)
 
-        prune_old_days(self.day_buckets, keep_days=max(30, self.reading_window_days * 2))
+        prune_old_days(
+            self.day_buckets, keep_days=max(30, self.reading_window_days * 2)
+        )
         await self.save()
 
         if should_schedule and schedule_ai and self.enable_ai:
@@ -451,9 +454,7 @@ class ConversationHealthAction(InteractAction):
         if interaction.conversation_id:
             conv = await Conversation.get(interaction.conversation_id)
             if conv:
-                await self._update_conversation_rollup(
-                    conv, agent_id=self.agent_id
-                )
+                await self._update_conversation_rollup(conv, agent_id=self.agent_id)
 
         await self.save()
         return {"ok": True, "health": updated}
@@ -466,5 +467,3 @@ class ConversationHealthAction(InteractAction):
         reading["flag_threshold"] = self.flag_threshold
         reading["dimensions"] = list(DIMENSIONS)
         return reading
-
-

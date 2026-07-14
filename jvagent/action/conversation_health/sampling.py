@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Tuple
 
 from .constants import (
     AI_BUCKET_BLIND_SPOT,
@@ -62,7 +62,7 @@ def sum_window_counters(
         "b_eligible",
         "b_selected",
     )
-    out = {k: 0 for k in keys}
+    out = dict.fromkeys(keys, 0)
     for day in days:
         b = day_buckets.get(day) or {}
         for k in keys:

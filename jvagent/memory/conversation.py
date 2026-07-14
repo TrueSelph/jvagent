@@ -124,12 +124,12 @@ class Conversation(DeferredSaveMixin, Node):
         ),
     )
     health: Dict[str, Any] = attribute(
-            default_factory=dict,
-            description=(
-                "Conversation Health rollup (avg/min dimensions, flagged, issue "
-                "tallies). Written by ConversationHealthAction."
-            ),
-        )
+        default_factory=dict,
+        description=(
+            "Conversation Health rollup (avg/min dimensions, flagged, issue "
+            "tallies). Written by ConversationHealthAction."
+        ),
+    )
 
     def ensure_token_secret(self) -> str:
         """Return this conversation's token secret, minting one if absent.

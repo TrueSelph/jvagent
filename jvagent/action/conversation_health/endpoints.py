@@ -92,9 +92,7 @@ async def _get_health_action(agent_id: str) -> ConversationHealthAction:
     )
     if not action:
         # try any action for agent even if disabled filter missed
-        action = await ConversationHealthAction.find_one(
-            {"context.agent_id": agent_id}
-        )
+        action = await ConversationHealthAction.find_one({"context.agent_id": agent_id})
     if not action:
         raise ResourceNotFoundError(
             message=f"Conversation Health is not configured for agent '{agent_id}'",
@@ -257,9 +255,7 @@ async def list_health_conversations(
                 "status": c.status,
                 "channel": c.channel,
                 "last_interaction_at": (
-                    c.last_interaction_at.isoformat()
-                    if c.last_interaction_at
-                    else None
+                    c.last_interaction_at.isoformat() if c.last_interaction_at else None
                 ),
                 "health": h,
                 # Convenience mirrors for list UIs
@@ -344,7 +340,9 @@ async def get_health_conversation(
     roles=["admin"],
     tags=["Conversation Health"],
     response=success_response(
-        data={"results": ResponseField(field_type=list, description="Per-turn AI results")}
+        data={
+            "results": ResponseField(field_type=list, description="Per-turn AI results")
+        }
     ),
 )
 async def deep_review_conversation(
@@ -378,9 +376,7 @@ async def deep_review_conversation(
     for ix in targets:
         scorable, reason = action.is_scorable(ix)
         if not scorable:
-            results.append(
-                {"interaction_id": ix.id, "skipped": True, "reason": reason}
-            )
+            results.append({"interaction_id": ix.id, "skipped": True, "reason": reason})
             continue
         # Ensure heuristic baseline
         if not (getattr(ix, "health", None) or {}).get("scored"):
