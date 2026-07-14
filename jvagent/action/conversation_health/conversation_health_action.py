@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 
@@ -43,6 +43,17 @@ logger = logging.getLogger(__name__)
 
 class ConversationHealthAction(InteractAction):
     """Passive post-turn health scoring with bucketed async AI sampling."""
+
+    # Admin routes under /api/agents/{agent_id}/health… (not /actions/{id}/…)
+    additional_endpoint_path_templates: ClassVar[List[str]] = [
+        "/api/agents/{agent_id}/health",
+        "/api/agents/{agent_id}/health/stats",
+        "/api/agents/{agent_id}/health/trend",
+        "/api/agents/{agent_id}/health/conversations",
+        "/api/agents/{agent_id}/health/conversations/{conversation_id}",
+        "/api/agents/{agent_id}/health/conversations/{conversation_id}/deep-review",
+        "/api/agents/{agent_id}/health/backfill",
+    ]
 
     # ── Execution ────────────────────────────────────────────────────────────
     weight: int = attribute(default=200, description="Late execution weight")
@@ -260,15 +271,37 @@ class ConversationHealthAction(InteractAction):
             ai_status = "none"
             ai_select_reason = "ai_disabled"
 
-        # Preserve completed AI merge if re-heuristics without force wiping AI
-        if (
-            prev.get("evaluation_tier") in ("heuristic+ai", "ai")
+        # If AI already completed and we are not force-rescoring, keep the prior
+        # AI-merged health intact (no half-heuristic / half-ai payload).
+        keep_prior_ai = (
+            not force_rescore
+            and prev.get("scored")
             and prev.get("ai_status") == "completed"
-            and not force_rescore
-        ):
-            # Keep AI-enriched issues if present; re-run only contribution from new heuristics
-            # Spec: re-score heuristics refresh; for simplicity keep latest heuristic issues
-            pass
+            and prev.get("evaluation_tier") in ("heuristic+ai", "ai")
+            and isinstance(prev.get("issues"), list)
+            and prev.get("dimensions")
+        )
+        if keep_prior_ai:
+            # Undo heuristic contribution we just applied; restore prior contribution
+            apply_contribution(self.day_buckets, contribution, sign=-1)
+            if prev_contribution:
+                apply_contribution(self.day_buckets, prev_contribution, sign=+1)
+            health = dict(prev)
+            health["agent_id"] = agent_id
+            # Refresh bucket label from stored scores if missing
+            if not health.get("ai_bucket"):
+                health["ai_bucket"] = bucket
+            interaction.health = health
+            await interaction.save()
+            if conversation:
+                await self._update_conversation_rollup(
+                    conversation, agent_id=agent_id
+                )
+            prune_old_days(
+                self.day_buckets, keep_days=max(30, self.reading_window_days * 2)
+            )
+            await self.save()
+            return health
 
         health = build_interaction_health(
             scored=True,
@@ -285,16 +318,6 @@ class ConversationHealthAction(InteractAction):
             agent_id=agent_id,
             ai_selected=ai_selected,
         )
-        # Preserve completed AI if we had it and aren't forcing pure heuristic
-        if (
-            prev.get("ai_status") == "completed"
-            and prev.get("evaluation_tier") == "heuristic+ai"
-        ):
-            if not force_rescore:
-                health["ai_status"] = "completed"
-                health["evaluation_tier"] = prev.get("evaluation_tier")
-                # Prefer previous AI-merged issues only if same contribution day re-score
-                # Keep heuristic-only for v1 re-score simplicity
 
         interaction.health = health
         await interaction.save()

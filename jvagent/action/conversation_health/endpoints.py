@@ -4,17 +4,18 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import Body, Query
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
-from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
+from jvspatial.api.exceptions import ResourceNotFoundError
 
 from jvagent.core.agent import Agent
 from jvagent.memory.conversation import Conversation
 from jvagent.memory.interaction import Interaction
 
+from .constants import DIMENSIONS
 from .conversation_health_action import ConversationHealthAction
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,6 @@ def _parse_dt(value: Any) -> Optional[datetime]:
         return dt
     if isinstance(value, str) and value:
         try:
-            # support trailing Z
             s = value.replace("Z", "+00:00")
             dt = datetime.fromisoformat(s)
             if dt.tzinfo is None:
@@ -51,27 +51,26 @@ def _conversation_in_window(conv: Conversation, cutoff: datetime) -> bool:
     scored_at = _parse_dt(h.get("last_scored_at"))
     if scored_at is not None:
         return scored_at >= cutoff
-    # No timestamps: exclude when a window is requested
     return False
 
 
 def _enrich_health(health: Dict[str, Any]) -> Dict[str, Any]:
-    """Ensure composite scores exist on a health payload (backward compatible)."""
+    """Fill composite scores only when all four dimensions are present."""
     h = dict(health or {})
     if h.get("avg_score") is None and isinstance(h.get("avg"), dict):
         avg = h["avg"]
-        if avg and all(avg.get(d) is not None for d in avg):
+        if all(avg.get(d) is not None for d in DIMENSIONS):
             try:
                 h["avg_score"] = round(
-                    sum(float(v) for v in avg.values()) / max(1, len(avg)), 2
+                    sum(float(avg[d]) for d in DIMENSIONS) / len(DIMENSIONS), 2
                 )
             except (TypeError, ValueError):
                 pass
     if h.get("min_score") is None and isinstance(h.get("min"), dict):
         mn = h["min"]
-        if mn and all(mn.get(d) is not None for d in mn):
+        if all(mn.get(d) is not None for d in DIMENSIONS):
             try:
-                h["min_score"] = round(min(float(v) for v in mn.values()), 2)
+                h["min_score"] = round(min(float(mn[d]) for d in DIMENSIONS), 2)
             except (TypeError, ValueError):
                 pass
     return h
@@ -91,14 +90,97 @@ async def _get_health_action(agent_id: str) -> ConversationHealthAction:
         }
     )
     if not action:
-        # try any action for agent even if disabled filter missed
-        action = await ConversationHealthAction.find_one({"context.agent_id": agent_id})
+        action = await ConversationHealthAction.find_one(
+            {"context.agent_id": agent_id}
+        )
     if not action:
         raise ResourceNotFoundError(
             message=f"Conversation Health is not configured for agent '{agent_id}'",
             details={"agent_id": agent_id},
         )
-    return action
+    return action  # type: ignore[return-value]
+
+
+async def _conversation_belongs_to_agent(
+    conv: Conversation, agent_id: str
+) -> bool:
+    """True if conversation is owned by agent (graph or health stamp)."""
+    h = getattr(conv, "health", None) or {}
+    stamped = h.get("agent_id")
+    if stamped and str(stamped) == str(agent_id):
+        return True
+    try:
+        agent = await conv.get_agent()
+        if agent is not None and str(getattr(agent, "id", "")) == str(agent_id):
+            return True
+    except Exception:
+        logger.debug(
+            "conversation ownership lookup failed conv=%s",
+            getattr(conv, "id", None),
+            exc_info=True,
+        )
+    return False
+
+
+async def _require_conversation_for_agent(
+    agent_id: str, conversation_id: str
+) -> Conversation:
+    conv = await Conversation.get(conversation_id)
+    if not conv or not await _conversation_belongs_to_agent(conv, agent_id):
+        # 404 for both missing and foreign — avoid ID enumeration
+        raise ResourceNotFoundError(
+            message=f"Conversation '{conversation_id}' not found",
+            details={"conversation_id": conversation_id, "agent_id": agent_id},
+        )
+    return conv  # type: ignore[return-value]
+
+
+async def _iter_agent_conversations(agent_id: str) -> List[Conversation]:
+    """Conversations under this agent's memory graph (safe scope)."""
+    agent = await Agent.get(agent_id)
+    if not agent:
+        return []
+    memory = await agent.get_memory()
+    if not memory:
+        return []
+    out: List[Conversation] = []
+    try:
+        users = await memory.get_users()
+    except Exception:
+        logger.debug("list agent users failed agent=%s", agent_id, exc_info=True)
+        return []
+    for user in users or []:
+        try:
+            convs = await user.nodes(node=Conversation)
+        except Exception:
+            continue
+        for c in convs or []:
+            out.append(c)
+    return out
+
+
+async def _iter_agent_interactions_recent(
+    agent_id: str, *, limit: int, offset: int
+) -> Tuple[List[Interaction], int]:
+    """Page recent interactions for one agent only (memory graph walk)."""
+    collected: List[Interaction] = []
+    for conv in await _iter_agent_conversations(agent_id):
+        try:
+            ixs = await conv.get_interactions(limit=0, reverse=True)
+        except Exception:
+            continue
+        for ix in ixs or []:
+            collected.append(ix)
+
+    collected.sort(
+        key=lambda ix: getattr(ix, "started_at", None) or datetime.min.replace(
+            tzinfo=timezone.utc
+        ),
+        reverse=True,
+    )
+    total = len(collected)
+    page = collected[offset : offset + limit]
+    return page, total
 
 
 @endpoint(
@@ -147,6 +229,7 @@ async def get_health_stats(
             "interaction_count": reading.get("interaction_count"),
             "flagged_count": reading.get("flagged_count"),
             "flag_rate": reading.get("flag_rate"),
+            "avg_score": reading.get("avg_score"),
             "avg_dimensions": reading.get("avg_dimensions"),
             "top_issues": reading.get("top_issues"),
             "ambient": reading.get("ambient"),
@@ -207,30 +290,39 @@ async def list_health_conversations(
     action = await _get_health_action(agent_id)
     window_days = days if days is not None else None
 
-    # Filter conversations that have been scored (health.scored_turn_count > 0)
-    # and optionally stamped with this agent_id
-    query: Dict[str, Any] = {
+    # Strict agent scope: stamped health.agent_id OR graph ownership (no unscoped fallback)
+    query_agent: Dict[str, Any] = {
         "context.health.scored_turn_count": {"$gt": 0},
-    }
-    if flagged is not None:
-        query["context.health.flagged"] = flagged
-
-    # Prefer agent stamp when present
-    query_agent = {
-        **query,
         "context.health.agent_id": agent_id,
     }
+    if flagged is not None:
+        query_agent["context.health.flagged"] = flagged
 
-    skip = (page - 1) * page_size
     try:
-        rows = await Conversation.find(query_agent)
-        if not rows:
-            rows = await Conversation.find(query)
+        stamped = list(await Conversation.find(query_agent) or [])
     except Exception:
-        logger.debug("conversation health list query failed", exc_info=True)
-        rows = []
+        logger.debug("conversation health stamped query failed", exc_info=True)
+        stamped = []
 
-    rows = list(rows or [])
+    # Also include scored conversations under this agent's memory that lack stamp
+    # (legacy / first-score race) — still ownership-checked via graph walk
+    stamped_ids = {str(c.id) for c in stamped}
+    graph_rows: List[Conversation] = []
+    for conv in await _iter_agent_conversations(agent_id):
+        if str(conv.id) in stamped_ids:
+            continue
+        h = getattr(conv, "health", None) or {}
+        if not h.get("scored_turn_count"):
+            continue
+        if flagged is not None and bool(h.get("flagged")) != flagged:
+            continue
+        # Only if health is for this agent or unstamped (then ownership is graph)
+        hid = h.get("agent_id")
+        if hid and str(hid) != str(agent_id):
+            continue
+        graph_rows.append(conv)
+
+    rows: List[Conversation] = stamped + graph_rows
     if window_days is not None:
         cutoff = datetime.now(timezone.utc) - timedelta(days=int(window_days))
         rows = [c for c in rows if _conversation_in_window(c, cutoff)]
@@ -242,6 +334,7 @@ async def list_health_conversations(
         reverse=True,
     )
     total = len(rows)
+    skip = (page - 1) * page_size
     page_rows = rows[skip : skip + page_size]
 
     conversations = []
@@ -258,7 +351,6 @@ async def list_health_conversations(
                     c.last_interaction_at.isoformat() if c.last_interaction_at else None
                 ),
                 "health": h,
-                # Convenience mirrors for list UIs
                 "avg_score": h.get("avg_score"),
                 "min_score": h.get("min_score"),
                 "flagged": h.get("flagged"),
@@ -296,12 +388,7 @@ async def get_health_conversation(
     conversation_id: str,
 ) -> Dict[str, Any]:
     await _get_health_action(agent_id)
-    conv = await Conversation.get(conversation_id)
-    if not conv:
-        raise ResourceNotFoundError(
-            message=f"Conversation '{conversation_id}' not found",
-            details={"conversation_id": conversation_id},
-        )
+    conv = await _require_conversation_for_agent(agent_id, conversation_id)
     interactions = await conv.get_interactions(limit=0, reverse=False)
     turns = []
     for ix in interactions:
@@ -353,22 +440,23 @@ async def deep_review_conversation(
     ),
 ) -> Dict[str, Any]:
     action = await _get_health_action(agent_id)
-    conv = await Conversation.get(conversation_id)
-    if not conv:
-        raise ResourceNotFoundError(
-            message=f"Conversation '{conversation_id}' not found",
-            details={"conversation_id": conversation_id},
-        )
+    conv = await _require_conversation_for_agent(agent_id, conversation_id)
 
     targets: List[Interaction] = []
     if interaction_id:
         ix = await Interaction.get(interaction_id)
-        if not ix or ix.conversation_id != conversation_id:
-            raise ValidationError(
-                message="interaction_id not in conversation",
-                details={"interaction_id": interaction_id},
+        if (
+            not ix
+            or str(getattr(ix, "conversation_id", "")) != str(conversation_id)
+        ):
+            raise ResourceNotFoundError(
+                message=f"Interaction '{interaction_id}' not found",
+                details={
+                    "interaction_id": interaction_id,
+                    "conversation_id": conversation_id,
+                },
             )
-        targets = [ix]
+        targets = [ix]  # type: ignore[list-item]
     else:
         targets = await conv.get_interactions(limit=0, reverse=False)
 
@@ -378,7 +466,6 @@ async def deep_review_conversation(
         if not scorable:
             results.append({"interaction_id": ix.id, "skipped": True, "reason": reason})
             continue
-        # Ensure heuristic baseline
         if not (getattr(ix, "health", None) or {}).get("scored"):
             await action.score_interaction(ix, schedule_ai=False)
         out = await action.run_ai_for_interaction(str(ix.id))
@@ -398,6 +485,7 @@ async def deep_review_conversation(
             "processed": ResponseField(field_type=int),
             "scored": ResponseField(field_type=int),
             "cursor": ResponseField(field_type=str, description="Next offset cursor"),
+            "total_candidates": ResponseField(field_type=int),
         }
     ),
 )
@@ -405,7 +493,7 @@ async def backfill_health(
     agent_id: str,
     body: Optional[Dict[str, Any]] = Body(default=None),
 ) -> Dict[str, Any]:
-    """Heuristic-only backfill of recent interactions (no ambient AI flood)."""
+    """Heuristic-only backfill of this agent's interactions (memory-scoped)."""
     action = await _get_health_action(agent_id)
     body = body or {}
     limit = min(int(body.get("limit") or 50), 200)
@@ -413,19 +501,9 @@ async def backfill_health(
     enqueue_critical_ai = bool(body.get("enqueue_critical_ai") or False)
     force = bool(body.get("force") or False)
 
-    # Load recent interactions — best-effort page via find + sort
-    try:
-        all_rows = await Interaction.find({})
-    except Exception:
-        logger.debug("backfill interaction find failed", exc_info=True)
-        all_rows = []
-
-    all_rows = list(all_rows or [])
-    all_rows.sort(
-        key=lambda ix: getattr(ix, "started_at", None) or "",
-        reverse=True,
+    rows, total = await _iter_agent_interactions_recent(
+        agent_id, limit=limit, offset=offset
     )
-    rows = all_rows[offset : offset + limit]
 
     processed = 0
     scored = 0
@@ -434,7 +512,10 @@ async def backfill_health(
         h = getattr(ix, "health", None) or {}
         if h.get("scored") and not force:
             continue
-        # Only score if we can attribute loosely (no agent_id on interaction — score anyway for agent backfill)
+        # Never stamp foreign health onto this agent
+        prior_agent = h.get("agent_id")
+        if prior_agent and str(prior_agent) != str(agent_id):
+            continue
         result = await action.score_interaction(
             ix,
             agent_id=agent_id,
@@ -448,4 +529,5 @@ async def backfill_health(
         "processed": processed,
         "scored": scored,
         "cursor": str(offset + processed),
+        "total_candidates": total,
     }
