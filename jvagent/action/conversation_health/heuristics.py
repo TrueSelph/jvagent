@@ -103,6 +103,8 @@ def _issue(
     deduction: int,
     field: str,
     text: str,
+    *,
+    excerpt_max: int = _EXCERPT_MAX,
     **extra: Any,
 ) -> Dict[str, Any]:
     return {
@@ -110,7 +112,10 @@ def _issue(
         "dimension": dimension,
         "severity": severity,
         "deduction": deduction,
-        "evidence": {"field": field, "excerpt": _excerpt(text)},
+        "evidence": {
+            "field": field,
+            "excerpt": _excerpt(text, max_len=int(excerpt_max) or _EXCERPT_MAX),
+        },
         **extra,
     }
 
@@ -137,6 +142,7 @@ def detect_slow_response(
     duration: Optional[float],
     latency_bands: Optional[Sequence[tuple]] = None,
     deductions: Optional[Dict[str, int]] = None,
+    excerpt_max: int = _EXCERPT_MAX,
 ) -> Optional[Dict[str, Any]]:
     if duration is None:
         return None
@@ -155,11 +161,14 @@ def detect_slow_response(
         int(ded.get(severity, 20)),
         "response",
         f"duration={duration:.2f}s",
+        excerpt_max=excerpt_max,
         duration_seconds=duration,
     )
 
 
-def detect_empty_or_trivial(response: str) -> Optional[Dict[str, Any]]:
+def detect_empty_or_trivial(
+    response: str, excerpt_max: int = _EXCERPT_MAX
+) -> Optional[Dict[str, Any]]:
     r = (response or "").strip()
     if not r:
         return _issue(
@@ -169,6 +178,7 @@ def detect_empty_or_trivial(response: str) -> Optional[Dict[str, Any]]:
             DEFAULT_SEVERITY_DEDUCTIONS["high"],
             "response",
             "(empty)",
+            excerpt_max=excerpt_max,
         )
     if len(r) < 3 or r.lower() in _TRIVIAL_REPLIES:
         return _issue(
@@ -178,14 +188,16 @@ def detect_empty_or_trivial(response: str) -> Optional[Dict[str, Any]]:
             DEFAULT_SEVERITY_DEDUCTIONS["high"],
             "response",
             r,
+            excerpt_max=excerpt_max,
         )
     return None
 
 
-def detect_idk(utterance: str, response: str) -> Optional[Dict[str, Any]]:
+def detect_idk(
+    utterance: str, response: str, excerpt_max: int = _EXCERPT_MAX
+) -> Optional[Dict[str, Any]]:
     if not _IDK_RE.search(response or ""):
         return None
-    # Only penalize when user asked something substantive
     u = (utterance or "").strip()
     if len(u) < 4:
         return None
@@ -198,11 +210,12 @@ def detect_idk(utterance: str, response: str) -> Optional[Dict[str, Any]]:
         DEFAULT_SEVERITY_DEDUCTIONS["high"],
         "response",
         response or "",
+        excerpt_max=excerpt_max,
     )
 
 
 def detect_unanswered_question(
-    utterance: str, response: str
+    utterance: str, response: str, excerpt_max: int = _EXCERPT_MAX
 ) -> Optional[Dict[str, Any]]:
     u = (utterance or "").strip()
     r = (response or "").strip()
@@ -216,8 +229,8 @@ def detect_unanswered_question(
             DEFAULT_SEVERITY_DEDUCTIONS["high"],
             "utterance",
             u,
+            excerpt_max=excerpt_max,
         )
-    # Weak answer: very short relative to question, or pure deflection without content
     if len(r) < 15 and not re.search(r"\b(yes|no|here|see|link|http)\b", r, re.I):
         return _issue(
             "unanswered_question",
@@ -226,11 +239,14 @@ def detect_unanswered_question(
             DEFAULT_SEVERITY_DEDUCTIONS["high"],
             "response",
             r,
+            excerpt_max=excerpt_max,
         )
     return None
 
 
-def detect_human_request(utterance: str) -> Optional[Dict[str, Any]]:
+def detect_human_request(
+    utterance: str, excerpt_max: int = _EXCERPT_MAX
+) -> Optional[Dict[str, Any]]:
     if not _HUMAN_REQUEST_RE.search(utterance or ""):
         return None
     return _issue(
@@ -240,6 +256,7 @@ def detect_human_request(utterance: str) -> Optional[Dict[str, Any]]:
         DEFAULT_SEVERITY_DEDUCTIONS["high"],
         "utterance",
         utterance or "",
+        excerpt_max=excerpt_max,
     )
 
 
@@ -247,6 +264,7 @@ def detect_repetition_loop(
     response: str,
     prior_agent_responses: Sequence[str],
     threshold: float = 0.92,
+    excerpt_max: int = _EXCERPT_MAX,
 ) -> Optional[Dict[str, Any]]:
     r = (response or "").strip()
     if len(r) < 20:
@@ -264,16 +282,19 @@ def detect_repetition_loop(
                 50,
                 "response",
                 r,
+                excerpt_max=excerpt_max,
                 similarity=round(ratio, 3),
             )
     return None
 
 
-def detect_prompt_injection(utterance: str, response: str) -> Optional[Dict[str, Any]]:
+def detect_prompt_injection(
+    utterance: str, response: str, excerpt_max: int = _EXCERPT_MAX
+) -> Optional[Dict[str, Any]]:
     if not _INJECTION_RE.search(utterance or ""):
         return None
     if _REFUSAL_RE.search(response or ""):
-        return None  # handled correctly
+        return None
     return _issue(
         "prompt_injection_attempt",
         "integrity",
@@ -281,10 +302,13 @@ def detect_prompt_injection(utterance: str, response: str) -> Optional[Dict[str,
         40,
         "utterance",
         utterance or "",
+        excerpt_max=excerpt_max,
     )
 
 
-def detect_toxicity(utterance: str) -> Optional[Dict[str, Any]]:
+def detect_toxicity(
+    utterance: str, excerpt_max: int = _EXCERPT_MAX
+) -> Optional[Dict[str, Any]]:
     if not _TOXICITY_RE.search(utterance or ""):
         return None
     return _issue(
@@ -294,10 +318,13 @@ def detect_toxicity(utterance: str) -> Optional[Dict[str, Any]]:
         DEFAULT_SEVERITY_DEDUCTIONS["high"],
         "utterance",
         utterance or "",
+        excerpt_max=excerpt_max,
     )
 
 
-def detect_execution_failure(interaction: Any) -> Optional[Dict[str, Any]]:
+def detect_execution_failure(
+    interaction: Any, excerpt_max: int = _EXCERPT_MAX
+) -> Optional[Dict[str, Any]]:
     """Heuristic: events/parameters marked failed without a useful response."""
     events = getattr(interaction, "events", None) or []
     for ev in events:
@@ -314,6 +341,7 @@ def detect_execution_failure(interaction: Any) -> Optional[Dict[str, Any]]:
                     DEFAULT_SEVERITY_DEDUCTIONS["high"],
                     "response",
                     resp or content[:80],
+                    excerpt_max=excerpt_max,
                 )
     return None
 
@@ -326,19 +354,25 @@ def run_heuristics(
     prior_agent_responses: Optional[Sequence[str]] = None,
     interaction: Any = None,
     latency_bands: Optional[Sequence[tuple]] = None,
+    excerpt_max: int = _EXCERPT_MAX,
 ) -> List[Dict[str, Any]]:
     """Run all v1 heuristic detectors; return list of Issue dicts."""
+    em = int(excerpt_max) if excerpt_max else _EXCERPT_MAX
     issues: List[Dict[str, Any]] = []
     for detector_result in (
-        detect_slow_response(duration, latency_bands=latency_bands),
-        detect_empty_or_trivial(response),
-        detect_idk(utterance, response),
-        detect_unanswered_question(utterance, response),
-        detect_human_request(utterance),
-        detect_repetition_loop(response, prior_agent_responses or ()),
-        detect_prompt_injection(utterance, response),
-        detect_toxicity(utterance),
-        detect_execution_failure(interaction) if interaction is not None else None,
+        detect_slow_response(duration, latency_bands=latency_bands, excerpt_max=em),
+        detect_empty_or_trivial(response, excerpt_max=em),
+        detect_idk(utterance, response, excerpt_max=em),
+        detect_unanswered_question(utterance, response, excerpt_max=em),
+        detect_human_request(utterance, excerpt_max=em),
+        detect_repetition_loop(response, prior_agent_responses or (), excerpt_max=em),
+        detect_prompt_injection(utterance, response, excerpt_max=em),
+        detect_toxicity(utterance, excerpt_max=em),
+        (
+            detect_execution_failure(interaction, excerpt_max=em)
+            if interaction is not None
+            else None
+        ),
     ):
         if detector_result:
             issues.append(detector_result)

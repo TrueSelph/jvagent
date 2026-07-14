@@ -80,8 +80,11 @@ def _parse_json_response(raw: Any) -> Dict[str, Any]:
 def merge_ai_issues(
     heuristic_issues: List[Dict[str, Any]],
     ai_payload: Dict[str, Any],
+    *,
+    excerpt_max: int = 120,
 ) -> List[Dict[str, Any]]:
     """Merge AI issues into heuristic list (by code, AI can add new)."""
+    cap = max(1, int(excerpt_max) if excerpt_max else 120)
     by_code = {str(i.get("code")): dict(i) for i in heuristic_issues if i.get("code")}
     for raw in ai_payload.get("issues") or []:
         if not isinstance(raw, dict):
@@ -94,7 +97,8 @@ def merge_ai_issues(
         if sev not in DEFAULT_SEVERITY_DEDUCTIONS:
             sev = "medium"
         ded = int(DEFAULT_SEVERITY_DEDUCTIONS[sev])
-        excerpt = str(raw.get("evidence_excerpt") or raw.get("rationale") or "")[:120]
+        raw_excerpt = str(raw.get("evidence_excerpt") or raw.get("rationale") or "")
+        excerpt = raw_excerpt[:cap]
         by_code[code] = {
             "code": code,
             "dimension": dim,
@@ -146,12 +150,21 @@ def apply_ai_to_health(
     ai_payload: Dict[str, Any],
     *,
     day: str,
+    flag_threshold: float = 70.0,
+    excerpt_max: int = 120,
 ) -> Dict[str, Any]:
-    """Return updated health dict after merging AI issues and recomputing scores."""
-    issues = merge_ai_issues(list(health.get("issues") or []), ai_payload)
+    """Return updated health dict after merging AI issues and recomputing scores.
+
+    ``flag_threshold`` should match the action config so intermediate flagged
+    state is consistent (caller may still re-flag).
+    """
+    issues = merge_ai_issues(
+        list(health.get("issues") or []),
+        ai_payload,
+        excerpt_max=excerpt_max,
+    )
     dimensions = score_dimensions(issues)
-    flagged = is_flagged(dimensions, issues, flag_threshold=70.0)
-    # Prefer existing flag threshold from health if present — caller may re-flag
+    flagged = is_flagged(dimensions, issues, flag_threshold=flag_threshold)
     hs = heuristic_health_score(dimensions)
     contribution = build_contribution(
         day=day,

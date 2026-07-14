@@ -156,13 +156,33 @@ async def _iter_agent_conversations(agent_id: str) -> List[Conversation]:
 
 
 async def _iter_agent_interactions_recent(
-    agent_id: str, *, limit: int, offset: int
+    agent_id: str,
+    *,
+    limit: int,
+    offset: int,
+    max_conversations: int = 100,
+    max_per_conversation: int = 50,
 ) -> Tuple[List[Interaction], int]:
-    """Page recent interactions for one agent only (memory graph walk)."""
+    """Page recent interactions for one agent (bounded graph walk).
+
+    Caps conversations and turns per conversation so backfill cannot load an
+    unbounded history into memory.
+    """
+    convs = await _iter_agent_conversations(agent_id)
+    convs.sort(
+        key=lambda c: getattr(c, "last_interaction_at", None)
+        or getattr(c, "created_at", None)
+        or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    max_conversations = max(1, min(int(max_conversations), 500))
+    max_per_conversation = max(1, min(int(max_per_conversation), 200))
+    convs = convs[:max_conversations]
+
     collected: List[Interaction] = []
-    for conv in await _iter_agent_conversations(agent_id):
+    for conv in convs:
         try:
-            ixs = await conv.get_interactions(limit=0, reverse=True)
+            ixs = await conv.get_interactions(limit=max_per_conversation, reverse=True)
         except Exception:
             continue
         for ix in ixs or []:
@@ -492,9 +512,15 @@ async def backfill_health(
     offset = int(body.get("cursor") or body.get("offset") or 0)
     enqueue_critical_ai = bool(body.get("enqueue_critical_ai") or False)
     force = bool(body.get("force") or False)
+    max_conversations = min(int(body.get("max_conversations") or 100), 500)
+    max_per_conversation = min(int(body.get("max_per_conversation") or 50), 200)
 
     rows, total = await _iter_agent_interactions_recent(
-        agent_id, limit=limit, offset=offset
+        agent_id,
+        limit=limit,
+        offset=offset,
+        max_conversations=max_conversations,
+        max_per_conversation=max_per_conversation,
     )
 
     processed = 0

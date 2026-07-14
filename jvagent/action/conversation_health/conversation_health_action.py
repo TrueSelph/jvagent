@@ -124,6 +124,11 @@ class ConversationHealthAction(InteractAction):
             )
 
     def is_scorable(self, interaction: Interaction) -> tuple[bool, Optional[str]]:
+        """True only for user-facing turns we can fairly evaluate.
+
+        No reply and no emit is unscorable unless posture is explicitly RESPOND
+        (empty/trivial agent reply is then a real quality signal).
+        """
         utterance = (getattr(interaction, "utterance", None) or "").strip()
         if not utterance:
             return False, "no_utterance"
@@ -131,13 +136,15 @@ class ConversationHealthAction(InteractAction):
         response = getattr(interaction, "response", None)
         has_response = response is not None and str(response).strip() != ""
         emitted = bool(getattr(interaction, "emitted", False))
-        if posture in ("DEFER", "SUPPRESS") and not has_response and not emitted:
+        if has_response or emitted:
+            return True, None
+        # No user-facing reply
+        if posture in ("DEFER", "SUPPRESS"):
             return False, f"posture_{posture.lower()}_no_reply"
-        if not has_response and not emitted and posture != "RESPOND":
-            # RESPOND with empty response is scorable (empty_or_trivial)
-            if posture and posture != "RESPOND":
-                return False, "no_user_facing_reply"
-        return True, None
+        if posture == "RESPOND":
+            # Explicit respond with empty body → score as empty/trivial
+            return True, None
+        return False, "no_user_facing_reply"
 
     async def score_interaction(
         self,
@@ -203,6 +210,7 @@ class ConversationHealthAction(InteractAction):
             prior_agent_responses=prior_responses,
             interaction=interaction,
             latency_bands=bands,
+            excerpt_max=self.evidence_excerpt_max_chars,
         )
         dimensions = score_dimensions(issues)
         flagged = is_flagged(dimensions, issues, flag_threshold=self.flag_threshold)
@@ -417,9 +425,11 @@ class ConversationHealthAction(InteractAction):
             if conv:
                 try:
                     recent = await conv.get_interactions(
-                        limit=self.history_limit, reverse=True
+                        limit=self.history_limit + 1, reverse=True
                     )
                     for ix in reversed(recent):
+                        if str(getattr(ix, "id", "")) == str(interaction.id):
+                            continue
                         if ix.utterance:
                             history.append(
                                 {"role": "user", "content": str(ix.utterance)}
@@ -428,6 +438,8 @@ class ConversationHealthAction(InteractAction):
                             history.append(
                                 {"role": "assistant", "content": str(ix.response)}
                             )
+                        if len(history) >= self.history_limit * 2:
+                            break
                 except Exception:
                     pass
 
@@ -451,12 +463,12 @@ class ConversationHealthAction(InteractAction):
 
         prev_contribution = health.get("contribution")
         day = str((prev_contribution or {}).get("day") or utc_day_str())
-        updated = apply_ai_to_health(health, ai_payload, day=day)
-        # Re-flag with action threshold
-        updated["flagged"] = is_flagged(
-            updated.get("dimensions") or {},
-            updated.get("issues") or [],
+        updated = apply_ai_to_health(
+            health,
+            ai_payload,
+            day=day,
             flag_threshold=self.flag_threshold,
+            excerpt_max=self.evidence_excerpt_max_chars,
         )
         updated["contribution"] = build_contribution(
             day=day,
