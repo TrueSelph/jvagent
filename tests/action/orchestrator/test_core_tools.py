@@ -7,15 +7,11 @@ import uuid
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-import pytest
-
 from jvagent.action.orchestrator.core_tools import (
     build_artifact_tools,
     build_core_tools,
 )
 from jvagent.memory.conversation import Conversation
-
-pytestmark = pytest.mark.asyncio
 
 
 def _names(tier):

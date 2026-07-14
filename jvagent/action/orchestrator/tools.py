@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
+from jvagent.action.model.utils.json_utils import strip_json_fences
 from jvagent.action.orchestrator.access import is_tool_allowed
 
 logger = logging.getLogger(__name__)
@@ -133,25 +133,28 @@ def render_observations_section(observations: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-_JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
-
-
 def parse_json_object(raw: str) -> Optional[Dict[str, Any]]:
-    """Parse the first JSON object out of a model response (tolerant)."""
-    candidate = (raw or "").strip()
-    try:
-        obj = json.loads(candidate)
-        if isinstance(obj, dict):
-            return obj
-    except json.JSONDecodeError:
-        pass
-    match = _JSON_OBJECT_RE.search(candidate)
-    if not match:
+    r"""Parse the first JSON object out of a model response.
+
+    Strips markdown `````json`` code fences before parsing so responses from
+    providers that don't enforce JSON mode (e.g. ollama) still parse. If parsing
+    fails after fence-striipping, logs a warning so malformed responses are
+    diagnosable rather than silently dropped.
+    """
+    candidate = strip_json_fences((raw or "").strip())
+    if not candidate:
         return None
     try:
-        obj = json.loads(match.group(0))
+        obj = json.loads(candidate)
         return obj if isinstance(obj, dict) else None
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
+        logger.warning(
+            "parse_json_object: failed to parse model response as JSON "
+            "(len=%d, err=%s). First 120 chars: %r",
+            len(candidate),
+            exc,
+            candidate[:120],
+        )
         return None
 
 

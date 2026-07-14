@@ -14,8 +14,6 @@ from jvagent.action.orchestrator.skill_providers import (
 )
 from jvagent.action.orchestrator.skills import SkillDoc, discover_skill_docs
 
-pytestmark = pytest.mark.asyncio
-
 _AGENT = SimpleNamespace(namespace="jvagent", name="orchestrator_agent")
 
 

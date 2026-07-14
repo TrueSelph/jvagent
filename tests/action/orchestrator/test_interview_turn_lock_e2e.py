@@ -4,16 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
-import pytest
-
 import jvagent.action.orchestrator.orchestrator_interact_action as sei
 from jvagent.action.interview.interview_action import InterviewAction
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
 from jvagent.action.orchestrator.skills import SkillDoc
-
-pytestmark = pytest.mark.asyncio
 
 
 def _reply_tool():

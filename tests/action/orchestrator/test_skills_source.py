@@ -6,13 +6,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
 import jvagent.core.app_context as app_context
 import jvagent.scaffold.skill_resolve as skill_resolve
 from jvagent.action.orchestrator.skills import discover_skill_docs
-
-pytestmark = pytest.mark.asyncio
 
 
 def _stub_resolver(monkeypatch):

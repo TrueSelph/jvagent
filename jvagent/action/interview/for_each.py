@@ -611,21 +611,24 @@ def build_prefixed_child_prompt(
 def for_each_review_sections(
     session: InterviewSession,
     spec: InterviewSpec,
-    *,
-    omit_parents: Optional[set] = None,
 ) -> List[str]:
-    """Markdown lines for completed for_each records on the review summary.
+    """Markdown record blocks for completed for_each records on the review summary.
 
-    ``omit_parents`` mirrors the ``omit_fields`` set in ``build_review_summary``
-    — when a custom review handler hides a parent field from the summary, its
-    per-item records are suppressed here too.
+    Always renders the per-item section for every parent with ``for_each``.
+    A custom review handler that hides the parent's own raw-value line does so
+    via ``modified_values`` → ``__omit__`` (consumed by ``build_review_summary``'s
+    top-level loop); that suppression must NOT also drop the per-item records,
+    which are the only place those collected child values are surfaced.
+
+    Returns one string per record — the header and its child lines joined by a
+    single newline so a record renders as a tight block. The caller joins these
+    blocks with a blank-line separator (``\\n\\n``), producing one blank line
+    between records and no blank lines within a record.
     """
     store = get_for_each_store(session)
-    lines: List[str] = []
+    blocks: List[str] = []
     for fdef in spec.fields:
         if not fdef.for_each:
-            continue
-        if omit_parents and fdef.key in omit_parents:
             continue
         state = store.get(fdef.key)
         if not isinstance(state, dict):
@@ -637,18 +640,21 @@ def for_each_review_sections(
             if not isinstance(rec, dict):
                 continue
             label = rec.get("label") or rec.get("item_id") or "Item"
-            lines.append(f"**{fdef.key.replace('_', ' ').title()} — {label}**")
+            record_lines: List[str] = [
+                f"**{_singularize_key(fdef.key).title()} — {label}**"
+            ]
             fields_data = rec.get("fields") or {}
             skipped = set(rec.get("skipped_fields") or [])
             if isinstance(fields_data, dict):
                 for child in fdef.for_each.fields:
                     if child.key in skipped:
-                        lines.append(
+                        record_lines.append(
                             f"  **{child.key.replace('_', ' ').title()}**: (skipped)"
                         )
                     elif child.key in fields_data:
-                        lines.append(
+                        record_lines.append(
                             f"  **{child.key.replace('_', ' ').title()}**: "
                             f"{fields_data[child.key]}"
                         )
-    return lines
+            blocks.append("\n".join(record_lines))
+    return blocks

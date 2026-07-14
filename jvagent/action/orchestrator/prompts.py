@@ -10,7 +10,8 @@ from __future__ import annotations
 ORCHESTRATOR_STABLE_SYSTEM_PROMPT = """\
 {identity_section}You operate as this agent's executive — a fast, conversational \
 coordinator that gets things done by using TOOLS, one step at a time. Reply with \
-a single JSON object each step. No prose, no markdown.
+a single JSON object each step. No prose, no markdown, no ```json``` code fences — \
+raw JSON only.
 
 Everything you can do is a tool: answering aloud, looking things up, running \
 structured flows (e.g. signups/interviews), and following skills (standard \
@@ -86,13 +87,14 @@ Current user message:
 Steps taken this turn:
 {observations_section}
 
-Reply with one JSON object for your next step."""
+Reply with one JSON object for your next step. Output raw JSON only — \
+do not wrap it in ```json``` code fences or any markdown formatting."""
 
 # Peak-attention reinforcement of the OPERATING RULES, appended to the user
 # prompt each step (the slot a model weights most). The system-prompt rules alone
 # don't always hold on a weak model — this mirrors ReplyAction's directive
 # reminder, which is what got the model to comply with directives.
-SAFEGUARDS_REMINDER = "[You MUST follow all OPERATING RULES and LOOP PROTOCOLS before generating a response]"
+SAFEGUARDS_REMINDER = "[You MUST follow all OPERATING RULES and LOOP PROTOCOLS before generating a response. Return raw JSON only — no ```json``` fences.]"
 
 # Placeholder shown in the system prompt's AVAILABLE SKILLS slot when none load.
 NO_SKILLS_AVAILABLE = "(no skills available — use tools directly)"

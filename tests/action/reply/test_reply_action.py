@@ -7,11 +7,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from jvagent.action.reply.reply_action import ReplyAction
-
-pytestmark = pytest.mark.asyncio
 
 
 def _visitor_no_bus():

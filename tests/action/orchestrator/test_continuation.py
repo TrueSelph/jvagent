@@ -9,15 +9,11 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from jvagent.action.orchestrator.continuation import (
     active_flow_note,
     active_flow_owner,
 )
 from jvagent.memory.task_store import TaskStore
-
-pytestmark = pytest.mark.asyncio
 
 
 def _visitor():

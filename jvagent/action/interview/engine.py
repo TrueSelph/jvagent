@@ -1441,7 +1441,10 @@ def build_review_summary(
         lines.append(f"**{label}**: {collected[key]}")
     for label, value in (additional_data or {}).items():
         lines.append(f"**{label}**: {value}")
-    fe_lines = for_each_review_sections(session, spec, omit_parents=omitted)
+    # Each element of fe_lines is one record block (header + child lines joined
+    # by a single newline); the "\n\n".join below produces one blank line between
+    # records and no blank lines within a record.
+    fe_lines = for_each_review_sections(session, spec)
     if fe_lines:
         if lines:
             lines.append("")

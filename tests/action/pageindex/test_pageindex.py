@@ -5,7 +5,7 @@ import pytest
 pytest.importorskip("openai")
 pytest.importorskip("tiktoken")
 pytest.importorskip("litellm")
-pytest.importorskip("PyPDF2")
+pytest.importorskip("pypdf")
 
 from unittest.mock import AsyncMock, patch
 

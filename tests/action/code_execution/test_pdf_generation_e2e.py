@@ -14,8 +14,6 @@ import pytest
 from jvagent.action.code_execution.code_execution_action import CodeExecutionAction
 from jvagent.action.code_execution.executor import ExecRequest, SubprocessExecutor
 
-pytestmark = pytest.mark.asyncio
-
 _SKILL_DIR = Path("jvagent/skills/pdf_generation")
 
 

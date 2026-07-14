@@ -8,13 +8,9 @@ from __future__ import annotations
 import base64
 from types import SimpleNamespace
 
-import pytest
-
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
-
-pytestmark = pytest.mark.asyncio
 
 
 def _b64(b: bytes) -> str:

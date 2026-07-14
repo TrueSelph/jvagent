@@ -22,9 +22,6 @@ from jvagent.action.pageindex.pageindex_action.pageindex_action import (
     PageIndexAction,
 )
 
-pytestmark = pytest.mark.asyncio
-
-
 # --- the path-vs-content heuristic -----------------------------------------
 
 

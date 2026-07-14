@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from jvagent.action.orchestrator.catalog import (
     build_catalog_tools,
     build_skill_meta_tools,
@@ -18,13 +16,22 @@ from jvagent.action.orchestrator.tools import (
     wrap_action_tool,
 )
 
-pytestmark = pytest.mark.asyncio
 
-
-async def test_parse_json_object_tolerant():
+async def test_parse_json_object_strict():
+    # Raw JSON parses cleanly
     assert parse_json_object('{"a": 1}') == {"a": 1}
-    assert parse_json_object('noise {"a": 2} trailing') == {"a": 2}
+    # Empty/whitespace returns None
+    assert parse_json_object("") is None
+    assert parse_json_object("   ") is None
+    # Non-JSON returns None (no tolerant regex fallback)
     assert parse_json_object("not json") is None
+    # Prose-wrapped JSON is not rescued — the prompt instructs
+    # the model to return raw JSON only, and parse failures are logged.
+    assert parse_json_object('noise {"a": 2} trailing') is None
+    # Markdown-fenced JSON is recovered via strip_json_fences
+    assert parse_json_object('```json\n{"a": 1}\n```') == {"a": 1}
+    assert parse_json_object('```JSON\n{"b": 2}\n```') == {"b": 2}
+    assert parse_json_object('```\n{"c": 3}\n```') == {"c": 3}
 
 
 async def test_render_tools_section_empty_and_full():

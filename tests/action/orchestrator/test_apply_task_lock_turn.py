@@ -4,13 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from jvagent.action.orchestrator.skill_tasks import apply_task_lock_turn
 from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.action.skill_spec.task_lock import TaskLockPrep
-
-pytestmark = pytest.mark.asyncio
 
 
 async def test_apply_task_lock_turn_uses_bound_action_hooks():

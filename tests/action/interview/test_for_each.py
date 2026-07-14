@@ -216,9 +216,79 @@ async def test_for_each_review_summary_groups_records(for_each_spec):
         session.get_collected_summary(),
         visible_keys=["item_ids"],
     )
-    assert "Item Ids — A" in summary or "Item Ids — A" in summary.replace("_", " ")
+    assert "Item Id — A" in summary
     assert "Alpha" in summary
     assert "Beta" in summary
+    # Tight spacing: the record header and its first child are separated by a
+    # single newline (not a blank line).
+    assert "**Item Id — A**\n  **Title**: Alpha" in summary
+    # Exactly one blank line between the two records.
+    assert "Alpha" in summary
+    a_block_end = summary.index("Alpha")
+    b_block_start = summary.index("Item Id — B")
+    between = summary[a_block_end:b_block_start]
+    # After the last child line of record A, there should be exactly one blank
+    # line (\n\n) before the record B header.
+    assert "\n\n" in between
+    assert between.count("\n\n") == 1
+
+
+@pytest.mark.asyncio
+async def test_for_each_review_summary_renders_when_parent_omitted(for_each_spec):
+    """Regression: omitting the parent via omit_fields must NOT suppress the
+    per-item for_each section.
+
+    Before the fix, ``for_each_review_sections`` dropped the parent when it
+    appeared in ``omit_fields`` (mirrored via ``omit_parents``), so a custom
+    review handler that hides the parent's raw value also hid every per-item
+    record — leaving an empty summary. The per-item section is the only place
+    collected child values are surfaced, so it must always render.
+    """
+    session = InterviewSession(interview_type=for_each_spec.name)
+    session.set_value("item_ids", "A, B")
+    session.context["for_each"] = {
+        "item_ids": {
+            "status": "complete",
+            "items": [{"id": "A", "label": "A"}, {"id": "B", "label": "B"}],
+            "current_index": 2,
+            "child_keys": ["title", "quantity", "notes"],
+            "records": [
+                {
+                    "item_id": "A",
+                    "label": "A",
+                    "fields": {"title": "Alpha", "quantity": "1"},
+                    "skipped_fields": ["notes"],
+                },
+                {
+                    "item_id": "B",
+                    "label": "B",
+                    "fields": {"title": "Beta", "quantity": "2"},
+                    "skipped_fields": [],
+                },
+            ],
+        }
+    }
+    # Simulate a custom review handler that omits the parent's raw line.
+    summary = build_review_summary(
+        session,
+        for_each_spec,
+        session.get_collected_summary(),
+        visible_keys=["item_ids"],
+        omit_fields={"item_ids"},
+    )
+    # The parent's raw value line is suppressed…
+    assert "A, B" not in summary
+    # …but every per-item record still renders.
+    assert "Item Id — A" in summary
+    assert "Alpha" in summary
+    assert "Beta" in summary
+    # Tight spacing within a record: header and first child separated by a single
+    # newline (no blank line inside a record block).
+    assert "**Item Id — A**\n  **Title**: Alpha" in summary
+    # Exactly one blank line between records.
+    a_end = summary.index("Alpha")
+    b_start = summary.index("Item Id — B")
+    assert summary[a_end:b_start].count("\n\n") == 1
 
 
 @pytest.mark.asyncio

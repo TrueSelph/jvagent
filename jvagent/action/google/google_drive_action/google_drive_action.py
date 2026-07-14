@@ -209,10 +209,24 @@ class GoogleDriveAction(GoogleAction):
 
         return {"success": True}
 
+    _GOOGLE_APPS_NON_DOCUMENT_MIMES = frozenset(
+        {
+            "application/vnd.google-apps.video",
+            "application/vnd.google-apps.audio",
+            "application/vnd.google-apps.photo",
+            "application/vnd.google-apps.form",
+            "application/vnd.google-apps.map",
+            "application/vnd.google-apps.site",
+            "application/vnd.google-apps.jam",
+        }
+    )
+
     async def get_media(self, file_id: str) -> bytes:
         """
         Download a file's content from Google Drive.
         Handles both regular binary files and Google Workspace documents (Docs, Sheets, etc.).
+        Raises ValueError for non-document Google Workspace types (video, audio, photo, etc.)
+        that cannot be exported as PDF.
         """
         service = await self.get_service()
 
@@ -224,8 +238,17 @@ class GoogleDriveAction(GoogleAction):
         )
 
         mime_type = file_metadata.get("mimeType", "")
+        file_name = file_metadata.get("name", "")
 
-        # 2. Define the request based on file type
+        # 2. Reject non-document Google Workspace types (video, audio, photo, etc.)
+        if mime_type in self._GOOGLE_APPS_NON_DOCUMENT_MIMES:
+            raise ValueError(
+                f"Google Workspace type '{mime_type}' for '{file_name}' cannot be "
+                f"exported as a document. Only Docs, Sheets, Slides, and Drawings "
+                f"are supported for PageIndex ingest."
+            )
+
+        # 3. Define the request based on file type
         if mime_type.startswith("application/vnd.google-apps."):
             request = service.files().export_media(
                 fileId=file_id, mimeType="application/pdf"
@@ -233,7 +256,7 @@ class GoogleDriveAction(GoogleAction):
         else:
             request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
 
-        # 3. Perform the download using a buffer
+        # 4. Perform the download using a buffer
         fh = io.BytesIO()
         downloader = MediaIoBaseDownload(fh, request)
 
@@ -242,7 +265,7 @@ class GoogleDriveAction(GoogleAction):
             # Standard google-api-client execute() is synchronous
             status, done = downloader.next_chunk()
 
-        # 4. Return the bytes
+        # 5. Return the bytes
         return fh.getvalue()
 
     def compare_files(

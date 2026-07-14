@@ -325,6 +325,22 @@ class OllamaLanguageModelAction(LanguageModelAction):
         }
         if tools:
             payload["tools"] = tools
+        # Honor response_format when the caller requests JSON mode (e.g. the
+        # Orchestrator sets {"type": "json_object"}). Ollama's native API uses
+        # ``format: "json"`` to constrain the grammar during sampling so output
+        # is valid JSON. Without this, ollama freely emits prose/fences even
+        # when the caller expects JSON. Only set when explicitly passed —
+        # callers that want free-text output (e.g. ReplyAction) don't set
+        # response_format, so they're unaffected.
+        response_format = kwargs.get("response_format")
+        if response_format is not None:
+            if (
+                isinstance(response_format, dict)
+                and response_format.get("type") == "json_object"
+            ):
+                payload["format"] = "json"
+            elif isinstance(response_format, str):
+                payload["format"] = response_format
         reasoning = kwargs.get("reasoning")
         if isinstance(reasoning, dict) and reasoning.get("think") is True:
             payload["think"] = True

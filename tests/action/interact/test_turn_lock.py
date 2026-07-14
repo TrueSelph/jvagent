@@ -5,14 +5,10 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from jvagent.memory.distributed_conversation_lock import (
     conversation_mutation_lock,
     holds_conversation_mutation_lock,
 )
-
-pytestmark = pytest.mark.asyncio
 
 
 async def test_holds_conversation_mutation_lock_reentrant():

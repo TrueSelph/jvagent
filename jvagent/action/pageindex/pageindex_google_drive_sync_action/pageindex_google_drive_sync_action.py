@@ -488,7 +488,11 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         cfg: DriveIngestConfig,
         cancel_event: threading.Event,
     ) -> Dict[str, Any]:
-        file_bytes = await google_drive_action.get_media(file_id=file_id)
+        try:
+            file_bytes = await google_drive_action.get_media(file_id=file_id)
+        except ValueError as exc:
+            logger.warning("Skipping non-exportable Drive file %s: %s", doc_name, exc)
+            raise ValidationError(str(exc)) from exc
         forge_base = (get_jvagent_jvforge_base_url() or "").strip()
         effective_forge = resolve_effective_jvforge_base(
             forge_base, use_jvforge=cfg.use_jvforge
@@ -656,6 +660,34 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     "skipped": False,
                     "doc_name": doc_name,
                     "ingestion_message": f"Timed out ingesting {doc_name}",
+                }
+            except ValidationError as ve:
+                msg = str(ve.message) if hasattr(ve, "message") else str(ve)
+                if "cannot be exported" in msg or "non-exportable" in msg.lower():
+                    logger.info(
+                        "Skipping non-exportable Drive file for PageIndex: %s (%s)",
+                        doc_name,
+                        msg,
+                    )
+                    return await _pop_skip_head(
+                        google_drive_documents_node,
+                        source=source,
+                        doc_type=doc_type,
+                        doc_name=doc_name,
+                        ingestion_message=f"Skipped non-exportable file: {doc_name}",
+                    )
+                await self._mark_drive_ingest_failed(
+                    google_drive_documents_node,
+                    source=source,
+                    doc_type=doc_type,
+                    file_info=file_info,
+                )
+                logger.exception("ValidationError ingesting document %s", doc_name)
+                return {
+                    "success": False,
+                    "skipped": False,
+                    "doc_name": doc_name,
+                    "ingestion_message": f"Failed to ingest {doc_name}: {msg}",
                 }
             except Exception:
                 await self._mark_drive_ingest_failed(

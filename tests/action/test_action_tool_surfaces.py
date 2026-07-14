@@ -9,8 +9,6 @@ import importlib
 
 import pytest
 
-pytestmark = pytest.mark.asyncio
-
 # action import path -> (class name, expected tool names)
 CASES = {
     "jvagent.action.google.google_gmail_action.google_gmail_action": (

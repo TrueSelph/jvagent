@@ -17,8 +17,6 @@ from tests.action.interview.conftest import ORCHESTRATOR_AGENT_DIR
 
 _OPENING = "Hello my name is Eldon Marks. I'm here to sign up"
 
-pytestmark = pytest.mark.asyncio
-
 
 def _reply_tool():
     from jvagent.tooling.tool import Tool

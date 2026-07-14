@@ -70,7 +70,7 @@ async def test_post_jvforge_raises_validation_after_retries_exhausted() -> None:
             )
     assert "connection error" in str(ei.value.message)
     assert "JVAGENT_JVFORGE_BASE_URL" in str(ei.value.message)
-    assert client.post.await_count == 3
+    assert client.post.await_count == 5
 
 
 @pytest.mark.asyncio

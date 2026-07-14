@@ -6,11 +6,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from jvagent.action.interact.interact_walker import InteractWalker
-
-pytestmark = pytest.mark.asyncio
 
 
 def _walker():

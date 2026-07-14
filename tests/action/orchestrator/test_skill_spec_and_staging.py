@@ -5,13 +5,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from jvagent.action.orchestrator.catalog import build_skill_meta_tools
 from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.scaffold.skill_resolve import parse_skill_bundle
-
-pytestmark = pytest.mark.asyncio
 
 
 def test_pdf_generation_is_claude_spec():

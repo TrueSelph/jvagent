@@ -5,15 +5,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from jvagent.action.task_trigger_interact_action.task_trigger_interact_action import (
     TaskTriggerInteractAction,
 )
 from jvagent.memory.task_proactive import ProactiveTaskSpec
 from jvagent.memory.task_store import TaskStore
-
-pytestmark = pytest.mark.asyncio
 
 
 def _visitor(conversation, utterance="I'm busy now"):

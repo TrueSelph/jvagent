@@ -5,11 +5,8 @@ All network + DNS is mocked."""
 from __future__ import annotations
 
 import httpx
-import pytest
 
 from jvagent.action.web_fetch.web_fetch_action import WebFetchAction
-
-pytestmark = pytest.mark.asyncio
 
 
 class _Resp:

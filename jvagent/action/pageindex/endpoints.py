@@ -467,11 +467,35 @@ async def _stage_graph_from_remote_url(
 ) -> str:
     """Download a PageIndex graph from ``url`` into app storage; return storage path.
 
+    Retries on 404 (artifact may not be written yet or propagating across replicas)
+    with exponential backoff up to 30 seconds.
+
     Caller must delete the staged file after import (or on failure).
     """
-    raw, _fname_hint, ct = await _fetch_url_bytes_capped(
-        url, read_timeout=fetch_read_timeout
-    )
+    _ARTIFACT_404_RETRIES = 6
+    _ARTIFACT_404_BACKOFF_S = (1.0, 2.0, 4.0, 8.0, 10.0, 5.0)
+    for attempt in range(1, _ARTIFACT_404_RETRIES + 1):
+        try:
+            raw, _fname_hint, ct = await _fetch_url_bytes_capped(
+                url, read_timeout=fetch_read_timeout
+            )
+            break
+        except ValidationError as exc:
+            msg = str(getattr(exc, "message", exc) or exc)
+            if "HTTP 404" in msg and attempt < _ARTIFACT_404_RETRIES:
+                delay = _ARTIFACT_404_BACKOFF_S[
+                    min(attempt - 1, len(_ARTIFACT_404_BACKOFF_S) - 1)
+                ]
+                logger.warning(
+                    "Artifact URL returned 404 (attempt %d/%d); retrying in %.1fs: %s",
+                    attempt,
+                    _ARTIFACT_404_RETRIES,
+                    delay,
+                    url,
+                )
+                await asyncio.sleep(delay)
+                continue
+            raise
     staging_fn = _import_staging_filename(url, ct)
     meta: Dict[str, Any] = {"source_url": url, "agent_id": agent_id}
     if extra_staging_metadata:

@@ -6,11 +6,7 @@ chain walk = N sequential DB fetches per turn on the history hot path).
 
 import uuid
 
-import pytest
-
 from jvagent.memory.conversation import Conversation
-
-pytestmark = pytest.mark.asyncio
 
 
 async def _conv_with(n):
