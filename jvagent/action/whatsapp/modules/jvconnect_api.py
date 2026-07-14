@@ -260,3 +260,24 @@ class JvconnectWhatsAppAPI(MetaWhatsAppAPI):
         return await MetaWhatsAppAPI.send_template_message(
             self, phone, template_name, language=language, components=components
         )
+
+    async def list_flows(self) -> dict:
+        """List WhatsApp Flows via jvconnect (key-bound WABA)."""
+        await self.ensure_account()
+        data = await self._jvconnect_json("GET", "flows")
+        if data.get("error") and not data.get("ok", True):
+            return {"ok": False, "error": data.get("error"), "raw": data}
+        flows = data.get("flows") or data.get("data") or []
+        if not isinstance(flows, list):
+            flows = []
+        return {
+            "ok": True,
+            "flows": flows,
+            "phone_number_id": data.get("phone_number_id") or self.phone_number_id,
+            "waba_id": data.get("waba_id") or self.waba_id,
+        }
+
+    async def send_flow_message(self, phone: str, **kwargs: Any) -> dict:
+        """Send an interactive Flow through jvconnect ``POST .../messages``."""
+        await self.ensure_account()
+        return await MetaWhatsAppAPI.send_flow_message(self, phone, **kwargs)

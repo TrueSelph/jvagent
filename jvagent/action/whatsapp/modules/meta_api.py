@@ -763,6 +763,92 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
             self._messages_url(), method="POST", data=data, use_full_url=True
         )
 
+    async def list_flows(self) -> dict:
+        """List WhatsApp Flows for the configured WABA (direct Graph)."""
+        waba = (self.waba_id or "").strip()
+        if not waba:
+            return {"ok": False, "error": "waba_id required to list flows"}
+        url = (
+            f"{self.api_url.rstrip('/')}/{waba}/flows"
+            "?fields=id,name,status,categories,endpoint_uri&limit=100"
+        )
+        data = await self.send_rest_request(url, method="GET", use_full_url=True)
+        if data.get("error") and not data.get("ok", True):
+            return {"ok": False, "error": data.get("error"), "raw": data}
+        flows = data.get("data") or []
+        if not isinstance(flows, list):
+            flows = []
+        return {"ok": True, "flows": [f for f in flows if isinstance(f, dict)]}
+
+    async def send_flow_message(
+        self,
+        phone: str,
+        *,
+        flow_id: str = "",
+        flow_name: str = "",
+        flow_cta: str = "Open",
+        body: str = "Please complete this form.",
+        flow_token: str = "",
+        flow_action: str = "",
+        screen: str = "",
+        flow_action_data: Optional[Dict[str, Any]] = None,
+        mode: str = "",
+        header: str = "",
+        footer: str = "",
+    ) -> dict:
+        """Send an interactive WhatsApp Flow message to *phone*."""
+        to = self._normalize_recipient(phone)
+        fid = str(flow_id or "").strip()
+        fname = (flow_name or "").strip()
+        if not to or (not fid and not fname):
+            return {"ok": False, "error": "phone and flow_id or flow_name are required"}
+        cta = (flow_cta or "Open").strip() or "Open"
+        text = (body or "").strip() or "Please complete this form."
+        action_params: Dict[str, Any] = {
+            "flow_message_version": "3",
+            "flow_cta": cta,
+        }
+        if fid:
+            action_params["flow_id"] = fid
+        if fname:
+            action_params["flow_name"] = fname
+        if flow_token:
+            action_params["flow_token"] = flow_token
+        if mode:
+            action_params["mode"] = mode
+
+        action = (flow_action or "").strip().lower()
+        screen_id = (screen or "").strip()
+        if action == "data_exchange":
+            action_params["flow_action"] = "data_exchange"
+        elif screen_id:
+            action_params["flow_action"] = "navigate"
+            payload: Dict[str, Any] = {"screen": screen_id}
+            if flow_action_data:
+                payload["data"] = flow_action_data
+            action_params["flow_action_payload"] = payload
+
+        interactive: Dict[str, Any] = {
+            "type": "flow",
+            "body": {"text": text},
+            "action": {"name": "flow", "parameters": action_params},
+        }
+        if header:
+            interactive["header"] = {"type": "text", "text": header}
+        if footer:
+            interactive["footer"] = {"text": footer}
+
+        data: Dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to,
+            "type": "interactive",
+            "interactive": interactive,
+        }
+        return await self.send_rest_request(
+            self._messages_url(), method="POST", data=data, use_full_url=True
+        )
+
     async def send_image(
         self,
         phone: str,

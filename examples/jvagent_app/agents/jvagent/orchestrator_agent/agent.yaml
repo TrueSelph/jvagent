@@ -157,6 +157,7 @@ actions:
         - docx            # app-local CLAUDE skill (skills.sh / anthropics) — docx-js + OOXML scripts
         - signup_interview  # app-local interview skill (InterviewAction + SKILL.md interview:)
         - whatsapp_templates  # Meta HSM send via WhatsAppAction (WhatsApp inbound only)
+        - whatsapp_flows      # Meta Flow interactive send (WhatsApp inbound only)
 
   # MCP gateway: a sandboxed filesystem server (npx). Its tools surface to the
   # executive (tool_servers above) as mcp_filesystem__<tool>, sandboxed per
@@ -333,11 +334,15 @@ actions:
       # Meta HSMs: only these names may be sent via whatsapp__send_template
       template_allowlist:
         - signup
+        - request_contact_info_3 
+        - account_creation_confirmation_3
       default_template_language: "en_US"
+      # Meta Flows: allow by id or name (empty = all WABA flows)
+      flow_allowlist: []
 
   - action: jvagent/whatsapp_voice_action
     context:
-      enabled: false
+      enabled: true
       description: "WhatsApp voice calls via jvvoice delegation"
       jvvoice_base_url: "${JVVOICE_BASE_URL}"
       jvvoice_api_key: "${JVVOICE_API_KEY}"

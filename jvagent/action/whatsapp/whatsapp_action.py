@@ -61,7 +61,8 @@ class WhatsAppAction(Action):
     optional ``session`` on this action, then the current agent's name.
     """
 
-    # Stable tool prefix: whatsapp__list_templates / whatsapp__send_template
+    # Stable tool prefix: whatsapp__list_templates / whatsapp__send_template /
+    # whatsapp__list_flows / whatsapp__send_flow
     tool_namespace: ClassVar[str] = "whatsapp"
 
     # AUDIT-actions XC-4: declare non-conforming endpoint paths so deregister
@@ -188,6 +189,14 @@ class WhatsAppAction(Action):
         default="en_US",
         description="Default language code for whatsapp__send_template when omitted",
         max_length=20,
+    )
+
+    flow_allowlist: List[str] = attribute(
+        default_factory=list,
+        description=(
+            "When non-empty, only these Flow ids or names may be sent/listed. "
+            "Empty means all Flows from the WABA are allowed."
+        ),
     )
 
     stt_action: Optional[str] = attribute(
@@ -1358,6 +1367,259 @@ class WhatsAppAction(Action):
             )
         except Exception as e:
             logger.exception("whatsapp__send_template failed")
+            return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
+
+    # ------------------------------------------------------------------
+    # Meta WhatsApp Flows (Orchestrator tools)
+    # ------------------------------------------------------------------
+
+    _FLOW_CHANNEL_ERROR = "whatsapp_flows_require_inbound_whatsapp"
+
+    def _flow_dispatch_gate(self) -> Optional[Dict[str, Any]]:
+        ctx = get_dispatch_context()
+        if (
+            not ctx
+            or (ctx.channel or "").lower() != "whatsapp"
+            or not (ctx.user_id or "").strip()
+        ):
+            return {"ok": False, "error": self._FLOW_CHANNEL_ERROR}
+        return None
+
+    def _flow_allowlist_keys(self) -> List[str]:
+        raw = self.flow_allowlist or []
+        return [str(n).strip().lower() for n in raw if str(n).strip()]
+
+    def _is_flow_allowed(self, flow_id: str = "", flow_name: str = "") -> bool:
+        allowed = self._flow_allowlist_keys()
+        if not allowed:
+            return True
+        candidates = {
+            (flow_id or "").strip().lower(),
+            (flow_name or "").strip().lower(),
+        }
+        candidates.discard("")
+        return bool(candidates & set(allowed))
+
+    def _filter_flows_by_allowlist(
+        self, flows: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        allowed = self._flow_allowlist_keys()
+        if not allowed:
+            return flows
+        out: List[Dict[str, Any]] = []
+        for f in flows:
+            if not isinstance(f, dict):
+                continue
+            if self._is_flow_allowed(str(f.get("id") or ""), str(f.get("name") or "")):
+                out.append(f)
+        return out
+
+    async def _record_flow_send(
+        self,
+        *,
+        flow_id: str,
+        flow_name: str,
+        to: str,
+        result: Dict[str, Any],
+    ) -> None:
+        visitor = get_tool_visitor()
+        interaction = getattr(visitor, "interaction", None) if visitor else None
+        if interaction is None:
+            return
+        message_id = ""
+        messages = result.get("messages") if isinstance(result, dict) else None
+        if isinstance(messages, list) and messages:
+            first = messages[0]
+            if isinstance(first, dict):
+                message_id = str(first.get("id") or "")
+        try:
+            interaction.add_parameter(
+                {
+                    "name": "whatsapp_flow_sent",
+                    "flow_id": flow_id,
+                    "flow_name": flow_name,
+                    "to": to,
+                    "message_id": message_id,
+                    "executed": True,
+                },
+                self.get_class_name(),
+            )
+            if hasattr(interaction, "save"):
+                await interaction.save()
+        except Exception:
+            logger.debug("Failed to record flow send on interaction", exc_info=True)
+
+    @tool(name="whatsapp__list_flows")
+    async def list_flows(self) -> str:
+        """List WhatsApp Flows available to send on this inbound WhatsApp turn. Only works when the user messaged via WhatsApp."""
+        import json
+
+        gate = self._flow_dispatch_gate()
+        if gate:
+            return json.dumps(gate)
+        if not self.is_configured() or not self.is_meta_provider():
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": "WhatsApp Meta/jvconnect provider is not configured",
+                }
+            )
+        try:
+            api = await self.api()
+            list_fn = getattr(api, "list_flows", None)
+            if not callable(list_fn):
+                return json.dumps(
+                    {"ok": False, "error": "list_flows unsupported for this provider"}
+                )
+            result = await list_fn()
+            if not result.get("ok", True) or result.get("error"):
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": result.get("error") or "failed to list flows",
+                    }
+                )
+            flows = result.get("flows") or []
+            if not isinstance(flows, list):
+                flows = []
+            filtered = self._filter_flows_by_allowlist(
+                [f for f in flows if isinstance(f, dict)]
+            )
+            slim = [
+                {
+                    "id": f.get("id"),
+                    "name": f.get("name"),
+                    "status": f.get("status"),
+                    "categories": f.get("categories"),
+                    "endpoint_uri": f.get("endpoint_uri"),
+                }
+                for f in filtered
+            ]
+            return json.dumps({"ok": True, "flows": slim})
+        except Exception as e:
+            logger.exception("whatsapp__list_flows failed")
+            return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
+
+    @tool(name="whatsapp__send_flow")
+    async def send_flow(
+        self,
+        flow_id: Annotated[
+            Optional[str],
+            "Meta Flow id (preferred). Provide flow_id or flow_name.",
+        ] = None,
+        flow_name: Annotated[
+            Optional[str],
+            "Meta Flow name if id is unknown. Prefer flow_id when known.",
+        ] = None,
+        body: Annotated[
+            Optional[str],
+            "Message body shown above the Flow button.",
+        ] = "Please complete this form.",
+        flow_cta: Annotated[
+            Optional[str],
+            "CTA button label (max 20 chars).",
+        ] = "Open",
+        flow_action: Annotated[
+            Optional[str],
+            "Optional: navigate or data_exchange. Omit to use Meta entry screen.",
+        ] = None,
+        screen: Annotated[
+            Optional[str],
+            "Optional entry screen id when flow_action is navigate.",
+        ] = None,
+        mode: Annotated[
+            Optional[str],
+            "published (default) or draft (testers only).",
+        ] = None,
+    ) -> str:
+        """Send a WhatsApp Flow to the same phone that messaged this turn. Only works on inbound WhatsApp; recipient is fixed to the sender."""
+        import json
+        import time
+        import uuid
+
+        gate = self._flow_dispatch_gate()
+        if gate:
+            return json.dumps(gate)
+        ctx = get_dispatch_context()
+        assert ctx is not None
+        to = (ctx.user_id or "").strip()
+        fid = (flow_id or "").strip()
+        fname = (flow_name or "").strip()
+        if not fid and not fname:
+            return json.dumps(
+                {"ok": False, "error": "flow_id or flow_name is required"}
+            )
+        if not self._is_flow_allowed(fid, fname):
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": "flow is not on the agent allowlist",
+                    "allowlist": self._flow_allowlist_keys(),
+                }
+            )
+        if not self.is_configured() or not self.is_meta_provider():
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": "WhatsApp Meta/jvconnect provider is not configured",
+                }
+            )
+        token = f"jvagent_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+        try:
+            api = await self.api()
+            send_fn = getattr(api, "send_flow_message", None)
+            if not callable(send_fn):
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": "send_flow_message unsupported for this provider",
+                    }
+                )
+            result = await send_fn(
+                to,
+                flow_id=fid,
+                flow_name=fname,
+                flow_cta=(flow_cta or "Open").strip() or "Open",
+                body=(body or "").strip() or "Please complete this form.",
+                flow_token=token,
+                flow_action=(flow_action or "").strip(),
+                screen=(screen or "").strip(),
+                mode=(mode or "").strip(),
+            )
+            if not result.get("ok", True) or result.get("error"):
+                err = result.get("error")
+                if isinstance(err, dict):
+                    err = err.get("message") or err.get("error_user_msg") or str(err)
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": err or "failed to send flow",
+                        "raw": result,
+                    }
+                )
+            await self._record_flow_send(
+                flow_id=fid, flow_name=fname, to=to, result=result
+            )
+            messages = result.get("messages") or []
+            message_id = ""
+            if (
+                isinstance(messages, list)
+                and messages
+                and isinstance(messages[0], dict)
+            ):
+                message_id = str(messages[0].get("id") or "")
+            return json.dumps(
+                {
+                    "ok": True,
+                    "flow_id": fid,
+                    "flow_name": fname,
+                    "to": to,
+                    "flow_token": token,
+                    "message_id": message_id,
+                }
+            )
+        except Exception as e:
+            logger.exception("whatsapp__send_flow failed")
             return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
 
     async def healthcheck(self) -> Union[bool, Dict[str, Any]]:

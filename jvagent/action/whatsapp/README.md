@@ -259,6 +259,8 @@ Use the official WhatsApp Business Cloud API instead of a self-hosted bridge. Su
 
 Template tools are hard-gated: they only run on inbound `channel=whatsapp` turns and always send to the inbound sender (`user_id`). Optional `template_allowlist` / `default_template_language` on the action bound which Meta templates may be sent. Listing goes through jvconnect `GET /api/v1/meta/whatsapp/templates`; send uses `POST /api/v1/meta/whatsapp/messages` with `type: template`.
 
+**Flows:** `whatsapp__list_flows` / `whatsapp__send_flow` send interactive Flow messages (`type: interactive`, `interactive.type: flow`) with the same inbound-WhatsApp gate. Optional `flow_allowlist` (ids or names). Listing via jvconnect `GET /api/v1/meta/whatsapp/flows`. In the jvconnect **Flows** UI, the Send dialog can **Copy JSON** / **Copy jvconnect curl** for the Cloud API payload.
+
 Configure `stt_action` and `tts_action` on the WhatsApp action (same as bridge providers) for voice note transcription and voice replies.
 
 #### jvconnect credential proxy (required for `provider: meta`)
