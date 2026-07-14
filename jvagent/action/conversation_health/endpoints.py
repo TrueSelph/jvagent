@@ -90,9 +90,7 @@ async def _get_health_action(agent_id: str) -> ConversationHealthAction:
         }
     )
     if not action:
-        action = await ConversationHealthAction.find_one(
-            {"context.agent_id": agent_id}
-        )
+        action = await ConversationHealthAction.find_one({"context.agent_id": agent_id})
     if not action:
         raise ResourceNotFoundError(
             message=f"Conversation Health is not configured for agent '{agent_id}'",
@@ -101,9 +99,7 @@ async def _get_health_action(agent_id: str) -> ConversationHealthAction:
     return action  # type: ignore[return-value]
 
 
-async def _conversation_belongs_to_agent(
-    conv: Conversation, agent_id: str
-) -> bool:
+async def _conversation_belongs_to_agent(conv: Conversation, agent_id: str) -> bool:
     """True if conversation is owned by agent (graph or health stamp)."""
     h = getattr(conv, "health", None) or {}
     stamped = h.get("agent_id")
@@ -173,9 +169,8 @@ async def _iter_agent_interactions_recent(
             collected.append(ix)
 
     collected.sort(
-        key=lambda ix: getattr(ix, "started_at", None) or datetime.min.replace(
-            tzinfo=timezone.utc
-        ),
+        key=lambda ix: getattr(ix, "started_at", None)
+        or datetime.min.replace(tzinfo=timezone.utc),
         reverse=True,
     )
     total = len(collected)
@@ -445,10 +440,7 @@ async def deep_review_conversation(
     targets: List[Interaction] = []
     if interaction_id:
         ix = await Interaction.get(interaction_id)
-        if (
-            not ix
-            or str(getattr(ix, "conversation_id", "")) != str(conversation_id)
-        ):
+        if not ix or str(getattr(ix, "conversation_id", "")) != str(conversation_id):
             raise ResourceNotFoundError(
                 message=f"Interaction '{interaction_id}' not found",
                 details={

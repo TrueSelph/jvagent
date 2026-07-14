@@ -294,9 +294,7 @@ class ConversationHealthAction(InteractAction):
             interaction.health = health
             await interaction.save()
             if conversation:
-                await self._update_conversation_rollup(
-                    conversation, agent_id=agent_id
-                )
+                await self._update_conversation_rollup(conversation, agent_id=agent_id)
             prune_old_days(
                 self.day_buckets, keep_days=max(30, self.reading_window_days * 2)
             )
