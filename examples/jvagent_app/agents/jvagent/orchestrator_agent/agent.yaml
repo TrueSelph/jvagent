@@ -337,8 +337,10 @@ actions:
         - request_contact_info_3 
         - account_creation_confirmation_3
       default_template_language: "en_US"
-      # Meta Flows: allow by id or name (empty = all WABA flows)
-      flow_allowlist: []
+      # Meta Flows: only these ids or names may be sent via whatsapp__send_flow
+      # (empty = all WABA flows). Replace with your published Meta Flow names/ids.
+      flow_allowlist:
+        - signup_form
 
   - action: jvagent/whatsapp_voice_action
     context:

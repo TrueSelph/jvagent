@@ -1534,7 +1534,11 @@ class WhatsAppAction(Action):
         ] = None,
         screen: Annotated[
             Optional[str],
-            "First screen id when using navigate / No data. Ignored for data_exchange.",
+            "First screen id when using navigate / No data. Required when screen_data is set. Ignored for data_exchange.",
+        ] = None,
+        screen_data: Annotated[
+            Optional[Dict[str, Any]],
+            "Optional initial screen field values for navigate Flows (flow_action_payload.data). Keys must match Flow JSON data bindings. Requires screen. Not valid with data_exchange.",
         ] = None,
         mode: Annotated[
             Optional[str],
@@ -1573,6 +1577,37 @@ class WhatsAppAction(Action):
                     "error": "WhatsApp Meta/jvconnect provider is not configured",
                 }
             )
+        if screen_data is not None and not isinstance(screen_data, dict):
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": "screen_data must be an object of field keys to values",
+                }
+            )
+        prefill: Optional[Dict[str, Any]] = (
+            screen_data if isinstance(screen_data, dict) and screen_data else None
+        )
+        action_raw = (flow_action or "").strip().lower()
+        screen_id = (screen or "").strip()
+        if prefill is not None:
+            if action_raw == "data_exchange":
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": (
+                            "screen_data requires navigate flow_action; "
+                            "not valid with data_exchange"
+                        ),
+                    }
+                )
+            if not screen_id:
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": "screen is required when screen_data is set",
+                    }
+                )
+            action_raw = "navigate"
         token = f"jvagent_{int(time.time())}_{uuid.uuid4().hex[:8]}"
         try:
             api = await self.api()
@@ -1591,8 +1626,9 @@ class WhatsAppAction(Action):
                 flow_cta=(flow_cta or "Open").strip() or "Open",
                 body=(body or "").strip() or "Please complete this form.",
                 flow_token=token,
-                flow_action=(flow_action or "").strip(),
-                screen=(screen or "").strip(),
+                flow_action=action_raw or (flow_action or "").strip(),
+                screen=screen_id,
+                flow_action_data=prefill,
                 mode=(mode or "").strip(),
             )
             if not result.get("ok", True) or result.get("error"):

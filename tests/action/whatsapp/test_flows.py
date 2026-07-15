@@ -105,6 +105,104 @@ async def test_send_flow_allowlist_rejection(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_send_flow_forwards_screen_data(monkeypatch):
+    monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "https://agent.example.com")
+    monkeypatch.setenv("JVCONNECT_URL", "https://connect.example.com")
+    monkeypatch.setenv("JVCONNECT_API_KEY", "jvk_test")
+    action = _meta_action()
+    sent = {}
+
+    async def fake_api(self):
+        api = SimpleNamespace()
+
+        async def send_flow_message(phone, **kwargs):
+            sent["phone"] = phone
+            sent.update(kwargs)
+            return {"ok": True, "messages": [{"id": "wamid.flow"}]}
+
+        api.send_flow_message = send_flow_message
+        return api
+
+    monkeypatch.setattr(WhatsAppAction, "api", fake_api)
+    monkeypatch.setattr(WhatsAppAction, "is_configured", lambda self: True)
+
+    visitor = SimpleNamespace(
+        user_id="15559876543",
+        channel="whatsapp",
+        session_id="wa-1",
+        interaction=SimpleNamespace(
+            add_parameter=lambda *a, **k: True,
+            save=AsyncMock(),
+        ),
+        _agent=SimpleNamespace(id="a1"),
+    )
+    with bind_dispatch_context(visitor):
+        out = json.loads(
+            await action.send_flow(
+                flow_id="flow_9",
+                screen="PROFILE_SCREEN",
+                screen_data={"name": "Jason", "order_id": "123"},
+            )
+        )
+    assert out["ok"] is True
+    assert sent["flow_action"] == "navigate"
+    assert sent["screen"] == "PROFILE_SCREEN"
+    assert sent["flow_action_data"] == {"name": "Jason", "order_id": "123"}
+
+
+@pytest.mark.asyncio
+async def test_send_flow_screen_data_requires_screen(monkeypatch):
+    monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "https://agent.example.com")
+    monkeypatch.setenv("JVCONNECT_URL", "https://connect.example.com")
+    monkeypatch.setenv("JVCONNECT_API_KEY", "jvk_test")
+    action = _meta_action()
+    monkeypatch.setattr(WhatsAppAction, "is_configured", lambda self: True)
+    visitor = SimpleNamespace(
+        user_id="15551112222",
+        channel="whatsapp",
+        session_id="wa-1",
+        interaction=None,
+        _agent=SimpleNamespace(id="a1"),
+    )
+    with bind_dispatch_context(visitor):
+        out = json.loads(
+            await action.send_flow(
+                flow_id="flow_1",
+                screen_data={"name": "Jason"},
+            )
+        )
+    assert out["ok"] is False
+    assert "screen is required" in out["error"]
+
+
+@pytest.mark.asyncio
+async def test_send_flow_screen_data_rejects_data_exchange(monkeypatch):
+    monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "https://agent.example.com")
+    monkeypatch.setenv("JVCONNECT_URL", "https://connect.example.com")
+    monkeypatch.setenv("JVCONNECT_API_KEY", "jvk_test")
+    action = _meta_action()
+    monkeypatch.setattr(WhatsAppAction, "is_configured", lambda self: True)
+    visitor = SimpleNamespace(
+        user_id="15551112222",
+        channel="whatsapp",
+        session_id="wa-1",
+        interaction=None,
+        _agent=SimpleNamespace(id="a1"),
+    )
+    with bind_dispatch_context(visitor):
+        out = json.loads(
+            await action.send_flow(
+                flow_id="flow_1",
+                flow_action="data_exchange",
+                screen="WELCOME_SCREEN",
+                screen_data={"name": "Jason"},
+            )
+        )
+    assert out["ok"] is False
+    assert "data_exchange" in out["error"]
+
+
+@pytest.mark.asyncio
 async def test_meta_send_flow_message_payload(monkeypatch):
     api = MetaWhatsAppAPI(
         api_url="https://graph.facebook.com/v25.0",
@@ -127,6 +225,7 @@ async def test_meta_send_flow_message_payload(monkeypatch):
         body="Please complete this form.",
         flow_action="navigate",
         screen="WELCOME_SCREEN",
+        flow_action_data={"name": "Jason", "order_id": "12345"},
     )
     assert result["ok"] is True
     assert called["data"]["type"] == "interactive"
@@ -135,6 +234,10 @@ async def test_meta_send_flow_message_payload(monkeypatch):
     assert params["flow_id"] == "flow_1"
     assert params["flow_action"] == "navigate"
     assert params["flow_action_payload"]["screen"] == "WELCOME_SCREEN"
+    assert params["flow_action_payload"]["data"] == {
+        "name": "Jason",
+        "order_id": "12345",
+    }
 
 
 @pytest.mark.asyncio

@@ -261,6 +261,8 @@ Template tools are hard-gated: they only run on inbound `channel=whatsapp` turns
 
 **Flows:** `whatsapp__list_flows` / `whatsapp__send_flow` send interactive Flow messages (`type: interactive`, `interactive.type: flow`) with the same inbound-WhatsApp gate. Optional `flow_allowlist` (ids or names). Listing via jvconnect `GET /api/v1/meta/whatsapp/flows`. In the jvconnect **Flows** UI, the Send dialog can **Copy JSON** / **Copy jvconnect curl** for the Cloud API payload.
 
+**Flow prefill (navigate):** pass `screen` plus `screen_data` (object of field keys → values) on `whatsapp__send_flow`. That maps to Meta `flow_action_payload.data`. Keys must match bindings in the published Flow JSON; not valid with `flow_action=data_exchange` (INIT path).
+
 **Flow inbound paths (distinct from chat webhooks):**
 
 | Path | Transport | Agent handling |
