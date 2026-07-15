@@ -1044,8 +1044,10 @@ async def handle_set_fields(
                 nudge = (
                     "for_each_staged: extract data for the remaining "
                     + str(remaining)
-                    + " item(s) now if the user mentioned them. Keys are 1-based "
-                    + "indices (current="
+                    + " item(s) now if the user mentioned them — save whatever "
+                    + "they gave for those items immediately even if the current "
+                    + "item is still incomplete. Keys are 1-based indices "
+                    + "(current="
                     + str(fe_payload.get("index"))
                     + ", total="
                     + str(fe_payload.get("total"))
@@ -1053,12 +1055,17 @@ async def handle_set_fields(
                 )
                 if child_key:
                     nudge += (
-                        'Example: {"fields": {"' + child_key + '": "value"}, '
+                        'Example (full): {"fields": {"' + child_key + '": "value"}, '
                         '"for_each_staged": {"2": {"description": "phone", '
-                        '"invoice_value": "243"}}}'
+                        '"invoice_value": "243"}}}. '
+                        'Example (partial OK): {"fields": {"description": "laptop"}, '
+                        '"for_each_staged": {"2": {"description": "phone"}}}'
                     )
                 else:
-                    nudge += "Use 1-based indices matching for_each.index."
+                    nudge += (
+                        "Use 1-based indices matching for_each.index; partial "
+                        "maps per item are OK."
+                    )
                 system_message = (
                     f"{system_message} {nudge}".strip() if system_message else nudge
                 )
@@ -1258,15 +1265,19 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
             fe_nudge = (
                 "for_each_staged: extract data for the remaining "
                 + str(remaining)
-                + " item(s) now if the user mentioned them. Use 1-based indices "
+                + " item(s) now if the user mentioned them — save whatever they "
+                + "gave for those items immediately even if the current item is "
+                + "still incomplete. Use 1-based indices "
                 + "(current="
                 + str(fe_meta.get("index"))
                 + ", total="
                 + str(fe_meta.get("total"))
-                + '). Example: {"fields": {"'
+                + '). Example (full): {"fields": {"'
                 + fdef.key
                 + '": "value"}, "for_each_staged": {"2": {"description": "phone", '
-                '"invoice_value": "243"}}}'
+                '"invoice_value": "243"}}}. Example (partial OK): '
+                '{"fields": {"description": "laptop"}, '
+                '"for_each_staged": {"2": {"description": "phone"}}}'
             )
 
     return interview_tool_response(

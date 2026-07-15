@@ -94,11 +94,15 @@ def _build_core_tools(action: "InterviewAction") -> List[Tool]:
                             "For-each subpart data for items. During active iteration, "
                             "keys are 1-based indices matching for_each.index from the "
                             "response; values are maps of child field key to value for "
-                            "that item, pre-filled for future items. During review, keys "
-                            "are 1-based item indices targeting completed records for "
-                            "per-item correction. Only used when a for_each expansion "
-                            "exists. Example: "
-                            '{"2": {"description": "phone", "invoice_value": "243"}}'
+                            "that item. Save whatever the user gave for non-current "
+                            "items immediately — even if the current item is still "
+                            "incomplete and even if only some child fields were given "
+                            "(partial maps are OK). During review, keys are 1-based "
+                            "item indices targeting completed records for per-item "
+                            "correction. Only used when a for_each expansion exists. "
+                            'Example (full): {"2": {"description": "phone", '
+                            '"invoice_value": "243"}}. Example (partial): '
+                            '{"2": {"description": "phone"}}'
                         ),
                         "additionalProperties": {
                             "type": "object",

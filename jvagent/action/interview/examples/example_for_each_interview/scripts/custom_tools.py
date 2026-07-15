@@ -38,10 +38,14 @@ def item_id_prefix(
 ) -> str:
     from jvagent.action.interview.for_each import _ordinal, _singularize_key
 
-    singular = _singularize_key(field_key)
     if total == 1:
-        return f"For {singular} {field_value}:"
-    return f"For the {_ordinal(index)} {singular} {field_value}:"
+        return ""
+    singular = _singularize_key(field_key)
+    return (
+        f"For the {_ordinal(index)} {singular} {field_value} "
+        "(state this prefix only when clarity needs it; "
+        "do not repeat it for every subpart question of the same item):"
+    )
 
 
 def validate_quantity(ctx) -> Dict[str, Any]:

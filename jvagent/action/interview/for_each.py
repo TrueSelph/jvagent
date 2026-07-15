@@ -569,10 +569,14 @@ def build_for_each_metadata(
 def _default_for_each_prefix(
     index: int, total: int, field_key: str, field_value: str
 ) -> str:
-    singular = _singularize_key(field_key)
     if total == 1:
-        return f"For {singular} {field_value}:"
-    return f"For the {_ordinal(index)} {singular} {field_value}:"
+        return ""
+    singular = _singularize_key(field_key)
+    return (
+        f"For the {_ordinal(index)} {singular} {field_value} "
+        "(state this prefix only when clarity needs it; "
+        "do not repeat it for every subpart question of the same item):"
+    )
 
 
 def build_prefixed_child_prompt(

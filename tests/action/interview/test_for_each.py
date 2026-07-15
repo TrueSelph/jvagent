@@ -97,7 +97,7 @@ async def test_for_each_walk_three_items_two_required_subparts(for_each_action):
 
     nxt = await build_next_field(session, spec, load)
     assert nxt["key"] == "title"
-    assert "For the first item id A:" in nxt["prompt"]
+    assert "For the first item id A" in nxt["prompt"]
     assert nxt["for_each"]["total"] == 3
 
     await handle_set_fields(
@@ -115,7 +115,7 @@ async def test_for_each_walk_three_items_two_required_subparts(for_each_action):
     )
     nxt = await build_next_field(session, spec, load)
     assert nxt["key"] == "title"
-    assert "For the second item id B:" in nxt["prompt"]
+    assert "For the second item id B" in nxt["prompt"]
 
     await handle_set_fields(
         action, fields={"title": "Widget B", "quantity": "1"}, visitor=SimpleNamespace()
@@ -181,7 +181,7 @@ async def test_for_each_parent_correction_resets_records(for_each_action):
 
     nxt = await build_next_field(session, spec, _load_fn(spec))
     assert nxt["key"] == "title"
-    assert "For item id X:" in nxt["prompt"]
+    assert "For item id X:" not in nxt["prompt"]
 
 
 @pytest.mark.asyncio
@@ -402,6 +402,105 @@ async def test_for_each_staged_with_parent_in_same_set_fields_call(for_each_acti
     item_b_staged = stage_store.get("B", {})
     assert item_b_staged.get("title") == "Widget B"
     assert item_b_staged.get("quantity") == "1"
+
+
+@pytest.mark.asyncio
+async def test_for_each_staged_partial_saves_while_current_item_incomplete(
+    for_each_action,
+):
+    """Future-item values must be saved immediately even when item 1 is incomplete.
+
+    Mirrors "a laptop, 532 and a phone 231": current item gets title+quantity in
+    fields; item 2 gets the same via for_each_staged while notes is still pending.
+    """
+    action, spec = for_each_action
+    session = InterviewSession(interview_type=spec.name)
+    action._get_session_and_contract = AsyncMock(return_value=(session, spec))
+    action._save_session = AsyncMock()
+    load = _load_fn(spec)
+    visitor = SimpleNamespace()
+
+    await handle_set_fields(action, fields={"item_ids": "A, B"}, visitor=visitor)
+
+    raw = await handle_set_fields(
+        action,
+        fields={"title": "Widget A", "quantity": "2"},
+        for_each_staged={"2": {"title": "Widget B", "quantity": "1"}},
+        visitor=visitor,
+    )
+    payload = json.loads(raw)
+    assert payload["ok"] is True
+
+    # Item 1 incomplete (optional notes still pending) — must not block item 2 save.
+    assert session.get_value("title") == "Widget A"
+    assert session.get_value("quantity") == "2"
+    assert not session.has_field("notes") and not session.is_skipped("notes")
+    state = get_for_each_state(session, "item_ids")
+    assert state["status"] == STATUS_ACTIVE
+    assert int(state.get("current_index") or 0) == 0
+
+    stage_store = session.context.get("_for_each_staged", {})
+    assert stage_store.get("B", {}).get("title") == "Widget B"
+    assert stage_store.get("B", {}).get("quantity") == "1"
+
+    nxt = await build_next_field(session, spec, load)
+    assert nxt["key"] == "notes"
+
+    # Finish item 1 → staged item 2 must apply (no re-ask for title/quantity).
+    await action._handle_skip_field(field="notes", visitor=visitor)
+    assert session.get_value("title") == "Widget B"
+    assert session.get_value("quantity") == "1"
+    nxt = await build_next_field(session, spec, load)
+    assert nxt["key"] == "notes"
+    assert "second" in (nxt.get("prompt") or "").lower() or nxt["for_each"]["index"] == 2
+
+
+@pytest.mark.asyncio
+async def test_for_each_staged_description_only_while_current_incomplete(
+    for_each_action,
+):
+    """Partial multi-item dump (titles only) must stage item 2 before item 1 finishes.
+
+    Mirrors "a laptop and a phone": only description/title for each item.
+    """
+    action, spec = for_each_action
+    session = InterviewSession(interview_type=spec.name)
+    action._get_session_and_contract = AsyncMock(return_value=(session, spec))
+    action._save_session = AsyncMock()
+    load = _load_fn(spec)
+    visitor = SimpleNamespace()
+
+    await handle_set_fields(action, fields={"item_ids": "A, B"}, visitor=visitor)
+
+    raw = await handle_set_fields(
+        action,
+        fields={"title": "Widget A"},
+        for_each_staged={"2": {"title": "Widget B"}},
+        visitor=visitor,
+    )
+    payload = json.loads(raw)
+    assert payload["ok"] is True
+
+    assert session.get_value("title") == "Widget A"
+    assert not session.has_field("quantity")
+    state = get_for_each_state(session, "item_ids")
+    assert int(state.get("current_index") or 0) == 0
+
+    stage_store = session.context.get("_for_each_staged", {})
+    assert stage_store.get("B", {}).get("title") == "Widget B"
+    assert "quantity" not in stage_store.get("B", {})
+
+    nxt = await build_next_field(session, spec, load)
+    assert nxt["key"] == "quantity"
+
+    await handle_set_fields(action, fields={"quantity": "2"}, visitor=visitor)
+    await action._handle_skip_field(field="notes", visitor=visitor)
+
+    assert session.get_value("title") == "Widget B"
+    assert not session.has_field("quantity")
+    nxt = await build_next_field(session, spec, load)
+    assert nxt["key"] == "quantity"
+    assert nxt["for_each"]["index"] == 2
 
 
 @pytest.mark.asyncio
