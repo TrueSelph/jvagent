@@ -44,15 +44,15 @@ logger = logging.getLogger(__name__)
 class ConversationHealthAction(InteractAction):
     """Passive post-turn health scoring with bucketed async AI sampling."""
 
-    # Admin routes under /api/agents/{agent_id}/health… (not /actions/{id}/…)
+    # Admin routes under /api/agents/{agent_id}/conversation/health… (not /actions/{id}/…)
     additional_endpoint_path_templates: ClassVar[List[str]] = [
-        "/api/agents/{agent_id}/health",
-        "/api/agents/{agent_id}/health/stats",
-        "/api/agents/{agent_id}/health/trend",
-        "/api/agents/{agent_id}/health/conversations",
-        "/api/agents/{agent_id}/health/conversations/{conversation_id}",
-        "/api/agents/{agent_id}/health/conversations/{conversation_id}/deep-review",
-        "/api/agents/{agent_id}/health/backfill",
+        "/api/agents/{agent_id}/conversation/health",
+        "/api/agents/{agent_id}/conversation/health/stats",
+        "/api/agents/{agent_id}/conversation/health/trend",
+        "/api/agents/{agent_id}/conversation/health/conversations",
+        "/api/agents/{agent_id}/conversation/health/conversations/{conversation_id}",
+        "/api/agents/{agent_id}/conversation/health/conversations/{conversation_id}/deep-review",
+        "/api/agents/{agent_id}/conversation/health/backfill",
     ]
 
     # ── Execution ────────────────────────────────────────────────────────────

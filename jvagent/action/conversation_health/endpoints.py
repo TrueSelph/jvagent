@@ -199,7 +199,7 @@ async def _iter_agent_interactions_recent(
 
 
 @endpoint(
-    "/api/agents/{agent_id}/health",
+    "/api/agents/{agent_id}/conversation/health",
     methods=["GET"],
     auth=True,
     roles=["admin"],
@@ -224,7 +224,7 @@ async def get_agent_health(
 
 
 @endpoint(
-    "/api/agents/{agent_id}/health/stats",
+    "/api/agents/{agent_id}/conversation/health/stats",
     methods=["GET"],
     auth=True,
     roles=["admin"],
@@ -253,7 +253,7 @@ async def get_health_stats(
 
 
 @endpoint(
-    "/api/agents/{agent_id}/health/trend",
+    "/api/agents/{agent_id}/conversation/health/trend",
     methods=["GET"],
     auth=True,
     roles=["admin"],
@@ -272,7 +272,7 @@ async def get_health_trend(
 
 
 @endpoint(
-    "/api/agents/{agent_id}/health/conversations",
+    "/api/agents/{agent_id}/conversation/health/conversations",
     methods=["GET"],
     auth=True,
     roles=["admin"],
@@ -386,7 +386,7 @@ async def list_health_conversations(
 
 
 @endpoint(
-    "/api/agents/{agent_id}/health/conversations/{conversation_id}",
+    "/api/agents/{agent_id}/conversation/health/conversations/{conversation_id}",
     methods=["GET"],
     auth=True,
     roles=["admin"],
@@ -436,7 +436,7 @@ async def get_health_conversation(
 
 
 @endpoint(
-    "/api/agents/{agent_id}/health/conversations/{conversation_id}/deep-review",
+    "/api/agents/{agent_id}/conversation/health/conversations/{conversation_id}/deep-review",
     methods=["POST"],
     auth=True,
     roles=["admin"],
@@ -487,7 +487,7 @@ async def deep_review_conversation(
 
 
 @endpoint(
-    "/api/agents/{agent_id}/health/backfill",
+    "/api/agents/{agent_id}/conversation/health/backfill",
     methods=["POST"],
     auth=True,
     roles=["admin"],
