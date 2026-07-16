@@ -37,6 +37,7 @@ from .utils.endpoint_helpers import (
     is_directed_message,
     normalize_result,
 )
+from .utils.flow_data_exchange import is_flow_data_exchange_request
 from .utils.meta_webhook_dedup import remember_meta_wamid
 
 logger = logging.getLogger(__name__)
@@ -534,6 +535,15 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         if whatsapp_action.is_meta_provider():
             app_secret = whatsapp_action._env_app_secret()
             if not app_secret:
+                if whatsapp_action.is_meta_provider():
+                    raise HTTPException(
+                        status_code=500,
+                        detail=(
+                            "JVCONNECT_WEBHOOK_SECRET (or action.jvconnect_webhook_secret) "
+                            "is required after webhook/register; restart after registration "
+                            "or set the secret from jvconnect"
+                        ),
+                    )
                 raise HTTPException(
                     status_code=500,
                     detail="WHATSAPP_APP_SECRET (or FACEBOOK_APP_SECRET) is required for meta webhook POST",
@@ -550,6 +560,8 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             except (UnicodeDecodeError, json.JSONDecodeError) as e:
                 logger.debug("Meta WhatsApp webhook JSON parse error: %s", e)
                 raise HTTPException(status_code=400, detail="Invalid JSON body")
+            if is_flow_data_exchange_request(request.headers, request_data):
+                return whatsapp_action.handle_flow_data_exchange(request_data)
         else:
             await _authenticate_bridge_webhook_api_key(request)
             request_data = getattr(request.state, "parsed_payload", None)

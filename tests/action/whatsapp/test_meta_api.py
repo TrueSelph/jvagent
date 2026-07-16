@@ -71,6 +71,82 @@ STATUS_ONLY_WEBHOOK = {
     ],
 }
 
+NFM_REPLY_WEBHOOK = {
+    "object": "whatsapp_business_account",
+    "entry": [
+        {
+            "id": "102290129340398",
+            "changes": [
+                {
+                    "value": {
+                        "messaging_product": "whatsapp",
+                        "metadata": {
+                            "display_phone_number": "15550783881",
+                            "phone_number_id": "106540352242922",
+                        },
+                        "contacts": [
+                            {
+                                "profile": {"name": "Sheena Nelson"},
+                                "wa_id": "16505551234",
+                            }
+                        ],
+                        "messages": [
+                            {
+                                "from": "16505551234",
+                                "id": "wamid.NFMREPLY001",
+                                "timestamp": "1749416383",
+                                "type": "interactive",
+                                "interactive": {
+                                    "type": "nfm_reply",
+                                    "nfm_reply": {
+                                        "response_json": '{"flow_token":"ft1","name":"Ada"}',
+                                        "body": "Sent",
+                                        "name": "flow",
+                                    },
+                                },
+                            }
+                        ],
+                    },
+                    "field": "messages",
+                }
+            ],
+        }
+    ],
+}
+
+BUTTON_INTERACTIVE_WEBHOOK = {
+    "object": "whatsapp_business_account",
+    "entry": [
+        {
+            "id": "102290129340398",
+            "changes": [
+                {
+                    "value": {
+                        "messaging_product": "whatsapp",
+                        "metadata": {
+                            "display_phone_number": "15550783881",
+                            "phone_number_id": "106540352242922",
+                        },
+                        "messages": [
+                            {
+                                "from": "16505551234",
+                                "id": "wamid.BTN001",
+                                "timestamp": "1749416383",
+                                "type": "interactive",
+                                "interactive": {
+                                    "type": "button_reply",
+                                    "button_reply": {"id": "1", "title": "Yes"},
+                                },
+                            }
+                        ],
+                    },
+                    "field": "messages",
+                }
+            ],
+        }
+    ],
+}
+
 
 @pytest.fixture
 def meta_api():
@@ -97,6 +173,20 @@ class TestMetaWhatsAppParseInbound:
     @pytest.mark.asyncio
     async def test_ignores_status_only_webhook(self, meta_api):
         payload = await meta_api.parse_inbound_message(STATUS_ONLY_WEBHOOK)
+        assert payload is not None
+        assert payload.message_type == "ignored"
+
+    @pytest.mark.asyncio
+    async def test_parses_flow_nfm_reply(self, meta_api):
+        payload = await meta_api.parse_inbound_message(NFM_REPLY_WEBHOOK)
+        assert payload is not None
+        assert payload.message_type == "chat"
+        assert payload.body == '{"flow_token":"ft1","name":"Ada"}'
+        assert payload.sender == "16505551234"
+
+    @pytest.mark.asyncio
+    async def test_ignores_non_nfm_interactive(self, meta_api):
+        payload = await meta_api.parse_inbound_message(BUTTON_INTERACTIVE_WEBHOOK)
         assert payload is not None
         assert payload.message_type == "ignored"
 

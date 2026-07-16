@@ -4,7 +4,7 @@ import asyncio
 import hmac
 import logging
 import os
-from typing import Any, ClassVar, Dict, List, Optional, Union
+from typing import Annotated, Any, ClassVar, Dict, List, Optional, Union
 
 from jvspatial.api.auth.api_key_service import APIKeyService
 from jvspatial.core.annotations import attribute
@@ -15,7 +15,10 @@ from jvspatial.exceptions import DatabaseError, ValidationError
 
 from jvagent.action.base import Action
 from jvagent.core.public_url import get_public_base_url
+from jvagent.tooling.tool_decorator import tool
+from jvagent.tooling.tool_executor import get_dispatch_context, get_tool_visitor
 
+from .modules.jvconnect_api import JvconnectWhatsAppAPI
 from .modules.meta_api import MetaWhatsAppAPI
 from .modules.registry import get_provider_factory
 from .modules.ultramsg import UltraMsgAPI
@@ -58,6 +61,10 @@ class WhatsAppAction(Action):
     optional ``session`` on this action, then the current agent's name.
     """
 
+    # Stable tool prefix: whatsapp__list_templates / whatsapp__send_template /
+    # whatsapp__list_flows / whatsapp__send_flow
+    tool_namespace: ClassVar[str] = "whatsapp"
+
     # AUDIT-actions XC-4: declare non-conforming endpoint paths so deregister
     # cleanup unregisters them along with the standard /actions/{id}/ ones.
     # ``/whatsapp/{action_id}/...`` paths are unique to this action instance;
@@ -71,6 +78,19 @@ class WhatsAppAction(Action):
         default="wwebjs",
         description="WhatsApp provider (wppconnect, ultramsg, ts-whatsapp, wwebjs, meta)",
         pattern=r"^(wppconnect|ultramsg|ts-whatsapp|wwebjs|meta)$",
+    )
+
+    jvconnect_url: str = attribute(
+        default="",
+        description="jvconnect base URL; when empty, JVCONNECT_URL / WHATSAPP_PROXY_URL env is used",
+    )
+
+    jvconnect_webhook_secret: str = attribute(
+        default="",
+        description=(
+            "HMAC secret from jvconnect webhook/register; when empty, "
+            "JVCONNECT_WEBHOOK_SECRET env is used"
+        ),
     )
 
     api_url: str = attribute(
@@ -93,15 +113,18 @@ class WhatsAppAction(Action):
 
     phone_number_id: str = attribute(
         default="",
-        description="Meta Cloud API phone number ID; when empty, WHATSAPP_PHONE_NUMBER_ID env is used",
+        description=(
+            "Optional Meta phone number ID override; for provider=meta, phone is "
+            "resolved from the jvconnect API key (GET /account)"
+        ),
     )
     access_token: str = attribute(
         default="",
-        description="Meta Cloud API access token; when empty, WHATSAPP_ACCESS_TOKEN env is used",
+        description="Deprecated for provider=meta (jvconnect holds the token); unused",
     )
     app_secret: str = attribute(
         default="",
-        description="Meta app secret for webhook signature (bridge providers; meta uses env WHATSAPP_APP_SECRET)",
+        description="Meta app secret for webhook signature (bridge providers only; meta uses jvconnect)",
     )
     verify_token: Optional[str] = attribute(
         default=None,
@@ -152,6 +175,28 @@ class WhatsAppAction(Action):
     ignore_list: List[str] = attribute(
         default_factory=lambda: ["status@broadcast"],
         description="Keywords to block: messages from senders or to receivers containing any keyword are ignored. Default includes status@broadcast to ignore WhatsApp status updates.",
+    )
+
+    template_allowlist: List[str] = attribute(
+        default_factory=list,
+        description=(
+            "When non-empty, only these Meta template names may be sent/listed. "
+            "Empty means all approved templates from the WABA are allowed."
+        ),
+    )
+
+    default_template_language: str = attribute(
+        default="en_US",
+        description="Default language code for whatsapp__send_template when omitted",
+        max_length=20,
+    )
+
+    flow_allowlist: List[str] = attribute(
+        default_factory=list,
+        description=(
+            "When non-empty, only these Flow ids or names may be sent/listed. "
+            "Empty means all Flows from the WABA are allowed."
+        ),
     )
 
     stt_action: Optional[str] = attribute(
@@ -206,22 +251,64 @@ class WhatsAppAction(Action):
             return t
         return (env("WHATSAPP_ACCESS_TOKEN") or "").strip()
 
+    def _env_jvconnect_url(self) -> str:
+        u = (self.jvconnect_url or "").strip()
+        if u:
+            return u.rstrip("/")
+        return (
+            (
+                env("JVCONNECT_URL")
+                or env("WHATSAPP_PROXY_URL")
+                or os.environ.get("JVCONNECT_URL")
+                or os.environ.get("WHATSAPP_PROXY_URL")
+                or ""
+            )
+            .strip()
+            .rstrip("/")
+        )
+
+    def _env_jvconnect_api_key(self) -> str:
+        return (
+            env("JVCONNECT_API_KEY") or os.environ.get("JVCONNECT_API_KEY") or ""
+        ).strip()
+
+    def _env_jvconnect_webhook_secret(self) -> str:
+        s = (self.jvconnect_webhook_secret or "").strip()
+        if s:
+            return s
+        return (
+            env("JVCONNECT_WEBHOOK_SECRET")
+            or os.environ.get("JVCONNECT_WEBHOOK_SECRET")
+            or ""
+        ).strip()
+
     def _env_app_secret(self) -> str:
         if self.is_meta_provider():
-            return (
-                env("WHATSAPP_APP_SECRET") or env("FACEBOOK_APP_SECRET") or ""
-            ).strip()
+            # Inbound POSTs are signed by jvconnect with the per-agent webhook secret
+            return self._env_jvconnect_webhook_secret()
         s = (self.app_secret or "").strip()
         if s:
             return s
         return (env("WHATSAPP_APP_SECRET") or env("FACEBOOK_APP_SECRET") or "").strip()
 
     def effective_verify_token(self, agent_id: str = "") -> str:
-        """Return Meta hub.verify_token (yaml override or derived from agent_id + app secret)."""
+        """Return Meta hub.verify_token (yaml override or derived)."""
         configured = self.verify_token
         if isinstance(configured, str) and configured.strip():
             return configured.strip()
+        if self.is_meta_provider():
+            # Meta verifies against jvconnect (FB_VERIFY_TOKEN), not this agent.
+            # Agent GET hub.challenge is unused for provider=meta+jvconnect.
+            return "jvconnect"
         return derive_meta_verify_token(agent_id, self._env_app_secret())
+
+    def handle_flow_data_exchange(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Respond to jvconnect ``X-Jvconnect-Flow-Exchange`` without InteractWalker."""
+        from .utils.flow_data_exchange import build_flow_data_exchange_response
+
+        return build_flow_data_exchange_response(
+            payload if isinstance(payload, dict) else {}
+        )
 
     def _env_waba_id(self) -> str:
         w = (self.waba_id or "").strip()
@@ -264,11 +351,9 @@ class WhatsAppAction(Action):
             return False
 
         if self.is_meta_provider():
-            if not self._env_phone_number_id():
+            if not self._env_jvconnect_url():
                 return False
-            if not self._env_access_token():
-                return False
-            if not self._env_app_secret():
+            if not self._env_jvconnect_api_key():
                 return False
             return True
 
@@ -308,19 +393,15 @@ class WhatsAppAction(Action):
             issues.append("base_url must be a valid HTTP/HTTPS URL")
 
         if self.is_meta_provider():
-            if not self._env_phone_number_id():
+            if not self._env_jvconnect_url():
                 issues.append(
-                    "phone_number_id (action.phone_number_id or WHATSAPP_PHONE_NUMBER_ID) "
-                    "is not configured"
+                    "jvconnect_url (action.jvconnect_url or JVCONNECT_URL / "
+                    "WHATSAPP_PROXY_URL) is not configured"
                 )
-            if not self._env_access_token():
+            if not self._env_jvconnect_api_key():
                 issues.append(
-                    "access_token (action.access_token or WHATSAPP_ACCESS_TOKEN) "
-                    "is not configured"
-                )
-            if not self._env_app_secret():
-                issues.append(
-                    "app_secret (WHATSAPP_APP_SECRET or FACEBOOK_APP_SECRET env) is not configured"
+                    "JVCONNECT_API_KEY is not configured "
+                    "(create a phone-bound key in jvconnect API Credentials)"
                 )
             return issues
 
@@ -741,7 +822,9 @@ class WhatsAppAction(Action):
 
     async def api(
         self,
-    ) -> Union[WPPConnectAPI, WWebJSAPI, UltraMsgAPI, MetaWhatsAppAPI]:
+    ) -> Union[
+        WPPConnectAPI, WWebJSAPI, UltraMsgAPI, MetaWhatsAppAPI, JvconnectWhatsAppAPI
+    ]:
         """Get API instance for the configured provider."""
         if not self.is_configured():
             raise ValidationError(
@@ -762,19 +845,38 @@ class WhatsAppAction(Action):
                 phone_id = self._env_phone_number_id()
                 agent = await self.get_agent()
                 agent_id = str(agent.id) if agent else ""
-                factory = get_provider_factory("meta")
+                factory = get_provider_factory("jvconnect")
                 if factory is None:
-                    raise ValidationError(f"Unsupported provider: {self.provider}")
-                return factory(
-                    api_url=self._meta_graph_api_url(),
-                    session=phone_id,
-                    token=self._env_access_token(),
-                    secret_key=self._env_app_secret(),
+                    raise ValidationError("jvconnect provider is not registered")
+                client = factory(
+                    api_url=self._env_jvconnect_url(),
+                    session=phone_id or "jvconnect",
+                    token=self._env_jvconnect_api_key(),
+                    secret_key=self._env_jvconnect_webhook_secret(),
                     timeout=timeout,
                     phone_number_id=phone_id,
                     waba_id=self._env_waba_id(),
                     verify_token=self.effective_verify_token(agent_id),
                 )
+                # Always reconcile phone/WABA from the phone-bound API key.
+                # Local caches go stale when the key is rebound to a new number;
+                # inbound filtering must match jvconnect's live binding.
+                try:
+                    account = await client.fetch_account()
+                    if account.get("ok") and account.get("phone_number_id"):
+                        resolved = str(account["phone_number_id"])
+                        if resolved != (self.phone_number_id or "").strip():
+                            object.__setattr__(self, "phone_number_id", resolved)
+                        if account.get("waba_id"):
+                            resolved_waba = str(account["waba_id"])
+                            if resolved_waba != (self.waba_id or "").strip():
+                                object.__setattr__(self, "waba_id", resolved_waba)
+                except Exception as acct_err:
+                    logger.warning(
+                        "jvconnect account lookup failed (will retry on use): %s",
+                        acct_err,
+                    )
+                return client
 
             session = await self._effective_whatsapp_session()
             if not session or not session.strip():
@@ -917,21 +1019,47 @@ class WhatsAppAction(Action):
             )
             wa = await self.api()
             result = await wa.register_webhook_subscription(callback, verify)
+            # Persist jvconnect binding + webhook HMAC secret for inbound verification
+            if self.is_meta_provider() and isinstance(result, dict):
+                dirty = False
+                secret = str(result.get("webhook_secret") or "").strip()
+                if secret and secret != (self.jvconnect_webhook_secret or "").strip():
+                    object.__setattr__(self, "jvconnect_webhook_secret", secret)
+                    dirty = True
+                phone = str(
+                    result.get("phone_number_id")
+                    or getattr(wa, "phone_number_id", "")
+                    or ""
+                ).strip()
+                if phone and phone != (self.phone_number_id or "").strip():
+                    object.__setattr__(self, "phone_number_id", phone)
+                    dirty = True
+                waba = str(
+                    result.get("waba_id") or getattr(wa, "waba_id", "") or ""
+                ).strip()
+                if waba and waba != (self.waba_id or "").strip():
+                    object.__setattr__(self, "waba_id", waba)
+                    dirty = True
+                if dirty:
+                    try:
+                        await self.save()
+                    except Exception as save_err:
+                        logger.warning(
+                            "Failed to persist jvconnect webhook binding: %s",
+                            save_err,
+                        )
             ok = bool(result.get("success") or result.get("ok"))
             if not ok:
                 err_msg = str(result.get("error") or result)
                 logger.warning(
                     "Meta WhatsApp webhook override Graph error: %s", err_msg
                 )
-                if "502" in err_msg or "Callback verification" in err_msg:
+                if self.is_meta_provider():
                     logger.warning(
-                        "Meta could not verify the callback URL. Ensure GET "
-                        "/api/whatsapp/interact/webhook/%s?hub.mode=subscribe&"
-                        "hub.verify_token=...&hub.challenge=... returns 200 before "
-                        "subscribing. Increase WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS "
-                        "or set WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true and "
-                        "call POST .../meta/webhook-register when the server is up.",
-                        agent_id,
+                        "jvconnect webhook registration failed. Ensure JVCONNECT_URL "
+                        "and JVCONNECT_API_KEY are valid and APP_BASE_URL is set on "
+                        "jvconnect so Meta can verify %s/api/webhooks",
+                        self._env_jvconnect_url(),
                     )
                 return {
                     "status": "error",
@@ -1053,6 +1181,524 @@ class WhatsAppAction(Action):
             raise ValidationError(f"Session registration failed: {e}")
         except Exception as e:
             raise ValidationError(f"Session registration failed: {e}")
+
+    # ------------------------------------------------------------------
+    # Meta message templates (Orchestrator tools)
+    # ------------------------------------------------------------------
+
+    _TEMPLATE_CHANNEL_ERROR = "whatsapp_templates_require_inbound_whatsapp"
+    _OUTBOUND_WA_CHANNELS = frozenset({"whatsapp", "whatsapp_call"})
+
+    def _whatsapp_outbound_dispatch_gate(
+        self, *, error: str
+    ) -> Optional[Dict[str, Any]]:
+        """Require WhatsApp text or voice-call interact + user_id (caller WAID).
+
+        ``whatsapp_call`` is the jvvoice interact channel; recipient is still
+        ``user_id`` (the caller's WhatsApp number). Returns an error envelope
+        or None when allowed.
+        """
+        ctx = get_dispatch_context()
+        channel = (ctx.channel or "").lower() if ctx else ""
+        if (
+            not ctx
+            or channel not in self._OUTBOUND_WA_CHANNELS
+            or not (ctx.user_id or "").strip()
+        ):
+            return {"ok": False, "error": error}
+        return None
+
+    def _template_dispatch_gate(self) -> Optional[Dict[str, Any]]:
+        """Require inbound WhatsApp text/call + user_id. Returns error envelope or None."""
+        return self._whatsapp_outbound_dispatch_gate(error=self._TEMPLATE_CHANNEL_ERROR)
+
+    def _template_allowlist_names(self) -> List[str]:
+        raw = self.template_allowlist or []
+        return [str(n).strip().lower() for n in raw if str(n).strip()]
+
+    def _filter_templates_by_allowlist(
+        self, templates: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        allowed = self._template_allowlist_names()
+        if not allowed:
+            return templates
+        return [
+            t
+            for t in templates
+            if isinstance(t, dict)
+            and str(t.get("name") or "").strip().lower() in allowed
+        ]
+
+    def _is_template_allowed(self, template_name: str) -> bool:
+        allowed = self._template_allowlist_names()
+        if not allowed:
+            return True
+        return (template_name or "").strip().lower() in allowed
+
+    async def _record_template_send(
+        self, template_name: str, language: str, to: str, result: Dict[str, Any]
+    ) -> None:
+        """Tag the current Interaction so history notes the HSM send."""
+        visitor = get_tool_visitor()
+        interaction = getattr(visitor, "interaction", None) if visitor else None
+        if interaction is None:
+            return
+        message_id = ""
+        messages = result.get("messages") if isinstance(result, dict) else None
+        if isinstance(messages, list) and messages:
+            first = messages[0]
+            if isinstance(first, dict):
+                message_id = str(first.get("id") or "")
+        try:
+            interaction.add_parameter(
+                {
+                    "name": "whatsapp_template_sent",
+                    "template_name": template_name,
+                    "language": language,
+                    "to": to,
+                    "message_id": message_id,
+                    "executed": True,
+                },
+                self.get_class_name(),
+            )
+            if hasattr(interaction, "save"):
+                await interaction.save()
+        except Exception:
+            logger.debug("Failed to record template send on interaction", exc_info=True)
+
+    @tool(name="whatsapp__list_templates")
+    async def list_templates(self) -> str:
+        """List approved WhatsApp message templates available to send on this WhatsApp text or voice-call turn."""
+        import json
+
+        gate = self._template_dispatch_gate()
+        if gate:
+            return json.dumps(gate)
+        if not self.is_configured() or not self.is_meta_provider():
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": "WhatsApp Meta/jvconnect provider is not configured",
+                }
+            )
+        try:
+            api = await self.api()
+            list_fn = getattr(api, "list_message_templates", None)
+            if not callable(list_fn):
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": "list_message_templates unsupported for this provider",
+                    }
+                )
+            result = await list_fn()
+            if not result.get("ok", True) or result.get("error"):
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": result.get("error") or "failed to list templates",
+                    }
+                )
+            templates = result.get("templates") or []
+            if not isinstance(templates, list):
+                templates = []
+            filtered = self._filter_templates_by_allowlist(
+                [t for t in templates if isinstance(t, dict)]
+            )
+            slim = [
+                {
+                    "name": t.get("name"),
+                    "language": t.get("language"),
+                    "status": t.get("status"),
+                    "category": t.get("category"),
+                }
+                for t in filtered
+            ]
+            return json.dumps({"ok": True, "templates": slim})
+        except Exception as e:
+            logger.exception("whatsapp__list_templates failed")
+            return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
+
+    @tool(name="whatsapp__send_template")
+    async def send_template(
+        self,
+        template_name: Annotated[
+            str,
+            "Exact Meta template name (e.g. signup). Must be allowlisted when allowlist is set.",
+        ],
+        language: Annotated[
+            Optional[str],
+            "Template language code (e.g. en_US). Defaults to action default_template_language.",
+        ] = None,
+        components: Annotated[
+            Optional[List[Dict[str, Any]]],
+            "Optional Meta template components array (header/body/button parameters).",
+        ] = None,
+    ) -> str:
+        """Send an approved WhatsApp template to the same phone on this WhatsApp text or voice-call turn. Recipient is fixed to the sender/caller — do not invent a phone number."""
+        import json
+
+        gate = self._template_dispatch_gate()
+        if gate:
+            return json.dumps(gate)
+        ctx = get_dispatch_context()
+        assert ctx is not None  # gate passed
+        to = (ctx.user_id or "").strip()
+        name = (template_name or "").strip()
+        if not name:
+            return json.dumps({"ok": False, "error": "template_name is required"})
+        if not self._is_template_allowed(name):
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": f"template '{name}' is not on the agent allowlist",
+                    "allowlist": self._template_allowlist_names(),
+                }
+            )
+        if not self.is_configured() or not self.is_meta_provider():
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": "WhatsApp Meta/jvconnect provider is not configured",
+                }
+            )
+        lang = (
+            (language or "").strip()
+            or (self.default_template_language or "en_US").strip()
+            or "en_US"
+        )
+        try:
+            api = await self.api()
+            send_fn = getattr(api, "send_template_message", None)
+            if not callable(send_fn):
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": "send_template_message unsupported for this provider",
+                    }
+                )
+            result = await send_fn(to, name, language=lang, components=components or [])
+            if not result.get("ok", True) or result.get("error"):
+                err = result.get("error")
+                if isinstance(err, dict):
+                    err = err.get("message") or err.get("error_user_msg") or str(err)
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": err or "failed to send template",
+                        "raw": result,
+                    }
+                )
+            await self._record_template_send(name, lang, to, result)
+            messages = result.get("messages") or []
+            message_id = ""
+            if (
+                isinstance(messages, list)
+                and messages
+                and isinstance(messages[0], dict)
+            ):
+                message_id = str(messages[0].get("id") or "")
+            return json.dumps(
+                {
+                    "ok": True,
+                    "template_name": name,
+                    "language": lang,
+                    "to": to,
+                    "message_id": message_id,
+                }
+            )
+        except Exception as e:
+            logger.exception("whatsapp__send_template failed")
+            return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
+
+    # ------------------------------------------------------------------
+    # Meta WhatsApp Flows (Orchestrator tools)
+    # ------------------------------------------------------------------
+
+    _FLOW_CHANNEL_ERROR = "whatsapp_flows_require_inbound_whatsapp"
+
+    def _flow_dispatch_gate(self) -> Optional[Dict[str, Any]]:
+        """Require inbound WhatsApp text/call + user_id. Returns error envelope or None."""
+        return self._whatsapp_outbound_dispatch_gate(error=self._FLOW_CHANNEL_ERROR)
+
+    def _flow_allowlist_keys(self) -> List[str]:
+        raw = self.flow_allowlist or []
+        return [str(n).strip().lower() for n in raw if str(n).strip()]
+
+    def _is_flow_allowed(self, flow_id: str = "", flow_name: str = "") -> bool:
+        allowed = self._flow_allowlist_keys()
+        if not allowed:
+            return True
+        candidates = {
+            (flow_id or "").strip().lower(),
+            (flow_name or "").strip().lower(),
+        }
+        candidates.discard("")
+        return bool(candidates & set(allowed))
+
+    def _filter_flows_by_allowlist(
+        self, flows: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        allowed = self._flow_allowlist_keys()
+        if not allowed:
+            return flows
+        out: List[Dict[str, Any]] = []
+        for f in flows:
+            if not isinstance(f, dict):
+                continue
+            if self._is_flow_allowed(str(f.get("id") or ""), str(f.get("name") or "")):
+                out.append(f)
+        return out
+
+    async def _record_flow_send(
+        self,
+        *,
+        flow_id: str,
+        flow_name: str,
+        to: str,
+        result: Dict[str, Any],
+    ) -> None:
+        visitor = get_tool_visitor()
+        interaction = getattr(visitor, "interaction", None) if visitor else None
+        if interaction is None:
+            return
+        message_id = ""
+        messages = result.get("messages") if isinstance(result, dict) else None
+        if isinstance(messages, list) and messages:
+            first = messages[0]
+            if isinstance(first, dict):
+                message_id = str(first.get("id") or "")
+        try:
+            interaction.add_parameter(
+                {
+                    "name": "whatsapp_flow_sent",
+                    "flow_id": flow_id,
+                    "flow_name": flow_name,
+                    "to": to,
+                    "message_id": message_id,
+                    "executed": True,
+                },
+                self.get_class_name(),
+            )
+            if hasattr(interaction, "save"):
+                await interaction.save()
+        except Exception:
+            logger.debug("Failed to record flow send on interaction", exc_info=True)
+
+    @tool(name="whatsapp__list_flows")
+    async def list_flows(self) -> str:
+        """List WhatsApp Flows available to send on this WhatsApp text or voice-call turn."""
+        import json
+
+        gate = self._flow_dispatch_gate()
+        if gate:
+            return json.dumps(gate)
+        if not self.is_configured() or not self.is_meta_provider():
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": "WhatsApp Meta/jvconnect provider is not configured",
+                }
+            )
+        try:
+            api = await self.api()
+            list_fn = getattr(api, "list_flows", None)
+            if not callable(list_fn):
+                return json.dumps(
+                    {"ok": False, "error": "list_flows unsupported for this provider"}
+                )
+            result = await list_fn()
+            if not result.get("ok", True) or result.get("error"):
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": result.get("error") or "failed to list flows",
+                    }
+                )
+            flows = result.get("flows") or []
+            if not isinstance(flows, list):
+                flows = []
+            filtered = self._filter_flows_by_allowlist(
+                [f for f in flows if isinstance(f, dict)]
+            )
+            slim = [
+                {
+                    "id": f.get("id"),
+                    "name": f.get("name"),
+                    "status": f.get("status"),
+                    "categories": f.get("categories"),
+                    "endpoint_uri": f.get("endpoint_uri"),
+                }
+                for f in filtered
+            ]
+            return json.dumps({"ok": True, "flows": slim})
+        except Exception as e:
+            logger.exception("whatsapp__list_flows failed")
+            return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
+
+    @tool(name="whatsapp__send_flow")
+    async def send_flow(
+        self,
+        flow_id: Annotated[
+            Optional[str],
+            "Meta Flow id (preferred). Provide flow_id or flow_name.",
+        ] = None,
+        flow_name: Annotated[
+            Optional[str],
+            "Meta Flow name if id is unknown. Prefer flow_id when known.",
+        ] = None,
+        body: Annotated[
+            Optional[str],
+            "Message body shown above the Flow button.",
+        ] = "Please complete this form.",
+        flow_cta: Annotated[
+            Optional[str],
+            "CTA button label (max 20 chars).",
+        ] = "Open",
+        flow_action: Annotated[
+            Optional[str],
+            "Optional: omit or navigate for No data (open first screen); data_exchange for Request data (endpoint INIT). Prefer navigate/no-action for static Flows.",
+        ] = None,
+        screen: Annotated[
+            Optional[str],
+            "First screen id when using navigate / No data. Required when screen_data is set. Ignored for data_exchange.",
+        ] = None,
+        screen_data: Annotated[
+            Optional[Dict[str, Any]],
+            "Optional initial screen field values for navigate Flows (flow_action_payload.data). Keys must match Flow JSON data bindings. Requires screen. Not valid with data_exchange.",
+        ] = None,
+        mode: Annotated[
+            Optional[str],
+            "published (default) or draft (testers only).",
+        ] = None,
+    ) -> str:
+        """Send a WhatsApp Flow to the same phone on this WhatsApp text or voice-call turn. Recipient is fixed to the sender/caller."""
+        import json
+        import time
+        import uuid
+
+        gate = self._flow_dispatch_gate()
+        if gate:
+            return json.dumps(gate)
+        ctx = get_dispatch_context()
+        assert ctx is not None
+        to = (ctx.user_id or "").strip()
+        fid = (flow_id or "").strip()
+        fname = (flow_name or "").strip()
+        if not fid and not fname:
+            return json.dumps(
+                {"ok": False, "error": "flow_id or flow_name is required"}
+            )
+        if not self._is_flow_allowed(fid, fname):
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": "flow is not on the agent allowlist",
+                    "hint": (
+                        "Allowlist entries must match the flow_id and/or "
+                        "flow_name you pass. Put both the Meta Flow id and "
+                        "name in flow_allowlist, or pass both arguments."
+                    ),
+                    "requested": {"flow_id": fid, "flow_name": fname},
+                    "allowlist": self._flow_allowlist_keys(),
+                }
+            )
+        if not self.is_configured() or not self.is_meta_provider():
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": "WhatsApp Meta/jvconnect provider is not configured",
+                }
+            )
+        if screen_data is not None and not isinstance(screen_data, dict):
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": "screen_data must be an object of field keys to values",
+                }
+            )
+        prefill: Optional[Dict[str, Any]] = (
+            screen_data if isinstance(screen_data, dict) and screen_data else None
+        )
+        action_raw = (flow_action or "").strip().lower()
+        screen_id = (screen or "").strip()
+        if prefill is not None:
+            if action_raw == "data_exchange":
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": (
+                            "screen_data requires navigate flow_action; "
+                            "not valid with data_exchange"
+                        ),
+                    }
+                )
+            if not screen_id:
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": "screen is required when screen_data is set",
+                    }
+                )
+            action_raw = "navigate"
+        token = f"jvagent_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+        try:
+            api = await self.api()
+            send_fn = getattr(api, "send_flow_message", None)
+            if not callable(send_fn):
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": "send_flow_message unsupported for this provider",
+                    }
+                )
+            result = await send_fn(
+                to,
+                flow_id=fid,
+                flow_name=fname,
+                flow_cta=(flow_cta or "Open").strip() or "Open",
+                body=(body or "").strip() or "Please complete this form.",
+                flow_token=token,
+                flow_action=action_raw or (flow_action or "").strip(),
+                screen=screen_id,
+                flow_action_data=prefill,
+                mode=(mode or "").strip(),
+            )
+            if not result.get("ok", True) or result.get("error"):
+                err = result.get("error")
+                if isinstance(err, dict):
+                    err = err.get("message") or err.get("error_user_msg") or str(err)
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": err or "failed to send flow",
+                        "raw": result,
+                    }
+                )
+            await self._record_flow_send(
+                flow_id=fid, flow_name=fname, to=to, result=result
+            )
+            messages = result.get("messages") or []
+            message_id = ""
+            if (
+                isinstance(messages, list)
+                and messages
+                and isinstance(messages[0], dict)
+            ):
+                message_id = str(messages[0].get("id") or "")
+            return json.dumps(
+                {
+                    "ok": True,
+                    "flow_id": fid,
+                    "flow_name": fname,
+                    "to": to,
+                    "flow_token": token,
+                    "message_id": message_id,
+                }
+            )
+        except Exception as e:
+            logger.exception("whatsapp__send_flow failed")
+            return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
 
     async def healthcheck(self) -> Union[bool, Dict[str, Any]]:
         """Perform health check for WhatsApp action."""
