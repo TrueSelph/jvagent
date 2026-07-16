@@ -4,7 +4,6 @@ from jvspatial.api.integrations.webhooks.utils import generate_hmac_signature
 from starlette.requests import Request
 
 from jvagent.action.utils.meta_webhook import verify_meta_webhook_signature
-from jvagent.action.whatsapp.utils.meta_verify_token import derive_meta_verify_token
 from jvagent.action.whatsapp.whatsapp_action import WhatsAppAction
 
 AGENT_ID = "n.Agent.test123"
@@ -62,47 +61,50 @@ class TestVerifyMetaWebhookSignature:
 
 
 class TestWhatsAppActionMetaConfig:
-    def test_is_configured_meta_requires_yaml_and_env(self, monkeypatch):
+    def test_is_configured_meta_requires_jvconnect(self, monkeypatch):
         monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "https://example.com")
-        monkeypatch.setenv("WHATSAPP_APP_SECRET", APP_SECRET)
+        monkeypatch.setenv("JVCONNECT_URL", "https://connect.example.com")
+        monkeypatch.setenv("JVCONNECT_API_KEY", "jvk_test")
 
-        action = _meta_action()
+        action = _meta_action(phone_number_id="", access_token="")
         assert action.is_configured() is True
         assert action.is_meta_provider() is True
 
-    def test_is_configured_meta_without_yaml_phone_id(self, monkeypatch):
+    def test_is_configured_meta_without_phone_id(self, monkeypatch):
         monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "https://example.com")
-        monkeypatch.setenv("WHATSAPP_APP_SECRET", APP_SECRET)
-        monkeypatch.setenv("WHATSAPP_PHONE_NUMBER_ID", "123")
-        monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "token")
+        monkeypatch.setenv("JVCONNECT_URL", "https://connect.example.com")
+        monkeypatch.setenv("JVCONNECT_API_KEY", "jvk_test")
+        monkeypatch.delenv("WHATSAPP_PHONE_NUMBER_ID", raising=False)
 
         action = _meta_action(phone_number_id="", access_token="")
         assert action.is_configured() is True
 
-    def test_is_configured_meta_missing_phone_and_env(self, monkeypatch):
+    def test_is_configured_meta_missing_jvconnect(self, monkeypatch):
         monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "https://example.com")
-        monkeypatch.setenv("WHATSAPP_APP_SECRET", APP_SECRET)
+        monkeypatch.delenv("JVCONNECT_URL", raising=False)
+        monkeypatch.delenv("JVCONNECT_API_KEY", raising=False)
         monkeypatch.delenv("WHATSAPP_PHONE_NUMBER_ID", raising=False)
 
-        action = _meta_action(phone_number_id="")
+        action = _meta_action(phone_number_id="", access_token="")
         assert action.is_configured() is False
 
-    def test_is_configured_meta_without_env_app_secret(self, monkeypatch):
+    def test_is_configured_meta_without_app_secret(self, monkeypatch):
         monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "https://example.com")
+        monkeypatch.setenv("JVCONNECT_URL", "https://connect.example.com")
+        monkeypatch.setenv("JVCONNECT_API_KEY", "jvk_test")
         monkeypatch.delenv("WHATSAPP_APP_SECRET", raising=False)
         monkeypatch.delenv("FACEBOOK_APP_SECRET", raising=False)
 
-        action = _meta_action()
-        assert action.is_configured() is False
+        action = _meta_action(phone_number_id="", access_token="")
+        assert action.is_configured() is True
 
-    def test_parse_webhook_verify_success_derived_token(self, monkeypatch):
-        monkeypatch.setenv("WHATSAPP_APP_SECRET", APP_SECRET)
+    def test_parse_webhook_verify_success_jvconnect_token(self, monkeypatch):
+        # Meta verifies against jvconnect; agent hub.verify_token is a fixed placeholder
         action = _meta_action()
-        token = derive_meta_verify_token(AGENT_ID, APP_SECRET)
         result = action.parse_webhook_verify(
             {
                 "hub.mode": "subscribe",
-                "hub.verify_token": token,
+                "hub.verify_token": "jvconnect",
                 "hub.challenge": "1234567890",
             },
             agent_id=AGENT_ID,

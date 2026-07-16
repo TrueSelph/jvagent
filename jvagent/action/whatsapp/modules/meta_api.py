@@ -4,7 +4,7 @@ import base64
 import json
 import logging
 import re
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
 
@@ -19,7 +19,8 @@ META_CAPTION_MAX_LENGTH = 1024
 _META_INBOUND_TYPES = frozenset(
     {"text", "image", "video", "document", "audio", "location"}
 )
-# Explicit non-user / unsupported types (logged and ignored)
+# Explicit non-user / unsupported types (logged and ignored).
+# ``interactive`` is handled specially: only ``nfm_reply`` (Flow completion) is admitted.
 _META_DENIED_TYPES = frozenset(
     {
         "system",
@@ -449,10 +450,36 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         )
 
     @staticmethod
+    def _flow_nfm_reply_body(msg: dict) -> Optional[str]:
+        """Extract utterance text from a Flow completion ``nfm_reply``, or None."""
+        if str(msg.get("type") or "").lower() != "interactive":
+            return None
+        interactive = msg.get("interactive") or {}
+        if not isinstance(interactive, dict):
+            return None
+        if str(interactive.get("type") or "").lower() != "nfm_reply":
+            return None
+        nfm = interactive.get("nfm_reply") or {}
+        if not isinstance(nfm, dict):
+            return None
+        response_json = nfm.get("response_json")
+        if isinstance(response_json, str) and response_json.strip():
+            return response_json.strip()
+        body = nfm.get("body")
+        if isinstance(body, str) and body.strip():
+            return body.strip()
+        try:
+            return json.dumps(nfm, separators=(",", ":"))
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
     def _jvagent_message_type(msg: dict) -> str:
         """Map Meta message type to jvagent MessagePayload.message_type."""
         msg_type = str(msg.get("type") or "").lower()
         if msg_type == "text":
+            return "chat"
+        if msg_type == "interactive" and MetaWhatsAppAPI._flow_nfm_reply_body(msg):
             return "chat"
         if msg_type == "audio":
             audio = msg.get("audio") or {}
@@ -558,8 +585,11 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
             if isinstance(context, dict) and context.get("id"):
                 quoted = {"id": context.get("id")}
 
+            nfm_body = self._flow_nfm_reply_body(msg)
             jv_type = self._jvagent_message_type(msg)
-            if msg_type in _META_DENIED_TYPES or msg_type not in _META_INBOUND_TYPES:
+            if nfm_body is None and (
+                msg_type in _META_DENIED_TYPES or msg_type not in _META_INBOUND_TYPES
+            ):
                 logger.debug(
                     "Meta inbound type %r ignored (non-user or unsupported message)",
                     msg_type,
@@ -576,7 +606,9 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
             body = ""
             caption = ""
             location: Dict[str, Any] = {}
-            if msg_type == "text":
+            if nfm_body is not None:
+                body = nfm_body
+            elif msg_type == "text":
                 text_obj = msg.get("text") or {}
                 body = (
                     (text_obj.get("body") or "").strip()
@@ -705,6 +737,146 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         }
         if message_id:
             data["context"] = {"message_id": message_id}
+        return await self.send_rest_request(
+            self._messages_url(), method="POST", data=data, use_full_url=True
+        )
+
+    async def list_message_templates(self) -> dict:
+        """List sendable Meta message templates for the configured WABA.
+
+        Direct Graph access (non-jvconnect). Bridge providers should not call this.
+        """
+        waba = (self.waba_id or "").strip()
+        if not waba:
+            return {"ok": False, "error": "waba_id required to list templates"}
+        url = (
+            f"{self.api_url.rstrip('/')}/{waba}/message_templates"
+            f"?fields=name,language,status,components,category&limit=1000"
+        )
+        data = await self.send_rest_request(url, method="GET", use_full_url=True)
+        if data.get("error") and not data.get("ok", True):
+            return {"ok": False, "error": data.get("error"), "raw": data}
+        templates = data.get("data") or []
+        if not isinstance(templates, list):
+            templates = []
+        sendable = {"APPROVED", "QUALITY_PENDING"}
+        filtered = [
+            t
+            for t in templates
+            if isinstance(t, dict) and str(t.get("status") or "") in sendable
+        ]
+        return {"ok": True, "templates": filtered}
+
+    async def send_template_message(
+        self,
+        phone: str,
+        template_name: str,
+        language: str = "en_US",
+        components: Optional[List[Dict[str, Any]]] = None,
+    ) -> dict:
+        """Send an approved Meta template (HSM) to *phone*."""
+        to = self._normalize_recipient(phone)
+        name = (template_name or "").strip()
+        if not to or not name:
+            return {"ok": False, "error": "phone and template_name are required"}
+        lang = (language or "en_US").strip() or "en_US"
+        data: Dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to,
+            "type": "template",
+            "template": {
+                "name": name,
+                "language": {"code": lang},
+                "components": list(components or []),
+            },
+        }
+        return await self.send_rest_request(
+            self._messages_url(), method="POST", data=data, use_full_url=True
+        )
+
+    async def list_flows(self) -> dict:
+        """List WhatsApp Flows for the configured WABA (direct Graph)."""
+        waba = (self.waba_id or "").strip()
+        if not waba:
+            return {"ok": False, "error": "waba_id required to list flows"}
+        url = (
+            f"{self.api_url.rstrip('/')}/{waba}/flows"
+            "?fields=id,name,status,categories,endpoint_uri&limit=100"
+        )
+        data = await self.send_rest_request(url, method="GET", use_full_url=True)
+        if data.get("error") and not data.get("ok", True):
+            return {"ok": False, "error": data.get("error"), "raw": data}
+        flows = data.get("data") or []
+        if not isinstance(flows, list):
+            flows = []
+        return {"ok": True, "flows": [f for f in flows if isinstance(f, dict)]}
+
+    async def send_flow_message(
+        self,
+        phone: str,
+        *,
+        flow_id: str = "",
+        flow_name: str = "",
+        flow_cta: str = "Open",
+        body: str = "Please complete this form.",
+        flow_token: str = "",
+        flow_action: str = "",
+        screen: str = "",
+        flow_action_data: Optional[Dict[str, Any]] = None,
+        mode: str = "",
+        header: str = "",
+        footer: str = "",
+    ) -> dict:
+        """Send an interactive WhatsApp Flow message to *phone*."""
+        to = self._normalize_recipient(phone)
+        fid = str(flow_id or "").strip()
+        fname = (flow_name or "").strip()
+        if not to or (not fid and not fname):
+            return {"ok": False, "error": "phone and flow_id or flow_name are required"}
+        cta = (flow_cta or "Open").strip() or "Open"
+        text = (body or "").strip() or "Please complete this form."
+        action_params: Dict[str, Any] = {
+            "flow_message_version": "3",
+            "flow_cta": cta,
+        }
+        if fid:
+            action_params["flow_id"] = fid
+        if fname:
+            action_params["flow_name"] = fname
+        if flow_token:
+            action_params["flow_token"] = flow_token
+        if mode:
+            action_params["mode"] = mode
+
+        action = (flow_action or "").strip().lower()
+        screen_id = (screen or "").strip()
+        if action == "data_exchange":
+            action_params["flow_action"] = "data_exchange"
+        elif screen_id:
+            action_params["flow_action"] = "navigate"
+            payload: Dict[str, Any] = {"screen": screen_id}
+            if flow_action_data:
+                payload["data"] = flow_action_data
+            action_params["flow_action_payload"] = payload
+
+        interactive: Dict[str, Any] = {
+            "type": "flow",
+            "body": {"text": text},
+            "action": {"name": "flow", "parameters": action_params},
+        }
+        if header:
+            interactive["header"] = {"type": "text", "text": header}
+        if footer:
+            interactive["footer"] = {"text": footer}
+
+        data: Dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to,
+            "type": "interactive",
+            "interactive": interactive,
+        }
         return await self.send_rest_request(
             self._messages_url(), method="POST", data=data, use_full_url=True
         )

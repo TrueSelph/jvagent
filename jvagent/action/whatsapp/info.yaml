@@ -2,7 +2,7 @@ package:
   name: jvagent/whatsapp_action
   author: V75 Inc.
   archetype: WhatsAppAction
-  version: 1.1.0
+  version: 1.2.0
   meta:
     title: WhatsApp Integration
     description: WhatsApp implementation using multiple providers with enhanced security and error handling

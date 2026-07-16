@@ -55,7 +55,7 @@ actions:
       # Opus/Sonnet for any agent that runs multi-step skills/plans. The class
       # default (gpt-4o-mini) is for cheap single-step agents only. See
       # docs/ORCHESTRATOR.md "Model floor".
-      model: gpt-4.1
+      model: gpt-4.1-nano
       model_action_type: OpenAILanguageModelAction
       model_temperature: 0.2
       # Agentic/research headroom: each tick is one tool call, so multistep
@@ -156,6 +156,8 @@ actions:
         - triage          # library CLAUDE skill — sorts findings via code_execution
         - docx            # app-local CLAUDE skill (skills.sh / anthropics) — docx-js + OOXML scripts
         - signup_interview  # app-local interview skill (InterviewAction + SKILL.md interview:)
+        - whatsapp_templates  # Meta HSM send via WhatsAppAction (WhatsApp inbound only)
+        - whatsapp_flows      # Meta Flow interactive send (WhatsApp inbound only)
 
   # MCP gateway: a sandboxed filesystem server (npx). Its tools surface to the
   # executive (tool_servers above) as mcp_filesystem__<tool>, sandboxed per
@@ -171,7 +173,7 @@ actions:
     context:
       enabled: false
       model_action_type: OpenAILanguageModelAction
-      model: gpt-4o-mini
+      model: gpt-4.1-nano
       sandbox_mode: true
       sandbox_user_scoped: true
       servers:
@@ -199,7 +201,7 @@ actions:
     context:
       enabled: true
       model_action_type: OpenAILanguageModelAction
-      model: gpt-4o-mini
+      model: gpt-4.1-nano
       strategy: tree_search
       limit: 10
 
@@ -268,7 +270,7 @@ actions:
     context:
       enabled: true
       api_endpoint: https://api.openai.com/v1
-      model: gpt-4o-mini
+      model: gpt-4.1-nano
       temperature: 0.2
       max_tokens: 4096
       timeout: 60
@@ -291,7 +293,7 @@ actions:
     context:
       enabled: true
       model_action_type: OpenAILanguageModelAction
-      model: gpt-4o-mini
+      model: gpt-4.1-nano
       model_temperature: 0.3
 
   # Interview tool bundle — skills-v2 signup flow uses signup_interview skill.
@@ -321,18 +323,28 @@ actions:
       enabled: true
       description: "WhatsApp provider (wppconnect, ultramsg, wwebjs, meta)"
       # Bridge: provider wwebjs + WHATSAPP_API_URL / WHATSAPP_API_KEY in .env
-      # Cloud API: provider meta + waba_id / phone_number_id / access_token in yaml,
-      #   or WHATSAPP_WABA_ID / WHATSAPP_PHONE_NUMBER_ID / WHATSAPP_ACCESS_TOKEN in .env
+      # Cloud API: provider meta + JVCONNECT_URL / JVCONNECT_API_KEY in .env
+      #   (phone is bound to the jvconnect API key; waba/phone yaml optional)
       provider: "meta"
       stt_action: "DeepgramSTTAction"
       tts_action: "ElevenLabsTTSAction"
-      waba_id: ""              # e.g. "107732305578216"
-      phone_number_id: ""      # e.g. "102274452799236"
-      access_token: ""         # Meta system user token for this WABA
+      waba_id: ""              # optional; resolved from jvconnect /account
+      phone_number_id: ""      # optional; resolved from jvconnect /account
+      access_token: ""         # unused with jvconnect
+      # Meta HSMs: only these names may be sent via whatsapp__send_template
+      template_allowlist:
+        - signup
+        - request_contact_info_3
+        - account_creation_confirmation_3
+      default_template_language: "en_US"
+      # Meta Flows: only these ids or names may be sent via whatsapp__send_flow
+      # (empty = all WABA flows). Replace with your published Meta Flow names/ids.
+      flow_allowlist:
+        - signup_form
 
   - action: jvagent/whatsapp_voice_action
     context:
-      enabled: false
+      enabled: true
       description: "WhatsApp voice calls via jvvoice delegation"
       jvvoice_base_url: "${JVVOICE_BASE_URL}"
       jvvoice_api_key: "${JVVOICE_API_KEY}"
