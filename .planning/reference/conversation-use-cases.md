@@ -284,3 +284,179 @@ Apps wire orchestrator fixtures (see zoon-ai `tests/use_cases/` when added).
 - LLM-judge / semantic similarity assertions (future `profile: llm-eval` extension)
 - Live model-in-the-loop runs (scenarios include `harness` for mocked orchestrator only)
 - Handler-internal hook assertions (remain in unit tests)
+
+## 14.0 Full Multi-Turn Conversations
+
+**CUCS** defines the machine-readable specification for orchestrator tests. In addition, every app **SHOULD** maintain human-readable conversation transcripts that demonstrate how a real user and agent are expected to interact.
+
+These transcripts are not executable tests. Their purpose is to help product owners, QA engineers, prompt authors, and LLMs understand the expected conversational style, pacing, and user experience before it is translated into **CUCS** **YAML**.
+
+### 14.1 Purpose
+
+Conversation transcripts provide realistic examples of complete user journeys.
+
+They are intended to:
+
+- Demonstrate how a conversation naturally progresses from greeting to resolution.
+- Help LLMs generate authentic conversational scenarios instead of short synthetic exchanges.
+- Provide reference material for prompt engineering and conversation design.
+- Complement **CUCS** **YAML** without duplicating its executable assertions.
+
+### 14.2 Authoring Guidelines
+
+Authors **SHOULD** write conversations that resemble genuine interactions rather than idealized test cases.
+
+| Aspect | Guideline |
+| --- | --- |
+| Conversation length | Prefer 8–12 turns, unless the interaction is naturally shorter. |
+| --- | --- |
+| Opening | Begin with a natural greeting or request (for example, *Hi*, *I need help with...*, *I'd like to...*). |
+| --- | --- |
+| Closing | End with a natural conclusion, confirmation, or polite sign-off. |
+| --- | --- |
+| Realistic data | Use plausible names, email addresses, phone numbers, product names, account numbers, dates, and identifiers. Avoid placeholders such as example.com, John Doe, or 12345 unless intentionally testing placeholder handling. |
+| --- | --- |
+| Clarifications | Include at least one clarification, correction, or follow-up question when appropriate. |
+| --- | --- |
+| Agent behavior | Responses should feel conversational, acknowledge user input, and guide the user toward completion rather than behaving like a command parser. |
+| --- | --- |
+| Consistency | Maintain consistent facts, context, and terminology throughout the conversation. |
+| --- | --- |
+
+### 14.3 Typical Conversation Flow
+
+Most successful conversations follow a recognizable progression, although individual skills may omit or reorder phases where appropriate.
+
+Greeting / Opening
+
+↓
+
+Request or Intent
+
+↓
+
+### Information Collection
+
+↓
+
+(Optional) Verification or Authentication
+
+↓
+
+Clarification or Correction
+
+↓
+
+Confirmation
+
+↓
+
+Resolution or Action
+
+↓
+
+Closing
+
+The goal is not to force every conversation into this sequence, but to ensure the interaction tells a complete and coherent story.
+
+### 14.4 Authoring Checklist
+
+Before considering a conversation complete, verify that it:
+
+- contains enough turns to represent a realistic interaction;
+- begins with a natural user message;
+- uses believable real-world data instead of generic placeholders;
+- includes clarification, confirmation, or correction where appropriate;
+- reaches a clear outcome or resolution;
+- ends with a natural closing;
+- remains internally consistent from beginning to end; and
+- references the corresponding **CUCS** scenario for executable behavior.
+
+### 14.5 Relationship to CUCS
+
+| Artifact | Purpose |
+| --- | --- |
+| Conversation transcript | Human-readable example of a realistic interaction between a user and the agent. |
+| --- | --- |
+| CUCS YAML | Executable specification describing the same scenario using given, turns, harness, and then assertions. |
+| --- | --- |
+| SKILL.md interview: | Defines interview fields, branching logic, validation, and handlers exercised by the conversation. |
+| --- | --- |
+
+The conversation transcript should describe how the interaction feels.
+
+The **CUCS** **YAML** describes how the interaction executes.
+
+Authors **SHOULD** avoid duplicating harness decisions, task-graph assertions, or other executable test details inside conversation transcripts.
+
+### 14.6 Recommended Transcript Structure
+
+Conversation transcripts **SHOULD** follow a consistent structure.
+
+\# Conversation: &lt;Short Title&gt;
+
+\> Scenario: &lt;One-line description&gt;
+
+\## Overview
+
+| Field | Value |
+
+|------|-------|
+
+| Skills | quotation_interview, account_provisioning |
+
+| Related Use Case | \`use-cases/account/new-user.yaml\` |
+
+\## Preconditions
+
+\- User has no active session.
+
+\- Visitor is a new customer.
+
+\## Conversation
+
+\### Turn 1
+
+\*\*User\*\*
+
+\> ...
+
+\*\*Assistant\*\*
+
+\> ...
+
+\### Turn 2
+
+\*\*User\*\*
+
+\> ...
+
+\*\*Assistant\*\*
+
+\> ...
+
+...
+
+\### Turn N
+
+\*\*User\*\*
+
+\> ...
+
+\*\*Assistant\*\*
+
+\> ...
+
+The transcript should read naturally as a complete conversation while remaining aligned with the corresponding **CUCS** scenario.
+
+### 14.7 Out of Scope
+
+This section does not define:
+
+- executable orchestrator behavior (covered by **CUCS** **YAML**);
+- interview field definitions or branching logic (covered by **SKILL**.md);
+- **API** calls, execution traces, or task graph internals;
+- semantic evaluation or **LLM**-based grading of conversations; or
+- application-specific business rules or data dictionaries.
+
+Those concerns remain documented in their respective artifacts.
