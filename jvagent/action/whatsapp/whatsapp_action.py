@@ -1027,7 +1027,8 @@ class WhatsAppAction(Action):
                     object.__setattr__(self, "jvconnect_webhook_secret", secret)
                     dirty = True
                 phone = str(
-                    result.get("phone_number_id") or getattr(wa, "phone_number_id", "")
+                    result.get("phone_number_id")
+                    or getattr(wa, "phone_number_id", "")
                     or ""
                 ).strip()
                 if phone and phone != (self.phone_number_id or "").strip():

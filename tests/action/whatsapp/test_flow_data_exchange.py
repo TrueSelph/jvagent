@@ -55,5 +55,7 @@ class TestFlowDataExchangeResponse:
             }
         )
         assert out["screen"] == "SUCCESS"
-        assert out["data"]["extension_message_response"]["params"]["flow_token"] == "ft1"
+        assert (
+            out["data"]["extension_message_response"]["params"]["flow_token"] == "ft1"
+        )
         assert out["data"]["extension_message_response"]["params"]["name"] == "Ada"

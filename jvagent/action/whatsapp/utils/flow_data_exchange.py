@@ -10,9 +10,7 @@ def is_flow_data_exchange_payload(body: Any) -> bool:
     return isinstance(body, dict) and body.get("type") == "whatsapp_flow_data_exchange"
 
 
-def is_flow_data_exchange_request(
-    headers: Mapping[str, str], body: Any
-) -> bool:
+def is_flow_data_exchange_request(headers: Mapping[str, str], body: Any) -> bool:
     """Detect Flow data-exchange via header or body type."""
     header_val = ""
     for key, value in headers.items():
@@ -51,7 +49,7 @@ def build_flow_data_exchange_response(payload: Dict[str, Any]) -> Dict[str, Any]
                 "error": "endpoint_not_configured",
                 "error_message": (
                     "Agent received Flow data exchange but has no INIT screen "
-                    "handler. Use a navigate Flow (\"No data\") or provide screens "
+                    'handler. Use a navigate Flow ("No data") or provide screens '
                     "via a custom Flow endpoint handler."
                 ),
             }

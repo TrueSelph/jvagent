@@ -334,7 +334,7 @@ actions:
       # Meta HSMs: only these names may be sent via whatsapp__send_template
       template_allowlist:
         - signup
-        - request_contact_info_3 
+        - request_contact_info_3
         - account_creation_confirmation_3
       default_template_language: "en_US"
       # Meta Flows: only these ids or names may be sent via whatsapp__send_flow

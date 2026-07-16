@@ -10,7 +10,6 @@ from jvspatial.env import env
 
 from jvagent.action.base import Action
 from jvagent.action.interact.webhook_pipeline import get_conversation_with_lock
-from jvagent.action.whatsapp.modules.jvconnect_api import JvconnectWhatsAppAPI
 from jvagent.tooling.tool_decorator import tool
 
 from .call_webhook import WhatsAppCallEvent, parse_calls_webhook
@@ -141,8 +140,9 @@ class WhatsAppVoiceAction(Action):
             return phone_number_id, access_token
 
         client = await wa.api()
-        if isinstance(client, JvconnectWhatsAppAPI):
-            creds = await client.fetch_calling_credentials()
+        fetch_calling_credentials = getattr(client, "fetch_calling_credentials", None)
+        if callable(fetch_calling_credentials):
+            creds = await fetch_calling_credentials()
             if not creds.get("ok"):
                 raise ValueError(
                     "jvconnect calling/credentials failed: "
