@@ -858,22 +858,24 @@ class WhatsAppAction(Action):
                     waba_id=self._env_waba_id(),
                     verify_token=self.effective_verify_token(agent_id),
                 )
-                # Resolve phone/WABA from the phone-bound API key when not set locally
-                if not phone_id or not self._env_waba_id():
-                    try:
-                        account = await client.fetch_account()
-                        if account.get("ok") and account.get("phone_number_id"):
-                            resolved = str(account["phone_number_id"])
+                # Always reconcile phone/WABA from the phone-bound API key.
+                # Local caches go stale when the key is rebound to a new number;
+                # inbound filtering must match jvconnect's live binding.
+                try:
+                    account = await client.fetch_account()
+                    if account.get("ok") and account.get("phone_number_id"):
+                        resolved = str(account["phone_number_id"])
+                        if resolved != (self.phone_number_id or "").strip():
                             object.__setattr__(self, "phone_number_id", resolved)
-                            if account.get("waba_id") and not self._env_waba_id():
-                                object.__setattr__(
-                                    self, "waba_id", str(account["waba_id"])
-                                )
-                    except Exception as acct_err:
-                        logger.warning(
-                            "jvconnect account lookup failed (will retry on use): %s",
-                            acct_err,
-                        )
+                        if account.get("waba_id"):
+                            resolved_waba = str(account["waba_id"])
+                            if resolved_waba != (self.waba_id or "").strip():
+                                object.__setattr__(self, "waba_id", resolved_waba)
+                except Exception as acct_err:
+                    logger.warning(
+                        "jvconnect account lookup failed (will retry on use): %s",
+                        acct_err,
+                    )
                 return client
 
             session = await self._effective_whatsapp_session()
@@ -1017,16 +1019,33 @@ class WhatsAppAction(Action):
             )
             wa = await self.api()
             result = await wa.register_webhook_subscription(callback, verify)
-            # Persist jvconnect-issued webhook HMAC secret for inbound verification
+            # Persist jvconnect binding + webhook HMAC secret for inbound verification
             if self.is_meta_provider() and isinstance(result, dict):
+                dirty = False
                 secret = str(result.get("webhook_secret") or "").strip()
-                if secret:
+                if secret and secret != (self.jvconnect_webhook_secret or "").strip():
                     object.__setattr__(self, "jvconnect_webhook_secret", secret)
+                    dirty = True
+                phone = str(
+                    result.get("phone_number_id") or getattr(wa, "phone_number_id", "")
+                    or ""
+                ).strip()
+                if phone and phone != (self.phone_number_id or "").strip():
+                    object.__setattr__(self, "phone_number_id", phone)
+                    dirty = True
+                waba = str(
+                    result.get("waba_id") or getattr(wa, "waba_id", "") or ""
+                ).strip()
+                if waba and waba != (self.waba_id or "").strip():
+                    object.__setattr__(self, "waba_id", waba)
+                    dirty = True
+                if dirty:
                     try:
                         await self.save()
                     except Exception as save_err:
                         logger.warning(
-                            "Failed to persist jvconnect_webhook_secret: %s", save_err
+                            "Failed to persist jvconnect webhook binding: %s",
+                            save_err,
                         )
             ok = bool(result.get("success") or result.get("ok"))
             if not ok:
