@@ -15,8 +15,9 @@ from jvagent.core.agent import Agent
 from jvagent.memory.conversation import Conversation
 from jvagent.memory.interaction import Interaction
 
+from . import service as health_service
+from .config import is_enabled_for_agent, load_conversation_health_config
 from .constants import DIMENSIONS
-from .conversation_health_action import ConversationHealthAction
 
 logger = logging.getLogger(__name__)
 
@@ -76,27 +77,25 @@ def _enrich_health(health: Dict[str, Any]) -> Dict[str, Any]:
     return h
 
 
-async def _get_health_action(agent_id: str) -> ConversationHealthAction:
+async def _require_agent(agent_id: str) -> Agent:
     agent = await Agent.get(agent_id)
     if not agent:
         raise ResourceNotFoundError(
             message=f"Agent '{agent_id}' not found",
             details={"agent_id": agent_id},
         )
-    action = await ConversationHealthAction.find_one(
-        {
-            "context.agent_id": agent_id,
-            "context.enabled": True,
-        }
-    )
-    if not action:
-        action = await ConversationHealthAction.find_one({"context.agent_id": agent_id})
-    if not action:
-        raise ResourceNotFoundError(
-            message=f"Conversation Health is not configured for agent '{agent_id}'",
-            details={"agent_id": agent_id},
-        )
-    return action  # type: ignore[return-value]
+    return agent  # type: ignore[return-value]
+
+
+def _service_status(agent: Agent) -> Dict[str, Any]:
+    cfg = load_conversation_health_config()
+    enabled = is_enabled_for_agent(agent, cfg)
+    return {
+        "enabled": enabled,
+        "app_enabled": cfg.enabled,
+        "agent_override": getattr(agent, "conversation_health_enabled", None),
+        "flag_threshold": cfg.flag_threshold,
+    }
 
 
 async def _conversation_belongs_to_agent(conv: Conversation, agent_id: str) -> bool:
@@ -219,8 +218,23 @@ async def get_agent_health(
         None, description="Window in days (default action config, max 30)"
     ),
 ) -> Dict[str, Any]:
-    action = await _get_health_action(agent_id)
-    return {"reading": action.get_agent_reading(days=days)}
+    agent = await _require_agent(agent_id)
+    status = _service_status(agent)
+    if not status["enabled"]:
+        return {
+            "reading": {
+                "agent_id": agent_id,
+                "enabled": False,
+                "interaction_count": 0,
+                "flagged_count": 0,
+                "avg_score": None,
+                "avg_dimensions": None,
+                "trend": [],
+            },
+            "status": status,
+        }
+    reading = await health_service.get_agent_reading(agent_id, days=days)
+    return {"reading": reading, "status": status}
 
 
 @endpoint(
@@ -237,10 +251,14 @@ async def get_health_stats(
     agent_id: str,
     days: Optional[int] = Query(None),
 ) -> Dict[str, Any]:
-    action = await _get_health_action(agent_id)
-    reading = action.get_agent_reading(days=days)
+    agent = await _require_agent(agent_id)
+    status = _service_status(agent)
+    if not status["enabled"]:
+        return {"stats": {"enabled": False}, "status": status}
+    reading = await health_service.get_agent_reading(agent_id, days=days)
     return {
         "stats": {
+            "enabled": True,
             "interaction_count": reading.get("interaction_count"),
             "flagged_count": reading.get("flagged_count"),
             "flag_rate": reading.get("flag_rate"),
@@ -248,7 +266,8 @@ async def get_health_stats(
             "avg_dimensions": reading.get("avg_dimensions"),
             "top_issues": reading.get("top_issues"),
             "ambient": reading.get("ambient"),
-        }
+        },
+        "status": status,
     }
 
 
@@ -266,9 +285,12 @@ async def get_health_trend(
     agent_id: str,
     days: Optional[int] = Query(None),
 ) -> Dict[str, Any]:
-    action = await _get_health_action(agent_id)
-    reading = action.get_agent_reading(days=days)
-    return {"trend": reading.get("trend") or []}
+    agent = await _require_agent(agent_id)
+    status = _service_status(agent)
+    if not status["enabled"]:
+        return {"trend": [], "status": status}
+    reading = await health_service.get_agent_reading(agent_id, days=days)
+    return {"trend": reading.get("trend") or [], "status": status}
 
 
 @endpoint(
@@ -302,8 +324,10 @@ async def list_health_conversations(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ) -> Dict[str, Any]:
-    action = await _get_health_action(agent_id)
+    agent = await _require_agent(agent_id)
+    status = _service_status(agent)
     window_days = days if days is not None else None
+    cfg = load_conversation_health_config()
 
     # Strict agent scope: stamped health.agent_id OR graph ownership (no unscoped fallback)
     query_agent: Dict[str, Any] = {
@@ -380,8 +404,10 @@ async def list_health_conversations(
             "count": len(conversations),
             "total": total,
             "days": window_days,
-            "flag_threshold": action.flag_threshold,
+            "flag_threshold": cfg.flag_threshold,
+            "enabled": status["enabled"],
         },
+        "status": status,
     }
 
 
@@ -402,7 +428,7 @@ async def get_health_conversation(
     agent_id: str,
     conversation_id: str,
 ) -> Dict[str, Any]:
-    await _get_health_action(agent_id)
+    await _require_agent(agent_id)
     conv = await _require_conversation_for_agent(agent_id, conversation_id)
     interactions = await conv.get_interactions(limit=0, reverse=False)
     turns = []
@@ -454,7 +480,13 @@ async def deep_review_conversation(
         None, description="If set, only review this interaction"
     ),
 ) -> Dict[str, Any]:
-    action = await _get_health_action(agent_id)
+    agent = await _require_agent(agent_id)
+    status = _service_status(agent)
+    if not status["enabled"]:
+        raise ResourceNotFoundError(
+            message="Conversation Health is disabled",
+            details={"agent_id": agent_id, "status": status},
+        )
     conv = await _require_conversation_for_agent(agent_id, conversation_id)
 
     targets: List[Interaction] = []
@@ -474,16 +506,18 @@ async def deep_review_conversation(
 
     results = []
     for ix in targets:
-        scorable, reason = action.is_scorable(ix)
+        scorable, reason = health_service.is_scorable(ix)
         if not scorable:
             results.append({"interaction_id": ix.id, "skipped": True, "reason": reason})
             continue
         if not (getattr(ix, "health", None) or {}).get("scored"):
-            await action.score_interaction(ix, schedule_ai=False)
-        out = await action.run_ai_for_interaction(str(ix.id))
+            await health_service.score_interaction(
+                ix, agent_id=agent_id, schedule_ai=False
+            )
+        out = await health_service.run_ai_for_interaction(str(ix.id), agent_id=agent_id)
         results.append({"interaction_id": ix.id, **out})
 
-    return {"results": results}
+    return {"results": results, "status": status}
 
 
 @endpoint(
@@ -506,7 +540,13 @@ async def backfill_health(
     body: Optional[Dict[str, Any]] = Body(default=None),
 ) -> Dict[str, Any]:
     """Heuristic-only backfill of this agent's interactions (memory-scoped)."""
-    action = await _get_health_action(agent_id)
+    agent = await _require_agent(agent_id)
+    status = _service_status(agent)
+    if not status["enabled"]:
+        raise ResourceNotFoundError(
+            message="Conversation Health is disabled",
+            details={"agent_id": agent_id, "status": status},
+        )
     body = body or {}
     limit = min(int(body.get("limit") or 50), 200)
     offset = int(body.get("cursor") or body.get("offset") or 0)
@@ -530,11 +570,10 @@ async def backfill_health(
         h = getattr(ix, "health", None) or {}
         if h.get("scored") and not force:
             continue
-        # Never stamp foreign health onto this agent
         prior_agent = h.get("agent_id")
         if prior_agent and str(prior_agent) != str(agent_id):
             continue
-        result = await action.score_interaction(
+        result = await health_service.score_interaction(
             ix,
             agent_id=agent_id,
             force_rescore=force,
@@ -548,4 +587,5 @@ async def backfill_health(
         "scored": scored,
         "cursor": str(offset + processed),
         "total_candidates": total,
+        "status": status,
     }

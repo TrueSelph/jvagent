@@ -561,6 +561,19 @@ async def interact_endpoint(
                 if walker.background_actions:
                     await _run_background_actions(walker)
 
+                # Conversation Health Service (core; default on) — after background IAs
+                try:
+                    from jvagent.core.conversation_health.service import (
+                        maybe_score_after_interaction,
+                    )
+
+                    await maybe_score_after_interaction(walker)
+                except Exception:
+                    logger.error(
+                        "Conversation Health post-turn scoring failed",
+                        exc_info=True,
+                    )
+
                 # Log interaction using INTERACTION level AFTER background actions
                 # so model calls they made are present in observability_metrics.
                 await _emit_interaction_log(walker, interaction, agent_id)
@@ -830,6 +843,18 @@ async def _stream_interaction(
             if walker.background_actions:
                 await _run_background_actions(walker)
 
+            try:
+                from jvagent.core.conversation_health.service import (
+                    maybe_score_after_interaction,
+                )
+
+                await maybe_score_after_interaction(walker)
+            except Exception:
+                logger.error(
+                    "Conversation Health post-turn scoring failed",
+                    exc_info=True,
+                )
+
             # Log interaction using INTERACTION level AFTER background actions so
             # model calls they made are present in observability_metrics.
             agent_id_for_logging = (
@@ -883,6 +908,18 @@ async def _stream_interaction(
             # Run background actions after final chunk is yielded (await for Lambda)
             if walker.background_actions:
                 await _run_background_actions(walker)
+
+            try:
+                from jvagent.core.conversation_health.service import (
+                    maybe_score_after_interaction,
+                )
+
+                await maybe_score_after_interaction(walker)
+            except Exception:
+                logger.error(
+                    "Conversation Health post-turn scoring failed",
+                    exc_info=True,
+                )
 
             # Log interaction using INTERACTION level AFTER background actions so
             # model calls they made are present in observability_metrics.

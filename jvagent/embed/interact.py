@@ -204,6 +204,16 @@ async def interact(
 
                 await _run_background_actions(walker)
 
+            # Conversation Health Service (core; default on) — after background IAs
+            try:
+                from jvagent.core.conversation_health.service import (
+                    maybe_score_after_interaction,
+                )
+
+                await maybe_score_after_interaction(walker)
+            except Exception:
+                pass
+
             return result
         finally:
             set_current_profile(None)
@@ -562,6 +572,15 @@ async def interact_stream(
             from jvagent.action.interact.endpoints import _run_background_actions
 
             await _run_background_actions(walker)
+
+        try:
+            from jvagent.core.conversation_health.service import (
+                maybe_score_after_interaction,
+            )
+
+            await maybe_score_after_interaction(walker)
+        except Exception:
+            pass
     finally:
         if walk_task is not None:
             for key in task_keys:

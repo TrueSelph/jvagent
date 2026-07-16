@@ -160,7 +160,7 @@ class Interaction(DeferredSaveMixin, Node):
         default_factory=dict,
         description=(
             "Conversation Health result for this turn (dimensions, issues, "
-            "flagged, ai_status, contribution). Written by ConversationHealthAction."
+            "flagged, ai_status, contribution). Written by Conversation Health Service."
         ),
     )
 

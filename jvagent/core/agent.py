@@ -77,6 +77,13 @@ class Agent(Node):
         default=None,
         description="Default maximum length for truncating utterances and responses in conversation history. Can be overridden when calling methods that accept max_statement_length parameter. None = no truncation.",
     )
+    conversation_health_enabled: Optional[bool] = attribute(
+        default=None,
+        description=(
+            "Override Conversation Health Service for this agent. "
+            "None = follow app config (default on); False disables scoring/AI."
+        ),
+    )
 
     # Runtime instances (private, transient)
     _response_bus: Any = attribute(private=True, default=None)

@@ -127,7 +127,7 @@ class Conversation(DeferredSaveMixin, Node):
         default_factory=dict,
         description=(
             "Conversation Health rollup (avg/min dimensions, flagged, issue "
-            "tallies). Written by ConversationHealthAction."
+            "tallies). Written by Conversation Health Service."
         ),
     )
 
