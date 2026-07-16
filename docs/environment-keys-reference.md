@@ -191,9 +191,10 @@ falls back to a sibling env var when its primary key is unset:
 - `WHATSAPP_SESSION_REGISTER_TIMEOUT_SECONDS`
 - `WHATSAPP_SKIP_STARTUP_REGISTRATION`
 - `WHATSAPP_REQUEST_TIMEOUT`
-- Meta Cloud API (`provider: meta`) — **agent.yaml** (preferred): `waba_id`, `phone_number_id`, `access_token` on WhatsAppAction; **env fallback** when yaml empty: `WHATSAPP_WABA_ID`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`
-- Meta Cloud API — **env**: `WHATSAPP_APP_SECRET` (webhook signature; falls back to `FACEBOOK_APP_SECRET`), `WHATSAPP_APP_ID` (optional; falls back to `FACEBOOK_APP_ID`), `WHATSAPP_GRAPH_VERSION` (default `v25.0`)
-- Meta verify token: auto-derived from agent id + app secret (optional `verify_token` on action to override)
+- Meta Cloud API (`provider: meta`) — phone is resolved from the jvconnect API key (`GET /api/v1/meta/whatsapp/account`). Optional yaml/env overrides: `phone_number_id` / `WHATSAPP_PHONE_NUMBER_ID`, `waba_id` / `WHATSAPP_WABA_ID` (usually unnecessary).
+- Meta Cloud API — **env**: `WHATSAPP_GRAPH_VERSION` (default `v25.0`; Graph version is pinned on jvconnect). `WHATSAPP_ACCESS_TOKEN` / `WHATSAPP_APP_SECRET` / `WHATSAPP_APP_ID` are unused when using jvconnect.
+- **jvconnect proxy** (required for `provider: meta`): set `JVCONNECT_URL` and `JVCONNECT_API_KEY` only (create a phone-bound key in jvconnect API Credentials). Do **not** set `WHATSAPP_ACCESS_TOKEN` / `WHATSAPP_APP_SECRET`. After startup webhook registration, `JVCONNECT_WEBHOOK_SECRET` is persisted on the action (or set from jvconnect’s register response). Optional: `WHATSAPP_PROXY_URL` alias for `JVCONNECT_URL`. Routes under `/api/v1/meta/whatsapp/*` (room for messenger/instagram later).
+- Meta verify token: Meta verifies against jvconnect (`FB_VERIFY_TOKEN`); agent inbound uses the jvconnect-issued webhook secret
 - After `jvagent --purge`, agent id changes — update Meta App Dashboard callback URL to match `GET .../meta/webhook-status` `expected_callback_url` (Graph override alone does not update the `application` layer)
 - Meta media/voice outbound requires `JVAGENT_PUBLIC_BASE_URL` (files fetched from jvagent before Graph upload)
 - Meta typing uses inbound message wamid; configure `stt_action` / `tts_action` on the WhatsApp action for voice notes
