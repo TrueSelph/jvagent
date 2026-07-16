@@ -94,6 +94,31 @@ async def test_jvconnect_fetch_account(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_jvconnect_fetch_calling_credentials(monkeypatch):
+    api = JvconnectWhatsAppAPI(
+        api_url="https://connect.example.com",
+        session="jvconnect",
+        token="jvk_x",
+    )
+
+    async def fake_json(method, path, json_body=None, params=None):
+        assert method == "GET"
+        assert path == "calling/credentials"
+        return {
+            "phone_number_id": "phone1",
+            "access_token": "meta_token",
+            "waba_id": "waba1",
+        }
+
+    monkeypatch.setattr(api, "_jvconnect_json", fake_json)
+    data = await api.fetch_calling_credentials()
+    assert data["ok"] is True
+    assert data["access_token"] == "meta_token"
+    assert api.phone_number_id == "phone1"
+    assert api.waba_id == "waba1"
+
+
+@pytest.mark.asyncio
 async def test_jvconnect_webhook_register_callback_only(monkeypatch):
     api = JvconnectWhatsAppAPI(
         api_url="https://connect.example.com",

@@ -114,6 +114,35 @@ class JvconnectWhatsAppAPI(MetaWhatsAppAPI):
         data["ok"] = True
         return data
 
+    async def fetch_calling_credentials(self) -> dict:
+        """Load Meta phone_number_id + access_token for LiveKit AcceptWhatsAppCall.
+
+        Tokens stay on jvconnect; this endpoint mints them for the phone-bound
+        API key so voice workers can talk to Meta Graph directly.
+        """
+        data = await self._jvconnect_json("GET", "calling/credentials")
+        if data.get("error"):
+            data["ok"] = False
+            return data
+        phone = str(data.get("phone_number_id") or "").strip()
+        token = str(data.get("access_token") or "").strip()
+        waba = str(data.get("waba_id") or "").strip()
+        if phone:
+            self.phone_number_id = phone
+            self.session = phone
+        if waba:
+            self.waba_id = waba
+        if not phone or not token:
+            return {
+                "ok": False,
+                "error": "calling/credentials missing phone_number_id or access_token",
+                "raw": data,
+            }
+        data["ok"] = True
+        data["phone_number_id"] = phone
+        data["access_token"] = token
+        return data
+
     async def ensure_account(self) -> None:
         if not self._account_loaded or not self.phone_number_id:
             await self.fetch_account()

@@ -9,6 +9,8 @@ from jvspatial.core.annotations import attribute
 from jvspatial.env import env
 
 from jvagent.action.base import Action
+from jvagent.action.interact.webhook_pipeline import get_conversation_with_lock
+from jvagent.action.whatsapp.modules.jvconnect_api import JvconnectWhatsAppAPI
 from jvagent.tooling.tool_decorator import tool
 
 from .call_webhook import WhatsAppCallEvent, parse_calls_webhook
@@ -20,9 +22,10 @@ logger = logging.getLogger(__name__)
 class WhatsAppVoiceAction(Action):
     """Accept and manage WhatsApp voice calls via jvvoice delegation.
 
-    Requires a sibling ``WhatsAppAction`` with ``provider: meta`` on the same agent
-    for Meta credentials (phone_number_id, access_token). jvagent calls jvvoice's
-    connector HTTP API using ``jvvoice_base_url`` and ``jvvoice_api_key``.
+    Requires a sibling ``WhatsAppAction`` with ``provider: meta`` on the same agent.
+    Meta credentials come from jvconnect (``GET .../calling/credentials``) or an
+    optional yaml/env override. jvagent calls jvvoice's connector HTTP API using
+    ``jvvoice_base_url`` and ``jvvoice_api_key``.
 
     A standalone jvvoice deployment must be running and registered under ``agent_name``
     to handle realtime audio and bridge utterances to the jvagent Orchestrator.
@@ -126,15 +129,71 @@ class WhatsAppVoiceAction(Action):
         return wa
 
     async def _meta_credentials(self) -> tuple[str, str]:
+        """Resolve Meta phone_number_id + access_token for LiveKit accept.
+
+        Prefers optional yaml/env overrides when both are set; otherwise fetches
+        from jvconnect ``GET .../calling/credentials`` via the sibling WhatsAppAction.
+        """
         wa = await self._get_whatsapp_action()
-        phone_number_id = wa._env_phone_number_id()
-        access_token = wa._env_access_token()
-        if not phone_number_id or not access_token:
-            raise ValueError(
-                "Meta phone_number_id and access_token are required "
-                "(WhatsAppAction yaml or WHATSAPP_* env)"
-            )
-        return phone_number_id, access_token
+        phone_number_id = (wa._env_phone_number_id() or "").strip()
+        access_token = (wa._env_access_token() or "").strip()
+        if phone_number_id and access_token:
+            return phone_number_id, access_token
+
+        client = await wa.api()
+        if isinstance(client, JvconnectWhatsAppAPI):
+            creds = await client.fetch_calling_credentials()
+            if not creds.get("ok"):
+                raise ValueError(
+                    "jvconnect calling/credentials failed: "
+                    f"{creds.get('error') or 'unknown error'}"
+                )
+            phone_number_id = str(creds.get("phone_number_id") or "").strip()
+            access_token = str(creds.get("access_token") or "").strip()
+            if phone_number_id and access_token:
+                return phone_number_id, access_token
+
+        raise ValueError(
+            "Meta phone_number_id and access_token are required "
+            "(jvconnect calling/credentials, or WhatsAppAction yaml / WHATSAPP_* env)"
+        )
+
+    async def _resolve_call_session_id(
+        self, caller_phone: str, *, agent_id: str
+    ) -> str:
+        """Reuse the active WhatsApp text session, or create a whatsapp-channel one."""
+        phone = (caller_phone or "").strip()
+        if not phone:
+            raise ValueError("caller_phone is required to resolve call session_id")
+
+        convo = await get_conversation_with_lock(phone, agent_id=agent_id)
+        session_id = (
+            str(getattr(convo, "session_id", "") or "").strip() if convo else ""
+        )
+        if session_id:
+            return session_id
+
+        from jvagent.core.agent import Agent
+
+        agent = await Agent.get(agent_id)
+        if agent is None:
+            raise ValueError(f"Agent {agent_id!r} not found for call session")
+        memory = await agent.get_memory()
+        if memory is None:
+            raise ValueError(f"Agent {agent_id!r} has no Memory node")
+        user = await memory.get_user(phone, create_if_missing=True)
+        if user is None:
+            raise ValueError(f"Failed to resolve user for caller {phone}")
+        created = await user.create_conversation(channel="whatsapp")
+        session_id = str(getattr(created, "session_id", "") or "").strip()
+        if not session_id:
+            raise ValueError("create_conversation returned empty session_id")
+        logger.info(
+            "Created WhatsApp conversation session_id=%s for voice caller=%s",
+            session_id,
+            phone,
+        )
+        return session_id
 
     async def _jvvoice_client(self) -> JvvoiceClient:
         if self._jvvoice is None:
@@ -200,12 +259,15 @@ class WhatsAppVoiceAction(Action):
             }
 
         phone_number_id, access_token = await self._meta_credentials()
-        if event.phone_number_id and event.phone_number_id != phone_number_id:
-            logger.warning(
-                "Call phone_number_id %s does not match configured %s",
-                event.phone_number_id,
-                phone_number_id,
-            )
+        if event.phone_number_id:
+            if phone_number_id and event.phone_number_id != phone_number_id:
+                logger.warning(
+                    "Call phone_number_id %s does not match configured %s; "
+                    "using webhook phone_number_id",
+                    event.phone_number_id,
+                    phone_number_id,
+                )
+            phone_number_id = event.phone_number_id
 
         base_url = self._resolved_jvagent_base_url()
         if not base_url:
@@ -213,6 +275,24 @@ class WhatsAppVoiceAction(Action):
                 "status": "error",
                 "call_id": event.call_id,
                 "error": "jvagent_base_url is not configured (JVAGENT_PUBLIC_BASE_URL)",
+            }
+
+        try:
+            session_id = await self._resolve_call_session_id(
+                event.from_number, agent_id=agent_id
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to resolve session_id for call_id=%s caller=%s: %s",
+                event.call_id,
+                event.from_number,
+                exc,
+                exc_info=True,
+            )
+            return {
+                "status": "error",
+                "call_id": event.call_id,
+                "error": f"session_id resolution failed: {exc}",
             }
 
         payload = {
@@ -227,6 +307,8 @@ class WhatsAppVoiceAction(Action):
             "sdp": event.sdp,
             "sdp_type": event.sdp_type or "offer",
             "agent_name": self.agent_name,
+            "session_id": session_id,
+            "user_id": event.from_number,
         }
 
         try:
