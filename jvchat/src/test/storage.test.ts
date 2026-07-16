@@ -24,6 +24,9 @@ import {
   getSavedCredentials,
   addSavedCredential,
   removeSavedCredential,
+  getInteractSessionToken,
+  setInteractSessionToken,
+  removeInteractSessionToken,
 } from "../utils/storage";
 
 function makeJwt(payload: Record<string, unknown>): string {
@@ -61,6 +64,54 @@ describe("token storage", () => {
     setRefreshToken("refresh-token");
     removeRefreshToken();
     expect(getRefreshToken()).toBeNull();
+  });
+});
+
+describe("interact session token storage", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("returns null when no session token stored", () => {
+    expect(getInteractSessionToken("sess-1")).toBeNull();
+    expect(getInteractSessionToken(undefined)).toBeNull();
+  });
+
+  it("stores and retrieves a token per session", () => {
+    setInteractSessionToken("sess-1", "tok-a");
+    setInteractSessionToken("sess-2", "tok-b");
+    expect(getInteractSessionToken("sess-1")).toBe("tok-a");
+    expect(getInteractSessionToken("sess-2")).toBe("tok-b");
+  });
+
+  it("overwrites the token for an existing session", () => {
+    setInteractSessionToken("sess-1", "tok-a");
+    setInteractSessionToken("sess-1", "tok-refreshed");
+    expect(getInteractSessionToken("sess-1")).toBe("tok-refreshed");
+  });
+
+  it("removes a token", () => {
+    setInteractSessionToken("sess-1", "tok-a");
+    removeInteractSessionToken("sess-1");
+    expect(getInteractSessionToken("sess-1")).toBeNull();
+  });
+
+  it("survives corrupted storage", () => {
+    localStorage.setItem("jvchat_interact_session_tokens", "not-json");
+    expect(getInteractSessionToken("sess-1")).toBeNull();
+    setInteractSessionToken("sess-1", "tok-a");
+    expect(getInteractSessionToken("sess-1")).toBe("tok-a");
+  });
+
+  it("caps the number of stored session tokens", () => {
+    for (let i = 0; i < 105; i++) {
+      setInteractSessionToken(`sess-${i}`, `tok-${i}`);
+    }
+    const raw = localStorage.getItem("jvchat_interact_session_tokens");
+    const parsed = JSON.parse(raw || "{}");
+    expect(Object.keys(parsed).length).toBeLessThanOrEqual(100);
+    // Most recent entry is retained
+    expect(getInteractSessionToken("sess-104")).toBe("tok-104");
   });
 });
 

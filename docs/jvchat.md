@@ -49,6 +49,15 @@ port/origin avoids that:
 - Turn on `JVAGENT_INTERACT_PUBLIC_AUTH=required` (session capability tokens,
   [ADR-0020](../.planning/adr/0020-public-interact-endpoint-auth.md)) and the
   rate limiter so the public `interact` endpoint isn't trivially abusable.
+  jvchat handles the client side automatically: it stores the minted
+  `session_token` per conversation, resends it as `X-Session-Token`, and
+  renews it via `POST /agents/{id}/interact/session/refresh`
+  ([ADR-0032](../.planning/adr/0032-interact-session-token-refresh.md)) when
+  it nears or passes expiry — so long-idle chats resume instead of 401-ing.
+  Other clients embedding the interact endpoint should implement the same
+  protocol (see the session-token refresh section of
+  [`environment-keys-reference.md`](environment-keys-reference.md) for the
+  TTL/grace knobs).
 - Serve everything over TLS.
 - For a hardened deployment, build jvchat and host the static `dist/` on a CDN
   (S3+CloudFront, Netlify, …) pointed at the API via `--url` / the login
