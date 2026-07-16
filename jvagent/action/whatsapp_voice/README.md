@@ -58,6 +58,8 @@ Voice-backend credentials (`LIVEKIT_*`, speech API keys, etc.) belong on **jvvoi
 
 Voice calls share the same `Conversation.session_id` as the WhatsApp text chat for that caller when an active conversation exists. Cold calls create a new `channel=whatsapp` conversation (`sess_…`). Interact still uses `channel=whatsapp_call` so TTS replies do not also egress as WhatsApp text messages.
 
+During a call, Orchestrator tools `whatsapp__send_flow` / `whatsapp__send_template` are allowed: they send to the caller's WhatsApp number (`user_id`) over the Cloud API while spoken replies stay on the voice path.
+
 ## Status endpoint
 
 `GET /api/actions/{action_id}/voice/status` — returns `configured`, `agent_name`, `active_calls`.

@@ -46,6 +46,44 @@ async def test_send_flow_rejects_non_whatsapp_channel(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_send_flow_allows_whatsapp_call_channel(monkeypatch):
+    monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "https://agent.example.com")
+    monkeypatch.setenv("JVCONNECT_URL", "https://connect.example.com")
+    monkeypatch.setenv("JVCONNECT_API_KEY", "jvk_test")
+    action = _meta_action()
+    sent = {}
+
+    async def fake_api(self):
+        api = SimpleNamespace()
+
+        async def send_flow_message(phone, **kwargs):
+            sent["phone"] = phone
+            sent.update(kwargs)
+            return {"ok": True, "messages": [{"id": "wamid.flow"}]}
+
+        api.send_flow_message = send_flow_message
+        return api
+
+    monkeypatch.setattr(WhatsAppAction, "api", fake_api)
+    monkeypatch.setattr(WhatsAppAction, "is_configured", lambda self: True)
+    visitor = SimpleNamespace(
+        user_id="15559876543",
+        channel="whatsapp_call",
+        session_id="wa-call-1",
+        interaction=SimpleNamespace(
+            add_parameter=lambda *a, **k: True,
+            save=AsyncMock(),
+        ),
+        _agent=SimpleNamespace(id="a1"),
+    )
+    with bind_dispatch_context(visitor):
+        out = json.loads(await action.send_flow(flow_id="flow_9", body="Hi"))
+    assert out["ok"] is True
+    assert sent["phone"] == "15559876543"
+    assert out["to"] == "15559876543"
+
+
+@pytest.mark.asyncio
 async def test_send_flow_forces_recipient(monkeypatch):
     monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "https://agent.example.com")
     monkeypatch.setenv("JVCONNECT_URL", "https://connect.example.com")
@@ -102,6 +140,44 @@ async def test_send_flow_allowlist_rejection(monkeypatch):
         out = json.loads(await action.send_flow(flow_name="blocked_flow"))
     assert out["ok"] is False
     assert "allowlist" in out["error"]
+    assert "hint" in out
+
+
+@pytest.mark.asyncio
+async def test_send_flow_allowlist_accepts_id_when_listed(monkeypatch):
+    monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "https://agent.example.com")
+    monkeypatch.setenv("JVCONNECT_URL", "https://connect.example.com")
+    monkeypatch.setenv("JVCONNECT_API_KEY", "jvk_test")
+    action = _meta_action(flow_allowlist=["ai_readiness_check", "1663253904764206"])
+    sent = {}
+
+    async def fake_api(self):
+        api = SimpleNamespace()
+
+        async def send_flow_message(phone, **kwargs):
+            sent.update(kwargs)
+            return {"ok": True, "messages": [{"id": "wamid.flow"}]}
+
+        api.send_flow_message = send_flow_message
+        return api
+
+    monkeypatch.setattr(WhatsAppAction, "api", fake_api)
+    monkeypatch.setattr(WhatsAppAction, "is_configured", lambda self: True)
+    visitor = SimpleNamespace(
+        user_id="15551112222",
+        channel="whatsapp",
+        session_id="wa-1",
+        interaction=SimpleNamespace(
+            add_parameter=lambda *a, **k: True,
+            save=AsyncMock(),
+        ),
+        _agent=SimpleNamespace(id="a1"),
+    )
+    with bind_dispatch_context(visitor):
+        # id-only must pass when id is on the allowlist (name-only would fail)
+        out = json.loads(await action.send_flow(flow_id="1663253904764206"))
+    assert out["ok"] is True
+    assert sent["flow_id"] == "1663253904764206"
 
 
 @pytest.mark.asyncio

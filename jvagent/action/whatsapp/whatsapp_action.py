@@ -1167,17 +1167,30 @@ class WhatsAppAction(Action):
     # ------------------------------------------------------------------
 
     _TEMPLATE_CHANNEL_ERROR = "whatsapp_templates_require_inbound_whatsapp"
+    _OUTBOUND_WA_CHANNELS = frozenset({"whatsapp", "whatsapp_call"})
 
-    def _template_dispatch_gate(self) -> Optional[Dict[str, Any]]:
-        """Require inbound WhatsApp channel + user_id. Returns error envelope or None."""
+    def _whatsapp_outbound_dispatch_gate(
+        self, *, error: str
+    ) -> Optional[Dict[str, Any]]:
+        """Require WhatsApp text or voice-call interact + user_id (caller WAID).
+
+        ``whatsapp_call`` is the jvvoice interact channel; recipient is still
+        ``user_id`` (the caller's WhatsApp number). Returns an error envelope
+        or None when allowed.
+        """
         ctx = get_dispatch_context()
+        channel = (ctx.channel or "").lower() if ctx else ""
         if (
             not ctx
-            or (ctx.channel or "").lower() != "whatsapp"
+            or channel not in self._OUTBOUND_WA_CHANNELS
             or not (ctx.user_id or "").strip()
         ):
-            return {"ok": False, "error": self._TEMPLATE_CHANNEL_ERROR}
+            return {"ok": False, "error": error}
         return None
+
+    def _template_dispatch_gate(self) -> Optional[Dict[str, Any]]:
+        """Require inbound WhatsApp text/call + user_id. Returns error envelope or None."""
+        return self._whatsapp_outbound_dispatch_gate(error=self._TEMPLATE_CHANNEL_ERROR)
 
     def _template_allowlist_names(self) -> List[str]:
         raw = self.template_allowlist or []
@@ -1235,7 +1248,7 @@ class WhatsAppAction(Action):
 
     @tool(name="whatsapp__list_templates")
     async def list_templates(self) -> str:
-        """List approved WhatsApp message templates available to send on this inbound WhatsApp turn. Only works when the user messaged via WhatsApp."""
+        """List approved WhatsApp message templates available to send on this WhatsApp text or voice-call turn."""
         import json
 
         gate = self._template_dispatch_gate()
@@ -1302,7 +1315,7 @@ class WhatsAppAction(Action):
             "Optional Meta template components array (header/body/button parameters).",
         ] = None,
     ) -> str:
-        """Send an approved WhatsApp template to the same phone that messaged this turn. Only works on inbound WhatsApp; recipient is fixed to the sender — do not invent a phone number."""
+        """Send an approved WhatsApp template to the same phone on this WhatsApp text or voice-call turn. Recipient is fixed to the sender/caller — do not invent a phone number."""
         import json
 
         gate = self._template_dispatch_gate()
@@ -1385,14 +1398,8 @@ class WhatsAppAction(Action):
     _FLOW_CHANNEL_ERROR = "whatsapp_flows_require_inbound_whatsapp"
 
     def _flow_dispatch_gate(self) -> Optional[Dict[str, Any]]:
-        ctx = get_dispatch_context()
-        if (
-            not ctx
-            or (ctx.channel or "").lower() != "whatsapp"
-            or not (ctx.user_id or "").strip()
-        ):
-            return {"ok": False, "error": self._FLOW_CHANNEL_ERROR}
-        return None
+        """Require inbound WhatsApp text/call + user_id. Returns error envelope or None."""
+        return self._whatsapp_outbound_dispatch_gate(error=self._FLOW_CHANNEL_ERROR)
 
     def _flow_allowlist_keys(self) -> List[str]:
         raw = self.flow_allowlist or []
@@ -1460,7 +1467,7 @@ class WhatsAppAction(Action):
 
     @tool(name="whatsapp__list_flows")
     async def list_flows(self) -> str:
-        """List WhatsApp Flows available to send on this inbound WhatsApp turn. Only works when the user messaged via WhatsApp."""
+        """List WhatsApp Flows available to send on this WhatsApp text or voice-call turn."""
         import json
 
         gate = self._flow_dispatch_gate()
@@ -1545,7 +1552,7 @@ class WhatsAppAction(Action):
             "published (default) or draft (testers only).",
         ] = None,
     ) -> str:
-        """Send a WhatsApp Flow to the same phone that messaged this turn. Only works on inbound WhatsApp; recipient is fixed to the sender."""
+        """Send a WhatsApp Flow to the same phone on this WhatsApp text or voice-call turn. Recipient is fixed to the sender/caller."""
         import json
         import time
         import uuid
@@ -1567,6 +1574,12 @@ class WhatsAppAction(Action):
                 {
                     "ok": False,
                     "error": "flow is not on the agent allowlist",
+                    "hint": (
+                        "Allowlist entries must match the flow_id and/or "
+                        "flow_name you pass. Put both the Meta Flow id and "
+                        "name in flow_allowlist, or pass both arguments."
+                    ),
+                    "requested": {"flow_id": fid, "flow_name": fname},
                     "allowlist": self._flow_allowlist_keys(),
                 }
             )

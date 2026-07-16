@@ -44,6 +44,44 @@ async def test_send_template_rejects_non_whatsapp_channel(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_send_template_allows_whatsapp_call_channel(monkeypatch):
+    monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "https://agent.example.com")
+    monkeypatch.setenv("JVCONNECT_URL", "https://connect.example.com")
+    monkeypatch.setenv("JVCONNECT_API_KEY", "jvk_test")
+    action = _meta_action()
+    sent = {}
+
+    async def fake_api(self):
+        api = SimpleNamespace()
+
+        async def send_template_message(phone, name, language="en_US", components=None):
+            sent["phone"] = phone
+            sent["name"] = name
+            return {"ok": True, "messages": [{"id": "wamid.tpl"}]}
+
+        api.send_template_message = send_template_message
+        return api
+
+    monkeypatch.setattr(WhatsAppAction, "api", fake_api)
+    monkeypatch.setattr(WhatsAppAction, "is_configured", lambda self: True)
+    visitor = SimpleNamespace(
+        user_id="15559876543",
+        channel="whatsapp_call",
+        session_id="wa-call-1",
+        interaction=SimpleNamespace(
+            add_parameter=lambda *a, **k: True,
+            save=AsyncMock(),
+        ),
+        _agent=SimpleNamespace(id="a1"),
+    )
+    with bind_dispatch_context(visitor):
+        out = json.loads(await action.send_template("signup"))
+    assert out["ok"] is True
+    assert sent["phone"] == "15559876543"
+    assert out["to"] == "15559876543"
+
+
+@pytest.mark.asyncio
 async def test_send_template_rejects_missing_context():
     action = _meta_action()
     out = json.loads(await action.send_template("signup"))

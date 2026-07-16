@@ -257,9 +257,9 @@ WHATSAPP_TOKEN=your_token
 
 Use the official WhatsApp Business Cloud API instead of a self-hosted bridge. Supports 1:1 text, images, documents, video, voice notes (inbound STT / outbound TTS), location, typing indicators (within the 24-hour customer service window), and **approved message templates (HSMs)** via Orchestrator tools `whatsapp__list_templates` / `whatsapp__send_template`.
 
-Template tools are hard-gated: they only run on inbound `channel=whatsapp` turns and always send to the inbound sender (`user_id`). Optional `template_allowlist` / `default_template_language` on the action bound which Meta templates may be sent. Listing goes through jvconnect `GET /api/v1/meta/whatsapp/templates`; send uses `POST /api/v1/meta/whatsapp/messages` with `type: template`.
+Template tools are hard-gated: they only run on inbound `channel=whatsapp` **or** `channel=whatsapp_call` (jvvoice) turns and always send to the inbound sender/caller (`user_id`). Optional `template_allowlist` / `default_template_language` on the action bound which Meta templates may be sent. Listing goes through jvconnect `GET /api/v1/meta/whatsapp/templates`; send uses `POST /api/v1/meta/whatsapp/messages` with `type: template`.
 
-**Flows:** `whatsapp__list_flows` / `whatsapp__send_flow` send interactive Flow messages (`type: interactive`, `interactive.type: flow`) with the same inbound-WhatsApp gate. Optional `flow_allowlist` (ids or names). Listing via jvconnect `GET /api/v1/meta/whatsapp/flows`. In the jvconnect **Flows** UI, the Send dialog can **Copy JSON** / **Copy jvconnect curl** for the Cloud API payload.
+**Flows:** `whatsapp__list_flows` / `whatsapp__send_flow` send interactive Flow messages (`type: interactive`, `interactive.type: flow`) with the same WhatsApp text/call gate. Optional `flow_allowlist` (ids or names). Listing via jvconnect `GET /api/v1/meta/whatsapp/flows`. In the jvconnect **Flows** UI, the Send dialog can **Copy JSON** / **Copy jvconnect curl** for the Cloud API payload.
 
 **Flow prefill (navigate):** pass `screen` plus `screen_data` (object of field keys → values) on `whatsapp__send_flow`. That maps to Meta `flow_action_payload.data`. Keys must match bindings in the published Flow JSON; not valid with `flow_action=data_exchange` (INIT path).
 
