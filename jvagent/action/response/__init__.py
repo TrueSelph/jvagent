@@ -10,7 +10,11 @@ This module provides the response bus infrastructure for jvagent, enabling:
 from jvagent.action.response.channel_adapter import ChannelAdapter
 from jvagent.action.response.channel_filter import ChannelFilter
 from jvagent.action.response.message import ResponseMessage
-from jvagent.action.response.response_bus import ResponseBus
+from jvagent.action.response.response_bus import (
+    ResponseBus,
+    clear_agent_response_bus,
+    get_agent_response_bus,
+)
 from jvagent.action.response.streaming import (
     create_sse_response,
     format_sse_chunk,
@@ -25,4 +29,6 @@ __all__ = [
     "create_sse_response",
     "format_sse_chunk",
     "stream_messages",
+    "get_agent_response_bus",
+    "clear_agent_response_bus",
 ]

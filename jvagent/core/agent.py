@@ -263,16 +263,30 @@ class Agent(Node):
     async def get_response_bus(self) -> "ResponseBus":
         """Get or initialize the agent-scoped ResponseBus instance.
 
-        Each agent owns exactly one ResponseBus instance. Channel adapters and
-        filters from this agent's actions register with this bus.
+        Uses a process-level registry keyed by agent id so adapters, filters,
+        and SSE subscribers survive Agent cache rematerialize (TTL churn).
 
         Returns:
             ResponseBus instance for this agent
         """
-        if self._response_bus is None:
-            from jvagent.action.response.response_bus import ResponseBus
+        # Honor an explicitly injected bus (test seam / deliberate override)
+        # before consulting the process registry. A rematerialized cached Agent
+        # has ``_response_bus is None`` and still resolves to the shared registry
+        # bus below, so the cache-churn fix is preserved.
+        if self._response_bus is not None:
+            return self._response_bus
 
-            self._response_bus = ResponseBus()
+        from jvagent.action.response.response_bus import (
+            ResponseBus,
+            get_agent_response_bus,
+        )
+
+        agent_id = getattr(self, "id", None)
+        if agent_id:
+            bus = await get_agent_response_bus(str(agent_id))
+            self._response_bus = bus
+            return bus
+        self._response_bus = ResponseBus()
         return self._response_bus
 
     async def send_proactive_message(

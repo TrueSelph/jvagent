@@ -68,7 +68,7 @@ async def stream_messages(
         for message in existing_messages:
             if interaction_id and message.interaction_id != interaction_id:
                 continue
-            mid = getattr(message, "message_id", None)
+            mid = getattr(message, "id", None) or getattr(message, "message_id", None)
             if mid:
                 replayed_ids.add(mid)
             yield format_sse_chunk(message.to_dict())
@@ -78,7 +78,9 @@ async def stream_messages(
             try:
                 # Wait for message with timeout to allow checking for done event
                 message = await asyncio.wait_for(message_queue.get(), timeout=0.1)
-                mid = getattr(message, "message_id", None)
+                mid = getattr(message, "id", None) or getattr(
+                    message, "message_id", None
+                )
                 if mid and mid in replayed_ids:
                     # Already delivered from the backlog replay — drop the dup.
                     replayed_ids.discard(mid)

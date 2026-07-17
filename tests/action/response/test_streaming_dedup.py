@@ -13,12 +13,17 @@ pytestmark = pytest.mark.asyncio
 
 
 class _Msg:
-    def __init__(self, mid, iid="i1"):
-        self.message_id = mid
+    def __init__(self, mid, iid="i1", *, use_id=False):
+        # ResponseMessage uses Object.id; legacy mocks used message_id.
+        if use_id:
+            self.id = mid
+        else:
+            self.message_id = mid
         self.interaction_id = iid
 
     def to_dict(self):
-        return {"message_id": self.message_id}
+        mid = getattr(self, "id", None) or getattr(self, "message_id", None)
+        return {"id": mid}
 
 
 class _Bus:
@@ -55,8 +60,8 @@ async def test_backlog_message_not_redelivered_from_live_queue():
     await gen.aclose()
 
     joined = "".join(out)
-    assert joined.count('"m1"') == 1
-    assert joined.count('"m2"') == 1
+    assert joined.count('"id": "m1"') == 1
+    assert joined.count('"id": "m2"') == 1
 
 
 async def test_distinct_messages_all_delivered():
@@ -76,3 +81,18 @@ async def test_distinct_messages_all_delivered():
 
     assert '"a"' in first
     assert '"b"' in second
+
+
+async def test_dedup_uses_object_id_attr():
+    """ResponseMessage.id (not message_id) must drive SSE dedup."""
+    m1 = _Msg("oid1", use_id=True)
+    bus = _Bus([m1])
+    gen = stream_messages("s1", bus)
+    out = [await gen.__anext__()]
+    await bus._cb(m1)
+    await bus._cb(_Msg("oid2", use_id=True))
+    out.append(await gen.__anext__())
+    await gen.aclose()
+    joined = "".join(out)
+    assert joined.count('"id": "oid1"') == 1
+    assert '"id": "oid2"' in joined
