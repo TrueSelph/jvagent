@@ -8,8 +8,16 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Security
+
+- **Egress authz (once-over S1).** `POST .../email/send` requires `roles=["admin"]` (was any authenticated caller). SendGrid inbound drops messages unless SPF and DKIM pass before minting a User from `From`. `reply/publish` binds `user_id` to the authenticated caller (rejects foreign `user_id`). WhatsApp `/whatsapp/{action_id}/qr` and connection page require admin (were `auth=False`).
+
 ### Fixed
 
+- **Log retention + PII bloat (once-over S2).** `App.log_retention_days` is enforced on `TaskMonitor.tick` via `jvagent.logging.retention` (`0` disables). `sanitize_visitor_data_for_log` redacts `image_urls` / attachments / data-URIs. Task `_events` capped at 200; `terminal_ttl_days` default is now **30** (was 0 = unbounded).
+- **Orchestrator resilience (once-over S3).** Action-enum failure skips orphan-flow cancel; locked-flow dispatch honors `tool_call_timeout`; observation replay capped; missing/erroring interview branch hooks fail the turn without pruning answers; MCP `connect` is serialized + cleans up on failure; directive trust treats `contrib_*` / unknown `ns__tool` as untrusted.
+- **ResponseBus lifecycle (once-over S4).** Process-level bus registry keyed by agent id (survives Agent cache TTL); SSE dedup uses `ResponseMessage.id`; accumulator eviction is idle-based; idle session queues are evicted.
+- **Multi-worker + ops (once-over S5).** User usage/`last_seen` reload under lock; proactive claim CAS under conversation lock; Messenger inbound mid dedup; `interaction_limit=0` syncs and disables prune; `agent uninstall` requires `--yes`/confirm; `--update --source` removes agents dropped from app.yaml; pip deps reject option injection; enable/disable invalidates action cache; DynamoDB log creds no longer clobber process `AWS_*`.
 - **`ReplyAction.gather()` ignored intro-style parameters.** When the interaction
   carried response-shaping parameters but no directives (first-engagement intro via
   `IntroInteractAction`), `gather()` returned early without composing and
