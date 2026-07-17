@@ -32,14 +32,25 @@ class _Resp:
             self.bytes_yielded += len(chunk)
             yield chunk
 
-    async def __aenter__(self):
-        return self
+    async def aclose(self):
+        pass
 
-    async def __aexit__(self, *a):
-        return False
+
+class _MockRequest:
+    def __init__(self, method, url, headers):
+        self.method = method
+        self.url = url
+        self.headers = headers or {}
+        self.extensions: dict = {}
+
+
+# Records the requests the last _install_client built (for pin assertions).
+_LAST_REQUESTS: list = []
 
 
 def _install_client(monkeypatch, responses):
+    _LAST_REQUESTS.clear()
+
     class _Client:
         def __init__(self, *a, **k):
             self._responses = list(responses)
@@ -50,19 +61,23 @@ def _install_client(monkeypatch, responses):
         async def __aexit__(self, *a):
             return False
 
-        def stream(self, method, url, headers=None):
-            # httpx's client.stream returns an async context manager (the
-            # response itself here).
+        def build_request(self, method, url, headers=None):
+            req = _MockRequest(method, url, headers)
+            _LAST_REQUESTS.append(req)
+            return req
+
+        async def send(self, request, stream=False):
             return self._responses.pop(0)
 
     monkeypatch.setattr(httpx, "AsyncClient", _Client)
 
 
-def _allow_all_hosts(monkeypatch, blocked=("127.0.0.1", "localhost")):
-    async def _ok(self, host):
-        return host not in blocked
+def _allow_all_hosts(monkeypatch, blocked=("127.0.0.1", "localhost"), pin_ip=None):
+    async def _rv(self, host):
+        # (pin_ip, ok) — ok False for a blocked host.
+        return (pin_ip, host not in blocked)
 
-    monkeypatch.setattr(WebFetchAction, "_host_allowed", _ok)
+    monkeypatch.setattr(WebFetchAction, "_resolve_validated_ip", _rv)
 
 
 # --- SSRF / scheme validation (no network) --------------------------------
@@ -182,6 +197,60 @@ async def test_plain_text_passed_through(monkeypatch):
     )
     out = await WebFetchAction().fetch("https://example.com/robots.txt")
     assert "just some text" in out
+
+
+async def test_fetch_pins_connection_to_validated_ip(monkeypatch):
+    """The request connects to the validated IP, but keeps the original Host
+    header and SNI — closing the DNS-rebinding window. AUDIT-actions M17."""
+    _allow_all_hosts(monkeypatch, pin_ip="93.184.216.34")
+    _install_client(
+        monkeypatch,
+        [
+            _Resp(
+                headers={"content-type": "text/html"},
+                content=b"<html><body><main>ok</main></body></html>",
+            )
+        ],
+    )
+    out = await WebFetchAction().fetch("https://example.com/path")
+    assert out.startswith("# Source:")
+
+    req = _LAST_REQUESTS[-1]
+    # Connected to the pinned IP...
+    assert str(req.url).startswith("https://93.184.216.34")
+    # ...but the Host header and TLS SNI are the real hostname.
+    assert req.headers.get("Host") == "example.com"
+    assert req.extensions.get("sni_hostname") == "example.com"
+
+
+async def test_fetch_without_pin_uses_original_url(monkeypatch):
+    """When no pin IP is available (e.g. allow_private_hosts), connect normally —
+    no IP rewrite, no SNI override."""
+    _allow_all_hosts(monkeypatch, pin_ip=None)
+    _install_client(
+        monkeypatch,
+        [_Resp(headers={"content-type": "text/plain"}, content=b"ok")],
+    )
+    await WebFetchAction().fetch("https://example.com/x")
+    req = _LAST_REQUESTS[-1]
+    assert str(req.url) == "https://example.com/x"
+    assert "sni_hostname" not in req.extensions
+
+
+async def test_redirect_repins_each_hop(monkeypatch):
+    """Each redirect hop is re-validated AND re-pinned."""
+    _allow_all_hosts(monkeypatch, pin_ip="93.184.216.34")
+    _install_client(
+        monkeypatch,
+        [
+            _Resp(status=302, headers={"location": "https://example.com/final"}),
+            _Resp(headers={"content-type": "text/plain"}, content=b"done"),
+        ],
+    )
+    await WebFetchAction().fetch("https://example.com/start")
+    # Two requests built, both pinned to the validated IP.
+    assert len(_LAST_REQUESTS) == 2
+    assert all(str(r.url).startswith("https://93.184.216.34") for r in _LAST_REQUESTS)
 
 
 async def test_redirect_to_private_host_blocked(monkeypatch):
