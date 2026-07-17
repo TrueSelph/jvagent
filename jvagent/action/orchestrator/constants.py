@@ -39,11 +39,67 @@ DECISION_RESERVED_KEYS = frozenset(
 # deployment and could otherwise hijack egress or coerce tool-chaining.
 # MCP tools are surfaced as ``mcp_{server}__{tool}`` (see mcp_action.get_tools).
 MCP_TOOL_NAME_PREFIX = "mcp_"
+CONTRIB_TOOL_NAME_PREFIX = "contrib_"
+
+# Positive allowlist for snake_case / namespaced tools that may emit directives.
+# InteractAction class-name tools (PascalCase, no ``__``) remain trusted.
+_TRUSTED_DIRECTIVE_EXACT = frozenset(
+    {
+        "reply",
+        "use_skill",
+        "find_tool",
+        "clarify",
+        "memory_get",
+        "memory_set",
+        "memory_append",
+        "memory_search",
+        "memory_delete",
+    }
+)
+# Namespaced first-party tools (``ns__tool``) that legitimately emit
+# directives. Kept generic here (no cross-subsystem literals); owning
+# subsystems declare their own namespace via
+# ``register_trusted_directive_prefix`` at load time (dependency inversion —
+# the orchestrator carries no knowledge of specific plugins).
+_TRUSTED_DIRECTIVE_PREFIXES_STATIC = ("orchestrator__",)
+_TRUSTED_DIRECTIVE_PREFIXES_DYNAMIC: set = set()
+
+
+def register_trusted_directive_prefix(prefix: str) -> None:
+    """Declare a ``ns__`` tool namespace whose results may carry directives.
+
+    Owning subsystems (e.g. a flow plugin whose tool results deliver
+    ``next_tool`` / ``response_directive``) call this at load time so the
+    orchestrator trusts them without hardcoding their names.
+    """
+    if prefix and str(prefix).strip():
+        _TRUSTED_DIRECTIVE_PREFIXES_DYNAMIC.add(str(prefix).strip())
 
 
 def is_untrusted_directive_source(tool_name: str) -> bool:
-    """True if a raw result from *tool_name* must not be parsed for directives."""
-    return bool(tool_name) and str(tool_name).startswith(MCP_TOOL_NAME_PREFIX)
+    """True if a raw result from *tool_name* must not be parsed for directives.
+
+    Untrusted: ``mcp_*``, ``contrib_*``, and unknown ``ns__tool`` namespaces.
+    Trusted: allowlisted core tools, registered first-party ``ns__`` namespaces,
+    PascalCase IA tools, and simple first-party snake_case names (no ``__``).
+    """
+    if not tool_name:
+        return False
+    name = str(tool_name)
+    if name.startswith(MCP_TOOL_NAME_PREFIX):
+        return True
+    if name.startswith(CONTRIB_TOOL_NAME_PREFIX):
+        return True
+    if name in _TRUSTED_DIRECTIVE_EXACT:
+        return False
+    if any(name.startswith(p) for p in _TRUSTED_DIRECTIVE_PREFIXES_STATIC):
+        return False
+    if any(name.startswith(p) for p in _TRUSTED_DIRECTIVE_PREFIXES_DYNAMIC):
+        return False
+    # Unknown namespaced tools (contrib packages often use ``pkg__tool``).
+    if "__" in name:
+        return True
+    return False
 
 
 # Backward-compatible aliases for tests and internal imports.

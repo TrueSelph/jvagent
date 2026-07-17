@@ -192,10 +192,21 @@ async def reply_publish_endpoint(
     agent, bus = await _get_agent_and_bus(agent_id)
     await _authorize_session(agent, uid, bound_session_id, session_id)
 
+    # Bind publish identity to the authenticated caller — never trust a
+    # caller-supplied user_id (agent-attributed spoof).
+    if user_id is not None and str(user_id).strip() and str(user_id).strip() != uid:
+        from jvspatial.api.exceptions import AuthorizationError
+
+        raise AuthorizationError(
+            message="user_id does not match authenticated identity",
+            details={"agent_id": agent_id},
+        )
+    publish_user_id = uid
+
     logger.info(
         "reply/publish: agent=%s user=%s session=%s",
         agent_id,
-        uid,
+        publish_user_id,
         session_id,
     )
 
@@ -204,7 +215,7 @@ async def reply_publish_endpoint(
         content=message,
         channel="default",
         stream=False,
-        user_id=user_id,
+        user_id=publish_user_id,
         streaming_complete=True,
     )
     return {

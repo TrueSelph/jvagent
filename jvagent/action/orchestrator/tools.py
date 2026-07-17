@@ -121,11 +121,21 @@ def render_tools_section(tools: List[Any], *, lean: bool = False) -> str:
     return body
 
 
+# Cap replay into the model prompt — unbounded observations blow context.
+MAX_OBSERVATIONS_IN_PROMPT = 12
+
+
 def render_observations_section(observations: List[Dict[str, Any]]) -> str:
     if not observations:
         return "(none yet)"
     lines: List[str] = []
-    for obs in observations:
+    truncated = 0
+    view = observations
+    if len(view) > MAX_OBSERVATIONS_IN_PROMPT:
+        truncated = len(view) - MAX_OBSERVATIONS_IN_PROMPT
+        view = view[-MAX_OBSERVATIONS_IN_PROMPT:]
+        lines.append(f"(…{truncated} earlier tool results omitted)")
+    for obs in view:
         tool = obs.get("tool", "")
         args = obs.get("args", {})
         result = obs.get("observation", "")

@@ -338,7 +338,7 @@ Install on agents that need scheduled or event-triggered follow-ups:
 | `tick_interval` | `"every 2 minutes"` | `@on_schedule` expression |
 | `max_parallel_conversations` | `5` | Concurrent dispatches per tick |
 | `default_max_attempts` | `3` | Retry ceiling when spec omits `max_attempts` |
-| `terminal_ttl_days` | `0` | When `> 0`, prune terminal `PROACTIVE` rows older than N days on each tick |
+| `terminal_ttl_days` | `30` | Prune terminal `PROACTIVE` rows older than N days on each tick; `0` disables |
 
 **Scheduler:** jvagent bootstraps jvspatial `SchedulerService` in `pre_startup_bootstrap` when `server.scheduler_enabled` is true or any agent installs `task_monitor`. Env: `JVSPATIAL_SCHEDULER_ENABLED`, `JVSPATIAL_SCHEDULER_INTERVAL`. Serverless: use `GET /api/proactive/tick/{agent_id}` (external cron). Detail: [`docs/task-tracking.md`](../../docs/task-tracking.md).
 

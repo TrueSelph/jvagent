@@ -43,6 +43,9 @@ STEP_STATUSES = frozenset({"pending", "in_progress", "done", "failed", "skipped"
 _TASK_TERMINAL = frozenset({"completed", "failed", "cancelled"})
 _STEP_TERMINAL = frozenset({"done", "failed", "skipped"})
 
+# Cap observability event lists on tasks/steps (Conversation.tasks growth).
+MAX_TASK_EVENTS = 200
+
 # ------------------------------------------------------------------
 # Exceptions
 # ------------------------------------------------------------------
@@ -369,6 +372,8 @@ class StepHandle:
                 "details": dict(details or {}),
             }
         )
+        if len(events) > MAX_TASK_EVENTS:
+            events = events[-MAX_TASK_EVENTS:]
         self._step.data["_events"] = events
         self._step._touch()
         await self._store._persist_step(self._step, self._task_id)
@@ -679,7 +684,8 @@ class TaskHandle:
         """Append an observability log entry to the task's data bag.
 
         Structured events (thinking, tool_call, etc.) are appended to a
-        ``_events`` list inside ``task.data``.
+        ``_events`` list inside ``task.data``. Kept to the last
+        ``MAX_TASK_EVENTS`` entries to bound Conversation document growth.
         """
         events = list(self._task.data.get("_events") or [])
         events.append(
@@ -690,6 +696,8 @@ class TaskHandle:
                 "details": dict(details or {}),
             }
         )
+        if len(events) > MAX_TASK_EVENTS:
+            events = events[-MAX_TASK_EVENTS:]
         self._task.data["_events"] = events
         self._task._touch()
         await self._store._persist_task(self._task)
@@ -967,29 +975,56 @@ class TaskStore:
         return handle
 
     async def claim_proactive(self, task_id: str, lease_id: str) -> bool:
-        """Transition pending → active with a dispatch lease."""
+        """Transition pending → active with a dispatch lease (CAS).
+
+        Re-reads the conversation under lock so two workers cannot both claim
+        the same pending task (check-then-write race).
+        """
         from jvagent.memory.task_eligibility import conversation_has_blockers
         from jvagent.memory.task_proactive import PROACTIVE_TASK_TYPE, ProactiveTaskSpec
 
         if conversation_has_blockers(self):
             return False
 
-        handle = self.get(task_id)
-        if handle is None:
-            return False
-        if handle.task_type != PROACTIVE_TASK_TYPE or handle.status != "pending":
-            return False
+        conv_id = getattr(self._conversation, "id", None)
         try:
-            spec = ProactiveTaskSpec.from_task_handle(handle)
-        except ValueError:
-            return False
-        spec.dispatch_lease_id = lease_id
-        spec.dispatch_claimed_at = _now_iso()
-        handle._task.data = spec.to_data()
-        handle._task.transition("active")
-        await self._persist_task(handle._task)
-        await self._emit_task_callback(handle._task, "updated")
-        return True
+            from jvagent.memory.distributed_conversation_lock import (
+                conversation_mutation_lock,
+            )
+        except ImportError:
+            from contextlib import asynccontextmanager
+
+            @asynccontextmanager
+            async def conversation_mutation_lock(_id):  # type: ignore
+                yield
+
+        async with conversation_mutation_lock(conv_id or ""):
+            # Refresh conversation.tasks from DB before CAS.
+            if conv_id:
+                from jvagent.memory.conversation import Conversation
+
+                fresh = await Conversation.get(conv_id)
+                if fresh is not None:
+                    self._conversation = fresh
+            handle = self.get(task_id)
+            if handle is None:
+                return False
+            if handle.task_type != PROACTIVE_TASK_TYPE or handle.status != "pending":
+                return False
+            try:
+                spec = ProactiveTaskSpec.from_task_handle(handle)
+            except ValueError:
+                return False
+            # Reject if another worker already stamped a lease.
+            if getattr(spec, "dispatch_lease_id", None):
+                return False
+            spec.dispatch_lease_id = lease_id
+            spec.dispatch_claimed_at = _now_iso()
+            handle._task.data = spec.to_data()
+            handle._task.transition("active")
+            await self._persist_task(handle._task)
+            await self._emit_task_callback(handle._task, "updated")
+            return True
 
     async def requeue_proactive(self, task_id: str, reason: str) -> bool:
         """Transition active → pending and increment attempt_count."""

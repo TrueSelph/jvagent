@@ -149,6 +149,24 @@ async def test_publish_owner_allowed(monkeypatch):
     )
     assert result["ok"] is True
     bus.publish.assert_awaited()
+    assert bus.publish.await_args.kwargs["user_id"] == "alice"
+
+
+async def test_publish_rejects_foreign_user_id(monkeypatch):
+    from jvspatial.api.exceptions import AuthorizationError
+
+    _patch_tokens(monkeypatch, bearer_uid="alice")
+    _, bus = _install_agent(monkeypatch, conversation=SimpleNamespace(user_id="alice"))
+
+    with pytest.raises(AuthorizationError):
+        await reply_endpoints.reply_publish_endpoint(
+            _request({"authorization": "Bearer tok"}),
+            "a1",
+            message="hi",
+            user_id="victim",
+            session_id="s1",
+        )
+    bus.publish.assert_not_called()
 
 
 async def test_publish_requires_session_id(monkeypatch):

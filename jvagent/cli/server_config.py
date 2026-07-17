@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from jvspatial.api import Server
 from jvspatial.api.config_groups import (
@@ -500,7 +500,9 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         if log_db_path:
             os.environ["JVSPATIAL_LOG_DB_PATH"] = log_db_path
 
-        # Set DynamoDB logging database environment variables if using DynamoDB
+        # Set DynamoDB logging database environment variables if using DynamoDB.
+        # Pass credentials via initialize_logging_database(config=...) — never
+        # clobber process-wide AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY.
         if log_db_type == "dynamodb":
             if log_dynamodb_table_name:
                 os.environ["JVSPATIAL_LOG_DB_TABLE_NAME"] = log_dynamodb_table_name
@@ -508,13 +510,23 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
                 os.environ["JVSPATIAL_LOG_DB_REGION"] = log_dynamodb_region
             if log_dynamodb_endpoint_url:
                 os.environ["JVSPATIAL_LOG_DB_ENDPOINT_URL"] = log_dynamodb_endpoint_url
-            if log_dynamodb_access_key_id:
-                os.environ["AWS_ACCESS_KEY_ID"] = log_dynamodb_access_key_id
-            if log_dynamodb_secret_access_key:
-                os.environ["AWS_SECRET_ACCESS_KEY"] = log_dynamodb_secret_access_key
+
+        log_init_config: Optional[Dict[str, Any]] = None
+        if log_db_type == "dynamodb":
+            log_init_config = {
+                "enabled": True,
+                "db_type": "dynamodb",
+                "table_name": log_dynamodb_table_name,
+                "region_name": log_dynamodb_region,
+                "endpoint_url": log_dynamodb_endpoint_url,
+                "aws_access_key_id": log_dynamodb_access_key_id,
+                "aws_secret_access_key": log_dynamodb_secret_access_key,
+                "database_name": "logs",
+            }
 
         # Initialize with updated log_levels
         initialize_logging_database(
+            config=log_init_config,
             log_levels=log_levels,
         )
     else:

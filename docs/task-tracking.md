@@ -159,7 +159,7 @@ actions:
       enabled: true
       tick_interval: "every 2 minutes"
       max_parallel_conversations: 5
-      terminal_ttl_days: 0   # optional: prune old terminal PROACTIVE rows
+      terminal_ttl_days: 30  # prune terminal PROACTIVE rows older than N days; 0 disables
 ```
 
 The orchestrator reference agent at `examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml` includes this stack.

@@ -77,6 +77,16 @@ async def parse_sendgrid_inbound(form: FormData) -> List[InboundTuple]:
         logger.debug("SendGrid inbound: missing usable from address")
         return []
 
+    from jvagent.action.email_action.inbound.auth import assert_inbound_auth
+
+    # Reject forged From: require SPF + DKIM pass before minting a User.
+    if not assert_inbound_auth(
+        "sendgrid",
+        spf=_get_str("SPF") or _get_str("spf"),
+        dkim=_get_str("dkim"),
+    ):
+        return []
+
     subject = _get_str("subject").strip()
     text = _get_str("text").strip()
     html = _get_str("html").strip()

@@ -2,11 +2,11 @@
 
 import pytest
 
-from jvagent.action.whatsapp.modules.meta_api import MetaWhatsAppAPI
-from jvagent.action.whatsapp.utils.meta_webhook_dedup import (
+from jvagent.action.utils.meta_webhook_dedup import (
     clear_meta_wamid_cache,
     remember_meta_wamid,
 )
+from jvagent.action.whatsapp.modules.meta_api import MetaWhatsAppAPI
 
 from .test_meta_api import SAMPLE_TEXT_WEBHOOK, STATUS_ONLY_WEBHOOK
 

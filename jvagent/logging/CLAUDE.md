@@ -43,7 +43,7 @@ It does **not** own: per-interaction observability metrics (those live on `Inter
 1. **Logs DB is separate from main DB.** Always: `get_logging_service(database_name="logs")`. Don't accidentally use the main jvspatial context.
 2. **`INTERACTION` level must be registered before any module that emits at that level imports.** `service.py` handles this; don't reorder.
 3. **`Interaction.observability_metrics` is the per-interaction aggregator.** Other code SHOULD merge events into it rather than emit standalone log records, so they're recoverable per interaction.
-4. **Log retention is configured via `App.log_retention_days`** ([`core/app.py:65`](../core/app.py)) — default 60 days. Long-running deploys should set this lower to bound storage.
+4. **Log retention is enforced via `App.log_retention_days`** ([`core/app.py:65`](../core/app.py)) — default 60 days. `TaskMonitor.tick` calls [`logging/retention.py`](retention.py) `purge_logs_past_retention`. Set to **`0` to disable** purge (unbounded growth — document intentionally).
 
 ---
 
@@ -76,7 +76,7 @@ pytest tests/logging/ -v   # if exists
 | Forgetting `preserve_handler_class_names=["DBLogHandler", "StartupLogCounter"]` when reconfiguring logging | Custom handlers drop; logs go to stderr only. See `cli/main.py:34`. |
 | Querying logs DB with main jvspatial context | Misses. Use `get_logging_service(database_name="logs")`. |
 | Emitting massive JSON blobs in log messages | DB pressure; storage growth. Use `observability_metrics` for structured per-interaction data. |
-| Setting `App.log_retention_days = 0` | Logs purged immediately. Use a reasonable value or disable retention by leaving large. |
+| Setting `App.log_retention_days = 0` | Disables purge (logs grow forever). Use a positive value in production. |
 | Logging inside `_run_background_actions` without try/except | Failures propagate. The wrapper already catches; don't double-handle. |
 
 ---

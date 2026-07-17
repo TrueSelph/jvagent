@@ -726,6 +726,10 @@ class Action(Node):
                 await self.on_enable()
                 self.enabled = True
                 await self.save()
+                if self.agent_id:
+                    from jvagent.core.cache import invalidate_action_cache
+
+                    await invalidate_action_cache(self.agent_id)
             except Exception as e:
                 # Log to console (database logging handled automatically by DBLogHandler)
                 logger.error(  # type: ignore[call-arg]  # details= via _logging_compat
@@ -755,6 +759,10 @@ class Action(Node):
                 await self.on_disable()
                 self.enabled = False
                 await self.save()
+                if self.agent_id:
+                    from jvagent.core.cache import invalidate_action_cache
+
+                    await invalidate_action_cache(self.agent_id)
             except Exception as e:
                 # Log to console (database logging handled automatically by DBLogHandler)
                 logger.error(  # type: ignore[call-arg]  # details= via _logging_compat

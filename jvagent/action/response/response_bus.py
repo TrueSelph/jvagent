@@ -33,6 +33,33 @@ class AdhocAccumulator:
     segment_id: Optional[str] = None
     relay_to_adapters: bool = False
     started_at: float = field(default_factory=time.time)
+    last_activity: float = field(default_factory=time.time)
+
+
+# Process-level bus registry — survives Agent cache rematerialize (TTL churn).
+_agent_bus_registry: Dict[str, "ResponseBus"] = {}
+_agent_bus_lock = asyncio.Lock()
+
+
+async def get_agent_response_bus(agent_id: str) -> "ResponseBus":
+    """Return the process-scoped ResponseBus for ``agent_id`` (create once)."""
+    key = str(agent_id or "").strip()
+    if not key:
+        return ResponseBus()
+    async with _agent_bus_lock:
+        bus = _agent_bus_registry.get(key)
+        if bus is None:
+            bus = ResponseBus()
+            _agent_bus_registry[key] = bus
+        return bus
+
+
+def clear_agent_response_bus(agent_id: Optional[str] = None) -> None:
+    """Test helper: drop one or all registry entries."""
+    if agent_id is None:
+        _agent_bus_registry.clear()
+        return
+    _agent_bus_registry.pop(str(agent_id), None)
 
 
 # Forward declaration for type hints
@@ -64,14 +91,17 @@ class ResponseBus:
     # Cleanup configuration
     CLEANUP_INTERVAL_SECONDS = 60  # Max once per 60s for lazy cleanup
     BUFFER_TTL_SECONDS = 3600  # 1 hour TTL for message/observability buffers
-    ACCUMULATOR_TIMEOUT_SECONDS = 120  # 2 min timeout for incomplete streams
+    # Idle timeout (no chunks) — long streams stay alive while active.
+    ACCUMULATOR_IDLE_SECONDS = 120
+    SESSION_QUEUE_IDLE_SECONDS = 3600  # Evict idle session queues with no subscribers
 
     def __init__(self):
         """Initialize ResponseBus (agent-scoped instance).
 
-        Each agent creates one ResponseBus via Agent.get_response_bus().
+        Prefer :func:`get_agent_response_bus` so the bus survives Agent cache TTL.
         """
         self._session_queues: Dict[str, List[ResponseMessage]] = {}
+        self._session_queue_activity: Dict[str, float] = {}
         self._subscribers: Dict[str, List[Callable[[ResponseMessage], Any]]] = {}
         # O(1) subscriber lookup set: {session_id: {id(callback), ...}}
         # Used for fast duplicate checking during subscribe()
@@ -125,22 +155,24 @@ class ResponseBus:
             return
         self._last_cleanup_time = now
 
-        # Evict expired accumulators (incomplete streams older than timeout)
+        # Evict idle accumulators (no chunk activity — not wall-clock from start)
         expired_acc = [
             k
             for k, v in self._adhoc_accumulation.items()
-            if now - v.started_at > self.ACCUMULATOR_TIMEOUT_SECONDS
+            if now - getattr(v, "last_activity", v.started_at)
+            > self.ACCUMULATOR_IDLE_SECONDS
         ]
         for k in expired_acc:
-            logger.debug(f"Evicting expired accumulator for interaction {k}")
+            logger.debug(f"Evicting idle accumulator for interaction {k}")
             self._adhoc_accumulation.pop(k, None)
         expired_thought_acc = [
             k
             for k, v in self._thought_accumulation.items()
-            if now - v.started_at > self.ACCUMULATOR_TIMEOUT_SECONDS
+            if now - getattr(v, "last_activity", v.started_at)
+            > self.ACCUMULATOR_IDLE_SECONDS
         ]
         for k in expired_thought_acc:
-            logger.debug("Evicting expired thought accumulator for interaction %s", k)
+            logger.debug("Evicting idle thought accumulator for interaction %s", k)
             self._thought_accumulation.pop(k, None)
 
         # Evict expired buffers (interactions never finalized within TTL)
@@ -153,6 +185,18 @@ class ResponseBus:
             logger.debug(f"Evicting expired buffers for interaction {k}")
             self._message_buffers.pop(k, None)
             self._buffer_timestamps.pop(k, None)
+
+        # Evict idle session queues with no live subscribers
+        idle_sessions = [
+            sid
+            for sid, ts in self._session_queue_activity.items()
+            if now - ts > self.SESSION_QUEUE_IDLE_SECONDS
+            and not self._subscribers.get(sid)
+        ]
+        for sid in idle_sessions:
+            self._session_queues.pop(sid, None)
+            self._session_queue_activity.pop(sid, None)
+            self._subscriber_ids.pop(sid, None)
 
     def _get_or_create_accumulator(
         self,
@@ -215,6 +259,7 @@ class ResponseBus:
             self._session_queues[session_id] = []
         queue = self._session_queues[session_id]
         queue.append(message)
+        self._session_queue_activity[session_id] = time.time()
         if len(queue) > self._max_session_queue_size:
             queue.pop(0)
         if session_id in self._subscribers:
@@ -399,6 +444,7 @@ class ResponseBus:
             )
             for chunk in chunk_text_by_lm_tokens(content):
                 acc.chunks.append(chunk)
+                acc.last_activity = time.time()
                 if (
                     message_category == "user"
                     and not transient
@@ -483,6 +529,7 @@ class ResponseBus:
                 relay_to_adapters=relay_to_adapters,
             )
             acc.chunks.append(content)
+            acc.last_activity = time.time()
 
             now = await self._get_now()
             if not streaming_complete:
