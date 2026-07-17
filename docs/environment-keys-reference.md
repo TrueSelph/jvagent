@@ -68,6 +68,7 @@ See [Integration environment variables](integrations-environment.md#jvforge-page
 - `JVAGENT_TASK_COMPLETED_WEBHOOK_URL` - Outbound webhook on task complete.
 - `JVAGENT_TASK_FAILED_WEBHOOK_URL` - Outbound webhook on task fail.
 - `JVAGENT_TASK_CANCELLED_WEBHOOK_URL` - Outbound webhook on task cancel.
+- `JVAGENT_TASK_BLOCKER_STALE_SECONDS` - Lease after which a non-terminal SKILL/PROACTIVE task stops suppressing proactive dispatch (default `86400` = 24h; `0` disables — a blocker suppresses indefinitely). Guards against an orphaned task (crash/timeout) blocking proactive messages forever; the task itself is not cancelled.
 
 ### Performance and runtime behavior
 - `JVAGENT_ASSUME_YES` - When truthy, skips the `--purge` interactive confirmation prompt (same as passing `--yes`). `--purge` still requires `JVSPATIAL_ENVIRONMENT=development` set explicitly.

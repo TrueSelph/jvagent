@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, List, Optional
@@ -18,6 +19,44 @@ if TYPE_CHECKING:
 
 _SKILL_TASK_TYPE = "SKILL"
 _ACTIVE_BLOCKER_STATUSES = frozenset({"pending", "active"})
+
+# A pending/active SKILL task, or an active PROACTIVE spec task, suppresses
+# proactive dispatch (conversation_has_blockers). A crash, a serverless timeout,
+# or an abandoned flow can leave such a task non-terminal with no lease — and
+# nothing sweeps non-terminal tasks — so it would suppress proactive dispatch
+# FOREVER. Treat a blocker whose ``updated_at`` is older than this lease as
+# stale (non-blocking). This does NOT cancel the task — it only lifts the
+# proactive suppression; the flow still resumes when the user returns and its
+# ``updated_at`` is bumped on every transition/event, so a genuinely-active flow
+# never goes stale. AUDIT-memory MEDIUM (M11).
+_DEFAULT_BLOCKER_STALE_SECONDS = 24 * 60 * 60
+_BLOCKER_STALE_ENV = "JVAGENT_TASK_BLOCKER_STALE_SECONDS"
+
+
+def blocker_stale_seconds() -> int:
+    """Lease after which a non-terminal task stops suppressing proactive dispatch.
+
+    ``0`` (or negative) disables the lease — blockers suppress indefinitely
+    (legacy behavior). Unset/invalid falls back to the 24h default.
+    """
+    raw = os.environ.get(_BLOCKER_STALE_ENV, "").strip()
+    if not raw:
+        return _DEFAULT_BLOCKER_STALE_SECONDS
+    try:
+        return int(raw)
+    except ValueError:
+        return _DEFAULT_BLOCKER_STALE_SECONDS
+
+
+def _is_stale_blocker(handle: Any, now: datetime) -> bool:
+    """True when *handle* is past its blocker lease (so it must not block)."""
+    ttl = blocker_stale_seconds()
+    if ttl <= 0:
+        return False
+    updated = parse_instant(getattr(handle, "updated_at", "") or "")
+    if updated is None:
+        return False  # no timestamp → can't age it out; keep blocking
+    return (now - updated).total_seconds() > ttl
 
 
 def parse_instant(value: Optional[str]) -> Optional[datetime]:
@@ -99,17 +138,22 @@ def is_event_eligible(
     return False
 
 
-def conversation_has_blockers(store: "TaskStore") -> bool:
+def conversation_has_blockers(
+    store: "TaskStore", *, now: Optional[datetime] = None
+) -> bool:
+    now_dt = now or datetime.now(timezone.utc)
     for handle in store.list():
         status = str(getattr(handle, "status", "") or "")
         task_type = str(getattr(handle, "task_type", "") or "").upper()
-        if task_type == _SKILL_TASK_TYPE and status in _ACTIVE_BLOCKER_STATUSES:
-            return True
-        if (
+        blocking = (
+            task_type == _SKILL_TASK_TYPE and status in _ACTIVE_BLOCKER_STATUSES
+        ) or (
             task_type == PROACTIVE_TASK_TYPE
             and status == "active"
             and is_proactive_spec_task(handle)
-        ):
+        )
+        # A stale (orphaned) blocker must not suppress proactive dispatch forever.
+        if blocking and not _is_stale_blocker(handle, now_dt):
             return True
     return False
 
@@ -129,10 +173,10 @@ def pick_next_proactive_task(
     now: Optional[datetime] = None,
 ) -> Optional["TaskHandle"]:
     """Return the highest-priority eligible pending PROACTIVE task, if any."""
-    if conversation_has_blockers(store):
+    now_dt = now or datetime.now(timezone.utc)
+    if conversation_has_blockers(store, now=now_dt):
         return None
 
-    now_dt = now or datetime.now(timezone.utc)
     candidates: List[Any] = []
     for handle in store.list(status="pending"):
         if not is_proactive_spec_task(handle):
