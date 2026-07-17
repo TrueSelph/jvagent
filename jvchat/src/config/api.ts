@@ -13,6 +13,9 @@ import {
   setRefreshToken,
   isTokenExpired,
   clearAuthSession,
+  getInteractSessionToken,
+  setInteractSessionToken,
+  removeInteractSessionToken,
 } from '../utils/storage'
 import type {
   LoginRequest,
@@ -678,16 +681,108 @@ class ApiClient {
    * token). Harmless when the server runs public-auth `off`; the endpoint stays
    * usable with no token at all.
    */
-  private _interactAuthHeaders(): Record<string, string> {
+  private _interactAuthHeaders(sessionId?: string): Record<string, string> {
+    const headers: Record<string, string> = {}
     try {
       const token = getToken()
       if (token && !isTokenExpired(token)) {
-        return { Authorization: `Bearer ${token}` }
+        headers.Authorization = `Bearer ${token}`
       }
     } catch {
       // best-effort; the endpoint remains anonymous-capable
     }
-    return {}
+    try {
+      // Mode B (ADR-0020): resend the minted session capability token so an
+      // existing conversation can be resumed when public auth is `required`.
+      const sessionToken = getInteractSessionToken(sessionId)
+      if (sessionToken) {
+        headers['X-Session-Token'] = sessionToken
+      }
+    } catch {
+      // best-effort; the endpoint remains anonymous-capable
+    }
+    return headers
+  }
+
+  /** Persist the Mode B session token returned by interact/refresh responses. */
+  private _captureInteractSessionToken(sessionId?: string, token?: string): void {
+    if (!sessionId || !token) return
+    try {
+      setInteractSessionToken(sessionId, token)
+    } catch {
+      // best-effort; losing the token only means the next resume re-negotiates
+    }
+  }
+
+  /**
+   * Refresh the Mode B interact session token for a session
+   * (`POST /agents/{id}/interact/session/refresh`). Returns the new token, or
+   * null when there is nothing to refresh / the server declines (e.g. public
+   * auth `off`, token revoked or beyond the grace window).
+   */
+  async refreshInteractSession(agentId: string, sessionId: string): Promise<string | null> {
+    const current = getInteractSessionToken(sessionId)
+    if (!current) return null
+
+    for (const base of this.baseUrls) {
+      for (const prefix of ['/api', '']) {
+        const url = `${base}${prefix}/agents/${agentId}/interact/session/refresh`
+        try {
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Session-Token': current,
+            },
+            body: JSON.stringify({}),
+          })
+
+          if (response.status === 404) {
+            continue // older server or other prefix — try next
+          }
+          if (response.status === 401 || response.status === 403) {
+            // Token revoked/expired beyond grace: drop it so the next message
+            // starts a fresh session instead of resending a dead credential.
+            console.warn('Interact session token rejected by refresh; clearing stored token')
+            removeInteractSessionToken(sessionId)
+            return null
+          }
+          if (!response.ok) {
+            continue
+          }
+
+          const payload = await response.json()
+          const data = payload?.data && payload?.success ? payload.data : payload
+          const newToken: string | undefined = data?.session_token
+          if (newToken) {
+            this._captureInteractSessionToken(data?.session_id || sessionId, newToken)
+            return newToken
+          }
+          return null
+        } catch (err) {
+          console.warn('Interact session refresh attempt failed:', err)
+          // network error — try next base/prefix
+        }
+      }
+    }
+    return null
+  }
+
+  /**
+   * Proactively refresh the stored session token before an interact call when
+   * it is expired or about to expire. Best-effort: on failure the call
+   * proceeds with whatever credential is available.
+   */
+  private async _ensureFreshInteractSession(agentId: string, sessionId?: string): Promise<void> {
+    if (!sessionId) return
+    try {
+      const stored = getInteractSessionToken(sessionId)
+      if (stored && isTokenExpired(stored)) {
+        await this.refreshInteractSession(agentId, sessionId)
+      }
+    } catch {
+      // best-effort only
+    }
   }
 
   async interact(
@@ -696,6 +791,8 @@ class ApiClient {
   ): Promise<InteractionResponse> {
     // Interact endpoint is anonymous - create a request without auth headers
     // Try /api/agents/{id}/interact first, fallback to /agents/{id}/interact, with baseURL fallbacks
+    // Renew the Mode B session token first if it is expired/expiring (ADR-0032).
+    await this._ensureFreshInteractSession(agentId, request.session_id)
     const response = await this._withFallback(async (baseURL) => {
         // Use fetch directly to avoid axios interceptor adding auth headers
         const url = `${baseURL}/api/agents/${agentId}/interact`
@@ -703,7 +800,7 @@ class ApiClient {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...this._interactAuthHeaders(),
+            ...this._interactAuthHeaders(request.session_id),
           },
           body: JSON.stringify(request),
         })
@@ -720,7 +817,7 @@ class ApiClient {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                ...this._interactAuthHeaders(),
+                ...this._interactAuthHeaders(request.session_id),
               },
               body: JSON.stringify(request),
             })
@@ -758,10 +855,13 @@ class ApiClient {
         return { data: await fetchResponse.json() }
     })
     // Handle both wrapped (success_response) and unwrapped responses
-    if (response.data.success && response.data.data) {
-      return response.data.data as InteractionResponse
-    }
-    return response.data as InteractionResponse
+    const result =
+      response.data.success && response.data.data
+        ? (response.data.data as InteractionResponse)
+        : (response.data as InteractionResponse)
+    // Persist the (re)minted Mode B session token for the next resume (ADR-0020).
+    this._captureInteractSessionToken(result?.session_id, result?.session_token)
+    return result
   }
 
   async streamInteract(
@@ -776,6 +876,23 @@ class ApiClient {
     const bases = this.baseUrls
     let lastError: any
 
+    // Renew the Mode B session token first if it is expired/expiring (ADR-0032).
+    await this._ensureFreshInteractSession(agentId, request.session_id)
+
+    // Persist the session token the server delivers on the SSE start chunk
+    // (ADR-0020) before handing the chunk to the caller.
+    const handleChunk = (data: any) => {
+      if (
+        data &&
+        typeof data === 'object' &&
+        data.session_token &&
+        typeof data.session_id === 'string'
+      ) {
+        this._captureInteractSessionToken(data.session_id, data.session_token)
+      }
+      onChunk(data)
+    }
+
     for (const base of bases) {
       for (const prefix of ['/api', '']) {
         if (signal?.aborted) {
@@ -787,9 +904,10 @@ class ApiClient {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              // Mode A (ADR-0020): attach the login JWT when present; the
-              // endpoint stays anonymous-capable when there is none.
-              ...this._interactAuthHeaders(),
+              // Mode A/B (ADR-0020): attach the login JWT and/or the stored
+              // session capability token when present; the endpoint stays
+              // anonymous-capable when there is neither.
+              ...this._interactAuthHeaders(request.session_id),
             },
             body: JSON.stringify({ ...request, stream: true }),
             signal,
@@ -842,7 +960,7 @@ class ApiClient {
                     const dataStr = line.substring(5).trim()
                     try {
                       data = JSON.parse(dataStr)
-                      onChunk(data)
+                      handleChunk(data)
                     } catch (e) {
                       console.error('Failed to parse SSE chunk:', e)
                     }
@@ -903,10 +1021,12 @@ class ApiClient {
       await this._withFallback(async (baseURL) => {
         await this.client.delete(endpoint, { baseURL })
       })
+      removeInteractSessionToken(sessionId)
     } catch (error: any) {
       // Handle 404 as non-critical (conversation might not exist on server)
       if (error.response?.status === 404) {
         console.warn(`Conversation ${sessionId} not found on server (may have been deleted already)`)
+        removeInteractSessionToken(sessionId)
         return
       }
       // Re-throw other errors
