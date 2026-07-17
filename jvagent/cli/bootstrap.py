@@ -43,6 +43,23 @@ async def bootstrap_application_graph(
     if app_root is None:
         app_root = os.getcwd()
 
+    # Serialize the graph build cluster-wide so concurrent workers / replicas /
+    # serverless invocations don't each race check-then-create and duplicate the
+    # App / Agents / Action nodes (the default JSON adapter enforces no
+    # uniqueness). One builds; the rest wait then read the finished, idempotent
+    # graph. Keyed on the app id (or the app root when the id isn't set yet).
+    # Without a Redis/DynamoDB lock configured this is only in-process. ADR-0033.
+    from jvagent.core.distributed_lease import distributed_lease
+
+    lease_key = f"bootstrap:{get_jvagent_app_id() or os.path.abspath(app_root)}"
+    async with distributed_lease(lease_key):
+        await _bootstrap_application_graph_locked(update_mode, app_root)
+
+
+async def _bootstrap_application_graph_locked(
+    update_mode: Optional[str], app_root: str
+) -> None:
+    """Body of :func:`bootstrap_application_graph`; run under the bootstrap lease."""
     bootstrap_log = BootstrapLogger("Bootstrap")
 
     app_yaml_path = os.path.join(app_root, "app.yaml")
