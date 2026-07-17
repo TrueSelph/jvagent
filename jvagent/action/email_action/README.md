@@ -5,7 +5,8 @@ Send transactional email and receive inbound mail on channel `email`. The action
 ## Providers
 
 - **`gmail` (default)** — Outbound via Gmail API (OAuth on **`GoogleGmailAction`** on the same agent). Inbound via the **email webhook**: each POST with `api_key` runs **one** inbox fetch (`users.messages.list` / `get` with `format=raw`). The first message matching `gmail_list_query` that passes access control is marked read, then processed. The same run is available for admins as `POST /api/actions/{action_id}/email/gmail/fetch-inbox-once`. The POST body is ignored for Gmail. Inbound **interaction utterance** is the email **subject** (or `(no subject)`); **plain/HTML body** is stored on `email_inbound.BodyPlain` / `BodyHtml`, and small inline **images** are added to `image_urls` for vision (same idea as WhatsApp). Persona appends the body to the model prompt when `channel=email`.
-- **`sendgrid`** — Outbound via Mail Send v3; inbound via **SendGrid Inbound Parse** posting to `/api/email/interact/webhook/{agent_id}`.
+- **`sendgrid`** — Outbound via Mail Send v3; inbound via **SendGrid Inbound Parse** posting to `/api/email/interact/webhook/{agent_id}`. Inbound messages are accepted only when SendGrid reports **SPF=pass** and **DKIM pass** (forged `From` is dropped). Gmail/Outlook poll paths trust the authenticated API mailbox, not SMTP headers.
+- **`POST .../email/send`** requires **admin** role (same as other email admin endpoints).
 
 ## Environment variables
 

@@ -7,8 +7,8 @@ import pytest
 from jvspatial.api.integrations.webhooks.utils import generate_hmac_signature
 from starlette.requests import Request
 
+from jvagent.action.utils.meta_webhook_dedup import clear_meta_wamid_cache
 from jvagent.action.whatsapp.endpoints import whatsapp_interact
-from jvagent.action.whatsapp.utils.meta_webhook_dedup import clear_meta_wamid_cache
 
 from .test_meta_api import SAMPLE_TEXT_WEBHOOK
 

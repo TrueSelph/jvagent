@@ -160,6 +160,8 @@ async def test_parse_sendgrid_inbound_form():
             ("subject", "SG subject"),
             ("text", "SG body"),
             ("headers", json.dumps(headers)),
+            ("SPF", "pass"),
+            ("dkim", "{@example.com : pass}"),
         ]
     )
     rows = await parse_sendgrid_inbound(fd)
@@ -183,6 +185,8 @@ async def test_parse_sendgrid_inbound_html_sets_body_fields():
             ("from", "dan@example.com"),
             ("subject", "H"),
             ("html", "<p>Hi HTML</p>"),
+            ("SPF", "pass"),
+            ("dkim", "{@example.com : pass}"),
         ]
     )
     rows = await parse_sendgrid_inbound(fd)
@@ -190,6 +194,41 @@ async def test_parse_sendgrid_inbound_html_sets_body_fields():
     _uid, _utt, data = rows[0]
     assert "<p>Hi HTML</p>" in (data["email_inbound"].get("BodyHtml") or "")
     assert "Hi HTML" in (data["email_inbound"].get("BodyPlain") or "")
+
+
+@pytest.mark.asyncio
+async def test_parse_sendgrid_inbound_rejects_spf_fail():
+    fd = FormData(
+        [
+            ("from", "victim@example.com"),
+            ("subject", "phish"),
+            ("text", "please click"),
+            ("SPF", "fail"),
+            ("dkim", "{@example.com : pass}"),
+        ]
+    )
+    assert await parse_sendgrid_inbound(fd) == []
+
+
+@pytest.mark.asyncio
+async def test_parse_sendgrid_inbound_rejects_missing_auth():
+    fd = FormData(
+        [
+            ("from", "victim@example.com"),
+            ("subject", "phish"),
+            ("text", "please click"),
+        ]
+    )
+    assert await parse_sendgrid_inbound(fd) == []
+
+
+def test_assert_inbound_auth_gmail_outlook_trusted():
+    from jvagent.action.email_action.inbound.auth import assert_inbound_auth
+
+    assert assert_inbound_auth("gmail") is True
+    assert assert_inbound_auth("outlook") is True
+    assert assert_inbound_auth("sendgrid", spf="pass", dkim="{@x : pass}") is True
+    assert assert_inbound_auth("sendgrid", spf="fail", dkim="{@x : pass}") is False
 
 
 def test_email_action_gmail_config_issues(monkeypatch):

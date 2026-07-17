@@ -730,9 +730,15 @@ async def messenger_interact_webhook_events(request: Request, agent_id: str) -> 
                 sender_name=merged_event.get("sender_name") or None,
             )
 
+    from jvagent.action.utils.meta_webhook_dedup import remember_meta_wamid
+
     for event in events:
         sender = event.get("sender_id", "")
         if not sender:
+            continue
+        mid = (event.get("mid") or "").strip()
+        if mid and not remember_meta_wamid(mid):
+            logger.debug("Messenger duplicate mid ignored: %s", mid)
             continue
         if window <= 0:
             await handle_merged_messenger_event(event)
