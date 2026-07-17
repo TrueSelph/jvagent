@@ -57,6 +57,7 @@ from jvagent.action.orchestrator.walk_path import OrchestratorWalkPathMixin
 active_flow_owner = continuation.active_flow_owner
 active_flow_note = continuation.active_flow_note
 active_plan = continuation.active_plan
+cancel_orphan_flow_tasks = continuation.cancel_orphan_flow_tasks
 clear_locked_flow_error = continuation.clear_locked_flow_error
 note_locked_flow_error = continuation.note_locked_flow_error
 plan_resume_note = continuation.plan_resume_note

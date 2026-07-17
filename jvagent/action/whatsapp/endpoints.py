@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 import aiohttp
 from fastapi import HTTPException, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 from jvspatial import create_task
 from jvspatial.api import endpoint
 from jvspatial.api.constants import APIRoutes
@@ -561,7 +561,13 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
                 logger.debug("Meta WhatsApp webhook JSON parse error: %s", e)
                 raise HTTPException(status_code=400, detail="Invalid JSON body")
             if is_flow_data_exchange_request(request.headers, request_data):
-                return whatsapp_action.handle_flow_data_exchange(request_data)
+                # Return a raw JSONResponse: the payload shape is {screen, data}
+                # (Meta Flows contract), not this endpoint's declared
+                # {status, response} schema — letting FastAPI serialize it
+                # against the response model 500s the exchange.
+                return JSONResponse(
+                    content=whatsapp_action.handle_flow_data_exchange(request_data)
+                )
         else:
             await _authenticate_bridge_webhook_api_key(request)
             request_data = getattr(request.state, "parsed_payload", None)
