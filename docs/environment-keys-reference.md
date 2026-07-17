@@ -43,6 +43,7 @@ Use this split for new app descriptors:
 - `JVAGENT_INTERACT_PUBLIC_AUTH` - Public-endpoint session auth (ADR-0020): `off` (default, legacy), `log` (observe-only), `required` (enforce 401). Needs `JVSPATIAL_JWT_SECRET_KEY`.
 - `JVAGENT_INTERACT_TOKEN_TTL_SECONDS` - Mode B session capability token lifetime (default `604800` = 7 days). Tokens are re-minted on every interact turn and can be renewed without an utterance via `POST /agents/{id}/interact/session/refresh` (ADR-0032).
 - `JVAGENT_INTERACT_TOKEN_REFRESH_GRACE_SECONDS` - Post-expiry window in which an expired session token may still be exchanged at the refresh endpoint (default `604800` = 7 days; `0` disables — refresh then requires a still-valid token). Expired tokens are never accepted on `interact` itself.
+- `JVAGENT_TRUST_PROXY_HEADERS` - When `true`, `extract_client_ip` trusts `X-Forwarded-For`/`X-Real-IP`/`CF-Connecting-IP` for rate-limit bucketing. Default `false` (fail-safe): proxy headers are ignored and `request.client.host` is used. Enable ONLY behind a trusted reverse proxy that overwrites these headers.
 
 ### PageIndex
 - `JVAGENT_PAGEINDEX_DB_TYPE` - PageIndex backend type.
@@ -69,6 +70,7 @@ See [Integration environment variables](integrations-environment.md#jvforge-page
 - `JVAGENT_TASK_CANCELLED_WEBHOOK_URL` - Outbound webhook on task cancel.
 
 ### Performance and runtime behavior
+- `JVAGENT_ASSUME_YES` - When truthy, skips the `--purge` interactive confirmation prompt (same as passing `--yes`). `--purge` still requires `JVSPATIAL_ENVIRONMENT=development` set explicitly.
 - `JVAGENT_DISABLE_RUNTIME_PIP_INSTALL` - Disables runtime package installation for action deps.
 - `JVAGENT_ENABLE_PROFILING` - Enables profiling.
 - `JVAGENT_ENABLE_AGENT_CACHE` - Enables agent cache.
