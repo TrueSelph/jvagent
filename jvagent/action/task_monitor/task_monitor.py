@@ -312,12 +312,16 @@ class TaskMonitor(Action):
                                 return
 
                             if dry_run:
+                                # Dry-run must have NO side effects. Calling
+                                # handle.complete() here transitioned the picked
+                                # task pending -> completed, which Task.transition
+                                # rejects ("Cannot transition task from 'pending'")
+                                # — the error was swallowed as "dispatch failed"
+                                # and nothing was ever counted. Just report.
+                                # AUDIT-memory (M13).
                                 logger.info(
                                     "TaskMonitor dry-run: would dispatch %s",
                                     handle.id,
-                                )
-                                await handle.complete(
-                                    result="Dry-run proactive dispatch."
                                 )
                                 dispatched_count += 1
                                 return
