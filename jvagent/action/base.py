@@ -968,8 +968,15 @@ class Action(Node):
             if model_action and isinstance(model_action, LanguageModelAction):
                 return model_action
 
-        # Fallback: find first available LanguageModelAction
-        model_action = await self.get_action(LanguageModelAction)
+        # Fallback: find any available LanguageModelAction. This MUST be a
+        # base-class scan — get_action() resolves by exact class name via the
+        # type index, which only ever holds concrete provider names
+        # (OpenAILanguageModelAction, AnthropicLanguageModelAction, ...). No
+        # node is registered under the base name "LanguageModelAction", so
+        # get_action(LanguageModelAction) always missed and any agent without
+        # the specific model_action_type silently lost identity compose.
+        # AUDIT-actions HIGH.
+        model_action = await self.get_action_by_base_class(LanguageModelAction)
         if model_action:
             return model_action
 
