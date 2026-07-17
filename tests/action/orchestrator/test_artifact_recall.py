@@ -7,8 +7,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
@@ -17,8 +15,6 @@ from jvagent.action.orchestrator.uploads import (
     _RECALL_MAX_ARTIFACTS,
     _RECALL_MAX_CHARS,
 )
-
-pytestmark = pytest.mark.asyncio
 
 
 def _art(data, source="vision", tags=("image",)):

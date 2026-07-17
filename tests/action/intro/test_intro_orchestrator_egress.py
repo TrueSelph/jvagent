@@ -18,8 +18,6 @@ from jvagent.action.orchestrator.orchestrator_interact_action import (
 )
 from jvagent.action.reply.reply_action import ReplyAction
 
-pytestmark = pytest.mark.asyncio
-
 pytest_plugins = ["tests.action.orchestrator.conftest"]
 
 

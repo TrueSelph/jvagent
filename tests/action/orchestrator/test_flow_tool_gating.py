@@ -4,13 +4,9 @@ turns (fixing the 'interview always triggered' misroute)."""
 
 from __future__ import annotations
 
-import pytest
-
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
-
-pytestmark = pytest.mark.asyncio
 
 
 def _signup(flow_stub_cls):

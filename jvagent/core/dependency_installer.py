@@ -49,8 +49,31 @@ def install_pip_dependencies(
         )
         return False
 
-    # Filter out empty strings
-    dependencies = [dep.strip() for dep in dependencies if dep and dep.strip()]
+    # Filter out empty strings; reject pip option injection (specs starting with -).
+    raw_deps = [dep.strip() for dep in dependencies if dep and dep.strip()]
+    dependencies = []
+    for dep in raw_deps:
+        if dep.startswith("-"):
+            logger.error(
+                "Action %s: rejecting pip dependency that looks like an option: %r",
+                action_name,
+                dep,
+            )
+            return False
+        try:
+            from packaging.requirements import Requirement
+
+            dependencies.append(str(Requirement(dep)))
+        except Exception:
+            # Allow simple names / VCS URLs that Requirement rejects, but never options.
+            if any(c.isspace() for c in dep) and not dep.startswith(("git+", "http")):
+                logger.error(
+                    "Action %s: rejecting invalid pip dependency: %r",
+                    action_name,
+                    dep,
+                )
+                return False
+            dependencies.append(dep)
 
     if not dependencies:
         return True

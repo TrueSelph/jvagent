@@ -245,3 +245,17 @@ class TestTaskHandleAddEvent:
         assert len(events) == 2
         assert events[0]["details"]["tokens"] == 100
         assert events[1]["details"]["tokens"] == 200
+
+    @pytest.mark.asyncio
+    async def test_add_event_caps_at_max(self):
+        from jvagent.memory.task_store import MAX_TASK_EVENTS
+
+        store, conv = _make_store()
+        handle = await store.create(title="t", description="t")
+        await handle.start()
+        for i in range(MAX_TASK_EVENTS + 25):
+            await handle.add_event(event_type="thinking", iteration=i, details={"i": i})
+        events = conv.tasks[0]["data"].get("_events", [])
+        assert len(events) == MAX_TASK_EVENTS
+        assert events[0]["details"]["i"] == 25
+        assert events[-1]["details"]["i"] == MAX_TASK_EVENTS + 24

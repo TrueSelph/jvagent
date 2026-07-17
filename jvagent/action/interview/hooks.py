@@ -40,10 +40,16 @@ BUILTIN_HOOKS: Dict[str, Callable] = {
 
 _module_cache: Dict[str, Any] = {}
 
-# Model-only composition guidance lives after this marker in a directive. The
-# compose model reads it (it steers rendering); ReplyAction's literal-relay fast
-# path drops it so interview internals never reach the user.
+# Directive shape: message (before marker) + guidance block (after marker).
+# Guidance block = default paraphrase rules + optional author ``hint``.
+# ReplyAction receives the full directive string; it does not take hint= itself.
+# The compose model reads the guidance block; literal-relay drops it.
 _G = DIRECTIVE_GUIDANCE_MARKER
+
+_DEFAULT_GUIDANCE = (
+    "You may paraphrase slightly but keep the same intent. "
+    "Do not ask for other information in this reply."
+)
 
 # ── Lifecycle phases ─────────────────────────────────────────────────
 # The run a hook fires on. ``ctx.say`` only records on SAY_PHASES; on the others
@@ -113,34 +119,37 @@ def slim_hook_entry(tool: str, parsed: Dict[str, Any]) -> Dict[str, Any]:
     return entry
 
 
-def user_directive(question: str, *, note: str = "") -> str:
-    """Single-action directive: the model replies with one question.
+def user_directive(question: str, *, hint: str = "", note: str = "") -> str:
+    """Single-action directive: ``message`` + guidance block (rules + optional hint).
 
-    ``note`` is MODEL-FACING guidance placed AFTER the guidance marker — it steers
-    the compose model but is never relayed verbatim. Anything the user must read
-    belongs in ``question``.
+    ``question`` is the user-facing message (before the marker). The guidance
+    block after the marker is the default paraphrase rules, then a non-empty
+    ``hint`` on its own line. Hints are model-only compose steering — never
+    relayed verbatim. Only attach ``hint`` when it adds necessary guidance.
+
+    ``note`` is a deprecated alias for ``hint`` (used when ``hint`` is empty).
     """
-    guidance = (
-        "You may paraphrase slightly but keep the same intent. "
-        "Do not ask for other information in this reply."
-    )
-    if note:
-        guidance = f"{guidance} {note}"
+    guidance = _DEFAULT_GUIDANCE
+    hint = (hint or note or "").strip()
+    if hint:
+        guidance = f"{guidance}\n{hint}"
     return f"Tell the user or ask the user: {question}{_G}{guidance}"
 
 
-def with_hint(prompt: str, hint: str = "") -> str:
-    """Frame a field ``hint`` into the question's USER-FACING text.
+def append_hint(directive: str, hint: str) -> str:
+    """Append a non-empty hint onto an existing directive's guidance block."""
+    hint = (hint or "").strip()
+    if not hint or _G not in (directive or ""):
+        return directive
+    return f"{directive}\n{hint}"
 
-    A ``hint`` is plain answer-guidance for the user — how to answer this question
-    (e.g. "enter your first, last, and any other names"; an accepted format; that a
-    field is optional). It is delivered WITH the question so the agent instructs
-    the user on the intended answer. It must be user-facing content (the compose
-    model delivers a directive's parts IN FULL, in the agent's voice; the
-    orchestrator strips model-only after-marker guidance before composing). Keep it
-    to one line, non-redundant with ``prompt``, so the model weaves it into a single
-    natural prompt. The same ``hint`` is also surfaced in ``field_reference`` /
-    ``next_field`` so the model can answer the user's clarifications about the field.
+
+def with_hint(prompt: str, hint: str = "") -> str:
+    """Legacy helper: weave a field ``hint`` into USER-FACING prompt text.
+
+    Prefer :func:`field_prompt_directive`, which keeps the prompt user-facing and
+    attaches a non-empty ``hint`` into the guidance block after the marker. Field
+    hints also remain on ``field_reference`` / ``next_field`` for clarifications.
     """
     if not hint:
         return prompt
@@ -148,8 +157,12 @@ def with_hint(prompt: str, hint: str = "") -> str:
 
 
 def field_prompt_directive(prompt: str, hint: str = "") -> str:
-    """Frame a field's question, folding a field-level ``hint`` into the prompt."""
-    return user_directive(with_hint(prompt, hint))
+    """Frame a field's question; attach ``hint`` into the guidance block when set.
+
+    User-facing block is the prompt only. A non-empty ``hint`` is model-only
+    (after the marker), same two-block layout as ``ctx.say`` directives.
+    """
+    return user_directive(prompt, hint=(hint or "").strip())
 
 
 def user_followup_directive(message: str, follow_up_question: str) -> str:
@@ -189,14 +202,15 @@ def validation_guidance_directive(error: str, *, question_text: str = "") -> str
 def review_confirmation_directive(
     summary: str,
     *,
-    preamble: str = "Please review your details before we finalize.",
+    preamble: str = "Please review the details.",
 ) -> str:
     """Confirmation-step directive — not completion."""
     summary_block = f"\n\n{summary}" if summary else ""
     return (
         f"Tell the user or ask the user: {preamble}{summary_block}\n\n"
-        "Ask whether everything looks correct and whether they want to confirm, "
-        "and if they want changes, ask what to update."
+        "Close with exactly this confirmation prompt (paraphrase lightly if needed): "
+        "If everything looks correct, reply 'Confirm' or 'Yes' to continue. "
+        "If you'd like to make changes, just let me know."
         f"{_G}This is a confirmation step only — the process is NOT complete yet. "
         "Do NOT say the process is complete or that any account or record has been created. "
         "Do NOT call interview__complete until they explicitly confirm. "
@@ -314,9 +328,10 @@ class HookExecutionContext:
 
         ``message`` is one statement or a list of sequential statements.
         ``continue_=True`` appends the branch-aware next-field prompt. ``hint`` is
-        MODEL-ONLY guidance (e.g. "ask for the code only; do not skip") — it steers
-        the compose model but is never relayed verbatim. Inert outside SAY_PHASES
-        (e.g. the store re-run), so it is safe to call unconditionally.
+        optional model-only text appended into the directive's guidance block
+        (after the default paraphrase rules) — it steers compose but is never
+        relayed verbatim. Inert outside SAY_PHASES (e.g. the store re-run), so it
+        is safe to call unconditionally.
         """
         if not self._can_say:
             return
@@ -477,13 +492,15 @@ async def _build_say_directive(ctx: HookExecutionContext) -> str:
                 ctx.session, ctx.spec, load_fn, ctx.visitor, action
             )
         prompt = str((nxt or {}).get("prompt") or "").strip()
-        hint = str((nxt or {}).get("hint") or "")
+        hint = str((nxt or {}).get("hint") or "").strip()
         if prompt:
-            directive = (
-                user_followup_directive(sidebar, with_hint(prompt, hint))
-                if sidebar
-                else field_prompt_directive(prompt, hint)
-            )
+            if sidebar:
+                directive = append_hint(
+                    user_followup_directive(sidebar, prompt),
+                    hint,
+                )
+            else:
+                directive = field_prompt_directive(prompt, hint)
         elif sidebar:
             directive = user_directive_then_tool(sidebar, "interview__review")
         else:
@@ -493,10 +510,10 @@ async def _build_say_directive(ctx: HookExecutionContext) -> str:
     elif msgs:
         directive = user_followup_directive("\n\n".join(msgs[:-1]), msgs[-1])
 
-    # Append any model-only guidance (hint=) after the existing post-marker guidance.
+    # Append ctx.say(hint=…) into the existing guidance block.
     hints = ctx._flags.get("hints")
     if hints and _G in directive:
-        directive = f"{directive} {' '.join(hints)}"
+        directive = append_hint(directive, " ".join(h for h in hints if h))
     return directive
 
 

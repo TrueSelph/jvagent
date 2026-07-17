@@ -15,8 +15,6 @@ from jvagent.action.pageindex.documents import (
 )
 from jvagent.action.pageindex.url_guard import require_path_under_work_dir
 
-pytestmark = pytest.mark.asyncio
-
 
 async def _patch_fetch(monkeypatch, *, content: bytes, content_type: str):
     async def _fake(url: str, **kwargs):

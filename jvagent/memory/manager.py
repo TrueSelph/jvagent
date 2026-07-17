@@ -326,13 +326,15 @@ class Memory(Node):
             Number of interactions removed by pruning (0 if none).
         """
         agent = await self.get_agent()
-        if (
-            not agent
-            or not hasattr(agent, "interaction_limit")
-            or agent.interaction_limit <= 0
-        ):
+        if not agent or not hasattr(agent, "interaction_limit"):
             return 0
-        agent_limit = agent.interaction_limit
+        agent_limit = int(agent.interaction_limit or 0)
+        # 0 disables pruning — sync down so stale positive limits stop pruning.
+        if agent_limit <= 0:
+            if conversation.interaction_limit != 0:
+                conversation.interaction_limit = 0
+                await conversation.save()
+            return 0
         # Sync conversation limit from agent (handles both increase and decrease)
         if conversation.interaction_limit != agent_limit:
             conversation.interaction_limit = agent_limit

@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from fastapi.responses import StreamingResponse
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
-from jvspatial.api.exceptions import ResourceNotFoundError
+from jvspatial.api.exceptions import InvalidInputError, ResourceNotFoundError
 
 from jvagent.action.model.language.base import LanguageModelAction
 
@@ -78,6 +78,7 @@ async def query_model_action(
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
     top_p: Optional[float] = None,
+    provider: Optional[str] = None,
 ) -> Any:
     """Query a model action with a prompt.
 
@@ -118,6 +119,10 @@ async def query_model_action(
     - temperature: Optional temperature override (0.0-2.0)
     - max_tokens: Optional max tokens override
     - top_p: Optional top_p override (0.0-1.0)
+    - provider: Optional provider name for validation (e.g. "openai", "ollama").
+      When provided, the endpoint verifies it matches the action's provider and
+      rejects mismatched requests so a model intended for one provider is not
+      accidentally routed to another (e.g. an Ollama model sent to OpenAI).
 
 
     **Returns:**
@@ -179,6 +184,27 @@ async def query_model_action(
             message=f"Model action with ID '{action_id}' not found",
             details={"action_id": action_id},
         )
+
+    # Validate provider match when caller specifies one. This prevents a
+    # model intended for one backend (e.g. ollama's "glm-5.1:cloud") from
+    # being routed to a different provider's action (e.g. OpenAI) which
+    # would 404 with a confusing "model not found" error.
+    if provider is not None:
+        action_provider = getattr(action, "provider", None)
+        if action_provider is not None and action_provider != provider:
+            raise InvalidInputError(
+                message=(
+                    f"Provider mismatch: action '{action_id}' is provider "
+                    f"'{action_provider}' but request specified '{provider}'. "
+                    f"Use the action for provider '{provider}' or omit the "
+                    f"provider field."
+                ),
+                details={
+                    "action_id": action_id,
+                    "action_provider": action_provider,
+                    "requested_provider": provider,
+                },
+            )
 
     # Build kwargs for query
     kwargs: Dict[str, Any] = {}

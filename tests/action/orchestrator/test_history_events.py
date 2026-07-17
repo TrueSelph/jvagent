@@ -8,8 +8,6 @@ from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
 
-pytestmark = pytest.mark.asyncio
-
 
 @pytest.mark.asyncio
 async def test_history_includes_events_by_default(make_visitor):

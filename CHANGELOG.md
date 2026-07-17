@@ -8,8 +8,34 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-17
+
+### Added
+
+- **Interview `for_each` staging (#80).** Parent fields can stage remaining
+  subpart items in one turn: `for_each_staged` is applied after the parent
+  store + post-processors, staged items auto-advance, and matching records are
+  preserved on parent re-entry. Static `prompt_prefix` is replaced by
+  singularized/ordinal defaults with an optional `for_each_prefix`; tool
+  responses surface `for_each` metadata + model nudges. Interview-scoped
+  `parameters` (and `INTERVIEW_CORE_PARAMETERS`) inject only while a session is
+  active.
+- **Google Drive shared-drive support (#80).** `supportsAllDrives` on Drive/
+  Sheets calls, shared-drive listing, `drive_id`, and
+  `get_shared_drive_metadata`.
+- **PageIndex jvforge resilience (#80).** Retry transient jvforge assimilate
+  POSTs; shared-drive root handling + client invalidation on Drive sync errors.
+
+### Security
+
+- **Egress authz (once-over S1).** `POST .../email/send` requires `roles=["admin"]` (was any authenticated caller). SendGrid inbound drops messages unless SPF and DKIM pass before minting a User from `From`. `reply/publish` binds `user_id` to the authenticated caller (rejects foreign `user_id`). WhatsApp `/whatsapp/{action_id}/qr` and connection page require admin (were `auth=False`).
+
 ### Fixed
 
+- **Log retention + PII bloat (once-over S2).** `App.log_retention_days` is enforced on `TaskMonitor.tick` via `jvagent.logging.retention` (`0` disables). `sanitize_visitor_data_for_log` redacts `image_urls` / attachments / data-URIs. Task `_events` capped at 200; `terminal_ttl_days` default is now **30** (was 0 = unbounded).
+- **Orchestrator resilience (once-over S3).** Action-enum failure skips orphan-flow cancel; locked-flow dispatch honors `tool_call_timeout`; observation replay capped; missing/erroring interview branch hooks fail the turn without pruning answers; MCP `connect` is serialized + cleans up on failure; directive trust treats `contrib_*` / unknown `ns__tool` as untrusted.
+- **ResponseBus lifecycle (once-over S4).** Process-level bus registry keyed by agent id (survives Agent cache TTL); SSE dedup uses `ResponseMessage.id`; accumulator eviction is idle-based; idle session queues are evicted.
+- **Multi-worker + ops (once-over S5).** User usage/`last_seen` reload under lock; proactive claim CAS under conversation lock; Messenger inbound mid dedup; `interaction_limit=0` syncs and disables prune; `agent uninstall` requires `--yes`/confirm; `--update --source` removes agents dropped from app.yaml; pip deps reject option injection; enable/disable invalidates action cache; DynamoDB log creds no longer clobber process `AWS_*`.
 - **`ReplyAction.gather()` ignored intro-style parameters.** When the interaction
   carried response-shaping parameters but no directives (first-engagement intro via
   `IntroInteractAction`), `gather()` returned early without composing and
@@ -22,6 +48,13 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   `tests/action/intro/test_intro_orchestrator_egress.py`.
 
 ### Changed
+- **Orchestrator skill grounding (#80).** PROCEDURE stays in the system
+  `skills_section` (not in `use_skill` observations); duplicate task-lock prep
+  catalog is skipped on the same activation turn; the field catalog is
+  re-grounded on resumed task-lock turns.
+- **Reply defaults to markdown (#80).** Default markdown channel format and the
+  current utterance is included in compose; the PageIndex modal defaults jvforge
+  on.
 - **Action modularization refactor** — shared channel helpers moved to `interact/webhook_pipeline.py`; OAuth to `action/oauth/`; spreadsheet range utils to `action/spreadsheet/`; `MediaManager` to `action/channels/media.py`; Meta verify/dedup canonical in `whatsapp/utils/`; `webhook_system_user_factory` collapses duplicate `webhook_auth` modules; Facebook gets own `webhook_auth`; handoff resolves notify channel via `handoff_notify_action_type`; `TaskLockPrep` in `skill_spec/task_lock.py`; public `mcp_action.normalize_call_result`. See `.planning/reference/action-modularization-audit.md`.
 - **Docling no longer in default test/dev deps.** Native PDF→Markdown still uses Docling when `convert_to_markdown` is on and ingest runs locally; install `jvagent[pageindex]` (or set `JVAGENT_JVFORGE_BASE_URL` to delegate conversion). Removed `docling`/`tabulate` from `[test]` and `requirements-dev.txt` — they pulled torch into every dev/CI install without being required for the core test suite.
 

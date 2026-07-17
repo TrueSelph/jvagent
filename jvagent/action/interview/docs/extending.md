@@ -302,7 +302,6 @@ fields:
   - key: tracking_numbers
     post_processor: check_tracking_statuses
     for_each:
-      prompt_prefix: "For tracking #{index} ({label}):"
       fields:
         - key: description
           prompt: What is the description?

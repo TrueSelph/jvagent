@@ -396,8 +396,9 @@ async def test_next_field_optional_signals_skip(signup_action):
 
     assert result["next_field"]["key"] == "phone_number"
     assert result["next_field"]["required"] is False
-    assert "interview__skip_field" in result["response_directive"]
-    assert "phone_number" in result["response_directive"]
+    # Skip stays on the tool surface — not injected into the reply directive.
+    assert "interview__skip_field" not in result["response_directive"]
+    assert "phone" in result["response_directive"].lower()
 
 
 @pytest.mark.asyncio
@@ -427,10 +428,10 @@ async def test_skip_field_without_key_skips_pending_field(signup_action):
 
 
 @pytest.mark.asyncio
-async def test_inline_next_question_carries_key_and_skip_path(signup_action):
+async def test_inline_next_question_carries_key_without_skip_tool_text(signup_action):
     """When set_fields inlines an optional next question (bypassing next_field), it
-    must still surface the canonical next_field_key and the skip path — otherwise the
-    model asks the question with no key to later pass to skip_field."""
+    must still surface the canonical next_field_key — without injecting
+    interview__skip_field into the reply directive."""
     action, spec = signup_action
     session = InterviewSession(interview_type="signup_interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
@@ -451,5 +452,5 @@ async def test_inline_next_question_carries_key_and_skip_path(signup_action):
     assert result["next_field_key"] == "phone_number"
     directive = result["response_directive"]
     assert "phone" in directive.lower()  # inlined question
-    assert "interview__skip_field" in directive  # skip path present
-    assert '"field_key": "phone_number"' in directive  # with canonical key
+    assert "interview__skip_field" not in directive
+    assert '"field_key": "phone_number"' not in directive

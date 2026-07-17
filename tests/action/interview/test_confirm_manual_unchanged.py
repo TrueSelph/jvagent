@@ -44,7 +44,9 @@ async def test_default_review_manual_waits_for_confirm(tmp_path):
     assert result.get("confirm", "manual") == "manual"
     assert result.get("next_tool") != "interview__complete"
     directive = result["response_directive"]
-    assert "explicitly confirm" in directive.lower() or "confirm" in directive.lower()
+    assert "Please review the details." in directive
+    assert "reply 'Confirm' or 'Yes' to continue" in directive
+    assert "make changes" in directive.lower()
     assert "Do NOT call interview__complete until" in directive
 
 

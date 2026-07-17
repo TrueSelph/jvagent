@@ -24,6 +24,7 @@ from .directive_compose import (
     compose_system_message,
 )
 from .flow import (
+    BranchHookError,
     build_awaiting_fields,
     build_next_field,
     compute_active_path_for_prune,
@@ -34,14 +35,22 @@ from .flow import (
     resolve_next_field_name,
 )
 from .for_each import (
+    STATUS_COMPLETE,
     apply_default_expand_after_parent_store,
     apply_for_each_expand,
+    apply_for_each_staged_to_records,
+    auto_advance_staged_for_each,
+    build_for_each_metadata,
     field_sort_order,
+    find_child_field_parent,
     for_each_review_sections,
     get_active_for_each,
+    get_for_each_state,
+    get_for_each_store,
     is_for_each_child_key,
     maybe_advance_for_each,
     resolve_field_def,
+    update_for_each_record_field,
     wipe_parent_for_each,
 )
 from .hooks import (
@@ -53,6 +62,7 @@ from .hooks import (
     REVIEW_PHASE,
     STORE_PHASE,
     TOOL_PHASE,
+    append_hint,
     auto_confirm_directive,
     call_hook,
     call_tool_directive,
@@ -68,7 +78,6 @@ from .hooks import (
     user_directive,
     user_followup_directive,
     validation_guidance_directive,
-    with_hint,
 )
 from .session import (
     ACTIVATION_UTTERANCE_KEY,
@@ -88,9 +97,85 @@ from .spec import (
 
 logger = logging.getLogger(__name__)
 
+_INTERVIEW_ACTION_NAME = "InterviewAction"
+
+
+def _inject_spec_parameters(spec: InterviewSpec, visitor: Any = None) -> None:
+    """Add interview core + per-skill parameters onto the interaction.
+
+    Injects the interview core parameters (stay-in-flow, cancel option, etc.)
+    and the spec's per-skill parameters onto the visitor's interaction so the
+    reply compose prompt picks them up. Only called when a session is active,
+    so interview params never appear in prompts outside an interview.
+    Deduplication in render_parameters prevents duplicates across turns.
+    """
+    from .interview_action import INTERVIEW_CORE_PARAMETERS
+
+    interaction = getattr(visitor, "interaction", None) if visitor else None
+    if interaction is None:
+        return
+    if not hasattr(interaction, "add_parameters"):
+        return
+    try:
+        if INTERVIEW_CORE_PARAMETERS:
+            interaction.add_parameters(
+                INTERVIEW_CORE_PARAMETERS, _INTERVIEW_ACTION_NAME
+            )
+    except Exception as exc:
+        logger.debug("_inject_spec_parameters core failed: %s", exc)
+    try:
+        if spec.parameters:
+            interaction.add_parameters(spec.parameters, _INTERVIEW_ACTION_NAME)
+    except Exception as exc:
+        logger.debug("_inject_spec_parameters spec failed: %s", exc)
+
+
 SET_FIELDS_ARGS_EXAMPLE = (
-    '{"fields": {"user_name": "Jane Doe", "available_times": "Monday at 9"}}'
+    '{"fields": {"field_a": "Jane Doe", "field_b": "Monday at 9"}}'
 )
+
+
+def _for_each_example_child_keys(child_keys: Optional[List[str]] = None) -> List[str]:
+    """Pick up to two child keys for staged-payload examples (neutral fallback)."""
+    keys = [str(k).strip() for k in (child_keys or []) if str(k).strip()]
+    if not keys:
+        return ["child_a", "child_b"]
+    if len(keys) == 1:
+        return [keys[0]]
+    return [keys[0], keys[1]]
+
+
+def _for_each_staged_example_snippets(
+    *,
+    current_field_key: str = "",
+    child_keys: Optional[List[str]] = None,
+) -> Tuple[str, str, str]:
+    """Return (full, partial, review) JSON example snippets for for_each nudges."""
+    keys = _for_each_example_child_keys(child_keys)
+    k0 = keys[0]
+    staged_full = {k0: "value"}
+    if len(keys) > 1:
+        staged_full[keys[1]] = "other"
+    staged_partial = {k0: "value"}
+    field_key = (current_field_key or k0).strip() or "field_key"
+    full = (
+        '{"fields": {"'
+        + field_key
+        + '": "value"}, "for_each_staged": {"2": '
+        + json.dumps(staged_full, separators=(",", ": "))
+        + "}}"
+    )
+    partial = (
+        '{"fields": {"'
+        + k0
+        + '": "value"}, "for_each_staged": {"2": '
+        + json.dumps(staged_partial, separators=(",", ": "))
+        + "}}"
+    )
+    review = '{"2": ' + json.dumps(staged_partial, separators=(",", ": ")) + "}"
+    return full, partial, review
+
+
 _WORD_RE = re.compile(r"\b[a-z0-9_]{3,}\b", re.IGNORECASE)
 _LABEL_RE = re.compile(r"\b[a-z][a-z0-9_\-\s]{1,40}\s*(?:is|:|=)", re.IGNORECASE)
 _TIME_RE = re.compile(r"\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b", re.IGNORECASE)
@@ -147,7 +232,10 @@ async def get_session_and_spec(
     session = await get_session(visitor)
     if not session:
         return None, None
-    return session, action._registry.get(session.interview_type)
+    spec = action._registry.get(session.interview_type)
+    if spec:
+        _inject_spec_parameters(spec, visitor)
+    return session, spec
 
 
 def _no_session_response() -> str:
@@ -363,6 +451,7 @@ async def run_post_processors(
             "retain_context_keys",
             "system_message",
             "for_each_expand",
+            "status",
         ):
             if key in parsed:
                 merged[key] = parsed[key]
@@ -461,6 +550,7 @@ async def handle_set_fields(
     action: Any,
     fields: Optional[Dict[str, str]] = None,
     visitor: Any = None,
+    for_each_staged: Optional[Dict[str, Dict[str, str]]] = None,
     **kwargs: Any,
 ) -> str:
     session, spec = await action._get_session_and_contract(visitor)
@@ -468,7 +558,8 @@ async def handle_set_fields(
         return _no_session_response()
 
     field_map = _normalize_field_map(fields, **kwargs)
-    if not field_map:
+
+    if not field_map and not for_each_staged:
         return interview_tool_response(
             ok=False,
             status="error",
@@ -563,9 +654,20 @@ async def handle_set_fields(
         # Incremental branch settlement: an earlier field in this same call may
         # have routed onto a branch that excludes this field. Skip it before
         # running its validator/post_processor so no off-path side effects fire.
-        reachable_now = await compute_active_path_for_prune(
-            session, spec, load_fn, visitor, action
-        )
+        try:
+            reachable_now = await compute_active_path_for_prune(
+                session, spec, load_fn, visitor, action
+            )
+        except BranchHookError as exc:
+            return interview_tool_response(
+                ok=False,
+                status="error",
+                error=str(exc),
+                system_message=(
+                    "Branch hook failed — stored answers were kept; fix the "
+                    "skill branch function and retry."
+                ),
+            )
         if reachable_now and fname not in set(reachable_now):
             results.append(
                 {
@@ -654,12 +756,18 @@ async def handle_set_fields(
         # validation already passed — if we wiped before validation and validation
         # then failed, the old expansion would be gone but the old stored value
         # would remain, permanently blocking the children.
-        if (
-            fdef.for_each is not None
-            and session.has_field(fname)
-            and stored_value != str(session.get_value(fname))
-        ):
-            wipe_parent_for_each(session, spec, fname)
+        # When the for_each already has state (records from a prior expansion),
+        # skip the wipe so init_expansion can preserve matching records and only
+        # re-collect new/changed items.
+        if fdef.for_each is not None and session.has_field(fname):
+            existing_state = get_for_each_state(session, fname)
+            has_records = (
+                isinstance(existing_state, dict)
+                and isinstance(existing_state.get("records"), list)
+                and len(existing_state.get("records", [])) > 0
+            )
+            if stored_value != str(session.get_value(fname)) and not has_records:
+                wipe_parent_for_each(session, spec, fname)
         session.set_value(fname, stored_value)
         stored_any = True
         entry["stored"] = True
@@ -729,15 +837,82 @@ async def handle_set_fields(
             maybe_advance_for_each(session, spec, fname)
             if entry.get("stored"):
                 stored_for_each_child = True
+        elif entry.get("stored") and find_child_field_parent(spec, fname):
+            update_for_each_record_field(session, spec, fname, stored_value)
 
         results.append(entry)
 
-    reachable = await compute_active_path_for_prune(
-        session, spec, load_fn, visitor, action
-    )
+    try:
+        reachable = await compute_active_path_for_prune(
+            session, spec, load_fn, visitor, action
+        )
+    except BranchHookError as exc:
+        if stored_any:
+            await action._save_session(session, visitor)
+        return interview_tool_response(
+            ok=False,
+            status="error",
+            error=str(exc),
+            results=_compact_field_updates(results) if results else None,
+            system_message=(
+                "Branch hook failed — stored answers were kept; fix the "
+                "skill branch function and retry."
+            ),
+        )
     if stored_any:
         pruned_all = prune_unreachable_fields(session, reachable)
         prune_orphan_for_each_states(session, spec, reachable)
+
+    # Process for_each_staged AFTER all fields have been stored and
+    # post_processors have run, so that parent field post_processors that
+    # create for_each expansions (e.g. check_tracking_statuses expanding
+    # tracking_numbers) have already created the for_each state. This
+    # allows for_each_staged data to be properly mapped to item IDs when
+    # the for_each expansion is created by a parent field in the same call.
+    staged_results: List[Dict[str, Any]] = []
+    if for_each_staged:
+        active_fe = get_active_for_each(session, spec)
+        if active_fe:
+            items = active_fe.state.get("items") or []
+            child_keys_set = set(active_fe.state.get("child_keys") or [])
+            if not isinstance(session.context, dict):
+                session.context = {}
+            stage_store = session.context.setdefault("_for_each_staged", {})
+            for idx_str, item_values in for_each_staged.items():
+                try:
+                    idx = int(idx_str) - 1
+                except (ValueError, TypeError):
+                    continue
+                if idx < 0 or idx >= len(items):
+                    continue
+                item_id = items[idx].get("id", "")
+                item_staged = stage_store.setdefault(item_id, {})
+                for ck, cv in item_values.items():
+                    if ck in child_keys_set:
+                        item_staged[ck] = str(cv)
+                        staged_results.append(
+                            {
+                                "field": f"for_each_staged[{idx_str}].{ck}",
+                                "stored": True,
+                                "staged": True,
+                                "value": cv,
+                            }
+                        )
+        else:
+            updated = apply_for_each_staged_to_records(session, spec, for_each_staged)
+            if updated:
+                for idx_str, item_values in for_each_staged.items():
+                    for ck in item_values:
+                        staged_results.append(
+                            {
+                                "field": f"for_each_staged[{idx_str}].{ck}",
+                                "stored": True,
+                                "updated_record": True,
+                                "value": item_values[ck],
+                            }
+                        )
+
+    auto_advance_staged_for_each(session, spec)
     active_key_set = set(reachable)
     spec_keys = set(spec.field_keys())
     ignored_fields = {
@@ -849,6 +1024,19 @@ async def handle_set_fields(
         )
         if system_message:
             payload["system_message"] = system_message
+    elif str(post_outcome.get("status") or "") == "extraction_pending":
+        # Post-processor still has async work (e.g. async URL queue). Wait
+        # was already delivered via say — do not chain review/complete.
+        payload["status"] = "extraction_pending"
+        directive = compose_directives(directive_queue, fallback="")
+        if directive:
+            payload["response_directive"] = directive
+        system_message = compose_system_message(
+            system_queue,
+            fallback=str(post_outcome.get("system_message") or "").strip(),
+        )
+        if system_message:
+            payload["system_message"] = system_message
     else:
         # The next step is decided ONCE, from the FINAL settled state — not from
         # the per-field directives queued mid-batch (a later field in the same call
@@ -866,21 +1054,15 @@ async def handle_set_fields(
             # what that tool would have provided: the canonical key (next_field_key
             # below) and, for optional fields, the skip path.
             next_fdef = resolve_field_def(session, spec, next_field["key"])
-            next_hint = next_fdef.hint if next_fdef is not None else ""
-            question = with_hint(next_field["prompt"], next_hint)
+            next_hint = (next_fdef.hint or "").strip() if next_fdef is not None else ""
+            prompt = str(next_field.get("prompt") or "")
             if notes_text:
-                directive = user_followup_directive(notes_text, question)
-            else:
-                directive = field_prompt_directive(
-                    str(next_field.get("prompt") or ""),
+                directive = append_hint(
+                    user_followup_directive(notes_text, prompt),
                     next_hint,
                 )
-            if next_fdef is not None and not next_fdef.required:
-                directive += (
-                    " If the user declines or has nothing to add, call "
-                    f'interview__skip_field with {{"field_key": '
-                    f'"{next_field["key"]}"}}.'
-                )
+            else:
+                directive = field_prompt_directive(prompt, next_hint)
             payload["response_directive"] = directive
         else:
             # No further questions — chain straight to review/complete with a
@@ -892,6 +1074,27 @@ async def handle_set_fields(
             payload["response_directive"] = call_tool_directive(next_tool)
         if next_field:
             payload["next_field_key"] = next_field["key"]
+        fe_meta = None
+        fe_store = get_for_each_store(session)
+        for parent_key in fe_store:
+            meta = build_for_each_metadata(session, spec, parent_key)
+            if meta:
+                fe_meta = meta
+                break
+        if fe_meta:
+            payload["for_each"] = fe_meta
+        elif stored_for_each_child:
+            for parent_key in fe_store:
+                state = fe_store[parent_key]
+                if isinstance(state, dict) and state.get("status") == STATUS_COMPLETE:
+                    payload["for_each"] = {
+                        "parent": parent_key,
+                        "index": len(state.get("items") or []),
+                        "total": len(state.get("items") or []),
+                        "label": "",
+                        "complete": True,
+                    }
+                    break
         if not inline_question:
             # next_tool signals a CHAIN: the model MUST call it before finalizing.
             # The inline-question branch above is a terminal reply (the question is
@@ -909,6 +1112,55 @@ async def handle_set_fields(
                 f"{notes_text} {system_message}".strip()
                 if system_message
                 else notes_text
+            )
+        fe_payload = payload.get("for_each")
+        active_fe = get_active_for_each(session, spec)
+        example_child_keys = (
+            list(active_fe.state.get("child_keys") or []) if active_fe else None
+        )
+        if fe_payload and not fe_payload.get("complete"):
+            remaining = fe_payload.get("total", 0) - fe_payload.get("index", 0)
+            if remaining > 0:
+                child_key = next_field["key"] if next_field else ""
+                nudge = (
+                    "for_each_staged: extract data for the remaining "
+                    + str(remaining)
+                    + " item(s) now if the user mentioned them — save whatever "
+                    + "they gave for those items immediately even if the current "
+                    + "item is still incomplete. Keys are 1-based indices "
+                    + "(current="
+                    + str(fe_payload.get("index"))
+                    + ", total="
+                    + str(fe_payload.get("total"))
+                    + "). "
+                )
+                if child_key:
+                    full_ex, partial_ex, _ = _for_each_staged_example_snippets(
+                        current_field_key=child_key,
+                        child_keys=example_child_keys,
+                    )
+                    nudge += (
+                        f"Example (full): {full_ex}. "
+                        f"Example (partial OK): {partial_ex}"
+                    )
+                else:
+                    nudge += (
+                        "Use 1-based indices matching for_each.index; partial "
+                        "maps per item are OK."
+                    )
+                system_message = (
+                    f"{system_message} {nudge}".strip() if system_message else nudge
+                )
+        elif fe_payload and fe_payload.get("complete"):
+            _, _, review_ex = _for_each_staged_example_snippets(
+                child_keys=example_child_keys,
+            )
+            nudge = (
+                "for_each_staged can update individual items during review. "
+                "Use 1-based indices, e.g. " + review_ex
+            )
+            system_message = (
+                f"{system_message} {nudge}".strip() if system_message else nudge
             )
         if system_message:
             payload["system_message"] = system_message
@@ -958,13 +1210,22 @@ async def persist_interview_fields(
         stored_values[name] = value
     if stored:
         load_fn = action._load_fn(spec)
-        reachable = await compute_active_path_for_prune(
-            session, spec, load_fn, visitor, action
-        )
-        prune_unreachable_fields(session, reachable)
+        try:
+            reachable = await compute_active_path_for_prune(
+                session, spec, load_fn, visitor, action
+            )
+            prune_unreachable_fields(session, reachable)
+        except BranchHookError:
+            # Keep stored values; skip prune on hook failure.
+            pass
         if session.status == InterviewStatus.REVIEW:
-            if await compute_missing_required(session, spec, load_fn, visitor, action):
-                session.status = InterviewStatus.ACTIVE
+            try:
+                if await compute_missing_required(
+                    session, spec, load_fn, visitor, action
+                ):
+                    session.status = InterviewStatus.ACTIVE
+            except BranchHookError:
+                pass
         await action._save_session(session, visitor)
     return {
         "stored": stored,
@@ -1028,6 +1289,17 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
                 str(next_field.get("prompt") or ""),
                 fdef.hint if fdef else "",
             )
+
+    # For for_each children, the pre_processor directive uses the raw
+    # field prompt. Override it with the prefixed prompt from
+    # build_next_field, which incorporates prompt_prefix + label.
+    active_fe = get_active_for_each(session, spec)
+    if active_fe and next_field["key"] in set(active_fe.state.get("child_keys") or []):
+        directive = field_prompt_directive(
+            str(next_field.get("prompt") or ""),
+            fdef.hint if fdef else "",
+        )
+
     pre_tools_results = extras.get("pre_tools_results") or []
     if any(not r.get("ok", True) for r in pre_tools_results):
         return interview_tool_response(
@@ -1063,18 +1335,37 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
     }
     if extras.get("suggested_value") is not None:
         slim_next["suggested_value"] = extras["suggested_value"]
-
-    # Optional fields are skippable — tell the model the skip path so a decline
-    # routes to interview__skip_field instead of stalling.
-    if not fdef.required:
-        directive = (
-            f"{directive} If the user declines or has nothing to add, call "
-            f'interview__skip_field with {{"field_key": "{fdef.key}"}}.'
-        )
+    if "for_each" in next_field:
+        slim_next["for_each"] = next_field["for_each"]
 
     # Persist any session.context mutations made by pre_processor hooks.
     if pre_tools_results:
         await action._save_session(session, visitor)
+
+    fe_nudge = None
+    if "for_each" in next_field:
+        fe_meta = next_field["for_each"]
+        remaining = fe_meta.get("total", 0) - fe_meta.get("index", 0)
+        if remaining > 0:
+            example_keys = (
+                list(active_fe.state.get("child_keys") or []) if active_fe else None
+            )
+            full_ex, partial_ex, _ = _for_each_staged_example_snippets(
+                current_field_key=fdef.key,
+                child_keys=example_keys,
+            )
+            fe_nudge = (
+                "for_each_staged: extract data for the remaining "
+                + str(remaining)
+                + " item(s) now if the user mentioned them — save whatever they "
+                + "gave for those items immediately even if the current item is "
+                + "still incomplete. Use 1-based indices "
+                + "(current="
+                + str(fe_meta.get("index"))
+                + ", total="
+                + str(fe_meta.get("total"))
+                + f"). Example (full): {full_ex}. Example (partial OK): {partial_ex}"
+            )
 
     return interview_tool_response(
         ok=True,
@@ -1083,6 +1374,7 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
         skipped_fields=sorted(session.skipped_fields) or None,
         pre_tools_results=pre_tools_results or None,
         response_directive=directive,
+        system_message=fe_nudge,
     )
 
 
@@ -1133,11 +1425,6 @@ async def handle_skip_field(action: Any, field: str, visitor: Any = None) -> str
             f"Please provide your {nxt['key'].replace('_', ' ')}."
         )
         directive = field_prompt_directive(prompt, pending.hint if pending else "")
-        if pending is not None and not pending.required:
-            directive += (
-                " If the user declines or has nothing to add, call "
-                f'interview__skip_field with {{"field_key": "{nxt["key"]}"}}.'
-            )
         return interview_tool_response(
             ok=False,
             status=session.status.value,
@@ -1168,11 +1455,23 @@ async def handle_skip_field(action: Any, field: str, visitor: Any = None) -> str
     was_for_each_child = is_for_each_child_key(session, spec, field)
     if was_for_each_child:
         maybe_advance_for_each(session, spec, field)
-    reachable = await compute_active_path_for_prune(
-        session, spec, load_fn, visitor, action
-    )
-    prune_unreachable_fields(session, reachable)
-    prune_orphan_for_each_states(session, spec, reachable)
+    try:
+        reachable = await compute_active_path_for_prune(
+            session, spec, load_fn, visitor, action
+        )
+        prune_unreachable_fields(session, reachable)
+        prune_orphan_for_each_states(session, spec, reachable)
+    except BranchHookError as exc:
+        await action._save_session(session, visitor)
+        return interview_tool_response(
+            ok=False,
+            status="error",
+            error=str(exc),
+            system_message=(
+                "Branch hook failed after skip — session kept; fix the skill "
+                "branch function and retry."
+            ),
+        )
     await action._save_session(session, visitor)
 
     if was_for_each_child:
@@ -1184,12 +1483,6 @@ async def handle_skip_field(action: Any, field: str, visitor: Any = None) -> str
                 str(next_field.get("prompt") or ""),
                 next_hint,
             )
-            if next_fdef is not None and not next_fdef.required:
-                directive += (
-                    " If the user declines or has nothing to add, call "
-                    f'interview__skip_field with {{"field_key": '
-                    f'"{next_field["key"]}"}}.'
-                )
             return interview_tool_response(
                 ok=True,
                 status=session.status.value,
@@ -1247,7 +1540,10 @@ def build_review_summary(
         lines.append(f"**{label}**: {collected[key]}")
     for label, value in (additional_data or {}).items():
         lines.append(f"**{label}**: {value}")
-    fe_lines = for_each_review_sections(session, spec, omit_parents=omitted)
+    # Each element of fe_lines is one record block (header + child lines joined
+    # by a single newline); the "\n\n".join below produces one blank line between
+    # records and no blank lines within a record.
+    fe_lines = for_each_review_sections(session, spec)
     if fe_lines:
         if lines:
             lines.append("")
@@ -1455,18 +1751,43 @@ async def handle_complete(action: Any, visitor: Any = None) -> str:
             response_directive=f"Completion function failed: {e}",
         )
 
+    parsed = coerce_hook_result(result)
+
+    # Deferred completion: async / queue work still open. Keep session + task.
+    if str(parsed.get("status") or "") == "extraction_pending":
+        payload: Dict[str, Any] = {
+            "ok": True,
+            "status": "extraction_pending",
+            "fields": fields_summary,
+            "completion_result": parsed,
+        }
+        system_message = str(parsed.get("system_message") or "").strip()
+        if system_message:
+            payload["system_message"] = system_message
+        raw_directive = str(parsed.get("response_directive") or "").strip()
+        if raw_directive:
+            stripped = raw_directive.strip()
+            payload["response_directive"] = (
+                raw_directive
+                if stripped.startswith("Tell the user or ask the user:")
+                or stripped.startswith("Tell the user:")
+                or stripped.startswith("Call ")
+                else user_directive(raw_directive)
+            )
+        # Never default to "Interview completed." while work remains.
+        return interview_tool_response(**payload)
+
     if visitor:
         await tasks.close_task(visitor, status="completed", spec_name=spec.name)
 
     retain_keys: List[str] = []
-    if isinstance(result, dict):
-        raw_retain = result.get("retain_context_keys")
-        if isinstance(raw_retain, list):
-            retain_keys = [str(k) for k in raw_retain if k]
+    raw_retain = parsed.get("retain_context_keys")
+    if isinstance(raw_retain, list):
+        retain_keys = [str(k) for k in raw_retain if k]
     await action._clear_interview_session(visitor, retain_context_keys=retain_keys)
 
-    if isinstance(result, dict):
-        raw_directive = result.get("response_directive") or "Interview completed."
+    if parsed:
+        raw_directive = parsed.get("response_directive") or "Interview completed."
         stripped = raw_directive.strip()
         directive = (
             raw_directive
@@ -1479,7 +1800,7 @@ async def handle_complete(action: Any, visitor: Any = None) -> str:
             ok=True,
             status="completed",
             response_directive=directive,
-            completion_result=result,
+            completion_result=parsed,
             fields=fields_summary,
         )
     return interview_tool_response(
@@ -1658,14 +1979,18 @@ async def handle_get_status(action: Any, visitor: Any = None) -> str:
 async def interview_turn_status(action: Any, visitor: Any = None) -> Optional[str]:
     """Per-turn re-grounding for a locked interview.
 
-    Activation surfaces the full ``field_reference`` once, but that observation ages
-    out of history — and under task-driven turn-lock (ADR-0026) a skill entered as a
-    pushed prerequisite / resumed via the drain is delivered terminally, so the model
-    may never run the activation turn at all. Either way the model loses the field
-    catalog (valid keys + per-field guidance) it needs to extract values and
-    supplement prompts correctly. So this re-asserts the **full** ``field_reference``
-    (key, prompt, guidance, required) alongside the pending field and progress on
-    every locked turn. ``get_status`` remains the on-demand path for the same.
+    Activation surfaces the full ``field_reference`` once (in the ``use_skill``
+    observation; PROCEDURE is in system ``skills_section``), but that observation
+    ages out of history — and under task-driven turn-lock (ADR-0026) a skill
+    entered as a pushed prerequisite / resumed via the drain is delivered
+    terminally, so the model may never run the activation turn at all. Either way
+    the model loses the field catalog (valid keys + per-field guidance) it needs
+    to extract values and supplement prompts correctly. So this re-asserts the
+    **full** ``field_reference`` (key, prompt, guidance, required) alongside the
+    pending field and progress on locked turns that lack an in-turn activation
+    catalog. The orchestrator omits appending this payload when activation
+    already supplied it this turn. ``get_status`` remains the on-demand path for
+    the same.
     """
     session, spec = await action._get_session_and_contract(visitor)
     if not session or not spec:
@@ -1717,6 +2042,8 @@ async def handle_start(
             ),
             available_types=available,
         )
+
+    _inject_spec_parameters(spec, visitor)
 
     conversation = await action._get_conversation(visitor)
     existing = load_session(conversation) if conversation else None

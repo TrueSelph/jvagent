@@ -52,6 +52,7 @@ from jvagent.action.orchestrator.loop_helpers import (
 )
 from jvagent.action.orchestrator.uploads import OrchestratorUploadsMixin
 from jvagent.action.orchestrator.walk_path import OrchestratorWalkPathMixin
+from jvagent.core.channel import normalize_channel
 
 # Re-export continuation helpers for tests that monkeypatch via orchestrator module.
 active_flow_owner = continuation.active_flow_owner
@@ -722,6 +723,32 @@ class OrchestratorInteractAction(
             kept.append(d)
         return kept
 
+    @staticmethod
+    def _skill_channel_allowed(doc: Any, channel: str) -> bool:
+        """Per-channel gate for a skill doc (ADR-0032).
+
+        Returns True when the skill may surface on ``channel``. Rules:
+
+        - both ``allowed_channels`` and ``denied_channels`` empty → allow all.
+        - ``allowed_channels`` non-empty → channel must be in it.
+        - ``denied_channels`` non-empty → channel must not be in it.
+        - if both are set → must be in allowed AND not in denied (allowed is the
+          allow-list; denied subtracts).
+
+        Channel is normalized via ``normalize_channel`` (web→default) so rule
+        lists use canonical channel names (e.g. ``whatsapp``, ``default``).
+        """
+        allowed = tuple(getattr(doc, "allowed_channels", ()) or ())
+        denied = tuple(getattr(doc, "denied_channels", ()) or ())
+        if not allowed and not denied:
+            return True
+        ch = normalize_channel(channel)
+        if allowed and ch not in allowed:
+            return False
+        if denied and ch in denied:
+            return False
+        return True
+
     # ------------------------------------------------------------------
     # Tool surface (per-turn; binds the visitor)
     # ------------------------------------------------------------------
@@ -1043,6 +1070,47 @@ class OrchestratorInteractAction(
         # entirely — dropped from the surfaced list, find_skill, use_skill, and
         # always-active pinning — so the model never sees a skill it can't run.
         docs = await self._enforce_required_actions(docs)
+        # Per-channel gate (ADR-0032): a skill whose ``allowed-channels``/
+        # ``denied-channels`` rules out the current channel is hidden from the
+        # whole surface (skills_section, find_skill, use_skill, always-active
+        # pinning) and its per-skill custom tools (``<skill>__*``) are dropped
+        # from the tool surface so the model cannot reach it. Skills with a
+        # ``deny-access-directive`` are collected so their message can be
+        # surfaced in skills_section (the model relays it verbatim when the
+        # user's intent matched the blocked skill).
+        channel = getattr(visitor, "channel", "default") or "default"
+        allowed_docs: List[Any] = []
+        blocked_docs: List[Any] = []
+        for d in docs:
+            if self._skill_channel_allowed(d, channel):
+                allowed_docs.append(d)
+            else:
+                blocked_docs.append(d)
+        # Drop per-skill custom tools (``<blocked_skill>__*``) the bound action
+        # registered via get_tools(); shared tools (``interview__*``) are kept
+        # so other interviews keep working. Also drop any name the skill listed
+        # in its ``requires_tools``/``allowed-tools`` so a blocked JV skill's
+        # referenced tools aren't surfaced on its behalf.
+        if blocked_docs:
+            blocked_names = {getattr(d, "name", "") for d in blocked_docs}
+            blocked_prefixes = tuple(f"{n}__" for n in blocked_names if n)
+            drop_names: Set[str] = set()
+            for d in blocked_docs:
+                drop_names |= {t for t in getattr(d, "requires_tools", ()) or () if t}
+            for name in list(tools.keys()):
+                if name in drop_names or (
+                    blocked_prefixes and name.startswith(blocked_prefixes)
+                ):
+                    tools.pop(name, None)
+                    longtail.discard(name)
+                    visible.discard(name)
+        docs = allowed_docs
+        if surface_meta is not None:
+            surface_meta["blocked_skill_notes"] = [
+                f"{getattr(d, 'name', '')}: {getattr(d, 'deny_access_directive', '')}"
+                for d in blocked_docs
+                if getattr(d, "deny_access_directive", "")
+            ]
         if skill_docs is not None:
             skill_docs.extend(docs)
         code_exec = self._select_code_execution_action(actions)
@@ -1058,6 +1126,7 @@ class OrchestratorInteractAction(
             visible,
             activate_hook=activate_hook,
             reactivate_hook=reactivate_hook,
+            blocked_docs=blocked_docs,
         ).items():
             tools[name] = t
             visible.add(name)
@@ -2613,12 +2682,18 @@ class OrchestratorInteractAction(
 
     async def _enabled_actions(self, agent: Any) -> List[Any]:
         if agent is None:
+            self._actions_enum_failed = False
             return []
         try:
             mgr = await agent.get_actions_manager()
-            return await mgr.get_all_actions(enabled_only=True) if mgr else []
+            actions = await mgr.get_all_actions(enabled_only=True) if mgr else []
+            self._actions_enum_failed = False
+            return actions
         except Exception as exc:
-            logger.debug("orchestrator: action enumeration failed: %s", exc)
+            # Signal loop to skip orphan-flow cancel — a partial/empty tool
+            # surface from a transient DB blip must not abandon healthy flows.
+            self._actions_enum_failed = True
+            logger.warning("orchestrator: action enumeration failed: %s", exc)
             return []
 
     @staticmethod

@@ -2,16 +2,109 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import mimetypes
 import os
-from typing import Any, Dict, Optional, Tuple, cast
+from typing import Any, Dict, Mapping, Optional, Tuple, cast
 
 import httpx
 from jvspatial.api.exceptions import ValidationError
 
 from .adapter import strip_redundant_md_suffix
 from .documents import delete_document, get_document_root, import_documents
+
+logger = logging.getLogger(__name__)
+
+_JVFORGE_POST_ATTEMPTS = 5
+_JVFORGE_RETRY_BACKOFF_S = (2.0, 4.0, 8.0, 16.0)
+
+# Transient transport failures worth retrying (connection drops mid-upload/response).
+_TRANSIENT_HTTPX = (
+    httpx.ReadError,
+    httpx.ConnectError,
+    httpx.WriteError,
+    httpx.RemoteProtocolError,
+    httpx.NetworkError,
+)
+
+
+async def _post_jvforge_with_retries(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    headers: Mapping[str, str],
+    data: Optional[Mapping[str, str]] = None,
+    files: Optional[Any] = None,
+) -> httpx.Response:
+    """POST to jvforge, retrying transient httpx transport errors and 499 status.
+
+    499 (Client Closed Request) is returned by jvforge when the client disconnects
+    mid-upload; callers that retry on transport errors should also retry on 499.
+    """
+    last_exc: Optional[BaseException] = None
+    for attempt in range(1, _JVFORGE_POST_ATTEMPTS + 1):
+        try:
+            kwargs: Dict[str, Any] = {"headers": dict(headers)}
+            if files is not None and data is not None:
+                kwargs["data"] = data
+                kwargs["files"] = files
+            elif files is not None:
+                kwargs["files"] = files
+            else:
+                kwargs["data"] = data
+            r = await client.post(url, **kwargs)
+            if r.status_code == 499:
+                if attempt >= _JVFORGE_POST_ATTEMPTS:
+                    break
+                delay = _JVFORGE_RETRY_BACKOFF_S[
+                    min(attempt - 1, len(_JVFORGE_RETRY_BACKOFF_S) - 1)
+                ]
+                logger.warning(
+                    "jvforge POST %s returned 499 (client disconnect); retry %d/%d in %.1fs",
+                    url,
+                    attempt,
+                    _JVFORGE_POST_ATTEMPTS,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+                continue
+            return r
+        except _TRANSIENT_HTTPX as exc:
+            last_exc = exc
+            if attempt >= _JVFORGE_POST_ATTEMPTS:
+                break
+            delay = _JVFORGE_RETRY_BACKOFF_S[
+                min(attempt - 1, len(_JVFORGE_RETRY_BACKOFF_S) - 1)
+            ]
+            logger.warning(
+                "jvforge POST %s failed (%s: %s); retry %d/%d in %.1fs",
+                url,
+                type(exc).__name__,
+                exc,
+                attempt,
+                _JVFORGE_POST_ATTEMPTS,
+                delay,
+            )
+            await asyncio.sleep(delay)
+
+    if last_exc is not None:
+        raise ValidationError(
+            message=(
+                f"jvforge request failed (connection error): {last_exc}. "
+                "Check JVAGENT_JVFORGE_BASE_URL and that jvforge is running."
+            ),
+            details={
+                "error_type": type(last_exc).__name__ if last_exc else None,
+                "url": url,
+                "attempts": _JVFORGE_POST_ATTEMPTS,
+            },
+        )
+    raise ValidationError(
+        message="jvforge request failed: server repeatedly closed connection (499)",
+        details={"url": url, "attempts": _JVFORGE_POST_ATTEMPTS},
+    )
 
 
 def _rewrite_pageindex_graph_doc_names(
@@ -152,14 +245,18 @@ async def assimilate_via_jvforge(
     async with httpx.AsyncClient(timeout=timeout) as client:
         if fu:
             multipart = {k: cast(Tuple[None, str], (None, v)) for k, v in data.items()}
-            r = await client.post(url, files=multipart, headers=headers)
+            r = await _post_jvforge_with_retries(
+                client, url, headers=headers, files=multipart
+            )
         else:
             fn = (filename or "").strip()
             ctype, _ = mimetypes.guess_type(fn)
             if not ctype:
                 ctype = "application/octet-stream"
             files = {"file": (fn, content or b"", ctype)}
-            r = await client.post(url, data=data, files=files, headers=headers)
+            r = await _post_jvforge_with_retries(
+                client, url, headers=headers, data=data, files=files
+            )
 
     if r.status_code >= 400:
         detail = (r.text or "")[:2000]
@@ -303,14 +400,18 @@ async def assimilate_via_jvforge_async(
     async with httpx.AsyncClient(timeout=timeout) as client:
         if fu:
             multipart = {k: cast(Tuple[None, str], (None, v)) for k, v in data.items()}
-            r = await client.post(url, files=multipart, headers=headers)
+            r = await _post_jvforge_with_retries(
+                client, url, headers=headers, files=multipart
+            )
         else:
             fn = (filename or "").strip()
             ctype, _ = mimetypes.guess_type(fn)
             if not ctype:
                 ctype = "application/octet-stream"
             files = {"file": (fn, content or b"", ctype)}
-            r = await client.post(url, data=data, files=files, headers=headers)
+            r = await _post_jvforge_with_retries(
+                client, url, headers=headers, data=data, files=files
+            )
 
     if r.status_code >= 400:
         detail = (r.text or "")[:2000]

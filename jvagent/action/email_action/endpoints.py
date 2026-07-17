@@ -287,11 +287,14 @@ async def email_health(action_id: str) -> Dict[str, Any]:
     "/actions/{action_id}/email/send",
     methods=["POST"],
     auth=True,
+    roles=["admin"],
     tags=["Email Action"],
     summary="Send a transactional email (canonical payload)",
     description=(
         "Sends through **EmailAction**’s configured provider using one canonical JSON "
-        "shape. **Gmail:** **GOOGLE_CLIENT_SECRETS_JSON** and **GoogleGmailAction** OAuth; "
+        "shape. **Admin role only** (same gate as other email admin endpoints and "
+        "WhatsApp send).\n\n"
+        "**Gmail:** **GOOGLE_CLIENT_SECRETS_JSON** and **GoogleGmailAction** OAuth; "
         "optional **EMAIL_DEFAULT_SENDER** (else mailbox profile address). **Outlook:** "
         "**MICROSOFT_CLIENT_ID** and **MicrosoftOutlookMailAction** OAuth; optional "
         "**EMAIL_DEFAULT_SENDER** (else mailbox profile). **SendGrid:** "

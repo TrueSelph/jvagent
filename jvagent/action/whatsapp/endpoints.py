@@ -23,6 +23,7 @@ from jvspatial.exceptions import DatabaseError, ValidationError
 from jvagent.action.access_control.access_control_action import log_access_denied
 from jvagent.action.utils.meta_calls_webhook import is_calls_webhook
 from jvagent.action.utils.meta_webhook import verify_meta_webhook_signature
+from jvagent.action.utils.meta_webhook_dedup import remember_meta_wamid
 from jvagent.core.agent import Agent
 from jvagent.core.errors import log_classified_exception
 
@@ -38,7 +39,6 @@ from .utils.endpoint_helpers import (
     normalize_result,
 )
 from .utils.flow_data_exchange import is_flow_data_exchange_request
-from .utils.meta_webhook_dedup import remember_meta_wamid
 
 logger = logging.getLogger(__name__)
 
@@ -299,12 +299,16 @@ async def _qr_result_to_png_bytes(qr: Any) -> Optional[bytes]:
 @endpoint(
     "/whatsapp/{action_id}/qr",
     methods=["GET"],
-    auth=False,
+    auth=True,
+    roles=["admin"],
     tags=["WhatsApp"],
     summary="WhatsApp QR code image (PNG)",
 )
 async def whatsapp_connection_qr(action_id: str) -> Response:
-    """Return the current session QR as PNG (proxied from the configured provider)."""
+    """Return the current session QR as PNG (proxied from the configured provider).
+
+    Admin-only — a leaked ``action_id`` must not allow session takeover via QR.
+    """
     try:
         wa_action = await get_whatsapp_action(action_id)
     except ResourceNotFoundError:
@@ -346,15 +350,16 @@ async def whatsapp_connection_qr(action_id: str) -> Response:
 @endpoint(
     "/whatsapp/{action_id}",
     methods=["GET"],
-    auth=False,
+    auth=True,
+    roles=["admin"],
     tags=["WhatsApp"],
     summary="WhatsApp connection / QR (browser)",
 )
 async def whatsapp_connection_page(action_id: str) -> HTMLResponse:
     """Show a human-readable page: connected state, or a QR to scan, or a clear error.
 
-    Public link (no auth) — the ``action_id`` should be unguessable (UUID), same as
-    ``/api/google/{action_id}`` for OAuth.
+    Admin-only — aligns with ``/actions/{action_id}/qrcode``. A leaked
+    ``action_id`` must not expose a scannable QR for session takeover.
     """
     try:
         wa_action = await get_whatsapp_action(action_id)

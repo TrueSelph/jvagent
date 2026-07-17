@@ -62,7 +62,8 @@ class OrchestratorLoopMixin:
         )
         lean_surface = bool(surface_meta.get("lean"))
         skill_names = {getattr(d, "name", "") for d in skill_docs}
-        skills_section = render_skills_section(skill_docs)
+        blocked_skill_notes = surface_meta.get("blocked_skill_notes") or []
+        skills_section = render_skills_section(skill_docs, blocked_skill_notes)
         # Advertised abilities: each enabled action's get_capabilities() merged
         # with the skill descriptions. Sourced from the actions/skills directly
         # (not the lean-surfaced tool list), so it stays complete even when most
@@ -100,7 +101,21 @@ class OrchestratorLoopMixin:
         # off-topic; interruption/cancel is the IA's own concern.
         if self.lock_active_flow and flow_owner and flow_owner in tools:
             tool_t0 = time.perf_counter()
-            locked_result = (await tools[flow_owner].run({})) or ""
+            try:
+                if self.tool_call_timeout and self.tool_call_timeout > 0:
+                    locked_result = (
+                        await asyncio.wait_for(
+                            tools[flow_owner].run({}),
+                            timeout=self.tool_call_timeout,
+                        )
+                    ) or ""
+                else:
+                    locked_result = (await tools[flow_owner].run({})) or ""
+            except asyncio.TimeoutError:
+                locked_result = (
+                    f"(tool error: locked flow {flow_owner} timed out after "
+                    f"{self.tool_call_timeout}s)"
+                )
             tool_timings.append(
                 {
                     "name": flow_owner,
@@ -167,19 +182,28 @@ class OrchestratorLoopMixin:
         if flow_owner and flow_owner not in tools:
             # Locked-in skill tasks use the skill name as owner_action — they
             # are not routable IA tools, so exempt them from the orphan sweep.
-            _locked_skill_names: Set[str] = {
-                d.name
-                for d in skill_docs
-                if getattr(d, "task_lock", False) and getattr(d, "name", None)
-            }
-            await _orch().cancel_orphan_flow_tasks(
-                visitor,
-                routable_tool_names=set(tools.keys()),
-                locked_skill_names=_locked_skill_names,
-            )
-            flow_owner = _orch().active_flow_owner(
-                visitor, flow_tool_names=flow_tool_names
-            )
+            # Skip the sweep entirely when action enumeration failed — an empty
+            # or partial tool map must not cancel a healthy in-progress flow.
+            if getattr(self, "_actions_enum_failed", False):
+                logger.warning(
+                    "orchestrator: skipping orphan flow sweep — action "
+                    "enumeration failed (owner=%s)",
+                    flow_owner,
+                )
+            else:
+                _locked_skill_names: Set[str] = {
+                    d.name
+                    for d in skill_docs
+                    if getattr(d, "task_lock", False) and getattr(d, "name", None)
+                }
+                await _orch().cancel_orphan_flow_tasks(
+                    visitor,
+                    routable_tool_names=set(tools.keys()),
+                    locked_skill_names=_locked_skill_names,
+                )
+                flow_owner = _orch().active_flow_owner(
+                    visitor, flow_tool_names=flow_tool_names
+                )
 
         flow_note = _orch().active_flow_note(flow_owner) if flow_owner else ""
 
@@ -753,6 +777,27 @@ class OrchestratorLoopMixin:
                                     {"response_directive": detour_directive}
                                 )
                                 obs_server_generated = True
+                        elif (
+                            skill_name
+                            and isinstance(obs, str)
+                            and obs.startswith("Activated skill")
+                        ):
+                            # Non-task-lock: PROCEDURE lives in skills_section so
+                            # Steps taken this turn stays TOOL-only.
+                            from jvagent.action.orchestrator.skill_tasks import (
+                                activated_skill_section_text,
+                            )
+
+                            doc = next(
+                                (
+                                    d
+                                    for d in skill_docs
+                                    if getattr(d, "name", None) == skill_name
+                                ),
+                                None,
+                            )
+                            if doc is not None:
+                                skills_section = activated_skill_section_text(doc)
                     # Companion detour: a companion capability (tool or skill) was
                     # used while a parent skill holds the turn-lock. Re-ground the
                     # parent in place so the model returns to it as soon as the side

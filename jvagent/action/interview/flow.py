@@ -16,6 +16,7 @@ from .for_each import (
     reachable_for_each_child_keys,
     resolve_field_def,
 )
+from .hooks import load_hook_function
 from .session import InterviewSession
 from .spec import FieldDef, InterviewSpec
 
@@ -105,6 +106,10 @@ _OPERATORS: Dict[str, Callable[[Any, Any], bool]] = {
 }
 
 
+class BranchHookError(RuntimeError):
+    """Branch hook missing or raised — fail the turn; do not prune as False."""
+
+
 def evaluate_operator(operator: str, actual: Any, expected: Any = None) -> bool:
     fn = _OPERATORS.get(operator.lower().strip())
     if fn is None:
@@ -120,7 +125,12 @@ async def matches_branch_condition(
     visitor: Any = None,
     interview_action: Any = None,
 ) -> bool:
-    """Return True when a branch condition matches the current session state."""
+    """Return True when a branch condition matches the current session state.
+
+    Missing or erroring branch *functions* raise :class:`BranchHookError` so
+    callers skip path-pruning (treating the hook as ``False`` would truncate
+    the reachable path and drop stored answers).
+    """
     from .hooks import call_hook
 
     if not condition or not field_key:
@@ -137,14 +147,24 @@ async def matches_branch_condition(
         func = load_function(function_name)
         if not func:
             logger.error("Branch function '%s' not found", function_name)
-            return False
-        result = await call_hook(
-            func,
-            session=session,
-            visitor=visitor,
-            interview_action=interview_action,
-            phase="branch",
-        )
+            raise BranchHookError(f"Branch function '{function_name}' not found")
+        try:
+            result = await call_hook(
+                func,
+                session=session,
+                visitor=visitor,
+                interview_action=interview_action,
+                phase="branch",
+            )
+        except BranchHookError:
+            raise
+        except Exception as exc:
+            logger.error(
+                "Branch function '%s' raised: %s", function_name, exc, exc_info=True
+            )
+            raise BranchHookError(
+                f"Branch function '{function_name}' failed: {exc}"
+            ) from exc
         if operator:
             try:
                 return evaluate_operator(operator, result, condition.get("value"))
@@ -419,9 +439,12 @@ async def build_next_field(
         child_fdef = spec.get_for_each_child_field(active.parent_key, nxt)
         if not child_fdef:
             return None
+        prefix_fn = None
+        if active.parent_fdef.for_each_prefix:
+            prefix_fn = load_hook_function(spec, active.parent_fdef.for_each_prefix)
         entry = _slim_field_entry(child_fdef)
         entry["prompt"] = build_prefixed_child_prompt(
-            active.parent_fdef, child_fdef, active.state
+            active.parent_fdef, child_fdef, active.state, prefix_fn=prefix_fn
         )
         if child_fdef.validator:
             entry["validator"] = child_fdef.validator

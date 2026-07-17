@@ -6,6 +6,7 @@ import threading
 from dataclasses import dataclass, replace
 from typing import Any, ClassVar, Dict, List, Optional, Set
 
+from googleapiclient.errors import HttpError
 from jvspatial.api.auth.api_key_service import APIKeyService
 from jvspatial.core.annotations import attribute
 from jvspatial.core.context import GraphContext
@@ -38,6 +39,7 @@ from ..jvforge_routing import resolve_effective_jvforge_base
 from .drive_ingest_filter import (
     filter_drive_doc_queues_for_ingestible,
     is_drive_file_pageindex_ingestible,
+    mark_drive_video_files_disabled,
 )
 from .google_drive_documents import GoogleDriveDocuments
 from .webhook_auth import get_or_create_system_user
@@ -487,7 +489,11 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         cfg: DriveIngestConfig,
         cancel_event: threading.Event,
     ) -> Dict[str, Any]:
-        file_bytes = await google_drive_action.get_media(file_id=file_id)
+        try:
+            file_bytes = await google_drive_action.get_media(file_id=file_id)
+        except ValueError as exc:
+            logger.warning("Skipping non-exportable Drive file %s: %s", doc_name, exc)
+            raise ValidationError(str(exc)) from exc
         forge_base = (get_jvagent_jvforge_base_url() or "").strip()
         effective_forge = resolve_effective_jvforge_base(
             forge_base, use_jvforge=cfg.use_jvforge
@@ -655,6 +661,34 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     "skipped": False,
                     "doc_name": doc_name,
                     "ingestion_message": f"Timed out ingesting {doc_name}",
+                }
+            except ValidationError as ve:
+                msg = str(ve.message) if hasattr(ve, "message") else str(ve)
+                if "cannot be exported" in msg or "non-exportable" in msg.lower():
+                    logger.info(
+                        "Skipping non-exportable Drive file for PageIndex: %s (%s)",
+                        doc_name,
+                        msg,
+                    )
+                    return await _pop_skip_head(
+                        google_drive_documents_node,
+                        source=source,
+                        doc_type=doc_type,
+                        doc_name=doc_name,
+                        ingestion_message=f"Skipped non-exportable file: {doc_name}",
+                    )
+                await self._mark_drive_ingest_failed(
+                    google_drive_documents_node,
+                    source=source,
+                    doc_type=doc_type,
+                    file_info=file_info,
+                )
+                logger.exception("ValidationError ingesting document %s", doc_name)
+                return {
+                    "success": False,
+                    "skipped": False,
+                    "doc_name": doc_name,
+                    "ingestion_message": f"Failed to ingest {doc_name}: {msg}",
                 }
             except Exception:
                 await self._mark_drive_ingest_failed(
@@ -834,22 +868,71 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         """Phase A: list Drive trees, merge queues, persist ``GoogleDriveDocuments`` nodes."""
         for google_drive_folder in google_drive_folders:
             google_drive_folder_id = google_drive_folder.get("folder_id")
+            drive_id = google_drive_folder.get("drive_id")
+            looks_like_shared_drive_root = bool(
+                google_drive_folder_id
+                and (
+                    google_drive_folder_id.startswith("0A")
+                    or (drive_id and google_drive_folder_id == drive_id)
+                )
+            )
 
+            def _invalidate_drive_service() -> None:
+                # Drop cached httplib2 client after connection errors so
+                # list_files does not reuse a broken socket.
+                if hasattr(google_drive_action, "_built_service"):
+                    google_drive_action._built_service = None
+
+            # Prefer files().get (supportsAllDrives) — shared drive ID is also
+            # the top-level folder ID. Only fall back to drives().get on 404.
+            folder_name = ""
             try:
                 root_meta = await google_drive_action.get_file_metadata(
-                    google_drive_folder_id, fields="id, name"
+                    google_drive_folder_id, fields="id, name, driveId"
                 )
                 folder_name = str(root_meta.get("name") or "")
+                if not drive_id:
+                    drive_id = root_meta.get("driveId")
+            except HttpError as e:
+                status = getattr(e.resp, "status", None)
+                if status in (404, "404") and looks_like_shared_drive_root:
+                    try:
+                        drive_meta = (
+                            await google_drive_action.get_shared_drive_metadata(
+                                google_drive_folder_id
+                            )
+                        )
+                        folder_name = str(drive_meta.get("name") or "")
+                        drive_id = google_drive_folder_id
+                    except Exception:
+                        logger.warning(
+                            "Could not fetch Drive folder/drive name for "
+                            "folder_id=%s",
+                            google_drive_folder_id,
+                            exc_info=True,
+                        )
+                        _invalidate_drive_service()
+                        drive_id = drive_id or google_drive_folder_id
+                else:
+                    logger.warning(
+                        "Could not fetch Drive folder/drive name for " "folder_id=%s",
+                        google_drive_folder_id,
+                        exc_info=True,
+                    )
+                    _invalidate_drive_service()
             except Exception:
                 logger.warning(
-                    "Could not fetch Drive folder name for folder_id=%s",
+                    "Could not fetch Drive folder/drive name for folder_id=%s",
                     google_drive_folder_id,
                     exc_info=True,
                 )
-                folder_name = ""
+                _invalidate_drive_service()
+
+            if not drive_id and looks_like_shared_drive_root:
+                drive_id = google_drive_folder_id
 
             files = await google_drive_action.list_files(
-                with_link=True, folder_id=google_drive_folder_id
+                with_link=True, folder_id=google_drive_folder_id, drive_id=drive_id
             )
             metadata = google_drive_folder.get("metadata", {})
 
@@ -862,6 +945,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 if google_drive_documents_node:
                     old_files = google_drive_documents_node.files
                     _merge_disable_ingestion_from_old(old_files, files)
+                    mark_drive_video_files_disabled(files)
                     ingesting_documents = google_drive_action.compare_files(
                         old_files=old_files, new_files=files
                     )
@@ -915,6 +999,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     await google_drive_documents_node.save()
                 else:
                     _merge_disable_ingestion_from_old([], files)
+                    mark_drive_video_files_disabled(files)
                     ingesting_documents = google_drive_action.compare_files(
                         old_files=[], new_files=files
                     )
@@ -984,12 +1069,12 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             fd = google_drive_documents_node.failed_documents
             has_ingest = bool(ing["added"] or ing["modified"] or ing["removed"])
             has_failed = bool(fd["added"] or fd["modified"] or fd["removed"])
-            if has_ingest:
-                ingesting_documents = ing
-                ingest_source = "ingesting_documents"
-            elif retry_failed_documents and has_failed:
+            if retry_failed_documents and has_failed:
                 ingesting_documents = fd
                 ingest_source = "failed_documents"
+            elif has_ingest:
+                ingesting_documents = ing
+                ingest_source = "ingesting_documents"
             else:
                 continue
 
@@ -999,6 +1084,55 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
 
             metadata = google_drive_folder.get("metadata", {})
             cfg = replace(cfg_template, metadata=dict(metadata or {}))
+
+            # When auto-delete is enabled, process removals FIRST so that a
+            # deleted file (e.g. "xxx.pdf") is removed from the PageIndex
+            # before any newly added file with the same name is ingested.
+            # Otherwise the skip-existing check would skip the new file
+            # because the old one is still in the index. Per-invocation
+            # one-unit semantics still hold: the removals batch returns
+            # here, and the added file is ingested on the next sync run.
+            if remove_deleted_documents and ingesting_documents["removed"]:
+                remove_docs_names = []
+                for removed_doc in list(ingesting_documents["removed"]):
+                    try:
+                        await delete_document(
+                            removed_doc.get("name", ""),
+                            collection_name=collection_name,
+                        )
+                        document_ingested["removed"].append(removed_doc.get("name", ""))
+                        remove_docs_names.append(removed_doc.get("name", ""))
+                        ingesting_documents["removed"].remove(removed_doc)
+                    except Exception as e:
+                        google_drive_documents_node.failed_documents["removed"].append(
+                            removed_doc
+                        )
+                        ingesting_documents["removed"].remove(removed_doc)
+                        _sync_drive_node_status_from_queues(google_drive_documents_node)
+                        await google_drive_documents_node.save()
+                        logger.error("Error deleting document: %s", e, exc_info=True)
+                        failed_name = removed_doc.get("name", "")
+                        return {
+                            "status": "completed",
+                            "message": f"Failed to delete {failed_name}",
+                            "documents_ingested": document_ingested,
+                        }
+                if ingest_source == "ingesting_documents":
+                    google_drive_documents_node.ingesting_documents = (
+                        ingesting_documents
+                    )
+                _sync_drive_node_status_from_queues(google_drive_documents_node)
+                await google_drive_documents_node.save()
+                ingestion_message = (
+                    f"Deleted {', '.join(remove_docs_names)}"
+                    if remove_docs_names
+                    else "Removed documents processed"
+                )
+                return {
+                    "status": "completed",
+                    "message": ingestion_message,
+                    "documents_ingested": document_ingested,
+                }
 
             if ingesting_documents["added"]:
                 new_file = ingesting_documents["added"][0]
@@ -1133,8 +1267,19 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         ocr_eff, docling_eff = _drive_resolve_docling_ocr(docling_ocr_engine, ocr)
         initialize_pageindex_database(app_id=await _get_app_id_from_node())
         logger.info(
-            "PageIndex Google Drive Sync: starting ingestion for %d folder(s)",
+            "PageIndex Google Drive Sync: starting ingestion for %d folder(s) "
+            "(retry_failed=%s use_jvforge=%s convert_to_markdown=%s ocr=%s "
+            "docling_ocr_engine=%s normalize_bold_headings=%s "
+            "skip_existing=%s remove_deleted=%s)",
             len(google_drive_folders),
+            retry_failed_documents,
+            use_jvforge,
+            convert_to_markdown,
+            ocr_eff,
+            docling_eff,
+            normalize_bold_headings,
+            skip_existing_documents,
+            remove_deleted_documents,
         )
         document_ingested: Dict[str, List[str]] = {
             "added": [],

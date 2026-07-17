@@ -121,6 +121,30 @@ def validate_number(value: str, min_length: int = 1, **kwargs) -> Dict[str, Any]
     return _ok(digits)
 
 
+def validate_digits(value: str, min_length: int = 1, **kwargs) -> Dict[str, Any]:
+    """Strip every non-digit character and validate the remaining digits.
+
+    Accepts numbers with embedded symbols (spaces, hyphens, slashes, dots,
+    letters, currency markers) and stores the digit-only string. Rejects when
+    no digits remain. Supports ``min_length``/``max_length``/``exact_length``
+    (applied to the stripped digits); defaults accept any non-empty digit run.
+    """
+    if not value or not isinstance(value, str):
+        return _fail("Ask: Please provide a valid number")
+    digits = re.sub(r"\D", "", value)
+    if not digits:
+        return _fail("Ask: Please provide a valid number")
+    max_len = kwargs.get("max_length")
+    exact_len = kwargs.get("exact_length", kwargs.get("length"))
+    if exact_len and len(digits) != exact_len:
+        return _fail(f"Ask: The number should be exactly {exact_len} digits long")
+    if len(digits) < min_length:
+        return _fail(f"Ask: The number should be at least {min_length} digits long")
+    if max_len and len(digits) > max_len:
+        return _fail(f"Ask: The number should be at most {max_len} digits long")
+    return _ok(digits)
+
+
 def validate_date_past(
     value: str, date_format: str = "%d-%m-%Y", **kwargs
 ) -> Dict[str, Any]:
@@ -231,6 +255,7 @@ BUILTIN_VALIDATORS: Dict[str, ValidatorFn] = {
     "email": validate_email,
     "name": validate_name,
     "number": validate_number,
+    "digits": validate_digits,
     "date": validate_date,
     "date_past": validate_date_past,
     "date_future": validate_date_future,

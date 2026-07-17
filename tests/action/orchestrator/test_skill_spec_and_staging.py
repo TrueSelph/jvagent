@@ -5,13 +5,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from jvagent.action.orchestrator.catalog import build_skill_meta_tools
 from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.scaffold.skill_resolve import parse_skill_bundle
-
-pytestmark = pytest.mark.asyncio
 
 
 def test_pdf_generation_is_claude_spec():
@@ -47,7 +43,8 @@ async def test_use_skill_runs_activate_hook_for_claude():
     out = await meta["use_skill"].run({"name": "demo"})
     assert calls == ["demo"]
     assert "staged demo" in out
-    assert "PROCEDURE:\nSOP" in out
+    assert "Activated skill 'demo'" in out
+    assert "PROCEDURE:" not in out
 
 
 async def test_use_skill_hook_failure_does_not_break_activation():
@@ -58,4 +55,5 @@ async def test_use_skill_hook_failure_does_not_break_activation():
     meta = build_skill_meta_tools([doc], set(), [], set(), activate_hook=_hook)
     out = await meta["use_skill"].run({"name": "demo"})
     assert "activation hook error" in out
-    assert "PROCEDURE:\nSOP" in out  # still activated
+    assert "Activated skill 'demo'" in out  # still activated
+    assert "PROCEDURE:" not in out

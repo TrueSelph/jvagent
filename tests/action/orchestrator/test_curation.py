@@ -6,10 +6,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
-pytestmark = pytest.mark.asyncio
-
 
 async def test_routable_ia_dropped_from_walk_path(
     make_orchestrator, make_visitor, flow_stub_cls

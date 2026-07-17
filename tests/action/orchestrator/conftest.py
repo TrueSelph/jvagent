@@ -33,6 +33,24 @@ def _clear_skill_discovery_cache():
     clear_skill_discovery_cache()
 
 
+@pytest.fixture(autouse=True)
+def _register_interview_directive_trust():
+    """Mirror ``InterviewAction.on_register`` at boot.
+
+    At runtime InterviewAction declares the ``interview__`` tool namespace as a
+    trusted directive source (its results carry ``next_tool`` /
+    ``response_directive``). These tests construct the loop without booting the
+    action, so register the namespace here so directive chaining from
+    ``interview__*`` results behaves as in production.
+    """
+    from jvagent.action.orchestrator.constants import (
+        register_trusted_directive_prefix,
+    )
+
+    register_trusted_directive_prefix("interview__")
+    yield
+
+
 @pytest.fixture
 def publish_log() -> List[Dict[str, Any]]:
     return []

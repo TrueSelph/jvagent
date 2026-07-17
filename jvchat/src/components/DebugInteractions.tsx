@@ -110,6 +110,12 @@ export function DebugInteractions({
 }: DebugInteractionsProps) {
   const [parentInteractions, setParentInteractions] = useState<any[]>([]);
   const [modelAction, setModelAction] = useState<any>(null);
+  /** All LM actions registered on the agent, keyed by provider name. */
+  const [modelActions, setModelActions] = useState<Record<string, any>>({});
+  /** Provider selected in the per-interaction replay section. */
+  const [selectedProvider, setSelectedProvider] = useState<string>("");
+  /** Provider selected in the improve-prompt section. */
+  const [improveProvider, setImproveProvider] = useState<string>("");
   const [pagination, setPagination] = useState<{
     page: number;
     page_size: number;
@@ -167,6 +173,26 @@ export function DebugInteractions({
   useEffect(() => {
     selectedUserIdRef.current = selectedUserId;
   }, [selectedUserId]);
+
+  // When a model_call interaction is selected, auto-switch the provider
+  // selector to the provider recorded in the metric (observability_metrics
+  // → data.provider). Falls back to the first available provider if the
+  // recorded one isn't installed on this agent.
+  useEffect(() => {
+    if (!selectedInteraction) return;
+    if (selectedInteraction.event_type !== "model_call") return;
+    const metricProvider = selectedInteraction.data?.provider;
+    if (metricProvider && modelActions[metricProvider]) {
+      setSelectedProvider(metricProvider);
+      setModelAction(modelActions[metricProvider]);
+    } else {
+      const fallback = Object.keys(modelActions)[0] || "";
+      if (fallback) {
+        setSelectedProvider(fallback);
+        setModelAction(modelActions[fallback]);
+      }
+    }
+  }, [selectedInteraction, modelActions]);
 
   const userRef = useRef<HTMLTextAreaElement>(null);
   const systemRef = useRef<HTMLTextAreaElement>(null);
@@ -231,6 +257,7 @@ export function DebugInteractions({
             system_prompt: pd.system_prompt || "",
             response: pd.response || "",
             model: pd.model || "",
+            provider: pd.provider || "",
             history: history,
           },
         });
@@ -347,10 +374,29 @@ export function DebugInteractions({
 
       const actionsData = await apiClient.getActions(targetAgent.id);
       const actions = actionsData.actions || [];
-      const modelActionItem = actions.find(
-        (a: any) => a.context?.label === "openai_lm",
-      );
-      setModelAction(modelActionItem || null);
+      // Collect language-model actions for the supported providers only.
+      // Hardcoded to openai + ollama so non-LM actions that also carry a
+      // provider field (e.g. WhatsAppAction with provider "wwebjs") are
+      // excluded from the provider selector.
+      const ALLOWED_PROVIDERS = ["openai", "ollama"] as const;
+      const lmActions: Record<string, any> = {};
+      for (const a of actions) {
+        const provider = a.context?.provider;
+        if (
+          provider &&
+          (ALLOWED_PROVIDERS as readonly string[]).includes(provider)
+        ) {
+          lmActions[provider] = a;
+        }
+      }
+      setModelActions(lmActions);
+
+      // Default to the openai action if present, otherwise the first LM action.
+      const defaultProvider =
+        lmActions["openai"] ? "openai" : Object.keys(lmActions)[0] || "";
+      setSelectedProvider(defaultProvider);
+      setImproveProvider(defaultProvider);
+      setModelAction(lmActions[defaultProvider] || null);
 
       const logsResponse = await apiClient.getLogs({
         category: "INTERACTION",
@@ -566,10 +612,12 @@ export function DebugInteractions({
         prompt: selectedInteraction.data.user_prompt,
         system: selectedInteraction.data.system_prompt,
         model: selectedInteraction.data.model,
+        provider: selectedProvider || undefined,
         history: selectedInteraction.data.history || [],
       };
 
-      const data = await apiClient.queryAction(modelAction.id, payload);
+      const actionId = modelActions[selectedProvider]?.id || modelAction?.id;
+      const data = await apiClient.queryAction(actionId, payload);
       preserveScroll(() =>
         setTestResult({
           success: true,
@@ -620,10 +668,13 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
         system:
           "You are a prompt engineering expert. Analyze the given prompts and improve them based on the instruction.",
         model: improveModel,
+        provider: improveProvider || undefined,
         history: [],
       };
 
-      const data = await apiClient.queryAction(modelAction.id, improvePayload);
+      const improveActionId =
+        modelActions[improveProvider]?.id || modelAction?.id;
+      const data = await apiClient.queryAction(improveActionId, improvePayload);
       preserveScroll(() => setImproveResult(data.response || ""));
     } catch (error: any) {
       preserveScroll(() => setImproveResult(`Error: ${error.message}`));
@@ -1313,25 +1364,56 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                 {/* Model — model_call only. */}
                 {selectedInteraction.event_type === "model_call" && (
                   <div>
-                    <label
-                      className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}
-                    >
-                      Model
-                    </label>
-                    <input
-                      type="text"
-                      value={selectedInteraction.data.model}
-                      onChange={(e) =>
-                        setSelectedInteraction({
-                          ...selectedInteraction,
-                          data: {
-                            ...selectedInteraction.data,
-                            model: e.target.value,
-                          },
-                        })
-                      }
-                      className={`w-full p-2 rounded text-sm font-mono ${debugCodePanelClass(effectiveDarkMode)}`}
-                    />
+                    <div className="flex items-end gap-3">
+                      <div className="flex-1">
+                        <label
+                          className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}
+                        >
+                          Model
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedInteraction.data.model}
+                          onChange={(e) =>
+                            setSelectedInteraction({
+                              ...selectedInteraction,
+                              data: {
+                                ...selectedInteraction.data,
+                                model: e.target.value,
+                              },
+                            })
+                          }
+                          className={`w-full p-2 rounded text-sm font-mono ${debugCodePanelClass(effectiveDarkMode)}`}
+                        />
+                      </div>
+                      <div className="w-40">
+                        <label
+                          className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}
+                        >
+                          Provider
+                        </label>
+                        <select
+                          value={selectedProvider}
+                          onChange={(e) => {
+                            const p = e.target.value;
+                            setSelectedProvider(p);
+                            setModelAction(modelActions[p] || null);
+                          }}
+                          className={`w-full p-2 rounded text-sm font-mono ${debugCodePanelClass(effectiveDarkMode)}`}
+                        >
+                          {Object.keys(modelActions).length === 0 && (
+                            <option value="">No LM actions</option>
+                          )}
+                          {Object.entries(modelActions).map(
+                            ([p]: [string, any]) => (
+                              <option key={p} value={p}>
+                                {p}
+                              </option>
+                            ),
+                          )}
+                        </select>
+                      </div>
+                    </div>
                   </div>
                 )}
                 {/* Test Button — only meaningful for model_call events
@@ -1437,15 +1519,40 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2">
-                    Model for Improvement
-                  </label>
-                  <input
-                    type="text"
-                    value={improveModel}
-                    onChange={(e) => setImproveModel(e.target.value)}
-                    className={`w-full p-2 rounded text-sm font-mono ${debugCodePanelClass(effectiveDarkMode)}`}
-                  />
+                  <div className="flex items-end gap-3">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium mb-2">
+                        Model for Improvement
+                      </label>
+                      <input
+                        type="text"
+                        value={improveModel}
+                        onChange={(e) => setImproveModel(e.target.value)}
+                        className={`w-full p-2 rounded text-sm font-mono ${debugCodePanelClass(effectiveDarkMode)}`}
+                      />
+                    </div>
+                    <div className="w-40">
+                      <label className="block text-sm font-medium mb-2">
+                        Provider
+                      </label>
+                      <select
+                        value={improveProvider}
+                        onChange={(e) => setImproveProvider(e.target.value)}
+                        className={`w-full p-2 rounded text-sm font-mono ${debugCodePanelClass(effectiveDarkMode)}`}
+                      >
+                        {Object.keys(modelActions).length === 0 && (
+                          <option value="">No LM actions</option>
+                        )}
+                        {Object.entries(modelActions).map(
+                          ([p]: [string, any]) => (
+                            <option key={p} value={p}>
+                              {p}
+                            </option>
+                          ),
+                        )}
+                      </select>
+                    </div>
+                  </div>
                 </div>
                 <div className="flex justify-end gap-2">
                   <button

@@ -1231,10 +1231,16 @@ class GoogleSheetsAction(GoogleAction):
         else:
             permission = {"type": "user", "role": role, "emailAddress": email}
 
-        service.permissions().create(fileId=file_id, body=permission).execute()
+        service.permissions().create(
+            fileId=file_id, body=permission, supportsAllDrives=True
+        ).execute()
 
         if share_type == "link":
-            file = service.files().get(fileId=file_id, fields="webViewLink").execute()
+            file = (
+                service.files()
+                .get(fileId=file_id, fields="webViewLink", supportsAllDrives=True)
+                .execute()
+            )
             return {"webViewLink": file.get("webViewLink")}
 
         return {"success": True}
@@ -1260,5 +1266,5 @@ class GoogleSheetsAction(GoogleAction):
             self._resolve_spreadsheet_url_or_id(spreadsheet_url_or_id)
         )
         service = await self._get_sheets_service()
-        service.files().delete(fileId=file_id).execute()
+        service.files().delete(fileId=file_id, supportsAllDrives=True).execute()
         return True

@@ -35,8 +35,11 @@ _INTERVIEW_KEYS = frozenset(
         "fields",
         "handlers",
         "skill_tools",
+        "parameters",
     }
 )
+
+_PARAMETER_KEYS = frozenset({"scope", "condition", "response"})
 
 _FIELD_KEYS = frozenset(
     {
@@ -52,10 +55,11 @@ _FIELD_KEYS = frozenset(
         "branches",
         "else",
         "for_each",
+        "for_each_prefix",
     }
 )
 
-_FOR_EACH_KEYS = frozenset({"prompt_prefix", "fields"})
+_FOR_EACH_KEYS = frozenset({"fields"})
 
 # Subpart fields inside for_each — no branches/else/nested for_each in v1.
 _FOR_EACH_CHILD_FIELD_KEYS = frozenset(
@@ -87,7 +91,6 @@ class BranchDef:
 class ForEachDef:
     """Per-item subpart field templates declared under a parent field."""
 
-    prompt_prefix: str = "For item #{index}:"
     fields: List["FieldDef"] = field(default_factory=list)
 
 
@@ -95,14 +98,14 @@ class ForEachDef:
 class FieldDef:
     key: str
     prompt: str
+    # Catalog acceptance criteria for judging the answer (field_reference /
+    # next_field). Not the directive guidance block — that is default paraphrase
+    # rules plus optional ``hint`` after the compose marker.
     guidance: str = ""
-    # Plain answer-guidance FOR THE USER — how to answer this question (e.g. "enter
-    # your first, last, and any other names"; an accepted format; that a field is
-    # optional). Woven into the prompt's user-facing text so the agent instructs the
-    # user on the intended answer, and surfaced in field_reference / next_field so
-    # the model can answer the user's clarifications. Phrase it as what to tell the
-    # user, non-redundant with ``prompt``. Distinct from ``guidance``, which is
-    # model-facing acceptance criteria for judging the answer.
+    # Optional model-only compose steering appended into the directive's guidance
+    # block (after the default paraphrase rules). Never user-facing text. Also
+    # surfaced on field_reference / next_field for clarifications. Distinct from
+    # ``guidance`` (catalog acceptance criteria).
     hint: str = ""
     required: bool = True
     validator: str = ""
@@ -112,6 +115,7 @@ class FieldDef:
     branches: List[BranchDef] = field(default_factory=list)
     else_field: Optional[str] = None
     for_each: Optional[ForEachDef] = None
+    for_each_prefix: str = ""
 
 
 @dataclass
@@ -131,6 +135,7 @@ class InterviewSpec:
     skill_tools: List[SkillToolDef] = field(default_factory=list)
     handlers: HandlersDef = field(default_factory=HandlersDef)
     confirm: ConfirmMode = "manual"
+    parameters: List[Dict[str, Any]] = field(default_factory=list)
     source_dir: str = ""
 
     def get_required_fields(self) -> List[str]:
@@ -252,8 +257,7 @@ def _parse_for_each(data: Any, *, path: str) -> ForEachDef:
     child_keys = [c.key for c in children]
     if len(child_keys) != len(set(child_keys)):
         raise ValueError(f"Duplicate for_each child keys at {path}")
-    prefix = str(data.get("prompt_prefix") or "For item #{index}:").strip()
-    return ForEachDef(prompt_prefix=prefix, fields=children)
+    return ForEachDef(fields=children)
 
 
 def _parse_field(data: Dict[str, Any], *, index: int) -> FieldDef:
@@ -278,9 +282,9 @@ def _parse_field(data: Dict[str, Any], *, index: int) -> FieldDef:
     )
     return FieldDef(
         key=str(data.get("key", "") or "").strip(),
-        prompt=str(data.get("prompt", "") or ""),
-        guidance=str(data.get("guidance", "") or ""),
-        hint=str(data.get("hint", "") or ""),
+        prompt=str(data.get("prompt", "") or "").strip(),
+        guidance=str(data.get("guidance", "") or "").strip(),
+        hint=str(data.get("hint", "") or "").strip(),
         required=bool(data.get("required", True)),
         validator=str(validator or "").strip(),
         validator_args=dict(data.get("validator_args") or {}),
@@ -289,6 +293,7 @@ def _parse_field(data: Dict[str, Any], *, index: int) -> FieldDef:
         branches=branches,
         else_field=data.get("else"),
         for_each=for_each,
+        for_each_prefix=str(data.get("for_each_prefix") or "").strip(),
     )
 
 
@@ -367,6 +372,29 @@ def parse_interview_spec(
         require_mapping=True,
     )
 
+    parameters: List[Dict[str, Any]] = []
+    for i, p in enumerate(data.get("parameters", []) or []):
+        if not p:
+            continue
+        if not isinstance(p, dict):
+            raise ValueError(f"parameters[{i}] must be a mapping")
+        reject_unknown_keys(p, _PARAMETER_KEYS, path=f"interview.parameters[{i}]")
+        if not p.get("response"):
+            raise ValueError(f"interview.parameters[{i}].response is required")
+        scope = str(p.get("scope", "response")).strip().lower()
+        if scope not in ("response", "orchestration"):
+            raise ValueError(
+                f"interview.parameters[{i}].scope must be 'response' or 'orchestration', "
+                f"got {scope!r}"
+            )
+        parameters.append(
+            {
+                "scope": scope,
+                "condition": str(p.get("condition", "") or "").strip(),
+                "response": str(p["response"]).strip(),
+            }
+        )
+
     return InterviewSpec(
         name=name,
         title=str(data.get("title", "") or ""),
@@ -375,6 +403,7 @@ def parse_interview_spec(
         skill_tools=skill_tools,
         handlers=_parse_handlers(data.get("handlers")),
         confirm=_parse_confirm(data.get("confirm")),
+        parameters=parameters,
         source_dir=source_dir,
     )
 

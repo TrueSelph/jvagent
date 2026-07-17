@@ -725,6 +725,15 @@ async def ensure_task_lock_session(
     return None
 
 
+def activated_skill_section_text(skill_doc: Any) -> str:
+    """PROCEDURE block for a non-task-lock skill after ``use_skill``.
+
+    Kept out of the ``use_skill`` observation so "Steps taken this turn" stays
+    a contiguous list of TOOL lines; the SOP lives in system ``skills_section``.
+    """
+    return f"ACTIVE SKILL: {skill_doc.name}\n" f"PROCEDURE:\n{skill_doc.body}"
+
+
 def task_lock_section_text(
     skill_doc: Any,
     *,
@@ -907,6 +916,51 @@ def _append_session_note(observations: List[Dict[str, Any]], note: str) -> None:
     )
 
 
+def _observation_has_activation_catalog(text: str, skill_name: str) -> bool:
+    """True when ``text`` is a fresh activation envelope for ``skill_name``."""
+    if not text or not skill_name:
+        return False
+    has_type = (
+        f'"interview_type": "{skill_name}"' in text
+        or f'"interview_type":"{skill_name}"' in text
+    )
+    activated = f"Activated skill '{skill_name}'" in text
+    if not (activated or has_type):
+        return False
+    # Catalog = field_reference (preferred) or at least the typed envelope.
+    return "field_reference" in text or has_type
+
+
+def activation_catalog_in_observations(
+    observations: List[Dict[str, Any]], skill_name: str
+) -> bool:
+    """True when this turn already has the skill's activation catalog.
+
+    Used to skip ``prepare_task_lock_turn`` re-grounding on the same turn as
+    ``use_skill`` / skill-session bootstrap so ``interview_type`` +
+    ``field_reference`` appear once under Steps taken this turn.
+    """
+    for ob in observations:
+        if not isinstance(ob, dict):
+            continue
+        tool = ob.get("tool") or ""
+        text = ob.get("observation") or ""
+        if not isinstance(text, str):
+            continue
+        if tool == "use_skill":
+            args = ob.get("args") or {}
+            name = (args.get("name") if isinstance(args, dict) else None) or ""
+            if name and name != skill_name:
+                continue
+            if _observation_has_activation_catalog(text, skill_name):
+                return True
+        elif tool == "(skill-session)" and _observation_has_activation_catalog(
+            text, skill_name
+        ):
+            return True
+    return False
+
+
 async def apply_task_lock_turn(
     skill_doc: Any,
     actions: List[Any],
@@ -939,10 +993,11 @@ async def apply_task_lock_turn(
         except Exception:
             runtime_ready = False
 
+    skip_prep_obs = activation_catalog_in_observations(observations, skill_doc.name)
     if bound is not None and hasattr(bound, "prepare_task_lock_turn"):
         try:
             prep = await bound.prepare_task_lock_turn(skill_doc.name, visitor)
-            if prep.observations:
+            if prep.observations and not skip_prep_obs:
                 for ob in prep.observations:
                     if isinstance(ob, dict):
                         ob.setdefault("kind", "server_prep")

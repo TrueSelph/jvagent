@@ -19,7 +19,7 @@ allowed-tools:
 
 Conduct interviews by calling `interview__*` tools. The server does not steer turns — you classify intent, extract values, and chain tools ([thin harness](docs/thin-harness.md)).
 
-Context contract: activation via `use_skill` is the single field catalog — `field_reference` (every field's `key`, `prompt`, `guidance`, `required`, and optional `hint`) plus `start_field` (where to begin). A field's `hint` is plain answer-guidance for the user — convey it with that field's prompt to explain the intended answer, and use it to answer the user's clarifications about the field. Nothing else duplicates that data. `interview__set_fields` returns only per-field outcomes (`results`: saved-or-not + the value you submitted + why, when not saved) and `response_directive`; `interview__next_field` returns `{key, prompt}` + directive. Re-pull `field_reference` any time with `interview__get_status`.
+Context contract: activation via `use_skill` is the single field catalog — `field_reference` (every field's `key`, `prompt`, `guidance`, `required`, and optional `hint`) plus `start_field` (where to begin). A field's `hint` is optional **model-only** compose steering (not relayed verbatim) — user-facing text belongs in `prompt` / catalog `guidance`; use `hint` for how to phrase or answer clarifications, not as copy to read aloud. Nothing else duplicates that data. `interview__set_fields` returns only per-field outcomes (`results`: saved-or-not + the value you submitted + why, when not saved) and `response_directive`; `interview__next_field` returns `{key, prompt}` + directive. Re-pull `field_reference` any time with `interview__get_status`.
 
 ## Session gate
 
