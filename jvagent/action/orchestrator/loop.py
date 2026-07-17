@@ -109,26 +109,32 @@ class OrchestratorLoopMixin:
                 # internal status sentinel ("(ran X)" / "(no visitor available)"
                 # / "(flow error: …)") — those are loop-internal. Surface a clean
                 # message instead.
+                #
+                # EVERY non-emitting locked turn — access-denied, a thrown
+                # error, or a silently-non-emitting IA — must count toward the
+                # escape streak. Otherwise a flow that denies access (AC revoked
+                # mid-flow) or runs without ever emitting/completing traps the
+                # user behind the turn-lock forever: the same dead-end reply on
+                # every subsequent turn, with no way to route elsewhere. After
+                # LOCKED_FLOW_ERROR_LIMIT consecutive dead-ends the owning
+                # control-task is abandoned so the next turn runs the loop.
+                # AUDIT-orchestrator HIGH.
                 res = locked_result.strip()
                 if "access denied" in res.lower():
                     ended = "locked_denied"
-                    await self._emit_reply(
-                        visitor,
+                    reply = (
                         "You don't currently have access to continue this. Let "
-                        "me know if there's something else I can help with.",
+                        "me know if there's something else I can help with."
                     )
                 elif res.startswith("(flow error") or res.startswith("(tool error"):
-                    # A persistently-throwing locked flow would trap the user
-                    # behind the turn-lock forever (every turn dead-ends in
-                    # clarify). Tolerate one failure (transient), then abandon
-                    # the owning control-task so the next turn runs the loop.
                     ended = "locked_error"
-                    if await _orch().note_locked_flow_error(visitor, flow_owner):
-                        ended = "locked_error_escape"
-                    await self._emit_reply(visitor, self.clarify_text)
+                    reply = self.clarify_text
                 else:
                     ended = "locked_silent"
-                    await self._emit_reply(visitor, self.clarify_text)
+                    reply = self.clarify_text
+                if await _orch().note_locked_flow_error(visitor, flow_owner):
+                    ended = f"{ended}_escape"
+                await self._emit_reply(visitor, reply)
             else:
                 # A working flow resets the failure streak.
                 await _orch().clear_locked_flow_error(visitor, flow_owner)

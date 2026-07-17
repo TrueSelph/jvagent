@@ -1109,3 +1109,81 @@ async def test_locked_flow_success_resets_error_streak(
     v3.conversation = conversation
     await ex.execute(v3)  # error #1 again (not #2)
     assert conversation.tasks[0]["status"] == "active"
+
+
+async def test_locked_denied_repeated_cancels_control_task(
+    make_orchestrator, make_visitor, flow_stub_cls
+):
+    """A locked flow that denies access every turn (AC revoked mid-flow) must
+    not trap the user forever. After two consecutive denied turns the owning
+    control-task is cancelled so the next turn runs the normal loop again."""
+    from jvagent.tooling.tool_result import ToolResult
+
+    class DeniedIA(flow_stub_cls):
+        anchors = ["sign up for training"]
+        description = "Signup interview."
+
+        async def execute(self, visitor):  # no user-facing emission
+            pass
+
+        async def _run_as_orchestrator_tool(self, visitor=None, **kwargs):
+            return ToolResult(content="access denied")
+
+    ia = DeniedIA()
+    ex = make_orchestrator(actions=[ia], action_registry={"DeniedIA": ia})
+    v = _capture_visitor(make_visitor, utterance="hi")
+    conversation = v.conversation
+    conversation.tasks = [
+        {
+            "id": "task_1",
+            "title": "DeniedIA",
+            "description": "signup flow",
+            "owner_action": "DeniedIA",
+            "status": "active",
+        }
+    ]
+
+    await ex.execute(v)
+    assert conversation.tasks[0]["status"] == "active"
+
+    v2 = _capture_visitor(make_visitor, utterance="hi again")
+    v2.conversation = conversation
+    await ex.execute(v2)
+    assert conversation.tasks[0]["status"] == "cancelled"
+
+
+async def test_locked_silent_repeated_cancels_control_task(
+    make_orchestrator, make_visitor, flow_stub_cls
+):
+    """A locked IA that runs but never emits/completes must not trap the user
+    forever either. After two consecutive silent turns the owning control-task
+    is cancelled so the next turn runs the normal loop again."""
+
+    class SilentIA(flow_stub_cls):
+        anchors = ["sign up for training"]
+        description = "Signup interview."
+
+        async def execute(self, visitor):  # runs, emits nothing
+            pass
+
+    ia = SilentIA()
+    ex = make_orchestrator(actions=[ia], action_registry={"SilentIA": ia})
+    v = _capture_visitor(make_visitor, utterance="hi")
+    conversation = v.conversation
+    conversation.tasks = [
+        {
+            "id": "task_1",
+            "title": "SilentIA",
+            "description": "signup flow",
+            "owner_action": "SilentIA",
+            "status": "active",
+        }
+    ]
+
+    await ex.execute(v)
+    assert conversation.tasks[0]["status"] == "active"
+
+    v2 = _capture_visitor(make_visitor, utterance="hi again")
+    v2.conversation = conversation
+    await ex.execute(v2)
+    assert conversation.tasks[0]["status"] == "cancelled"
