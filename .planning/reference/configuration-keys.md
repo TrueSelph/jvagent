@@ -400,9 +400,11 @@ falling back to `request.client.host`. Behind a trusted reverse proxy
 this is correct; on a direct-internet listener it lets a client spoof
 their IP and side-step per-IP rate limits.
 
-Set ``JVAGENT_TRUST_PROXY_HEADERS=false`` to ignore the proxy headers
-and always use ``request.client.host``. Default is ``true`` for
-backward compatibility. AUDIT-interact MED-12.
+Default is ``JVAGENT_TRUST_PROXY_HEADERS=false`` — proxy headers are
+ignored and ``request.client.host`` is always used. This is the
+fail-safe default. Set ``JVAGENT_TRUST_PROXY_HEADERS=true`` ONLY when
+jvagent runs behind a trusted reverse proxy that overwrites these
+headers. AUDIT-interact HIGH (was MED-12).
 
 ## 11. Reading list
 

@@ -437,10 +437,22 @@ async def interact_endpoint(
                     user_id=user_id,
                 )
             if identity.reject:
+                # Log the machine reason server-side only. Returning it in the
+                # response body leaks session state to the client (e.g.
+                # `bind_user_mismatch` confirms the session exists and the token
+                # is valid but for another user). AUDIT-interact MED (reason leak).
+                logger.info(
+                    "interact_auth_rejected",
+                    extra={
+                        "agent_id": agent_id,
+                        "reason": identity.reason,
+                        "mode": identity.mode,
+                        "via": identity.via,
+                    },
+                )
                 raise AuthenticationError(
                     message="Session authentication is required or the "
                     "supplied credentials are invalid.",
-                    details={"reason": identity.reason},
                 )
             if identity.denial and identity.mode == MODE_LOG:
                 logger.warning(
@@ -471,7 +483,12 @@ async def interact_endpoint(
                 # Streaming mode: return SSE response
                 # Note: Profiling for streaming is handled in _stream_interaction
                 return create_sse_response(
-                    _stream_interaction(walker, agent, request),
+                    _stream_interaction(
+                        walker,
+                        agent,
+                        request,
+                        allow_session_token=not identity.denial,
+                    ),
                     headers={"X-Session-ID": walker.session_id or ""},
                 )
             else:
@@ -553,9 +570,17 @@ async def interact_endpoint(
                 # Mint/refresh the Mode B session capability token (ADR-0020) so
                 # the client can resume this conversation on the next call. No-op
                 # in `off` mode / non-web channels.
-                session_token = await _issue_session_token(walker, agent_id)
-                if session_token and isinstance(result, dict):
-                    result["session_token"] = session_token
+                #
+                # Never mint for a denied identity: in `log` mode a tokenless /
+                # failed resume still reaches here (denials are observed, not
+                # enforced), and issuing a valid capability token then would hand
+                # an attacker a durable credential bound to the conversation's
+                # `token_secret` — one that keeps validating after the operator
+                # flips to `required`. AUDIT-interact MED (log-mode token mint).
+                if not identity.denial:
+                    session_token = await _issue_session_token(walker, agent_id)
+                    if session_token and isinstance(result, dict):
+                        result["session_token"] = session_token
 
                 # Fire background actions (await in Lambda to ensure it finishes before the execution freezes)
                 if walker.background_actions:
@@ -611,7 +636,10 @@ async def interact_endpoint(
 
 
 async def _stream_interaction(
-    walker: InteractWalker, agent: Agent, request: Optional[Request] = None
+    walker: InteractWalker,
+    agent: Agent,
+    request: Optional[Request] = None,
+    allow_session_token: bool = True,
 ) -> AsyncGenerator[str, None]:
     """Stream interaction as SSE chunks.
 
@@ -620,6 +648,10 @@ async def _stream_interaction(
         agent: Agent node
         request: Optional FastAPI Request used to detect client disconnection so
             the in-flight walker can be cancelled when the user stops generation.
+        allow_session_token: When False, no Mode B token is minted into the
+            start chunk. Set False for a denied identity (``log`` mode) so an
+            attacker cannot obtain a durable capability token — mirrors the
+            non-streaming path. AUDIT-interact MED (log-mode token mint).
 
     Yields:
         SSE-formatted string chunks
@@ -726,7 +758,11 @@ async def _stream_interaction(
         # Mint/refresh the Mode B session capability token (ADR-0020) and deliver
         # it in-stream — new streaming sessions have no resolved session_id at
         # response-header time, so the client reads both from the start chunk.
-        session_token = await _issue_session_token(walker, walker.agent_id or "")
+        session_token = (
+            await _issue_session_token(walker, walker.agent_id or "")
+            if allow_session_token
+            else None
+        )
 
         # Send initial message
         start_event: Dict[str, Any] = {

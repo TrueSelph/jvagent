@@ -25,7 +25,6 @@ from jvagent.cli.commands import (
     show_status,
 )
 from jvagent.cli.server_config import _set_db_env_from_config
-from jvagent.core.config import is_development_mode
 from jvagent.stress_seed_graph import STRESS_FLAG_NAMES, parse_stress_seed_for_run
 
 configure_standard_logging(
@@ -179,18 +178,30 @@ def main() -> None:
 
     args = [arg for arg in args if arg not in ["--update", "--source", "--merge"]]
 
+    assume_yes = "--yes" in args
+    if assume_yes:
+        args = [arg for arg in args if arg != "--yes"]
+
     purge_flag = "--purge" in args
     if purge_flag:
         args = [arg for arg in args if arg != "--purge"]
 
-        if not is_development_mode():
+        # Require development mode to be EXPLICITLY set, not merely defaulted.
+        # A misconfigured production host with JVSPATIAL_ENVIRONMENT unset
+        # defaults to "development" and would otherwise pass this guard.
+        raw_env = (os.environ.get("JVSPATIAL_ENVIRONMENT") or "").strip().lower()
+        if raw_env != "development":
             logger.error("The --purge flag is only allowed in development mode.")
             logger.error(
-                "Set JVSPATIAL_ENVIRONMENT=development or ensure you are not in production mode."
+                "Set JVSPATIAL_ENVIRONMENT=development explicitly to use --purge."
             )
             sys.exit(1)
 
-        purge_app_data(app_root=app_root)
+        assume_yes = assume_yes or (
+            os.environ.get("JVAGENT_ASSUME_YES", "").strip().lower()
+            in {"true", "1", "yes", "on"}
+        )
+        purge_app_data(app_root=app_root, assume_yes=assume_yes)
 
     # ``jvagent`` and ``jvagent run`` are the same
     if args and args[0] == "run":
