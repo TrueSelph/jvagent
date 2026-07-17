@@ -8,8 +8,6 @@ import pytest
 
 from jvagent.action.orchestrator.continuation import cancel_orphan_flow_tasks
 
-pytestmark = pytest.mark.asyncio
-
 
 async def test_cancel_orphan_flow_tasks_cancels_unroutable_owner():
     handle = MagicMock()

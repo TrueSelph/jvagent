@@ -10,11 +10,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
 from jvagent.action.interact import response_builder as rb
-
-pytestmark = pytest.mark.asyncio
 
 
 def _interaction():

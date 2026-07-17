@@ -137,7 +137,6 @@ fields:
   - key: tracking_numbers
     post_processor: check_tracking_statuses
     for_each:
-      prompt_prefix: "For tracking #{index} ({label}):"
       fields:
         - key: description
           prompt: What is the description?
@@ -156,7 +155,7 @@ async def check_tracking_statuses(ctx):
 
 1. Parent field stores → post-processor runs → engine reads `for_each_expand`.
 2. Engine initializes `session.context["for_each"][parent_key]` with `items`, `records`, active index.
-3. Collectible path interleaves subpart fields for the active item (prompts prefixed via `prompt_prefix`).
+3. Collectible path interleaves subpart fields for the active item (prompts prefixed with the default or custom `for_each_prefix`).
 4. After the last subpart field for an item stores, engine snapshots to `records[]`, clears scratch, advances index.
 5. When all items done (or `skip=True`), flow resumes the main field path (typically `interview__review`).
 

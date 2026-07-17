@@ -7,8 +7,6 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
-import pytest
-
 from jvagent.tooling.tool import Tool
 from jvagent.tooling.tool_executor import (
     ToolExecutionEngine,
@@ -18,8 +16,6 @@ from jvagent.tooling.tool_executor import (
 )
 from jvagent.tooling.tool_registry import ToolRegistry
 from jvagent.tooling.tool_result import ToolResult
-
-pytestmark = pytest.mark.asyncio
 
 
 def _registry(*tools: Tool) -> ToolRegistry:

@@ -60,7 +60,8 @@ class OrchestratorLoopMixin:
         )
         lean_surface = bool(surface_meta.get("lean"))
         skill_names = {getattr(d, "name", "") for d in skill_docs}
-        skills_section = render_skills_section(skill_docs)
+        blocked_skill_notes = surface_meta.get("blocked_skill_notes") or []
+        skills_section = render_skills_section(skill_docs, blocked_skill_notes)
         # Advertised abilities: each enabled action's get_capabilities() merged
         # with the skill descriptions. Sourced from the actions/skills directly
         # (not the lean-surfaced tool list), so it stays complete even when most
@@ -731,6 +732,27 @@ class OrchestratorLoopMixin:
                                     {"response_directive": detour_directive}
                                 )
                                 obs_server_generated = True
+                        elif (
+                            skill_name
+                            and isinstance(obs, str)
+                            and obs.startswith("Activated skill")
+                        ):
+                            # Non-task-lock: PROCEDURE lives in skills_section so
+                            # Steps taken this turn stays TOOL-only.
+                            from jvagent.action.orchestrator.skill_tasks import (
+                                activated_skill_section_text,
+                            )
+
+                            doc = next(
+                                (
+                                    d
+                                    for d in skill_docs
+                                    if getattr(d, "name", None) == skill_name
+                                ),
+                                None,
+                            )
+                            if doc is not None:
+                                skills_section = activated_skill_section_text(doc)
                     # Companion detour: a companion capability (tool or skill) was
                     # used while a parent skill holds the turn-lock. Re-ground the
                     # parent in place so the model returns to it as soon as the side

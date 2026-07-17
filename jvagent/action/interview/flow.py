@@ -16,6 +16,7 @@ from .for_each import (
     reachable_for_each_child_keys,
     resolve_field_def,
 )
+from .hooks import load_hook_function
 from .session import InterviewSession
 from .spec import FieldDef, InterviewSpec
 
@@ -438,9 +439,12 @@ async def build_next_field(
         child_fdef = spec.get_for_each_child_field(active.parent_key, nxt)
         if not child_fdef:
             return None
+        prefix_fn = None
+        if active.parent_fdef.for_each_prefix:
+            prefix_fn = load_hook_function(spec, active.parent_fdef.for_each_prefix)
         entry = _slim_field_entry(child_fdef)
         entry["prompt"] = build_prefixed_child_prompt(
-            active.parent_fdef, child_fdef, active.state
+            active.parent_fdef, child_fdef, active.state, prefix_fn=prefix_fn
         )
         if child_fdef.validator:
             entry["validator"] = child_fdef.validator

@@ -5,12 +5,8 @@ exercises the tool surface + executor end-to-end without a live App."""
 
 from __future__ import annotations
 
-import pytest
-
 from jvagent.action.code_execution.code_execution_action import CodeExecutionAction
 from jvagent.tooling.tool_executor import bind_dispatch_context
-
-pytestmark = pytest.mark.asyncio
 
 
 class _Visitor:

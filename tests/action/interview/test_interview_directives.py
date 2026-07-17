@@ -9,6 +9,7 @@ import pytest
 from jvagent.action.interview.hooks import (
     ACTIVATION_PHASE,
     STORE_PHASE,
+    TOOL_PHASE,
     VALIDATE_PHASE,
     HookExecutionContext,
     call_hook,
@@ -53,6 +54,29 @@ async def test_say_hint_is_model_only_guidance():
     user_facing, guidance = rd.split(_MARKER, 1)
     assert "Enter the code." in user_facing and "do not skip" not in user_facing
     assert "do not skip" in guidance
+    assert "paraphrase" in guidance.lower()
+    assert "\n" in guidance
+    assert guidance.index("paraphrase") < guidance.index("do not skip")
+
+
+@pytest.mark.asyncio
+async def test_say_hint_folds_on_tool_phase():
+    """LLM-invoked skill tools (TOOL_PHASE) must keep ctx.say hints for compose."""
+
+    async def hook(ctx):
+        ctx.say(
+            "I'd like to process your ID for you — it looks like the image "
+            "didn't come through.",
+            hint=("If the user mentions they have a photo, encourage them to send it."),
+        )
+        return ctx.tool_response(ok=False, status="no_image")
+
+    rd = (await call_hook(hook, phase=TOOL_PHASE))["response_directive"]
+    user_facing, guidance = rd.split(_MARKER, 1)
+    assert "image didn't come through" in user_facing
+    assert "encourage them to send it" not in user_facing
+    assert "encourage them to send it" in guidance
+    assert "paraphrase" in guidance.lower()
 
 
 @pytest.mark.asyncio

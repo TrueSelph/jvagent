@@ -10,8 +10,11 @@ restricted to the *visible* set, so hidden tools must first be loaded via
 ``find_tool`` or surfaced by a skill.)
 
 ``find_skill`` / ``use_skill`` mirror this for native SOP skills: only names +
-descriptions are surfaced up front; ``use_skill`` returns the full procedure
-body as an observation so it persists for the rest of the loop.
+descriptions are surfaced up front. ``use_skill`` returns a short activation
+note (plus any activate-hook payload) as an observation — tool steps stay
+contiguous under "Steps taken this turn". The skill PROCEDURE body is surfaced
+via the system ``skills_section`` (task-lock or post-activation), not inside
+the observation.
 """
 
 from __future__ import annotations
@@ -122,6 +125,34 @@ def build_catalog_tools(
     }
 
 
+def _skill_search_text(doc: SkillDoc) -> str:
+    """Name + description + tags used for ``find_skill`` matching."""
+    tags: List[str] = []
+    meta = getattr(doc, "metadata", None) or {}
+    if isinstance(meta, dict):
+        raw_tags = meta.get("tags") or []
+        if isinstance(raw_tags, str):
+            tags = [raw_tags] if raw_tags.strip() else []
+        elif isinstance(raw_tags, (list, tuple)):
+            tags = [str(t) for t in raw_tags if str(t).strip()]
+    return (doc.name + " " + (doc.description or "") + " " + " ".join(tags)).lower()
+
+
+def _channel_deny_observation(doc: SkillDoc) -> str:
+    """Observation when the model probes a channel-blocked skill (ADR-0032)."""
+    directive = (getattr(doc, "deny_access_directive", "") or "").strip()
+    if not directive:
+        return (
+            f"Skill '{doc.name}' is not available on this channel. "
+            "Tell the user you cannot help with that here; offer no workaround."
+        )
+    return (
+        f"Skill '{doc.name}' is not available on this channel. "
+        "Reply to the user with this message verbatim and offer no workaround:\n"
+        f"{directive}"
+    )
+
+
 def build_skill_meta_tools(
     docs: List[SkillDoc],
     available_tool_names: Set[str],
@@ -129,8 +160,17 @@ def build_skill_meta_tools(
     visible: Optional[Set[str]] = None,
     activate_hook: Optional[Callable[[SkillDoc], Awaitable[Optional[str]]]] = None,
     reactivate_hook: Optional[Callable[[SkillDoc], Awaitable[bool]]] = None,
+    blocked_docs: Optional[List[SkillDoc]] = None,
 ) -> Dict[str, SkillTool]:
     """``find_skill`` / ``use_skill`` over skills (progressive disclosure).
+
+    ``docs`` must already be the *channel-allowed* subset (ADR-0032): the
+    orchestrator drops channel-blocked skills before calling this, so they
+    never appear as activatable skills. ``blocked_docs`` carries those
+    channel-blocked skills so ``find_skill`` / ``use_skill`` can return their
+    ``deny_access_directive`` when the model's query or name matches — a
+    stronger signal than the skills_section note alone. Deny directives are
+    also surfaced via ``render_skills_section`` blocked notes.
 
     When ``visible`` is provided, activating a JV skill via ``use_skill``
     surfaces the skill's declared ``allowed-tools`` (those present on the
@@ -139,30 +179,50 @@ def build_skill_meta_tools(
 
     ``activate_hook`` runs once on a skill's first activation (e.g. to stage a
     Claude skill's folder into the code-execution sandbox); a non-empty string
-    it returns is appended to the activation observation.
+    it returns is appended to the activation observation. The skill PROCEDURE
+    body is not embedded in the observation — the orchestrator surfaces it via
+    system ``skills_section`` so Steps taken this turn stays TOOL-only.
     """
-    if not docs:
+    blocked = list(blocked_docs or [])
+    if not docs and not blocked:
         return {}
     index = {d.name: d for d in docs}
+    blocked_index = {d.name: d for d in blocked}
 
     async def _find(args: Dict[str, Any]) -> str:
         q = ((args or {}).get("query") or "").strip().lower()
-        hits = [
-            d for d in docs if not q or q in (d.name + " " + d.description).lower()
-        ] or docs
+        # Channel-blocked match wins: relay deny instead of listing unrelated
+        # allowed skills (stops the model improvising a gated flow).
+        if q:
+            blocked_hits = [
+                d
+                for d in blocked
+                if q in _skill_search_text(d)
+                and (getattr(d, "deny_access_directive", "") or "").strip()
+            ]
+            if blocked_hits:
+                return "\n\n".join(
+                    _channel_deny_observation(d) for d in blocked_hits[:3]
+                )
+        hits = [d for d in docs if not q or q in _skill_search_text(d)] or list(docs)
+        if not hits:
+            return "(no skills matched)"
         lines = [f"- {d.name}: {d.description}" for d in hits[:10]]
         return "Available skills (call use_skill to load one):\n" + "\n".join(lines)
 
     async def _use(args: Dict[str, Any]) -> str:
         name = ((args or {}).get("name") or "").strip()
+        blocked_doc = blocked_index.get(name)
+        if blocked_doc is not None:
+            return _channel_deny_observation(blocked_doc)
         doc = index.get(name)
         if doc is None:
             return f"(no such skill: {name})"
         present = [t for t in doc.requires_tools if t in available_tool_names]
         missing = [t for t in doc.requires_tools if t not in available_tool_names]
         # Idempotent: re-activating a skill already loaded this turn returns a
-        # short directive instead of re-dumping the SOP, so the model proceeds
-        # with the procedure instead of looping on use_skill.
+        # short directive instead of re-dumping activation, so the model proceeds
+        # with the procedure (in skills_section) instead of looping on use_skill.
         if name in activated:
             if visible is not None and present:
                 visible.update(present)
@@ -203,10 +263,9 @@ def build_skill_meta_tools(
         if visible is not None and present:
             visible.update(present)
         surfaced = f" Tools now callable: {', '.join(present)}." if present else ""
-        return (
-            f"Activated skill '{doc.name}'.{surfaced}{staged}"
-            f"\n\nPROCEDURE:\n{doc.body}{warn}"
-        )
+        # PROCEDURE lives in skills_section (system prompt), not here — keeps
+        # "Steps taken this turn" a contiguous list of TOOL lines.
+        return f"Activated skill '{doc.name}'.{surfaced}{staged}{warn}"
 
     return {
         "find_skill": SkillTool(

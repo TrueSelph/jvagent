@@ -4,11 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from jvagent.action.interact.endpoints import _run_background_actions
-
-pytestmark = pytest.mark.asyncio
 
 
 async def test_streaming_path_awaits_background_actions_not_fire_and_forget():

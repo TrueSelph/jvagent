@@ -9,8 +9,6 @@ import importlib
 
 import pytest
 
-pytestmark = pytest.mark.asyncio
-
 # action import path -> (class name, expected tool names)
 CASES = {
     "jvagent.action.google.google_gmail_action.google_gmail_action": (
@@ -33,6 +31,7 @@ CASES = {
             "google_drive__list_files",
             "google_drive__upload_file",
             "google_drive__get_file_metadata",
+            "google_drive__get_shared_drive_metadata",
             "google_drive__get_media",
             "google_drive__share_file",
             "google_drive__delete_file",

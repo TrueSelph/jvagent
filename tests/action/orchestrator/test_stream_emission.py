@@ -14,13 +14,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, Dict, List
 
-import pytest
-
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
-
-pytestmark = pytest.mark.asyncio
 
 
 class _FakeBus:

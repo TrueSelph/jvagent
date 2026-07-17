@@ -13,30 +13,50 @@ def _ensure_google_stubs() -> None:
     if getattr(_ensure_google_stubs, "_done", False):
         return
 
+    # Prefer real packages when installed so stubs do not shadow them for
+    # later test modules (e.g. pageindex Google Drive sync).
+    try:
+        import google.oauth2.credentials  # noqa: F401
+        import google_auth_oauthlib.flow  # noqa: F401
+        import googleapiclient.discovery  # noqa: F401
+    except ImportError:
+        pass
+    else:
+        _ensure_google_stubs._done = True  # type: ignore[attr-defined]
+        return
+
     google = ModuleType("google")
     google.__path__ = []  # type: ignore[attr-defined]
 
     auth = ModuleType("google.auth")
+    auth.__path__ = []  # type: ignore[attr-defined]
     transport = ModuleType("google.auth.transport")
+    transport.__path__ = []  # type: ignore[attr-defined]
     requests_mod = ModuleType("google.auth.transport.requests")
     requests_mod.Request = MagicMock()
     transport.requests = requests_mod
     auth.transport = transport
 
     oauth2 = ModuleType("google.oauth2")
+    oauth2.__path__ = []  # type: ignore[attr-defined]
     credentials = ModuleType("google.oauth2.credentials")
     credentials.Credentials = MagicMock()
     oauth2.credentials = credentials
 
     oauthlib = ModuleType("google_auth_oauthlib")
+    oauthlib.__path__ = []  # type: ignore[attr-defined]
     flow_mod = ModuleType("google_auth_oauthlib.flow")
     flow_mod.Flow = MagicMock()
     oauthlib.flow = flow_mod
 
     apiclient = ModuleType("googleapiclient")
+    apiclient.__path__ = []  # type: ignore[attr-defined]
     discovery = ModuleType("googleapiclient.discovery")
     discovery.build = MagicMock()
     apiclient.discovery = discovery
+    errors = ModuleType("googleapiclient.errors")
+    errors.HttpError = type("HttpError", (Exception,), {})
+    apiclient.errors = errors
 
     google.auth = auth
     google.oauth2 = oauth2
@@ -52,6 +72,7 @@ def _ensure_google_stubs() -> None:
         ("google_auth_oauthlib.flow", flow_mod),
         ("googleapiclient", apiclient),
         ("googleapiclient.discovery", discovery),
+        ("googleapiclient.errors", errors),
     ]:
         sys.modules.setdefault(name, mod)
 

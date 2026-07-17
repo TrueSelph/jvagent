@@ -15,8 +15,6 @@ from jvagent.action.interact import session_token as st
 
 _SECRET = "unit-test-secret-key-aaaaaaaaaaaaaaaaaaaaaaaaaa"
 
-pytestmark = pytest.mark.asyncio
-
 
 @pytest.fixture(autouse=True)
 def _secret_env(monkeypatch):

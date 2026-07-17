@@ -6,16 +6,12 @@ or always-active-pinned)."""
 
 from __future__ import annotations
 
-import pytest
-
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
     _parse_action_requirement,
     _version_satisfies,
 )
 from jvagent.action.orchestrator.skills import SkillDoc
-
-pytestmark = pytest.mark.asyncio
 
 
 class _FakeAction:

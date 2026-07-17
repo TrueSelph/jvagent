@@ -51,16 +51,25 @@ class OrchestratorEgressMixin:
     async def _send_reply(
         self, visitor: "InteractWalker", text: str = "", *, compose: bool = False
     ) -> None:
-        """Producer egress (ADR-0025). Queue reply as directive; ReplyAction gathers."""
+        """Producer egress (ADR-0025). Queue reply as directive; ReplyAction gathers.
+
+        Directives may carry model-only guidance after U+2063 (paraphrase rules,
+        ``ctx.say(..., hint=...)``). When ``compose=True``, keep that guidance on
+        the queued directive so ReplyAction can steer the compose model — it never
+        relays post-marker text to the user. When ``compose=False`` (or falling
+        through to thin publish), strip after the marker so guidance cannot leak.
+        """
         interaction = getattr(visitor, "interaction", None)
-        text = (text or "").strip()
-        if text:
-            text = text.split("\u2063", 1)[0].strip()
-        if interaction is not None and text:
+        raw = (text or "").strip()
+        user_facing = raw.split("\u2063", 1)[0].strip() if raw else ""
+        # Compose needs the full directive (intent + model guidance/hints).
+        # Literal paths queue only the user-facing portion.
+        to_queue = raw if (compose and raw) else user_facing
+        if interaction is not None and to_queue:
             framed = (
-                text
-                if text.lower().startswith("tell the user")
-                else f"Tell the user or ask the user: {text}"
+                to_queue
+                if to_queue.lower().startswith("tell the user")
+                else f"Tell the user or ask the user: {to_queue}"
             )
             try:
                 interaction.add_directive(framed, self.get_class_name())
@@ -88,7 +97,7 @@ class OrchestratorEgressMixin:
         if (
             responder is not None
             and interaction is not None
-            and not text
+            and not user_facing
             and not compose
         ):
             from jvagent.action.reply.reply_action import ReplyAction
@@ -104,8 +113,8 @@ class OrchestratorEgressMixin:
                         logger.warning(
                             "orchestrator: responder.respond failed: %s", exc
                         )
-        if text:
-            await self.publish(visitor=visitor, content=text)
+        if user_facing:
+            await self.publish(visitor=visitor, content=user_facing)
 
     async def _emit_reply(self, visitor: "InteractWalker", text: str) -> None:
         if not (text or "").strip():

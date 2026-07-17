@@ -6,8 +6,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from jvagent.action.orchestrator.access import delegate_resource_label
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
@@ -15,8 +13,6 @@ from jvagent.action.orchestrator.orchestrator_interact_action import (
 from jvagent.action.orchestrator.tools import wrap_action_tool
 from jvagent.tooling.tool import Tool
 from jvagent.tooling.tool_result import ToolResult
-
-pytestmark = pytest.mark.asyncio
 
 
 def _visitor():

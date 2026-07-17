@@ -7,8 +7,6 @@ from jvspatial.api.exceptions import ValidationError
 
 from jvagent.logging.endpoints import get_logs_by_agent
 
-pytestmark = pytest.mark.asyncio
-
 
 def _service(result=None):
     svc = MagicMock()

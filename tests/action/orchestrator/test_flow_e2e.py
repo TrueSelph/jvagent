@@ -4,11 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
-import pytest
-
 from jvagent.memory.task_store import TaskStore
-
-pytestmark = pytest.mark.asyncio
 
 
 def _signup(flow_stub_cls, on_exec=None):

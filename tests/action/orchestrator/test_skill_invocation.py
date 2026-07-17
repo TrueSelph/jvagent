@@ -8,15 +8,11 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
-import pytest
-
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
 from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.action.orchestrator.tools import SkillTool
-
-pytestmark = pytest.mark.asyncio
 
 _normalize = OrchestratorInteractAction._normalize
 

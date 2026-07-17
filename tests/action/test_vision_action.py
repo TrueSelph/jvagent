@@ -6,15 +6,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from jvagent.action.vision.vision_action import (
     IMAGE_INTERPRETATION_PROMPT,
     VisionAction,
     image_urls_from_visitor,
 )
-
-pytestmark = pytest.mark.asyncio
 
 
 def _visitor(data):

@@ -17,8 +17,6 @@ from tests.action.interview.conftest import ORCHESTRATOR_AGENT_DIR
 
 _OPENING = "Hello my name is Eldon Marks. I'm here to sign up"
 
-pytestmark = pytest.mark.asyncio
-
 
 def _reply_tool():
     from jvagent.tooling.tool import Tool
@@ -126,6 +124,20 @@ async def test_use_skill_mid_loop_minimal_prep(
     assert "interview__message_evaluation" not in second_obs_tools
     assert "interview__next_field" not in second_obs_tools
     assert "Turn-lock is ON" in model_calls[1]["skills_section"]
+    assert "PROCEDURE:" in model_calls[1]["skills_section"]
+    # PROCEDURE must not appear inside Steps (use_skill observation).
+    use_obs = next(
+        o for o in model_calls[1]["observations"] if o.get("tool") == "use_skill"
+    )
+    assert "PROCEDURE:" not in (use_obs.get("observation") or "")
+    # Activation catalog once — no server-prep interview__get_status duplicate.
+    status_obs = [
+        o
+        for o in model_calls[1]["observations"]
+        if o.get("tool") == "interview__get_status"
+    ]
+    assert status_obs == []
+    assert "field_reference" in (use_obs.get("observation") or "")
 
 
 @pytest.mark.asyncio
