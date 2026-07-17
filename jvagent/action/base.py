@@ -562,8 +562,13 @@ class Action(Node):
             # Also try unregistering by path pattern as a fallback for any remaining endpoints
             action_path_prefix = f"/actions/{self.id}/"
             try:
-                # Get all function endpoints and check for any we might have missed
-                for func, endpoint_info in registry._function_registry.items():
+                # Snapshot the registry first: unregister_function() deletes from
+                # _function_registry, so iterating the live .items() view and
+                # unregistering inside the loop raises "dictionary changed size
+                # during iteration" on the FIRST hit — the exception was caught
+                # below and any remaining missed endpoints leaked. AUDIT-actions
+                # MEDIUM (M16).
+                for func, endpoint_info in list(registry._function_registry.items()):
                     path = endpoint_info.path
                     if (
                         path.startswith(action_path_prefix)
