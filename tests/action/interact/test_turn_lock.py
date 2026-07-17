@@ -22,6 +22,53 @@ async def test_holds_conversation_mutation_lock_reentrant():
     assert holds_conversation_mutation_lock(conv_id) is False
 
 
+async def test_lock_holder_does_not_leak_into_background_task():
+    """A background task spawned while the turn holds the lock must NOT be seen
+    as holding it. asyncio.create_task copies the contextvar snapshot, so a
+    string-only holder would make the child's reentrancy check return True and
+    let it mutate the chain with no lock. The guard is task-aware, so the child
+    (a different task) reports False. AUDIT-memory HIGH (C8)."""
+    conv_id = "conv_bg_leak"
+    result: dict = {}
+
+    async with conversation_mutation_lock(conv_id):
+        assert holds_conversation_mutation_lock(conv_id) is True
+
+        async def _bg() -> None:
+            # Inherits the parent's contextvar snapshot but is a distinct task.
+            result["held"] = holds_conversation_mutation_lock(conv_id)
+
+        await asyncio.create_task(_bg())
+
+    assert result["held"] is False
+
+
+async def test_background_task_acquires_lock_not_reentrant():
+    """Because the inherited holder does not satisfy the guard, a background
+    task actually contends for the lock instead of short-circuiting — it can
+    only enter after the turn releases."""
+    conv_id = "conv_bg_contend"
+    events: list[str] = []
+    bg_entered = asyncio.Event()
+
+    async def _bg() -> None:
+        async with conversation_mutation_lock(conv_id):
+            events.append("bg_enter")
+            bg_entered.set()
+
+    async with conversation_mutation_lock(conv_id):
+        events.append("turn_hold")
+        task = asyncio.create_task(_bg())
+        # Give the background task a chance to run; it must NOT enter yet.
+        await asyncio.sleep(0.05)
+        assert not bg_entered.is_set(), events
+        events.append("turn_release")
+
+    await task
+    # The background task entered only after the turn released.
+    assert events == ["turn_hold", "turn_release", "bg_enter"]
+
+
 async def test_add_interaction_skips_nested_lock_when_turn_lock_held():
     from jvagent.memory.conversation import Conversation
 

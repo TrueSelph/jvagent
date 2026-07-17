@@ -45,11 +45,20 @@ async def _get_agent_and_bus(agent_id: str) -> tuple[Agent, ResponseBus]:
     return agent, bus
 
 
-def _authenticate(request: Request, agent_id: str) -> str:
+def _authenticate(request: Request, agent_id: str) -> tuple[str, Optional[str]]:
     """Verify ``Authorization: Bearer`` or ``x-session-token`` header.
 
-    Returns the verified ``user_id`` on success. Raises ``AuthenticationError``
-    when no header or an invalid token is supplied.
+    Returns ``(user_id, bound_session_id)`` on success:
+
+    - ``user_id`` — the verified caller identity.
+    - ``bound_session_id`` — for a Mode B session capability token, the
+      ``session_id`` the token is bound to (the token is a capability for
+      exactly that session). ``None`` for a Mode A login bearer, which is
+      not session-scoped and must be authorized against conversation
+      ownership instead.
+
+    Raises ``AuthenticationError`` when no header or an invalid token is
+    supplied.
     """
     from jvagent.action.interact.session_token import (
         verify_bearer,
@@ -72,6 +81,12 @@ def _authenticate(request: Request, agent_id: str) -> str:
             claims, _ = verify_session_token(stoken, expected_agent_id=agent_id)
             if claims:
                 uid = claims.get("user_id")
+                if uid:
+                    # Mode B token: bound to a specific session. Return the
+                    # bound session so the caller can enforce that the
+                    # requested session matches — the token is not a
+                    # blanket credential for the whole agent.
+                    return uid, claims.get("session_id")
 
     if not uid:
         from jvspatial.api.exceptions import AuthenticationError
@@ -81,7 +96,55 @@ def _authenticate(request: Request, agent_id: str) -> str:
             details={"agent_id": agent_id},
         )
 
-    return uid
+    return uid, None
+
+
+async def _authorize_session(
+    agent: Agent,
+    uid: str,
+    bound_session_id: Optional[str],
+    requested_session_id: str,
+) -> None:
+    """Enforce that ``uid`` may access ``requested_session_id`` on ``agent``.
+
+    Without this check the reply publish/subscribe surface is an IDOR: an
+    authenticated caller could read (and, on the one-shot poll, drain) any
+    session's messages, or inject agent-attributed content into any session.
+
+    Two identity kinds:
+
+    - **Mode B session token** (``bound_session_id`` set): the token is a
+      capability for exactly one session — the requested session must equal
+      the bound one. No DB lookup needed.
+    - **Mode A login bearer** (``bound_session_id`` is ``None``): authorize
+      against conversation ownership — the conversation for the requested
+      session must exist under this agent and belong to ``uid``.
+
+    Raises ``AuthorizationError`` (403) when access is not permitted.
+    """
+    from jvspatial.api.exceptions import AuthorizationError
+
+    if bound_session_id is not None:
+        if bound_session_id == requested_session_id:
+            return
+        raise AuthorizationError(
+            message="Session token is not valid for the requested session",
+            details={"agent_id": agent.id},
+        )
+
+    # Mode A: require ownership of the target conversation.
+    memory = await agent.get_memory()
+    conversation = (
+        await memory.get_conversation_by_session(requested_session_id)
+        if memory
+        else None
+    )
+    if conversation is not None and getattr(conversation, "user_id", None) == uid:
+        return
+    raise AuthorizationError(
+        message="You do not have access to this session",
+        details={"agent_id": agent.id},
+    )
 
 
 # ── Publish ──────────────────────────────────────────────────────────────────
@@ -90,16 +153,22 @@ def _authenticate(request: Request, agent_id: str) -> str:
 @endpoint(
     "/agents/{agent_id}/reply/publish",
     methods=["POST"],
-    auth=True,
     tags=["Reply"],
 )
 async def reply_publish_endpoint(
+    request: Request,
     agent_id: str,
     message: str = "Hello from ReplyAction!",
     user_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """Publish a message to a client session through the agent's ResponseBus.
+
+    Requires authentication (``Authorization: Bearer`` login token or
+    ``x-session-token``) AND authorization for the target session — the
+    caller must own the conversation (Mode A) or present a session token
+    bound to it (Mode B). Without this an authenticated caller could inject
+    agent-attributed content into any session on any agent.
 
     Args:
         agent_id:  The target agent.
@@ -110,14 +179,24 @@ async def reply_publish_endpoint(
     Returns:
         Delivery status.
     """
-    _, bus = await _get_agent_and_bus(agent_id)
+    uid, bound_session_id = _authenticate(request, agent_id)
+
+    if not session_id:
+        from jvspatial.api.exceptions import InvalidInputError
+
+        raise InvalidInputError(
+            message="session_id is required",
+            details={"agent_id": agent_id},
+        )
+
+    agent, bus = await _get_agent_and_bus(agent_id)
+    await _authorize_session(agent, uid, bound_session_id, session_id)
 
     logger.info(
-        "reply/publish: agent=%s user=%s session=%s msg=%s",
+        "reply/publish: agent=%s user=%s session=%s",
         agent_id,
-        user_id,
+        uid,
         session_id,
-        message,
     )
 
     msg = await bus.publish(
@@ -174,8 +253,9 @@ async def reply_subscribe_endpoint(
         - ``stream=true`` → ``text/event-stream`` ``StreamingResponse``.
         - ``stream=false`` → ``{"ok": true, "messages": […]}``.
     """
-    # Authenticate before serving any data
-    uid = _authenticate(request, agent_id)
+    # Authenticate, then authorize the caller for this specific session
+    # before serving any data (prevents cross-session disclosure / drain).
+    uid, bound_session_id = _authenticate(request, agent_id)
 
     logger.info(
         "reply/subscribe: agent=%s session=%s stream=%s user=%s",
@@ -185,7 +265,8 @@ async def reply_subscribe_endpoint(
         uid,
     )
 
-    _, bus = await _get_agent_and_bus(agent_id)
+    agent, bus = await _get_agent_and_bus(agent_id)
+    await _authorize_session(agent, uid, bound_session_id, session_id)
 
     if stream:
         # ── SSE: long-lived push ──

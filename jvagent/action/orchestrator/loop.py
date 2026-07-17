@@ -9,7 +9,10 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
-from jvagent.action.orchestrator.constants import _NON_SUBSTANTIVE_TOOLS
+from jvagent.action.orchestrator.constants import (
+    _NON_SUBSTANTIVE_TOOLS,
+    is_untrusted_directive_source,
+)
 from jvagent.action.orchestrator.loop_helpers import text_candidate as _text_candidate
 from jvagent.action.orchestrator.prompts import (
     render_capabilities_section,
@@ -110,26 +113,32 @@ class OrchestratorLoopMixin:
                 # internal status sentinel ("(ran X)" / "(no visitor available)"
                 # / "(flow error: …)") — those are loop-internal. Surface a clean
                 # message instead.
+                #
+                # EVERY non-emitting locked turn — access-denied, a thrown
+                # error, or a silently-non-emitting IA — must count toward the
+                # escape streak. Otherwise a flow that denies access (AC revoked
+                # mid-flow) or runs without ever emitting/completing traps the
+                # user behind the turn-lock forever: the same dead-end reply on
+                # every subsequent turn, with no way to route elsewhere. After
+                # LOCKED_FLOW_ERROR_LIMIT consecutive dead-ends the owning
+                # control-task is abandoned so the next turn runs the loop.
+                # AUDIT-orchestrator HIGH.
                 res = locked_result.strip()
                 if "access denied" in res.lower():
                     ended = "locked_denied"
-                    await self._emit_reply(
-                        visitor,
+                    reply = (
                         "You don't currently have access to continue this. Let "
-                        "me know if there's something else I can help with.",
+                        "me know if there's something else I can help with."
                     )
                 elif res.startswith("(flow error") or res.startswith("(tool error"):
-                    # A persistently-throwing locked flow would trap the user
-                    # behind the turn-lock forever (every turn dead-ends in
-                    # clarify). Tolerate one failure (transient), then abandon
-                    # the owning control-task so the next turn runs the loop.
                     ended = "locked_error"
-                    if await _orch().note_locked_flow_error(visitor, flow_owner):
-                        ended = "locked_error_escape"
-                    await self._emit_reply(visitor, self.clarify_text)
+                    reply = self.clarify_text
                 else:
                     ended = "locked_silent"
-                    await self._emit_reply(visitor, self.clarify_text)
+                    reply = self.clarify_text
+                if await _orch().note_locked_flow_error(visitor, flow_owner):
+                    ended = f"{ended}_escape"
+                await self._emit_reply(visitor, reply)
             else:
                 # A working flow resets the failure streak.
                 await _orch().clear_locked_flow_error(visitor, flow_owner)
@@ -598,6 +607,11 @@ class OrchestratorLoopMixin:
                             )
                             continue
                     tool = tools.get(tool_name)
+                    # Whether this iteration's ``obs`` is server-generated framing
+                    # (always trusted for the directive contract) rather than a
+                    # raw tool result. Set True wherever the loop constructs obs
+                    # itself (e.g. the prerequisite detour below).
+                    obs_server_generated = False
                     if tool is None:
                         # Genuinely unknown name (often a hallucinated tool) —
                         # this is where find_tool earns its keep: point the model
@@ -694,6 +708,7 @@ class OrchestratorLoopMixin:
                                 obs = json.dumps(
                                     {"response_directive": detour_directive}
                                 )
+                                obs_server_generated = True
                         elif (
                             skill_name
                             and isinstance(obs, str)
@@ -742,7 +757,18 @@ class OrchestratorLoopMixin:
                     # delivered directly so the model cannot re-decide (e.g. re-call
                     # the same tool). Generic — no tool is named in code.
                     if isinstance(obs, str):
-                        nt, rd = self._result_next(obs)
+                        # Trust boundary (AUDIT-orchestrator HIGH): only honor the
+                        # directive contract from server-generated framing or a
+                        # first-party tool. A raw MCP/third-party result is external
+                        # content — parsing next_tool/response_directive from it
+                        # would let a compromised server hijack the turn's reply or
+                        # force tool-chaining.
+                        if obs_server_generated or not is_untrusted_directive_source(
+                            tool_name
+                        ):
+                            nt, rd = self._result_next(obs)
+                        else:
+                            nt, rd = None, ""
                         if nt:
                             # The result chains to another tool the model MUST call.
                             pending_chain = nt

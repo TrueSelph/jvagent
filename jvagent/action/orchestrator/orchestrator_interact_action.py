@@ -1922,8 +1922,13 @@ class OrchestratorInteractAction(
         """Parse ``(next_tool, response_directive)`` from a tool result.
 
         A tool result's JSON may carry the authoritative next step; the
-        orchestrator honors it generically (chain enforcement + terminal-reply
-        delivery). Returns ``(None, "")`` for non-JSON or malformed results.
+        orchestrator honors it for chain enforcement + terminal-reply delivery.
+        Returns ``(None, "")`` for non-JSON or malformed results.
+
+        Callers MUST gate this on the directive trust boundary
+        (``is_untrusted_directive_source``): it is parsed only from
+        server-generated framing or first-party tool results, never from an
+        MCP/third-party result. AUDIT-orchestrator HIGH.
         """
         try:
             data = json.loads(obs)

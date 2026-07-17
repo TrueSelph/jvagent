@@ -27,12 +27,14 @@ def registered_provider_names() -> frozenset[str]:
 
 
 def _register_builtin_providers() -> None:
+    from .jvconnect_api import JvconnectWhatsAppAPI
     from .meta_api import MetaWhatsAppAPI
     from .ultramsg import UltraMsgAPI
     from .wppconnect import WPPConnectAPI
     from .wwebjs_api import WWebJSAPI
 
     register_provider("meta", MetaWhatsAppAPI)
+    register_provider("jvconnect", JvconnectWhatsAppAPI)
     register_provider("wppconnect", WPPConnectAPI)
     register_provider("wwebjs", WWebJSAPI)
     register_provider("ultramsg", UltraMsgAPI)

@@ -373,6 +373,14 @@ async def finalize_interaction_from_webhook(
         await interaction.close_interaction()
         await flush_deferred_entities(interaction, walker.conversation, strict=True)
         await run_background_actions(walker)
+        try:
+            from jvagent.core.conversation_health.service import (
+                maybe_score_after_interaction,
+            )
+
+            await maybe_score_after_interaction(walker)
+        except Exception:
+            logger.error("Conversation Health post-turn scoring failed", exc_info=True)
         await finalize_usage(interaction)
         await emit_interaction_log(walker, interaction, agent_id)
     except DatabaseError as e:

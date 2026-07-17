@@ -1,10 +1,11 @@
 """Tests for WhatsAppVoiceAction call handling."""
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from jvagent.action.whatsapp.modules.jvconnect_api import JvconnectWhatsAppAPI
 from jvagent.action.whatsapp_voice.whatsapp_voice_action import WhatsAppVoiceAction
 
 _CONNECT_PAYLOAD = {
@@ -62,6 +63,9 @@ def _action_stub(**overrides: object) -> SimpleNamespace:
         "_resolved_jvvoice_api_key",
         "handle_call_webhook",
         "is_configured",
+        "_meta_credentials",
+        "_resolve_call_session_id",
+        "_get_whatsapp_action",
     ):
         method = getattr(WhatsAppVoiceAction, method_name)
         setattr(action, method_name, method.__get__(action, WhatsAppVoiceAction))
@@ -84,6 +88,7 @@ async def test_handle_connect_delegates_to_jvvoice():
         }
     )
     action._meta_credentials = AsyncMock(return_value=("436666719526789", "meta-token"))
+    action._resolve_call_session_id = AsyncMock(return_value="sess_abc123def456")
     action._jvvoice_client = AsyncMock(return_value=mock_client)
 
     result = await action.handle_call_webhook(_CONNECT_PAYLOAD, agent_id="n.Agent.test")
@@ -96,7 +101,106 @@ async def test_handle_connect_delegates_to_jvvoice():
     assert payload["jvagent_agent_id"] == "n.Agent.test"
     assert payload["jvagent_base_url"] == "https://jv.example.com"
     assert payload["caller_phone"] == "16315553601"
+    assert payload["session_id"] == "sess_abc123def456"
+    assert payload["user_id"] == "16315553601"
     assert "room_name" not in payload
+    action._resolve_call_session_id.assert_awaited_once_with(
+        "16315553601", agent_id="n.Agent.test"
+    )
+
+
+@pytest.mark.asyncio
+async def test_meta_credentials_uses_env_override():
+    action = _action_stub()
+    wa = SimpleNamespace(
+        _env_phone_number_id=lambda: "phone_from_env",
+        _env_access_token=lambda: "token_from_env",
+        api=AsyncMock(),
+    )
+    action._get_whatsapp_action = AsyncMock(return_value=wa)
+
+    phone, token = await WhatsAppVoiceAction._meta_credentials(action)
+
+    assert phone == "phone_from_env"
+    assert token == "token_from_env"
+    wa.api.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_meta_credentials_fetches_from_jvconnect():
+    action = _action_stub()
+    jv_client = MagicMock(spec=JvconnectWhatsAppAPI)
+    jv_client.fetch_calling_credentials = AsyncMock(
+        return_value={
+            "ok": True,
+            "phone_number_id": "phone_jv",
+            "access_token": "token_jv",
+        }
+    )
+    wa = SimpleNamespace(
+        _env_phone_number_id=lambda: "",
+        _env_access_token=lambda: "",
+        api=AsyncMock(return_value=jv_client),
+    )
+    action._get_whatsapp_action = AsyncMock(return_value=wa)
+
+    phone, token = await WhatsAppVoiceAction._meta_credentials(action)
+
+    assert phone == "phone_jv"
+    assert token == "token_jv"
+    jv_client.fetch_calling_credentials.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_meta_credentials_raises_when_unavailable():
+    action = _action_stub()
+    wa = SimpleNamespace(
+        _env_phone_number_id=lambda: "",
+        _env_access_token=lambda: "",
+        api=AsyncMock(return_value=SimpleNamespace()),  # not JvconnectWhatsAppAPI
+    )
+    action._get_whatsapp_action = AsyncMock(return_value=wa)
+
+    with pytest.raises(ValueError, match="calling/credentials"):
+        await WhatsAppVoiceAction._meta_credentials(action)
+
+
+@pytest.mark.asyncio
+async def test_resolve_call_session_id_reuses_active_conversation():
+    action = _action_stub()
+    convo = SimpleNamespace(session_id="sess_existing")
+    with patch(
+        "jvagent.action.whatsapp_voice.whatsapp_voice_action.get_conversation_with_lock",
+        new=AsyncMock(return_value=convo),
+    ):
+        session_id = await WhatsAppVoiceAction._resolve_call_session_id(
+            action, "16315553601", agent_id="n.Agent.test"
+        )
+    assert session_id == "sess_existing"
+
+
+@pytest.mark.asyncio
+async def test_resolve_call_session_id_creates_whatsapp_conversation():
+    action = _action_stub()
+    created = SimpleNamespace(session_id="sess_created")
+    user = SimpleNamespace(create_conversation=AsyncMock(return_value=created))
+    memory = SimpleNamespace(get_user=AsyncMock(return_value=user))
+    agent = SimpleNamespace(get_memory=AsyncMock(return_value=memory))
+    with (
+        patch(
+            "jvagent.action.whatsapp_voice.whatsapp_voice_action.get_conversation_with_lock",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "jvagent.core.agent.Agent.get",
+            new=AsyncMock(return_value=agent),
+        ),
+    ):
+        session_id = await WhatsAppVoiceAction._resolve_call_session_id(
+            action, "16315553601", agent_id="n.Agent.test"
+        )
+    assert session_id == "sess_created"
+    user.create_conversation.assert_awaited_once_with(channel="whatsapp")
 
 
 @pytest.mark.asyncio

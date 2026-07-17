@@ -42,6 +42,8 @@ intro_interact_action runs BEFORE the executive (always_execute sidecar)
 | `what is 19 x 23?` | Loop → web search or skill → `reply` |
 | `what do our internal docs say about X?` | `answer` skill → `pageindex__search` (internal KB) first, web fallback, cited synthesis → `respond` |
 | `sign up for jvagent training` | Model activates `signup_interview` skill → InterviewAction session starts, turn-lock via TaskStore |
+| `Send me the signup template` (**WhatsApp only**) | `whatsapp_templates` skill → `whatsapp__send_template` → Meta HSM to **the same** inbound sender via jvconnect. Web/chat is refused (`whatsapp_templates_require_inbound_whatsapp`). Requires APPROVED Meta template `signup` + allowlist in `agent.yaml`. |
+| `Send me the signup flow` (**WhatsApp only**) | `whatsapp_flows` skill → `whatsapp__send_flow` → interactive Flow to the inbound sender. Web/chat refused (`whatsapp_flows_require_inbound_whatsapp`). Build/copy the Graph payload from jvconnect **Flows → Send**. |
 | `Hello my name is Jane Doe` (activation) | Model calls `interview__set_fields`, chains `interview__next_field`, then replies — no server prep steering |
 | your answers on following turns | Model classifies intent per SKILL SOP; `interview__set_fields` → `interview__next_field` → reply |
 | `change my email to X` mid-interview | `interview__set_fields` correction — works on any stored field, not only the active question |

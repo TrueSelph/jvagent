@@ -156,6 +156,13 @@ class Interaction(DeferredSaveMixin, Node):
         default_factory=dict,
         description="Aggregated usage (tokens, model calls) for this interaction",
     )
+    health: Dict[str, Any] = attribute(
+        default_factory=dict,
+        description=(
+            "Conversation Health result for this turn (dimensions, issues, "
+            "flagged, ai_status, contribution). Written by Conversation Health Service."
+        ),
+    )
 
     # Timestamps
     started_at: datetime = attribute(

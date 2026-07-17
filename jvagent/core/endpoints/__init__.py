@@ -16,6 +16,8 @@ re-exported below for backwards compatibility (tests and any caller doing
 ``from jvagent.core import endpoints; endpoints.list_agents(...)``).
 """
 
+# Conversation Health core service endpoints + deferred AI handler
+from jvagent.core import conversation_health as _conversation_health  # noqa: F401
 from jvagent.core.agent import Agent  # re-export for tests using ``endpoints.Agent``
 from jvagent.core.endpoints import (  # noqa: F401 — register routes on import
     agents,

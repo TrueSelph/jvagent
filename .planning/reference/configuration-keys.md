@@ -28,6 +28,7 @@ Code: [`jvagent/core/config.py:60-150`](../../jvagent/core/config.py) — `Confi
 | `JVAGENT_INTERACT_MAX_MEDIA_BYTES` | `20971520` (20 MB) | Max serialized size of the **media** portion of `data` (inline base64 uploads, total across media keys). Raise for larger uploads; `none` disables. ([`action/interact/rate_limiter.py`](../../jvagent/action/interact/rate_limiter.py)) |
 | `JVAGENT_INTERACT_REDACT_DEBUG` | unset / `false` | When truthy, the public (`auth=False`) interact endpoint redacts the debug/observability payload (`interaction` detail + `report`) **outside** production too — for non-prod internet deploys. Off by default so local dev keeps full detail (the jvchat Debug view); production always redacts regardless. ([`action/interact/response_builder.py`](../../jvagent/action/interact/response_builder.py)) |
 | `JVAGENT_INTERACT_TOKEN_TTL_SECONDS` | `604800` (7d) | Lifetime of a minted Mode B session capability token ([`action/interact/session_token.py`](../../jvagent/action/interact/session_token.py)). Requires `JVSPATIAL_JWT_SECRET_KEY`. |
+| `JVAGENT_INTERACT_TOKEN_REFRESH_GRACE_SECONDS` | `604800` (7d) | Post-expiry window in which an expired Mode B token may still be exchanged at `POST /agents/{id}/interact/session/refresh` (ADR-0032). `0` disables the grace window. Expired tokens are never accepted on `interact` itself. ([`action/interact/session_token.py`](../../jvagent/action/interact/session_token.py)) |
 | `JVAGENT_DISABLE_RUNTIME_PIP_INSTALL` | unset / `false` | If `true`, do not pip-install action dependencies at load time |
 | `JVAGENT_ENVIRONMENT` | — | informational (`development` / `staging` / `production`) |
 | `SERVERLESS_MODE` | unset | Set to `true` by `--serverless` ([`cli/main.py:145`](../../jvagent/cli/main.py)) |
@@ -400,9 +401,11 @@ falling back to `request.client.host`. Behind a trusted reverse proxy
 this is correct; on a direct-internet listener it lets a client spoof
 their IP and side-step per-IP rate limits.
 
-Set ``JVAGENT_TRUST_PROXY_HEADERS=false`` to ignore the proxy headers
-and always use ``request.client.host``. Default is ``true`` for
-backward compatibility. AUDIT-interact MED-12.
+Default is ``JVAGENT_TRUST_PROXY_HEADERS=false`` — proxy headers are
+ignored and ``request.client.host`` is always used. This is the
+fail-safe default. Set ``JVAGENT_TRUST_PROXY_HEADERS=true`` ONLY when
+jvagent runs behind a trusted reverse proxy that overwrites these
+headers. AUDIT-interact HIGH (was MED-12).
 
 ## 11. Reading list
 

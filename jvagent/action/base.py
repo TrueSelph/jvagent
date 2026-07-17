@@ -37,8 +37,17 @@ T = TypeVar("T", bound="Action")
 
 @compound_index([("agent_id", 1), ("enabled", 1)], name="agent_enabled")
 @compound_index(
-    [("agent_id", 1), ("label", 1)],
-    name="agent_label",
+    # Canonical action identity is (agent_id, namespace, label) — the same
+    # tuple the loader and Actions manager use. The unique key MUST include
+    # ``namespace``; keying on (agent_id, label) alone rejects a second action
+    # that legitimately shares a label across two namespaces with E11000 (and
+    # the action is then silently dropped by register_action). The partial
+    # filter already scopes the constraint to rows carrying all three fields.
+    # AUDIT-core C3. The old (agent_id, label) index shipped under the name
+    # ``agent_label``; it is registered in DEPRECATED_INDEXES so the migration
+    # drops it before creating this one.
+    [("agent_id", 1), ("namespace", 1), ("label", 1)],
+    name="agent_ns_label",
     unique=True,
     partial_filter_expression={
         "context.agent_id": {"$gt": ""},
@@ -959,8 +968,15 @@ class Action(Node):
             if model_action and isinstance(model_action, LanguageModelAction):
                 return model_action
 
-        # Fallback: find first available LanguageModelAction
-        model_action = await self.get_action(LanguageModelAction)
+        # Fallback: find any available LanguageModelAction. This MUST be a
+        # base-class scan — get_action() resolves by exact class name via the
+        # type index, which only ever holds concrete provider names
+        # (OpenAILanguageModelAction, AnthropicLanguageModelAction, ...). No
+        # node is registered under the base name "LanguageModelAction", so
+        # get_action(LanguageModelAction) always missed and any agent without
+        # the specific model_action_type silently lost identity compose.
+        # AUDIT-actions HIGH.
+        model_action = await self.get_action_by_base_class(LanguageModelAction)
         if model_action:
             return model_action
 

@@ -560,7 +560,6 @@ class Memory(Node):
             Dictionary with memory statistics
         """
         from jvagent.memory.conversation import Conversation
-        from jvagent.memory.interaction import Interaction
         from jvagent.memory.user import User
 
         users_under = await self.users_scoped_to_this_memory()
@@ -577,7 +576,10 @@ class Memory(Node):
         for u in users_under:
             stats["total_conversations"] += await u.count_neighbors(node=Conversation)
             for c in await u.nodes(node=Conversation):
-                inters = await c.nodes(node=Interaction)
+                # Count the full chain, not just the head. c.nodes(node=Interaction)
+                # is direction="out" and only reaches the chain head — it would
+                # report ~1 interaction per conversation. AUDIT-memory HIGH.
+                inters = await c.get_interactions(limit=0)
                 stats["total_interactions"] += len(inters)
         return stats
 
@@ -1151,7 +1153,6 @@ class Memory(Node):
             Dictionary with exported memory data
         """
         from jvagent.memory.conversation import Conversation
-        from jvagent.memory.interaction import Interaction
 
         users = await self.users_scoped_to_this_memory()
         if user_id:
@@ -1169,8 +1170,13 @@ class Memory(Node):
                 conv_data = await conv.export()
                 conv_data["interactions"] = []
 
-                # Use nodes() to get connected interactions (leverages graph structure)
-                interactions = await conv.nodes(node=Interaction)
+                # Walk the FULL interaction chain. conv.nodes(node=Interaction)
+                # uses direction="out" and a Conversation is edge-connected only
+                # to the chain head, so it returns exactly one interaction and
+                # silently drops the rest — data loss on this backup path.
+                # get_interactions(limit=0) batch-loads the whole chain by
+                # conversation_id. AUDIT-memory HIGH.
+                interactions = await conv.get_interactions(limit=0)
                 for interaction in interactions:
                     interaction_data = await interaction.export()
                     conv_data["interactions"].append(interaction_data)

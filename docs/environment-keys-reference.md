@@ -41,7 +41,9 @@ Use this split for new app descriptors:
 - `JVAGENT_INTERACT_MAX_MEDIA_BYTES` - Max serialized size of the media portion of `data` — inline base64 uploads (default 20 MB; `none` disables).
 - `JVAGENT_INTERACT_REDACT_DEBUG` - When truthy, the public interact endpoint redacts debug/observability (interaction detail + report) outside production too. Off by default (dev keeps full detail); production always redacts.
 - `JVAGENT_INTERACT_PUBLIC_AUTH` - Public-endpoint session auth (ADR-0020): `off` (default, legacy), `log` (observe-only), `required` (enforce 401). Needs `JVSPATIAL_JWT_SECRET_KEY`.
-- `JVAGENT_INTERACT_TOKEN_TTL_SECONDS` - Mode B session capability token lifetime (default `604800` = 7 days).
+- `JVAGENT_INTERACT_TOKEN_TTL_SECONDS` - Mode B session capability token lifetime (default `604800` = 7 days). Tokens are re-minted on every interact turn and can be renewed without an utterance via `POST /agents/{id}/interact/session/refresh` (ADR-0032).
+- `JVAGENT_INTERACT_TOKEN_REFRESH_GRACE_SECONDS` - Post-expiry window in which an expired session token may still be exchanged at the refresh endpoint (default `604800` = 7 days; `0` disables — refresh then requires a still-valid token). Expired tokens are never accepted on `interact` itself.
+- `JVAGENT_TRUST_PROXY_HEADERS` - When `true`, `extract_client_ip` trusts `X-Forwarded-For`/`X-Real-IP`/`CF-Connecting-IP` for rate-limit bucketing. Default `false` (fail-safe): proxy headers are ignored and `request.client.host` is used. Enable ONLY behind a trusted reverse proxy that overwrites these headers.
 
 ### PageIndex
 - `JVAGENT_PAGEINDEX_DB_TYPE` - PageIndex backend type.
@@ -68,6 +70,7 @@ See [Integration environment variables](integrations-environment.md#jvforge-page
 - `JVAGENT_TASK_CANCELLED_WEBHOOK_URL` - Outbound webhook on task cancel.
 
 ### Performance and runtime behavior
+- `JVAGENT_ASSUME_YES` - When truthy, skips the `--purge` interactive confirmation prompt (same as passing `--yes`). `--purge` still requires `JVSPATIAL_ENVIRONMENT=development` set explicitly.
 - `JVAGENT_DISABLE_RUNTIME_PIP_INSTALL` - Disables runtime package installation for action deps.
 - `JVAGENT_ENABLE_PROFILING` - Enables profiling.
 - `JVAGENT_ENABLE_AGENT_CACHE` - Enables agent cache.
@@ -191,9 +194,10 @@ falls back to a sibling env var when its primary key is unset:
 - `WHATSAPP_SESSION_REGISTER_TIMEOUT_SECONDS`
 - `WHATSAPP_SKIP_STARTUP_REGISTRATION`
 - `WHATSAPP_REQUEST_TIMEOUT`
-- Meta Cloud API (`provider: meta`) — **agent.yaml** (preferred): `waba_id`, `phone_number_id`, `access_token` on WhatsAppAction; **env fallback** when yaml empty: `WHATSAPP_WABA_ID`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`
-- Meta Cloud API — **env**: `WHATSAPP_APP_SECRET` (webhook signature; falls back to `FACEBOOK_APP_SECRET`), `WHATSAPP_APP_ID` (optional; falls back to `FACEBOOK_APP_ID`), `WHATSAPP_GRAPH_VERSION` (default `v25.0`)
-- Meta verify token: auto-derived from agent id + app secret (optional `verify_token` on action to override)
+- Meta Cloud API (`provider: meta`) — phone is resolved from the jvconnect API key (`GET /api/v1/meta/whatsapp/account`). Optional yaml/env overrides: `phone_number_id` / `WHATSAPP_PHONE_NUMBER_ID`, `waba_id` / `WHATSAPP_WABA_ID` (usually unnecessary).
+- Meta Cloud API — **env**: `WHATSAPP_GRAPH_VERSION` (default `v25.0`; Graph version is pinned on jvconnect). `WHATSAPP_ACCESS_TOKEN` / `WHATSAPP_APP_SECRET` / `WHATSAPP_APP_ID` are unused when using jvconnect.
+- **jvconnect proxy** (required for `provider: meta`): set `JVCONNECT_URL` and `JVCONNECT_API_KEY` only (create a phone-bound key in jvconnect API Credentials). Do **not** set `WHATSAPP_ACCESS_TOKEN` / `WHATSAPP_APP_SECRET`. After startup webhook registration, `JVCONNECT_WEBHOOK_SECRET` is persisted on the action (or set from jvconnect’s register response). Optional: `WHATSAPP_PROXY_URL` alias for `JVCONNECT_URL`. Routes under `/api/v1/meta/whatsapp/*` (room for messenger/instagram later).
+- Meta verify token: Meta verifies against jvconnect (`FB_VERIFY_TOKEN`); agent inbound uses the jvconnect-issued webhook secret
 - After `jvagent --purge`, agent id changes — update Meta App Dashboard callback URL to match `GET .../meta/webhook-status` `expected_callback_url` (Graph override alone does not update the `application` layer)
 - Meta media/voice outbound requires `JVAGENT_PUBLIC_BASE_URL` (files fetched from jvagent before Graph upload)
 - Meta typing uses inbound message wamid; configure `stt_action` / `tts_action` on the WhatsApp action for voice notes

@@ -45,6 +45,30 @@ _ALLOWED_CONFIG_SECTIONS = {
     "interact",
     "cors",
     "performance",
+    "conversation_health",
+}
+
+_ALLOWED_CONVERSATION_HEALTH_KEYS = {
+    "enabled",
+    "flag_threshold",
+    "optimization_ceiling",
+    "reading_window_days",
+    "evidence_excerpt_max_chars",
+    "unflagged_ambient_max_rate",
+    "ambient_b_share",
+    "ambient_a_share",
+    "ambient_spillover",
+    "ambient_b_target_rate",
+    "ambient_a_target_rate",
+    "latency_band_low",
+    "latency_band_medium",
+    "latency_band_high",
+    "model_action_type",
+    "model",
+    "model_temperature",
+    "model_max_tokens",
+    "enable_ai",
+    "history_limit",
 }
 
 _ALLOWED_CONTEXT_KEYS = {
@@ -304,6 +328,51 @@ def validate_app_yaml_config(config: Dict[str, Any]) -> List[AppYamlWarning]:
             perf.get("cache_cleanup_probability"),
             (int, float),
         )
+
+    ch = config.get("conversation_health")
+    if isinstance(ch, dict):
+        _warn_unknown_keys(
+            warnings,
+            "config.conversation_health",
+            ch,
+            _ALLOWED_CONVERSATION_HEALTH_KEYS,
+        )
+        for k in (
+            "enabled",
+            "ambient_spillover",
+            "enable_ai",
+        ):
+            _expect_type(
+                warnings, f"config.conversation_health.{k}", ch.get(k), (bool,)
+            )
+        for k in (
+            "flag_threshold",
+            "optimization_ceiling",
+            "unflagged_ambient_max_rate",
+            "ambient_b_share",
+            "ambient_a_share",
+            "ambient_b_target_rate",
+            "ambient_a_target_rate",
+            "latency_band_low",
+            "latency_band_medium",
+            "latency_band_high",
+            "model_temperature",
+        ):
+            _expect_type(
+                warnings,
+                f"config.conversation_health.{k}",
+                ch.get(k),
+                (int, float),
+            )
+        for k in (
+            "reading_window_days",
+            "evidence_excerpt_max_chars",
+            "model_max_tokens",
+            "history_limit",
+        ):
+            _expect_type(warnings, f"config.conversation_health.{k}", ch.get(k), (int,))
+        for k in ("model_action_type", "model"):
+            _expect_type(warnings, f"config.conversation_health.{k}", ch.get(k), (str,))
 
     return warnings
 

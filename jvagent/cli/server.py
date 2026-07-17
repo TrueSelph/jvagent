@@ -56,6 +56,35 @@ def load_app_env(app_root: str = None) -> None:
         logger.debug(f"No .env in app root: {app_root}")
 
 
+def _unsafe_purge_reason(target: Path, app_root: Path) -> Optional[str]:
+    """Return a reason string if *target* is unsafe to delete, else None.
+
+    ``--purge`` deletes whatever the resolved DB/log paths point at. A
+    misconfigured ``database.path: "."`` (or an env override pointing at the
+    app root or ``$HOME``) would otherwise ``rmtree`` the entire app tree —
+    YAML sources and all. Refuse targets that are the app root itself, an
+    ancestor of it, the filesystem root, or the home directory.
+    """
+    try:
+        target = target.resolve()
+        app_root = app_root.resolve()
+    except Exception as e:  # pragma: no cover - defensive
+        return f"could not resolve path ({e})"
+
+    if target == Path(target.anchor):
+        return "filesystem root"
+    try:
+        if target == Path.home().resolve():
+            return "home directory"
+    except Exception:  # pragma: no cover - home may be undefined
+        pass
+    if target == app_root:
+        return "the app root directory"
+    if target in app_root.parents:
+        return "an ancestor of the app root (would delete app sources)"
+    return None
+
+
 def _remove_fs_target(path: Path) -> None:
     """Remove a local database path (directory tree or single file)."""
     if not path.exists():
@@ -72,15 +101,21 @@ def _remove_fs_target(path: Path) -> None:
         logger.error("Failed to delete %s: %s", path, e)
 
 
-def purge_app_data(app_root: str) -> None:
+def purge_app_data(app_root: str, assume_yes: bool = False) -> None:
     """Purge local application data (JSON/SQLite stores only).
 
     Reads database configuration from app.yaml and environment variables.
     Remote backends (MongoDB, DynamoDB) are not modified; a warning is logged.
     Resolves relative paths relative to app_root.
 
+    Targets that are the app root, an ancestor of it, the filesystem root, or
+    the home directory are refused (a misconfigured ``database.path`` must not
+    delete app sources). Requires interactive confirmation unless
+    ``assume_yes`` is set (``--yes`` / ``JVAGENT_ASSUME_YES``).
+
     Args:
         app_root: Path to the app root directory.
+        assume_yes: Skip the interactive confirmation prompt.
     """
     if app_root is None:
         app_root = os.getcwd()
@@ -136,9 +171,42 @@ def purge_app_data(app_root: str) -> None:
                 pi_type,
             )
 
+    # Refuse unsafe targets before touching the filesystem.
+    app_root_path = Path(app_root)
+    safe_targets: Set[Path] = set()
+    for target in paths_to_purge:
+        reason = _unsafe_purge_reason(target, app_root_path)
+        if reason:
+            logger.error(
+                "Refusing to purge %s: resolves to %s. Check database.path / "
+                "JVSPATIAL_DB_PATH.",
+                target,
+                reason,
+            )
+            continue
+        safe_targets.add(target)
+
+    if not safe_targets:
+        logger.warning("Purge: no safe local data paths to remove.")
+        return
+
+    sorted_targets = sorted(safe_targets, key=lambda p: str(p))
+
+    if not assume_yes:
+        print("The following local data paths will be permanently deleted:")
+        for target in sorted_targets:
+            print(f"  - {target}")
+        try:
+            answer = input("Type 'yes' to confirm: ").strip().lower()
+        except EOFError:
+            answer = ""
+        if answer != "yes":
+            logger.warning("Purge aborted by user.")
+            return
+
     logger.warning("Purging local application data under %s...", app_root)
 
-    for target in sorted(paths_to_purge, key=lambda p: str(p)):
+    for target in sorted_targets:
         _remove_fs_target(target)
 
     logger.info("Purge complete.")
@@ -274,10 +342,17 @@ def run_server(
 
         # Start the server
         bootstrap_log.complete("Ready")
-        run_kwargs = {}
+        # Always disable uvicorn auto-reload. jvagent boots the app object
+        # (not an import string) and builds the graph in-process, so uvicorn's
+        # reload path — which requires an import string — aborts the server
+        # with SystemExit(1). Without this, `development.debug: true` in
+        # app.yaml (which sets Server.config.debug, and reload defaults to it)
+        # is a guaranteed startup crash *after* bootstrap already consumed the
+        # one-shot update_mode. `debug` still controls verbose logging via
+        # log_level; it must not imply auto-reload here. AUDIT-cli (debug reload).
+        run_kwargs: dict[str, Any] = {"reload": False}
         if is_serverless_mode():
             run_kwargs["workers"] = 1
-            run_kwargs["reload"] = False
         server.run(**run_kwargs)
     except Exception:
         # If server fails to start, display summary and remove handler
