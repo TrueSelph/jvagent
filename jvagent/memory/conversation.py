@@ -341,13 +341,15 @@ class Conversation(DeferredSaveMixin, Node):
         self.last_interaction_at = now
 
         agent = await self.get_agent()
-        if (
-            agent
-            and hasattr(agent, "interaction_limit")
-            and agent.interaction_limit > 0
-            and self.interaction_limit != agent.interaction_limit
-        ):
-            self.interaction_limit = agent.interaction_limit
+        if agent and hasattr(agent, "interaction_limit"):
+            agent_limit = int(agent.interaction_limit or 0)
+            # 0 disables pruning — must sync down so a prior positive limit
+            # does not keep pruning after the agent sets limit=0.
+            if agent_limit <= 0:
+                if self.interaction_limit != 0:
+                    self.interaction_limit = 0
+            elif self.interaction_limit != agent_limit:
+                self.interaction_limit = agent_limit
 
         # AUDIT-memory HIGH-10: a single save() covers all the field
         # changes above instead of two back-to-back writes.

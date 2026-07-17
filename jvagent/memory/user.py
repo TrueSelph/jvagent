@@ -205,12 +205,23 @@ class User(Node):
         return conversations[0]
 
     async def record_activity(self) -> None:
-        """Update last_seen timestamp to current time."""
+        """Update last_seen timestamp to current time.
+
+        Serialized under the same lock as usage updates so concurrent
+        whole-document saves cannot clobber ``User.memory`` / usage counters.
+        """
         from jvagent.core.app import App
 
-        app = await App.get()
-        self.last_seen = await app.now() if app else datetime.now(timezone.utc)
-        await self.save()
+        lock_mgr = get_user_lock_manager()
+        lock = await lock_mgr.acquire(f"usage:{self.id}")
+        async with lock:
+            fresh = await User.get(self.id) if self.id else None
+            target = fresh or self
+            app = await App.get()
+            target.last_seen = await app.now() if app else datetime.now(timezone.utc)
+            await target.save()
+            if fresh is not None and fresh is not self:
+                self.last_seen = target.last_seen
 
     def get_name(self) -> Optional[str]:
         """Return the raw name provided by the user."""
@@ -250,8 +261,11 @@ class User(Node):
         lock_mgr = get_user_lock_manager()
         lock = await lock_mgr.acquire(f"usage:{self.id}")
         async with lock:
-            if not self.usage:
-                self.usage = {
+            # Reload under lock so concurrent writers don't clobber memory/usage.
+            fresh = await User.get(self.id) if self.id else None
+            target = fresh or self
+            if not target.usage:
+                target.usage = {
                     "total_tokens": 0,
                     "prompt_tokens": 0,
                     "completion_tokens": 0,
@@ -262,35 +276,39 @@ class User(Node):
                     "last_updated": None,
                 }
 
-            self.usage["total_tokens"] = self.usage.get("total_tokens", 0) + usage.get(
+            target.usage["total_tokens"] = target.usage.get(
                 "total_tokens", 0
-            )
-            self.usage["prompt_tokens"] = self.usage.get(
+            ) + usage.get("total_tokens", 0)
+            target.usage["prompt_tokens"] = target.usage.get(
                 "prompt_tokens", 0
             ) + usage.get("prompt_tokens", 0)
-            self.usage["completion_tokens"] = self.usage.get(
+            target.usage["completion_tokens"] = target.usage.get(
                 "completion_tokens", 0
             ) + usage.get("completion_tokens", 0)
-            self.usage["model_call_count"] = self.usage.get(
+            target.usage["model_call_count"] = target.usage.get(
                 "model_call_count", 0
             ) + usage.get("model_call_count", 0)
-            self.usage["estimated_cost_usd"] = round(
-                self.usage.get("estimated_cost_usd", 0.0)
+            target.usage["estimated_cost_usd"] = round(
+                target.usage.get("estimated_cost_usd", 0.0)
                 + usage.get("estimated_cost_usd", 0.0),
                 6,
             )
-            self.usage["total_duration_seconds"] = round(
-                self.usage.get("total_duration_seconds", 0.0)
+            target.usage["total_duration_seconds"] = round(
+                target.usage.get("total_duration_seconds", 0.0)
                 + usage.get("total_duration_seconds", 0.0),
                 3,
             )
-            self.usage["interaction_count"] = self.usage.get("interaction_count", 0) + 1
+            target.usage["interaction_count"] = (
+                target.usage.get("interaction_count", 0) + 1
+            )
 
             app = await App.get()
-            self.usage["last_updated"] = (
+            target.usage["last_updated"] = (
                 await app.now() if app else datetime.now(timezone.utc)
             ).isoformat()
-            await self.save()
+            await target.save()
+            if fresh is not None:
+                self.usage = target.usage
 
     def get_usage_statistics(self) -> Dict[str, Any]:
         """Return usage stats with sensible defaults."""

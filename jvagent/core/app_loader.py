@@ -507,6 +507,11 @@ class AppLoader:
                 logger.error(f"Failed to install agent: {namespace}/{agent_name}")
                 failed_count += 1
 
+        # Source mode: remove agents connected to this app but absent from app.yaml
+        # (mirrors action _reconcile_actions).
+        if update_mode == "source":
+            await self._reconcile_agents(descriptor)
+
         # Log summary (debug logs for individual agents already shown above)
         if failed_count > 0:
             logger.warning(
@@ -519,6 +524,43 @@ class AppLoader:
             if updated_count > 0:
                 parts.append(f"{updated_count} updated")
             logger.info(f"Agents: {', '.join(parts)}")
+
+    async def _reconcile_agents(self, descriptor: AppDescriptor) -> None:
+        """In source mode, uninstall agents not listed in app.yaml."""
+        desired = set()
+        for agent_ref in descriptor.agents or []:
+            if "/" in agent_ref:
+                ns, name = agent_ref.split("/", 1)
+                desired.add((ns.strip(), name.strip()))
+
+        try:
+            app = await App.get()
+            agents_manager = await app.node(node="Agents") if app else None
+            if not agents_manager:
+                return
+            connected = await agents_manager.get_connected_agents()
+        except Exception as e:
+            logger.warning("Agent reconcile: could not list connected agents: %s", e)
+            return
+
+        for agent in connected or []:
+            ns = (getattr(agent, "namespace", None) or "").strip()
+            name = (getattr(agent, "name", None) or "").strip()
+            if not ns or not name:
+                continue
+            if (ns, name) in desired:
+                continue
+            logger.info(
+                "Source mode: uninstalling agent absent from app.yaml: %s/%s",
+                ns,
+                name,
+            )
+            try:
+                ok = await self.agent_loader.uninstall_agent(ns, name)
+                if not ok:
+                    logger.warning("Failed to uninstall stale agent %s/%s", ns, name)
+            except Exception as e:
+                logger.warning("Error uninstalling stale agent %s/%s: %s", ns, name, e)
 
     async def get_app_status(self) -> Dict[str, Any]:
         """Get the current application status.

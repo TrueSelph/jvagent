@@ -158,9 +158,10 @@ def handle_agent_command(args: List[str], app_root: str = None) -> None:
         asyncio.run(list_agents())
     elif command == "uninstall":
         if len(args) < 2:
-            print("Usage: jvagent agent uninstall <namespace/agent_name>")
+            print("Usage: jvagent agent uninstall <namespace/agent_name> [--yes]")
             return
         agent_ref = args[1]
+        assume_yes = "--yes" in args[2:] or "-y" in args[2:]
 
         # Parse namespace/agent_name format
         if "/" not in agent_ref:
@@ -168,7 +169,14 @@ def handle_agent_command(args: List[str], app_root: str = None) -> None:
             return
 
         namespace, agent_name = agent_ref.split("/", 1)
-        asyncio.run(uninstall_agent(namespace, agent_name, app_root=app_root))
+        asyncio.run(
+            uninstall_agent(
+                namespace,
+                agent_name,
+                app_root=app_root,
+                assume_yes=assume_yes,
+            )
+        )
     else:
         print(f"Unknown agent command: {command}")
         print("Available commands: create, list, uninstall")
@@ -250,27 +258,42 @@ async def list_agents() -> None:
 
 
 async def uninstall_agent(
-    namespace: str, agent_name: str, app_root: str = None
+    namespace: str,
+    agent_name: str,
+    app_root: str = None,
+    assume_yes: bool = False,
 ) -> None:
-    """Uninstall an agent.
+    """Uninstall an agent (cascade-deletes user memory under that agent).
 
-    Args:
-        namespace: Agent namespace
-        agent_name: Agent name
-        app_root: Path to the app root directory. If None, uses current working directory.
+    Requires ``--yes`` or an interactive ``yes`` confirmation — same safety
+    bar as ``--purge``.
     """
     from jvagent.core.agent_loader import AgentLoader
 
     if app_root is None:
         app_root = os.getcwd()
 
+    ref = f"{namespace}/{agent_name}"
+    if not assume_yes:
+        print(
+            f"This will permanently delete agent {ref} and cascade-delete "
+            "its users/conversations/interactions."
+        )
+        try:
+            answer = input("Type 'yes' to confirm: ").strip()
+        except EOFError:
+            answer = ""
+        if answer != "yes":
+            print("Aborted.")
+            return
+
     loader = AgentLoader(app_root)
     success = await loader.uninstall_agent(namespace, agent_name)
 
     if success:
-        print(f"Uninstalled agent: {namespace}/{agent_name}")
+        print(f"Uninstalled agent: {ref}")
     else:
-        print(f"Failed to uninstall agent: {namespace}/{agent_name}")
+        print(f"Failed to uninstall agent: {ref}")
 
 
 async def list_actions(agent_name: str) -> None:
