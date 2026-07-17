@@ -119,7 +119,9 @@ class ElevenLabsTTSAction(BaseTTSAction):
         client = ElevenLabs(api_key=api_key)
         # SDK call is synchronous; offload to a thread. AUDIT-actions XC-3.
         result = await asyncio.to_thread(client.voices.get_all)
-        voices = list(result.voices) if result and getattr(result, "voices", None) else []
+        voices = (
+            list(result.voices) if result and getattr(result, "voices", None) else []
+        )
         _voices_cache[api_key] = (now + _VOICES_CACHE_TTL_S, voices)
         return voices
 
