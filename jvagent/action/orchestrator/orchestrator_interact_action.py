@@ -555,9 +555,10 @@ class OrchestratorInteractAction(
         description="Per-channel loop-knob overrides, keyed by visitor.channel "
         "(e.g. whatsapp_call). Supported keys per channel: history_limit, "
         "activation_budget, max_duration_seconds, tool_call_timeout, "
-        "max_statement_length, and system_prompt_extra (APPENDED after the "
-        "base extra for that channel only). Lets a voice channel run a "
-        "tighter/faster loop than chat without a second agent.",
+        "max_statement_length, first_emit_timeout_ms, ack_statements, and "
+        "system_prompt_extra (APPENDED after the base extra for that channel "
+        "only). Lets a voice channel run a tighter/faster loop with its own "
+        "spoken filler than chat without a second agent.",
     )
     block_raw_tool_invocation: bool = attribute(
         default=False,
@@ -2203,9 +2204,12 @@ class OrchestratorInteractAction(
         """
         if not self.enable_transient_ack:
             return None
+        channel_statements = self._channel_cfg(
+            visitor, "ack_statements", self.ack_statements
+        )
         statements = [
             s.strip()
-            for s in (self.ack_statements or [])
+            for s in (channel_statements or [])
             if isinstance(s, str) and s.strip()
         ]
         if not statements:
@@ -2216,7 +2220,16 @@ class OrchestratorInteractAction(
             return None
         interaction = getattr(visitor, "interaction", None)
         channel = getattr(visitor, "channel", "default") or "default"
-        first_delay = max(0.0, float(self.first_emit_timeout_ms or 0) / 1000.0)
+        first_delay = max(
+            0.0,
+            float(
+                self._channel_cfg(
+                    visitor, "first_emit_timeout_ms", self.first_emit_timeout_ms
+                )
+                or 0
+            )
+            / 1000.0,
+        )
         interval = max(0.0, float(self.ack_interval_ms or 0) / 1000.0)
         # Channel-conditional shape: a streamed UI shows the ack as an ephemeral
         # status line in its activity strip (category=thought/status, kept out of

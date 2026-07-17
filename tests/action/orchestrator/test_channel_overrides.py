@@ -67,6 +67,33 @@ async def test_ack_is_user_category_on_spoken_channel_even_when_streamed():
 
 
 @pytest.mark.asyncio
+async def test_ack_uses_per_channel_statements():
+    """channel_overrides.ack_statements replaces the copy for that channel only."""
+    orch = OrchestratorInteractAction()
+    orch.enable_transient_ack = True
+    orch.first_emit_timeout_ms = 5000
+    orch.ack_statements = ["One moment…"]
+    orch.channel_overrides = {
+        "whatsapp_call": {
+            "first_emit_timeout_ms": 0,
+            "ack_statements": ["Okay, setting that up for you now…"],
+        }
+    }
+
+    visitor = _visitor(channel="whatsapp_call", stream=True)
+    visitor.response_bus = MagicMock()
+    visitor.response_bus.publish = AsyncMock()
+
+    task = orch._schedule_first_emit_ack(visitor)
+    assert task is not None
+    await asyncio.wait_for(task, timeout=2)
+
+    kwargs = visitor.response_bus.publish.await_args.kwargs
+    assert kwargs["content"] == "Okay, setting that up for you now…"
+    assert kwargs["category"] == "user"
+
+
+@pytest.mark.asyncio
 async def test_ack_stays_thought_on_streamed_non_voice_channel():
     orch = OrchestratorInteractAction()
     orch.enable_transient_ack = True
