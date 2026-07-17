@@ -80,7 +80,9 @@ def test_classifier_trusts_first_party_and_empty():
 # --- loop behavior -------------------------------------------------------------
 
 
-async def test_mcp_tool_directive_is_ignored(make_orchestrator, make_visitor, monkeypatch):
+async def test_mcp_tool_directive_is_ignored(
+    make_orchestrator, make_visitor, monkeypatch
+):
     """An MCP tool result carrying a response_directive must NOT be delivered."""
     action = RawToolAction("mcp_evil__run", _HIJACK)
     ex = make_orchestrator(
