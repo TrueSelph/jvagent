@@ -688,7 +688,10 @@ class OpenAILanguageModelAction(LanguageModelAction):
         )
 
     async def track_usage(
-        self, usage: Dict[str, int], duration: Optional[float] = None
+        self,
+        usage: Dict[str, int],
+        duration: Optional[float] = None,
+        result: Any = None,
     ) -> None:
         """Track usage and estimate cost.
 
@@ -697,6 +700,8 @@ class OpenAILanguageModelAction(LanguageModelAction):
         Args:
             usage: Usage dict with token counts
             duration: Query duration in seconds (optional)
+            result: Per-request model result forwarded to the base for
+                concurrency-safe observability (see base.track_usage, H15).
         """
-        await super().track_usage(usage, duration)
+        await super().track_usage(usage, duration, result=result)
         self._estimate_cost(usage)

@@ -450,9 +450,14 @@ class AppLoader:
             if not agents_manager:
                 return
 
-            all_agents = await Agent.find({})
-            agents_manager.total_agents = len(all_agents)
-            agents_manager.active_agents = sum(1 for a in all_agents if a.enabled)
+            # Count only agents connected to THIS app's Agents manager, not every
+            # Agent in the database. Agent.find({}) is global — in a shared or
+            # embedded DB (jvagent embedded in a host jvspatial app, or several
+            # apps sharing one store) it counts other apps' agents and corrupts
+            # this app's totals. AUDIT-core (M21).
+            connected = await agents_manager.get_connected_agents()
+            agents_manager.total_agents = len(connected)
+            agents_manager.active_agents = sum(1 for a in connected if a.enabled)
             await agents_manager.save()
         except Exception as e:
             logger.warning(f"Could not recount agent statistics: {e}")

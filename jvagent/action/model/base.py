@@ -237,6 +237,7 @@ class BaseModelAction(Action, ABC):
         self,
         usage: Dict[str, int],
         duration: Optional[float] = None,
+        result: Any = None,
     ) -> None:
         """Track token usage and update metrics.
 
@@ -246,6 +247,14 @@ class BaseModelAction(Action, ABC):
         Args:
             usage: Usage dict with token counts
             duration: Query duration in seconds (optional)
+            result: The per-request model result to source prompts/response/
+                provider from. MUST be passed on the streaming path — emission is
+                deferred until the stream is consumed, by which point a concurrent
+                request on this SHARED action instance may have overwritten
+                ``self._last_result``, leaking one user's prompts/response into
+                another user's interaction. When None, falls back to
+                ``self._last_result`` (safe for synchronous single-shot callers).
+                AUDIT-actions HIGH (H15).
         """
         total = usage.get("total_tokens", 0)
         self.total_requests += 1
@@ -268,7 +277,9 @@ class BaseModelAction(Action, ABC):
 
             interaction = get_interaction()
             if interaction:
-                await self._emit_observability(interaction, usage, duration)
+                await self._emit_observability(
+                    interaction, usage, duration, result=result
+                )
         except Exception as e:
             logger.debug(f"Failed to emit observability: {e}")
 
@@ -277,6 +288,7 @@ class BaseModelAction(Action, ABC):
         interaction: Any,
         usage: Dict[str, int],
         duration: Optional[float],
+        result: Any = None,
     ) -> None:
         """Emit observability event directly to the interaction.
 
@@ -293,9 +305,11 @@ class BaseModelAction(Action, ABC):
             else:
                 event_type = "model_call"
 
-            # Get result for provider and response data
-            result = None
-            if hasattr(self, "_last_result"):
+            # Prefer the explicitly-passed per-request result; fall back to the
+            # shared-instance attribute only when a caller did not provide one.
+            # Reading self._last_result under concurrency leaks another request's
+            # data — see track_usage docstring (H15).
+            if result is None:
                 result = getattr(self, "_last_result", None)
 
             # Get provider from result if available, otherwise from self

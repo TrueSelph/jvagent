@@ -42,6 +42,12 @@ def load_app_env(app_root: str = None) -> None:
     1. Try to load .env from the app root directory
     2. Log if a .env file was found and loaded
 
+    ``override=False``: a variable already present in the real environment wins
+    over the ``.env`` file. This matches the documented precedence (env var
+    above app.yaml/defaults) and 12-factor deploys — a stale ``.env`` baked into
+    an image must NOT beat an operator-injected env var (Docker/systemd/secret
+    manager). AUDIT-cli LOW (M24).
+
     Args:
         app_root: Path to the app root directory. If None, uses current working directory.
     """
@@ -49,7 +55,7 @@ def load_app_env(app_root: str = None) -> None:
         app_root = os.getcwd()
 
     env_path = os.path.join(app_root, ".env")
-    load_dotenv(env_path, override=True)
+    load_dotenv(env_path, override=False)
     if os.path.exists(env_path):
         logger.info(f"Loaded .env from: {env_path}")
     else:
