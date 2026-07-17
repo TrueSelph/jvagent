@@ -141,26 +141,55 @@ class WebFetchAction(Action):
             ) as client:
                 current = url
                 for _ in range(int(self.max_redirects) + 1):
-                    resp = await client.get(current, headers=headers)
-                    if resp.status_code in (301, 302, 303, 307, 308):
-                        loc = resp.headers.get("location")
-                        if not loc:
-                            break
-                        current = urljoin(current, loc)
-                        err = await self._validate(current)  # re-validate each hop
-                        if err:
-                            return err
-                        continue
-                    return self._render(resp, current, limit)
+                    # Stream so the body is read incrementally and capped at
+                    # max_bytes — client.get() buffers the ENTIRE response first,
+                    # so a hostile URL could push hundreds of MB into memory
+                    # before max_bytes is applied. AUDIT-actions MED (M17).
+                    async with client.stream("GET", current, headers=headers) as resp:
+                        if resp.status_code in (301, 302, 303, 307, 308):
+                            loc = resp.headers.get("location")
+                            if not loc:
+                                break
+                            current = urljoin(current, loc)
+                            err = await self._validate(current)  # re-validate hop
+                            if err:
+                                return err
+                            continue
+                        return await self._render(resp, current, limit)
                 return "(refused: too many redirects)"
         except httpx.HTTPError as exc:
             return f"(fetch error: {type(exc).__name__}: {exc})"
 
-    def _render(self, resp: "httpx.Response", url: str, limit: int) -> str:
+    async def _read_capped(self, resp: "httpx.Response") -> Optional[bytes]:
+        """Read at most ``max_bytes`` from a streaming response.
+
+        Rejects early on a ``Content-Length`` over the cap, and stops reading
+        once the cap is reached so an unbounded / mislabelled body cannot exhaust
+        memory. Returns ``None`` when the declared length already exceeds the cap.
+        """
+        clen = resp.headers.get("content-length")
+        if clen:
+            try:
+                if int(clen) > self.max_bytes:
+                    return None
+            except ValueError:
+                pass
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in resp.aiter_bytes():
+            chunks.append(chunk)
+            total += len(chunk)
+            if total >= self.max_bytes:
+                break
+        return b"".join(chunks)[: self.max_bytes]
+
+    async def _render(self, resp: "httpx.Response", url: str, limit: int) -> str:
         ctype = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
         if ctype and not any(ctype.startswith(a) for a in _ALLOWED_CONTENT):
             return f"(unsupported content type: {ctype})"
-        raw = resp.content[: self.max_bytes]
+        raw = await self._read_capped(resp)
+        if raw is None:
+            return "(refused: response exceeds size limit)"
         text = raw.decode(resp.encoding or "utf-8", errors="replace")
         if ctype.startswith("text/html") or ctype.startswith("application/xhtml"):
             title, body = self._html_to_markdown(text)

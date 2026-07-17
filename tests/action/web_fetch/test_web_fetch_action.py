@@ -13,11 +13,30 @@ pytestmark = pytest.mark.asyncio
 
 
 class _Resp:
-    def __init__(self, status=200, headers=None, content=b"", encoding="utf-8"):
+    """A streaming-capable mock httpx response (also its own async CM)."""
+
+    def __init__(
+        self, status=200, headers=None, content=b"", encoding="utf-8", chunk_size=None
+    ):
         self.status_code = status
         self.headers = headers or {}
-        self.content = content
+        self._content = content
         self.encoding = encoding
+        self._chunk_size = chunk_size or max(1, len(content) or 1)
+        self.bytes_yielded = 0
+
+    async def aiter_bytes(self):
+        data = self._content
+        for i in range(0, len(data), self._chunk_size):
+            chunk = data[i : i + self._chunk_size]
+            self.bytes_yielded += len(chunk)
+            yield chunk
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
 
 
 def _install_client(monkeypatch, responses):
@@ -31,7 +50,9 @@ def _install_client(monkeypatch, responses):
         async def __aexit__(self, *a):
             return False
 
-        async def get(self, url, headers=None):
+        def stream(self, method, url, headers=None):
+            # httpx's client.stream returns an async context manager (the
+            # response itself here).
             return self._responses.pop(0)
 
     monkeypatch.setattr(httpx, "AsyncClient", _Client)
@@ -107,6 +128,40 @@ async def test_truncation_applies(monkeypatch):
     )
     out = await WebFetchAction().fetch("https://example.com", max_chars=500)
     assert "[truncated at 500 chars]" in out
+
+
+async def test_content_length_over_cap_rejected_before_read(monkeypatch):
+    """A Content-Length over max_bytes is refused without reading the body."""
+    _allow_all_hosts(monkeypatch)
+    resp = _Resp(
+        headers={"content-type": "text/plain", "content-length": "999999999"},
+        content=b"x" * 100,
+    )
+    _install_client(monkeypatch, [resp])
+    a = WebFetchAction()
+    a.max_bytes = 1000
+    out = await a.fetch("https://example.com/huge")
+    assert "exceeds size limit" in out
+    assert resp.bytes_yielded == 0  # body never streamed
+
+
+async def test_body_capped_at_max_bytes_when_length_unknown(monkeypatch):
+    """No Content-Length, oversized body: streaming stops at max_bytes so memory
+    is bounded (not read in full then sliced)."""
+    _allow_all_hosts(monkeypatch)
+    body = ("<html><body><main>" + ("a" * 100000) + "</main></body></html>").encode()
+    resp = _Resp(
+        headers={"content-type": "text/html"},
+        content=body,
+        chunk_size=1000,
+    )
+    _install_client(monkeypatch, [resp])
+    a = WebFetchAction()
+    a.max_bytes = 5000
+    out = await a.fetch("https://example.com/stream")
+    # Reading stopped near the cap — not the whole 100KB body.
+    assert resp.bytes_yielded <= 5000 + 1000  # cap + at most one final chunk
+    assert out.startswith("# Source:")
 
 
 async def test_unsupported_content_type_rejected(monkeypatch):
