@@ -66,6 +66,12 @@ DEPRECATED_INDEXES: Dict[str, List[str]] = {
     "node": [
         "conv_id_only",
         "context.session_id_1",
+        # Old Action unique index keyed on (agent_id, label) only. Replaced by
+        # ``agent_ns_label`` on (agent_id, namespace, label) so a label reused
+        # across namespaces no longer collides. Drop the old name so the new
+        # index can be created without a leftover wrong-shape unique constraint.
+        # AUDIT-core C3.
+        "agent_label",
     ],
 }
 

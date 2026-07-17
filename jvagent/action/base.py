@@ -37,8 +37,17 @@ T = TypeVar("T", bound="Action")
 
 @compound_index([("agent_id", 1), ("enabled", 1)], name="agent_enabled")
 @compound_index(
-    [("agent_id", 1), ("label", 1)],
-    name="agent_label",
+    # Canonical action identity is (agent_id, namespace, label) — the same
+    # tuple the loader and Actions manager use. The unique key MUST include
+    # ``namespace``; keying on (agent_id, label) alone rejects a second action
+    # that legitimately shares a label across two namespaces with E11000 (and
+    # the action is then silently dropped by register_action). The partial
+    # filter already scopes the constraint to rows carrying all three fields.
+    # AUDIT-core C3. The old (agent_id, label) index shipped under the name
+    # ``agent_label``; it is registered in DEPRECATED_INDEXES so the migration
+    # drops it before creating this one.
+    [("agent_id", 1), ("namespace", 1), ("label", 1)],
+    name="agent_ns_label",
     unique=True,
     partial_filter_expression={
         "context.agent_id": {"$gt": ""},
