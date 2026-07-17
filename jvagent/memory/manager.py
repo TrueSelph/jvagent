@@ -484,6 +484,16 @@ class Memory(Node):
         4. Both → Get/Create User; resume or create Conversation. Validates
            ownership; foreign session_id raises ValueError.
 
+        When a ``session_id`` is provided, the whole resolve-or-create runs under
+        a per-(memory, session_id) lock so two concurrent first messages for the
+        same session cannot both miss the existence check and each create a
+        Conversation — a fork that splits history and gives the copies different
+        ``token_secret``s (ADR-0020), making session tokens intermittently fail.
+        Mirrors the per-user lock in :meth:`get_user`. The lock is in-process
+        (per worker); cross-process races still require a distributed lock —
+        tracked in ADR-0033. A generated (no client) session_id is unique and
+        needs no lock.
+
         Args:
             user_id: Optional user identifier
             session_id: Optional session identifier
@@ -497,6 +507,27 @@ class Memory(Node):
             RuntimeError: If user creation/lookup fails
             ValueError: If session is foreign to this Memory, or ownership validation fails
         """
+        if not session_id:
+            return await self._get_session_unlocked(
+                user_id, session_id, user_name, channel
+            )
+        from jvagent.memory.lock_manager import get_conversation_lock_manager
+
+        lock_mgr = get_conversation_lock_manager()
+        lock = await lock_mgr.acquire(f"session-create:{self.id}:{session_id}")
+        async with lock:
+            return await self._get_session_unlocked(
+                user_id, session_id, user_name, channel
+            )
+
+    async def _get_session_unlocked(
+        self,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        user_name: Optional[str] = None,
+        channel: str = "default",
+    ) -> Tuple["User", "Conversation", str, str, bool]:
+        """Body of :meth:`get_session`; run under the per-session lock there."""
         # Case 1: No IDs — create anonymous session
         if not user_id and not session_id:
             user, conv, uid, sid = await self._create_anonymous_user_and_conversation(
