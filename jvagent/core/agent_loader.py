@@ -255,6 +255,13 @@ class AgentLoader:
             actions_manager = await self._ensure_actions_node(agent)
             await self._ensure_memory_node(agent)
 
+            # Converge duplicate action nodes (same namespace/label) left by
+            # prior races, partial installs, or multi-worker boots. Runs on
+            # EVERY install — not only under --update — so a plain restart
+            # heals accumulated duplicates instead of carrying them forward.
+            # AUDIT-core C1 / ADR-0033.
+            await self._dedupe_actions_by_identity(agent, actions_manager)
+
             # Run _install_actions when: (a) agent has actions to install, or
             # (b) update_mode is set (to sync: remove actions no longer in descriptor)
             if descriptor.actions or update_mode is not None:
@@ -294,6 +301,145 @@ class AgentLoader:
         memory = await Memory.create()
         await agent.connect(memory, direction="both")
         return memory
+
+    async def _dedupe_actions_by_identity(
+        self, agent: Agent, actions_manager: Actions
+    ) -> int:
+        """Collapse duplicate action nodes sharing ``(namespace, label)``.
+
+        Canonical action identity is ``(agent_id, namespace, label)``. On the
+        default JSON adapter uniqueness is not enforced (``create_index`` is a
+        no-op), and the ``find_one`` existence check in ``register_action`` is
+        blind to persisted actions whose Python class is not imported at check
+        time (jvspatial filters queries by imported subclass names). So a
+        prior race, a partial install, or two workers booting concurrently can
+        leave several nodes with the same identity, splitting the action across
+        managers — some invisible to the walker.
+
+        This pass runs on every install and keeps exactly one node per
+        identity, preferring one connected to the Actions manager (so the
+        walker keeps seeing it), then an enabled one, then the lexicographically
+        smallest id for determinism. Duplicates are removed at the data level
+        (disconnect + ``delete(cascade=True)``) — deliberately NOT via
+        ``deregister_action``, whose module-unload/endpoint-teardown would
+        disturb the surviving node that shares the same class and module.
+
+        Returns the number of duplicate nodes removed.
+        """
+        from jvspatial.core.entities.node import Node
+
+        try:
+            all_records = await self._get_all_action_records(agent)
+        except Exception as e:
+            logger.warning(
+                "dedupe: could not read action records for %s: %s", agent.name, e
+            )
+            return 0
+
+        groups: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+        for record in all_records:
+            ctx = record.get("context", {})
+            key = (ctx.get("namespace"), ctx.get("label"))
+            groups.setdefault(key, []).append(record)
+
+        removed = 0
+        removed_labels: List[str] = []
+
+        for (ns, label), records in groups.items():
+            if len(records) < 2:
+                continue
+
+            keeper_id = await self._choose_keeper_id(actions_manager, records)
+
+            for record in records:
+                rid = record.get("id")
+                if rid == keeper_id or not rid:
+                    continue
+                try:
+                    node = await Node.get(rid)
+                    if node is None:
+                        continue
+                    if await actions_manager.is_connected_to(node):
+                        await actions_manager.disconnect(node)
+                    await node.delete(cascade=True)
+                    removed += 1
+                    removed_labels.append(f"{ns}/{label}")
+                except Exception as e:
+                    logger.warning(
+                        "dedupe: failed to remove duplicate action %s/%s (%s): %s",
+                        ns,
+                        label,
+                        rid,
+                        e,
+                    )
+
+            # Ensure the surviving node is connected to the manager (a removed
+            # duplicate may have been the connected one).
+            if keeper_id:
+                try:
+                    keeper = await Node.get(keeper_id)
+                    if (
+                        keeper is not None
+                        and not await actions_manager.is_connected_to(keeper)
+                    ):
+                        await actions_manager.connect(keeper, direction="both")
+                except Exception as e:
+                    logger.warning(
+                        "dedupe: failed to reconnect kept action %s/%s: %s",
+                        ns,
+                        label,
+                        e,
+                    )
+
+        if removed:
+            logger.warning(
+                "Removed %d duplicate action node(s) for %s: %s",
+                removed,
+                agent.name,
+                ", ".join(sorted(set(removed_labels))),
+            )
+            # Re-sync counts from ground truth after structural changes.
+            try:
+                await actions_manager.update_statistics()
+            except Exception as e:
+                logger.warning("dedupe: recount failed for %s: %s", agent.name, e)
+
+        return removed
+
+    async def _choose_keeper_id(
+        self, actions_manager: Actions, records: List[Dict[str, Any]]
+    ) -> Optional[str]:
+        """Pick which duplicate to keep: connected first, then enabled, then id.
+
+        Prefers a node still connected to the Actions manager (the walker sees
+        those), then an enabled node, with a deterministic lexicographic id
+        tie-break so concurrent processes converge on the same survivor.
+        """
+        from jvspatial.core.entities.node import Node
+
+        scored: List[Tuple[int, int, str]] = []
+        for record in records:
+            rid = record.get("id")
+            if not rid:
+                continue
+            connected = 0
+            enabled = 0
+            try:
+                node = await Node.get(rid)
+                if node is not None:
+                    if await actions_manager.is_connected_to(node):
+                        connected = 1
+                    enabled = 1 if getattr(node, "enabled", False) else 0
+            except Exception:
+                pass
+            # Lower sort tuple wins: prefer connected, then enabled, then
+            # smallest id. Negate the "good" flags so they sort first.
+            scored.append((-connected, -enabled, rid))
+
+        if not scored:
+            return None
+        scored.sort()
+        return scored[0][2]
 
     # ============================================================================
     # Action installation
