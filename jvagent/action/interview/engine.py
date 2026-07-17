@@ -999,7 +999,7 @@ async def handle_set_fields(
         if system_message:
             payload["system_message"] = system_message
     elif str(post_outcome.get("status") or "") == "extraction_pending":
-        # Post-processor still has async work (e.g. quotation URL queue). Wait
+        # Post-processor still has async work (e.g. async URL queue). Wait
         # was already delivered via say — do not chain review/complete.
         payload["status"] = "extraction_pending"
         directive = compose_directives(directive_queue, fallback="")

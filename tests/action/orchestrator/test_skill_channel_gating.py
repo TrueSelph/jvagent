@@ -440,9 +440,7 @@ async def test_find_skill_returns_deny_for_blocked_query_match() -> None:
         deny_access_directive="You'll need WhatsApp for a quote.",
         metadata={"tags": ["quotation", "quote", "product"]},
     )
-    meta = build_skill_meta_tools(
-        [allowed], set(), [], blocked_docs=[blocked]
-    )
+    meta = build_skill_meta_tools([allowed], set(), [], blocked_docs=[blocked])
     out = await meta["find_skill"].run({"query": "quote"})
     assert "You'll need WhatsApp for a quote." in out
     assert "verbatim" in out.lower()
