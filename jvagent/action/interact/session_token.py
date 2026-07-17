@@ -48,6 +48,7 @@ _TOKEN_CHANNEL = "web"
 
 _ALGORITHM = "HS256"
 _DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 7  # 7 days
+_DEFAULT_REFRESH_GRACE_SECONDS = 60 * 60 * 24 * 7  # 7 days past exp
 
 # Staged-rollout modes.
 MODE_OFF = "off"
@@ -82,6 +83,29 @@ def token_ttl_seconds() -> int:
         return val if val > 0 else _DEFAULT_TTL_SECONDS
     except (TypeError, ValueError):
         return _DEFAULT_TTL_SECONDS
+
+
+def refresh_grace_seconds() -> int:
+    """Post-expiry window in which a session token may still be *refreshed*.
+
+    ``JVAGENT_INTERACT_TOKEN_REFRESH_GRACE_SECONDS`` (default 7 days). An
+    expired token is never accepted on ``interact`` itself; within this grace
+    window the refresh endpoint will exchange it for a fresh one, so an idle
+    chat (open tab, returning visitor) can recover its conversation instead of
+    being forced into a new session. ``0`` disables the grace window — refresh
+    then requires a still-valid token. Revocation via
+    ``Conversation.rotate_token_secret()`` is unaffected.
+    """
+    try:
+        val = int(
+            env(
+                "JVAGENT_INTERACT_TOKEN_REFRESH_GRACE_SECONDS",
+                default=_DEFAULT_REFRESH_GRACE_SECONDS,
+            )
+        )
+        return val if val >= 0 else _DEFAULT_REFRESH_GRACE_SECONDS
+    except (TypeError, ValueError):
+        return _DEFAULT_REFRESH_GRACE_SECONDS
 
 
 def _secret() -> Optional[str]:
@@ -157,6 +181,82 @@ def verify_session_token(
     if expected_agent_id and claims.get("agent_id") != expected_agent_id:
         return None, "agent_mismatch"
     return claims, None
+
+
+def verify_session_token_for_refresh(
+    token: str, *, expected_agent_id: Optional[str] = None
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Verify a Mode B token for the *refresh* exchange.
+
+    Same signature/type/agent checks as :func:`verify_session_token`, but the
+    ``exp`` claim is allowed to be up to :func:`refresh_grace_seconds` in the
+    past. Returns ``(claims, None)`` or ``(None, reason)``.
+    """
+    secret = _secret()
+    if not secret:
+        return None, "no_secret_configured"
+    if not token:
+        return None, "missing_token"
+    try:
+        claims = jwt.decode(
+            token,
+            secret,
+            algorithms=[_ALGORITHM],
+            options={"verify_exp": False},
+        )
+    except jwt.InvalidTokenError as exc:
+        return None, f"invalid:{type(exc).__name__}"
+    if claims.get("typ") != "interact_session":
+        return None, "wrong_type"
+    if expected_agent_id and claims.get("agent_id") != expected_agent_id:
+        return None, "agent_mismatch"
+    exp = claims.get("exp")
+    if not isinstance(exp, (int, float)):
+        return None, "invalid:MissingExpiry"
+    if int(time.time()) > int(exp) + refresh_grace_seconds():
+        return None, "expired_beyond_grace"
+    return claims, None
+
+
+async def refresh_session_token(
+    *,
+    request: Any,
+    agent: Any,
+    agent_id: str,
+    session_token: Optional[str] = None,
+) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[str]]:
+    """Exchange a session token for a fresh one bound to the same conversation.
+
+    The presented token (``X-Session-Token`` header or explicit
+    ``session_token`` argument) must carry a valid signature and either be
+    unexpired or within :func:`refresh_grace_seconds` of its ``exp``. Its
+    claims must still bind to the loaded ``Conversation`` — so a rotated
+    ``token_secret`` revokes refresh exactly like it revokes resume.
+
+    Returns ``(new_token, claims, None)`` on success or ``(None, claims|None,
+    reason)`` on failure.
+    """
+    token = session_token or _extract_session_token(request)
+    if not token:
+        return None, None, "missing_token"
+    claims, err = verify_session_token_for_refresh(token, expected_agent_id=agent_id)
+    if err or claims is None:
+        return None, None, err or "invalid"
+    conv = await _load_conversation(agent, str(claims.get("session_id") or ""))
+    if conv is None:
+        return None, claims, "no_conversation"
+    bind_err = claims_match_conversation(claims, conv)
+    if bind_err:
+        return None, claims, f"bind_{bind_err}"
+    new_token = mint_session_token(
+        agent_id=agent_id,
+        session_id=str(claims.get("session_id") or ""),
+        user_id=str(claims.get("user_id") or ""),
+        token_secret=getattr(conv, "token_secret", "") or "",
+    )
+    if not new_token:
+        return None, claims, "no_secret_configured"
+    return new_token, claims, None
 
 
 def verify_bearer(token: str) -> Optional[str]:
@@ -396,9 +496,12 @@ __all__ = [
     "IdentityDecision",
     "auth_mode",
     "token_ttl_seconds",
+    "refresh_grace_seconds",
     "is_web_channel",
     "mint_session_token",
     "verify_session_token",
+    "verify_session_token_for_refresh",
+    "refresh_session_token",
     "verify_bearer",
     "claims_match_conversation",
     "resolve_interact_identity",

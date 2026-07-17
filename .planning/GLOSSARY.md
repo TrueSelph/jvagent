@@ -112,6 +112,9 @@ Per-agent message bus. Source: `jvagent/action/response/response_bus.py`. Channe
 ### Root
 The single jvspatial `Root` node. `App` is connected to `Root`.
 
+### Session capability token
+Server-minted HS256 JWT that authorizes resuming one web `Conversation` on the public interact endpoint (ADR-0020 "Mode B"). Claims bind it to `agent_id`/`session_id`/`user_id` plus a per-conversation `cs` secret (`Conversation.token_secret` — rotating it revokes all outstanding tokens). Minted/re-minted each interact turn (`session_token` response field / SSE `start` chunk, resent as `X-Session-Token`); renewable without an utterance via `POST /agents/{id}/interact/session/refresh` within a post-expiry grace window (ADR-0032). Source: [`jvagent/action/interact/session_token.py`](../jvagent/action/interact/session_token.py).
+
 ### Skill
 A `SKILL.md`-first folder the Orchestrator loads through progressive disclosure (`find_skill` / `use_skill`, [`jvagent/action/orchestrator/skills.py`](../jvagent/action/orchestrator/skills.py)). A skill is *judgment over capability* — distinct from `Action`s. Two specs (ADR-0017), set by a `spec` frontmatter key: **JV** (`spec: jv`, default) coordinates existing action/IA tools by `namespace__tool` name (no code); **Claude** (`spec: claude`) is a standard Anthropic Agent Skills folder whose bundled `scripts/` the model runs via the `code_execution__bash` substrate, staged into the caller's per-user sandbox. See [`adr/0017-two-skill-specs-code-execution-substrate.md`](adr/0017-two-skill-specs-code-execution-substrate.md), [`adr/0011-skills-two-kinds.md`](adr/0011-skills-two-kinds.md), and [`jvagent/skills/README.md`](../jvagent/skills/README.md).
 
