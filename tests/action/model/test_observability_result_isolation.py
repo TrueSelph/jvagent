@@ -54,9 +54,7 @@ async def test_passed_result_wins_over_shared_last_result():
     interaction = _interaction()
     mine = _result("MINE")
 
-    await action._emit_observability(
-        interaction, {"total_tokens": 2}, 0.1, result=mine
-    )
+    await action._emit_observability(interaction, {"total_tokens": 2}, 0.1, result=mine)
 
     assert len(interaction.observability_metrics) == 1
     data = interaction.observability_metrics[0]["data"]

@@ -26,9 +26,7 @@ async def _store_with_pending_proactive():
     conv.tasks = []
     conv.save = AsyncMock()
     store = TaskStore(conv)
-    await store.enqueue_proactive(
-        ProactiveTaskSpec(directive="ping"), title="ping"
-    )
+    await store.enqueue_proactive(ProactiveTaskSpec(directive="ping"), title="ping")
     return store
 
 
