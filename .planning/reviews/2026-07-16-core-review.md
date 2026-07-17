@@ -1,8 +1,34 @@
 # jvagent Core Review — Findings & Improvement Plan
 
 **Date:** 2026-07-16
+**Status:** RESOLVED (2026-07-17) — every actionable finding shipped; see the resolution map below.
 **Scope:** Core (bootstrap, App/Agent/Actions graph), memory subsystem, orchestrator, interact pipeline + session tokens, bundled actions, CLI/logging/graph-repair.
 **Method:** One inline core-bootstrap review + five parallel subsystem reviewers. Every finding verified against actual code paths (and jvspatial internals where relevant), not inferred from names.
+
+---
+
+## Resolution (2026-07-17)
+
+All findings were fixed across PRs #85–#102 (each with regression tests that fail
+against the pre-fix code; every PR passed pre-commit + full pytest). Summary:
+
+| Area | Findings | PR(s) |
+|---|---|---|
+| Interact/reply/CLI security | H22 rate-limiter spoof, H10/H11 reply IDOR, M3 reason leak, M1 log-mode token, M9 debug crash, M10 --purge | #85 |
+| Duplicate-singleton root cause | C3 index shape, C1 boot dedupe | #86, #87 |
+| Correctness HIGHs | H14 get_model_action, H17 memory export | #88 |
+| Orchestrator | H13 lock-traps, H12 directive-trust/MCP hijack | #89, #90 |
+| Memory locking | C8 contextvar leak, C6 per-session lock, C7 turn-lock lease renewal, bootstrap lease | #91, #99, #100, #101 |
+| Availability / mediums | M11 orphan-task lease, M15 stale StepHandle, M17 web_fetch DoS, M16 endpoint-unregister, M23 module-unload | #92, #93, #94, #95, #96 |
+| Batched mediums | H15 observability leak, M13 dry-run, M19 SSE dup, M21 agent recount, M22 bootstrap mask, M24 .env | #97 |
+| LOW batch | chain-cycle hang, read-mint, reply-space, task refs | #98 |
+| Deferred | M17 DNS-rebinding pin, Retry-After clamp, HTTP-client cross-loop | #102 |
+
+**Not fixed (accepted risk):** H16 code-execution per-user isolation — requires a
+sandboxing runtime (gVisor / nsjail / firecracker), not a code change; documented
+in `code_execution/executor.py`.
+
+The identity & locking substrate is captured in [ADR-0033](../adr/0033-identity-and-locking-substrate.md).
 
 ---
 

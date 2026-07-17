@@ -562,8 +562,13 @@ class Action(Node):
             # Also try unregistering by path pattern as a fallback for any remaining endpoints
             action_path_prefix = f"/actions/{self.id}/"
             try:
-                # Get all function endpoints and check for any we might have missed
-                for func, endpoint_info in registry._function_registry.items():
+                # Snapshot the registry first: unregister_function() deletes from
+                # _function_registry, so iterating the live .items() view and
+                # unregistering inside the loop raises "dictionary changed size
+                # during iteration" on the FIRST hit — the exception was caught
+                # below and any remaining missed endpoints leaked. AUDIT-actions
+                # MEDIUM (M16).
+                for func, endpoint_info in list(registry._function_registry.items()):
                     path = endpoint_info.path
                     if (
                         path.startswith(action_path_prefix)
@@ -647,7 +652,15 @@ class Action(Node):
                         # But check if other actions might be using it
                         # For now, we'll be conservative and only unload if it's clearly this action's module
                         action_module_pattern = f"jvagent.actions.{self.metadata.get('namespace', '')}.{self.metadata.get('name', '')}"
-                        if module_name.startswith(action_module_pattern):
+                        # Match the action's own module or a submodule of it, on a
+                        # dotted-component boundary. A bare startswith would also
+                        # match a SIBLING whose name is a prefix — deregistering
+                        # ``foo`` would unload ``foo_bar``'s modules and break that
+                        # still-registered action until re-import. AUDIT-actions
+                        # MEDIUM (M23).
+                        if module_name == action_module_pattern or (
+                            module_name.startswith(action_module_pattern + ".")
+                        ):
                             # This is this action's specific module, safe to unload
                             del sys.modules[module_name]
                             unloaded_count += 1

@@ -745,7 +745,18 @@ class TaskStore:
                     steps[s_idx] = step_dict
                     break
             else:
-                steps.append(step_dict)
+                # Stale StepHandle: its step id is no longer in the task's plan
+                # because set_plan / sync_plan regenerated all step ids. Appending
+                # it here would resurrect a zombie step that has_pending_steps /
+                # current_step then count as phantom work, mis-planning a resumed
+                # flow. Drop the write — the handle refers to a superseded plan.
+                # AUDIT-memory MEDIUM (M15).
+                logger.debug(
+                    "Ignoring persist for stale step %s (no longer in task %s plan)",
+                    step.id,
+                    task_id,
+                )
+                return
             entry["steps"] = steps
             entry["updated_at"] = step.updated_at
             raw[idx] = entry

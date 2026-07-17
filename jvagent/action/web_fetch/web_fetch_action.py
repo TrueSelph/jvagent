@@ -75,43 +75,72 @@ class WebFetchAction(Action):
         parsed = urlparse(url)
         return (parsed.scheme or "").lower(), (parsed.hostname or "")
 
-    async def _host_allowed(self, host: str) -> bool:
-        """Resolve *host* and reject private/loopback/link-local/reserved IPs."""
-        if self.allow_private_hosts:
+    @staticmethod
+    def _is_blocked_ip(addr: str) -> bool:
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
             return True
+        return bool(
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        )
+
+    async def _resolve_validated_ip(self, host: str) -> Tuple[Optional[str], bool]:
+        """Resolve *host* and validate every address.
+
+        Returns ``(pin_ip, ok)``: ``ok`` is False if any resolved address is
+        private/loopback/etc (reject). ``pin_ip`` is the first validated address
+        to CONNECT to — pinning the connection to the exact IP we validated
+        closes the DNS-rebinding TOCTOU: without it, ``_host_allowed`` resolves
+        once and httpx re-resolves at connect, so a domain that resolves public
+        then rebinds to a private IP would reach an internal host. AUDIT-actions
+        (M17). ``pin_ip`` is None when ``allow_private_hosts`` (no pin needed).
+        """
+        if self.allow_private_hosts:
+            return None, True
         if not host:
-            return False
+            return None, False
         try:
             infos = await asyncio.get_running_loop().getaddrinfo(host, None)
         except Exception:
-            return False
+            return None, False
         if not infos:
-            return False
+            return None, False
+        pin_ip: Optional[str] = None
         for info in infos:
             addr = info[4][0]
-            try:
-                ip = ipaddress.ip_address(addr)
-            except ValueError:
-                return False
-            if (
-                ip.is_private
-                or ip.is_loopback
-                or ip.is_link_local
-                or ip.is_reserved
-                or ip.is_multicast
-                or ip.is_unspecified
-            ):
-                return False
-        return True
+            if self._is_blocked_ip(addr):
+                return None, False
+            if pin_ip is None:
+                pin_ip = addr
+        return pin_ip, True
 
-    async def _validate(self, url: str) -> Optional[str]:
-        """Return an error string if *url* is unsafe to fetch, else None."""
+    async def _host_allowed(self, host: str) -> bool:
+        """Resolve *host* and reject private/loopback/link-local/reserved IPs."""
+        _, ok = await self._resolve_validated_ip(host)
+        return ok
+
+    async def _validate(self, url: str) -> Tuple[Optional[str], Optional[str]]:
+        """Return ``(error_or_None, pin_ip_or_None)`` for *url*.
+
+        ``pin_ip`` is the validated IP the fetch must connect to (rebinding
+        guard); None means connect normally (private hosts allowed).
+        """
         scheme, host = self._scheme_host(url)
         if scheme not in _ALLOWED_SCHEMES:
-            return f"(refused: only http/https URLs are allowed, got {scheme or '∅'})"
-        if not await self._host_allowed(host):
-            return f"(refused: host {host or '∅'} is not permitted)"
-        return None
+            return (
+                f"(refused: only http/https URLs are allowed, got {scheme or '∅'})",
+                None,
+            )
+        pin_ip, ok = await self._resolve_validated_ip(host)
+        if not ok:
+            return (f"(refused: host {host or '∅'} is not permitted)", None)
+        return None, pin_ip
 
     # -- Fetch + extract ----------------------------------------------------
 
@@ -130,7 +159,7 @@ class WebFetchAction(Action):
         if not url:
             return "(refused: empty url)"
         # Validate before opening any client so unsafe URLs never touch the wire.
-        err = await self._validate(url)
+        err, pin_ip = await self._validate(url)
         if err:
             return err
         limit = int(max_chars or self.max_chars)
@@ -141,26 +170,87 @@ class WebFetchAction(Action):
             ) as client:
                 current = url
                 for _ in range(int(self.max_redirects) + 1):
-                    resp = await client.get(current, headers=headers)
-                    if resp.status_code in (301, 302, 303, 307, 308):
-                        loc = resp.headers.get("location")
-                        if not loc:
-                            break
-                        current = urljoin(current, loc)
-                        err = await self._validate(current)  # re-validate each hop
-                        if err:
-                            return err
-                        continue
-                    return self._render(resp, current, limit)
+                    # Stream so the body is read incrementally and capped at
+                    # max_bytes — client.get() buffers the ENTIRE response first,
+                    # so a hostile URL could push hundreds of MB into memory
+                    # before max_bytes is applied.
+                    req = self._build_pinned_request(client, current, pin_ip, headers)
+                    resp = await client.send(req, stream=True)
+                    try:
+                        if resp.status_code in (301, 302, 303, 307, 308):
+                            loc = resp.headers.get("location")
+                            if not loc:
+                                break
+                            current = urljoin(current, loc)
+                            # Re-validate AND re-pin each hop.
+                            err, pin_ip = await self._validate(current)
+                            if err:
+                                return err
+                            continue
+                        return await self._render(resp, current, limit)
+                    finally:
+                        await resp.aclose()
                 return "(refused: too many redirects)"
         except httpx.HTTPError as exc:
             return f"(fetch error: {type(exc).__name__}: {exc})"
 
-    def _render(self, resp: "httpx.Response", url: str, limit: int) -> str:
+    def _build_pinned_request(
+        self,
+        client: "httpx.AsyncClient",
+        url: str,
+        pin_ip: Optional[str],
+        headers: dict,
+    ) -> "httpx.Request":
+        """Build a GET request that connects to the validated ``pin_ip``.
+
+        The connection targets the exact IP we validated, while the ``Host``
+        header and TLS SNI keep the original hostname — so a DNS rebind between
+        validation and connect cannot redirect us to an internal host, and HTTPS
+        cert verification still checks the real hostname. AUDIT-actions (M17).
+        """
+        if not pin_ip:
+            return client.build_request("GET", url, headers=headers)
+        parsed = httpx.URL(url)
+        host = parsed.host
+        port = parsed.port
+        pinned = parsed.copy_with(host=pin_ip)
+        req_headers = dict(headers)
+        req_headers["Host"] = f"{host}:{port}" if port else host
+        req = client.build_request("GET", pinned, headers=req_headers)
+        # TLS SNI + certificate validation must use the real hostname, not the IP.
+        req.extensions["sni_hostname"] = host
+        return req
+
+    async def _read_capped(self, resp: "httpx.Response") -> Optional[bytes]:
+        """Read at most ``max_bytes`` from a streaming response.
+
+        Rejects early on a ``Content-Length`` over the cap, and stops reading
+        once the cap is reached so an unbounded / mislabelled body cannot exhaust
+        memory. Returns ``None`` when the declared length already exceeds the cap.
+        """
+        clen = resp.headers.get("content-length")
+        if clen:
+            try:
+                if int(clen) > self.max_bytes:
+                    return None
+            except ValueError:
+                pass
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in resp.aiter_bytes():
+            chunks.append(chunk)
+            total += len(chunk)
+            if total >= self.max_bytes:
+                break
+        return b"".join(chunks)[: self.max_bytes]
+
+    async def _render(self, resp: "httpx.Response", url: str, limit: int) -> str:
         ctype = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
         if ctype and not any(ctype.startswith(a) for a in _ALLOWED_CONTENT):
             return f"(unsupported content type: {ctype})"
-        raw = resp.content[: self.max_bytes]
+        raw = await self._read_capped(resp)
+        if raw is None:
+            return "(refused: response exceeds size limit)"
         text = raw.decode(resp.encoding or "utf-8", errors="replace")
         if ctype.startswith("text/html") or ctype.startswith("application/xhtml"):
             title, body = self._html_to_markdown(text)

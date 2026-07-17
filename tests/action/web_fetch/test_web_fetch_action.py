@@ -10,14 +10,44 @@ from jvagent.action.web_fetch.web_fetch_action import WebFetchAction
 
 
 class _Resp:
-    def __init__(self, status=200, headers=None, content=b"", encoding="utf-8"):
+    """A streaming-capable mock httpx response (also its own async CM)."""
+
+    def __init__(
+        self, status=200, headers=None, content=b"", encoding="utf-8", chunk_size=None
+    ):
         self.status_code = status
         self.headers = headers or {}
-        self.content = content
+        self._content = content
         self.encoding = encoding
+        self._chunk_size = chunk_size or max(1, len(content) or 1)
+        self.bytes_yielded = 0
+
+    async def aiter_bytes(self):
+        data = self._content
+        for i in range(0, len(data), self._chunk_size):
+            chunk = data[i : i + self._chunk_size]
+            self.bytes_yielded += len(chunk)
+            yield chunk
+
+    async def aclose(self):
+        pass
+
+
+class _MockRequest:
+    def __init__(self, method, url, headers):
+        self.method = method
+        self.url = url
+        self.headers = headers or {}
+        self.extensions: dict = {}
+
+
+# Records the requests the last _install_client built (for pin assertions).
+_LAST_REQUESTS: list = []
 
 
 def _install_client(monkeypatch, responses):
+    _LAST_REQUESTS.clear()
+
     class _Client:
         def __init__(self, *a, **k):
             self._responses = list(responses)
@@ -28,17 +58,23 @@ def _install_client(monkeypatch, responses):
         async def __aexit__(self, *a):
             return False
 
-        async def get(self, url, headers=None):
+        def build_request(self, method, url, headers=None):
+            req = _MockRequest(method, url, headers)
+            _LAST_REQUESTS.append(req)
+            return req
+
+        async def send(self, request, stream=False):
             return self._responses.pop(0)
 
     monkeypatch.setattr(httpx, "AsyncClient", _Client)
 
 
-def _allow_all_hosts(monkeypatch, blocked=("127.0.0.1", "localhost")):
-    async def _ok(self, host):
-        return host not in blocked
+def _allow_all_hosts(monkeypatch, blocked=("127.0.0.1", "localhost"), pin_ip=None):
+    async def _rv(self, host):
+        # (pin_ip, ok) — ok False for a blocked host.
+        return (pin_ip, host not in blocked)
 
-    monkeypatch.setattr(WebFetchAction, "_host_allowed", _ok)
+    monkeypatch.setattr(WebFetchAction, "_resolve_validated_ip", _rv)
 
 
 # --- SSRF / scheme validation (no network) --------------------------------
@@ -106,6 +142,40 @@ async def test_truncation_applies(monkeypatch):
     assert "[truncated at 500 chars]" in out
 
 
+async def test_content_length_over_cap_rejected_before_read(monkeypatch):
+    """A Content-Length over max_bytes is refused without reading the body."""
+    _allow_all_hosts(monkeypatch)
+    resp = _Resp(
+        headers={"content-type": "text/plain", "content-length": "999999999"},
+        content=b"x" * 100,
+    )
+    _install_client(monkeypatch, [resp])
+    a = WebFetchAction()
+    a.max_bytes = 1000
+    out = await a.fetch("https://example.com/huge")
+    assert "exceeds size limit" in out
+    assert resp.bytes_yielded == 0  # body never streamed
+
+
+async def test_body_capped_at_max_bytes_when_length_unknown(monkeypatch):
+    """No Content-Length, oversized body: streaming stops at max_bytes so memory
+    is bounded (not read in full then sliced)."""
+    _allow_all_hosts(monkeypatch)
+    body = ("<html><body><main>" + ("a" * 100000) + "</main></body></html>").encode()
+    resp = _Resp(
+        headers={"content-type": "text/html"},
+        content=body,
+        chunk_size=1000,
+    )
+    _install_client(monkeypatch, [resp])
+    a = WebFetchAction()
+    a.max_bytes = 5000
+    out = await a.fetch("https://example.com/stream")
+    # Reading stopped near the cap — not the whole 100KB body.
+    assert resp.bytes_yielded <= 5000 + 1000  # cap + at most one final chunk
+    assert out.startswith("# Source:")
+
+
 async def test_unsupported_content_type_rejected(monkeypatch):
     _allow_all_hosts(monkeypatch)
     _install_client(
@@ -124,6 +194,60 @@ async def test_plain_text_passed_through(monkeypatch):
     )
     out = await WebFetchAction().fetch("https://example.com/robots.txt")
     assert "just some text" in out
+
+
+async def test_fetch_pins_connection_to_validated_ip(monkeypatch):
+    """The request connects to the validated IP, but keeps the original Host
+    header and SNI — closing the DNS-rebinding window. AUDIT-actions M17."""
+    _allow_all_hosts(monkeypatch, pin_ip="93.184.216.34")
+    _install_client(
+        monkeypatch,
+        [
+            _Resp(
+                headers={"content-type": "text/html"},
+                content=b"<html><body><main>ok</main></body></html>",
+            )
+        ],
+    )
+    out = await WebFetchAction().fetch("https://example.com/path")
+    assert out.startswith("# Source:")
+
+    req = _LAST_REQUESTS[-1]
+    # Connected to the pinned IP...
+    assert str(req.url).startswith("https://93.184.216.34")
+    # ...but the Host header and TLS SNI are the real hostname.
+    assert req.headers.get("Host") == "example.com"
+    assert req.extensions.get("sni_hostname") == "example.com"
+
+
+async def test_fetch_without_pin_uses_original_url(monkeypatch):
+    """When no pin IP is available (e.g. allow_private_hosts), connect normally —
+    no IP rewrite, no SNI override."""
+    _allow_all_hosts(monkeypatch, pin_ip=None)
+    _install_client(
+        monkeypatch,
+        [_Resp(headers={"content-type": "text/plain"}, content=b"ok")],
+    )
+    await WebFetchAction().fetch("https://example.com/x")
+    req = _LAST_REQUESTS[-1]
+    assert str(req.url) == "https://example.com/x"
+    assert "sni_hostname" not in req.extensions
+
+
+async def test_redirect_repins_each_hop(monkeypatch):
+    """Each redirect hop is re-validated AND re-pinned."""
+    _allow_all_hosts(monkeypatch, pin_ip="93.184.216.34")
+    _install_client(
+        monkeypatch,
+        [
+            _Resp(status=302, headers={"location": "https://example.com/final"}),
+            _Resp(headers={"content-type": "text/plain"}, content=b"done"),
+        ],
+    )
+    await WebFetchAction().fetch("https://example.com/start")
+    # Two requests built, both pinned to the validated IP.
+    assert len(_LAST_REQUESTS) == 2
+    assert all(str(r.url).startswith("https://93.184.216.34") for r in _LAST_REQUESTS)
 
 
 async def test_redirect_to_private_host_blocked(monkeypatch):

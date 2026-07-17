@@ -1,6 +1,6 @@
 # ADR-0033 — Identity & Locking Substrate for Bootstrap and Memory
 
-- **Status:** Proposed
+- **Status:** Accepted — implemented 2026-07-17 (identity index #86, boot dedupe #87, contextvar hygiene #91, per-session conversation lock #99, turn-lock lease renewal #100, distributed bootstrap lease #101). Remaining: cross-worker upsert-by-identity for User/Conversation (in-process races locked; cross-process now rides the lease infra — small follow-up).
 - **Date:** 2026-07-16
 - **Supersedes / amends:** contracts in `jvagent/core/CLAUDE.md` §3, `jvagent/memory/CLAUDE.md` §3/§7 (the "compound index rejects on save" claim), and the singleton-enforcement narrative in `jvagent/action/actions.py`.
 - **Related:** review [`.planning/reviews/2026-07-16-core-review.md`](../reviews/2026-07-16-core-review.md); ADR-0003 (interaction pruning), ADR-0020 (public auth / session tokens).

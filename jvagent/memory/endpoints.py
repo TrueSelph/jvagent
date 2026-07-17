@@ -495,7 +495,8 @@ async def get_my_memory(
     if not memory_manager:
         raise ResourceNotFoundError(f"Memory not found for agent '{agent_id}'")
 
-    user = await memory_manager.get_user(caller_id)
+    # Read-only endpoint: never mint a User just by reading. AUDIT-memory (LOW).
+    user = await memory_manager.get_user(caller_id, create_if_missing=False)
     if not user:
         return {"memory": {}}
 
@@ -540,7 +541,8 @@ async def get_user_memory_content(
     if not memory_manager:
         raise ResourceNotFoundError(f"Memory not found for agent '{agent_id}'")
 
-    user = await memory_manager.get_user(user_id)
+    # Read-only endpoint: never mint a User just by reading. AUDIT-memory (LOW).
+    user = await memory_manager.get_user(user_id, create_if_missing=False)
     if not user:
         raise ResourceNotFoundError(f"User '{user_id}' not found")
 

@@ -54,15 +54,23 @@ async def stream_messages(
         except Exception as e:
             logger.error(f"Error queuing message: {e}", exc_info=True)
 
-    # Subscribe with receive_chunks=True to get all stream chunks
+    # Subscribe BEFORE replaying the backlog so no message published in between
+    # is missed. This means a message can arrive on BOTH the backlog replay and
+    # the live queue, so dedup by message_id: any queued message already sent
+    # from the backlog is skipped. Previously the same message was delivered
+    # twice. AUDIT-actions (M19).
     await response_bus.subscribe(session_id, message_callback, receive_chunks=True)
 
     try:
-        # Send any existing messages first
+        # Send any existing messages first, recording their ids for dedup.
+        replayed_ids: set = set()
         existing_messages = await response_bus.get_messages(session_id)
         for message in existing_messages:
             if interaction_id and message.interaction_id != interaction_id:
                 continue
+            mid = getattr(message, "message_id", None)
+            if mid:
+                replayed_ids.add(mid)
             yield format_sse_chunk(message.to_dict())
 
         # Stream new messages as they arrive using queue-based waiting
@@ -70,6 +78,11 @@ async def stream_messages(
             try:
                 # Wait for message with timeout to allow checking for done event
                 message = await asyncio.wait_for(message_queue.get(), timeout=0.1)
+                mid = getattr(message, "message_id", None)
+                if mid and mid in replayed_ids:
+                    # Already delivered from the backlog replay — drop the dup.
+                    replayed_ids.discard(mid)
+                    continue
                 yield format_sse_chunk(message.to_dict())
             except asyncio.TimeoutError:
                 # Check if we should continue (allows graceful shutdown)

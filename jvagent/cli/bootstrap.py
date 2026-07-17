@@ -43,6 +43,23 @@ async def bootstrap_application_graph(
     if app_root is None:
         app_root = os.getcwd()
 
+    # Serialize the graph build cluster-wide so concurrent workers / replicas /
+    # serverless invocations don't each race check-then-create and duplicate the
+    # App / Agents / Action nodes (the default JSON adapter enforces no
+    # uniqueness). One builds; the rest wait then read the finished, idempotent
+    # graph. Keyed on the app id (or the app root when the id isn't set yet).
+    # Without a Redis/DynamoDB lock configured this is only in-process. ADR-0033.
+    from jvagent.core.distributed_lease import distributed_lease
+
+    lease_key = f"bootstrap:{get_jvagent_app_id() or os.path.abspath(app_root)}"
+    async with distributed_lease(lease_key):
+        await _bootstrap_application_graph_locked(update_mode, app_root)
+
+
+async def _bootstrap_application_graph_locked(
+    update_mode: Optional[str], app_root: str
+) -> None:
+    """Body of :func:`bootstrap_application_graph`; run under the bootstrap lease."""
     bootstrap_log = BootstrapLogger("Bootstrap")
 
     app_yaml_path = os.path.join(app_root, "app.yaml")
@@ -57,10 +74,21 @@ async def bootstrap_application_graph(
         if app:
             bootstrap_log.complete("Application graph ready")
         else:
+            # app.yaml is present but declarative bootstrap failed. Do NOT fall
+            # back to manual bootstrap here: that fabricates a generic default
+            # App ("jvAgent"), masking the real failure and potentially leaving
+            # a half-installed graph behind the wrong App node. Fail loudly so
+            # the operator sees and fixes app.yaml instead of starting on a
+            # broken graph. Manual bootstrap remains for the genuine
+            # no-app.yaml case below. AUDIT-cli (M22).
             bootstrap_log.error(
-                "Declarative bootstrap failed - falling back to manual bootstrap"
+                "Declarative bootstrap from app.yaml failed; refusing to start "
+                "on a fabricated default graph."
             )
-            await _manual_bootstrap(app_root)
+            raise RuntimeError(
+                "Declarative bootstrap failed for app.yaml at "
+                f"{app_yaml_path}; see logs above for the underlying error."
+            )
     else:
         bootstrap_log.start("Application graph (manual mode, no app.yaml)")
         bootstrap_log.info("No app.yaml found - using manual bootstrap")
@@ -88,7 +116,7 @@ async def _manual_bootstrap(app_root: Optional[str] = None) -> None:
 
     if app:
         logger.info(f"App node already exists: {app.id}")
-        App._cached_app = app
+        App._set_cached_app(app)
     else:
         _cfg = load_app_config(app_root)
         _fs = get_file_storage_config(app_root, _cfg)
@@ -102,7 +130,7 @@ async def _manual_bootstrap(app_root: Optional[str] = None) -> None:
             file_storage_enabled=True,
         )
         logger.info(f"Created App node: {app.id}")
-        App._cached_app = app
+        App._set_cached_app(app)
 
     if not await root.is_connected_to(app):
         await root.connect(app)

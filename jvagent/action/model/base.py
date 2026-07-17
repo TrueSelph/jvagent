@@ -65,6 +65,17 @@ class BaseModelAction(Action, ABC):
         description="Maximum backoff delay in seconds between retries",
         ge=0.0,
     )
+    retry_after_max: float = attribute(
+        default=300.0,
+        description=(
+            "Absolute cap on how long a server-supplied Retry-After header is "
+            "honored (seconds). A 429/503 Retry-After is respected up to this "
+            "cap — NOT clamped to retry_max_delay, so we don't retry before the "
+            "server said it's allowed — while still bounding a hostile/broken "
+            "Retry-After. AUDIT-actions (LOW)."
+        ),
+        ge=0.0,
+    )
     retry_backoff_multiplier: float = attribute(
         default=2.0,
         description="Multiplier applied to delay after each retry attempt",
@@ -126,10 +137,12 @@ class BaseModelAction(Action, ABC):
             if code in (429, 503):
                 ra = self._parse_retry_after_header(exception.response)
                 if ra is not None:
-                    delay = min(self.retry_max_delay, ra)
-                    if self.retry_jitter:
-                        delay *= random.uniform(0.5, 1.5)
-                    return max(0.0, delay)
+                    # Honor the server's Retry-After up to retry_after_max — do
+                    # NOT clamp to retry_max_delay, or a "Retry-After: 60" gets
+                    # retried at 20s, before the server allows it (repeated 429s
+                    # / rate-limit ban). Jitter is not applied to an explicit
+                    # server instruction. AUDIT-actions (LOW).
+                    return max(0.0, min(self.retry_after_max, ra))
 
         delay = min(
             self.retry_max_delay,
@@ -230,13 +243,18 @@ class BaseModelAction(Action, ABC):
         default=0.0, description="Cumulative query duration in seconds"
     )
 
-    # HTTP client (not persisted)
+    # HTTP client (not persisted). The loop id it was created on is tracked so a
+    # client bound to a stale/closed event loop (serverless warm start reuses the
+    # cached action instance on a fresh loop) is recreated rather than reused —
+    # reusing it raises "attached to a different loop". AUDIT-actions (LOW).
     _http_client: Optional[httpx.AsyncClient] = attribute(private=True, default=None)
+    _http_client_loop_id: Optional[int] = attribute(private=True, default=None)
 
     async def track_usage(
         self,
         usage: Dict[str, int],
         duration: Optional[float] = None,
+        result: Any = None,
     ) -> None:
         """Track token usage and update metrics.
 
@@ -246,6 +264,14 @@ class BaseModelAction(Action, ABC):
         Args:
             usage: Usage dict with token counts
             duration: Query duration in seconds (optional)
+            result: The per-request model result to source prompts/response/
+                provider from. MUST be passed on the streaming path — emission is
+                deferred until the stream is consumed, by which point a concurrent
+                request on this SHARED action instance may have overwritten
+                ``self._last_result``, leaking one user's prompts/response into
+                another user's interaction. When None, falls back to
+                ``self._last_result`` (safe for synchronous single-shot callers).
+                AUDIT-actions HIGH (H15).
         """
         total = usage.get("total_tokens", 0)
         self.total_requests += 1
@@ -268,7 +294,9 @@ class BaseModelAction(Action, ABC):
 
             interaction = get_interaction()
             if interaction:
-                await self._emit_observability(interaction, usage, duration)
+                await self._emit_observability(
+                    interaction, usage, duration, result=result
+                )
         except Exception as e:
             logger.debug(f"Failed to emit observability: {e}")
 
@@ -277,6 +305,7 @@ class BaseModelAction(Action, ABC):
         interaction: Any,
         usage: Dict[str, int],
         duration: Optional[float],
+        result: Any = None,
     ) -> None:
         """Emit observability event directly to the interaction.
 
@@ -293,9 +322,11 @@ class BaseModelAction(Action, ABC):
             else:
                 event_type = "model_call"
 
-            # Get result for provider and response data
-            result = None
-            if hasattr(self, "_last_result"):
+            # Prefer the explicitly-passed per-request result; fall back to the
+            # shared-instance attribute only when a caller did not provide one.
+            # Reading self._last_result under concurrency leaks another request's
+            # data — see track_usage docstring (H15).
+            if result is None:
                 result = getattr(self, "_last_result", None)
 
             # Get provider from result if available, otherwise from self
@@ -445,15 +476,37 @@ class BaseModelAction(Action, ABC):
         This method can be called multiple times safely - it will only initialize
         the client if it doesn't already exist. Called automatically during
         on_register() and when HTTP client is needed for queries.
+
+        Recreates the client when the running event loop differs from the one the
+        cached client was created on — a serverless warm start reuses the cached
+        action instance on a fresh loop, and an httpx client bound to the old
+        (closed) loop raises "attached to a different loop" on use.
         """
+        try:
+            loop_id: Optional[int] = id(asyncio.get_running_loop())
+        except RuntimeError:
+            loop_id = None
+
         if self._http_client is not None:
-            return
+            if self._http_client_loop_id is None:
+                # Untracked client (injected by a test, or created before this
+                # tracking existed). Adopt the current loop and keep it — don't
+                # replace a client we can't prove is stale.
+                self._http_client_loop_id = loop_id
+                return
+            if self._http_client_loop_id == loop_id:
+                return
+            # Tracked client whose loop changed — stale. Drop it. Do NOT await
+            # aclose(): its loop is likely closed, so awaiting would itself fail;
+            # the socket is released when the old loop's resources are reclaimed.
+            self._http_client = None
 
         # Initialize HTTP client with connection pooling
         self._http_client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout),
             limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
         )
+        self._http_client_loop_id = loop_id
 
         logger.debug(f"HTTP client initialized (endpoint: {self.api_endpoint})")
 
