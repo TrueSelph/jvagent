@@ -880,7 +880,7 @@ class LanguageModelAction(BaseModelAction, ABC):
         # For streaming results, skip initial observability emission
         # We'll emit after token estimation completes to avoid duplicate entries
         if not (stream and result.is_streaming):
-            await self.track_usage(usage_dict, duration)
+            await self.track_usage(usage_dict, duration, result=result)
 
         # For streaming results, schedule token estimation after stream completion
         if stream and result.is_streaming:
@@ -931,7 +931,9 @@ class LanguageModelAction(BaseModelAction, ABC):
 
                                         if get_interaction() is not None:
                                             await self.track_usage(
-                                                usage_dict, actual_duration
+                                                usage_dict,
+                                                actual_duration,
+                                                result=result,
                                             )
                                     except Exception as e:
                                         logger.debug(
@@ -977,7 +979,9 @@ class LanguageModelAction(BaseModelAction, ABC):
 
                                         if get_interaction() is not None:
                                             await self.track_usage(
-                                                estimated_usage, actual_duration
+                                                estimated_usage,
+                                                actual_duration,
+                                                result=result,
                                             )
                                     except Exception as e:
                                         logger.debug(
