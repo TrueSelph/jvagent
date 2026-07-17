@@ -30,7 +30,9 @@ async def _make_action(agent_id, ns, label, manager, *, enabled=True, connect=Tr
 
 
 async def _setup(tmp_path):
-    agent = await Agent.create(name="dedupe_agent", namespace="test", alias="Dedupe", description="d")
+    agent = await Agent.create(
+        name="dedupe_agent", namespace="test", alias="Dedupe", description="d"
+    )
     manager = await Actions.create()
     await agent.connect(manager, direction="both")
     loader = AgentLoader(str(tmp_path))
@@ -116,7 +118,9 @@ async def test_dedupe_reconnects_survivor_when_kept_node_was_unconnected(
 async def test_dedupe_isolated_per_agent(test_db, tmp_path):
     """Duplicates for one agent must not touch another agent's identical labels."""
     agent_a, manager_a, loader = await _setup(tmp_path)
-    agent_b = await Agent.create(name="other", namespace="test", alias="Other", description="d")
+    agent_b = await Agent.create(
+        name="other", namespace="test", alias="Other", description="d"
+    )
     manager_b = await Actions.create()
     await agent_b.connect(manager_b, direction="both")
 
