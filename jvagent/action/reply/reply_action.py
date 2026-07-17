@@ -565,9 +565,12 @@ class ReplyAction(Action):
         if model_action is None:
             # No compose model — thin-publish the literal message. `content` is
             # now the user's utterance (the message was framed as a directive),
-            # so prefer the original message text.
-            literal = original_text or content or " "
-            await self.publish(literal, visitor, transient=transient)
+            # so prefer the original message text. Only publish when there is
+            # actual text: the old `or " "` fallback sent a lone space bubble to
+            # the user when both were empty. AUDIT-actions (LOW).
+            literal = (original_text or content or "").strip()
+            if literal:
+                await self.publish(literal, visitor, transient=transient)
             return original_text or content
 
         # Conversation history for the compose model. Callers may pass it
