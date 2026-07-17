@@ -69,21 +69,23 @@ class MCPClientWrapper:
         self._stdio_task: Optional[asyncio.Task] = None
         self._stdio_ready: Optional[asyncio.Event] = None
         self._stdio_error: Optional[Exception] = None
+        self._connect_lock = asyncio.Lock()
 
     def _ensure_imports(self) -> Any:
         return _import_mcp()
 
     async def connect(self) -> None:
         """Establish MCP session (transport + ClientSession + initialize)."""
-        if self._session is not None:
-            return
+        async with self._connect_lock:
+            if self._session is not None:
+                return
 
-        if self._transport == "stdio":
-            await self._connect_stdio()
-        elif self._transport == "streamable_http":
-            await self._connect_streamable_http()
-        else:
-            raise ValueError(f"Unsupported transport: {self._transport}")
+            if self._transport == "stdio":
+                await self._connect_stdio()
+            elif self._transport == "streamable_http":
+                await self._connect_streamable_http()
+            else:
+                raise ValueError(f"Unsupported transport: {self._transport}")
 
     async def _connect_stdio(self) -> None:
         """Connect via stdio transport using a background task.
@@ -132,13 +134,15 @@ class MCPClientWrapper:
                 self._stdio_ready.wait(), timeout=self._connect_timeout
             )
         except asyncio.TimeoutError:
-            self._stdio_task.cancel()
+            await self.disconnect()
             raise TimeoutError(
                 f"MCP stdio connection timed out after {self._connect_timeout}s"
             )
 
         if self._stdio_error is not None:
-            raise self._stdio_error
+            err = self._stdio_error
+            await self.disconnect()
+            raise err
 
     async def _connect_streamable_http(self) -> None:
         """Connect via streamable_http transport using AsyncExitStack."""

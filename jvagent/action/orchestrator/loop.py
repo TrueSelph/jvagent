@@ -97,7 +97,21 @@ class OrchestratorLoopMixin:
         # (so it owns the turn's output). The IA receives all input including
         # off-topic; interruption/cancel is the IA's own concern.
         if self.lock_active_flow and flow_owner and flow_owner in tools:
-            locked_result = (await tools[flow_owner].run({})) or ""
+            try:
+                if self.tool_call_timeout and self.tool_call_timeout > 0:
+                    locked_result = (
+                        await asyncio.wait_for(
+                            tools[flow_owner].run({}),
+                            timeout=self.tool_call_timeout,
+                        )
+                    ) or ""
+                else:
+                    locked_result = (await tools[flow_owner].run({})) or ""
+            except asyncio.TimeoutError:
+                locked_result = (
+                    f"(tool error: locked flow {flow_owner} timed out after "
+                    f"{self.tool_call_timeout}s)"
+                )
             interaction = getattr(visitor, "interaction", None)
             # The locked IA "emits" either by setting a response OR by queuing a
             # directive (the directive-based publishing pattern — `_egress`
@@ -156,19 +170,28 @@ class OrchestratorLoopMixin:
         if flow_owner and flow_owner not in tools:
             # Locked-in skill tasks use the skill name as owner_action — they
             # are not routable IA tools, so exempt them from the orphan sweep.
-            _locked_skill_names: Set[str] = {
-                d.name
-                for d in skill_docs
-                if getattr(d, "task_lock", False) and getattr(d, "name", None)
-            }
-            await _orch().cancel_orphan_flow_tasks(
-                visitor,
-                routable_tool_names=set(tools.keys()),
-                locked_skill_names=_locked_skill_names,
-            )
-            flow_owner = _orch().active_flow_owner(
-                visitor, flow_tool_names=flow_tool_names
-            )
+            # Skip the sweep entirely when action enumeration failed — an empty
+            # or partial tool map must not cancel a healthy in-progress flow.
+            if getattr(self, "_actions_enum_failed", False):
+                logger.warning(
+                    "orchestrator: skipping orphan flow sweep — action "
+                    "enumeration failed (owner=%s)",
+                    flow_owner,
+                )
+            else:
+                _locked_skill_names: Set[str] = {
+                    d.name
+                    for d in skill_docs
+                    if getattr(d, "task_lock", False) and getattr(d, "name", None)
+                }
+                await _orch().cancel_orphan_flow_tasks(
+                    visitor,
+                    routable_tool_names=set(tools.keys()),
+                    locked_skill_names=_locked_skill_names,
+                )
+                flow_owner = _orch().active_flow_owner(
+                    visitor, flow_tool_names=flow_tool_names
+                )
 
         flow_note = _orch().active_flow_note(flow_owner) if flow_owner else ""
 

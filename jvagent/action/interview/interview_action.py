@@ -42,6 +42,18 @@ class InterviewAction(Action):
 
     async def on_register(self):
         await super().on_register()
+        # Declare the ``interview__`` tool namespace as a trusted directive
+        # source — interview tool results carry ``next_tool`` /
+        # ``response_directive`` (hooks.py). Dependency inversion keeps the
+        # orchestrator free of interview literals.
+        try:
+            from jvagent.action.orchestrator.constants import (
+                register_trusted_directive_prefix,
+            )
+
+            register_trusted_directive_prefix("interview__")
+        except Exception:  # pragma: no cover - orchestrator optional at load
+            pass
         await self._discover_specs()
 
     async def on_reload(self):

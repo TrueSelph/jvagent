@@ -2523,12 +2523,18 @@ class OrchestratorInteractAction(
 
     async def _enabled_actions(self, agent: Any) -> List[Any]:
         if agent is None:
+            self._actions_enum_failed = False
             return []
         try:
             mgr = await agent.get_actions_manager()
-            return await mgr.get_all_actions(enabled_only=True) if mgr else []
+            actions = await mgr.get_all_actions(enabled_only=True) if mgr else []
+            self._actions_enum_failed = False
+            return actions
         except Exception as exc:
-            logger.debug("orchestrator: action enumeration failed: %s", exc)
+            # Signal loop to skip orphan-flow cancel — a partial/empty tool
+            # surface from a transient DB blip must not abandon healthy flows.
+            self._actions_enum_failed = True
+            logger.warning("orchestrator: action enumeration failed: %s", exc)
             return []
 
     @staticmethod

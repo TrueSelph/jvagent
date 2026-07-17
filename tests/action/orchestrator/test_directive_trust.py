@@ -71,10 +71,29 @@ def test_classifier_flags_mcp_tools():
 
 
 def test_classifier_trusts_first_party_and_empty():
-    assert is_untrusted_directive_source("interview__set_fields") is False
     assert is_untrusted_directive_source("reply") is False
+    assert is_untrusted_directive_source("SignupIA") is False
     assert is_untrusted_directive_source("") is False
     assert is_untrusted_directive_source(None) is False  # type: ignore[arg-type]
+
+
+def test_classifier_flags_contrib_and_unknown_namespace():
+    assert is_untrusted_directive_source("contrib_evil__run") is True
+    assert is_untrusted_directive_source("unknownpkg__hijack") is True
+
+
+def test_registration_makes_namespace_trusted():
+    """A ``ns__`` tool is untrusted until its owning subsystem declares it via
+    ``register_trusted_directive_prefix`` (dependency inversion — the
+    orchestrator carries no plugin literals; e.g. InterviewAction.on_register
+    registers ``interview__``). Uses a unique prefix for test isolation."""
+    from jvagent.action.orchestrator.constants import (
+        register_trusted_directive_prefix,
+    )
+
+    assert is_untrusted_directive_source("zztestns__go") is True
+    register_trusted_directive_prefix("zztestns__")
+    assert is_untrusted_directive_source("zztestns__go") is False
 
 
 # --- loop behavior -------------------------------------------------------------

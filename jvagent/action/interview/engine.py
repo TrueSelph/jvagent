@@ -24,6 +24,7 @@ from .directive_compose import (
     compose_system_message,
 )
 from .flow import (
+    BranchHookError,
     build_awaiting_fields,
     build_next_field,
     compute_active_path_for_prune,
@@ -563,9 +564,20 @@ async def handle_set_fields(
         # Incremental branch settlement: an earlier field in this same call may
         # have routed onto a branch that excludes this field. Skip it before
         # running its validator/post_processor so no off-path side effects fire.
-        reachable_now = await compute_active_path_for_prune(
-            session, spec, load_fn, visitor, action
-        )
+        try:
+            reachable_now = await compute_active_path_for_prune(
+                session, spec, load_fn, visitor, action
+            )
+        except BranchHookError as exc:
+            return interview_tool_response(
+                ok=False,
+                status="error",
+                error=str(exc),
+                system_message=(
+                    "Branch hook failed — stored answers were kept; fix the "
+                    "skill branch function and retry."
+                ),
+            )
         if reachable_now and fname not in set(reachable_now):
             results.append(
                 {
@@ -732,9 +744,23 @@ async def handle_set_fields(
 
         results.append(entry)
 
-    reachable = await compute_active_path_for_prune(
-        session, spec, load_fn, visitor, action
-    )
+    try:
+        reachable = await compute_active_path_for_prune(
+            session, spec, load_fn, visitor, action
+        )
+    except BranchHookError as exc:
+        if stored_any:
+            await action._save_session(session, visitor)
+        return interview_tool_response(
+            ok=False,
+            status="error",
+            error=str(exc),
+            results=_compact_field_updates(results) if results else None,
+            system_message=(
+                "Branch hook failed — stored answers were kept; fix the "
+                "skill branch function and retry."
+            ),
+        )
     if stored_any:
         pruned_all = prune_unreachable_fields(session, reachable)
         prune_orphan_for_each_states(session, spec, reachable)
@@ -958,13 +984,22 @@ async def persist_interview_fields(
         stored_values[name] = value
     if stored:
         load_fn = action._load_fn(spec)
-        reachable = await compute_active_path_for_prune(
-            session, spec, load_fn, visitor, action
-        )
-        prune_unreachable_fields(session, reachable)
+        try:
+            reachable = await compute_active_path_for_prune(
+                session, spec, load_fn, visitor, action
+            )
+            prune_unreachable_fields(session, reachable)
+        except BranchHookError:
+            # Keep stored values; skip prune on hook failure.
+            pass
         if session.status == InterviewStatus.REVIEW:
-            if await compute_missing_required(session, spec, load_fn, visitor, action):
-                session.status = InterviewStatus.ACTIVE
+            try:
+                if await compute_missing_required(
+                    session, spec, load_fn, visitor, action
+                ):
+                    session.status = InterviewStatus.ACTIVE
+            except BranchHookError:
+                pass
         await action._save_session(session, visitor)
     return {
         "stored": stored,
@@ -1168,11 +1203,23 @@ async def handle_skip_field(action: Any, field: str, visitor: Any = None) -> str
     was_for_each_child = is_for_each_child_key(session, spec, field)
     if was_for_each_child:
         maybe_advance_for_each(session, spec, field)
-    reachable = await compute_active_path_for_prune(
-        session, spec, load_fn, visitor, action
-    )
-    prune_unreachable_fields(session, reachable)
-    prune_orphan_for_each_states(session, spec, reachable)
+    try:
+        reachable = await compute_active_path_for_prune(
+            session, spec, load_fn, visitor, action
+        )
+        prune_unreachable_fields(session, reachable)
+        prune_orphan_for_each_states(session, spec, reachable)
+    except BranchHookError as exc:
+        await action._save_session(session, visitor)
+        return interview_tool_response(
+            ok=False,
+            status="error",
+            error=str(exc),
+            system_message=(
+                "Branch hook failed after skip — session kept; fix the skill "
+                "branch function and retry."
+            ),
+        )
     await action._save_session(session, visitor)
 
     if was_for_each_child:
