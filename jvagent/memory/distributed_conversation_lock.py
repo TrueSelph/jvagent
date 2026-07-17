@@ -19,18 +19,45 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-_lock_holder: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
-    "conversation_mutation_lock_holder", default=None
+# Holder = (conversation_id, holding-task-identity). The task identity MUST be
+# part of the guard: ``asyncio.create_task`` copies the current contextvar
+# context into the child task, so a background task spawned while the turn holds
+# the lock would otherwise inherit ``_lock_holder`` and the reentrancy check
+# would report the lock as held — letting that background task (e.g. a
+# run_in_background=True action, or Agent.send_proactive_message) mutate the
+# interaction chain with NO lock, concurrently with the live turn. Binding the
+# holder to the task that acquired it means an inheriting child task (different
+# task) does not satisfy the guard and acquires the lock properly, while genuine
+# same-task reentrancy still short-circuits. AUDIT-memory HIGH (C8).
+_lock_holder: contextvars.ContextVar[Optional[Tuple[str, int]]] = (
+    contextvars.ContextVar("conversation_mutation_lock_holder", default=None)
 )
 
 
+def _current_task_id() -> Optional[int]:
+    """id() of the running asyncio Task, or None outside a task context."""
+    try:
+        task = asyncio.current_task()
+    except RuntimeError:
+        return None
+    return id(task) if task is not None else None
+
+
 def holds_conversation_mutation_lock(conversation_id: str) -> bool:
-    """Return True when the current task already holds *conversation_id*'s turn lock."""
-    return _lock_holder.get() == conversation_id
+    """Return True when the CURRENT task already holds *conversation_id*'s turn lock.
+
+    Task-aware: a holder inherited by a child task via context copy does not
+    count — only the task that actually acquired the lock does.
+    """
+    held = _lock_holder.get()
+    if held is None:
+        return False
+    cid, task_id = held
+    return cid == conversation_id and task_id == _current_task_id()
 
 
 _REDIS_URL_ENV = "JVAGENT_CONVERSATION_LOCK_REDIS_URL"
@@ -90,7 +117,7 @@ async def conversation_mutation_lock(conversation_id: str) -> AsyncIterator[None
         yield
         return
 
-    token = _lock_holder.set(conversation_id)
+    token = _lock_holder.set((conversation_id, _current_task_id()))
     try:
         redis_url = _redis_url()
         if redis_url:
