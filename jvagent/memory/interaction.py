@@ -746,12 +746,19 @@ class Interaction(DeferredSaveMixin, Node):
         self_dt = _normalize_dt(self.started_at)
         forward = []
         for c in candidates:
+            # Never treat self as its own neighbor — a stray self-edge would
+            # otherwise make traversal return this same node forever. AUDIT-memory.
+            if getattr(c, "id", None) == self.id:
+                continue
             cdt = _normalize_dt(getattr(c, "started_at", None))
             if cdt is None or self_dt is None or cdt >= self_dt:
                 forward.append(c)
         # If filter dropped everything (timestamps all behind us), keep the
-        # whole candidate set so the chain can still be traversed.
-        pool = forward or candidates
+        # remaining candidates (self already excluded) so the chain can still
+        # be traversed.
+        pool = forward or [c for c in candidates if getattr(c, "id", None) != self.id]
+        if not pool:
+            return None
         pool.sort(key=interaction_sort_key)
         return pool[0]
 
@@ -774,10 +781,14 @@ class Interaction(DeferredSaveMixin, Node):
         self_dt = _normalize_dt(self.started_at)
         backward = []
         for c in candidates:
+            if getattr(c, "id", None) == self.id:
+                continue
             cdt = _normalize_dt(getattr(c, "started_at", None))
             if cdt is None or self_dt is None or cdt <= self_dt:
                 backward.append(c)
-        pool = backward or candidates
+        pool = backward or [c for c in candidates if getattr(c, "id", None) != self.id]
+        if not pool:
+            return None
         pool.sort(key=interaction_sort_key)
         # Largest timestamp first (latest before self).
         return pool[-1]

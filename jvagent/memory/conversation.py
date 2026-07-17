@@ -195,12 +195,25 @@ class Conversation(DeferredSaveMixin, Node):
         if not first:
             return None
 
-        # Traverse forward through the chain
+        # Traverse forward through the chain. A visited-set bounds the walk: a
+        # corrupt / partially-pruned chain (or equal-timestamp neighbors whose
+        # ordering is ambiguous) could otherwise ping-pong between two nodes
+        # forever. Stop at the current node if a cycle is detected. AUDIT-memory.
         current = first
+        visited = {current.id}
         while True:
             next_interaction = await current.get_next_interaction()
             if not next_interaction:
                 return current
+            if next_interaction.id in visited:
+                logger.warning(
+                    "Interaction chain cycle detected at %s in conversation %s; "
+                    "stopping traversal.",
+                    next_interaction.id,
+                    self.id,
+                )
+                return current
+            visited.add(next_interaction.id)
             current = next_interaction
 
     async def get_last_interaction(self) -> Optional["Interaction"]:
