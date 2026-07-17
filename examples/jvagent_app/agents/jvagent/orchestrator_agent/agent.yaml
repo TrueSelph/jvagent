@@ -155,7 +155,28 @@ actions:
       ack_statements:                    # transient 'working on it' line(s), emitted in order
         - "One moment…"
         - "Still working on it…"
+      # Arm the ack before the FIRST substantive tool call (not just complex
+      # turns): a slow tool (Flow send ≈3s, web search) gets a spoken/visible
+      # "One moment…" instead of dead air. Fast tools still surface nothing
+      # (the ack only fires if the turn outlives first_emit_timeout_ms).
+      ack_on_first_tool_call: true
       max_concurrent_tools: 0             # 0 = unbounded
+
+      # -- Voice-call loop profile: WhatsApp calls run a tighter/faster loop
+      # than chat (shorter history prompt, tick + wall-clock caps, per-tool
+      # timeout, and a shorter spoken-reply cap). Chat turns are untouched.
+      channel_overrides:
+        whatsapp_call:
+          history_limit: 6              # fewer prior turns in the loop prompt
+          activation_budget: 8          # voice turns should be 1-3 ticks
+          max_duration_seconds: 30      # hard wall-clock cap for a spoken turn
+          tool_call_timeout: 15         # a hung tool can't stall the call
+          max_statement_length: 280     # short spoken replies
+          system_prompt_extra: >-
+            This is a live voice call: answer from what you already know in
+            1-2 short spoken sentences. Do not use exploratory tools (web
+            search, fetch, knowledge-base search, file tools) unless the user
+            explicitly asks you to look something up.
 
       # -- MCP tool servers: '-all' pulls tools from every enabled jvagent/mcp
       # action; or list action names. Tools surface as mcp_<server>__<tool>.

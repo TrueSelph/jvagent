@@ -238,6 +238,12 @@ async def test_orchestrator_activation_event_recorded_per_mode(
     # directive queue distinguishes this from an emitting locked turn).
     assert ev["data"]["ended_via"] == "locked_silent"
     assert ev["data"]["tools_invoked"] == ["SignupIA"]
+    assert "loop_duration_ms" in ev["data"]
+    assert isinstance(ev["data"]["loop_duration_ms"], int)
+    assert ev["data"]["loop_duration_ms"] >= 0
+    assert isinstance(ev["data"].get("tools"), list)
+    assert ev["data"]["tools"] and ev["data"]["tools"][0]["name"] == "SignupIA"
+    assert "duration_ms" in ev["data"]["tools"][0]
 
     # model-mediated: flow active but lock off
     ex2 = make_orchestrator(actions=[ia], action_registry={"SignupIA": ia})
