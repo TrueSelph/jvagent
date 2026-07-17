@@ -61,9 +61,7 @@ async def test_call_model_json_mode_bare_object():
 
 @pytest.mark.asyncio
 async def test_call_model_json_mode_fenced():
-    action, _model = _action_with_model(
-        '```json\n{"mode": "agent_escalation"}\n```'
-    )
+    action, _model = _action_with_model('```json\n{"mode": "agent_escalation"}\n```')
     result = await call_model(action, "x", "sys", json_response=True)
     assert result == {"mode": "agent_escalation"}
 

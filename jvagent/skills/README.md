@@ -126,8 +126,10 @@ Its per-skill custom tools (`<skill>__*`) and declared `allowed-tools` are
 dropped from the tool surface for the turn, so the model cannot reach it.
 Declare a `deny-access-directive` and its text is surfaced in `skills_section`
 as a note the model relays verbatim when the user's intent matched the blocked
-skill (e.g. "Please use WhatsApp to get a quotation…"). Channel names use
-`normalize_channel` (`web`→`default`).
+skill (e.g. "Please use WhatsApp to get a quotation…"). The same directive is
+returned from `find_skill` (query match on name/description/tags) and
+`use_skill` (exact blocked name) so the model gets a tool-level signal, not
+only a prompt note. Channel names use `normalize_channel` (`web`→`default`).
 
 ```yaml
 allowed-channels:

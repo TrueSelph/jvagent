@@ -1099,6 +1099,7 @@ class OrchestratorInteractAction(
             visible,
             activate_hook=activate_hook,
             reactivate_hook=reactivate_hook,
+            blocked_docs=blocked_docs,
         ).items():
             tools[name] = t
             visible.add(name)

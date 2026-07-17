@@ -1,7 +1,7 @@
 """Handoff interact action."""
 
 import logging
-from typing import Any, List, Optional
+from typing import List
 
 from jvspatial.core.annotations import attribute
 

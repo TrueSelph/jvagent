@@ -5,8 +5,8 @@ it surfaces. On a non-allowed channel the orchestrator hides it from the whole
 surface (skills_section, find_skill, use_skill, always-active pinning, auto-start)
 and drops its per-skill custom tools (``<skill>__*``) and declared
 ``allowed-tools`` from the tool surface. A ``deny-access-directive`` is surfaced
-in skills_section so the model relays the message verbatim when the user's
-intent matched the blocked skill.
+in skills_section and returned from ``find_skill`` / ``use_skill`` when the
+model probes a blocked skill so the model relays the message verbatim.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from jvagent.action.orchestrator.catalog import build_skill_meta_tools
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
@@ -342,6 +343,14 @@ async def test_assemble_tools_filters_blocked_skill_and_hides_its_tools(
     # directive surfaced in meta
     notes = surface_meta.get("blocked_skill_notes", [])
     assert any("Please use WhatsApp to get a quotation." in n for n in notes)
+    # find_skill / use_skill relay the deny (not a silent miss)
+    assert "find_skill" in tools and "use_skill" in tools
+    found = await tools["find_skill"].run({"query": "quote"})
+    assert "Please use WhatsApp to get a quotation." in found
+    assert "verbatim" in found.lower()
+    used = await tools["use_skill"].run({"name": "quotation_interview"})
+    assert "Please use WhatsApp to get a quotation." in used
+    assert "Activated skill" not in used
 
 
 async def test_assemble_tools_keeps_skill_on_allowed_channel(
@@ -407,6 +416,74 @@ async def test_assemble_tools_keeps_skill_on_allowed_channel(
     assert {getattr(d, "name", "") for d in skill_docs} == {"quotation_interview"}
     assert "quotation_interview__check_extraction_status" in tools
     assert surface_meta.get("blocked_skill_notes", []) == []
+    # Allowed channel: find/use still activate normally (no deny)
+    found = await tools["find_skill"].run({"query": "quote"})
+    assert "quotation_interview" in found
+    assert "Please use WhatsApp to get a quotation." not in found
+    used = await tools["use_skill"].run({"name": "quotation_interview"})
+    assert "Activated skill 'quotation_interview'" in used
+
+
+# ---------------------------------------------------------------------------
+# find_skill / use_skill deny relay (unit)
+# ---------------------------------------------------------------------------
+
+
+async def test_find_skill_returns_deny_for_blocked_query_match() -> None:
+    """A query matching a channel-blocked skill returns its deny directive."""
+    allowed = SkillDoc(name="faq", description="policy questions", body="b")
+    blocked = SkillDoc(
+        name="quotation_interview",
+        description="Extract product details and create quotations",
+        body="b",
+        allowed_channels=("whatsapp",),
+        deny_access_directive="You'll need WhatsApp for a quote.",
+        metadata={"tags": ["quotation", "quote", "product"]},
+    )
+    meta = build_skill_meta_tools(
+        [allowed], set(), [], blocked_docs=[blocked]
+    )
+    out = await meta["find_skill"].run({"query": "quote"})
+    assert "You'll need WhatsApp for a quote." in out
+    assert "verbatim" in out.lower()
+    assert "faq" not in out  # blocked match wins over listing allowed skills
+
+
+async def test_find_skill_matches_blocked_skill_by_tag() -> None:
+    blocked = SkillDoc(
+        name="quotation_interview",
+        description="create quotations",
+        body="b",
+        deny_access_directive="Use WhatsApp for quotes.",
+        metadata={"tags": ["e-commerce", "pricing"]},
+    )
+    meta = build_skill_meta_tools([], set(), [], blocked_docs=[blocked])
+    out = await meta["find_skill"].run({"query": "pricing"})
+    assert "Use WhatsApp for quotes." in out
+
+
+async def test_use_skill_returns_deny_for_blocked_name() -> None:
+    blocked = SkillDoc(
+        name="quotation_interview",
+        description="quotes",
+        body="b",
+        deny_access_directive="You'll need WhatsApp for a quote.",
+    )
+    activated: List[str] = []
+    meta = build_skill_meta_tools(
+        [SkillDoc(name="faq", description="faq", body="b")],
+        set(),
+        activated,
+        blocked_docs=[blocked],
+    )
+    out = await meta["use_skill"].run({"name": "quotation_interview"})
+    assert "You'll need WhatsApp for a quote." in out
+    assert activated == []  # must not activate a blocked skill
+
+
+async def test_build_skill_meta_tools_empty_without_docs_or_blocked() -> None:
+    assert build_skill_meta_tools([], set(), []) == {}
+    assert build_skill_meta_tools([], set(), [], blocked_docs=[]) == {}
 
 
 # ---------------------------------------------------------------------------
