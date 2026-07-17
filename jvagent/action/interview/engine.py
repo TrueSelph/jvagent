@@ -450,6 +450,7 @@ async def run_post_processors(
             "retain_context_keys",
             "system_message",
             "for_each_expand",
+            "status",
         ):
             if key in parsed:
                 merged[key] = parsed[key]
@@ -994,6 +995,19 @@ async def handle_set_fields(
         system_message = compose_system_message(
             system_queue,
             fallback=str(first_failure.get("system_message") or "").strip(),
+        )
+        if system_message:
+            payload["system_message"] = system_message
+    elif str(post_outcome.get("status") or "") == "extraction_pending":
+        # Post-processor still has async work (e.g. quotation URL queue). Wait
+        # was already delivered via say — do not chain review/complete.
+        payload["status"] = "extraction_pending"
+        directive = compose_directives(directive_queue, fallback="")
+        if directive:
+            payload["response_directive"] = directive
+        system_message = compose_system_message(
+            system_queue,
+            fallback=str(post_outcome.get("system_message") or "").strip(),
         )
         if system_message:
             payload["system_message"] = system_message
@@ -1690,10 +1704,35 @@ async def handle_complete(action: Any, visitor: Any = None) -> str:
             response_directive=f"Completion function failed: {e}",
         )
 
+    parsed = coerce_hook_result(result)
+
+    # Deferred completion: async / queue work still open. Keep session + task.
+    if str(parsed.get("status") or "") == "extraction_pending":
+        payload: Dict[str, Any] = {
+            "ok": True,
+            "status": "extraction_pending",
+            "fields": fields_summary,
+            "completion_result": parsed,
+        }
+        system_message = str(parsed.get("system_message") or "").strip()
+        if system_message:
+            payload["system_message"] = system_message
+        raw_directive = str(parsed.get("response_directive") or "").strip()
+        if raw_directive:
+            stripped = raw_directive.strip()
+            payload["response_directive"] = (
+                raw_directive
+                if stripped.startswith("Tell the user or ask the user:")
+                or stripped.startswith("Tell the user:")
+                or stripped.startswith("Call ")
+                else user_directive(raw_directive)
+            )
+        # Never default to "Interview completed." while work remains.
+        return interview_tool_response(**payload)
+
     if visitor:
         await tasks.close_task(visitor, status="completed", spec_name=spec.name)
 
-    parsed = coerce_hook_result(result)
     retain_keys: List[str] = []
     raw_retain = parsed.get("retain_context_keys")
     if isinstance(raw_retain, list):
