@@ -652,7 +652,15 @@ class Action(Node):
                         # But check if other actions might be using it
                         # For now, we'll be conservative and only unload if it's clearly this action's module
                         action_module_pattern = f"jvagent.actions.{self.metadata.get('namespace', '')}.{self.metadata.get('name', '')}"
-                        if module_name.startswith(action_module_pattern):
+                        # Match the action's own module or a submodule of it, on a
+                        # dotted-component boundary. A bare startswith would also
+                        # match a SIBLING whose name is a prefix — deregistering
+                        # ``foo`` would unload ``foo_bar``'s modules and break that
+                        # still-registered action until re-import. AUDIT-actions
+                        # MEDIUM (M23).
+                        if module_name == action_module_pattern or (
+                            module_name.startswith(action_module_pattern + ".")
+                        ):
                             # This is this action's specific module, safe to unload
                             del sys.modules[module_name]
                             unloaded_count += 1
