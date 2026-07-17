@@ -266,15 +266,14 @@ def extract_client_ip(request) -> Optional[str]:
 
     Trust order is configurable via ``JVAGENT_TRUST_PROXY_HEADERS`` env:
 
-    - ``true`` / ``1`` (default for backward compatibility): trust the
-      proxy chain headers (X-Forwarded-For, X-Real-IP, CF-Connecting-IP).
-      Use this only when jvagent sits behind a trusted reverse proxy
-      that overwrites these headers — otherwise a client-supplied
-      ``X-Forwarded-For: 1.2.3.4`` will spoof every per-IP rate-limit
-      bucket. AUDIT-interact MED-12.
-    - ``false`` / ``0``: ignore client-supplied proxy headers; always
-      use ``request.client.host``. Safer default for direct-internet
-      deployments.
+    - ``false`` / ``0`` (default): ignore client-supplied proxy headers;
+      always use ``request.client.host``. This is the fail-safe default —
+      without it a client-supplied ``X-Forwarded-For: <random>`` lands
+      every request in a distinct per-IP rate-limit bucket, defeating the
+      abuse control entirely. AUDIT-interact HIGH (was MED-12).
+    - ``true`` / ``1``: trust the proxy chain headers (X-Forwarded-For,
+      X-Real-IP, CF-Connecting-IP). Enable this ONLY when jvagent sits
+      behind a trusted reverse proxy that overwrites these headers.
 
     Order when proxy headers are trusted:
     1. X-Forwarded-For (first IP in comma-separated list)
@@ -291,8 +290,8 @@ def extract_client_ip(request) -> Optional[str]:
     import os
 
     trust_proxy = os.environ.get(
-        "JVAGENT_TRUST_PROXY_HEADERS", "true"
-    ).strip().lower() not in {"false", "0", "no", "off"}
+        "JVAGENT_TRUST_PROXY_HEADERS", "false"
+    ).strip().lower() in {"true", "1", "yes", "on"}
 
     if not trust_proxy:
         client = getattr(request, "client", None)
