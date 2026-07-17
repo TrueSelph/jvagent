@@ -604,6 +604,7 @@ export function ChatInterface() {
         {isPageIndexModalOpen && agentId && (
           <PageIndexDocumentsModal
             agentId={agentId}
+            agentName={agent.alias || agent.name || agentId}
             onClose={handleClosePageIndexModal}
             isEmbedded={true}
           />

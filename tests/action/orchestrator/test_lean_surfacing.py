@@ -7,15 +7,11 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
 from jvagent.action.orchestrator.catalog import build_catalog_tools
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
 from jvagent.action.orchestrator.tools import SkillTool, render_tools_section
-
-pytestmark = pytest.mark.asyncio
 
 
 class _ToolsAction:

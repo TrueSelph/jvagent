@@ -213,7 +213,7 @@ All strategies use the lexical index when available (documents ingested after th
 ## Dependencies
 
 - jvspatial (graph DB)
-- tiktoken, openai, PyPDF2, pymupdf, python-dotenv, pyyaml
+- tiktoken, openai, pypdf, pymupdf, python-dotenv, pyyaml
 - LanguageModelAction (for tree_search observability)
 
 ## Troubleshooting / Best Practices

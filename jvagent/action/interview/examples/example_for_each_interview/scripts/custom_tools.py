@@ -26,13 +26,26 @@ def validate_item_ids(ctx) -> Dict[str, Any]:
 
 
 def expand_item_ids(ctx) -> str:
-    # ctx.field_def.key is available in post_processors — no need to hardcode the
-    # field name. ctx.value is None here (value is already stored); read from session.
     field_key = ctx.field_def.key
     raw = ctx.session.get_value(field_key) or ""
     parts = [p.strip() for p in raw.split(",") if p.strip()]
     items = [{"id": p, "label": p} for p in parts]
     return ctx.tool_response(ok=True, **ctx.expand_for_each(items))
+
+
+def item_id_prefix(
+    index: int, total: int, label: str, field_key: str, field_value: str
+) -> str:
+    from jvagent.action.interview.for_each import _ordinal, _singularize_key
+
+    if total == 1:
+        return ""
+    singular = _singularize_key(field_key)
+    return (
+        f"For the {_ordinal(index)} {singular} {field_value} "
+        "(state this prefix only when clarity needs it; "
+        "do not repeat it for every subpart question of the same item):"
+    )
 
 
 def validate_quantity(ctx) -> Dict[str, Any]:

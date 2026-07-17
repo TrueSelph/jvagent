@@ -51,6 +51,7 @@ Each value is a **string** (function name), not a nested `{ function: … }` obj
 | `branches` | No | Conditional routing — see below |
 | `else` | No | Default next field when no branch matches |
 | `for_each` | No | Per-item subpart field templates — see below |
+| `for_each_prefix` | No | Function name in `scripts/custom_tools.py` that returns a custom prompt prefix for each for_each iteration. Receives `(index, total, label, field_key, field_value)`. Overrides the default prefix. When omitted, the default is `""` (no prefix) for single items and `"For the {ordinal} {singular_key} {value}:"` for multiple items. |
 
 ### Per-item subparts (`fields[].for_each`)
 
@@ -60,8 +61,15 @@ The parent `post_processor` (or activation `pre_processor` on gated resume) retu
 
 | Key | Required | Description |
 |-----|----------|-------------|
-| `prompt_prefix` | No | Prefix for each subpart prompt; supports `#{index}`, `{index}`, `{label}`. Default: `For item #{index}:` |
 | `fields` | Yes | Ordered subpart field definitions (same keys as top-level fields except no `branches` / `else` / nested `for_each`) |
+
+The default prompt prefix for each iteration is derived from the parent field key:
+- **Single item**: no prefix (the only item is obvious from context).
+- **Multiple items**: `"For the {ordinal} {singularized_key} {value}:"` (e.g. `"For the first tracking number 92492387:"`), with a guidance clause appended telling the orchestrator to state the prefix only when clarity needs it — not for every subpart question of the same item.
+
+To customize the prefix, add `for_each_prefix: function_name` on the parent field. The
+function receives `(index, total, label, field_key, field_value)` and returns the full
+prefix string.
 
 Child field keys must not collide with any top-level field key. Collected per-item
 data lives in `session.context["for_each"][parent_key]["records"]`.
@@ -123,7 +131,6 @@ interview:
       prompt: Enter tracking numbers (comma-separated).
       post_processor: check_tracking_statuses
       for_each:
-        prompt_prefix: "For tracking #{index} ({label}):"
         fields:
           - key: description
             prompt: What is the description?

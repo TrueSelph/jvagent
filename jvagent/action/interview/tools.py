@@ -27,9 +27,14 @@ def _build_core_tools(action: "InterviewAction") -> List[Tool]:
     no_args = {"type": "object", "properties": {}}
 
     async def _set_fields(
-        fields: Dict[str, str] | None = None, visitor: Any = None, **kwargs: Any
+        fields: Dict[str, str] | None = None,
+        for_each_staged: Dict[str, Dict[str, str]] | None = None,
+        visitor: Any = None,
+        **kwargs: Any,
     ) -> str:
-        return await action._handle_set_fields(fields=fields, visitor=visitor, **kwargs)
+        return await action._handle_set_fields(
+            fields=fields, for_each_staged=for_each_staged, visitor=visitor, **kwargs
+        )
 
     async def _skip_field(
         field_key: str | None = None,
@@ -79,9 +84,30 @@ def _build_core_tools(action: "InterviewAction") -> List[Tool]:
                         "type": "object",
                         "description": (
                             "Required. Map of interview field key to value. Example: "
-                            '{"user_name": "Jane Doe", "available_times": "Monday at 9"}.'
+                            '{"field_a": "Jane Doe", "field_b": "Monday at 9"}.'
                         ),
                         "additionalProperties": {"type": "string"},
+                    },
+                    "for_each_staged": {
+                        "type": "object",
+                        "description": (
+                            "For-each subpart data for items. During active iteration, "
+                            "keys are 1-based indices matching for_each.index from the "
+                            "response; values are maps of child field key to value for "
+                            "that item. Save whatever the user gave for non-current "
+                            "items immediately — even if the current item is still "
+                            "incomplete and even if only some child fields were given "
+                            "(partial maps are OK). During review, keys are 1-based "
+                            "item indices targeting completed records for per-item "
+                            "correction. Only used when a for_each expansion exists. "
+                            'Example (full): {"2": {"child_a": "value", '
+                            '"child_b": "other"}}. Example (partial): '
+                            '{"2": {"child_a": "value"}}'
+                        ),
+                        "additionalProperties": {
+                            "type": "object",
+                            "additionalProperties": {"type": "string"},
+                        },
                     },
                 },
                 "required": ["fields"],
@@ -120,8 +146,8 @@ def _build_core_tools(action: "InterviewAction") -> List[Tool]:
                 "Requires an active interview session (open it with use_skill on the "
                 "matching skill first). Get the next field to present. Runs "
                 "pre_processor hooks for context. Returns next_field "
-                "{key, prompt, required}, skipped_fields, and response_directive; for "
-                "optional fields the directive includes the interview__skip_field path."
+                "{key, prompt, required}, skipped_fields, and response_directive. "
+                "Optional fields may be skipped via interview__skip_field."
             ),
             parameters_schema=no_args,
             execute=_next_field,

@@ -16,8 +16,6 @@ from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
 
-pytestmark = pytest.mark.asyncio
-
 
 def _capture_visitor(make_visitor, **kw):
     """A visitor whose interaction collects observability_metrics in a real list."""

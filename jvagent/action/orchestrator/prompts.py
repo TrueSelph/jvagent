@@ -7,10 +7,13 @@ native function-calling) keeps the call fast and provider-portable.
 
 from __future__ import annotations
 
+from typing import Optional
+
 ORCHESTRATOR_STABLE_SYSTEM_PROMPT = """\
 {identity_section}You operate as this agent's executive — a fast, conversational \
 coordinator that gets things done by using TOOLS, one step at a time. Reply with \
-a single JSON object each step. No prose, no markdown.
+a single JSON object each step. No prose, no markdown, no ```json``` code fences — \
+raw JSON only.
 
 Everything you can do is a tool: answering aloud, looking things up, running \
 structured flows (e.g. signups/interviews), and following skills (standard \
@@ -86,13 +89,14 @@ Current user message:
 Steps taken this turn:
 {observations_section}
 
-Reply with one JSON object for your next step."""
+Reply with one JSON object for your next step. Output raw JSON only — \
+do not wrap it in ```json``` code fences or any markdown formatting."""
 
 # Peak-attention reinforcement of the OPERATING RULES, appended to the user
 # prompt each step (the slot a model weights most). The system-prompt rules alone
 # don't always hold on a weak model — this mirrors ReplyAction's directive
 # reminder, which is what got the model to comply with directives.
-SAFEGUARDS_REMINDER = "[You MUST follow all OPERATING RULES and LOOP PROTOCOLS before generating a response]"
+SAFEGUARDS_REMINDER = "[You MUST follow all OPERATING RULES and LOOP PROTOCOLS before generating a response. Return raw JSON only — no ```json``` fences.]"
 
 # Placeholder shown in the system prompt's AVAILABLE SKILLS slot when none load.
 NO_SKILLS_AVAILABLE = "(no skills available — use tools directly)"
@@ -188,14 +192,18 @@ def render_identity_section(alias: str = "", role: str = "") -> str:
     return f"{line}\n\n"
 
 
-def render_skills_section(docs: list) -> str:
+def render_skills_section(docs: list, blocked_notes: Optional[list] = None) -> str:
     """Render available skills as ``- name: description`` for the prompt.
 
     Listing skills inline (rather than only behind ``find_skill``) is what lets
     the model prefer a matching skill over ad-hoc tool calls.
+
+    ``blocked_notes`` (ADR-0032) lists per-skill deny directives for skills that
+    are unavailable on the current channel. They are appended as a separate
+    block instructing the model to relay the message verbatim when the user's
+    intent matched the blocked skill (the skills themselves are hidden, so the
+    note is the only signal).
     """
-    if not docs:
-        return "(no skills available — use tools directly)"
     lines = []
     for d in docs:
         name = getattr(d, "name", "") or (
@@ -206,6 +214,16 @@ def render_skills_section(docs: list) -> str:
         )
         desc = (desc or "").strip()
         lines.append(f"- {name}: {desc}" if desc else f"- {name}")
+    if not lines:
+        lines.append("(no skills available — use tools directly)")
+    if blocked_notes:
+        lines.append("")
+        lines.append(
+            "Skills unavailable on this channel — relay the message verbatim "
+            "if the user asks for one of them, and offer no workaround:"
+        )
+        for note in blocked_notes:
+            lines.append(f"- {note}")
     return "\n".join(lines)
 
 

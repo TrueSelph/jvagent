@@ -7,13 +7,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-import pytest
-
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
-
-pytestmark = pytest.mark.asyncio
 
 
 class _Conv:

@@ -4,14 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
-import pytest
-
 import jvagent.action.orchestrator.orchestrator_interact_action as sei
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
-
-pytestmark = pytest.mark.asyncio
 
 
 def _capture_visitor(make_visitor, **kw):

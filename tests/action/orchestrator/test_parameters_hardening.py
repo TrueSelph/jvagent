@@ -9,8 +9,6 @@ subset. Response-scoped params belong to the ReplyAction's response prompt.
 
 from unittest.mock import AsyncMock
 
-import pytest
-
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
@@ -19,8 +17,6 @@ from jvagent.action.parameters import (
     render_parameters,
     response_parameters,
 )
-
-pytestmark = pytest.mark.asyncio
 
 
 def test_orchestrator_native_core_is_orchestration_only():

@@ -7,11 +7,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from jvagent.action.reply.reply_action import ReplyAction
-
-pytestmark = pytest.mark.asyncio
 
 
 def _visitor_no_bus():
@@ -537,6 +533,7 @@ def test_directive_guidance_marker_split():
     composed = compose_directive(content)
     assert DIRECTIVE_GUIDANCE_MARKER not in composed
     assert "Do NOT call x." in composed and "Hello." in composed
+    assert "Hello.\n\nDo NOT call x." in composed
 
 
 async def test_compose_reinforces_directives_persona_style(monkeypatch):

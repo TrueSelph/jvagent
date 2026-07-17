@@ -97,7 +97,7 @@ async def test_for_each_walk_three_items_two_required_subparts(for_each_action):
 
     nxt = await build_next_field(session, spec, load)
     assert nxt["key"] == "title"
-    assert "For item 1 (A):" in nxt["prompt"]
+    assert "For the first item id A" in nxt["prompt"]
     assert nxt["for_each"]["total"] == 3
 
     await handle_set_fields(
@@ -115,7 +115,7 @@ async def test_for_each_walk_three_items_two_required_subparts(for_each_action):
     )
     nxt = await build_next_field(session, spec, load)
     assert nxt["key"] == "title"
-    assert "For item 2 (B):" in nxt["prompt"]
+    assert "For the second item id B" in nxt["prompt"]
 
     await handle_set_fields(
         action, fields={"title": "Widget B", "quantity": "1"}, visitor=SimpleNamespace()
@@ -181,7 +181,7 @@ async def test_for_each_parent_correction_resets_records(for_each_action):
 
     nxt = await build_next_field(session, spec, _load_fn(spec))
     assert nxt["key"] == "title"
-    assert "X" in nxt["prompt"]
+    assert "For item id X:" not in nxt["prompt"]
 
 
 @pytest.mark.asyncio
@@ -216,9 +216,79 @@ async def test_for_each_review_summary_groups_records(for_each_spec):
         session.get_collected_summary(),
         visible_keys=["item_ids"],
     )
-    assert "Item Ids — A" in summary or "Item Ids — A" in summary.replace("_", " ")
+    assert "Item Id — A" in summary
     assert "Alpha" in summary
     assert "Beta" in summary
+    # Tight spacing: the record header and its first child are separated by a
+    # single newline (not a blank line).
+    assert "**Item Id — A**\n  **Title**: Alpha" in summary
+    # Exactly one blank line between the two records.
+    assert "Alpha" in summary
+    a_block_end = summary.index("Alpha")
+    b_block_start = summary.index("Item Id — B")
+    between = summary[a_block_end:b_block_start]
+    # After the last child line of record A, there should be exactly one blank
+    # line (\n\n) before the record B header.
+    assert "\n\n" in between
+    assert between.count("\n\n") == 1
+
+
+@pytest.mark.asyncio
+async def test_for_each_review_summary_renders_when_parent_omitted(for_each_spec):
+    """Regression: omitting the parent via omit_fields must NOT suppress the
+    per-item for_each section.
+
+    Before the fix, ``for_each_review_sections`` dropped the parent when it
+    appeared in ``omit_fields`` (mirrored via ``omit_parents``), so a custom
+    review handler that hides the parent's raw value also hid every per-item
+    record — leaving an empty summary. The per-item section is the only place
+    collected child values are surfaced, so it must always render.
+    """
+    session = InterviewSession(interview_type=for_each_spec.name)
+    session.set_value("item_ids", "A, B")
+    session.context["for_each"] = {
+        "item_ids": {
+            "status": "complete",
+            "items": [{"id": "A", "label": "A"}, {"id": "B", "label": "B"}],
+            "current_index": 2,
+            "child_keys": ["title", "quantity", "notes"],
+            "records": [
+                {
+                    "item_id": "A",
+                    "label": "A",
+                    "fields": {"title": "Alpha", "quantity": "1"},
+                    "skipped_fields": ["notes"],
+                },
+                {
+                    "item_id": "B",
+                    "label": "B",
+                    "fields": {"title": "Beta", "quantity": "2"},
+                    "skipped_fields": [],
+                },
+            ],
+        }
+    }
+    # Simulate a custom review handler that omits the parent's raw line.
+    summary = build_review_summary(
+        session,
+        for_each_spec,
+        session.get_collected_summary(),
+        visible_keys=["item_ids"],
+        omit_fields={"item_ids"},
+    )
+    # The parent's raw value line is suppressed…
+    assert "A, B" not in summary
+    # …but every per-item record still renders.
+    assert "Item Id — A" in summary
+    assert "Alpha" in summary
+    assert "Beta" in summary
+    # Tight spacing within a record: header and first child separated by a single
+    # newline (no blank line inside a record block).
+    assert "**Item Id — A**\n  **Title**: Alpha" in summary
+    # Exactly one blank line between records.
+    a_end = summary.index("Alpha")
+    b_start = summary.index("Item Id — B")
+    assert summary[a_end:b_start].count("\n\n") == 1
 
 
 @pytest.mark.asyncio
@@ -276,6 +346,163 @@ async def test_for_each_parent_correction_preserves_state_on_validation_failure(
     ), "for_each state must not be wiped on validation failure"
     assert state_after["status"] == STATUS_ACTIVE
     assert session.get_value("item_ids") == "A, B"
+
+
+@pytest.mark.asyncio
+async def test_for_each_staged_with_parent_in_same_set_fields_call(for_each_action):
+    """for_each_staged data sent in the same set_fields call as the parent field
+    that triggers the for_each expansion must be properly staged, not silently
+    dropped.
+
+    Previously, for_each_staged was processed BEFORE field storage and
+    post_processors ran. Since the parent field's post_processor creates the
+    for_each expansion, there was no active for_each at that point, and
+    for_each_staged data was silently lost. The fix defers for_each_staged
+    processing until after all fields have been stored and post_processors
+    have run.
+    """
+    action, spec = for_each_action
+    session = InterviewSession(interview_type=spec.name)
+    action._get_session_and_contract = AsyncMock(return_value=(session, spec))
+    action._save_session = AsyncMock()
+
+    # Send the parent field AND for_each_staged in the SAME set_fields call.
+    # The parent field's post_processor (expand_item_ids) creates the for_each
+    # expansion. The for_each_staged data must be applied after the expansion
+    # is created.
+    raw = await handle_set_fields(
+        action,
+        fields={"item_ids": "A, B"},
+        for_each_staged={
+            "1": {"title": "Widget A", "quantity": "2"},
+            "2": {"title": "Widget B", "quantity": "1"},
+        },
+        visitor=SimpleNamespace(),
+    )
+    payload = json.loads(raw)
+
+    # The parent field should be stored successfully.
+    assert payload["ok"] is True
+
+    # for_each expansion should be created with 2 items.
+    state = get_for_each_state(session, "item_ids")
+    assert state is not None
+    assert state["status"] == STATUS_ACTIVE
+    assert len(state["items"]) == 2
+
+    # Item A's staged data should have been applied to the session fields.
+    # (Notes is optional and not staged, so the item is not yet complete —
+    # the model still needs to fill or skip it.)
+    assert session.get_value("title") == "Widget A"
+    assert session.get_value("quantity") == "2"
+
+    # Item B's staged data should be waiting in _for_each_staged for when
+    # iteration reaches item B.
+    stage_store = session.context.get("_for_each_staged", {})
+    item_b_staged = stage_store.get("B", {})
+    assert item_b_staged.get("title") == "Widget B"
+    assert item_b_staged.get("quantity") == "1"
+
+
+@pytest.mark.asyncio
+async def test_for_each_staged_partial_saves_while_current_item_incomplete(
+    for_each_action,
+):
+    """Future-item values must be saved immediately even when item 1 is incomplete.
+
+    Mirrors "a laptop, 532 and a phone 231": current item gets title+quantity in
+    fields; item 2 gets the same via for_each_staged while notes is still pending.
+    """
+    action, spec = for_each_action
+    session = InterviewSession(interview_type=spec.name)
+    action._get_session_and_contract = AsyncMock(return_value=(session, spec))
+    action._save_session = AsyncMock()
+    load = _load_fn(spec)
+    visitor = SimpleNamespace()
+
+    await handle_set_fields(action, fields={"item_ids": "A, B"}, visitor=visitor)
+
+    raw = await handle_set_fields(
+        action,
+        fields={"title": "Widget A", "quantity": "2"},
+        for_each_staged={"2": {"title": "Widget B", "quantity": "1"}},
+        visitor=visitor,
+    )
+    payload = json.loads(raw)
+    assert payload["ok"] is True
+
+    # Item 1 incomplete (optional notes still pending) — must not block item 2 save.
+    assert session.get_value("title") == "Widget A"
+    assert session.get_value("quantity") == "2"
+    assert not session.has_field("notes") and not session.is_skipped("notes")
+    state = get_for_each_state(session, "item_ids")
+    assert state["status"] == STATUS_ACTIVE
+    assert int(state.get("current_index") or 0) == 0
+
+    stage_store = session.context.get("_for_each_staged", {})
+    assert stage_store.get("B", {}).get("title") == "Widget B"
+    assert stage_store.get("B", {}).get("quantity") == "1"
+
+    nxt = await build_next_field(session, spec, load)
+    assert nxt["key"] == "notes"
+
+    # Finish item 1 → staged item 2 must apply (no re-ask for title/quantity).
+    await action._handle_skip_field(field="notes", visitor=visitor)
+    assert session.get_value("title") == "Widget B"
+    assert session.get_value("quantity") == "1"
+    nxt = await build_next_field(session, spec, load)
+    assert nxt["key"] == "notes"
+    assert (
+        "second" in (nxt.get("prompt") or "").lower() or nxt["for_each"]["index"] == 2
+    )
+
+
+@pytest.mark.asyncio
+async def test_for_each_staged_description_only_while_current_incomplete(
+    for_each_action,
+):
+    """Partial multi-item dump (titles only) must stage item 2 before item 1 finishes.
+
+    Mirrors "a laptop and a phone": only description/title for each item.
+    """
+    action, spec = for_each_action
+    session = InterviewSession(interview_type=spec.name)
+    action._get_session_and_contract = AsyncMock(return_value=(session, spec))
+    action._save_session = AsyncMock()
+    load = _load_fn(spec)
+    visitor = SimpleNamespace()
+
+    await handle_set_fields(action, fields={"item_ids": "A, B"}, visitor=visitor)
+
+    raw = await handle_set_fields(
+        action,
+        fields={"title": "Widget A"},
+        for_each_staged={"2": {"title": "Widget B"}},
+        visitor=visitor,
+    )
+    payload = json.loads(raw)
+    assert payload["ok"] is True
+
+    assert session.get_value("title") == "Widget A"
+    assert not session.has_field("quantity")
+    state = get_for_each_state(session, "item_ids")
+    assert int(state.get("current_index") or 0) == 0
+
+    stage_store = session.context.get("_for_each_staged", {})
+    assert stage_store.get("B", {}).get("title") == "Widget B"
+    assert "quantity" not in stage_store.get("B", {})
+
+    nxt = await build_next_field(session, spec, load)
+    assert nxt["key"] == "quantity"
+
+    await handle_set_fields(action, fields={"quantity": "2"}, visitor=visitor)
+    await action._handle_skip_field(field="notes", visitor=visitor)
+
+    assert session.get_value("title") == "Widget B"
+    assert not session.has_field("quantity")
+    nxt = await build_next_field(session, spec, load)
+    assert nxt["key"] == "quantity"
+    assert nxt["for_each"]["index"] == 2
 
 
 @pytest.mark.asyncio

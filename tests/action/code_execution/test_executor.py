@@ -5,11 +5,7 @@ from __future__ import annotations
 
 import os
 
-import pytest
-
 from jvagent.action.code_execution.executor import ExecRequest, SubprocessExecutor
-
-pytestmark = pytest.mark.asyncio
 
 
 async def _run(tmp_path, command, **kw):

@@ -7,15 +7,11 @@ tool surfacing, so the model never under-claims ("I can't sign you up…").
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-import pytest
-
 from jvagent.action.base import Action
 from jvagent.action.orchestrator.prompts import (
     ORCHESTRATOR_SYSTEM_PROMPT,
     render_capabilities_section,
 )
-
-pytestmark = pytest.mark.asyncio
 
 
 def test_base_action_advertises_nothing_by_default():
