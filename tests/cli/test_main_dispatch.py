@@ -75,15 +75,32 @@ class TestFirstAppRootPath:
 
 
 class TestMainDispatch:
-    def test_purge_blocked_outside_development(self, tmp_path, monkeypatch):
+    def test_purge_blocked_when_env_unset(self, tmp_path, monkeypatch):
+        # Guard requires JVSPATIAL_ENVIRONMENT=development to be set
+        # EXPLICITLY; a misconfigured host with it unset must NOT purge.
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr(sys, "argv", ["jvagent", "--purge"])
         monkeypatch.delenv("JVSPATIAL_ENVIRONMENT", raising=False)
 
         patches = _main_patches(
-            is_development_mode=patch(
-                "jvagent.cli.main.is_development_mode", return_value=False
-            ),
+            purge_app_data=patch("jvagent.cli.main.purge_app_data"),
+        )
+        with ExitStack() as stack:
+            mocks = {k: stack.enter_context(v) for k, v in patches.items()}
+            from jvagent.cli.main import main
+
+            with pytest.raises(SystemExit) as exc:
+                main()
+
+            assert exc.value.code == 1
+            mocks["purge_app_data"].assert_not_called()
+
+    def test_purge_blocked_in_production(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["jvagent", "--purge"])
+        monkeypatch.setenv("JVSPATIAL_ENVIRONMENT", "production")
+
+        patches = _main_patches(
             purge_app_data=patch("jvagent.cli.main.purge_app_data"),
         )
         with ExitStack() as stack:
@@ -98,13 +115,10 @@ class TestMainDispatch:
 
     def test_purge_allowed_in_development(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setattr(sys, "argv", ["jvagent", "--purge", "validate"])
+        monkeypatch.setattr(sys, "argv", ["jvagent", "--purge", "--yes", "validate"])
         monkeypatch.setenv("JVSPATIAL_ENVIRONMENT", "development")
 
         patches = _main_patches(
-            is_development_mode=patch(
-                "jvagent.cli.main.is_development_mode", return_value=True
-            ),
             purge_app_data=patch("jvagent.cli.main.purge_app_data"),
             run_validate=patch("jvagent.cli.main.run_validate", return_value=0),
         )
@@ -117,6 +131,8 @@ class TestMainDispatch:
 
             assert exc.value.code == 0
             mocks["purge_app_data"].assert_called_once()
+            # --yes propagates as assume_yes=True
+            assert mocks["purge_app_data"].call_args.kwargs.get("assume_yes") is True
 
     def test_source_without_update_exits(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
