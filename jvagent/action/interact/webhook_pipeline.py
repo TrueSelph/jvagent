@@ -26,6 +26,42 @@ _conversation_lock_manager = ConversationLockManager()
 
 _TRUNCATE_LEN = 200
 
+# Keys that commonly carry base64 / binary media — never log verbatim.
+_MEDIA_LOG_KEYS = frozenset(
+    {
+        "image_urls",
+        "files",
+        "attachments",
+        "documents",
+        "email_attachments",
+        "media",
+        "audio",
+        "video",
+    }
+)
+
+
+def _redact_media_value(val: Any) -> Any:
+    """Replace base64 / data-URI / oversized blobs with size placeholders."""
+    if isinstance(val, str):
+        s = val
+        if s.startswith("data:") and ";base64," in s:
+            b64 = s.split(";base64,", 1)[-1]
+            return f"[redacted data-uri {len(b64)} chars]"
+        # Heuristic: long base64-ish strings
+        if len(s) > 256 and all(c.isalnum() or c in "+/=\n\r" for c in s[:80]):
+            return f"[redacted {len(s)} chars]"
+        if len(s) > _TRUNCATE_LEN:
+            return s[:_TRUNCATE_LEN] + "..."
+        return s
+    if isinstance(val, list):
+        return [_redact_media_value(v) for v in val[:20]] + (
+            [f"...(+{len(val) - 20} more)"] if len(val) > 20 else []
+        )
+    if isinstance(val, dict):
+        return {k: _redact_media_value(v) for k, v in list(val.items())[:40]}
+    return val
+
 
 async def finalize_usage(interaction: Any) -> None:
     """Compute usage from observability_metrics and update user stats."""
@@ -140,11 +176,19 @@ def sanitize_visitor_data_for_log(visitor_data: Dict[str, Any]) -> Dict[str, Any
                     payload[pk] = (
                         pv[:_TRUNCATE_LEN] + "..." if len(pv) > _TRUNCATE_LEN else pv
                     )
+                elif pk in _MEDIA_LOG_KEYS:
+                    payload[pk] = _redact_media_value(pv)
                 else:
-                    payload[pk] = pv
+                    payload[pk] = _redact_media_value(pv) if isinstance(pv, str) else pv
             out[key] = payload
         elif key == "whatsapp_media" and isinstance(val, list):
             out[key] = [{"type": "media", "count": len(val)}]
+        elif key in _MEDIA_LOG_KEYS:
+            out[key] = _redact_media_value(val)
+        elif isinstance(val, str) and (
+            (val.startswith("data:") and ";base64," in val) or len(val) > 2048
+        ):
+            out[key] = _redact_media_value(val)
         else:
             out[key] = val
     return out

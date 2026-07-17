@@ -72,10 +72,10 @@ class TaskMonitor(Action):
         description="Default retry ceiling for proactive tasks without an explicit max.",
     )
     terminal_ttl_days: int = attribute(
-        default=0,
+        default=30,
         description=(
-            "When > 0, remove terminal PROACTIVE tasks older than this many days "
-            "on each tick."
+            "Remove terminal PROACTIVE tasks older than this many days on each "
+            "tick. Set to 0 to disable the sweep (unbounded growth)."
         ),
     )
 
@@ -240,9 +240,20 @@ class TaskMonitor(Action):
             return {"dispatched": 0, "skipped": "disabled"}
 
         from jvagent.core.app import App, app_now_aware_utc
+        from jvagent.logging.retention import purge_logs_past_retention
 
         app = await App.get()
         now_dt = await app_now_aware_utc(app)
+
+        # Bound INTERACTION / DBLog growth using App.log_retention_days
+        # (0 = disabled). Failures must not block proactive dispatch.
+        try:
+            await purge_logs_past_retention(
+                retention_days=int(getattr(app, "log_retention_days", 60) or 0),
+                now=now_dt,
+            )
+        except Exception as e:
+            logger.warning("TaskMonitor: log retention purge failed: %s", e)
 
         query: Dict[str, Any] = {
             "tasks": {
