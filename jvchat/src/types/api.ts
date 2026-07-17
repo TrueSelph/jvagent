@@ -75,6 +75,8 @@ export interface InteractionResponse {
   user_id: string
   session_id: string
   response?: string
+  /** Mode B session capability token (ADR-0020); resend as X-Session-Token to resume. */
+  session_token?: string
   interaction: {
     id: string
     utterance: string
@@ -113,6 +115,8 @@ export interface SSEChunk {
   interaction_id?: string
   session_id?: string
   user_id?: string
+  /** Mode B session capability token (ADR-0020), delivered on the 'start' chunk. */
+  session_token?: string
   message?: ResponseMessageData | string // ResponseMessageData when type === 'message', string when type === 'error'
   interaction?: InteractionResponse['interaction']
   report?: any[]

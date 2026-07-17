@@ -1,5 +1,6 @@
 const TOKEN_KEY = 'jvchat_token'
 const REFRESH_TOKEN_KEY = 'jvchat_refresh_token'
+const INTERACT_SESSION_TOKENS_KEY = 'jvchat_interact_session_tokens'
 const USER_ID_KEY = 'jvchat_user_id'
 const CONVERSATIONS_KEY = 'jvchat_conversations'
 const MESSAGES_KEY = 'jvchat_messages'
@@ -374,6 +375,69 @@ export function setRefreshToken(token: string): void {
 export function removeRefreshToken(): void {
   if (typeof window === 'undefined') return
   localStorage.removeItem(REFRESH_TOKEN_KEY)
+}
+
+/**
+ * Mode B interact session capability tokens (ADR-0020/0032), keyed by
+ * session_id. The server mints one per web conversation; it must be resent as
+ * `X-Session-Token` to resume, and refreshed via
+ * `POST /agents/{id}/interact/session/refresh` when it nears expiry.
+ */
+const MAX_INTERACT_SESSION_TOKENS = 100
+
+interface StoredInteractSessionToken {
+  token: string
+  savedAt: number
+}
+
+function readInteractSessionTokens(): Record<string, StoredInteractSessionToken> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = localStorage.getItem(INTERACT_SESSION_TOKENS_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+export function getInteractSessionToken(sessionId: string | undefined | null): string | null {
+  if (!sessionId) return null
+  const entry = readInteractSessionTokens()[sessionId]
+  return entry?.token || null
+}
+
+export function setInteractSessionToken(sessionId: string, token: string): void {
+  if (typeof window === 'undefined' || !sessionId || !token) return
+  try {
+    const map = readInteractSessionTokens()
+    map[sessionId] = { token, savedAt: Date.now() }
+    // Cap the map so abandoned sessions don't accumulate forever.
+    const ids = Object.keys(map)
+    if (ids.length > MAX_INTERACT_SESSION_TOKENS) {
+      ids
+        .sort((a, b) => (map[a]?.savedAt || 0) - (map[b]?.savedAt || 0))
+        .slice(0, ids.length - MAX_INTERACT_SESSION_TOKENS)
+        .forEach((id) => delete map[id])
+    }
+    safeSetItem(INTERACT_SESSION_TOKENS_KEY, JSON.stringify(map))
+  } catch (error) {
+    console.error('Failed to save interact session token:', error)
+  }
+}
+
+export function removeInteractSessionToken(sessionId: string | undefined | null): void {
+  if (typeof window === 'undefined' || !sessionId) return
+  try {
+    const map = readInteractSessionTokens()
+    if (map[sessionId]) {
+      delete map[sessionId]
+      safeSetItem(INTERACT_SESSION_TOKENS_KEY, JSON.stringify(map))
+    }
+  } catch (error) {
+    console.error('Failed to remove interact session token:', error)
+  }
 }
 
 export function getUserId(): string | null {
@@ -767,6 +831,7 @@ export function clearAllStorage(): void {
     clearAuthSession()
     localStorage.removeItem(CONVERSATIONS_KEY)
     localStorage.removeItem(MESSAGES_KEY)
+    localStorage.removeItem(INTERACT_SESSION_TOKENS_KEY)
   } catch (error) {
     console.error('Failed to clear all storage:', error)
   }
