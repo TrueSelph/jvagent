@@ -89,27 +89,31 @@ PARAMETERS_SECTION = (
 # the compose model deliver it faithfully in the agent's identity.
 RELAY_PREFIX = "Tell the user or ask the user: "
 
-# A directive may carry model-only composition guidance after this marker: how to
-# render the user-facing part ("you may paraphrase"), or producer chaining notes
-# ("Do NOT call …", "Then call …"). The compose model sees it (it steers
-# rendering); the literal-relay fast path MUST drop it so it never reaches the
-# user. An invisible separator char, so it's inert even if a raw directive ever
-# slips through unscrubbed.
+# Directive = message (before marker) + guidance block (after marker).
+# Guidance block = default paraphrase rules + optional author hint (and any
+# producer notes like "Then call …"). ReplyAction receives directive strings
+# only — there is no separate hint= API here. The compose model sees the
+# guidance block; the literal-relay fast path MUST drop it. Invisible separator
+# so it is inert even if a raw directive slips through unscrubbed.
 DIRECTIVE_GUIDANCE_MARKER = "\u2063"  # invisible separator
 
 
 def user_facing_directive(content: str) -> str:
-    """The user-facing portion of a directive: everything before the first
-    :data:`DIRECTIVE_GUIDANCE_MARKER`. Model-only guidance after it is dropped so
+    """The user-facing message: everything before the first
+    :data:`DIRECTIVE_GUIDANCE_MARKER`. The guidance block after it is dropped so
     it can never be relayed to the user."""
     return str(content or "").split(DIRECTIVE_GUIDANCE_MARKER, 1)[0].strip()
 
 
 def compose_directive(content: str) -> str:
     """A directive rendered for the compose model: the bare marker token is
-    removed (so it never appears literally) but the guidance after it is kept —
-    it legitimately steers how the model renders the user-facing reply."""
-    return str(content or "").replace(DIRECTIVE_GUIDANCE_MARKER, " ").strip()
+    removed (so it never appears literally) but the guidance block after it is
+    kept — default rules plus any optional hint that steers the reply.
+
+    Replaces the marker with a blank line so message and guidance form the same
+    two-block layout.
+    """
+    return str(content or "").replace(DIRECTIVE_GUIDANCE_MARKER, "\n\n").strip()
 
 
 # Channel formatting (the "format" axis), keyed by normalized channel name. The

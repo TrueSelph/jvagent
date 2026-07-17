@@ -84,7 +84,7 @@ def _build_core_tools(action: "InterviewAction") -> List[Tool]:
                         "type": "object",
                         "description": (
                             "Required. Map of interview field key to value. Example: "
-                            '{"user_name": "Jane Doe", "available_times": "Monday at 9"}.'
+                            '{"field_a": "Jane Doe", "field_b": "Monday at 9"}.'
                         ),
                         "additionalProperties": {"type": "string"},
                     },
@@ -100,9 +100,9 @@ def _build_core_tools(action: "InterviewAction") -> List[Tool]:
                             "(partial maps are OK). During review, keys are 1-based "
                             "item indices targeting completed records for per-item "
                             "correction. Only used when a for_each expansion exists. "
-                            'Example (full): {"2": {"description": "phone", '
-                            '"invoice_value": "243"}}. Example (partial): '
-                            '{"2": {"description": "phone"}}'
+                            'Example (full): {"2": {"child_a": "value", '
+                            '"child_b": "other"}}. Example (partial): '
+                            '{"2": {"child_a": "value"}}'
                         ),
                         "additionalProperties": {
                             "type": "object",
@@ -146,8 +146,8 @@ def _build_core_tools(action: "InterviewAction") -> List[Tool]:
                 "Requires an active interview session (open it with use_skill on the "
                 "matching skill first). Get the next field to present. Runs "
                 "pre_processor hooks for context. Returns next_field "
-                "{key, prompt, required}, skipped_fields, and response_directive; for "
-                "optional fields the directive includes the interview__skip_field path."
+                "{key, prompt, required}, skipped_fields, and response_directive. "
+                "Optional fields may be skipped via interview__skip_field."
             ),
             parameters_schema=no_args,
             execute=_next_field,

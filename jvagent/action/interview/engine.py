@@ -61,6 +61,7 @@ from .hooks import (
     REVIEW_PHASE,
     STORE_PHASE,
     TOOL_PHASE,
+    append_hint,
     auto_confirm_directive,
     call_hook,
     call_tool_directive,
@@ -76,7 +77,6 @@ from .hooks import (
     user_directive,
     user_followup_directive,
     validation_guidance_directive,
-    with_hint,
 )
 from .session import (
     ACTIVATION_UTTERANCE_KEY,
@@ -130,8 +130,51 @@ def _inject_spec_parameters(spec: InterviewSpec, visitor: Any = None) -> None:
 
 
 SET_FIELDS_ARGS_EXAMPLE = (
-    '{"fields": {"user_name": "Jane Doe", "available_times": "Monday at 9"}}'
+    '{"fields": {"field_a": "Jane Doe", "field_b": "Monday at 9"}}'
 )
+
+
+def _for_each_example_child_keys(child_keys: Optional[List[str]] = None) -> List[str]:
+    """Pick up to two child keys for staged-payload examples (neutral fallback)."""
+    keys = [str(k).strip() for k in (child_keys or []) if str(k).strip()]
+    if not keys:
+        return ["child_a", "child_b"]
+    if len(keys) == 1:
+        return [keys[0]]
+    return [keys[0], keys[1]]
+
+
+def _for_each_staged_example_snippets(
+    *,
+    current_field_key: str = "",
+    child_keys: Optional[List[str]] = None,
+) -> Tuple[str, str, str]:
+    """Return (full, partial, review) JSON example snippets for for_each nudges."""
+    keys = _for_each_example_child_keys(child_keys)
+    k0 = keys[0]
+    staged_full = {k0: "value"}
+    if len(keys) > 1:
+        staged_full[keys[1]] = "other"
+    staged_partial = {k0: "value"}
+    field_key = (current_field_key or k0).strip() or "field_key"
+    full = (
+        '{"fields": {"'
+        + field_key
+        + '": "value"}, "for_each_staged": {"2": '
+        + json.dumps(staged_full, separators=(",", ": "))
+        + "}}"
+    )
+    partial = (
+        '{"fields": {"'
+        + k0
+        + '": "value"}, "for_each_staged": {"2": '
+        + json.dumps(staged_partial, separators=(",", ": "))
+        + "}}"
+    )
+    review = '{"2": ' + json.dumps(staged_partial, separators=(",", ": ")) + "}"
+    return full, partial, review
+
+
 _WORD_RE = re.compile(r"\b[a-z0-9_]{3,}\b", re.IGNORECASE)
 _LABEL_RE = re.compile(r"\b[a-z][a-z0-9_\-\s]{1,40}\s*(?:is|:|=)", re.IGNORECASE)
 _TIME_RE = re.compile(r"\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b", re.IGNORECASE)
@@ -971,21 +1014,15 @@ async def handle_set_fields(
             # what that tool would have provided: the canonical key (next_field_key
             # below) and, for optional fields, the skip path.
             next_fdef = resolve_field_def(session, spec, next_field["key"])
-            next_hint = next_fdef.hint if next_fdef is not None else ""
-            question = with_hint(next_field["prompt"], next_hint)
+            next_hint = (next_fdef.hint or "").strip() if next_fdef is not None else ""
+            prompt = str(next_field.get("prompt") or "")
             if notes_text:
-                directive = user_followup_directive(notes_text, question)
-            else:
-                directive = field_prompt_directive(
-                    str(next_field.get("prompt") or ""),
+                directive = append_hint(
+                    user_followup_directive(notes_text, prompt),
                     next_hint,
                 )
-            if next_fdef is not None and not next_fdef.required:
-                directive += (
-                    " If the user declines or has nothing to add, call "
-                    f'interview__skip_field with {{"field_key": '
-                    f'"{next_field["key"]}"}}.'
-                )
+            else:
+                directive = field_prompt_directive(prompt, next_hint)
             payload["response_directive"] = directive
         else:
             # No further questions — chain straight to review/complete with a
@@ -1037,6 +1074,10 @@ async def handle_set_fields(
                 else notes_text
             )
         fe_payload = payload.get("for_each")
+        active_fe = get_active_for_each(session, spec)
+        example_child_keys = (
+            list(active_fe.state.get("child_keys") or []) if active_fe else None
+        )
         if fe_payload and not fe_payload.get("complete"):
             remaining = fe_payload.get("total", 0) - fe_payload.get("index", 0)
             if remaining > 0:
@@ -1054,12 +1095,13 @@ async def handle_set_fields(
                     + "). "
                 )
                 if child_key:
+                    full_ex, partial_ex, _ = _for_each_staged_example_snippets(
+                        current_field_key=child_key,
+                        child_keys=example_child_keys,
+                    )
                     nudge += (
-                        'Example (full): {"fields": {"' + child_key + '": "value"}, '
-                        '"for_each_staged": {"2": {"description": "phone", '
-                        '"invoice_value": "243"}}}. '
-                        'Example (partial OK): {"fields": {"description": "laptop"}, '
-                        '"for_each_staged": {"2": {"description": "phone"}}}'
+                        f"Example (full): {full_ex}. "
+                        f"Example (partial OK): {partial_ex}"
                     )
                 else:
                     nudge += (
@@ -1070,10 +1112,12 @@ async def handle_set_fields(
                     f"{system_message} {nudge}".strip() if system_message else nudge
                 )
         elif fe_payload and fe_payload.get("complete"):
+            _, _, review_ex = _for_each_staged_example_snippets(
+                child_keys=example_child_keys,
+            )
             nudge = (
                 "for_each_staged can update individual items during review. "
-                "Use 1-based indices, e.g. "
-                '{"2": {"invoice_value": "253"}}'
+                "Use 1-based indices, e.g. " + review_ex
             )
             system_message = (
                 f"{system_message} {nudge}".strip() if system_message else nudge
@@ -1245,14 +1289,6 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
     if "for_each" in next_field:
         slim_next["for_each"] = next_field["for_each"]
 
-    # Optional fields are skippable — tell the model the skip path so a decline
-    # routes to interview__skip_field instead of stalling.
-    if not fdef.required:
-        directive = (
-            f"{directive} If the user declines or has nothing to add, call "
-            f'interview__skip_field with {{"field_key": "{fdef.key}"}}.'
-        )
-
     # Persist any session.context mutations made by pre_processor hooks.
     if pre_tools_results:
         await action._save_session(session, visitor)
@@ -1262,6 +1298,13 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
         fe_meta = next_field["for_each"]
         remaining = fe_meta.get("total", 0) - fe_meta.get("index", 0)
         if remaining > 0:
+            example_keys = (
+                list(active_fe.state.get("child_keys") or []) if active_fe else None
+            )
+            full_ex, partial_ex, _ = _for_each_staged_example_snippets(
+                current_field_key=fdef.key,
+                child_keys=example_keys,
+            )
             fe_nudge = (
                 "for_each_staged: extract data for the remaining "
                 + str(remaining)
@@ -1272,12 +1315,7 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
                 + str(fe_meta.get("index"))
                 + ", total="
                 + str(fe_meta.get("total"))
-                + '). Example (full): {"fields": {"'
-                + fdef.key
-                + '": "value"}, "for_each_staged": {"2": {"description": "phone", '
-                '"invoice_value": "243"}}}. Example (partial OK): '
-                '{"fields": {"description": "laptop"}, '
-                '"for_each_staged": {"2": {"description": "phone"}}}'
+                + f"). Example (full): {full_ex}. Example (partial OK): {partial_ex}"
             )
 
     return interview_tool_response(
@@ -1338,11 +1376,6 @@ async def handle_skip_field(action: Any, field: str, visitor: Any = None) -> str
             f"Please provide your {nxt['key'].replace('_', ' ')}."
         )
         directive = field_prompt_directive(prompt, pending.hint if pending else "")
-        if pending is not None and not pending.required:
-            directive += (
-                " If the user declines or has nothing to add, call "
-                f'interview__skip_field with {{"field_key": "{nxt["key"]}"}}.'
-            )
         return interview_tool_response(
             ok=False,
             status=session.status.value,
@@ -1389,12 +1422,6 @@ async def handle_skip_field(action: Any, field: str, visitor: Any = None) -> str
                 str(next_field.get("prompt") or ""),
                 next_hint,
             )
-            if next_fdef is not None and not next_fdef.required:
-                directive += (
-                    " If the user declines or has nothing to add, call "
-                    f'interview__skip_field with {{"field_key": '
-                    f'"{next_field["key"]}"}}.'
-                )
             return interview_tool_response(
                 ok=True,
                 status=session.status.value,

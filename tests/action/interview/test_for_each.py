@@ -452,7 +452,9 @@ async def test_for_each_staged_partial_saves_while_current_item_incomplete(
     assert session.get_value("quantity") == "1"
     nxt = await build_next_field(session, spec, load)
     assert nxt["key"] == "notes"
-    assert "second" in (nxt.get("prompt") or "").lower() or nxt["for_each"]["index"] == 2
+    assert (
+        "second" in (nxt.get("prompt") or "").lower() or nxt["for_each"]["index"] == 2
+    )
 
 
 @pytest.mark.asyncio

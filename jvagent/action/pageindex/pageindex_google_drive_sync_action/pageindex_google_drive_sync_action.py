@@ -1085,6 +1085,55 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             metadata = google_drive_folder.get("metadata", {})
             cfg = replace(cfg_template, metadata=dict(metadata or {}))
 
+            # When auto-delete is enabled, process removals FIRST so that a
+            # deleted file (e.g. "xxx.pdf") is removed from the PageIndex
+            # before any newly added file with the same name is ingested.
+            # Otherwise the skip-existing check would skip the new file
+            # because the old one is still in the index. Per-invocation
+            # one-unit semantics still hold: the removals batch returns
+            # here, and the added file is ingested on the next sync run.
+            if remove_deleted_documents and ingesting_documents["removed"]:
+                remove_docs_names = []
+                for removed_doc in list(ingesting_documents["removed"]):
+                    try:
+                        await delete_document(
+                            removed_doc.get("name", ""),
+                            collection_name=collection_name,
+                        )
+                        document_ingested["removed"].append(removed_doc.get("name", ""))
+                        remove_docs_names.append(removed_doc.get("name", ""))
+                        ingesting_documents["removed"].remove(removed_doc)
+                    except Exception as e:
+                        google_drive_documents_node.failed_documents["removed"].append(
+                            removed_doc
+                        )
+                        ingesting_documents["removed"].remove(removed_doc)
+                        _sync_drive_node_status_from_queues(google_drive_documents_node)
+                        await google_drive_documents_node.save()
+                        logger.error("Error deleting document: %s", e, exc_info=True)
+                        failed_name = removed_doc.get("name", "")
+                        return {
+                            "status": "completed",
+                            "message": f"Failed to delete {failed_name}",
+                            "documents_ingested": document_ingested,
+                        }
+                if ingest_source == "ingesting_documents":
+                    google_drive_documents_node.ingesting_documents = (
+                        ingesting_documents
+                    )
+                _sync_drive_node_status_from_queues(google_drive_documents_node)
+                await google_drive_documents_node.save()
+                ingestion_message = (
+                    f"Deleted {', '.join(remove_docs_names)}"
+                    if remove_docs_names
+                    else "Removed documents processed"
+                )
+                return {
+                    "status": "completed",
+                    "message": ingestion_message,
+                    "documents_ingested": document_ingested,
+                }
+
             if ingesting_documents["added"]:
                 new_file = ingesting_documents["added"][0]
                 result = await self._process_single_document(

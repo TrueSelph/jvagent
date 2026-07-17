@@ -57,7 +57,8 @@ class OrchestratorLoopMixin:
         )
         lean_surface = bool(surface_meta.get("lean"))
         skill_names = {getattr(d, "name", "") for d in skill_docs}
-        skills_section = render_skills_section(skill_docs)
+        blocked_skill_notes = surface_meta.get("blocked_skill_notes") or []
+        skills_section = render_skills_section(skill_docs, blocked_skill_notes)
         # Advertised abilities: each enabled action's get_capabilities() merged
         # with the skill descriptions. Sourced from the actions/skills directly
         # (not the lean-surfaced tool list), so it stays complete even when most

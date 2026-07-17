@@ -259,6 +259,26 @@ def parse_skill_bundle(
     coactivate_with = _normalize_string_list(
         frontmatter.get("coactivate-with"), skill_file, key="coactivate-with"
     )
+    # Per-channel gating (ADR-0032): a skill may be restricted to a set of
+    # channels (``allowed-channels``) or excluded from a set (``denied-
+    # channels``). ``deny-access-directive`` is the message relayed to the user
+    # when the skill is hidden on the current channel. Both keys accept the
+    # hyphen or underscore form; empty/absent means "no restriction".
+    allowed_channels = _normalize_string_list(
+        frontmatter.get("allowed-channels") or frontmatter.get("allowed_channels"),
+        skill_file,
+        key="allowed-channels",
+    )
+    denied_channels = _normalize_string_list(
+        frontmatter.get("denied-channels") or frontmatter.get("denied_channels"),
+        skill_file,
+        key="denied-channels",
+    )
+    deny_access_directive = str(
+        frontmatter.get("deny-access-directive")
+        or frontmatter.get("deny_access_directive")
+        or ""
+    ).strip()
     scope_hint = ", ".join(str(tag) for tag in tags if str(tag).strip())
     if not scope_hint:
         scope_hint = description
@@ -320,6 +340,9 @@ def parse_skill_bundle(
         "exports": exports,
         "imports": imports,
         "coactivate_with": coactivate_with,
+        "allowed_channels": allowed_channels,
+        "denied_channels": denied_channels,
+        "deny_access_directive": deny_access_directive,
         "scope_hint": scope_hint,
         "source": source,
         "metadata": {

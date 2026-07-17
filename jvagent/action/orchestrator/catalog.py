@@ -135,6 +135,12 @@ def build_skill_meta_tools(
 ) -> Dict[str, SkillTool]:
     """``find_skill`` / ``use_skill`` over skills (progressive disclosure).
 
+    ``docs`` must already be the *channel-allowed* subset (ADR-0032): the
+    orchestrator drops channel-blocked skills before calling this, so they
+    never appear in ``find_skill`` results or the ``use_skill`` index. The
+    blocked skills' deny directives are surfaced separately via
+    ``render_skills_section`` blocked notes.
+
     When ``visible`` is provided, activating a JV skill via ``use_skill``
     surfaces the skill's declared ``allowed-tools`` (those present on the
     surface) into that set, so the model can call them immediately — a JV skill

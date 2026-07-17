@@ -565,3 +565,178 @@ async def test_retry_failed_prefers_failed_queue_when_ingesting_also_has_work() 
     assert captured["file_id"] == "file-failed"
     assert captured["use_jvforge"] is True
     assert out["documents_ingested"]["added"] == ["failed.pdf"]
+
+
+async def test_remove_deleted_true_processes_removed_before_added_same_name() -> None:
+    """When remove_deleted_documents=True, removals run before adds so a
+    deleted file (e.g. "manual.pdf") is removed from the index before a
+    newly added file with the same name is considered for ingestion.
+    On the first invocation the removed batch is drained and the added
+    file is left for the next run.
+    """
+    removed_file = {
+        "name": "manual.pdf",
+        "id": "file-old",
+        "url": "https://example.com/manual.pdf",
+        "mimeType": "application/pdf",
+    }
+    added_file = {
+        "name": "manual.pdf",
+        "id": "file-new",
+        "url": "https://example.com/manual.pdf",
+        "mimeType": "application/pdf",
+    }
+    node = SimpleNamespace(
+        folder_id="folder-1",
+        files=[added_file],
+        ingesting_documents={
+            "added": [added_file],
+            "modified": [],
+            "removed": [removed_file],
+        },
+        failed_documents={"added": [], "modified": [], "removed": []},
+        active_document="",
+        status="pending",
+        save=AsyncMock(return_value=None),
+    )
+    action = PageIndexGoogleDriveSyncAction(document_timeout=600)
+    cfg = DriveIngestConfig(
+        collection_name="agent-1",
+        metadata={},
+        model=None,
+        model_action=None,
+        node_summary="no",
+        agent_id="agent-1",
+        page_index_action=SimpleNamespace(),
+        use_jvforge=False,
+    )
+    delete_calls: list[str] = []
+
+    async def _fake_process(**kwargs):
+        raise AssertionError(
+            "_process_single_document must not run before removals are drained"
+        )
+
+    async def _fake_delete(name, collection_name):
+        delete_calls.append(name)
+
+    with (
+        patch.object(
+            PageIndexGoogleDriveSyncAction,
+            "node",
+            new_callable=AsyncMock,
+            return_value=node,
+        ),
+        patch.object(action, "_process_single_document", side_effect=_fake_process),
+        patch(
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action."
+            "pageindex_google_drive_sync_action.delete_document",
+            new=_fake_delete,
+        ),
+    ):
+        out = await action._phase_pick_and_process_google_drive_document(
+            google_drive_folders=[{"folder_id": "folder-1", "metadata": {}}],
+            remove_deleted_documents=True,
+            retry_failed_documents=False,
+            google_drive_action=SimpleNamespace(),
+            cfg_template=cfg,
+            document_ingested={
+                "added": [],
+                "updated": [],
+                "removed": [],
+                "to_be_removed": [],
+            },
+        )
+
+    assert delete_calls == ["manual.pdf"]
+    assert node.ingesting_documents["removed"] == []
+    assert node.ingesting_documents["added"] == [added_file]
+    assert out["documents_ingested"]["removed"] == ["manual.pdf"]
+    assert out["documents_ingested"]["added"] == []
+
+
+async def test_remove_deleted_false_keeps_added_before_removed_same_name() -> None:
+    """When remove_deleted_documents=False, the original order (added before
+    removed) is preserved. The added file is ingested first; the removed file
+    is moved to to_be_removed rather than being deleted from the index.
+    """
+    removed_file = {
+        "name": "manual.pdf",
+        "id": "file-old",
+        "url": "https://example.com/manual.pdf",
+        "mimeType": "application/pdf",
+    }
+    added_file = {
+        "name": "manual.pdf",
+        "id": "file-new",
+        "url": "https://example.com/manual.pdf",
+        "mimeType": "application/pdf",
+    }
+    node = SimpleNamespace(
+        folder_id="folder-1",
+        files=[added_file],
+        ingesting_documents={
+            "added": [added_file],
+            "modified": [],
+            "removed": [removed_file],
+        },
+        failed_documents={"added": [], "modified": [], "removed": []},
+        active_document="",
+        status="pending",
+        save=AsyncMock(return_value=None),
+    )
+    action = PageIndexGoogleDriveSyncAction(document_timeout=600)
+    cfg = DriveIngestConfig(
+        collection_name="agent-1",
+        metadata={},
+        model=None,
+        model_action=None,
+        node_summary="no",
+        agent_id="agent-1",
+        page_index_action=SimpleNamespace(),
+        use_jvforge=False,
+    )
+    delete_calls: list[str] = []
+
+    async def _fake_process(**kwargs):
+        return {
+            "success": True,
+            "skipped": False,
+            "doc_name": "manual.pdf",
+            "ingestion_message": "ok",
+        }
+
+    async def _fake_delete(name, collection_name):
+        delete_calls.append(name)
+
+    with (
+        patch.object(
+            PageIndexGoogleDriveSyncAction,
+            "node",
+            new_callable=AsyncMock,
+            return_value=node,
+        ),
+        patch.object(action, "_process_single_document", side_effect=_fake_process),
+        patch(
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action."
+            "pageindex_google_drive_sync_action.delete_document",
+            new=_fake_delete,
+        ),
+    ):
+        out = await action._phase_pick_and_process_google_drive_document(
+            google_drive_folders=[{"folder_id": "folder-1", "metadata": {}}],
+            remove_deleted_documents=False,
+            retry_failed_documents=False,
+            google_drive_action=SimpleNamespace(),
+            cfg_template=cfg,
+            document_ingested={
+                "added": [],
+                "updated": [],
+                "removed": [],
+                "to_be_removed": [],
+            },
+        )
+
+    assert delete_calls == []
+    assert out["documents_ingested"]["added"] == ["manual.pdf"]
+    assert node.ingesting_documents["removed"] == [removed_file]

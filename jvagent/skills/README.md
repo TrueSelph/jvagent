@@ -98,6 +98,9 @@ metadata:
 | `requires-actions` | JV | Action class names that must resolve (enabled) on the agent, each with an **optional inline version constraint** (PEP 508-style — the comparison operator is the delimiter): `CodeExecutionAction`, `PageIndexAction>=2.0`, `WebFetchAction==1.4.0`, `GmailAction>=1.0,<2.0`. **Hard gate, enforced:** if any declared type is absent — or its `get_version()` doesn't satisfy the constraint — the orchestrator hides the skill entirely for that turn (not listed, found, activated, or always-active-pinned). Replaces the old `requires-action-versions` map. **Not lifecycle binding:** listing multiple actions (e.g. `InterviewAction` + `ZoonAPIAction`) gates on all of them; which Action runs `on_skill_activate` / `prepare_task_lock_turn` is resolved separately (see below). |
 | `requires-jvagent` | JV | Framework version constraint, checked at preflight. |
 | `extends` | JV | SOP inheritance only (body composition). `action:<namespace>/<action>` loads `<action_dir>/SKILL.md` body; `skill:<name>` inherits another skill's composed body. Separate from `requires-actions`. When `extends: action:…` is set, that action ref is also the **preferred lifecycle binder** for skill hooks (`on_skill_activate`, `prepare_task_lock_turn`, `resolve_task_lock_skill`, etc.). |
+| `allowed-channels` | both | List of canonical channel names the skill is surfaced on (e.g. `[whatsapp]`). Empty/absent = all channels. Channel is normalized via `normalize_channel` (`web`→`default`). |
+| `denied-channels` | both | List of canonical channel names the skill is hidden from. Subtracted from `allowed-channels` when both are set. |
+| `deny-access-directive` | both | Message the model relays verbatim when the user asks for the skill on a non-allowed channel (the skill is hidden; this note is surfaced in `skills_section`). |
 | `license`, `metadata` | both | Claude-standard fields. `metadata.version` / `metadata.tags` for tracking + discovery cues. |
 
 (jvagent also parses chaining/dispatch extensions — `exports`, `imports`,
@@ -112,6 +115,27 @@ that must be callable turn-1 regardless of how the user phrases things, without
 disabling lean for the rest of the surface. (The raw-tool equivalent is the
 orchestrator's `pinned_tools` glob list.) It also lets the skill bypass the
 `skills:` allow-list selector.
+
+### Per-channel gating (ADR-0032)
+
+Restrict a skill to specific channels with `allowed-channels` (and/or
+`denied-channels`). On a non-allowed channel the skill is **hidden from the
+whole surface** — not listed in `skills_section`, not found via `find_skill`,
+not activated via `use_skill`, not auto-started, and not always-active-pinned.
+Its per-skill custom tools (`<skill>__*`) and declared `allowed-tools` are
+dropped from the tool surface for the turn, so the model cannot reach it.
+Declare a `deny-access-directive` and its text is surfaced in `skills_section`
+as a note the model relays verbatim when the user's intent matched the blocked
+skill (e.g. "Please use WhatsApp to get a quotation…"). Channel names use
+`normalize_channel` (`web`→`default`).
+
+```yaml
+allowed-channels:
+  - whatsapp
+deny-access-directive: >-
+  Please use WhatsApp to get a quotation. We will be able to connect to your
+  account and give you a better quote based on your discounts, etc.
+```
 
 ### Orchestrator `auto_start_skills_on_new_user`
 

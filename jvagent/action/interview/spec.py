@@ -98,14 +98,14 @@ class ForEachDef:
 class FieldDef:
     key: str
     prompt: str
+    # Catalog acceptance criteria for judging the answer (field_reference /
+    # next_field). Not the directive guidance block — that is default paraphrase
+    # rules plus optional ``hint`` after the compose marker.
     guidance: str = ""
-    # Plain answer-guidance FOR THE USER — how to answer this question (e.g. "enter
-    # your first, last, and any other names"; an accepted format; that a field is
-    # optional). Woven into the prompt's user-facing text so the agent instructs the
-    # user on the intended answer, and surfaced in field_reference / next_field so
-    # the model can answer the user's clarifications. Phrase it as what to tell the
-    # user, non-redundant with ``prompt``. Distinct from ``guidance``, which is
-    # model-facing acceptance criteria for judging the answer.
+    # Optional model-only compose steering appended into the directive's guidance
+    # block (after the default paraphrase rules). Never user-facing text. Also
+    # surfaced on field_reference / next_field for clarifications. Distinct from
+    # ``guidance`` (catalog acceptance criteria).
     hint: str = ""
     required: bool = True
     validator: str = ""
