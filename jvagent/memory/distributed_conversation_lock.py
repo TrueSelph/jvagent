@@ -91,6 +91,38 @@ def _dynamo_ttl_seconds() -> int:
         return 45
 
 
+def _lease_renew_interval(ttl: int) -> float:
+    """Heartbeat interval that renews the lease well before it expires.
+
+    A whole orchestrator turn runs inside the lease, and multi-step turns
+    routinely exceed the 45s TTL — without renewal the lease lapses mid-turn and
+    a second worker acquires it, running concurrently and forking the interaction
+    chain. Renewing at ~ttl/3 gives two renewals per TTL window before expiry.
+    AUDIT-memory HIGH (C7).
+    """
+    return max(1.0, ttl / 3.0)
+
+
+async def _run_lease_heartbeat(renew, interval: float, conversation_id: str) -> None:
+    """Loop: sleep ``interval``, then ``await renew()`` while the lock is held.
+
+    Cancelled by the lock context on release. A failed renewal is logged and the
+    loop continues — a transient blip shouldn't drop the lease early.
+    """
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            await renew()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.debug(
+                "conversation lock renew failed for %s (%s)",
+                conversation_id,
+                type(exc).__name__,
+            )
+
+
 def warn_missing_distributed_conversation_lock() -> None:
     """Warn when serverless mode runs without a cross-process conversation lock."""
     try:
@@ -168,6 +200,14 @@ async def _redis_conversation_lock(
         return 0
     end
     """
+    # Renew (extend the TTL) only while we still hold it — compare-and-expire.
+    renew_script = """
+    if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("expire", KEYS[1], ARGV[2])
+    else
+        return 0
+    end
+    """
 
     # AUDIT-memory HIGH-05: bounded wait + exponential backoff + heartbeat
     # logs. Unbounded polling lets a poisoned holder block every other
@@ -176,6 +216,7 @@ async def _redis_conversation_lock(
     start = asyncio.get_event_loop().time()
     delay = 0.05
     attempt = 0
+    heartbeat: Optional["asyncio.Task[None]"] = None
     try:
         while True:
             acquired = await client.set(name=key, value=token, nx=True, ex=ttl)
@@ -198,8 +239,21 @@ async def _redis_conversation_lock(
                 )
             await asyncio.sleep(delay)
             delay = min(delay * 1.5, 0.5)
+
+        async def _renew() -> None:
+            await client.eval(renew_script, 1, key, token, str(ttl))
+
+        heartbeat = asyncio.create_task(
+            _run_lease_heartbeat(_renew, _lease_renew_interval(ttl), conversation_id)
+        )
         yield
     finally:
+        if heartbeat is not None:
+            heartbeat.cancel()
+            try:
+                await heartbeat
+            except asyncio.CancelledError:
+                pass
         try:
             await client.eval(unlock_script, 1, key, token)
         except Exception as exc:
@@ -291,11 +345,26 @@ async def _dynamo_conversation_lock(
                     code,
                 )
 
+    def renew() -> None:
+        # Extend expires_at only while we still hold it (holder == token).
+        now = int(time.time())
+        client.update_item(
+            TableName=table_name,
+            Key={"lock_key": {"S": lock_key}},
+            UpdateExpression="SET expires_at = :e",
+            ConditionExpression="holder = :t",
+            ExpressionAttributeValues={
+                ":e": {"N": str(now + ttl_sec)},
+                ":t": {"S": token},
+            },
+        )
+
     # AUDIT-memory HIGH-05: same bounded wait + backoff as the Redis path.
     dyn_max_wait = max(ttl_sec + 5, 60)
     dyn_start = asyncio.get_event_loop().time()
     dyn_delay = 0.05
     dyn_attempt = 0
+    heartbeat: Optional["asyncio.Task[None]"] = None
     try:
         while True:
             ok = await asyncio.to_thread(try_acquire)
@@ -318,8 +387,23 @@ async def _dynamo_conversation_lock(
                 )
             await asyncio.sleep(dyn_delay)
             dyn_delay = min(dyn_delay * 1.5, 0.5)
+
+        async def _renew() -> None:
+            await asyncio.to_thread(renew)
+
+        heartbeat = asyncio.create_task(
+            _run_lease_heartbeat(
+                _renew, _lease_renew_interval(ttl_sec), conversation_id
+            )
+        )
         yield
     finally:
+        if heartbeat is not None:
+            heartbeat.cancel()
+            try:
+                await heartbeat
+            except asyncio.CancelledError:
+                pass
         await asyncio.to_thread(release)
 
 
