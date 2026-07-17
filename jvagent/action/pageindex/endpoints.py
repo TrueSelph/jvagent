@@ -70,6 +70,10 @@ from .url_guard import ssrf_guard_url as _ssrf_guard_url  # noqa: F401,E402
 
 logger = logging.getLogger(__name__)
 
+# Strong references to in-flight fire-and-forget tasks (asyncio only keeps weak
+# ones). AUDIT-actions (LOW).
+_BACKGROUND_TASKS: set = set()
+
 ALLOWED_EXTENSIONS = PAGEINDEX_UPLOAD_EXTENSIONS
 
 
@@ -534,7 +538,12 @@ def _schedule_background_webhook_graph_import(
         finally:
             await _delete_staged_file(staged_path)
 
-    asyncio.create_task(_job())
+    # Retain a strong reference until the task finishes: asyncio only holds a
+    # weak reference, so a bare create_task() can be garbage-collected mid-flight
+    # (documented footgun), silently dropping the background import.
+    _task = asyncio.create_task(_job())
+    _BACKGROUND_TASKS.add(_task)
+    _task.add_done_callback(_BACKGROUND_TASKS.discard)
 
 
 async def _import_graph_from_remote_url(

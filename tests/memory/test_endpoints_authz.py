@@ -36,7 +36,7 @@ async def test_current_user_id_overrides_query_user_id(monkeypatch):
         async def get_memory(self):
             return self
 
-        async def get_user(self, uid: str):
+        async def get_user(self, uid: str, create_if_missing: bool = True):
             self.observed_user_ids.append(uid)
             return None  # short-circuit; we only care which uid was queried
 
@@ -72,7 +72,7 @@ async def test_falls_back_to_user_id_when_no_current_user(monkeypatch):
         async def get_memory(self):
             return self
 
-        async def get_user(self, uid: str):
+        async def get_user(self, uid: str, create_if_missing: bool = True):
             self.observed_user_ids.append(uid)
             return None
 

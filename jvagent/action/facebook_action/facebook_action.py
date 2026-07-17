@@ -25,6 +25,10 @@ from .facebook_api import FacebookAPI
 
 logger = logging.getLogger(__name__)
 
+# Strong references to in-flight fire-and-forget tasks (asyncio keeps only weak
+# ones). AUDIT-actions (LOW).
+_BACKGROUND_TASKS: set = set()
+
 
 class FacebookAction(Action):
     """Action for Facebook Graph API (page management, Messenger, webhooks)."""
@@ -693,7 +697,11 @@ class FacebookAction(Action):
                         reg,
                     )
 
-            asyncio.create_task(_deferred_messenger_webhook_register())
+            # Retain a strong reference: asyncio holds only a weak one, so a bare
+            # create_task() can be GC'd mid-flight. AUDIT-actions (LOW).
+            _task = asyncio.create_task(_deferred_messenger_webhook_register())
+            _BACKGROUND_TASKS.add(_task)
+            _task.add_done_callback(_BACKGROUND_TASKS.discard)
 
     async def ensure_adapter_registered(self) -> bool:
         """Ensure Messenger ChannelAdapter is registered (e.g. Lambda cold start)."""
