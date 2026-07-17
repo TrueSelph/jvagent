@@ -33,7 +33,9 @@ from jvagent.action.interact.session_token import (
     auth_mode,
     is_web_channel,
     mint_session_token,
+    refresh_session_token,
     resolve_interact_identity,
+    token_ttl_seconds,
 )
 from jvagent.action.response.streaming import create_sse_response, format_sse_chunk
 from jvagent.core.agent import Agent
@@ -203,6 +205,122 @@ async def _issue_session_token(
         user_id=walker.user_id or "",
         token_secret=secret,
     )
+
+
+@endpoint(
+    "/agents/{agent_id}/interact/session/refresh",
+    methods=["POST"],
+    auth=False,
+    tags=["Agent"],
+    response=success_response(
+        data={
+            "session_id": ResponseField(
+                field_type=str,
+                description="Session identifier the refreshed token is bound to",
+                example="sess_xyz789",
+            ),
+            "user_id": ResponseField(
+                field_type=str,
+                description="User identifier the refreshed token is bound to",
+                example="usr_abc123",
+            ),
+            "session_token": ResponseField(
+                field_type=str,
+                description=(
+                    "Fresh Mode B session capability token (ADR-0020). "
+                    "Replaces the presented token; send it as X-Session-Token "
+                    "on subsequent interact calls."
+                ),
+                example="eyJhbGciOi...",
+            ),
+            "expires_in": ResponseField(
+                field_type=int,
+                description="Lifetime of the refreshed token in seconds",
+                example=604800,
+            ),
+        }
+    ),
+    response_model_exclude_none=True,
+)
+async def interact_session_refresh_endpoint(
+    request: Request,
+    agent_id: str,
+    session_token: Optional[str] = None,
+) -> Any:
+    """Refresh a Mode B interact session capability token (ADR-0020).
+
+    The public interact endpoint mints a session token with a finite TTL
+    (``JVAGENT_INTERACT_TOKEN_TTL_SECONDS``); once it expires, session resumes
+    are rejected and the chat is impaired. This endpoint exchanges the current
+    token for a fresh one **without requiring an utterance**, so clients can
+    extend a session proactively (before expiry) or recover an idle session
+    within the grace window (``JVAGENT_INTERACT_TOKEN_REFRESH_GRACE_SECONDS``).
+
+    **Presenting the token:** ``X-Session-Token`` header (preferred) or a
+    ``session_token`` body field.
+
+    **Guarantees:** the presented token must carry a valid signature, match
+    this agent, be within ``exp + grace``, and still bind to its conversation
+    (``cs == Conversation.token_secret``) — rotating the conversation's
+    ``token_secret`` revokes refresh exactly like it revokes resume.
+
+    **Modes:** available in ``log`` and ``required`` modes; in ``off`` mode
+    session tokens are not in use and the endpoint returns a validation error.
+    """
+    rate_limiter = get_rate_limiter()
+    client_ip = extract_client_ip(request) or "unknown"
+    if not await rate_limiter.check_rate_limit(client_ip, agent_id):
+        raise RateLimitError(
+            message=(
+                f"Rate limit exceeded: {rate_limiter.rate_limit_per_minute} "
+                "requests per minute"
+            ),
+            details={
+                "rate_limit": rate_limiter.rate_limit_per_minute,
+                "ip": client_ip,
+                "agent_id": agent_id,
+            },
+        )
+    await rate_limiter.record_request(client_ip, agent_id)
+
+    if auth_mode() == MODE_OFF:
+        raise ValidationError(
+            message=(
+                "Session token authentication is disabled "
+                "(JVAGENT_INTERACT_PUBLIC_AUTH=off); there is no token to refresh."
+            ),
+            details={"reason": "auth_off"},
+        )
+
+    from jvagent.core.cache import get_cached_agent
+
+    agent = await get_cached_agent(agent_id)
+    if not agent:
+        raise ResourceNotFoundError(
+            message=f"Agent with ID '{agent_id}' not found",
+            details={"agent_id": agent_id},
+        )
+
+    new_token, claims, err = await refresh_session_token(
+        request=request,
+        agent=agent,
+        agent_id=agent_id,
+        session_token=session_token,
+    )
+    if err or not new_token:
+        raise AuthenticationError(
+            message=(
+                "The supplied session token cannot be refreshed. Start a new "
+                "session via the interact endpoint."
+            ),
+            details={"reason": err or "invalid"},
+        )
+    return {
+        "session_id": str((claims or {}).get("session_id") or ""),
+        "user_id": str((claims or {}).get("user_id") or ""),
+        "session_token": new_token,
+        "expires_in": token_ttl_seconds(),
+    }
 
 
 @endpoint(
