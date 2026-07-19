@@ -40,7 +40,9 @@ actions:
       # -- Model gearing (ADR-0016): a LIGHT completion model handles single-
       # dimensional turns (reply / one tool); the HEAVY model above takes over
       # once the turn is multi-step. Empty light_model = single-model.
-      light_model: gpt-4.1-nano
+      # LIGHT gear handles single-tool turns (e.g. sending a form) — nano-class
+      # models announce instead of tool-calling, so mini is the floor here.
+      light_model: gpt-4.1-mini
       light_model_action_type: OpenAILanguageModelAction
       light_model_temperature: 0.2
       light_model_max_tokens: 1024
@@ -55,7 +57,7 @@ actions:
       # Opus/Sonnet for any agent that runs multi-step skills/plans. The class
       # default (gpt-4o-mini) is for cheap single-step agents only. See
       # docs/ORCHESTRATOR.md "Model floor".
-      model: gpt-4.1-nano
+      model: gpt-4.1
       model_action_type: OpenAILanguageModelAction
       model_temperature: 0.2
       # Agentic/research headroom: each tick is one tool call, so multistep
@@ -108,7 +110,21 @@ actions:
       # simplest, safe knob is additive extra instructions:
       system_prompt_extra: >-
         Keep replies brief and conversational; prefer 1-2 sentences unless
-        detail is explicitly requested.
+        detail is explicitly requested. On WhatsApp text or WhatsApp voice-call
+        turns: if the user wants to sign up, sign in, log in, create an account,
+        or register, IMMEDIATELY call whatsapp__send_flow with
+        flow_name=signin_signup only (no flow_id; do not web-search, do not
+        announce first). If they want to book or schedule an appointment,
+        IMMEDIATELY call whatsapp__send_flow with
+        flow_name=appointment_booking only (no flow_id). Never say you "will
+        send" a form — calling the tool IS sending it; only after the tool
+        returns ok reply that the form was sent (on a voice call, say it was
+        sent to this WhatsApp chat). In all user-facing replies call these
+        "forms" (e.g. "sign-up form", "appointment booking form") — never
+        "flows". If the latest user message is raw JSON containing form field
+        values and a flow_token, that is the user's SUBMITTED form: acknowledge
+        completion naturally, reference relevant submitted details (NEVER
+        repeat passwords or sensitive values), and do NOT send another form.
 
       # -- Tooling / egress-UX.
       tool_tier: standard                 # minimal | standard | full
@@ -128,17 +144,47 @@ actions:
       # in, where a relevance pre-surface keyed on the original message no longer
       # covers it — without these pins a weak model grabs whatever IS visible
       # (get_artifact, a filesystem MCP) instead of the right tool and stalls.
-      # pinned_tools:
-      #   - "file_interface__write_file"
-      #   - "file_interface__describe_write_workspace"
-      #   - "pageindex__assimilate"
+      # Pin Flow send so signup/appointment intents work turn-1 under lean
+      # surfacing (gpt-4.1-nano often skips use_skill / find_tool).
+      pinned_tools:
+        - "whatsapp__send_flow"
+        - "whatsapp__list_flows"
       enable_transient_ack: true         # emit ack(s) only on COMPLEX turns (skill or multiple tools)
       first_emit_timeout_ms: 1200        # delay before the FIRST ack
       ack_interval_ms: 12000             # delay between subsequent acks
       ack_statements:                    # transient 'working on it' line(s), emitted in order
         - "One moment…"
         - "Still working on it…"
+      # Arm the ack before the FIRST substantive tool call (not just complex
+      # turns): a slow tool (Flow send ≈3s, web search) gets a spoken/visible
+      # "One moment…" instead of dead air. Fast tools still surface nothing
+      # (the ack only fires if the turn outlives first_emit_timeout_ms).
+      ack_on_first_tool_call: true
       max_concurrent_tools: 0             # 0 = unbounded
+
+      # -- Voice-call loop profile: WhatsApp calls run a tighter/faster loop
+      # than chat (shorter history prompt, tick + wall-clock caps, per-tool
+      # timeout, and a shorter spoken-reply cap). Chat turns are untouched.
+      channel_overrides:
+        whatsapp_call:
+          history_limit: 6              # fewer prior turns in the loop prompt
+          activation_budget: 8          # voice turns should be 1-3 ticks
+          max_duration_seconds: 30      # hard wall-clock cap for a spoken turn
+          tool_call_timeout: 15         # a hung tool can't stall the call
+          max_statement_length: 280     # short spoken replies
+          # Voice-appropriate spoken filler while a slow tool runs (e.g. the
+          # ~3-5s Meta Flow send). Kept generic — on a call the first tool is
+          # almost always the form send, but the copy stays true if it isn't.
+          # Shorter first delay so the caller hears something sooner than chat.
+          first_emit_timeout_ms: 700
+          ack_statements:
+            - "Okay, setting that up for you now…"
+            - "Still working on it, one moment…"
+          system_prompt_extra: >-
+            This is a live voice call: answer from what you already know in
+            1-2 short spoken sentences. Do not use exploratory tools (web
+            search, fetch, knowledge-base search, file tools) unless the user
+            explicitly asks you to look something up.
 
       # -- MCP tool servers: '-all' pulls tools from every enabled jvagent/mcp
       # action; or list action names. Tools surface as mcp_<server>__<tool>.
@@ -157,7 +203,8 @@ actions:
         - docx            # app-local CLAUDE skill (skills.sh / anthropics) — docx-js + OOXML scripts
         - signup_interview  # app-local interview skill (InterviewAction + SKILL.md interview:)
         - whatsapp_templates  # Meta HSM send via WhatsAppAction (WhatsApp inbound only)
-        - whatsapp_flows      # Meta Flow interactive send (WhatsApp inbound only)
+        - whatsapp_flows      # Meta Flow interactive send (WhatsApp text / voice-call)
+        - whatsapp_service_flows  # signup/signin + appointment booking Flow intents
 
   # MCP gateway: a sandboxed filesystem server (npx). Its tools surface to the
   # executive (tool_servers above) as mcp_filesystem__<tool>, sandboxed per
@@ -337,10 +384,12 @@ actions:
         - request_contact_info_3
         - account_creation_confirmation_3
       default_template_language: "en_US"
-      # Meta Flows: only these ids or names may be sent via whatsapp__send_flow
-      # (empty = all WABA flows). Replace with your published Meta Flow names/ids.
+      # Meta Flows: only these names may be sent via whatsapp__send_flow
+      # (empty = all WABA flows). Use names only — Meta accepts flow_id OR
+      # flow_name, not both.
       flow_allowlist:
-        - signup_form
+        - appointment_booking
+        - signin_signup
 
   - action: jvagent/whatsapp_voice_action
     context:
