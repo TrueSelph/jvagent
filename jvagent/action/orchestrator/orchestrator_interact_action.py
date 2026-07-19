@@ -1413,29 +1413,50 @@ class OrchestratorInteractAction(
             (d for d in skill_docs if getattr(d, "name", None) == skill_name),
             None,
         )
-        if doc is None or not getattr(doc, "task_lock", False):
+        if doc is None:
+            return None, tools, visible, "", None
+        origin_task_lock = bool(getattr(doc, "task_lock", False))
+        has_requires = bool(getattr(doc, "requires_tasks", None))
+        # A plain skill — no turn-lock and no declarative prerequisites — needs none
+        # of this path: nothing to gate, nothing to lock.
+        if not origin_task_lock and not has_requires:
             return None, tools, visible, "", None
         # Declarative gate (ADR-0026): if the activated skill has an unmet
         # precondition, push the prerequisite task and redirect the lock to it (the
         # gated skill is now blocked and resumes when the prerequisite completes).
         # Chained so a prerequisite with its own unmet precondition pushes too.
+        #
+        # This fires for ANY skill that declares ``requires-tasks``, not only
+        # turn-locked ones: a non-turn-lock capability skill (e.g. a payment skill
+        # whose tools need a customer session) is gated exactly like an interview, so
+        # its prerequisite runs server-side instead of being left to the model to
+        # narrate — which otherwise flails ("please verify again") and never drives
+        # the detour. The pushed prerequisite is itself a task-lock skill and is what
+        # actually seizes the turn-lock below.
         from jvagent.action.orchestrator.skill_tasks import (
             action_for_skill,
             push_unmet_prerequisites,
         )
 
         pushed_any = False
-        for _ in range(8):
-            pushed = await push_unmet_prerequisites(visitor, doc, loop_actions)
-            if not pushed:
-                break
-            pushed_any = True
-            prereq_doc = next(
-                (d for d in skill_docs if getattr(d, "name", None) == pushed), None
-            )
-            if prereq_doc is None:
-                break
-            doc = prereq_doc
+        if has_requires:
+            for _ in range(8):
+                pushed = await push_unmet_prerequisites(visitor, doc, loop_actions)
+                if not pushed:
+                    break
+                pushed_any = True
+                prereq_doc = next(
+                    (d for d in skill_docs if getattr(d, "name", None) == pushed), None
+                )
+                if prereq_doc is None:
+                    break
+                doc = prereq_doc
+        # A non-turn-lock skill whose prerequisites were already satisfied (no detour
+        # pushed) has no lock to apply — it proceeds on the normal unlocked surface.
+        # Only the pushed prerequisite (task-lock) or an originally task-lock skill
+        # takes the restricted surface below.
+        if not origin_task_lock and not pushed_any:
+            return None, tools, visible, "", None
         tools, visible, skills_section = await self._apply_active_task_lock_skill(
             doc,
             loop_actions,
