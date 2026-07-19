@@ -144,3 +144,52 @@ async def test_entry_directive_advances_past_autoresolved_chain(monkeypatch):
     assert directive.strip().lower().startswith("tell the user")
     assert "interview__next_field" not in directive
     assert calls["n"] == 2  # advanced once past the chain
+
+
+def _action_onboarding():
+    action = InterviewAction()
+    action._registry = InterviewRegistry()
+    action._registry._specs["onboarding_interview"] = load_interview_spec_from_skill(
+        _SKILLS_DIR / "onboarding_interview"
+    )
+    return action
+
+
+@pytest.mark.asyncio
+async def test_gated_resume_auto_resolves_true_when_first_field_has_pre_processor():
+    """The gated-resume drain runs server-side activation when the first pending
+    field auto-resolves — here via a pre_processor (onboarding phone_number)."""
+    action = _action_onboarding()
+    visitor, conv = _visitor()
+    await save_session(conv, InterviewSession(interview_type="onboarding_interview"))
+    assert await action.gated_resume_auto_resolves("onboarding_interview", visitor) is True
+
+
+@pytest.mark.asyncio
+async def test_gated_resume_auto_resolves_false_for_plain_first_field():
+    """A first field with neither a pre_processor nor seed_from_activation needs
+    model/user input — keep the model-driven resume."""
+    action = _action()
+    visitor, conv = _visitor()
+    await save_session(conv, InterviewSession(interview_type="pre_alert_interview"))
+    assert await action.gated_resume_auto_resolves("pre_alert_interview", visitor) is False
+
+
+@pytest.mark.asyncio
+async def test_gated_resume_auto_resolves_false_without_ready_session():
+    action = _action()
+    visitor, _conv = _visitor()  # no session saved
+    assert await action.gated_resume_auto_resolves("pre_alert_interview", visitor) is False
+
+
+@pytest.mark.asyncio
+async def test_gated_resume_auto_resolves_walks_past_answered_field():
+    """The helper skips already-answered fields to the first pending one. Here the
+    first field (phone) is filled; the next pending field (email) also has a
+    pre_processor, so it still auto-resolves."""
+    action = _action_onboarding()
+    visitor, conv = _visitor()
+    sess = InterviewSession(interview_type="onboarding_interview")
+    sess.set_value("phone_number", "5926001234")  # first (pre_processor) field done
+    await save_session(conv, sess)
+    assert await action.gated_resume_auto_resolves("onboarding_interview", visitor) is True

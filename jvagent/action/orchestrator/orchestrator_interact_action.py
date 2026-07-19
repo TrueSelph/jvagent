@@ -1944,6 +1944,25 @@ class OrchestratorInteractAction(
             rd if isinstance(rd, str) else "",
         )
 
+    @staticmethod
+    def _result_is_completion(obs: str) -> bool:
+        """True when a tool result marks a skill/task completion.
+
+        Mirrors the guard inside ``_maybe_resume_after_completion``: a silent
+        completion — a prerequisite skill finishing with no user-facing
+        ``response_directive`` of its own — still needs to trigger the task-lock
+        drain so a now-runnable parent resumes in the same turn. Reads only the
+        completion flags, never the hijackable directive fields, so it is safe on
+        any result regardless of the directive trust boundary.
+        """
+        try:
+            data = json.loads(obs)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return False
+        if not isinstance(data, dict):
+            return False
+        return bool(data.get("interview_complete") or data.get("status") == "completed")
+
     def _open_plan_step(self, visitor: Any) -> Optional[str]:
         """Return a short description of the active plan's first unfinished step.
 

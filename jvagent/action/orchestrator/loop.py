@@ -792,17 +792,30 @@ class OrchestratorLoopMixin:
                             nt, rd = self._result_next(obs)
                         else:
                             nt, rd = None, ""
+                        # Completion detection is safe to read regardless of the
+                        # directive trust boundary: it consults only the completion
+                        # flags (not the hijackable next_tool/response_directive), and
+                        # the resume it triggers self-guards on real task state — a
+                        # spoofed completion cannot choose which task resumes. Some
+                        # first-party field-store tools are otherwise treated as
+                        # untrusted here, which would hide a prerequisite's silent
+                        # completion (one that carries no reply directive of its own).
+                        obs_is_completion = self._result_is_completion(obs)
+                        says_reply = rd.strip().lower().startswith("tell the user")
                         if nt:
                             # The result chains to another tool the model MUST call.
                             pending_chain = nt
                             chain_deflections = 0
-                        elif rd.strip().lower().startswith("tell the user"):
-                            # Drain (ADR-0026): before ending on a completion's
-                            # terminal reply, re-resolve the task lock. If a task-lock
-                            # skill just completed and a parent task is now the top
-                            # runnable, resume it in THIS turn instead of ending — the
-                            # resumed task produces the egress. Inert until prerequisites
-                            # exist (nothing blocked ⇒ no parent to resume).
+                        elif says_reply or obs_is_completion:
+                            # Drain (ADR-0026): when a task-lock skill completes —
+                            # whether it emits a terminal reply ("tell the user…") or a
+                            # silent completion (a prerequisite finishing with no
+                            # user-facing reply of its own) — re-resolve the task lock.
+                            # If a parent task is now the top
+                            # runnable, resume it in THIS turn instead of leaving the
+                            # resume to a model tick that may narrate past a first field
+                            # the activation would auto-resolve. _maybe_resume self-guards:
+                            # it no-ops unless obs marks a completion and a parent waits.
                             resumed = await self._maybe_resume_after_completion(
                                 obs,
                                 active_skill_doc,
@@ -832,15 +845,18 @@ class OrchestratorLoopMixin:
                                     )
                                     ended_via = "resume_reply"
                                     return
+                                # The parent's surface (and its server-side activation)
+                                # is now applied; continue so the model finalizes on it.
                                 continue
-                            # Terminal reply directive with no chain — deliver it
-                            # and end so the model cannot re-decide (e.g. re-run a
-                            # tool it already ran). Compose (not literal relay): the
-                            # directive may carry model-facing guidance that must be
-                            # rendered into the agent's voice, not leaked verbatim.
-                            await self._send_reply(visitor, rd, compose=True)
-                            ended_via = "directive_reply"
-                            return
+                            if says_reply:
+                                # Terminal reply directive with no chain — deliver it
+                                # and end so the model cannot re-decide (e.g. re-run a
+                                # tool it already ran). Compose (not literal relay): the
+                                # directive may carry model-facing guidance that must be
+                                # rendered into the agent's voice, not leaked verbatim.
+                                await self._send_reply(visitor, rd, compose=True)
+                                ended_via = "directive_reply"
+                                return
                         elif pending_chain and tool_name == pending_chain:
                             # The pending chain just ran and produced no further
                             # chain — it's satisfied; let the model finalize.

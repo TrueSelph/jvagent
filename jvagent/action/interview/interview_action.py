@@ -366,6 +366,40 @@ class InterviewAction(Action):
             return directive
         return None
 
+    async def gated_resume_auto_resolves(
+        self, skill_name: str, visitor: Any = None
+    ) -> bool:
+        """Task-lock hook (ADR-0026): True when this skill's next pending field
+        resolves server-side on activation — a ``pre_processor`` fills it, or a
+        declarative ``validator_args.seed_from_activation`` match does.
+
+        The gated-resume drain uses this to pick the resume style. Server-driven
+        (run the activation, deliver its resolved question terminally) is correct
+        and deterministic when the first field auto-resolves; model-driven (hand
+        the model the original request to extract from) is only needed when that
+        field genuinely requires model extraction. Without this, a
+        pre_processor-filled first field — one whose activation fills it from the
+        original request (and may run side effects such as a lookup or submission)
+        — is silently skipped whenever the model narrates a status line instead of
+        invoking the field tool.
+        """
+        if not await self._has_ready_session(skill_name, visitor):
+            return False
+        session = await self._get_session(visitor)
+        spec = self._registry.get(skill_name)
+        if session is None or spec is None:
+            return False
+        for fdef in spec.fields:
+            if not fdef.required:
+                continue
+            if str(session.get_value(fdef.key) or "").strip():
+                continue
+            # First pending required field: does activation resolve it server-side?
+            if fdef.pre_processor:
+                return True
+            return bool((fdef.validator_args or {}).get("seed_from_activation"))
+        return False
+
     async def snapshot_task_state(
         self, skill_name: str, visitor: Any = None
     ) -> Dict[str, Any]:
