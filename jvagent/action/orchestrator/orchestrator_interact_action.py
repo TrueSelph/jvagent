@@ -1524,6 +1524,59 @@ class OrchestratorInteractAction(
             }
         )
 
+    def _non_task_lock_parent_to_resume(
+        self, store: Any, skill_docs: List[Any]
+    ) -> Optional[Any]:
+        """The top runnable NON-turn-lock skill whose task still carries a seed —
+        a gated capability skill (e.g. payment) whose prerequisite just completed.
+
+        The task-lock resolver ignores non-turn-lock skills, so a gated capability
+        skill would otherwise never resume after its account/session detour. The
+        seed (``seed_from: [utterance]``, the original request) is the discriminator:
+        only a gated parent carries one. Returns the SkillDoc or ``None``.
+        """
+        if store is None:
+            return None
+        from jvagent.action.orchestrator.task_runners import runnable_task_types
+        from jvagent.memory.task_graph import pick_top_runnable
+
+        top = pick_top_runnable(store, task_types=runnable_task_types())
+        if top is None:
+            return None
+        owner = getattr(top, "owner_action", None)
+        doc = next(
+            (d for d in skill_docs if getattr(d, "name", None) == owner), None
+        )
+        if doc is None or getattr(doc, "task_lock", False):
+            return None
+        if not (getattr(top, "seed", None) or {}).get("utterance"):
+            return None
+        return doc
+
+    async def _apply_unlocked_skill_surface(
+        self,
+        doc: Any,
+        loop_actions: List[Any],
+        visitor: Any,
+        tools: Dict[str, Any],
+        visible: Set[str],
+        activated: List[str],
+    ) -> Tuple[Dict[str, Any], Set[str], str]:
+        """Re-add a non-turn-lock skill's tools (pruned during a detour) and return
+        its PROCEDURE section — without seizing the turn-lock. Used to resume a gated
+        capability skill after its prerequisite completes."""
+        from jvagent.action.orchestrator.skill_tasks import (
+            activated_skill_section_text,
+            ensure_skill_tools_materialized,
+        )
+
+        await ensure_skill_tools_materialized(
+            doc, loop_actions, visitor, tools, visible
+        )
+        if doc.name not in activated:
+            activated.append(doc.name)
+        return tools, visible, activated_skill_section_text(doc)
+
     async def _maybe_resume_after_completion(
         self,
         obs: str,
@@ -1558,43 +1611,61 @@ class OrchestratorInteractAction(
             return None
         # A skill completed → its task is closed and its session cleared. Re-resolve
         # the top runnable task-lock skill.
-        parent = await self._find_active_task_lock_skill_doc(
-            visitor, skill_docs, loop_actions
-        )
-        if parent is None:
-            return None
-        if getattr(parent, "name", None) == getattr(completed_doc, "name", None):
-            return None  # same skill still owns the lock — not a resume
         from jvagent.action.orchestrator.skill_tasks import (
             _active_skill_task,
             action_for_skill,
             task_store_for_conversation,
         )
 
+        store = task_store_for_conversation(getattr(visitor, "conversation", None))
+        parent = await self._find_active_task_lock_skill_doc(
+            visitor, skill_docs, loop_actions
+        )
+        non_locked_parent = False
+        if parent is None:
+            # A gated NON-turn-lock capability skill (e.g. a payment skill) is not
+            # returned by the task-lock resolver, so without this its account/session
+            # detour would complete and silently drop the user's original request.
+            # Resolve it from the top runnable task that still carries a seed (the
+            # gated request) and resume it on the normal unlocked surface.
+            parent = self._non_task_lock_parent_to_resume(store, skill_docs)
+            if parent is None:
+                return None
+            non_locked_parent = True
+        if getattr(parent, "name", None) == getattr(completed_doc, "name", None):
+            return None  # same skill still owns the lock — not a resume
+
         # The gated task carries the original request as its seed (seed_from:
         # [utterance]); a pushed prerequisite has none. That presence is the clean
         # discriminator between "resume the gated service with its original request"
         # and "enter a fresh prerequisite".
-        store = task_store_for_conversation(getattr(visitor, "conversation", None))
         ptask = _active_skill_task(store, parent.name) if store else None
         seed_utterance = str(
             (getattr(ptask, "seed", None) or {}).get("utterance") or ""
         )
-        # Re-apply the parent's locked surface. When resuming the gated service, run
-        # its activation against the *original* request so its first fields extract
-        # from it (extraction is model-owned, so this is fed as the activation input,
-        # not auto-filled) instead of re-asking for what the user already provided.
-        tools, visible, skills_section = await self._apply_active_task_lock_skill(
-            parent,
-            loop_actions,
-            visitor,
-            seed_utterance or utterance,
-            tools,
-            visible,
-            activated,
-            observations,
-            skill_docs=skill_docs,
-        )
+        # Re-apply the parent's surface. When resuming the gated service, run its
+        # activation against the *original* request so its first fields extract from
+        # it (extraction is model-owned, so this is fed as the activation input, not
+        # auto-filled) instead of re-asking for what the user already provided. A
+        # non-turn-lock parent has no interview session to rebuild: re-materialize
+        # its tools (pruned during the detour) and surface its PROCEDURE without
+        # seizing the turn-lock; the model resumes it from the seed below.
+        if non_locked_parent:
+            tools, visible, skills_section = await self._apply_unlocked_skill_surface(
+                parent, loop_actions, visitor, tools, visible, activated
+            )
+        else:
+            tools, visible, skills_section = await self._apply_active_task_lock_skill(
+                parent,
+                loop_actions,
+                visitor,
+                seed_utterance or utterance,
+                tools,
+                visible,
+                activated,
+                observations,
+                skill_docs=skill_docs,
+            )
         _, rd = self._result_next(obs)
         ack = self._directive_user_text(rd)
 

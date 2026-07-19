@@ -249,6 +249,44 @@ async def test_non_task_lock_skill_satisfied_gate_runs_unlocked(test_db):
 
 
 @pytest.mark.asyncio
+async def test_non_task_lock_parent_resolved_for_resume_after_prereq(test_db):
+    """A gated non-turn-lock skill (payment) resumes after its prerequisite
+    completes: the task-lock resolver skips it, so the seed-based resolver must
+    surface it — but only once the prereq is done and only while it carries a seed."""
+    clear_preconditions()
+    register_precondition("signed_in", lambda v: False)
+    conv = await Conversation.create(session_id=_sid(), user_id="u", channel="default")
+    try:
+        pay = _non_task_lock_gated_skill()
+        signin = _skill_doc("example_signin_interview")
+        docs = [pay, signin]
+        visitor = SimpleNamespace(conversation=conv, utterance="pay invoice Z1")
+        assert (
+            await push_unmet_prerequisites(visitor, pay, [])
+            == "example_signin_interview"
+        )
+        ex = OrchestratorInteractAction()
+
+        # While the prerequisite is active, payment is blocked → not resumable
+        # (the top runnable is the task-lock signin, which this resolver rejects).
+        assert ex._non_task_lock_parent_to_resume(TaskStore(conv), docs) is None
+
+        # Prerequisite completes → payment is top runnable and still seeded.
+        prereq = _active_skill_task(TaskStore(conv), "example_signin_interview")
+        await prereq.complete()
+        doc = ex._non_task_lock_parent_to_resume(TaskStore(conv), docs)
+        assert doc is not None and doc.name == "pay_capability"
+
+        # Seed consumed (post-resume) → no longer resumable, so it can't re-resume.
+        gated = _active_skill_task(TaskStore(conv), "pay_capability")
+        await gated.set_seed({})
+        assert ex._non_task_lock_parent_to_resume(TaskStore(conv), docs) is None
+    finally:
+        clear_preconditions()
+        await conv.delete(cascade=True)
+
+
+@pytest.mark.asyncio
 async def test_plain_skill_without_requires_is_untouched(test_db):
     """A plain skill (no turn-lock, no requires-tasks) is left entirely alone."""
     conv = await Conversation.create(session_id=_sid(), user_id="u", channel="default")
