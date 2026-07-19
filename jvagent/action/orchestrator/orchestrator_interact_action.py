@@ -1550,18 +1550,54 @@ class OrchestratorInteractAction(
         _, rd = self._result_next(obs)
         ack = self._directive_user_text(rd)
 
-        if seed_utterance:
-            # Resume the gated service: hand the model the original request to fill
-            # the pending field(s), then continue. Consume the seed so it is not
-            # re-injected on any later resume.
-            if ptask is not None:
-                try:
-                    remaining = {
-                        k: v for k, v in (ptask.seed or {}).items() if k != "utterance"
-                    }
-                    await ptask.set_seed(remaining)
-                except Exception as exc:  # pragma: no cover - defensive
-                    logger.debug("orchestrator: seed consume failed: %s", exc)
+        bound = action_for_skill(parent, loop_actions)
+
+        # A seed alone does not justify a model-driven resume. When the gated
+        # skill's first pending field auto-resolves on activation (a pre_processor
+        # fills it, or a declarative seed_from_activation match), that activation
+        # already ran server-side while re-applying the parent's surface — and it
+        # produced the resumed skill's own user-facing directive. Deliver that
+        # terminally instead of handing the turn back to the model: the model
+        # tends to (mis)compose this turn — narrating past the field, or even
+        # fabricating a failure over the prerequisite's success — so ending it
+        # server-composed removes that window. Only a field that genuinely needs
+        # model extraction from the original request keeps the model-driven path.
+        auto_resolves = False
+        if bound is not None and hasattr(bound, "gated_resume_auto_resolves"):
+            try:
+                auto_resolves = await bound.gated_resume_auto_resolves(
+                    parent.name, visitor
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug(
+                    "orchestrator: gated_resume_auto_resolves failed for %s: %s",
+                    parent.name,
+                    exc,
+                )
+
+        # Consume the seed regardless of resume style so a later resume can't
+        # re-inject the original request.
+        if seed_utterance and ptask is not None:
+            try:
+                remaining = {
+                    k: v for k, v in (ptask.seed or {}).items() if k != "utterance"
+                }
+                await ptask.set_seed(remaining)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("orchestrator: seed consume failed: %s", exc)
+
+        if auto_resolves:
+            resumed_directive = self._last_activation_directive(observations)
+            if resumed_directive:
+                question = self._directive_user_text(resumed_directive)
+                terminal = "Tell the user or ask the user: " + (
+                    f"{ack} {question}".strip()
+                )
+                return parent, tools, visible, skills_section, terminal
+            # No captured activation directive — fall through to the server-driven
+            # entry path below (which re-runs activation and delivers its prompt).
+
+        if seed_utterance and not auto_resolves:
             # The completed prerequisite's user-facing confirmation (ack) must reach
             # the user, but this resume is model-driven (the model fills the pending
             # field from the seed and voices the next question). Queue the ack as an
@@ -1592,10 +1628,11 @@ class OrchestratorInteractAction(
             )
             return parent, tools, visible, skills_section, None
 
-        # Fresh prerequisite (no seed): deliver its first question terminally
-        # (server-driven), prefixed with the completed step's acknowledgement, so the
-        # model cannot fabricate the answer the way the detour-start would.
-        bound = action_for_skill(parent, loop_actions)
+        # Server-driven resume: a fresh prerequisite (no seed), or an
+        # auto-resolving skill whose activation left no captured directive. Deliver
+        # its first question terminally, prefixed with the completed step's
+        # acknowledgement, so the model cannot fabricate the answer the way the
+        # detour-start would.
         entry = None
         if bound is not None and hasattr(bound, "task_lock_entry_directive"):
             try:
@@ -1962,6 +1999,32 @@ class OrchestratorInteractAction(
         if not isinstance(data, dict):
             return False
         return bool(data.get("interview_complete") or data.get("status") == "completed")
+
+    @staticmethod
+    def _last_activation_directive(observations: List[Dict[str, Any]]) -> str:
+        """The user-facing directive from the most recent skill-session activation.
+
+        When a task-lock skill's runtime is (re)bootstrapped mid-turn, its
+        activation envelope is recorded as a server-prep note. On a gated resume
+        whose first field auto-resolves, that envelope carries the resumed skill's
+        own next message (a prompt, or a "working on it" acknowledgement). Return
+        its ``response_directive`` so the caller can deliver it terminally instead
+        of letting the model recompose it. Empty when no such note is present.
+        """
+        for ob in reversed(observations):
+            if not isinstance(ob, dict) or ob.get("tool") != "(skill-session)":
+                continue
+            raw = ob.get("observation")
+            if not isinstance(raw, str):
+                continue
+            try:
+                data = json.loads(raw)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                continue
+            directive = data.get("response_directive") if isinstance(data, dict) else None
+            if isinstance(directive, str) and directive.strip():
+                return directive
+        return ""
 
     def _open_plan_step(self, visitor: Any) -> Optional[str]:
         """Return a short description of the active plan's first unfinished step.

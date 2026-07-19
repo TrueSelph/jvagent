@@ -369,19 +369,19 @@ class InterviewAction(Action):
     async def gated_resume_auto_resolves(
         self, skill_name: str, visitor: Any = None
     ) -> bool:
-        """Task-lock hook (ADR-0026): True when this skill's next pending field
-        resolves server-side on activation — a ``pre_processor`` fills it, or a
-        declarative ``validator_args.seed_from_activation`` match does.
+        """Task-lock hook (ADR-0026): True when this skill's next pending field is
+        resolved by a ``pre_processor`` that runs on activation.
 
         The gated-resume drain uses this to pick the resume style. Server-driven
-        (run the activation, deliver its resolved question terminally) is correct
-        and deterministic when the first field auto-resolves; model-driven (hand
-        the model the original request to extract from) is only needed when that
-        field genuinely requires model extraction. Without this, a
-        pre_processor-filled first field — one whose activation fills it from the
-        original request (and may run side effects such as a lookup or submission)
-        — is silently skipped whenever the model narrates a status line instead of
-        invoking the field tool.
+        (run the activation, deliver its resolved directive terminally) is correct
+        and deterministic when the first field's activation fills it — possibly
+        with side effects such as a lookup or submission — and produces the
+        skill's own next message. Model-driven (hand the model the original
+        request to extract from) is kept for a field that needs model extraction,
+        including a declarative ``validator_args.seed_from_activation`` match,
+        which is applied during validation of a model-provided value, not on
+        activation — so its field is asked (not filled) by the activation and the
+        model must supply the value from the original request.
         """
         if not await self._has_ready_session(skill_name, visitor):
             return False
@@ -394,10 +394,10 @@ class InterviewAction(Action):
                 continue
             if str(session.get_value(fdef.key) or "").strip():
                 continue
-            # First pending required field: does activation resolve it server-side?
-            if fdef.pre_processor:
-                return True
-            return bool((fdef.validator_args or {}).get("seed_from_activation"))
+            # First pending required field: only a pre_processor fills it on
+            # activation. seed_from_activation resolves later (at validate/store),
+            # so it does not make the resume server-drivable.
+            return bool(fdef.pre_processor)
         return False
 
     async def snapshot_task_state(
