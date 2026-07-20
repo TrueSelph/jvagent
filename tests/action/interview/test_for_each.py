@@ -139,6 +139,52 @@ async def test_for_each_walk_three_items_two_required_subparts(for_each_action):
 
 
 @pytest.mark.asyncio
+async def test_for_each_batch_skip_hook_applies_to_later_items(for_each_action):
+    """A batch-wide ask-time skip hook must fire for every for_each item.
+
+    Regression: when set_fields completes one item and advances to the next, the
+    next item's optional child was surfaced without running its ask-time
+    pre_processor, so an already-declined field ("no notes for any item") got
+    re-asked once on the second item. The framework now runs the ask-time skip
+    hook after each advance, so the decline sticks across all items — the second
+    item's notes is skipped even though skip_field is never called for it.
+    """
+    action, spec = for_each_action
+    session = InterviewSession(interview_type=spec.name)
+    action._get_session_and_contract = AsyncMock(return_value=(session, spec))
+    action._save_session = AsyncMock()
+    load = _load_fn(spec)
+
+    await handle_set_fields(
+        action, fields={"item_ids": "A, B"}, visitor=SimpleNamespace()
+    )
+    assert get_for_each_state(session, "item_ids")["status"] == STATUS_ACTIVE
+
+    # Item A: the user declines notes for the whole batch in the same message.
+    decliner = SimpleNamespace(utterance="no notes for any item")
+    await handle_set_fields(
+        action, fields={"title": "Widget A", "quantity": "2"}, visitor=decliner
+    )
+    # Notes for A skipped by the ask-time hook and the iteration advanced to B.
+    nxt = await build_next_field(session, spec, load)
+    assert nxt["key"] == "title"
+    assert "For the second item id B" in nxt["prompt"]
+
+    # Item B: only the required fields are supplied — NO skip_field call for
+    # notes. The batch-wide decline must skip B's notes on the advance.
+    await handle_set_fields(
+        action, fields={"title": "Widget B", "quantity": "1"}, visitor=SimpleNamespace()
+    )
+
+    state = get_for_each_state(session, "item_ids")
+    assert state["status"] == STATUS_COMPLETE
+    assert len(state["records"]) == 2
+    assert "notes" in state["records"][0]["skipped_fields"]
+    assert "notes" in state["records"][1]["skipped_fields"]
+    assert await resolve_next_field_name(session, spec, load) is None
+
+
+@pytest.mark.asyncio
 async def test_for_each_expand_skip_bypasses_subparts(for_each_action, for_each_spec):
     action, spec = for_each_action
     session = InterviewSession(interview_type=spec.name)

@@ -49,6 +49,7 @@ from .for_each import (
     get_for_each_store,
     is_for_each_child_key,
     maybe_advance_for_each,
+    next_unanswered_child_key,
     resolve_field_def,
     update_for_each_record_field,
     wipe_parent_for_each,
@@ -345,6 +346,59 @@ async def run_pre_processors(
 
     extras["pre_tools_results"] = results
     return directive or field_prompt_directive(fdef.prompt, fdef.hint), extras
+
+
+async def apply_ask_time_skip_hooks_after_advance(
+    action: Any,
+    session: InterviewSession,
+    spec: InterviewSpec,
+    visitor: Any = None,
+) -> bool:
+    """Fire ask-time pre_processors for the active for_each item's pending child.
+
+    ``interview__next_field`` runs a field's ``pre_processor`` (ACTIVATION phase)
+    before asking, so an ask-time skip hook (e.g. a batch-wide "no extra tracking
+    numbers" decline) can call ``session.skip_field`` instead of presenting it.
+    When ``set_fields`` completes one for_each item and advances to the next, the
+    next item's child was surfaced directly (via ``build_next_field``) without
+    that hook ever running — so a field the user already declined for the whole
+    batch got re-asked once per item.
+
+    This runs the same ask-time evaluation for the newly-active item's pending
+    child field, advancing the iteration when a hook resolves (skips or fills)
+    the current item. Bounded, and a no-op for children without a pre_processor,
+    so it only does work when an ask-time hook actually exists. Returns True if it
+    skipped or filled at least one field.
+
+    ``for_each_expand`` / ``interview_complete`` extras are deliberately NOT acted
+    on here — those belong to the parent-store and next_field paths; encountering
+    one means we stop and let the normal flow handle it.
+    """
+    changed = False
+    for _ in range(8):
+        active = get_active_for_each(session, spec)
+        if not active:
+            break
+        pending = next_unanswered_child_key(session, spec)
+        if not pending:
+            break
+        fdef = resolve_field_def(session, spec, pending)
+        if not fdef or not fdef.pre_processor:
+            break
+        _, extras = await run_pre_processors(action, session, spec, fdef, visitor)
+        if extras.get("for_each_expand") is not None or extras.get(
+            "interview_complete"
+        ):
+            break
+        # The hook resolved the field only if it skipped or filled it; otherwise
+        # stop so we never loop on a pending field the hook chose to leave open.
+        if not (
+            session.is_skipped(pending) or str(session.get_value(pending) or "").strip()
+        ):
+            break
+        changed = True
+        maybe_advance_for_each(session, spec, pending)
+    return changed
 
 
 async def run_pre_processors_for_store(
@@ -842,6 +896,13 @@ async def handle_set_fields(
 
         results.append(entry)
 
+    # A for_each advance surfaced the next item's child directly, skipping the
+    # ask-time pre_processor that interview__next_field would have run. Fire it
+    # now so a batch-wide skip hook (e.g. an already-declined optional field)
+    # applies to every item instead of re-asking once per item.
+    if stored_for_each_child:
+        await apply_ask_time_skip_hooks_after_advance(action, session, spec, visitor)
+
     try:
         reachable = await compute_active_path_for_prune(
             session, spec, load_fn, visitor, action
@@ -1264,6 +1325,56 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
             error=f"Unknown field '{next_field['key']}'.",
         )
     directive, extras = await run_pre_processors(action, session, spec, fdef, visitor)
+    # An ask-time pre_processor may fill the very field it guards (e.g. the
+    # built-in seed_field_from_activation, or a custom seeding hook reading the
+    # original request). The prompt computed above is then stale — delivering it
+    # would re-ask a question that is already answered (observed as the intent
+    # menu appearing despite an explicit "pre-alert …", and a tracking number
+    # being re-asked right after it was seeded). Recompute until the pending
+    # field is genuinely unanswered. Bounded; the expansion/completion branches
+    # below handle their own recompute.
+    _hook_results_acc: List[Dict[str, Any]] = list(
+        extras.get("pre_tools_results") or []
+    )
+    for _ in range(8):
+        if extras.get("for_each_expand") is not None or extras.get(
+            "interview_complete"
+        ):
+            break
+        # Resolved = the hook filled the field OR skipped it (e.g. a decline
+        # detector calling session.skip_field). Either way the prompt is stale.
+        _resolved = bool(
+            str(session.get_value(next_field["key"]) or "").strip()
+        ) or session.is_skipped(next_field["key"])
+        if not _resolved:
+            break
+        # A hook that filled its field AND authored its own directive (e.g. an
+        # async kickoff: "Still checking your link…") owns the reply — honour
+        # it. Only the stale default prompt (re-asking the just-filled field)
+        # justifies recomputing.
+        if directive != field_prompt_directive(fdef.prompt, fdef.hint):
+            break
+        recomputed = await build_next_field(session, spec, load_fn, visitor, action)
+        if recomputed is None:
+            if _hook_results_acc:
+                await action._save_session(session, visitor)
+            return interview_tool_response(
+                ok=True,
+                status=session.status.value,
+                skipped_fields=sorted(session.skipped_fields) or None,
+                next_tool="interview__review",
+                response_directive=call_tool_directive("interview__review"),
+            )
+        if recomputed["key"] == next_field["key"]:
+            break
+        next_field = recomputed
+        fdef = resolve_field_def(session, spec, next_field["key"]) or fdef
+        directive, extras = await run_pre_processors(
+            action, session, spec, fdef, visitor
+        )
+        _hook_results_acc.extend(extras.get("pre_tools_results") or [])
+    if _hook_results_acc:
+        extras["pre_tools_results"] = _hook_results_acc
     parent_fdef = spec.get_field(next_field["key"])
     if (
         parent_fdef
@@ -1595,6 +1706,16 @@ def _review_response(
     return interview_tool_response(ok=ok, status=status, **payload)
 
 
+REVIEW_PRESENTED_MARKER_KEY = "review_presented_marker"
+
+
+def _interaction_marker(visitor: Any) -> str:
+    """Stable id for the current interaction turn (empty when unavailable)."""
+    interaction = getattr(visitor, "interaction", None)
+    marker = getattr(interaction, "id", None) if interaction is not None else None
+    return str(marker or "")
+
+
 async def handle_review(action: Any, visitor: Any = None) -> str:
     session, spec = await action._get_session_and_contract(visitor)
     if not session or not spec:
@@ -1613,6 +1734,7 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
             session, spec, collected, visible_keys=visible_keys
         )
         session.status = InterviewStatus.REVIEW
+        session.context[REVIEW_PRESENTED_MARKER_KEY] = _interaction_marker(visitor)
         await action._save_session(session, visitor)
         return _review_response(session, spec, review_fields, summary)
 
@@ -1679,6 +1801,7 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
         additional_data=additional_data,
     )
     session.status = InterviewStatus.REVIEW
+    session.context[REVIEW_PRESENTED_MARKER_KEY] = _interaction_marker(visitor)
     await action._save_session(session, visitor)
     review_fields = {
         k: collected[k] for k in visible_keys if k in collected and k not in omit_fields
@@ -1712,6 +1835,27 @@ async def handle_complete(action: Any, visitor: Any = None) -> str:
             next_tool="interview__review",
             response_directive=call_tool_directive("interview__review"),
         )
+
+    # Same-turn confirmation guard: under manual confirmation the user must SEE
+    # the review summary and reply to it. If the review was produced on this
+    # very interaction, no user confirmation can exist yet — a model chaining
+    # review → complete in one turn is confirming on the user's behalf (e.g. a
+    # stray "confirm" that answered a different question). Deliver the summary
+    # and wait; the completion is one legitimate turn away.
+    if spec.confirm != "auto":
+        marker = _interaction_marker(visitor)
+        stamped = str(session.context.get(REVIEW_PRESENTED_MARKER_KEY) or "")
+        if marker and stamped and marker == stamped:
+            return interview_tool_response(
+                ok=False,
+                status=session.status.value,
+                error="User confirmation required after review.",
+                response_directive=(
+                    "Present the review summary to the user now and wait for "
+                    "their explicit confirmation (e.g. 'yes' / 'confirm') "
+                    "before calling interview__complete."
+                ),
+            )
 
     fields_summary = session.get_collected_summary()
     complete_fn = spec.handlers.complete

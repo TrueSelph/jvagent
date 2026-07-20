@@ -64,6 +64,18 @@ class OrchestratorLoopMixin:
         skill_names = {getattr(d, "name", "") for d in skill_docs}
         blocked_skill_notes = surface_meta.get("blocked_skill_notes") or []
         skills_section = render_skills_section(skill_docs, blocked_skill_notes)
+        # State the current channel explicitly. Skill docs are already filtered
+        # to this channel (ADR-0032), so everything listed IS available here —
+        # without this line the model has no ground truth for where it is and
+        # can hallucinate a channel deny ("please message us on WhatsApp") to a
+        # user who is already there, parroting deny copy from its knowledge.
+        _channel = str(getattr(visitor, "channel", "") or "").strip()
+        if _channel:
+            skills_section = (
+                f"CURRENT CHANNEL: {_channel}. Every skill listed below is "
+                "available on this channel — never tell the user to switch "
+                "channels to use one of them.\n\n" + skills_section
+            )
         # Advertised abilities: each enabled action's get_capabilities() merged
         # with the skill descriptions. Sourced from the actions/skills directly
         # (not the lean-surfaced tool list), so it stays complete even when most
