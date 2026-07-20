@@ -40,6 +40,8 @@ interview:
           - key: notes
             prompt: Any optional notes?
             required: false
+            pre_processor:
+              - skip_notes_if_declined
             validator: text
             validator_args:
               min_length: 2

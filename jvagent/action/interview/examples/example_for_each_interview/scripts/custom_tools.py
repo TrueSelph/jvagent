@@ -55,6 +55,43 @@ def validate_quantity(ctx) -> Dict[str, Any]:
     return ctx.valid(value=raw)
 
 
+_NOTES_DECLINED_ALL_KEY = "_notes_declined_all"
+_NOTES_DECLINE_PHRASES = ("no notes", "skip notes", "no extra notes", "none for any")
+
+
+async def skip_notes_if_declined(ctx) -> Dict[str, Any]:
+    """Ask-time pre_processor on the optional ``notes`` child field.
+
+    When the user declines notes for the whole batch — in the current message or
+    recorded earlier in this interview — skip the field instead of asking. The
+    batch-wide flag makes the decline stick across every for_each item, including
+    items the interview advances to inside a single set_fields call (which is
+    where a purely per-item skip used to re-ask the second item once).
+    """
+    session = ctx.session
+    field_def = ctx.field_def
+    if session is None or field_def is None:
+        return ctx.tool_response(ok=True, status="ok")
+
+    declined = bool(session.context.get(_NOTES_DECLINED_ALL_KEY))
+    if not declined:
+        for text in (
+            str(getattr(ctx.visitor, "utterance", "") or ""),
+            str(ctx.activation_utterance or ""),
+        ):
+            low = text.lower()
+            if low and any(p in low for p in _NOTES_DECLINE_PHRASES):
+                declined = True
+                session.context[_NOTES_DECLINED_ALL_KEY] = True
+                break
+
+    if not declined:
+        return ctx.tool_response(ok=True, status="ok")
+
+    session.skip_field(field_def.key)
+    return ctx.tool_response(ok=True, status="ok")
+
+
 def for_each_review(ctx) -> str:
     # Use ctx.get_for_each_records() instead of accessing session.context internals.
     records = ctx.get_for_each_records("item_ids")
