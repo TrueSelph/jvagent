@@ -238,6 +238,63 @@ async def test_handle_terminate_delegates_to_jvvoice():
     assert "wacid.ABGGFjFVU2AfAgo6V" not in action._active_calls
 
 
+@pytest.mark.asyncio
+async def test_handle_terminate_passes_meta_token():
+    """User-initiated disconnect forwards the Meta access token to jvvoice."""
+    from jvagent.action.whatsapp_voice.call_webhook import WhatsAppCallEvent
+
+    action = _action_stub()
+    action._meta_credentials = AsyncMock(return_value=("436666719526789", "meta-token"))
+    mock_client = AsyncMock()
+    mock_client.disconnect_call = AsyncMock(return_value={"status": "disconnected"})
+    action._jvvoice_client = AsyncMock(return_value=mock_client)
+
+    event = WhatsAppCallEvent(
+        call_id="wacid.ABGGFjFVU2AfAgo6V",
+        event="terminate",
+        sdp="",
+        sdp_type="",
+        phone_number_id="436666719526789",
+        from_number="16315553601",
+        to_number="",
+        contact_name="",
+    )
+    result = await action._handle_terminate(event)
+
+    assert result["status"] == "disconnected"
+    kwargs = mock_client.disconnect_call.await_args.kwargs
+    assert kwargs["whatsapp_api_key"] == "meta-token"
+    assert kwargs["user_initiated"] is True
+
+
+@pytest.mark.asyncio
+async def test_handle_terminate_survives_missing_credentials():
+    """Disconnect still delegates (with empty token) if credentials fail."""
+    from jvagent.action.whatsapp_voice.call_webhook import WhatsAppCallEvent
+
+    action = _action_stub()
+    action._meta_credentials = AsyncMock(side_effect=ValueError("no creds"))
+    mock_client = AsyncMock()
+    mock_client.disconnect_call = AsyncMock(return_value={"status": "disconnected"})
+    action._jvvoice_client = AsyncMock(return_value=mock_client)
+
+    event = WhatsAppCallEvent(
+        call_id="wacid.X",
+        event="terminate",
+        sdp="",
+        sdp_type="",
+        phone_number_id="",
+        from_number="16315553601",
+        to_number="",
+        contact_name="",
+    )
+    result = await action._handle_terminate(event)
+
+    assert result["status"] == "disconnected"
+    kwargs = mock_client.disconnect_call.await_args.kwargs
+    assert kwargs["whatsapp_api_key"] == ""
+
+
 def test_is_configured_requires_jvvoice_credentials():
     action = _action_stub()
     assert WhatsAppVoiceAction.is_configured(action) is True

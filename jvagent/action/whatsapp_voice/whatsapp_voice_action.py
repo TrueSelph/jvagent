@@ -350,10 +350,23 @@ class WhatsAppVoiceAction(Action):
 
     async def _handle_terminate(self, event: WhatsAppCallEvent) -> Dict[str, Any]:
         self._active_calls.pop(event.call_id, None)
+        # LiveKit's connector needs the Meta token even for user-initiated
+        # disconnects (it acks the terminate on the WhatsApp Cloud API side).
+        # Best-effort: a missing token still attempts the disconnect.
+        access_token = ""
+        try:
+            _, access_token = await self._meta_credentials()
+        except Exception as exc:
+            logger.warning(
+                "Could not resolve Meta credentials for disconnect call_id=%s: %s",
+                event.call_id,
+                exc,
+            )
         try:
             client = await self._jvvoice_client()
             result = await client.disconnect_call(
                 whatsapp_call_id=event.call_id,
+                whatsapp_api_key=access_token,
                 user_initiated=True,
             )
             logger.info(

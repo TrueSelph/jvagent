@@ -1,9 +1,11 @@
 """ElevenLabs text-to-speech action."""
 
+import asyncio
 import base64
 import logging
+import time
 import uuid
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from jvspatial.core.annotations import attribute
 from jvspatial.env import env
@@ -11,6 +13,16 @@ from jvspatial.env import env
 from jvagent.action.tts_action.base import BaseTTSAction
 
 logger = logging.getLogger(__name__)
+
+# Process-wide voice list cache (keyed by API key). Avoids voices.get_all() on
+# every synthesis for WhatsApp voice-note / PTT paths.
+_VOICES_CACHE_TTL_S = 600.0
+_voices_cache: Dict[str, Tuple[float, list]] = {}
+
+
+def _clear_voices_cache_for_tests() -> None:
+    """Reset the module voice cache (unit tests only)."""
+    _voices_cache.clear()
 
 
 class ElevenLabsTTSAction(BaseTTSAction):
@@ -36,8 +48,6 @@ class ElevenLabsTTSAction(BaseTTSAction):
             # The ElevenLabs SDK is synchronous; run the blocking calls in a
             # worker thread so the event loop is not stalled.
             # AUDIT-actions XC-3.
-            import asyncio
-
             from elevenlabs.client import ElevenLabs
 
             client = ElevenLabs(api_key=api_key)
@@ -95,6 +105,26 @@ class ElevenLabsTTSAction(BaseTTSAction):
 
         return audio
 
+    async def _fetch_voices(self, api_key: str) -> list:
+        """Return ElevenLabs voice objects, using a short TTL cache."""
+        now = time.monotonic()
+        cached = _voices_cache.get(api_key)
+        if cached is not None:
+            expires_at, voices = cached
+            if now < expires_at and voices is not None:
+                return voices
+
+        from elevenlabs.client import ElevenLabs
+
+        client = ElevenLabs(api_key=api_key)
+        # SDK call is synchronous; offload to a thread. AUDIT-actions XC-3.
+        result = await asyncio.to_thread(client.voices.get_all)
+        voices = (
+            list(result.voices) if result and getattr(result, "voices", None) else []
+        )
+        _voices_cache[api_key] = (now + _VOICES_CACHE_TTL_S, voices)
+        return voices
+
     async def get_voices(self) -> List[Dict[str, str]]:
         """Get all available voices."""
         api_key = (self._env_api_key() or "").strip()
@@ -102,23 +132,15 @@ class ElevenLabsTTSAction(BaseTTSAction):
             return []
 
         try:
-            import asyncio
-
-            from elevenlabs.client import ElevenLabs
-
-            client = ElevenLabs(api_key=api_key)
-            # SDK call is synchronous; offload to a thread. AUDIT-actions XC-3.
-            result = await asyncio.to_thread(client.voices.get_all)
-
-            if result:
-                return [
-                    {
-                        "name": v.name,
-                        "voice_id": v.voice_id,
-                        "category": v.category,
-                    }
-                    for v in result.voices
-                ]
+            voices = await self._fetch_voices(api_key)
+            return [
+                {
+                    "name": v.name,
+                    "voice_id": v.voice_id,
+                    "category": v.category,
+                }
+                for v in voices
+            ]
         except Exception as e:
             logger.error("Error getting voices: %s", e, exc_info=True)
 
@@ -133,13 +155,7 @@ class ElevenLabsTTSAction(BaseTTSAction):
             return None
 
         try:
-            import asyncio
-
-            from elevenlabs.client import ElevenLabs
-
-            client = ElevenLabs(api_key=api_key)
-            # SDK call is synchronous; offload to a thread. AUDIT-actions XC-3.
-            voices = (await asyncio.to_thread(client.voices.get_all)).voices
+            voices = await self._fetch_voices(api_key)
 
             name_lower = name.strip().lower()
 
@@ -166,8 +182,6 @@ class ElevenLabsTTSAction(BaseTTSAction):
             return []
 
         try:
-            import asyncio
-
             from elevenlabs.client import ElevenLabs
 
             client = ElevenLabs(api_key=api_key)

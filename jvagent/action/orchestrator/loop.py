@@ -39,6 +39,8 @@ def _orch():
 
 class OrchestratorLoopMixin:
     async def _run_loop(self, visitor: "InteractWalker") -> None:
+        loop_t0 = time.perf_counter()
+        tool_timings: List[Dict[str, Any]] = []
         activated: List[str] = []
         visible: Set[str] = set()
         skill_docs: List[Any] = []
@@ -98,6 +100,7 @@ class OrchestratorLoopMixin:
         # (so it owns the turn's output). The IA receives all input including
         # off-topic; interruption/cancel is the IA's own concern.
         if self.lock_active_flow and flow_owner and flow_owner in tools:
+            tool_t0 = time.perf_counter()
             try:
                 if self.tool_call_timeout and self.tool_call_timeout > 0:
                     locked_result = (
@@ -113,6 +116,12 @@ class OrchestratorLoopMixin:
                     f"(tool error: locked flow {flow_owner} timed out after "
                     f"{self.tool_call_timeout}s)"
                 )
+            tool_timings.append(
+                {
+                    "name": flow_owner,
+                    "duration_ms": int((time.perf_counter() - tool_t0) * 1000),
+                }
+            )
             interaction = getattr(visitor, "interaction", None)
             # The locked IA "emits" either by setting a response OR by queuing a
             # directive (the directive-based publishing pattern — `_egress`
@@ -164,6 +173,8 @@ class OrchestratorLoopMixin:
                 tick_count=0,
                 ended_via=ended,
                 activated=activated,
+                loop_duration_ms=int((time.perf_counter() - loop_t0) * 1000),
+                tool_timings=tool_timings,
             )
             await self._finalize_plan(visitor)
             return
@@ -321,7 +332,12 @@ class OrchestratorLoopMixin:
             # Tool names only — use_skill is handled by the skill-name branch.
             locked_companion_tools = {t for t in _allowed if t != "use_skill"}
 
-        budget = max(1, int(self.activation_budget))
+        budget = max(
+            1,
+            int(
+                self._channel_cfg(visitor, "activation_budget", self.activation_budget)
+            ),
+        )
         history = await self._history(visitor)
         ticks = 0
         ended_via = "budget"
@@ -358,11 +374,13 @@ class OrchestratorLoopMixin:
         ticks_light = 0
         ticks_heavy = 0
         started = time.time()
-        deadline = (
-            started + float(self.max_duration_seconds)
-            if self.max_duration_seconds and self.max_duration_seconds > 0
-            else 0.0
+        max_duration_seconds = float(
+            self._channel_cfg(
+                visitor, "max_duration_seconds", self.max_duration_seconds
+            )
+            or 0.0
         )
+        deadline = started + max_duration_seconds if max_duration_seconds > 0 else 0.0
 
         # The transient ack only applies once the heavy model is engaged (it is
         # the slow gear) — scheduled on the first heavy tick below, not up front.
@@ -671,23 +689,50 @@ class OrchestratorLoopMixin:
                             await self._emit_tool_thought(
                                 visitor, "tool_call", tool_name, tool_seg, args=args
                             )
+                        # Voice-friendly ack: arm the transient ack before the
+                        # FIRST substantive tool runs, so a slow tool (Flow
+                        # send, web search) is covered by a spoken/visible
+                        # "One moment…" instead of dead air. Still gated by
+                        # first_emit_timeout_ms — fast tools surface nothing.
+                        if (
+                            not ack_started
+                            and self.ack_on_first_tool_call
+                            and tool_name not in _NON_SUBSTANTIVE_TOOLS
+                        ):
+                            ack_started = True
+                            ack_task = self._schedule_first_emit_ack(visitor)
+                        tool_call_timeout = float(
+                            self._channel_cfg(
+                                visitor, "tool_call_timeout", self.tool_call_timeout
+                            )
+                            or 0.0
+                        )
+                        tool_t0 = time.perf_counter()
                         try:
-                            if self.tool_call_timeout and self.tool_call_timeout > 0:
+                            if tool_call_timeout > 0:
                                 obs = await asyncio.wait_for(
-                                    tool.run(args), timeout=self.tool_call_timeout
+                                    tool.run(args), timeout=tool_call_timeout
                                 )
                             else:
                                 obs = await tool.run(args)
                         except asyncio.TimeoutError:
                             obs = (
                                 f"(tool {tool_name} timed out after "
-                                f"{self.tool_call_timeout}s)"
+                                f"{tool_call_timeout}s)"
                             )
                         except Exception as exc:
                             logger.warning(
                                 "orchestrator: tool %r raised: %s", tool_name, exc
                             )
                             obs = f"(tool error: {exc})"
+                        tool_timings.append(
+                            {
+                                "name": tool_name,
+                                "duration_ms": int(
+                                    (time.perf_counter() - tool_t0) * 1000
+                                ),
+                            }
+                        )
                         # After (fires on success, timeout, or error — obs is
                         # always a string by here).
                         if tool_seg:
@@ -951,4 +996,6 @@ class OrchestratorLoopMixin:
                 activated=activated,
                 ticks_light=ticks_light,
                 ticks_heavy=ticks_heavy,
+                loop_duration_ms=int((time.perf_counter() - loop_t0) * 1000),
+                tool_timings=tool_timings,
             )

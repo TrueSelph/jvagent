@@ -534,6 +534,33 @@ class OrchestratorInteractAction(
         "the first after first_emit_timeout_ms, each subsequent after "
         "ack_interval_ms, while the turn runs.",
     )
+    ack_on_first_tool_call: bool = attribute(
+        default=False,
+        description="Arm the transient ack as soon as the model dispatches its "
+        "FIRST substantive tool call (instead of waiting for the complex-turn "
+        "threshold). The ack still only surfaces if the turn is still running "
+        "after first_emit_timeout_ms, so fast tool turns stay silent. Useful "
+        "for voice channels where a multi-second silent tool call feels like a "
+        "dropped call.",
+    )
+    ack_spoken_channels: List[str] = attribute(
+        default_factory=lambda: ["whatsapp_call"],
+        description="Channels whose transient ack must be shaped as a "
+        "deliverable user message even over a streamed connection. Voice "
+        "bridges (e.g. jvvoice over SSE) speak only category=user messages and "
+        "skip thought/status lines, so the streamed-UI ack shape would be "
+        "silent on a call.",
+    )
+    channel_overrides: Dict[str, Dict[str, Any]] = attribute(
+        default_factory=dict,
+        description="Per-channel loop-knob overrides, keyed by visitor.channel "
+        "(e.g. whatsapp_call). Supported keys per channel: history_limit, "
+        "activation_budget, max_duration_seconds, tool_call_timeout, "
+        "max_statement_length, first_emit_timeout_ms, ack_statements, and "
+        "system_prompt_extra (APPENDED after the base extra for that channel "
+        "only). Lets a voice channel run a tighter/faster loop with its own "
+        "spoken filler than chat without a second agent.",
+    )
     block_raw_tool_invocation: bool = attribute(
         default=False,
         description="When True a TOOL-USE POLICY is added so the USER cannot "
@@ -1913,6 +1940,8 @@ class OrchestratorInteractAction(
         activated: List[str],
         ticks_light: int = 0,
         ticks_heavy: int = 0,
+        loop_duration_ms: Optional[int] = None,
+        tool_timings: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         """Append a per-turn ``orchestrator_activation`` event to
         ``interaction.observability_metrics``.
@@ -1927,22 +1956,32 @@ class OrchestratorInteractAction(
         metrics = getattr(interaction, "observability_metrics", None)
         if metrics is None or not hasattr(metrics, "append"):
             return
+        tools_list = [
+            {"name": t["name"], "duration_ms": int(t["duration_ms"])}
+            for t in (tool_timings or [])
+            if isinstance(t, dict) and t.get("name")
+        ]
+        data: Dict[str, Any] = {
+            "continuation_mode": continuation_mode,
+            "flow_owner": flow_owner,
+            "lock_active_flow": bool(self.lock_active_flow),
+            "tools_invoked": [t for t in tools_invoked if t],
+            "tick_count": int(tick_count),
+            "budget": int(self.activation_budget),
+            "ended_via": ended_via,
+            "skills_used": list(activated or []),
+            "gearing": self._gearing_on(),
+            "ticks_light": int(ticks_light),
+            "ticks_heavy": int(ticks_heavy),
+            "escalated": bool(ticks_heavy) and self._gearing_on(),
+        }
+        if loop_duration_ms is not None:
+            data["loop_duration_ms"] = int(loop_duration_ms)
+        if tools_list:
+            data["tools"] = tools_list
         event = {
             "event_type": "orchestrator_activation",
-            "data": {
-                "continuation_mode": continuation_mode,
-                "flow_owner": flow_owner,
-                "lock_active_flow": bool(self.lock_active_flow),
-                "tools_invoked": [t for t in tools_invoked if t],
-                "tick_count": int(tick_count),
-                "budget": int(self.activation_budget),
-                "ended_via": ended_via,
-                "skills_used": list(activated or []),
-                "gearing": self._gearing_on(),
-                "ticks_light": int(ticks_light),
-                "ticks_heavy": int(ticks_heavy),
-                "escalated": bool(ticks_heavy) and self._gearing_on(),
-            },
+            "data": data,
             "timestamp": time.time(),
         }
         try:
@@ -1954,6 +1993,22 @@ class OrchestratorInteractAction(
                     await result
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("orchestrator: activation record failed: %s", exc)
+
+        channel = str(getattr(visitor, "channel", "") or "")
+        if channel == "whatsapp_call":
+            tool_summary = (
+                ",".join(f"{t['name']}:{t['duration_ms']}" for t in tools_list) or "-"
+            )
+            logger.info(
+                "jvagent_latency channel=%s loop_ms=%s ticks=%s tools=%s "
+                "ended_via=%s continuation=%s",
+                channel,
+                int(loop_duration_ms) if loop_duration_ms is not None else -1,
+                int(tick_count),
+                tool_summary,
+                ended_via,
+                continuation_mode,
+            )
 
     @staticmethod
     def _result_next(obs: str) -> Tuple[Optional[str], str]:
@@ -2272,6 +2327,23 @@ class OrchestratorInteractAction(
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("orchestrator: tool thought emit failed: %s", exc)
 
+    def _channel_cfg(self, visitor: Any, key: str, current: Any) -> Any:
+        """Resolve a loop knob with per-channel overrides (``channel_overrides``).
+
+        Returns the override for ``visitor.channel`` when one is configured for
+        ``key``, else ``current`` (the action-level value). Keys are the small
+        whitelist documented on the attribute; unknown keys simply never match
+        a call site.
+        """
+        overrides = self.channel_overrides or {}
+        if not overrides:
+            return current
+        channel = str(getattr(visitor, "channel", "") or "")
+        cfg = overrides.get(channel)
+        if isinstance(cfg, dict) and key in cfg and cfg[key] is not None:
+            return cfg[key]
+        return current
+
     def _schedule_first_emit_ack(
         self, visitor: "InteractWalker"
     ) -> Optional["asyncio.Task"]:
@@ -2285,9 +2357,12 @@ class OrchestratorInteractAction(
         """
         if not self.enable_transient_ack:
             return None
+        channel_statements = self._channel_cfg(
+            visitor, "ack_statements", self.ack_statements
+        )
         statements = [
             s.strip()
-            for s in (self.ack_statements or [])
+            for s in (channel_statements or [])
             if isinstance(s, str) and s.strip()
         ]
         if not statements:
@@ -2298,7 +2373,16 @@ class OrchestratorInteractAction(
             return None
         interaction = getattr(visitor, "interaction", None)
         channel = getattr(visitor, "channel", "default") or "default"
-        first_delay = max(0.0, float(self.first_emit_timeout_ms or 0) / 1000.0)
+        first_delay = max(
+            0.0,
+            float(
+                self._channel_cfg(
+                    visitor, "first_emit_timeout_ms", self.first_emit_timeout_ms
+                )
+                or 0
+            )
+            / 1000.0,
+        )
         interval = max(0.0, float(self.ack_interval_ms or 0) / 1000.0)
         # Channel-conditional shape: a streamed UI shows the ack as an ephemeral
         # status line in its activity strip (category=thought/status, kept out of
@@ -2306,7 +2390,12 @@ class OrchestratorInteractAction(
         # activity strip, so the ack must be a whole, delivered message
         # (category=user → relayed by the channel adapter; transient ⇒ not
         # persisted to interaction.response). Both stay transient.
-        streamed_ui = bool(getattr(visitor, "stream", False))
+        spoken_channels = {
+            str(c).strip() for c in (self.ack_spoken_channels or []) if str(c).strip()
+        }
+        streamed_ui = bool(getattr(visitor, "stream", False)) and (
+            channel not in spoken_channels
+        )
         ack_kwargs: Dict[str, Any] = (
             {"category": "thought", "thought_type": "status"}
             if streamed_ui
@@ -2799,7 +2888,9 @@ class OrchestratorInteractAction(
         try:
             return (
                 await getter(
-                    limit=int(self.history_limit),
+                    limit=int(
+                        self._channel_cfg(visitor, "history_limit", self.history_limit)
+                    ),
                     excluded=getattr(interaction, "id", None),
                     formatted=True,
                     with_event=bool(self.include_history_events),
@@ -2878,6 +2969,11 @@ class OrchestratorInteractAction(
             parameters_section=parameters_section or prompt_cache.get("parameters", ""),
             loop_protocol_extra=loop_protocol_extra,
         )
+        channel_extra = str(
+            self._channel_cfg(visitor, "system_prompt_extra", "") or ""
+        ).strip()
+        if channel_extra:
+            system_prompt = f"{system_prompt}\n\n{channel_extra}"
         if flow_note:
             note = self._fmt(
                 self.flow_in_progress_prompt,
@@ -2885,11 +2981,14 @@ class OrchestratorInteractAction(
                 flow_note=flow_note,
             )
             system_prompt = f"{system_prompt}\n\n{note}"
-        if self.max_statement_length and self.max_statement_length > 0:
+        max_statement_length = self._channel_cfg(
+            visitor, "max_statement_length", self.max_statement_length
+        )
+        if max_statement_length and int(max_statement_length) > 0:
             limit = self._fmt(
                 self.length_limit_prompt,
                 LENGTH_LIMIT_PROMPT,
-                max_chars=int(self.max_statement_length),
+                max_chars=int(max_statement_length),
             )
             system_prompt = f"{system_prompt}\n\n{limit}"
         if finalize:
