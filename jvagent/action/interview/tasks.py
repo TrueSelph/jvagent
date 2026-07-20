@@ -91,6 +91,30 @@ async def ensure_active_task(
         logger.debug("ensure_active_task: %s", exc)
 
 
+async def park_task(
+    visitor: Any,
+    spec_name: str,
+    *,
+    snapshot: Optional[dict] = None,
+    reason: str = "field_unavailable",
+) -> bool:
+    """Park the active SKILL task for this interview (ADR-0034).
+
+    Snapshots the session onto the task and transitions it active -> parked so it
+    owns no turns but can be rehydrated on return. Returns True when a task was
+    parked, False when none was found (best-effort — the caller still clears the
+    live session and replies)."""
+    handle = _find_existing_active_task(visitor, spec_name)
+    if handle is None:
+        return False
+    try:
+        await handle.park(snapshot=snapshot, reason=reason)
+        return True
+    except Exception as exc:
+        logger.debug("park_task: %s", exc)
+        return False
+
+
 async def close_task(
     visitor: Any,
     status: str = "completed",

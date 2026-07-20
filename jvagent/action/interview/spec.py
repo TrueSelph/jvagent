@@ -36,6 +36,11 @@ _INTERVIEW_KEYS = frozenset(
         "handlers",
         "skill_tools",
         "parameters",
+        # ADR-0034 abandonment policy (all optional; undeclared = today's behaviour).
+        "on_abandon",
+        "nudge_after",
+        "abandon_after",
+        "parked_expire_after",
     }
 )
 
@@ -56,6 +61,9 @@ _FIELD_KEYS = frozenset(
         "else",
         "for_each",
         "for_each_prefix",
+        # ADR-0034 field unavailability policy.
+        "on_unavailable",
+        "relaxable",
     }
 )
 
@@ -73,8 +81,16 @@ _FOR_EACH_CHILD_FIELD_KEYS = frozenset(
         "validator_args",
         "pre_processor",
         "post_processor",
+        # ADR-0034 field unavailability policy.
+        "on_unavailable",
+        "relaxable",
     }
 )
+
+# ADR-0034: what to do when the user says they cannot supply a field.
+_ON_UNAVAILABLE_VALUES = frozenset({"park", "cancel", "relax"})
+# ADR-0034: what to do when a whole interview is abandoned (soft or reaped).
+_ON_ABANDON_VALUES = frozenset({"park", "cancel"})
 
 _BRANCH_KEYS = frozenset({"when", "goto"})
 
@@ -116,6 +132,12 @@ class FieldDef:
     else_field: Optional[str] = None
     for_each: Optional[ForEachDef] = None
     for_each_prefix: str = ""
+    # ADR-0034: consequence when the user states they cannot supply this field.
+    # "park" (default) snapshots + parks the task; "cancel" closes it; "relax"
+    # skips the field and continues but is permitted only with relaxable=True
+    # (the compulsory-field rule, enforced at parse in _validate_unavailable_policy).
+    on_unavailable: str = "park"
+    relaxable: bool = False
 
 
 @dataclass
@@ -137,6 +159,14 @@ class InterviewSpec:
     confirm: ConfirmMode = "manual"
     parameters: List[Dict[str, Any]] = field(default_factory=list)
     source_dir: str = ""
+    # ADR-0034 interview-level abandonment policy. on_abandon governs the soft-
+    # abandon (two-strike) and reaper outcomes; the *_after keys are raw TTL
+    # strings ("4h", "24h", "30d") parsed by the reaper. All optional: an
+    # undeclared TTL means that stage never fires.
+    on_abandon: str = "park"
+    nudge_after: Optional[str] = None
+    abandon_after: Optional[str] = None
+    parked_expire_after: Optional[str] = None
 
     def get_required_fields(self) -> List[str]:
         return [f.key for f in self.fields if f.required]
@@ -210,6 +240,54 @@ def fields_reference(spec: InterviewSpec) -> List[Dict[str, Any]]:
     return out
 
 
+_DURATION_UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+
+
+def parse_duration_seconds(raw: Any) -> Optional[int]:
+    """Parse an ADR-0034 TTL string (``"30m"``, ``"4h"``, ``"24h"``, ``"30d"``)
+    into seconds. ``None``/empty returns ``None`` (stage disabled). Raises
+    ``ValueError`` on a malformed value so bad TTLs fail at spec load, not at the
+    reaper tick.
+    """
+    if raw is None:
+        return None
+    text = str(raw).strip().lower()
+    if not text:
+        return None
+    unit = text[-1]
+    if unit not in _DURATION_UNIT_SECONDS or not text[:-1].isdigit():
+        raise ValueError(
+            f"duration {raw!r} must be an integer followed by one of "
+            "s|m|h|d (e.g. '30m', '4h', '24h', '30d')"
+        )
+    value = int(text[:-1])
+    if value <= 0:
+        raise ValueError(f"duration {raw!r} must be positive")
+    return value * _DURATION_UNIT_SECONDS[unit]
+
+
+def _validate_unavailable_policy(
+    on_unavailable: str, relaxable: bool, *, path: str
+) -> None:
+    """ADR-0034 compulsory-field rule, enforced at spec load (fail fast)."""
+    if on_unavailable not in _ON_UNAVAILABLE_VALUES:
+        raise ValueError(
+            f"on_unavailable at {path} must be one of park|cancel|relax, "
+            f"got {on_unavailable!r}"
+        )
+    if on_unavailable == "relax" and not relaxable:
+        raise ValueError(
+            f"on_unavailable: relax at {path} requires relaxable: true — a "
+            "required field is compulsory by default; relaxing data integrity "
+            "must be an explicit two-key product decision"
+        )
+    if relaxable and on_unavailable != "relax":
+        raise ValueError(
+            f"relaxable: true at {path} has no effect without "
+            "on_unavailable: relax; remove it or set on_unavailable: relax"
+        )
+
+
 def _parse_branch(data: Dict[str, Any], *, path: str) -> BranchDef:
     if not isinstance(data, dict):
         raise ValueError(f"Branch at {path} must be a mapping")
@@ -230,6 +308,9 @@ def _parse_for_each_child(data: Dict[str, Any], *, path: str) -> FieldDef:
             f"validator at {path} must be a function name string; "
             "use validator_args for parameters"
         )
+    on_unavailable = str(data.get("on_unavailable") or "park").strip().lower()
+    relaxable = bool(data.get("relaxable", False))
+    _validate_unavailable_policy(on_unavailable, relaxable, path=path)
     return FieldDef(
         key=str(data.get("key", "") or "").strip(),
         prompt=str(data.get("prompt", "") or ""),
@@ -240,6 +321,8 @@ def _parse_for_each_child(data: Dict[str, Any], *, path: str) -> FieldDef:
         validator_args=dict(data.get("validator_args") or {}),
         pre_processor=parse_string_list(data.get("pre_processor")),
         post_processor=parse_string_list(data.get("post_processor")),
+        on_unavailable=on_unavailable,
+        relaxable=relaxable,
     )
 
 
@@ -280,6 +363,9 @@ def _parse_field(data: Dict[str, Any], *, index: int) -> FieldDef:
     for_each = (
         _parse_for_each(for_each_raw, path=f"{path}.for_each") if for_each_raw else None
     )
+    on_unavailable = str(data.get("on_unavailable") or "park").strip().lower()
+    relaxable = bool(data.get("relaxable", False))
+    _validate_unavailable_policy(on_unavailable, relaxable, path=path)
     return FieldDef(
         key=str(data.get("key", "") or "").strip(),
         prompt=str(data.get("prompt", "") or "").strip(),
@@ -294,6 +380,8 @@ def _parse_field(data: Dict[str, Any], *, index: int) -> FieldDef:
         else_field=data.get("else"),
         for_each=for_each,
         for_each_prefix=str(data.get("for_each_prefix") or "").strip(),
+        on_unavailable=on_unavailable,
+        relaxable=relaxable,
     )
 
 
@@ -395,6 +483,14 @@ def parse_interview_spec(
             }
         )
 
+    on_abandon = str(data.get("on_abandon") or "park").strip().lower()
+    if on_abandon not in _ON_ABANDON_VALUES:
+        raise ValueError(f"on_abandon must be one of park|cancel, got {on_abandon!r}")
+    # Validate the TTL trio at load so a malformed duration fails fast; the raw
+    # strings are stored and re-parsed by the reaper.
+    for _ttl_key in ("nudge_after", "abandon_after", "parked_expire_after"):
+        parse_duration_seconds(data.get(_ttl_key))
+
     return InterviewSpec(
         name=name,
         title=str(data.get("title", "") or ""),
@@ -405,6 +501,22 @@ def parse_interview_spec(
         confirm=_parse_confirm(data.get("confirm")),
         parameters=parameters,
         source_dir=source_dir,
+        on_abandon=on_abandon,
+        nudge_after=(
+            (str(data.get("nudge_after")).strip() or None)
+            if data.get("nudge_after")
+            else None
+        ),
+        abandon_after=(
+            (str(data.get("abandon_after")).strip() or None)
+            if data.get("abandon_after")
+            else None
+        ),
+        parked_expire_after=(
+            (str(data.get("parked_expire_after")).strip() or None)
+            if data.get("parked_expire_after")
+            else None
+        ),
     )
 
 

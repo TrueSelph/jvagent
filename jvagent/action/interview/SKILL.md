@@ -7,6 +7,7 @@ task-lock: true
 allowed-tools:
   - interview__set_fields
   - interview__skip_field
+  - interview__field_unavailable
   - interview__next_field
   - interview__get_status
   - interview__review
@@ -40,6 +41,7 @@ Sessions open only via `use_skill(<skill_name>)`.
 | Multi-answer | Several fields in one message | `interview__set_fields` with every matching key from the same utterance |
 | Correct / update | Names a stored field, "actually…", "wrong" | `interview__set_fields` same turn — do not ask to confirm first |
 | Decline optional | "skip", "no thanks" on optional field | `interview__skip_field` |
+| Can't supply pending field | "I don't have it", "can't find it", "I'll have to check" — for a **required** field they want to answer but can't right now | `interview__field_unavailable` (the server parks / cancels / relaxes per the field's policy and returns the reply to relay) |
 | Cancel / stop | "cancel", "never mind", "quit" | `interview__cancel` |
 | Start over | "start over", "restart", "try again" | `interview__reset` (not `cancel`) |
 | Confirm (`confirm: manual`) | yes / looks good at review | `interview__complete` after `interview__review` |

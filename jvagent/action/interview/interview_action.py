@@ -160,6 +160,11 @@ class InterviewAction(Action):
     async def _handle_skip_field(self, field: str, visitor: Any = None) -> str:
         return await engine.handle_skip_field(self, field, visitor)
 
+    async def _handle_field_unavailable(
+        self, field: str = "", visitor: Any = None, reason: str = ""
+    ) -> str:
+        return await engine.handle_field_unavailable(self, field, visitor, reason)
+
     async def _handle_get_status(self, visitor: Any = None, **_: Any) -> str:
         return await engine.handle_get_status(self, visitor)
 

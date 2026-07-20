@@ -36,7 +36,12 @@ logger = logging.getLogger(__name__)
 # Status constants
 # ------------------------------------------------------------------
 
-TASK_STATUSES = frozenset({"pending", "active", "completed", "failed", "cancelled"})
+# "parked" (ADR-0034) is non-terminal: a parked interview task owns no turns
+# (the resolver/orphan-sweep ignore it) but can be rehydrated back to "active" or
+# reaped to "cancelled".
+TASK_STATUSES = frozenset(
+    {"pending", "active", "completed", "failed", "cancelled", "parked"}
+)
 StepStatus = Literal["pending", "in_progress", "done", "failed", "skipped"]
 STEP_STATUSES = frozenset({"pending", "in_progress", "done", "failed", "skipped"})
 
@@ -196,7 +201,9 @@ class Task:
     id: str
     title: str
     description: str
-    status: Literal["pending", "active", "completed", "failed", "cancelled"] = "pending"
+    status: Literal[
+        "pending", "active", "completed", "failed", "cancelled", "parked"
+    ] = "pending"
     created_at: str = field(default_factory=_now_iso)
     updated_at: str = field(default_factory=_now_iso)
     completed_at: Optional[str] = None
@@ -215,7 +222,9 @@ class Task:
 
     def transition(
         self,
-        new_status: Literal["pending", "active", "completed", "failed", "cancelled"],
+        new_status: Literal[
+            "pending", "active", "completed", "failed", "cancelled", "parked"
+        ],
     ) -> None:
         if new_status not in TASK_STATUSES:
             raise TaskError(f"Invalid task status '{new_status}'")
@@ -228,10 +237,16 @@ class Task:
             {"active", "cancelled"}
         ):
             raise TaskError(f"Cannot transition task from 'pending' -> '{new_status}'")
+        # ADR-0034: an active interview may be parked; a parked interview may only
+        # rehydrate (-> active) or be reaped/cancelled.
         if self.status == "active" and new_status not in frozenset(
-            {"completed", "failed", "cancelled", "pending"}
+            {"completed", "failed", "cancelled", "pending", "parked"}
         ):
             raise TaskError(f"Cannot transition task from 'active' -> '{new_status}'")
+        if self.status == "parked" and new_status not in frozenset(
+            {"active", "cancelled"}
+        ):
+            raise TaskError(f"Cannot transition task from 'parked' -> '{new_status}'")
         self.status = new_status
         self._touch()
         if new_status in _TASK_TERMINAL:
@@ -505,6 +520,29 @@ class TaskHandle:
         await self._store._cascade_abandon_dependents(
             self._task.id, reason=f"prerequisite {self._task.id} cancelled"
         )
+
+    async def park(
+        self,
+        snapshot: Optional[Dict[str, Any]] = None,
+        reason: Optional[str] = None,
+    ) -> None:
+        """Transition active -> parked (ADR-0034), optionally persisting a
+        snapshot of the owner's runtime state so it can be rehydrated on return.
+        Non-terminal: does not cascade dependents (a parked task is set aside,
+        not abandoned)."""
+        if snapshot is not None:
+            self._task.snapshot = dict(snapshot or {})
+        self._task.transition("parked")
+        if reason is not None:
+            self._task.data["park_reason"] = reason
+        await self._store._persist_task(self._task)
+        await self._store._emit_task_callback(self._task, "parked")
+
+    async def resume_parked(self) -> None:
+        """Transition parked -> active (ADR-0034 rehydrate)."""
+        self._task.transition("active")
+        await self._store._persist_task(self._task)
+        await self._store._emit_task_callback(self._task, "resumed")
 
     async def update(self, **data: Any) -> None:
         """Merge key-value pairs into the task's data bag."""
