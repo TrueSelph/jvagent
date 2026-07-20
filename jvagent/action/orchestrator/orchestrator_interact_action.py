@@ -235,6 +235,27 @@ def _is_tool_chain_directive(directive: str) -> bool:
     )
 
 
+def _append_directive_hint(directive: str, hint: str) -> str:
+    """Append model-only compose steering onto a directive's guidance block.
+
+    Uses the interview directive contract's ``append_hint`` when the guidance
+    marker is present (the hint lands after the compose marker, never voiced
+    verbatim); otherwise appends as a trailing parenthetical model note.
+    """
+    hint = (hint or "").strip()
+    if not hint or not directive:
+        return directive
+    try:
+        from jvagent.action.interview.hooks import append_hint
+
+        appended = append_hint(directive, hint)
+        if appended != directive:
+            return appended
+    except Exception:  # pragma: no cover - defensive
+        pass
+    return f"{directive}\n({hint})"
+
+
 def _text_candidate(decision: Dict[str, Any]) -> str:
     """Pull the first non-empty user-facing string from a model decision."""
     return _text_candidate_impl(decision)
@@ -1499,6 +1520,22 @@ class OrchestratorInteractAction(
                     )
                 except Exception as exc:  # pragma: no cover - defensive
                     logger.debug("orchestrator: detour entry directive failed: %s", exc)
+            if detour_directive:
+                # The activation envelope the model saw earlier carried the field
+                # catalog + start_field computed BEFORE activation pre_processors
+                # ran; hooks may since have auto-filled fields and advanced the
+                # pending question (e.g. a phone-first match that pre-fills email
+                # and sends an OTP). This directive reflects the SETTLED state —
+                # mark it exclusive so the model never re-asks a catalog field the
+                # server already resolved (the "sent a code" + "what's your email"
+                # contradiction).
+                detour_directive = _append_directive_hint(
+                    detour_directive,
+                    "This is the ONLY question to ask this turn. Earlier "
+                    "activation info (start_field / field catalog) may be stale — "
+                    "the server has already filled or resolved prior fields. Do "
+                    "not ask for any other field.",
+                )
         return doc, tools, visible, skills_section, detour_directive
 
     async def _reground_parent_lock(

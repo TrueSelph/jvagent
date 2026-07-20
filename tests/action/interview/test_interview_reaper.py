@@ -51,6 +51,11 @@ async def _store_with_task(owner, *, status="active", snapshot=None, blocked_on=
     if blocked_on:
         for b in blocked_on:
             await handle.add_blocker(b)
+    # Deterministic idle clock: pin the task's last-update to _NOW so tests
+    # measure idle against the fixed baseline, not the wall clock (real
+    # created_at made these assertions flip as real time crossed _NOW).
+    handle._task.updated_at = _NOW.isoformat()
+    await store._persist_task(handle._task)
     return conv, store, handle
 
 
