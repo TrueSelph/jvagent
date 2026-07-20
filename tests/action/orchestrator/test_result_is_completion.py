@@ -34,7 +34,9 @@ def test_silent_completion_no_directive():
 
 def test_not_a_completion():
     assert _is_completion(json.dumps({"ok": True, "status": "ok"})) is False
-    assert _is_completion(json.dumps({"response_directive": "Tell the user: hi"})) is False
+    assert (
+        _is_completion(json.dumps({"response_directive": "Tell the user: hi"})) is False
+    )
 
 
 def test_non_json_or_non_dict_is_false():
@@ -49,16 +51,29 @@ _last_dir = OrchestratorInteractAction._last_activation_directive
 def test_last_activation_directive_extracts_from_skill_session_note():
     obs = [
         {"tool": "other", "observation": "x"},
-        {"tool": "(skill-session)", "observation": json.dumps(
-            {"status": "extraction_pending", "response_directive": "Tell the user: working on it"})},
+        {
+            "tool": "(skill-session)",
+            "observation": json.dumps(
+                {
+                    "status": "extraction_pending",
+                    "response_directive": "Tell the user: working on it",
+                }
+            ),
+        },
     ]
     assert _last_dir(obs) == "Tell the user: working on it"
 
 
 def test_last_activation_directive_prefers_most_recent():
     obs = [
-        {"tool": "(skill-session)", "observation": json.dumps({"response_directive": "old"})},
-        {"tool": "(skill-session)", "observation": json.dumps({"response_directive": "new"})},
+        {
+            "tool": "(skill-session)",
+            "observation": json.dumps({"response_directive": "old"}),
+        },
+        {
+            "tool": "(skill-session)",
+            "observation": json.dumps({"response_directive": "new"}),
+        },
     ]
     assert _last_dir(obs) == "new"
 
@@ -66,5 +81,10 @@ def test_last_activation_directive_prefers_most_recent():
 def test_last_activation_directive_empty_when_absent_or_unparsable():
     assert _last_dir([{"tool": "reply", "observation": "hi"}]) == ""
     assert _last_dir([{"tool": "(skill-session)", "observation": "not json"}]) == ""
-    assert _last_dir([{"tool": "(skill-session)", "observation": json.dumps({"ok": True})}]) == ""
+    assert (
+        _last_dir(
+            [{"tool": "(skill-session)", "observation": json.dumps({"ok": True})}]
+        )
+        == ""
+    )
     assert _last_dir([]) == ""

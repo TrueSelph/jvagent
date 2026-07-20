@@ -162,7 +162,9 @@ async def test_gated_resume_auto_resolves_true_when_first_field_has_pre_processo
     action = _action_onboarding()
     visitor, conv = _visitor()
     await save_session(conv, InterviewSession(interview_type="onboarding_interview"))
-    assert await action.gated_resume_auto_resolves("onboarding_interview", visitor) is True
+    assert (
+        await action.gated_resume_auto_resolves("onboarding_interview", visitor) is True
+    )
 
 
 @pytest.mark.asyncio
@@ -172,14 +174,18 @@ async def test_gated_resume_auto_resolves_false_for_plain_first_field():
     action = _action()
     visitor, conv = _visitor()
     await save_session(conv, InterviewSession(interview_type="pre_alert_interview"))
-    assert await action.gated_resume_auto_resolves("pre_alert_interview", visitor) is False
+    assert (
+        await action.gated_resume_auto_resolves("pre_alert_interview", visitor) is False
+    )
 
 
 @pytest.mark.asyncio
 async def test_gated_resume_auto_resolves_false_without_ready_session():
     action = _action()
     visitor, _conv = _visitor()  # no session saved
-    assert await action.gated_resume_auto_resolves("pre_alert_interview", visitor) is False
+    assert (
+        await action.gated_resume_auto_resolves("pre_alert_interview", visitor) is False
+    )
 
 
 @pytest.mark.asyncio
@@ -192,4 +198,6 @@ async def test_gated_resume_auto_resolves_walks_past_answered_field():
     sess = InterviewSession(interview_type="onboarding_interview")
     sess.set_value("phone_number", "5926001234")  # first (pre_processor) field done
     await save_session(conv, sess)
-    assert await action.gated_resume_auto_resolves("onboarding_interview", visitor) is True
+    assert (
+        await action.gated_resume_auto_resolves("onboarding_interview", visitor) is True
+    )

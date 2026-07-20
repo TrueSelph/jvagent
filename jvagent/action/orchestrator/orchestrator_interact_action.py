@@ -2021,7 +2021,9 @@ class OrchestratorInteractAction(
                 data = json.loads(raw)
             except (json.JSONDecodeError, TypeError, ValueError):
                 continue
-            directive = data.get("response_directive") if isinstance(data, dict) else None
+            directive = (
+                data.get("response_directive") if isinstance(data, dict) else None
+            )
             if isinstance(directive, str) and directive.strip():
                 return directive
         return ""
