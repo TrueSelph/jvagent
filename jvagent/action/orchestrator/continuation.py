@@ -302,6 +302,13 @@ async def cancel_orphan_flow_tasks(
         # the bound action marks them complete/cancelled.
         if owner and owner in exempt:
             continue
+        # A task blocked on a prerequisite is intentionally parked, not an orphan:
+        # e.g. a gated capability skill (payment) waiting on its pushed account/
+        # session prerequisite. Its owner is unroutable only during the detour and
+        # becomes routable once the prerequisite completes; sweeping it here would
+        # silently drop the gated request before it can resume.
+        if list(getattr(th, "blocked_on", None) or []):
+            continue
         if not owner or (names and owner not in names):
             try:
                 await th.cancel(reason="orphan flow task — owner unroutable")
