@@ -1276,11 +1276,16 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
         extras.get("pre_tools_results") or []
     )
     for _ in range(8):
-        if (
-            extras.get("for_each_expand") is not None
-            or extras.get("interview_complete")
-            or not str(session.get_value(next_field["key"]) or "").strip()
+        if extras.get("for_each_expand") is not None or extras.get(
+            "interview_complete"
         ):
+            break
+        # Resolved = the hook filled the field OR skipped it (e.g. a decline
+        # detector calling session.skip_field). Either way the prompt is stale.
+        _resolved = bool(
+            str(session.get_value(next_field["key"]) or "").strip()
+        ) or session.is_skipped(next_field["key"])
+        if not _resolved:
             break
         # A hook that filled its field AND authored its own directive (e.g. an
         # async kickoff: "Still checking your link…") owns the reply — honour
@@ -1640,6 +1645,16 @@ def _review_response(
     return interview_tool_response(ok=ok, status=status, **payload)
 
 
+REVIEW_PRESENTED_MARKER_KEY = "review_presented_marker"
+
+
+def _interaction_marker(visitor: Any) -> str:
+    """Stable id for the current interaction turn (empty when unavailable)."""
+    interaction = getattr(visitor, "interaction", None)
+    marker = getattr(interaction, "id", None) if interaction is not None else None
+    return str(marker or "")
+
+
 async def handle_review(action: Any, visitor: Any = None) -> str:
     session, spec = await action._get_session_and_contract(visitor)
     if not session or not spec:
@@ -1658,6 +1673,7 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
             session, spec, collected, visible_keys=visible_keys
         )
         session.status = InterviewStatus.REVIEW
+        session.context[REVIEW_PRESENTED_MARKER_KEY] = _interaction_marker(visitor)
         await action._save_session(session, visitor)
         return _review_response(session, spec, review_fields, summary)
 
@@ -1724,6 +1740,7 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
         additional_data=additional_data,
     )
     session.status = InterviewStatus.REVIEW
+    session.context[REVIEW_PRESENTED_MARKER_KEY] = _interaction_marker(visitor)
     await action._save_session(session, visitor)
     review_fields = {
         k: collected[k] for k in visible_keys if k in collected and k not in omit_fields
@@ -1757,6 +1774,27 @@ async def handle_complete(action: Any, visitor: Any = None) -> str:
             next_tool="interview__review",
             response_directive=call_tool_directive("interview__review"),
         )
+
+    # Same-turn confirmation guard: under manual confirmation the user must SEE
+    # the review summary and reply to it. If the review was produced on this
+    # very interaction, no user confirmation can exist yet — a model chaining
+    # review → complete in one turn is confirming on the user's behalf (e.g. a
+    # stray "confirm" that answered a different question). Deliver the summary
+    # and wait; the completion is one legitimate turn away.
+    if spec.confirm != "auto":
+        marker = _interaction_marker(visitor)
+        stamped = str(session.context.get(REVIEW_PRESENTED_MARKER_KEY) or "")
+        if marker and stamped and marker == stamped:
+            return interview_tool_response(
+                ok=False,
+                status=session.status.value,
+                error="User confirmation required after review.",
+                response_directive=(
+                    "Present the review summary to the user now and wait for "
+                    "their explicit confirmation (e.g. 'yes' / 'confirm') "
+                    "before calling interview__complete."
+                ),
+            )
 
     fields_summary = session.get_collected_summary()
     complete_fn = spec.handlers.complete

@@ -81,6 +81,28 @@ async def test_complete_allowed_after_review(signup_action):
 
 
 @pytest.mark.asyncio
+async def test_same_turn_review_complete_blocked_under_manual_confirm(signup_action):
+    """A model chaining review -> complete inside ONE interaction is confirming on
+    the user's behalf — the summary was never seen. Blocked on the same
+    interaction; allowed on the next one (user replied to the summary)."""
+    action, spec = signup_action
+    visitor = await _activate(action)
+    visitor.interaction = SimpleNamespace(id="turn-1")
+
+    await action._handle_review(visitor=visitor)
+    result = json.loads(await action._handle_complete(visitor=visitor))
+    assert result["ok"] is False
+    assert result["status"] != "completed"
+    assert "confirmation" in result["response_directive"].lower()
+
+    # Next interaction (the user has now seen and answered the summary).
+    visitor.interaction = SimpleNamespace(id="turn-2")
+    result = json.loads(await action._handle_complete(visitor=visitor))
+    assert result["ok"] is True
+    assert result["status"] == "completed"
+
+
+@pytest.mark.asyncio
 async def test_skip_unknown_field_key_is_rejected_no_phantom_skip(signup_action):
     """A skip with a key the spec doesn't define (a model guess from the prompt
     text) must NOT record a phantom skip — it re-anchors on the real pending
