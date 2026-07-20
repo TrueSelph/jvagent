@@ -1,6 +1,7 @@
 # ADR-0034 — Interview Abandonment: Field Unavailability, Parking, and Staleness Reaping
 
-- **Status:** Proposed — spec approved for implementation 2026-07-19.
+- **Status:** Accepted — L1–L6 implemented (L1–L4 + L6 on 2026-07-20, L5
+  two-strike soft-abandon on 2026-07-20). Spec approved 2026-07-19.
 - **Date:** 2026-07-19
 - **Related:** ADR-0026 (task-driven turn-lock, snapshot/rehydrate), ADR-0031 (skill SOP extends), QUO-2 reaper pattern (consumer precedent: TaskMonitor-driven timeout sweep for async jobs).
 
@@ -176,3 +177,60 @@ the pending field (mirrors the existing skip_field guidance).
 6. zoon frontmatter matrix + guidance lines; live verification battery
    (park→resume, relax-forbidden load error, reaper TTL with shortened
    clock, two-strike switch).
+
+## Implementation status (2026-07-20)
+
+All six layers are implemented, tested, and committed.
+
+- **L1 spec + validation** — `spec.py`: `FieldDef.on_unavailable`/`relaxable`,
+  `InterviewSpec.on_abandon` + TTL trio, compulsory-field rule (relax ⇒
+  relaxable) enforced at parse, `parse_duration_seconds`. (jvagent `4da65694`)
+- **L2 `interview__field_unavailable`** — tool + park/cancel/relax executors in
+  `engine.handle_field_unavailable`; base SKILL.md allowed-tools + intent table.
+  (jvagent `4da65694`)
+- **L3 parked status + resume** — `task_store` `parked` status (+ `park()` /
+  `resume_parked()`); `handle_start` rehydrates a parked task on re-activation.
+  `pick_top_runnable`/orphan-sweep already ignore it (not runnable). (jvagent
+  `4da65694`)
+- **L4 staleness reaper** — `interview/reaper.py` on the TaskMonitor tick:
+  nudge / abandon(park|cancel) / expire, with blocked-on + non-interview rails.
+  (jvagent `908bb52a`)
+- **L6 zoon policy matrix** — frontmatter-only across ticket / pre_alert /
+  quotation / account_provisioning + guidance lines. (zoon `00bf880`)
+- **L5 two-strike soft-abandon** — orchestrator companion gate
+  (`loop.py`) + strike accounting/apply in `continuation.py`
+  (`note_soft_abandon_strike`, `apply_soft_abandon`, `soft_abandon_title`,
+  `soft_abandon_collected_count`). Interview coupling kept behind lazy imports
+  so the no-interview-literals guard still passes.
+
+### L5 implementation notes
+
+Primary seam: the companion gate in `loop.py` — a non-companion
+`use_skill(name=…)` while task-locked was previously hard-blocked and steered
+back. That block *is* the strike condition: since the model emits one action per
+turn, choosing `use_skill` over a field-store inherently satisfies "off-topic,
+no field content". There is no routing confidence score (routing is model-driven
+`use_skill`), so "high-confidence different-skill match" == the model named a
+non-companion skill.
+
+Deterministic, NLU-free behaviour:
+- Strike counter on `conversation.context` keyed by locked skill name (mirrors
+  `note_locked_flow_error` / `_ERROR_STREAK_KEY`). The collected-field count is
+  stored alongside each strike.
+- On a gate hit (once per turn): read `len(session.get_collected_summary())`. If
+  it grew since the last strike, the user engaged the interview between attempts
+  → reset the streak to 1 ("continued engagement clears the strikes", observed
+  deterministically). Otherwise increment.
+- Streak 1: bounce as before. Streak 2: bounce but compose the one-turn ask
+  ("Want me to set aside the <spec.title> for now and help with that
+  instead?"). Streak ≥ 3 (the model persisted past the ask == the "yes"): apply
+  `spec.on_abandon` by reusing `reaper._apply_abandon` (park|cancel), then clear
+  `active_skill_doc` and `continue` so this turn's utterance re-routes through
+  the now-unlocked surface.
+- Persistence-as-confirmation is chosen over an affirmative-detection heuristic
+  to keep the hot path deterministic. The ADR's literal "ask on 2nd, yes on the
+  next turn" is honoured in spirit; a persisted repeat is the yes.
+
+Open verification: the two-strike switch under a live model (unit + loop-wiring
+tests cover the deterministic accounting, the streak-2 ask, and the streak-3
+apply+route in `tests/action/orchestrator/test_soft_abandon.py`).
