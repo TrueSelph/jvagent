@@ -222,6 +222,19 @@ def _significant_tokens(s: str) -> set:
     }
 
 
+def _is_tool_chain_directive(directive: str) -> bool:
+    """True when a directive is a bare tool-chain instruction ("Call <tool>().").
+
+    Chain directives are model-facing routing, never user copy — a terminal
+    delivery path must not voice one verbatim. Matches the shared
+    ``call_tool_directive`` shape generically (any tool name), keeping this
+    module free of skill-specific tool literals.
+    """
+    return bool(
+        re.match(r"^call\s+[a-z0-9_]+(\(\))?\.?$", (directive or "").strip().lower())
+    )
+
+
 def _text_candidate(decision: Dict[str, Any]) -> str:
     """Pull the first non-empty user-facing string from a model decision."""
     return _text_candidate_impl(decision)
@@ -1707,7 +1720,10 @@ class OrchestratorInteractAction(
 
         if auto_resolves:
             resumed_directive = self._last_activation_directive(observations)
-            if resumed_directive:
+            # A tool-chain instruction ("Call <tool>().") is model-facing, not
+            # user copy — never deliver it terminally. Fall through to the entry
+            # path, which executes chains server-side and yields the real prompt.
+            if resumed_directive and not _is_tool_chain_directive(resumed_directive):
                 question = self._directive_user_text(resumed_directive)
                 terminal = "Tell the user or ask the user: " + (
                     f"{ack} {question}".strip()

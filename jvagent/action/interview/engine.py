@@ -1282,6 +1282,12 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
             or not str(session.get_value(next_field["key"]) or "").strip()
         ):
             break
+        # A hook that filled its field AND authored its own directive (e.g. an
+        # async kickoff: "Still checking your link…") owns the reply — honour
+        # it. Only the stale default prompt (re-asking the just-filled field)
+        # justifies recomputing.
+        if directive != field_prompt_directive(fdef.prompt, fdef.hint):
+            break
         recomputed = await build_next_field(session, spec, load_fn, visitor, action)
         if recomputed is None:
             if _hook_results_acc:
