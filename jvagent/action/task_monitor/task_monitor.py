@@ -281,12 +281,61 @@ class TaskMonitor(Action):
 
             due_convs = await Conversation.find(query)
             scoped_convs = []
+            seen_conv_ids = set()
             for conv in due_convs:
                 user = await conv.node(direction="in", node=User)
                 if user and (
                     user.memory_id == memory.id or await memory.is_connected_to(user)
                 ):
                     scoped_convs.append(conv)
+                    seen_conv_ids.add(conv.id)
+
+            # ADR-0034: resolve the interview action once so the staleness reaper
+            # can look up per-skill TTL policy, then also scope in conversations
+            # that hold an idle interview SKILL task but no proactive task.
+            interview_action = None
+            spec_lookup = None
+            try:
+                interview_action = await agent.get_action_by_type("InterviewAction")
+                if interview_action is not None and hasattr(
+                    interview_action, "_ensure_specs_loaded"
+                ):
+                    await interview_action._ensure_specs_loaded()
+            except Exception as exc:
+                logger.debug("TaskMonitor: interview action lookup failed: %s", exc)
+                interview_action = None
+            if interview_action is not None:
+
+                def spec_lookup(owner: str, _ia: Any = interview_action) -> Any:
+                    try:
+                        return _ia._registry.get(owner)
+                    except Exception:
+                        return None
+
+                iv_query: Dict[str, Any] = {
+                    "tasks": {
+                        "$elemMatch": {
+                            "task_type": "SKILL",
+                            "status": {"$in": ["active", "parked"]},
+                            "data.interview_managed": True,
+                        }
+                    }
+                }
+                if conversation_id:
+                    iv_query["session_id"] = conversation_id
+                try:
+                    for conv in await Conversation.find(iv_query):
+                        if conv.id in seen_conv_ids:
+                            continue
+                        user = await conv.node(direction="in", node=User)
+                        if user and (
+                            user.memory_id == memory.id
+                            or await memory.is_connected_to(user)
+                        ):
+                            scoped_convs.append(conv)
+                            seen_conv_ids.add(conv.id)
+                except Exception as exc:
+                    logger.debug("TaskMonitor: interview conv scan failed: %s", exc)
 
             dispatched_count = 0
             semaphore = asyncio.Semaphore(max(1, int(self.max_parallel_conversations)))
@@ -317,6 +366,45 @@ class TaskMonitor(Action):
                                 ttl_days=int(self.terminal_ttl_days or 0),
                                 now=now_dt,
                             )
+
+                            # ADR-0034: staleness reaper for idle interview tasks
+                            # (nudge / abandon / expire). No-op for conversations
+                            # without idle interview tasks. Runs under the same
+                            # per-conversation lock (the in-flight-turn rail).
+                            if interview_action is not None and not dry_run:
+                                try:
+                                    from jvagent.action.interview.reaper import (
+                                        reap_interview_tasks,
+                                    )
+
+                                    async def _send(
+                                        text: str, _conv: Any = conversation
+                                    ) -> None:
+                                        if hasattr(agent, "send_proactive_message"):
+                                            await agent.send_proactive_message(
+                                                user_id=getattr(_conv, "user_id", "")
+                                                or "",
+                                                content=text,
+                                                channel=getattr(_conv, "channel", "")
+                                                or "default",
+                                                session_id=getattr(
+                                                    _conv, "session_id", None
+                                                ),
+                                            )
+
+                                    await reap_interview_tasks(
+                                        conversation,
+                                        store,
+                                        spec_lookup,
+                                        now_dt,
+                                        send=_send,
+                                    )
+                                except Exception as exc:
+                                    logger.debug(
+                                        "TaskMonitor: interview reap failed for %s: %s",
+                                        conv_id,
+                                        exc,
+                                    )
 
                             handle = pick_next_proactive_task(store, now=now_dt)
                             if handle is None:
