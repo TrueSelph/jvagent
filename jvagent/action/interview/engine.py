@@ -1264,6 +1264,45 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
             error=f"Unknown field '{next_field['key']}'.",
         )
     directive, extras = await run_pre_processors(action, session, spec, fdef, visitor)
+    # An ask-time pre_processor may fill the very field it guards (e.g. the
+    # built-in seed_field_from_activation, or a custom seeding hook reading the
+    # original request). The prompt computed above is then stale — delivering it
+    # would re-ask a question that is already answered (observed as the intent
+    # menu appearing despite an explicit "pre-alert …", and a tracking number
+    # being re-asked right after it was seeded). Recompute until the pending
+    # field is genuinely unanswered. Bounded; the expansion/completion branches
+    # below handle their own recompute.
+    _hook_results_acc: List[Dict[str, Any]] = list(
+        extras.get("pre_tools_results") or []
+    )
+    for _ in range(8):
+        if (
+            extras.get("for_each_expand") is not None
+            or extras.get("interview_complete")
+            or not str(session.get_value(next_field["key"]) or "").strip()
+        ):
+            break
+        recomputed = await build_next_field(session, spec, load_fn, visitor, action)
+        if recomputed is None:
+            if _hook_results_acc:
+                await action._save_session(session, visitor)
+            return interview_tool_response(
+                ok=True,
+                status=session.status.value,
+                skipped_fields=sorted(session.skipped_fields) or None,
+                next_tool="interview__review",
+                response_directive=call_tool_directive("interview__review"),
+            )
+        if recomputed["key"] == next_field["key"]:
+            break
+        next_field = recomputed
+        fdef = resolve_field_def(session, spec, next_field["key"]) or fdef
+        directive, extras = await run_pre_processors(
+            action, session, spec, fdef, visitor
+        )
+        _hook_results_acc.extend(extras.get("pre_tools_results") or [])
+    if _hook_results_acc:
+        extras["pre_tools_results"] = _hook_results_acc
     parent_fdef = spec.get_field(next_field["key"])
     if (
         parent_fdef
