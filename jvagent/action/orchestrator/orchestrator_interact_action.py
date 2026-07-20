@@ -1557,9 +1557,7 @@ class OrchestratorInteractAction(
         if top is None:
             return None
         owner = getattr(top, "owner_action", None)
-        doc = next(
-            (d for d in skill_docs if getattr(d, "name", None) == owner), None
-        )
+        doc = next((d for d in skill_docs if getattr(d, "name", None) == owner), None)
         if doc is None or getattr(doc, "task_lock", False):
             return None
         if not (getattr(top, "seed", None) or {}).get("utterance"):
