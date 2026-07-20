@@ -13,12 +13,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import jvagent.action.orchestrator.orchestrator_interact_action as sei
+from jvagent.action.interview.spec import InterviewSpec
 from jvagent.action.orchestrator import continuation
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
 from jvagent.action.orchestrator.skills import SkillDoc
-from jvagent.action.interview.spec import InterviewSpec
 
 # --------------------------------------------------------------------------- #
 # Fakes
