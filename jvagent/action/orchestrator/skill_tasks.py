@@ -670,6 +670,7 @@ async def ensure_task_lock_session(
         if hasattr(bound, "_ensure_specs_loaded"):
             await bound._ensure_specs_loaded()
         needs = await bound.needs_task_lock_rebootstrap(doc.name, visitor)
+        rehydrated = False
         if needs and hasattr(bound, "rehydrate_from_task"):
             # ADR-0026: rebuild the runtime from the task snapshot before starting
             # fresh, so a flow torn down for a detour resumes with its prior state.
@@ -679,6 +680,7 @@ async def ensure_task_lock_session(
             if snap:
                 try:
                     if await bound.rehydrate_from_task(doc.name, snap, visitor):
+                        rehydrated = True
                         needs = await bound.needs_task_lock_rebootstrap(
                             doc.name, visitor
                         )
@@ -688,11 +690,35 @@ async def ensure_task_lock_session(
                         doc.name,
                         exc,
                     )
-        if needs and hasattr(bound, "on_skill_activate"):
+        # Fire the skill's activation when a fresh runtime is needed. Also fire it
+        # after rehydrating a torn-down flow whose first pending field auto-resolves
+        # on activation (a pre_processor fills it, or a declarative
+        # seed_from_activation match). Rehydration restores the session but never
+        # runs that activation, so on a gated resume a pre_processor-filled first
+        # field — one the activation fills from the original request (possibly with
+        # side effects) — sits un-processed until the model happens to advance the
+        # interview, which on a single-field auto-fill skill it often never does (it
+        # narrates instead). The rehydrated-resume activation runs with no activation
+        # message so the session's preserved activation_utterance (the original
+        # request) is not clobbered by this turn's utterance (e.g. a prompted code).
+        activate_msg: Optional[str] = None
+        if needs:
+            activate_msg = user_message
+        elif rehydrated and hasattr(bound, "gated_resume_auto_resolves"):
+            try:
+                if await bound.gated_resume_auto_resolves(doc.name, visitor):
+                    activate_msg = ""
+            except Exception as exc:
+                logger.debug(
+                    "skill_tasks: gated_resume_auto_resolves failed for %s: %s",
+                    doc.name,
+                    exc,
+                )
+        if activate_msg is not None and hasattr(bound, "on_skill_activate"):
             note = await bound.on_skill_activate(
                 doc.name,
                 visitor,
-                user_message=user_message,
+                user_message=activate_msg,
             )
         else:
             note = None
