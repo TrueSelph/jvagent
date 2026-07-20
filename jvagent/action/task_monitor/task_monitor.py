@@ -277,6 +277,20 @@ class TaskMonitor(Action):
             if not memory:
                 return {"error": "Memory not found"}
 
+            # QUO-2 (optional consumer hook): ProductAction may expose
+            # ``reap_stale_extraction_jobs`` to close abandoned jvcapture jobs
+            # without a user poll. No-op when the action is absent.
+            if not dry_run:
+                try:
+                    product_action = await agent.get_action_by_type("ProductAction")
+                    reap_fn = getattr(
+                        product_action, "reap_stale_extraction_jobs", None
+                    )
+                    if callable(reap_fn):
+                        await reap_fn()
+                except Exception as exc:
+                    logger.debug("TaskMonitor: product extraction reap failed: %s", exc)
+
             from jvagent.memory.user import User
 
             due_convs = await Conversation.find(query)
@@ -294,7 +308,6 @@ class TaskMonitor(Action):
             # can look up per-skill TTL policy, then also scope in conversations
             # that hold an idle interview SKILL task but no proactive task.
             interview_action = None
-            spec_lookup = None
             try:
                 interview_action = await agent.get_action_by_type("InterviewAction")
                 if interview_action is not None and hasattr(
@@ -304,13 +317,14 @@ class TaskMonitor(Action):
             except Exception as exc:
                 logger.debug("TaskMonitor: interview action lookup failed: %s", exc)
                 interview_action = None
-            if interview_action is not None:
 
-                def spec_lookup(owner: str, _ia: Any = interview_action) -> Any:
-                    try:
-                        return _ia._registry.get(owner)
-                    except Exception:
-                        return None
+            def spec_lookup(owner: str, _ia: Any = interview_action) -> Any:
+                try:
+                    return _ia._registry.get(owner) if _ia is not None else None
+                except Exception:
+                    return None
+
+            if interview_action is not None:
 
                 iv_query: Dict[str, Any] = {
                     "tasks": {
