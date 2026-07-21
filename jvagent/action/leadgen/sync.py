@@ -5,12 +5,19 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 DIGEST_KEY = "_leadgen_sync_digest"
 LEGACY_DIGEST_KEY = "_lead_sync_mcp_DIGEST"
+UTC_MINUS_4 = timezone(timedelta(hours=-4))
+
+
+def _now_utc_minus_4() -> str:
+    return datetime.now(UTC_MINUS_4).strftime("%Y-%m-%d %H:%M")
 
 
 def compute_digest(data: Dict[str, Any]) -> str:
@@ -44,8 +51,12 @@ def substitute(val: Any, profile_data: Dict[str, Any], user_id: str) -> Any:
         s = s.replace("{profile_json}", profile_json)
         s = s.replace("{profile_keys}", json.dumps(profile_keys))
         s = s.replace("{profile_row}", json.dumps(profile_row))
+        s = s.replace("{last_updated}", _now_utc_minus_4())
         for k, v in profile_data.items():
             s = s.replace(f"{{{k}}}", str(v) if v is not None else "")
+        # Any remaining {placeholder} refers to a field that has not been
+        # captured; keep the cell blank instead of leaking the literal token.
+        s = __import__("re").sub(r"\{[A-Za-z_][A-Za-z0-9_]*\}", "", s)
         return s
 
     if isinstance(val, str):
@@ -138,6 +149,9 @@ async def _sync_mcp(
     server_name = (entry.get("server") or "").strip()
     tool_name = (entry.get("tool") or "").strip()
     raw_args = entry.get("arguments") or {}
+    upsert_key = (entry.get("upsert_key") or "").strip()
+    read_tool = (entry.get("read_tool") or "").strip()
+    write_tool = (entry.get("write_tool") or "").strip()
 
     if not tool_name:
         return False, f"Missing 'tool' for MCP entry '{server_name}'."
@@ -153,6 +167,15 @@ async def _sync_mcp(
             return False, f"Cannot get MCP client for '{server_name}': {exc2}"
         logger.debug("sync fallback client for %s: %s", server_name, exc)
 
+    # Upsert path: read sheet, find existing row by key, overwrite or append.
+    if upsert_key:
+        if not read_tool or not write_tool:
+            return False, f"upsert_key requires read_tool and write_tool for '{server_name}'."
+        ok, msg = await _sync_mcp_upsert(
+            client, tool_name, read_tool, write_tool, resolved_args, raw_args, upsert_key, profile_data, uid
+        )
+        return ok, msg
+
     try:
         call_result = await client.call_tool(tool_name, resolved_args)
         from jvagent.action.mcp.mcp_action import normalize_call_result
@@ -162,5 +185,267 @@ async def _sync_mcp(
             return False, f"MCP error: {norm.text}"
         return True, "ok"
     except Exception as exc:
-        logger.error("sync_mcp %s.%s: %s", server_name, tool_name, exc)
+        import traceback
+        logger.error("sync_mcp %s.%s failed:\n%s", server_name, tool_name, traceback.format_exc())
         return False, f"Exception: {exc}"
+
+
+async def _sync_mcp_upsert(
+    client: Any,
+    append_tool: str,
+    read_tool: str,
+    write_tool: str,
+    resolved_args: Dict[str, Any],
+    raw_args: Dict[str, Any],
+    upsert_key: str,
+    profile_data: Dict[str, Any],
+    uid: str,
+) -> Tuple[bool, str]:
+    """Append-or-update any MCP destination keyed by upsert_key (e.g. user_id).
+
+    Generic strategy:
+      1. Read the destination via read_tool.
+      2. Search the response text for the upsert_key value.
+      3. If found → call write_tool with resolved_args (augmented with
+         match context like row index or old text block).
+      4. If not found → call append_tool with resolved_args.
+    """
+    from jvagent.action.mcp.mcp_action import normalize_call_result
+
+    key_value = str(profile_data.get(upsert_key, uid))
+    if not key_value:
+        return False, "upsert: upsert key value is empty"
+
+    # Build read args from the resolved args — pass through everything
+    # the destination needs (account, spreadsheetId, documentId, etc.).
+    read_args = dict(resolved_args)
+    # Remove append/write-specific keys that don't belong in a read call.
+    for drop in ("values", "textToAppend", "valueInputOption", "addNewlineIfNeeded",
+                 "oldText", "newText"):
+        read_args.pop(drop, None)
+    # Expand single-cell ranges (e.g. "Leads!A1") to full-column reads
+    # so the upsert can find existing rows.
+    if "range" in read_args:
+        r = read_args["range"]
+        if "!" in r:
+            sheet, cell = r.split("!", 1)
+            if re.match(r"^[A-Z]+\d+$", cell):
+                read_args["range"] = f"{sheet}!A:Z"
+
+    try:
+        read_result = await client.call_tool(read_tool, read_args)
+        norm = normalize_call_result(read_result, read_tool)
+        if norm.is_error:
+            return False, f"upsert read error: {norm.text}"
+        response_text = norm.text
+    except Exception as exc:
+        import traceback
+        logger.error("upsert read failed:\n%s", traceback.format_exc())
+        return False, f"upsert read exception: {exc}"
+
+    # Auto-create header row if the sheet is empty.
+    rows = _parse_read_response(response_text)
+    if not rows or (len(rows) == 1 and all(not cell for cell in rows[0])):
+        header = _extract_header(raw_args)
+        if header:
+            await _write_header(client, write_tool, resolved_args, header)
+            # Re-read after writing header so match_ctx has the right row count.
+            try:
+                read_result = await client.call_tool(read_tool, read_args)
+                norm = normalize_call_result(read_result, read_tool)
+                if not norm.is_error:
+                    response_text = norm.text
+            except Exception:
+                pass
+
+    match_ctx = _search_for_key(response_text, upsert_key, key_value)
+    if match_ctx is None:
+        try:
+            call_result = await client.call_tool(append_tool, resolved_args)
+            norm = normalize_call_result(call_result, append_tool)
+            if norm.is_error:
+                return False, f"upsert append error: {norm.text}"
+            return True, "ok"
+        except Exception as exc:
+            import traceback
+            logger.error("upsert append failed:\n%s", traceback.format_exc())
+            return False, f"upsert append exception: {exc}"
+
+    write_args = dict(resolved_args)
+    write_args.update(match_ctx)
+    # Remove append-only keys that don't belong in a write call.
+    for drop in ("addNewlineIfNeeded", "textToAppend"):
+        write_args.pop(drop, None)
+    # If match_ctx provided oldText (doc edit), set newText from the template.
+    if "oldText" in match_ctx and "newText" not in match_ctx:
+        write_args["newText"] = resolved_args.get("textToAppend", "").strip()
+
+    try:
+        write_result = await client.call_tool(write_tool, write_args)
+        norm = normalize_call_result(write_result, write_tool)
+        if norm.is_error:
+            return False, f"upsert write error: {norm.text}"
+        return True, "updated"
+    except Exception as exc:
+        import traceback
+        logger.error("upsert write failed:\n%s", traceback.format_exc())
+        return False, f"upsert write exception: {exc}"
+
+
+def _search_for_key(text: str, key: str, value: str) -> Optional[Dict[str, Any]]:
+    """Search response text for a key=value match. Returns match context or None.
+
+    Tries multiple strategies in order:
+      1. JSON with 'values' array (spreadsheet rows) → returns {"range": "Sheet!A5:Z5"}
+      2. Markdown Row N: [...] lines → returns {"range": "Sheet!A5:Z5"}
+      3. ---delimited text blocks → returns {"oldText": "<block>"}
+      4. Plain text substring match → returns {} (key exists, write tool handles the rest)
+    """
+    if not text or not value:
+        return None
+
+    # Strip <untrusted-content> wrappers that some MCP servers (e.g.
+    # google-workspace-mcp) wrap around all responses.
+    # Extract sheet name from the full text before stripping — the range
+    # info lives outside the <untrusted-content> block.
+    sheet = "Sheet1"
+    range_match = re.search(r"(?:Spreadsheet\s+)?[Rr]ange:\s*\*?\*?\s*([A-Za-z0-9_]+)!", text)
+    if range_match:
+        sheet = range_match.group(1)
+    text = _strip_untrusted_wrapper(text)
+
+    # Strategy 1 & 2: row-based (spreadsheets)
+    rows = _parse_read_response(text)
+    if rows:
+        for i, row in enumerate(rows):
+            if row and str(row[0]) == value:
+                row_num = i + 1
+                num_cols = max(len(row), 1)
+                end_col = _column_letter(num_cols)
+                return {
+                    "range": f"{sheet}!A{row_num}:{end_col}{row_num}",
+                }
+        # Rows were parsed but no match — key not found.
+        return None
+
+    # Strategy 3: ---delimited text blocks
+    blocks = re.split(r"\n---\n", text)
+    for block in blocks:
+        block_stripped = block.strip()
+        if not block_stripped:
+            continue
+        escaped_key = re.escape(key)
+        escaped_val = re.escape(value)
+        if re.search(rf"{escaped_key}[:\s]+{escaped_val}", block_stripped, re.IGNORECASE):
+            return {"oldText": block_stripped}
+
+    # Strategy 4: plain text substring match
+    if value in text:
+        return {}
+
+    return None
+
+
+def _strip_untrusted_wrapper(text: str) -> str:
+    """Strip <untrusted-content> wrappers that some MCP servers wrap around responses."""
+    if not text:
+        return ""
+    match = re.search(r"<untrusted-content>\s*(.*?)\s*</untrusted-content>", text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return text.strip()
+
+
+def _parse_read_response(text: str) -> List[List[str]]:
+    """Extract rows from an MCP spreadsheet read response.
+
+    Some MCP servers (e.g. google-workspace-mcp) return a markdown-wrapped
+    block containing rows like:
+
+        Row 1: ["a", "b"]
+        Row 2: ["c", "d"]
+
+    Others return plain JSON with a "values" array. Try JSON first, then
+    fall back to parsing the markdown row lines.
+    """
+    if not text or not text.strip():
+        return []
+    stripped = text.strip()
+    # Try plain JSON first.
+    try:
+        data = json.loads(stripped)
+        values = data.get("values") if isinstance(data, dict) else None
+        if isinstance(values, list):
+            return values
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Fallback: extract Row N: [...] arrays from markdown text.
+    rows: List[List[Any]] = []
+    # Match lines like: Row 1: ["a", "b"] or Row 10: []
+    row_re = re.compile(r"^Row\s+(\d+):\s*(\[.*\])\s*$", re.MULTILINE)
+    for match in row_re.finditer(stripped):
+        row_text = match.group(2)
+        try:
+            row = json.loads(row_text)
+            if isinstance(row, list):
+                rows.append(row)
+        except (json.JSONDecodeError, ValueError):
+            continue
+    return rows
+
+
+def _column_letter(n: int) -> str:
+    """Convert 1-based column index to Excel letter(s)."""
+    out = ""
+    while n > 0:
+        n, r = divmod(n - 1, 26)
+        out = chr(ord("A") + r) + out
+    return out or "A"
+
+
+def _extract_header(resolved_args: Dict[str, Any]) -> Optional[List[str]]:
+    """Derive column headers from the template values.
+
+    If the values contain {placeholder} tokens, use the placeholder names
+    as headers. Otherwise return None (no auto-header needed).
+    """
+    values = resolved_args.get("values")
+    if not values or not isinstance(values, list):
+        return None
+    row = values[0] if isinstance(values[0], list) else values
+    headers = []
+    for cell in row:
+        cell_str = str(cell) if cell is not None else ""
+        match = re.match(r"^\{([A-Za-z_][A-Za-z0-9_]*)\}$", cell_str)
+        if match:
+            headers.append(match.group(1).replace("_", " ").title())
+        else:
+            return None
+    return headers if headers else None
+
+
+async def _write_header(
+    client: Any,
+    write_tool: str,
+    resolved_args: Dict[str, Any],
+    header: List[str],
+) -> None:
+    """Write a header row to the sheet."""
+    from jvagent.action.mcp.mcp_action import normalize_call_result
+
+    sheet_range = resolved_args.get("range", "Sheet1!A1")
+    sheet = sheet_range.split("!")[0] if "!" in sheet_range else "Sheet1"
+    end_col = _column_letter(len(header))
+    header_range = f"{sheet}!A1:{end_col}1"
+    header_args = {
+        "account": resolved_args.get("account"),
+        "spreadsheetId": resolved_args.get("spreadsheetId"),
+        "range": header_range,
+        "values": [header],
+        "valueInputOption": resolved_args.get("valueInputOption", "RAW"),
+    }
+    try:
+        await client.call_tool(write_tool, header_args)
+    except Exception as exc:
+        logger.warning("upsert: failed to write header row: %s", exc)

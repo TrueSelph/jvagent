@@ -1,0 +1,14 @@
+package:
+  name: jvagent/mcp_oauth
+  author: V75 Inc.
+  archetype: MCPOAuthAction
+  version: 1.0.0
+  meta:
+    title: MCP OAuth Action
+    description: Exposes styled endpoints for clients to authorize their accounts for stdio MCP servers (like google-workspace-mcp) without any CLI.
+    group: jvagent
+    type: action
+  dependencies:
+    jvagent: ~0.0.1
+    actions: []
+    pip: []
