@@ -6,7 +6,7 @@ import hashlib
 import json
 import logging
 import re
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -170,9 +170,20 @@ async def _sync_mcp(
     # Upsert path: read sheet, find existing row by key, overwrite or append.
     if upsert_key:
         if not read_tool or not write_tool:
-            return False, f"upsert_key requires read_tool and write_tool for '{server_name}'."
+            return (
+                False,
+                f"upsert_key requires read_tool and write_tool for '{server_name}'.",
+            )
         ok, msg = await _sync_mcp_upsert(
-            client, tool_name, read_tool, write_tool, resolved_args, raw_args, upsert_key, profile_data, uid
+            client,
+            tool_name,
+            read_tool,
+            write_tool,
+            resolved_args,
+            raw_args,
+            upsert_key,
+            profile_data,
+            uid,
         )
         return ok, msg
 
@@ -186,7 +197,10 @@ async def _sync_mcp(
         return True, "ok"
     except Exception as exc:
         import traceback
-        logger.error("sync_mcp %s.%s failed:\n%s", server_name, tool_name, traceback.format_exc())
+
+        logger.error(
+            "sync_mcp %s.%s failed:\n%s", server_name, tool_name, traceback.format_exc()
+        )
         return False, f"Exception: {exc}"
 
 
@@ -220,8 +234,14 @@ async def _sync_mcp_upsert(
     # the destination needs (account, spreadsheetId, documentId, etc.).
     read_args = dict(resolved_args)
     # Remove append/write-specific keys that don't belong in a read call.
-    for drop in ("values", "textToAppend", "valueInputOption", "addNewlineIfNeeded",
-                 "oldText", "newText"):
+    for drop in (
+        "values",
+        "textToAppend",
+        "valueInputOption",
+        "addNewlineIfNeeded",
+        "oldText",
+        "newText",
+    ):
         read_args.pop(drop, None)
     # Expand single-cell ranges (e.g. "Leads!A1") to full-column reads
     # so the upsert can find existing rows.
@@ -240,6 +260,7 @@ async def _sync_mcp_upsert(
         response_text = norm.text
     except Exception as exc:
         import traceback
+
         logger.error("upsert read failed:\n%s", traceback.format_exc())
         return False, f"upsert read exception: {exc}"
 
@@ -268,6 +289,7 @@ async def _sync_mcp_upsert(
             return True, "ok"
         except Exception as exc:
             import traceback
+
             logger.error("upsert append failed:\n%s", traceback.format_exc())
             return False, f"upsert append exception: {exc}"
 
@@ -288,6 +310,7 @@ async def _sync_mcp_upsert(
         return True, "updated"
     except Exception as exc:
         import traceback
+
         logger.error("upsert write failed:\n%s", traceback.format_exc())
         return False, f"upsert write exception: {exc}"
 
@@ -309,7 +332,9 @@ def _search_for_key(text: str, key: str, value: str) -> Optional[Dict[str, Any]]
     # Extract sheet name from the full text before stripping — the range
     # info lives outside the <untrusted-content> block.
     sheet = "Sheet1"
-    range_match = re.search(r"(?:Spreadsheet\s+)?[Rr]ange:\s*\*?\*?\s*([A-Za-z0-9_]+)!", text)
+    range_match = re.search(
+        r"(?:Spreadsheet\s+)?[Rr]ange:\s*\*?\*?\s*([A-Za-z0-9_]+)!", text
+    )
     if range_match:
         sheet = range_match.group(1)
     text = _strip_untrusted_wrapper(text)
@@ -336,7 +361,9 @@ def _search_for_key(text: str, key: str, value: str) -> Optional[Dict[str, Any]]
             continue
         escaped_key = re.escape(key)
         escaped_val = re.escape(value)
-        if re.search(rf"{escaped_key}[:\s]+{escaped_val}", block_stripped, re.IGNORECASE):
+        if re.search(
+            rf"{escaped_key}[:\s]+{escaped_val}", block_stripped, re.IGNORECASE
+        ):
             return {"oldText": block_stripped}
 
     # Strategy 4: plain text substring match
@@ -350,7 +377,9 @@ def _strip_untrusted_wrapper(text: str) -> str:
     """Strip <untrusted-content> wrappers that some MCP servers wrap around responses."""
     if not text:
         return ""
-    match = re.search(r"<untrusted-content>\s*(.*?)\s*</untrusted-content>", text, re.DOTALL)
+    match = re.search(
+        r"<untrusted-content>\s*(.*?)\s*</untrusted-content>", text, re.DOTALL
+    )
     if match:
         return match.group(1).strip()
     return text.strip()

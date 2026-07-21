@@ -4,20 +4,18 @@ import html
 import json
 import logging
 import urllib.parse
-from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import httpx
-from fastapi import Request
 from fastapi.responses import HTMLResponse
 from jvspatial.api import endpoint
 from jvspatial.api.exceptions import ResourceNotFoundError
+
+from jvagent.action.oauth.state import consume_oauth_state, create_oauth_state
 from jvagent.core.app import App
 from jvagent.core.public_url import get_public_base_url
-from jvagent.action.oauth.state import create_oauth_state, consume_oauth_state
 
 from .mcp_oauth_action import MCPOAuthAction
-from .mcp_oauth_node import MCPOAuthToken
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +35,9 @@ GOOGLE_SCOPES = [
 
 async def _get_mcp_oauth_action() -> Optional[MCPOAuthAction]:
     try:
-        from jvspatial.db import get_database_manager
         from jvspatial.core.context import GraphContext
+        from jvspatial.db import get_database_manager
+
         manager = get_database_manager()
         db = manager.get_database()
         ctx = GraphContext(db)
@@ -52,13 +51,18 @@ async def _get_mcp_oauth_action() -> Optional[MCPOAuthAction]:
 def _get_secrets() -> Dict[str, Any]:
     """Parse GOOGLE_CLIENT_SECRETS_JSON from environment."""
     import os
+
     raw = os.environ.get("GOOGLE_CLIENT_SECRETS_JSON", "").strip()
     if not raw:
-        raise ValueError("GOOGLE_CLIENT_SECRETS_JSON is not configured in the environment.")
+        raise ValueError(
+            "GOOGLE_CLIENT_SECRETS_JSON is not configured in the environment."
+        )
     data = json.loads(raw)
     web_or_installed = data.get("web") or data.get("installed")
     if not web_or_installed:
-        raise ValueError("Invalid client secrets format: expected 'web' or 'installed' root key.")
+        raise ValueError(
+            "Invalid client secrets format: expected 'web' or 'installed' root key."
+        )
     return web_or_installed
 
 
@@ -71,7 +75,9 @@ def _oauth_page_html(
 ) -> str:
     primary = "#4285F4" if theme == "auth" else "#4CAF50"
     icon_bg = "rgba(66, 133, 244, 0.1)" if theme == "auth" else "rgba(76, 175, 80, 0.1)"
-    badge_bg = "rgba(66, 133, 244, 0.15)" if theme == "auth" else "rgba(76, 175, 80, 0.15)"
+    badge_bg = (
+        "rgba(66, 133, 244, 0.15)" if theme == "auth" else "rgba(76, 175, 80, 0.15)"
+    )
     return f"""
     <!DOCTYPE html>
     <html lang="en">
@@ -220,7 +226,7 @@ def _oauth_error_html(message: str, status_code: int = 400) -> HTMLResponse:
             <h2 style="color: #FF5252">Authentication Failed</h2>
             <p style="color: var(--text-muted); line-height: 1.5;">{html.escape(message)}</p>
             <p class="close-text" style="color: var(--text-muted)">Please check configuration and try again.</p>
-        """
+        """,
     )
     return HTMLResponse(content=body, status_code=status_code)
 
@@ -239,7 +245,10 @@ async def get_mcp_auth_url(server_name: str, account: str = "integral") -> HTMLR
         raise ResourceNotFoundError(message="MCPOAuthAction not enabled or found.")
 
     if server_name != "google_workspace":
-        return _oauth_error_html(f"OAuth is not supported for server '{server_name}'. Only 'google_workspace' is supported.", 400)
+        return _oauth_error_html(
+            f"OAuth is not supported for server '{server_name}'. Only 'google_workspace' is supported.",
+            400,
+        )
 
     try:
         creds = _get_secrets()
@@ -257,7 +266,10 @@ async def get_mcp_auth_url(server_name: str, account: str = "integral") -> HTMLR
     if not redirect_uri:
         base_url = get_public_base_url()
         if not base_url:
-            return _oauth_error_html("JVAGENT_PUBLIC_BASE_URL is not set. A public base URL is required for OAuth callback.", 400)
+            return _oauth_error_html(
+                "JVAGENT_PUBLIC_BASE_URL is not set. A public base URL is required for OAuth callback.",
+                400,
+            )
         redirect_uri = f"{base_url.rstrip('/')}/api/mcp/{server_name}/auth/callback"
 
     # Create secure CSRF state token
@@ -280,7 +292,9 @@ async def get_mcp_auth_url(server_name: str, account: str = "integral") -> HTMLR
         "prompt": "consent",
         "state": state_token,
     }
-    auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
+    auth_url = (
+        f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
+    )
 
     agent = await action.get_agent()
     agent_name = html.escape(agent.alias or agent.name or "Agent") if agent else "Agent"
@@ -292,7 +306,9 @@ async def get_mcp_auth_url(server_name: str, account: str = "integral") -> HTMLR
             <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
         </svg>
     """
-    desc_html = f'<p class="agent-desc">{agent_description}</p>' if agent_description else ""
+    desc_html = (
+        f'<p class="agent-desc">{agent_description}</p>' if agent_description else ""
+    )
     body_inner = f"""
         <h2>Grant Google Workspace Access</h2>
         <p style="color: var(--text-muted)">Authorize this application to access spreadsheets, drive, calendar and Gmail.</p>
@@ -375,7 +391,7 @@ async def mcp_oauth_callback(server_name: str, code: str, state: str) -> HTMLRes
         return _oauth_error_html(
             "Did not receive a refresh token. Please go to your Google Account settings, "
             "remove the application permission, and authenticate again to grant offline access.",
-            400
+            400,
         )
 
     # Store the credentials in the database node
@@ -387,9 +403,11 @@ async def mcp_oauth_callback(server_name: str, code: str, state: str) -> HTMLRes
 
     # Trigger reboot/reload of the MCP client if active
     try:
-        from jvspatial.db import get_database_manager
         from jvspatial.core.context import GraphContext
+        from jvspatial.db import get_database_manager
+
         from jvagent.action.mcp.mcp_action import MCPAction
+
         manager = get_database_manager()
         db = manager.get_database()
         ctx = GraphContext(db)

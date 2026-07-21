@@ -478,7 +478,8 @@ class MCPAction(Action):
             if handler is None:
                 logger.warning(
                     "MCPAction: unknown bootstrap type '%s' for server '%s'",
-                    btype, name,
+                    btype,
+                    name,
                 )
                 continue
             try:
@@ -486,7 +487,9 @@ class MCPAction(Action):
             except Exception as exc:
                 logger.error(
                     "MCPAction: bootstrap '%s' failed for server '%s': %s",
-                    btype, name, exc,
+                    btype,
+                    name,
+                    exc,
                 )
 
     async def on_register(self) -> None:
