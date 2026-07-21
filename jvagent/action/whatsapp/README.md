@@ -331,15 +331,15 @@ Avoid `--purge` on production unless you intentionally reset the database and ca
 
 **Retry idempotency (wamid dedup):**
 
-Meta delivers webhooks **at-least-once** and may retry for up to 7 days. jvagent keeps an in-process cache of seen inbound **`messages[].id`** (wamid) for the meta provider and returns `duplicate webhook` (HTTP 200) on replay so the agent does not reply twice.
+Meta delivers webhooks **at-least-once** and may retry for up to 7 days. jvagent keeps a cache of seen inbound **`messages[].id`** (wamid) for the meta provider and returns `duplicate webhook` (HTTP 200) on replay so the agent does not reply twice.
 
 Env tuning (optional):
 
+- `WHATSAPP_META_WAMID_DEDUP_BACKEND` — `auto` (default), `memory`, or `redis`. `auto` uses Redis when `JVSPATIAL_REDIS_URL` / `REDIS_URL` is set.
 - `WHATSAPP_META_WAMID_DEDUP_TTL_SECONDS` — default **86400** (24h).
-- `WHATSAPP_META_WAMID_DEDUP_MAX` — default **10000** entries.
+- `WHATSAPP_META_WAMID_DEDUP_MAX` — max in-process cache entries (default **10000**; Redis uses TTL only).
 
-For multi-worker deployments, consider a shared dedup store (not included in the default in-process cache).
-
+For multi-worker / multi-replica deployments, set `JVSPATIAL_REDIS_URL` (or `REDIS_URL`) so wamid dedup is shared across processes.
 Env toggles:
 
 - `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true` — skip override on startup; call `POST /api/actions/{action_id}/meta/webhook-register` when ready.

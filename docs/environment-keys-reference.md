@@ -205,8 +205,9 @@ falls back to a sibling env var when its primary key is unset:
 - `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION` — when `true`, skip deferred Meta webhook override on startup (meta provider only)
 - `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS` — optional seconds before Meta Graph override on startup (default `0`; meta provider only)
 - `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE` — when `false`, skip Meta webhook override on action reload (default subscribe on reload)
-- `WHATSAPP_META_WAMID_DEDUP_TTL_SECONDS` — in-process wamid dedup TTL for meta webhooks (default `86400`)
-- `WHATSAPP_META_WAMID_DEDUP_MAX` — max wamid dedup cache entries (default `10000`)
+- `WHATSAPP_META_WAMID_DEDUP_BACKEND` — `auto` (default) / `memory` / `redis`; `auto` uses Redis when `JVSPATIAL_REDIS_URL` or `REDIS_URL` is set
+- `WHATSAPP_META_WAMID_DEDUP_TTL_SECONDS` — wamid dedup TTL for meta webhooks (default `86400`)
+- `WHATSAPP_META_WAMID_DEDUP_MAX` — max in-process wamid dedup cache entries (default `10000`)
 - **Voice calls (jvvoice)**: subscribe Meta webhook field `calls`; enable Calling API. Requires `jvagent/whatsapp_voice_action` with `JVVOICE_BASE_URL` + `JVVOICE_API_KEY`, plus a deployed **jvvoice** service. See [`.planning/runbooks/whatsapp-voice-calls.md`](../.planning/runbooks/whatsapp-voice-calls.md).
 
 ### jvvoice delegation (WhatsApp voice calls)
