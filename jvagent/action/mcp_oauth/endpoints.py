@@ -12,7 +12,6 @@ from jvspatial.api import endpoint
 from jvspatial.api.exceptions import ResourceNotFoundError
 
 from jvagent.action.oauth.state import consume_oauth_state, create_oauth_state
-from jvagent.core.app import App
 from jvagent.core.public_url import get_public_base_url
 
 from .mcp_oauth_action import MCPOAuthAction

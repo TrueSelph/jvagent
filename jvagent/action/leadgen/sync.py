@@ -461,7 +461,6 @@ async def _write_header(
     header: List[str],
 ) -> None:
     """Write a header row to the sheet."""
-    from jvagent.action.mcp.mcp_action import normalize_call_result
 
     sheet_range = resolved_args.get("range", "Sheet1!A1")
     sheet = sheet_range.split("!")[0] if "!" in sheet_range else "Sheet1"
