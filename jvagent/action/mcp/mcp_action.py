@@ -106,6 +106,7 @@ class _ServerEntry:
     mcp_npx_cmd: str = "npx"
     base_env: Optional[Dict[str, str]] = None
     base_url: str = ""
+    bootstrap: Optional[Dict[str, Any]] = None
 
 
 def _format_tools_description(tools: List[Tuple[str, Any]]) -> str:
