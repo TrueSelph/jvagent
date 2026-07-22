@@ -204,7 +204,9 @@ class TestResponseBusFilterIntegration:
 
         # Re-registering many times must never grow the list past one entry.
         for _ in range(50):
-            await bus.register_channel_filter(WhatsAppFilter(channels=["whatsapp"], priority=100))
+            await bus.register_channel_filter(
+                WhatsAppFilter(channels=["whatsapp"], priority=100)
+            )
         assert len(bus._channel_filters) == 1
 
     @pytest.mark.asyncio
