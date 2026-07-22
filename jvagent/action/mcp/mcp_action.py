@@ -329,7 +329,6 @@ class MCPAction(Action):
             if not isinstance(args, list):
                 args = []
             env = raw.get("env")
-            bootstrap = raw.get("bootstrap")
             url = str(raw.get("url") or "")
             connect_timeout = float(
                 raw.get("mcp_connect_timeout", self.mcp_connect_timeout)
@@ -430,7 +429,6 @@ class MCPAction(Action):
                 mcp_npx_cmd=mcp_npx_cmd,
                 base_env=env_d,
                 base_url=url,
-                bootstrap=bootstrap if isinstance(bootstrap, dict) else None,
             )
 
     async def _provision_sandboxes(self) -> None:
@@ -462,41 +460,10 @@ class MCPAction(Action):
             except Exception as e:
                 logger.debug("provision_sandbox for %s: %s", ent.name, e)
 
-    async def _bootstrap_servers(self) -> None:
-        """Run per-server bootstrap logic before any MCP connection.
-
-        Each server entry may declare a ``bootstrap`` config block.  The
-        framework dispatches to a handler based on ``bootstrap.type``.
-        """
-        for name, entry in self._servers_by_name.items():
-            if not entry.bootstrap:
-                continue
-            btype = str(entry.bootstrap.get("type", "")).strip()
-            if not btype:
-                continue
-            handler = _BOOTSTRAP_HANDLERS.get(btype)
-            if handler is None:
-                logger.warning(
-                    "MCPAction: unknown bootstrap type '%s' for server '%s'",
-                    btype,
-                    name,
-                )
-                continue
-            try:
-                await handler(name, entry)
-            except Exception as exc:
-                logger.error(
-                    "MCPAction: bootstrap '%s' failed for server '%s': %s",
-                    btype,
-                    name,
-                    exc,
-                )
-
     async def on_register(self) -> None:
         """Build server registry and set default label if empty."""
         await super().on_register()
         await self._build_server_entries()
-        await self._bootstrap_servers()
         await self._provision_sandboxes()
         if not (getattr(self, "label", None) or "").strip():
             server_names = self.get_server_names()
@@ -509,7 +476,6 @@ class MCPAction(Action):
         """Rebuild in-memory server registry after app restart."""
         await super().on_startup()
         await self._build_server_entries()
-        await self._bootstrap_servers()
         await self._provision_sandboxes()
 
     async def on_disable(self) -> None:
@@ -911,28 +877,3 @@ class MCPAction(Action):
                 )
 
         return tools
-
-
-# ---------------------------------------------------------------------------
-# Bootstrap handlers — per-server pre-launch setup
-# ---------------------------------------------------------------------------
-
-_BOOTSTRAP_HANDLERS: Dict[str, Any] = {}
-
-
-def register_bootstrap_handler(btype: str, handler):
-    """Register a bootstrap handler for an MCP server type.
-
-    Call this from an action's ``on_register`` or ``on_startup`` hook to
-    add pre-launch setup logic without modifying jvagent core.
-
-    Example::
-
-        from jvagent.action.mcp.mcp_action import register_bootstrap_handler
-
-        async def my_handler(server_name, entry):
-            ...
-
-        register_bootstrap_handler("my_service", my_handler)
-    """
-    _BOOTSTRAP_HANDLERS[btype] = handler
