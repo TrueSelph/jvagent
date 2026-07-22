@@ -1049,7 +1049,16 @@ class ResponseBus:
         """Register a channel filter with the response bus.
 
         Filters are stored in priority order (lower priority executes first).
-        Multiple filters can be registered for the same channel.
+        Multiple *distinct* filters can be registered for the same channel,
+        but re-registering an equivalent filter (same class, same channels,
+        same priority) replaces the previous instance instead of stacking a
+        duplicate — mirroring register_channel_adapter's dedup-by-channel
+        behavior above. Actions' on_register() can run more than once for
+        the same logical filter over an agent's lifetime (e.g. whenever the
+        action-list cache is rebuilt), and without this a new filter object
+        piles up on every rebuild instead of replacing the old one — an
+        unbounded leak of duplicate filters for the life of the process,
+        each one re-running its transform on every single outgoing message.
 
         Args:
             filter: ChannelFilter instance to register
@@ -1060,6 +1069,17 @@ class ResponseBus:
             )
             return
 
+        filter_channels = set(filter.channels)
+        duplicates = [
+            f
+            for f in self._channel_filters
+            if type(f) is type(filter)
+            and set(f.channels) == filter_channels
+            and f.priority == filter.priority
+        ]
+        for dup in duplicates:
+            self._channel_filters.remove(dup)
+
         # Add filter to list
         self._channel_filters.append(filter)
 
@@ -1067,10 +1087,17 @@ class ResponseBus:
         self._channel_filters.sort(key=lambda f: f.priority)
 
         channel_list = ", ".join(filter.channels)
-        logger.debug(
-            f"Registered channel filter for channels [{channel_list}] "
-            f"(priority: {filter.priority}, total filters: {len(self._channel_filters)})"
-        )
+        if duplicates:
+            logger.info(
+                f"Replaced {len(duplicates)} existing channel filter(s) for channels "
+                f"[{channel_list}] (class: {type(filter).__name__}, priority: {filter.priority}, "
+                f"total filters: {len(self._channel_filters)})"
+            )
+        else:
+            logger.debug(
+                f"Registered channel filter for channels [{channel_list}] "
+                f"(priority: {filter.priority}, total filters: {len(self._channel_filters)})"
+            )
 
     async def _apply_channel_filters(
         self, message: ResponseMessage, channel: str
