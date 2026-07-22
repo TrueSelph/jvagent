@@ -49,6 +49,7 @@ from .for_each import (
     get_for_each_store,
     is_for_each_child_key,
     maybe_advance_for_each,
+    next_unanswered_child_key,
     resolve_field_def,
     update_for_each_record_field,
     wipe_parent_for_each,
@@ -345,6 +346,59 @@ async def run_pre_processors(
 
     extras["pre_tools_results"] = results
     return directive or field_prompt_directive(fdef.prompt, fdef.hint), extras
+
+
+async def apply_ask_time_skip_hooks_after_advance(
+    action: Any,
+    session: InterviewSession,
+    spec: InterviewSpec,
+    visitor: Any = None,
+) -> bool:
+    """Fire ask-time pre_processors for the active for_each item's pending child.
+
+    ``interview__next_field`` runs a field's ``pre_processor`` (ACTIVATION phase)
+    before asking, so an ask-time skip hook (e.g. a batch-wide "no extra tracking
+    numbers" decline) can call ``session.skip_field`` instead of presenting it.
+    When ``set_fields`` completes one for_each item and advances to the next, the
+    next item's child was surfaced directly (via ``build_next_field``) without
+    that hook ever running — so a field the user already declined for the whole
+    batch got re-asked once per item.
+
+    This runs the same ask-time evaluation for the newly-active item's pending
+    child field, advancing the iteration when a hook resolves (skips or fills)
+    the current item. Bounded, and a no-op for children without a pre_processor,
+    so it only does work when an ask-time hook actually exists. Returns True if it
+    skipped or filled at least one field.
+
+    ``for_each_expand`` / ``interview_complete`` extras are deliberately NOT acted
+    on here — those belong to the parent-store and next_field paths; encountering
+    one means we stop and let the normal flow handle it.
+    """
+    changed = False
+    for _ in range(8):
+        active = get_active_for_each(session, spec)
+        if not active:
+            break
+        pending = next_unanswered_child_key(session, spec)
+        if not pending:
+            break
+        fdef = resolve_field_def(session, spec, pending)
+        if not fdef or not fdef.pre_processor:
+            break
+        _, extras = await run_pre_processors(action, session, spec, fdef, visitor)
+        if extras.get("for_each_expand") is not None or extras.get(
+            "interview_complete"
+        ):
+            break
+        # The hook resolved the field only if it skipped or filled it; otherwise
+        # stop so we never loop on a pending field the hook chose to leave open.
+        if not (
+            session.is_skipped(pending) or str(session.get_value(pending) or "").strip()
+        ):
+            break
+        changed = True
+        maybe_advance_for_each(session, spec, pending)
+    return changed
 
 
 async def run_pre_processors_for_store(
@@ -842,6 +896,13 @@ async def handle_set_fields(
 
         results.append(entry)
 
+    # A for_each advance surfaced the next item's child directly, skipping the
+    # ask-time pre_processor that interview__next_field would have run. Fire it
+    # now so a batch-wide skip hook (e.g. an already-declined optional field)
+    # applies to every item instead of re-asking once per item.
+    if stored_for_each_child:
+        await apply_ask_time_skip_hooks_after_advance(action, session, spec, visitor)
+
     try:
         reachable = await compute_active_path_for_prune(
             session, spec, load_fn, visitor, action
@@ -1264,6 +1325,56 @@ async def handle_next_field(action: Any, visitor: Any = None) -> str:
             error=f"Unknown field '{next_field['key']}'.",
         )
     directive, extras = await run_pre_processors(action, session, spec, fdef, visitor)
+    # An ask-time pre_processor may fill the very field it guards (e.g. the
+    # built-in seed_field_from_activation, or a custom seeding hook reading the
+    # original request). The prompt computed above is then stale — delivering it
+    # would re-ask a question that is already answered (observed as the intent
+    # menu appearing despite an explicit "pre-alert …", and a tracking number
+    # being re-asked right after it was seeded). Recompute until the pending
+    # field is genuinely unanswered. Bounded; the expansion/completion branches
+    # below handle their own recompute.
+    _hook_results_acc: List[Dict[str, Any]] = list(
+        extras.get("pre_tools_results") or []
+    )
+    for _ in range(8):
+        if extras.get("for_each_expand") is not None or extras.get(
+            "interview_complete"
+        ):
+            break
+        # Resolved = the hook filled the field OR skipped it (e.g. a decline
+        # detector calling session.skip_field). Either way the prompt is stale.
+        _resolved = bool(
+            str(session.get_value(next_field["key"]) or "").strip()
+        ) or session.is_skipped(next_field["key"])
+        if not _resolved:
+            break
+        # A hook that filled its field AND authored its own directive (e.g. an
+        # async kickoff: "Still checking your link…") owns the reply — honour
+        # it. Only the stale default prompt (re-asking the just-filled field)
+        # justifies recomputing.
+        if directive != field_prompt_directive(fdef.prompt, fdef.hint):
+            break
+        recomputed = await build_next_field(session, spec, load_fn, visitor, action)
+        if recomputed is None:
+            if _hook_results_acc:
+                await action._save_session(session, visitor)
+            return interview_tool_response(
+                ok=True,
+                status=session.status.value,
+                skipped_fields=sorted(session.skipped_fields) or None,
+                next_tool="interview__review",
+                response_directive=call_tool_directive("interview__review"),
+            )
+        if recomputed["key"] == next_field["key"]:
+            break
+        next_field = recomputed
+        fdef = resolve_field_def(session, spec, next_field["key"]) or fdef
+        directive, extras = await run_pre_processors(
+            action, session, spec, fdef, visitor
+        )
+        _hook_results_acc.extend(extras.get("pre_tools_results") or [])
+    if _hook_results_acc:
+        extras["pre_tools_results"] = _hook_results_acc
     parent_fdef = spec.get_field(next_field["key"])
     if (
         parent_fdef
@@ -1507,6 +1618,178 @@ async def handle_skip_field(action: Any, field: str, visitor: Any = None) -> str
     )
 
 
+def _humanize_field_keys(keys: List[str]) -> str:
+    """Render field keys as a readable, comma-joined phrase."""
+    labels = [k.replace("_", " ") for k in keys if k]
+    if not labels:
+        return ""
+    if len(labels) == 1:
+        return labels[0]
+    return ", ".join(labels[:-1]) + f" and {labels[-1]}"
+
+
+async def handle_field_unavailable(
+    action: Any, field: Any = None, visitor: Any = None, reason: Any = None
+) -> str:
+    """ADR-0034: the user says they cannot supply the pending field.
+
+    Detection is model-driven; the consequence is deterministic and server-owned,
+    read from the field's ``on_unavailable`` policy (park | cancel | relax):
+
+    - park (default): snapshot the session onto the SKILL task, park it, clear the
+      live session, release the turn-lock. Server-composed reply names what was
+      saved and what is still needed; the flow rehydrates on the next contact.
+    - cancel: close the task via the cancel path; server goodbye.
+    - relax: mark the field skipped and continue (permitted only for relaxable
+      fields — enforced at spec load).
+    """
+    session, spec = await action._get_session_and_contract(visitor)
+    if not session or not spec:
+        return _no_session_response()
+
+    load_fn = action._load_fn(spec)
+
+    field = (str(field or "")).strip()
+    if not field:
+        nxt = await build_next_field(session, spec, load_fn, visitor, action)
+        field = str((nxt or {}).get("key") or "")
+
+    if not field:
+        # Nothing pending — route to review rather than error.
+        return interview_tool_response(
+            ok=True,
+            status=session.status.value,
+            next_tool="interview__review",
+            response_directive=call_tool_directive("interview__review"),
+        )
+
+    fdef = resolve_field_def(session, spec, field)
+    if fdef is None:
+        # Unknown key — re-anchor on the real pending field, do not act.
+        nxt = await build_next_field(session, spec, load_fn, visitor, action)
+        if not nxt:
+            return interview_tool_response(
+                ok=True,
+                status=session.status.value,
+                next_tool="interview__review",
+                response_directive=call_tool_directive("interview__review"),
+            )
+        pending = resolve_field_def(session, spec, nxt["key"])
+        return interview_tool_response(
+            ok=False,
+            status=session.status.value,
+            error_code="UNKNOWN_FIELD",
+            error=(f"Unknown field '{field}'. The pending field is '{nxt['key']}'."),
+            next_field={"key": nxt["key"], "prompt": nxt.get("prompt")},
+            response_directive=field_prompt_directive(
+                str(nxt.get("prompt") or ""),
+                pending.hint if pending else "",
+            ),
+        )
+
+    policy = (fdef.on_unavailable or "park").lower()
+
+    # --- relax: skip the field and continue (relaxable enforced at load) --------
+    if policy == "relax":
+        session.skip_field(field)
+        was_for_each_child = is_for_each_child_key(session, spec, field)
+        if was_for_each_child:
+            maybe_advance_for_each(session, spec, field)
+        try:
+            reachable = await compute_active_path_for_prune(
+                session, spec, load_fn, visitor, action
+            )
+            prune_unreachable_fields(session, reachable)
+            prune_orphan_for_each_states(session, spec, reachable)
+        except BranchHookError as exc:
+            await action._save_session(session, visitor)
+            return interview_tool_response(ok=False, status="error", error=str(exc))
+        await action._save_session(session, visitor)
+        directive, next_tool = await _chain_hint(action, session, spec, visitor)
+        return interview_tool_response(
+            ok=True,
+            status=session.status.value,
+            field=field,
+            skipped_fields=sorted(session.skipped_fields),
+            response_directive=directive,
+            next_tool=next_tool,
+        )
+
+    # --- cancel: close the task, clear the session, say goodbye ------------------
+    if policy == "cancel":
+        goodbye = (
+            "No problem — I've set this aside for now. Start again whenever you "
+            f"have your {field.replace('_', ' ')} ready and we'll pick it right up."
+        )
+        cancel_fn = spec.handlers.cancel if spec else None
+        func = load_hook_function(spec, cancel_fn) if spec and cancel_fn else None
+        if func:
+            try:
+                result = await call_hook(
+                    func,
+                    session=session,
+                    spec=spec,
+                    visitor=visitor,
+                    interview_action=action,
+                    phase=CANCEL_PHASE,
+                )
+                if isinstance(result, dict) and result.get("response_directive"):
+                    goodbye = result["response_directive"]
+            except Exception as e:
+                logger.error("field_unavailable cancel handler failed: %s", e)
+        await action._clear_interview_session(visitor)
+        if visitor:
+            await tasks.close_task(
+                visitor, status="cancelled", spec_name=spec.name if spec else None
+            )
+        return interview_tool_response(
+            ok=True,
+            status="cancelled",
+            field=field,
+            response_directive=user_directive(goodbye),
+            fields={},
+        )
+
+    # --- park (default): snapshot + park the task, clear the live session --------
+    missing = await compute_missing_required(session, spec, load_fn, visitor, action)
+    still_needed = [m for m in missing if m != field]
+    saved = sorted(session.get_collected_summary().keys())
+
+    parts: List[str] = []
+    if saved:
+        parts.append(f"I've saved {_humanize_field_keys(saved)}")
+    needed_phrase = _humanize_field_keys([field] + still_needed)
+    parts.append(
+        (
+            f"and I still need your {needed_phrase}."
+            if saved
+            else f"No problem — I still need your {needed_phrase}."
+        )
+    )
+    park_message = (
+        " ".join(parts)
+        + " I'll hold everything here and pick up right where we left off the "
+        "moment you're back with it — no need to start over."
+    )
+
+    snapshot = {}
+    try:
+        snapshot = await action.snapshot_task_state(spec.name, visitor)
+    except Exception as exc:
+        logger.debug("field_unavailable: snapshot_task_state failed: %s", exc)
+    if not snapshot:
+        snapshot = session.to_dict()
+    if visitor:
+        await tasks.park_task(visitor, spec.name, snapshot=snapshot, reason=field)
+    await action._clear_interview_session(visitor)
+    return interview_tool_response(
+        ok=True,
+        status="parked",
+        field=field,
+        response_directive=user_directive(park_message),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Review / complete
 # ---------------------------------------------------------------------------
@@ -1595,6 +1878,16 @@ def _review_response(
     return interview_tool_response(ok=ok, status=status, **payload)
 
 
+REVIEW_PRESENTED_MARKER_KEY = "review_presented_marker"
+
+
+def _interaction_marker(visitor: Any) -> str:
+    """Stable id for the current interaction turn (empty when unavailable)."""
+    interaction = getattr(visitor, "interaction", None)
+    marker = getattr(interaction, "id", None) if interaction is not None else None
+    return str(marker or "")
+
+
 async def handle_review(action: Any, visitor: Any = None) -> str:
     session, spec = await action._get_session_and_contract(visitor)
     if not session or not spec:
@@ -1613,6 +1906,7 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
             session, spec, collected, visible_keys=visible_keys
         )
         session.status = InterviewStatus.REVIEW
+        session.context[REVIEW_PRESENTED_MARKER_KEY] = _interaction_marker(visitor)
         await action._save_session(session, visitor)
         return _review_response(session, spec, review_fields, summary)
 
@@ -1679,6 +1973,7 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
         additional_data=additional_data,
     )
     session.status = InterviewStatus.REVIEW
+    session.context[REVIEW_PRESENTED_MARKER_KEY] = _interaction_marker(visitor)
     await action._save_session(session, visitor)
     review_fields = {
         k: collected[k] for k in visible_keys if k in collected and k not in omit_fields
@@ -1712,6 +2007,27 @@ async def handle_complete(action: Any, visitor: Any = None) -> str:
             next_tool="interview__review",
             response_directive=call_tool_directive("interview__review"),
         )
+
+    # Same-turn confirmation guard: under manual confirmation the user must SEE
+    # the review summary and reply to it. If the review was produced on this
+    # very interaction, no user confirmation can exist yet — a model chaining
+    # review → complete in one turn is confirming on the user's behalf (e.g. a
+    # stray "confirm" that answered a different question). Deliver the summary
+    # and wait; the completion is one legitimate turn away.
+    if spec.confirm != "auto":
+        marker = _interaction_marker(visitor)
+        stamped = str(session.context.get(REVIEW_PRESENTED_MARKER_KEY) or "")
+        if marker and stamped and marker == stamped:
+            return interview_tool_response(
+                ok=False,
+                status=session.status.value,
+                error="User confirmation required after review.",
+                response_directive=(
+                    "Present the review summary to the user now and wait for "
+                    "their explicit confirmation (e.g. 'yes' / 'confirm') "
+                    "before calling interview__complete."
+                ),
+            )
 
     fields_summary = session.get_collected_summary()
     complete_fn = spec.handlers.complete
@@ -2023,6 +2339,47 @@ async def interview_turn_status(action: Any, visitor: Any = None) -> Optional[st
     )
 
 
+async def _rehydrate_parked_session(
+    spec: InterviewSpec, visitor: Any, conversation: Any
+) -> Optional[InterviewSession]:
+    """ADR-0034 rehydrate trigger: when a skill re-activates and a parked task for
+    it exists, restore the snapshotted session and reactivate the task so the
+    interview resumes (from the first still-missing field) instead of starting
+    fresh. Returns the revived session, or None when there is nothing to resume."""
+    if not visitor:
+        return None
+    try:
+        store = visitor.tasks
+    except Exception:
+        return None
+    if store is None:
+        return None
+    try:
+        parked = store.list(status="parked", owner_action=spec.name) or []
+    except Exception:
+        return None
+    for handle in parked:
+        snap = getattr(handle, "snapshot", None)
+        if not snap:
+            continue
+        try:
+            session = InterviewSession.from_dict(snap)
+        except Exception as exc:
+            logger.debug("rehydrate parked: bad snapshot for %s: %s", spec.name, exc)
+            continue
+        if session.interview_type != spec.name:
+            continue
+        try:
+            await handle.resume_parked()
+        except Exception as exc:
+            logger.debug("rehydrate parked: resume_parked failed: %s", exc)
+        if conversation:
+            await save_session(conversation, session)
+        logger.info("interview: rehydrated parked task for skill %s", spec.name)
+        return session
+    return None
+
+
 async def handle_start(
     action: Any,
     interview_type: str,
@@ -2047,6 +2404,14 @@ async def handle_start(
 
     conversation = await action._get_conversation(visitor)
     existing = load_session(conversation) if conversation else None
+
+    # ADR-0034: no live session but a parked task for this skill? Resume it — rebuild
+    # the session from the snapshot and reactivate the task, so the user picks up
+    # where they left off instead of a fresh interview.
+    if (existing is None or not existing.is_active()) and visitor:
+        revived = await _rehydrate_parked_session(spec, visitor, conversation)
+        if revived is not None:
+            existing = revived
 
     # The message that activated this interview — on a gated resume this is the
     # task's seed (the user's ORIGINAL request), fed in by the orchestrator. Stash

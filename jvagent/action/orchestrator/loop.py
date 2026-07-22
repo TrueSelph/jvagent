@@ -9,6 +9,7 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
+from jvagent.action.orchestrator import continuation
 from jvagent.action.orchestrator.constants import (
     _NON_SUBSTANTIVE_TOOLS,
     is_untrusted_directive_source,
@@ -64,6 +65,18 @@ class OrchestratorLoopMixin:
         skill_names = {getattr(d, "name", "") for d in skill_docs}
         blocked_skill_notes = surface_meta.get("blocked_skill_notes") or []
         skills_section = render_skills_section(skill_docs, blocked_skill_notes)
+        # State the current channel explicitly. Skill docs are already filtered
+        # to this channel (ADR-0032), so everything listed IS available here —
+        # without this line the model has no ground truth for where it is and
+        # can hallucinate a channel deny ("please message us on WhatsApp") to a
+        # user who is already there, parroting deny copy from its knowledge.
+        _channel = str(getattr(visitor, "channel", "") or "").strip()
+        if _channel:
+            skills_section = (
+                f"CURRENT CHANNEL: {_channel}. Every skill listed below is "
+                "available on this channel — never tell the user to switch "
+                "channels to use one of them.\n\n" + skills_section
+            )
         # Advertised abilities: each enabled action's get_capabilities() merged
         # with the skill descriptions. Sourced from the actions/skills directly
         # (not the lean-surfaced tool list), so it stays complete even when most
@@ -368,6 +381,12 @@ class OrchestratorLoopMixin:
             else frozenset()
         )
         deflected_named: Set[str] = set()
+        # ADR-0034 L5 two-strike soft-abandon: evaluate the strike once per turn
+        # at the companion gate, then reuse the decision on any repeat gate hit
+        # within the same turn.
+        soft_abandon_evaluated = False
+        soft_abandon_streak = 0
+        soft_abandon_title = ""
         nd_streak = 0  # consecutive unparseable model decisions
         # Model gearing (ADR-0016): light until the turn proves multi-step.
         substantive_tool_calls = 0
@@ -598,6 +617,57 @@ class OrchestratorLoopMixin:
                         and (args or {}).get("name") != active_skill_doc.name
                         and (args or {}).get("name") not in locked_companion_skill_names
                     ):
+                        requested = (args or {}).get("name")
+                        # ADR-0034 L5: a non-companion use_skill under a task-lock
+                        # interview is a soft-abandon strike (the model chose to
+                        # switch rather than answer the pending field). Count it
+                        # once per turn and escalate deterministically: streak 1
+                        # bounces, streak 2 also asks the one-turn switch question,
+                        # and a streak past the ask == the user's "yes" — apply the
+                        # skill's on_abandon and unlock so this same utterance
+                        # re-routes on the now-free surface.
+                        if not soft_abandon_evaluated:
+                            soft_abandon_evaluated = True
+                            collected = continuation.soft_abandon_collected_count(
+                                getattr(visitor, "conversation", None)
+                            )
+                            soft_abandon_streak = (
+                                await continuation.note_soft_abandon_strike(
+                                    visitor,
+                                    active_skill_doc.name,
+                                    collected_count=collected,
+                                )
+                            )
+                            soft_abandon_title = await continuation.soft_abandon_title(
+                                agent, active_skill_doc
+                            )
+                            if (
+                                soft_abandon_streak
+                                > continuation.SOFT_ABANDON_ASK_STRIKE
+                                and await continuation.apply_soft_abandon(
+                                    visitor, agent, active_skill_doc.name
+                                )
+                            ):
+                                active_skill_doc = None
+                                locked_companion_skill_names = set()
+                                locked_companion_tools = set()
+                                continue
+                        if soft_abandon_streak == continuation.SOFT_ABANDON_ASK_STRIKE:
+                            observations.append(
+                                {
+                                    "tool": tool_name,
+                                    "args": args,
+                                    "observation": (
+                                        f"({requested} cannot be started while "
+                                        f"{active_skill_doc.name} is in progress. "
+                                        'Before switching, ask the user: "Want me '
+                                        f"to set aside the {soft_abandon_title} for "
+                                        'now and help with that instead?" and wait '
+                                        "for their answer.)"
+                                    ),
+                                }
+                            )
+                            continue
                         allowed = (
                             ", ".join(sorted(locked_companion_skill_names)) or "none"
                         )
@@ -606,7 +676,7 @@ class OrchestratorLoopMixin:
                                 "tool": tool_name,
                                 "args": args,
                                 "observation": (
-                                    f"({(args or {}).get('name')} cannot be started "
+                                    f"({requested} cannot be started "
                                     f"while {active_skill_doc.name} is in progress. "
                                     f"Permitted companions: {allowed}. Finish or "
                                     "cancel the active task first, then switch.)"

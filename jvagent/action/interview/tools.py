@@ -47,6 +47,16 @@ def _build_core_tools(action: "InterviewAction") -> List[Tool]:
             return await action._handle_skip_field("", visitor)
         return await action._handle_skip_field(key, visitor)
 
+    async def _field_unavailable(
+        field_key: str | None = None,
+        field: str | None = None,
+        reason: str | None = None,
+        visitor: Any = None,
+        **_: Any,
+    ) -> str:
+        key = field_key or field or ""
+        return await action._handle_field_unavailable(key, visitor, reason or "")
+
     async def _next_field(visitor: Any = None) -> str:
         return await action._handle_next_field(visitor)
 
@@ -139,6 +149,41 @@ def _build_core_tools(action: "InterviewAction") -> List[Tool]:
                 "additionalProperties": False,
             },
             execute=_skip_field,
+        ),
+        Tool(
+            name="interview__field_unavailable",
+            description=(
+                "Call when the user says they CANNOT supply the pending field right "
+                'now ("I don\'t have the tracking number", "I\'ll have to check", '
+                '"can\'t find it") — distinct from declining an optional field '
+                "(use interview__skip_field) or cancelling the whole request (use "
+                'interview__cancel). Args: {"field_key": "field_name"} — optional; '
+                'defaults to the current pending field; optional "reason" carries '
+                "the user's words. The server applies the field's configured policy "
+                "(park / cancel / relax) and returns a response_directive to relay — "
+                "usually the request is set aside and resumes when the user returns "
+                "with the value."
+            ),
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "field_key": {
+                        "type": "string",
+                        "description": (
+                            "Interview field key the user cannot supply. Optional — "
+                            "defaults to the current pending field."
+                        ),
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": (
+                            "Optional short paraphrase of why they can't supply it."
+                        ),
+                    },
+                },
+                "additionalProperties": False,
+            },
+            execute=_field_unavailable,
         ),
         Tool(
             name="interview__next_field",

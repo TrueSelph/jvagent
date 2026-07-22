@@ -12,6 +12,9 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
+from jvagent.action.orchestrator.orchestrator_interact_action import (
+    OrchestratorInteractAction,
+)
 from jvagent.action.orchestrator.preconditions import (
     clear_preconditions,
     register_precondition,
@@ -141,5 +144,161 @@ async def test_plan_drains_in_order(test_db):
             seen.append(top.title)
             await TaskStore(conv).get(top.id).complete()
         assert seen == ["step-0", "step-1", "step-2"]
+    finally:
+        await conv.delete(cascade=True)
+
+
+def _non_task_lock_gated_skill() -> SkillDoc:
+    """A capability skill (no turn-lock) that still declares a session prerequisite
+    — the shape of a payment/tool skill whose tools need a customer session."""
+    return SkillDoc(
+        name="pay_capability",
+        description="Live payment tools.",
+        body="SOP.",
+        task_lock=False,
+        requires_tasks=(
+            {
+                "when": "signed_in",
+                "push": "example_signin_interview",
+                "seed_from": ["utterance"],
+            },
+        ),
+    )
+
+
+async def _apply_after_use_skill(ex, visitor, skill_docs, skill_name):
+    """Drive _apply_task_lock_after_use_skill with _apply_active_task_lock_skill
+    stubbed to record the doc it locks onto (isolates the gate decision)."""
+    locked: dict = {}
+
+    async def _fake_apply(doc, *a, **kw):
+        locked["doc"] = doc
+        return {"reply": object()}, {"reply"}, f"LOCKED:{doc.name}"
+
+    ex._apply_active_task_lock_skill = _fake_apply  # type: ignore[assignment]
+    result = await ex._apply_task_lock_after_use_skill(
+        skill_name=skill_name,
+        activation_obs=f"Activated skill '{skill_name}'",
+        skill_docs=skill_docs,
+        loop_actions=[],
+        visitor=visitor,
+        utterance=visitor.utterance,
+        tools={},
+        visible=set(),
+        activated=[],
+        observations=[],
+    )
+    return result, locked
+
+
+@pytest.mark.asyncio
+async def test_non_task_lock_skill_unmet_gate_pushes_prereq(test_db):
+    """A non-turn-lock skill with requires-tasks whose precondition is UNMET must
+    push the prerequisite and lock onto it — instead of proceeding ungated and
+    leaving the model to narrate the missing session."""
+    clear_preconditions()
+    register_precondition("signed_in", lambda v: False)
+    conv = await Conversation.create(session_id=_sid(), user_id="u", channel="default")
+    try:
+        pay = _non_task_lock_gated_skill()
+        signin = _skill_doc("example_signin_interview")
+        visitor = SimpleNamespace(conversation=conv, utterance="pay invoice Z1")
+        ex = OrchestratorInteractAction()
+
+        (doc, _tools, _vis, section, _detour), locked = await _apply_after_use_skill(
+            ex, visitor, [pay, signin], "pay_capability"
+        )
+
+        # Gate fired: prerequisite pushed, and the lock is redirected onto it.
+        store = TaskStore(conv)
+        prereq = _active_skill_task(store, "example_signin_interview")
+        gated = _active_skill_task(store, "pay_capability")
+        assert prereq is not None and gated is not None
+        assert prereq.resumes == gated.id
+        assert gated.seed.get("utterance") == "pay invoice Z1"
+        assert doc.name == "example_signin_interview"
+        assert locked["doc"].name == "example_signin_interview"
+        assert section == "LOCKED:example_signin_interview"
+    finally:
+        clear_preconditions()
+        await conv.delete(cascade=True)
+
+
+@pytest.mark.asyncio
+async def test_non_task_lock_skill_satisfied_gate_runs_unlocked(test_db):
+    """When the precondition is already satisfied, the same skill proceeds on the
+    normal unlocked surface — no prereq pushed, no lock applied."""
+    clear_preconditions()
+    register_precondition("signed_in", lambda v: True)
+    conv = await Conversation.create(session_id=_sid(), user_id="u", channel="default")
+    try:
+        pay = _non_task_lock_gated_skill()
+        visitor = SimpleNamespace(conversation=conv, utterance="pay invoice Z1")
+        ex = OrchestratorInteractAction()
+
+        (doc, _t, _v, section, _d), locked = await _apply_after_use_skill(
+            ex, visitor, [pay], "pay_capability"
+        )
+
+        assert doc is None and section == ""
+        assert "doc" not in locked  # never locked
+        assert _active_skill_task(TaskStore(conv), "example_signin_interview") is None
+    finally:
+        clear_preconditions()
+        await conv.delete(cascade=True)
+
+
+@pytest.mark.asyncio
+async def test_non_task_lock_parent_resolved_for_resume_after_prereq(test_db):
+    """A gated non-turn-lock skill (payment) resumes after its prerequisite
+    completes: the task-lock resolver skips it, so the seed-based resolver must
+    surface it — but only once the prereq is done and only while it carries a seed."""
+    clear_preconditions()
+    register_precondition("signed_in", lambda v: False)
+    conv = await Conversation.create(session_id=_sid(), user_id="u", channel="default")
+    try:
+        pay = _non_task_lock_gated_skill()
+        signin = _skill_doc("example_signin_interview")
+        docs = [pay, signin]
+        visitor = SimpleNamespace(conversation=conv, utterance="pay invoice Z1")
+        assert (
+            await push_unmet_prerequisites(visitor, pay, [])
+            == "example_signin_interview"
+        )
+        ex = OrchestratorInteractAction()
+
+        # While the prerequisite is active, payment is blocked → not resumable
+        # (the top runnable is the task-lock signin, which this resolver rejects).
+        assert ex._non_task_lock_parent_to_resume(TaskStore(conv), docs) is None
+
+        # Prerequisite completes → payment is top runnable and still seeded.
+        prereq = _active_skill_task(TaskStore(conv), "example_signin_interview")
+        await prereq.complete()
+        doc = ex._non_task_lock_parent_to_resume(TaskStore(conv), docs)
+        assert doc is not None and doc.name == "pay_capability"
+
+        # Seed consumed (post-resume) → no longer resumable, so it can't re-resume.
+        gated = _active_skill_task(TaskStore(conv), "pay_capability")
+        await gated.set_seed({})
+        assert ex._non_task_lock_parent_to_resume(TaskStore(conv), docs) is None
+    finally:
+        clear_preconditions()
+        await conv.delete(cascade=True)
+
+
+@pytest.mark.asyncio
+async def test_plain_skill_without_requires_is_untouched(test_db):
+    """A plain skill (no turn-lock, no requires-tasks) is left entirely alone."""
+    conv = await Conversation.create(session_id=_sid(), user_id="u", channel="default")
+    try:
+        faq = SkillDoc(name="faq", description="", body="SOP.", task_lock=False)
+        visitor = SimpleNamespace(conversation=conv, utterance="where are you located")
+        ex = OrchestratorInteractAction()
+
+        (doc, _t, _v, section, _d), locked = await _apply_after_use_skill(
+            ex, visitor, [faq], "faq"
+        )
+
+        assert doc is None and section == "" and "doc" not in locked
     finally:
         await conv.delete(cascade=True)

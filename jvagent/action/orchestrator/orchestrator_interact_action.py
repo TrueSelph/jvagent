@@ -222,6 +222,40 @@ def _significant_tokens(s: str) -> set:
     }
 
 
+def _is_tool_chain_directive(directive: str) -> bool:
+    """True when a directive is a bare tool-chain instruction ("Call <tool>().").
+
+    Chain directives are model-facing routing, never user copy — a terminal
+    delivery path must not voice one verbatim. Matches the shared
+    ``call_tool_directive`` shape generically (any tool name), keeping this
+    module free of skill-specific tool literals.
+    """
+    return bool(
+        re.match(r"^call\s+[a-z0-9_]+(\(\))?\.?$", (directive or "").strip().lower())
+    )
+
+
+def _append_directive_hint(directive: str, hint: str) -> str:
+    """Append model-only compose steering onto a directive's guidance block.
+
+    Uses the interview directive contract's ``append_hint`` when the guidance
+    marker is present (the hint lands after the compose marker, never voiced
+    verbatim); otherwise appends as a trailing parenthetical model note.
+    """
+    hint = (hint or "").strip()
+    if not hint or not directive:
+        return directive
+    try:
+        from jvagent.action.interview.hooks import append_hint
+
+        appended = append_hint(directive, hint)
+        if appended != directive:
+            return appended
+    except Exception:  # pragma: no cover - defensive
+        pass
+    return f"{directive}\n({hint})"
+
+
 def _text_candidate(decision: Dict[str, Any]) -> str:
     """Pull the first non-empty user-facing string from a model decision."""
     return _text_candidate_impl(decision)
@@ -1413,29 +1447,50 @@ class OrchestratorInteractAction(
             (d for d in skill_docs if getattr(d, "name", None) == skill_name),
             None,
         )
-        if doc is None or not getattr(doc, "task_lock", False):
+        if doc is None:
+            return None, tools, visible, "", None
+        origin_task_lock = bool(getattr(doc, "task_lock", False))
+        has_requires = bool(getattr(doc, "requires_tasks", None))
+        # A plain skill — no turn-lock and no declarative prerequisites — needs none
+        # of this path: nothing to gate, nothing to lock.
+        if not origin_task_lock and not has_requires:
             return None, tools, visible, "", None
         # Declarative gate (ADR-0026): if the activated skill has an unmet
         # precondition, push the prerequisite task and redirect the lock to it (the
         # gated skill is now blocked and resumes when the prerequisite completes).
         # Chained so a prerequisite with its own unmet precondition pushes too.
+        #
+        # This fires for ANY skill that declares ``requires-tasks``, not only
+        # turn-locked ones: a non-turn-lock capability skill (e.g. a payment skill
+        # whose tools need a customer session) is gated exactly like an interview, so
+        # its prerequisite runs server-side instead of being left to the model to
+        # narrate — which otherwise flails ("please verify again") and never drives
+        # the detour. The pushed prerequisite is itself a task-lock skill and is what
+        # actually seizes the turn-lock below.
         from jvagent.action.orchestrator.skill_tasks import (
             action_for_skill,
             push_unmet_prerequisites,
         )
 
         pushed_any = False
-        for _ in range(8):
-            pushed = await push_unmet_prerequisites(visitor, doc, loop_actions)
-            if not pushed:
-                break
-            pushed_any = True
-            prereq_doc = next(
-                (d for d in skill_docs if getattr(d, "name", None) == pushed), None
-            )
-            if prereq_doc is None:
-                break
-            doc = prereq_doc
+        if has_requires:
+            for _ in range(8):
+                pushed = await push_unmet_prerequisites(visitor, doc, loop_actions)
+                if not pushed:
+                    break
+                pushed_any = True
+                prereq_doc = next(
+                    (d for d in skill_docs if getattr(d, "name", None) == pushed), None
+                )
+                if prereq_doc is None:
+                    break
+                doc = prereq_doc
+        # A non-turn-lock skill whose prerequisites were already satisfied (no detour
+        # pushed) has no lock to apply — it proceeds on the normal unlocked surface.
+        # Only the pushed prerequisite (task-lock) or an originally task-lock skill
+        # takes the restricted surface below.
+        if not origin_task_lock and not pushed_any:
+            return None, tools, visible, "", None
         tools, visible, skills_section = await self._apply_active_task_lock_skill(
             doc,
             loop_actions,
@@ -1465,6 +1520,22 @@ class OrchestratorInteractAction(
                     )
                 except Exception as exc:  # pragma: no cover - defensive
                     logger.debug("orchestrator: detour entry directive failed: %s", exc)
+            if detour_directive:
+                # The activation envelope the model saw earlier carried the field
+                # catalog + start_field computed BEFORE activation pre_processors
+                # ran; hooks may since have auto-filled fields and advanced the
+                # pending question (e.g. a phone-first match that pre-fills email
+                # and sends an OTP). This directive reflects the SETTLED state —
+                # mark it exclusive so the model never re-asks a catalog field the
+                # server already resolved (the "sent a code" + "what's your email"
+                # contradiction).
+                detour_directive = _append_directive_hint(
+                    detour_directive,
+                    "This is the ONLY question to ask this turn. Earlier "
+                    "activation info (start_field / field catalog) may be stale — "
+                    "the server has already filled or resolved prior fields. Do "
+                    "not ask for any other field.",
+                )
         return doc, tools, visible, skills_section, detour_directive
 
     async def _reground_parent_lock(
@@ -1503,6 +1574,57 @@ class OrchestratorInteractAction(
             }
         )
 
+    def _non_task_lock_parent_to_resume(
+        self, store: Any, skill_docs: List[Any]
+    ) -> Optional[Any]:
+        """The top runnable NON-turn-lock skill whose task still carries a seed —
+        a gated capability skill (e.g. payment) whose prerequisite just completed.
+
+        The task-lock resolver ignores non-turn-lock skills, so a gated capability
+        skill would otherwise never resume after its account/session detour. The
+        seed (``seed_from: [utterance]``, the original request) is the discriminator:
+        only a gated parent carries one. Returns the SkillDoc or ``None``.
+        """
+        if store is None:
+            return None
+        from jvagent.action.orchestrator.task_runners import runnable_task_types
+        from jvagent.memory.task_graph import pick_top_runnable
+
+        top = pick_top_runnable(store, task_types=runnable_task_types())
+        if top is None:
+            return None
+        owner = getattr(top, "owner_action", None)
+        doc = next((d for d in skill_docs if getattr(d, "name", None) == owner), None)
+        if doc is None or getattr(doc, "task_lock", False):
+            return None
+        if not (getattr(top, "seed", None) or {}).get("utterance"):
+            return None
+        return doc
+
+    async def _apply_unlocked_skill_surface(
+        self,
+        doc: Any,
+        loop_actions: List[Any],
+        visitor: Any,
+        tools: Dict[str, Any],
+        visible: Set[str],
+        activated: List[str],
+    ) -> Tuple[Dict[str, Any], Set[str], str]:
+        """Re-add a non-turn-lock skill's tools (pruned during a detour) and return
+        its PROCEDURE section — without seizing the turn-lock. Used to resume a gated
+        capability skill after its prerequisite completes."""
+        from jvagent.action.orchestrator.skill_tasks import (
+            activated_skill_section_text,
+            ensure_skill_tools_materialized,
+        )
+
+        await ensure_skill_tools_materialized(
+            doc, loop_actions, visitor, tools, visible
+        )
+        if doc.name not in activated:
+            activated.append(doc.name)
+        return tools, visible, activated_skill_section_text(doc)
+
     async def _maybe_resume_after_completion(
         self,
         obs: str,
@@ -1537,43 +1659,61 @@ class OrchestratorInteractAction(
             return None
         # A skill completed → its task is closed and its session cleared. Re-resolve
         # the top runnable task-lock skill.
-        parent = await self._find_active_task_lock_skill_doc(
-            visitor, skill_docs, loop_actions
-        )
-        if parent is None:
-            return None
-        if getattr(parent, "name", None) == getattr(completed_doc, "name", None):
-            return None  # same skill still owns the lock — not a resume
         from jvagent.action.orchestrator.skill_tasks import (
             _active_skill_task,
             action_for_skill,
             task_store_for_conversation,
         )
 
+        store = task_store_for_conversation(getattr(visitor, "conversation", None))
+        parent = await self._find_active_task_lock_skill_doc(
+            visitor, skill_docs, loop_actions
+        )
+        non_locked_parent = False
+        if parent is None:
+            # A gated NON-turn-lock capability skill (e.g. a payment skill) is not
+            # returned by the task-lock resolver, so without this its account/session
+            # detour would complete and silently drop the user's original request.
+            # Resolve it from the top runnable task that still carries a seed (the
+            # gated request) and resume it on the normal unlocked surface.
+            parent = self._non_task_lock_parent_to_resume(store, skill_docs)
+            if parent is None:
+                return None
+            non_locked_parent = True
+        if getattr(parent, "name", None) == getattr(completed_doc, "name", None):
+            return None  # same skill still owns the lock — not a resume
+
         # The gated task carries the original request as its seed (seed_from:
         # [utterance]); a pushed prerequisite has none. That presence is the clean
         # discriminator between "resume the gated service with its original request"
         # and "enter a fresh prerequisite".
-        store = task_store_for_conversation(getattr(visitor, "conversation", None))
         ptask = _active_skill_task(store, parent.name) if store else None
         seed_utterance = str(
             (getattr(ptask, "seed", None) or {}).get("utterance") or ""
         )
-        # Re-apply the parent's locked surface. When resuming the gated service, run
-        # its activation against the *original* request so its first fields extract
-        # from it (extraction is model-owned, so this is fed as the activation input,
-        # not auto-filled) instead of re-asking for what the user already provided.
-        tools, visible, skills_section = await self._apply_active_task_lock_skill(
-            parent,
-            loop_actions,
-            visitor,
-            seed_utterance or utterance,
-            tools,
-            visible,
-            activated,
-            observations,
-            skill_docs=skill_docs,
-        )
+        # Re-apply the parent's surface. When resuming the gated service, run its
+        # activation against the *original* request so its first fields extract from
+        # it (extraction is model-owned, so this is fed as the activation input, not
+        # auto-filled) instead of re-asking for what the user already provided. A
+        # non-turn-lock parent has no interview session to rebuild: re-materialize
+        # its tools (pruned during the detour) and surface its PROCEDURE without
+        # seizing the turn-lock; the model resumes it from the seed below.
+        if non_locked_parent:
+            tools, visible, skills_section = await self._apply_unlocked_skill_surface(
+                parent, loop_actions, visitor, tools, visible, activated
+            )
+        else:
+            tools, visible, skills_section = await self._apply_active_task_lock_skill(
+                parent,
+                loop_actions,
+                visitor,
+                seed_utterance or utterance,
+                tools,
+                visible,
+                activated,
+                observations,
+                skill_docs=skill_docs,
+            )
         _, rd = self._result_next(obs)
         ack = self._directive_user_text(rd)
 
@@ -1615,7 +1755,10 @@ class OrchestratorInteractAction(
 
         if auto_resolves:
             resumed_directive = self._last_activation_directive(observations)
-            if resumed_directive:
+            # A tool-chain instruction ("Call <tool>().") is model-facing, not
+            # user copy — never deliver it terminally. Fall through to the entry
+            # path, which executes chains server-side and yields the real prompt.
+            if resumed_directive and not _is_tool_chain_directive(resumed_directive):
                 question = self._directive_user_text(resumed_directive)
                 terminal = "Tell the user or ask the user: " + (
                     f"{ack} {question}".strip()
