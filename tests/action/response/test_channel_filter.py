@@ -182,6 +182,34 @@ class TestResponseBusFilterIntegration:
         assert bus._channel_filters[0] is filter
 
     @pytest.mark.asyncio
+    async def test_register_channel_filter_replaces_equivalent_duplicate(self):
+        """Re-registering an equivalent filter (same class/channels/priority)
+        replaces the previous instance instead of stacking a duplicate.
+
+        Regression test: an action's on_register() can run more than once
+        for the same logical filter over an agent's lifetime (e.g. whenever
+        the action-list cache rebuilds), which previously caused filters to
+        accumulate without bound for the life of the process.
+        """
+        bus = ResponseBus()
+
+        first = WhatsAppFilter(channels=["whatsapp"], priority=100)
+        second = WhatsAppFilter(channels=["whatsapp"], priority=100)
+
+        await bus.register_channel_filter(first)
+        await bus.register_channel_filter(second)
+
+        assert len(bus._channel_filters) == 1
+        assert bus._channel_filters[0] is second
+
+        # Re-registering many times must never grow the list past one entry.
+        for _ in range(50):
+            await bus.register_channel_filter(
+                WhatsAppFilter(channels=["whatsapp"], priority=100)
+            )
+        assert len(bus._channel_filters) == 1
+
+    @pytest.mark.asyncio
     async def test_register_multiple_filters_priority_order(self):
         """Test that multiple filters are sorted by priority."""
         bus = ResponseBus()
