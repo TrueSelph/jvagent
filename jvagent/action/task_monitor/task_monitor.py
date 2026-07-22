@@ -29,6 +29,10 @@ except ImportError:
 logger = logging.getLogger(__name__)
 SCHEDULE_TASK_ID = "system_task_monitor"
 
+# Once-per-process latch for the tick's App.initialize_actions() call — see the
+# comment at the call site in TaskMonitor.tick().
+_TICK_ACTIONS_INITIALIZED = False
+
 _scheduler_service_refs: Dict[int, Any] = {}
 
 
@@ -456,7 +460,21 @@ class TaskMonitor(Action):
                         )
 
             if scoped_convs:
-                await app.initialize_actions()
+                # Once per process: App.initialize_actions() fans out to EVERY
+                # action's on_startup(), whose side effects are not idempotent
+                # (fresh channel-filter instances, WhatsApp session registration,
+                # interview spec re-discovery, scheduler re-registration).
+                # Re-running it on every tick with eligible conversations churned
+                # all of that every 2 minutes for the life of the process — and,
+                # before register_channel_filter deduped, leaked +2 duplicate
+                # filters per tick without bound. The server boot path already
+                # initializes actions (core/startup.py); this latch keeps the
+                # tick's re-init to exactly one pass for late-boot/serverless
+                # processes where the boot path did not run.
+                global _TICK_ACTIONS_INITIALIZED
+                if not _TICK_ACTIONS_INITIALIZED:
+                    await app.initialize_actions()
+                    _TICK_ACTIONS_INITIALIZED = True
                 await asyncio.gather(
                     *(_dispatch_conversation(conv.id) for conv in scoped_convs),
                     return_exceptions=True,

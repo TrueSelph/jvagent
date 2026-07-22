@@ -1053,10 +1053,13 @@ class ResponseBus:
         but re-registering an equivalent filter (same class, same channels,
         same priority) replaces the previous instance instead of stacking a
         duplicate — mirroring register_channel_adapter's dedup-by-channel
-        behavior above. Actions' on_register() can run more than once for
-        the same logical filter over an agent's lifetime (e.g. whenever the
-        action-list cache is rebuilt), and without this a new filter object
-        piles up on every rebuild instead of replacing the old one — an
+        behavior above. Actions' on_startup() can run more than once for the
+        same logical filter over a process's lifetime — TaskMonitor.tick()
+        calls App.initialize_actions() (which fans out to every action's
+        on_startup) whenever it has eligible conversations, and actions like
+        WhatsAppAction construct FRESH filter instances on each on_startup
+        call, so their per-instance _initialized guard cannot help. Without
+        this dedup a new filter object piled up on every such pass — an
         unbounded leak of duplicate filters for the life of the process,
         each one re-running its transform on every single outgoing message.
 
