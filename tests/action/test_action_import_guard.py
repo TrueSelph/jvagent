@@ -41,6 +41,7 @@ _ALLOWED_SIBLING_EDGES = frozenset(
         ("email_action", "microsoft"),
         ("google", "email_action"),
         ("leadgen", "mcp"),
+        ("mcp_oauth", "mcp"),
         ("microsoft", "email_action"),
         ("pageindex", "google"),
     }
