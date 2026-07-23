@@ -2,7 +2,7 @@
 
 LLM-driven interview framework for structured data collection. The orchestrator LLM reads the composed interview procedure (`SkillDoc.body` = standard tool loop + per-skill custom rules) and calls granular tools to conduct interviews. `InterviewAction` manages session state, validation, hook orchestration, and tool registration — it does not drive the conversation itself.
 
-**Custom interview skills** are two-file packages under `agents/<ns>/<agent>/skills/<name>/` ([ADR-0023 placement standard](../../.planning/adr/0023-skill-placement-standard.md)). Copy [`examples/example_interview/`](examples/example_interview/) as a template, set `extends: action:jvagent/interview`, `requires-actions: [InterviewAction]`, and `task-lock: true` for turn-lock.
+**Custom interview skills** are two-file packages under `agents/<ns>/<agent>/skills/<name>/` ([ADR-0023 placement standard](../../../.planning/adr/0023-skill-placement-standard.md)). Copy [`examples/example_interview/`](examples/example_interview/) as a template, set `extends: action:jvagent/interview`, `requires-actions: [InterviewAction]`, and `task-lock: true` for turn-lock.
 
 **Agent entry point:** [CLAUDE.md](CLAUDE.md)
 
@@ -57,7 +57,7 @@ Declare the machine contract under `interview:` in `SKILL.md` frontmatter (not a
 4. **Implement functions** in `scripts/custom_tools.py` for every `function:` name referenced in frontmatter `interview:` (builtin validators like `phone` and `email` need no custom function).
 5. **Validate the contract** — `jvagent skill validate agents/<ns>/<agent>/skills/<your_skill_name>/SKILL.md` checks that frontmatter `function:` refs resolve in `custom_tools.py`.
 6. **Write custom instructions** in `SKILL.md` body — when to use, session overrides, and behavioral rules. Add `extends: action:jvagent/interview`; do not copy the base procedure into the body.
-7. **Register the skill** in [`agent.yaml`](../../../agent.yaml) orchestrator `skills:` list.
+7. **Register the skill** in the agent's `agent.yaml` orchestrator `skills:` list.
 8. **Declare allowed tools** in `SKILL.md` frontmatter — list every `interview__*` tool plus any `{skill}__{tool}` custom tools.
 9. **(Optional)** Set `confirm: auto` when review should chain to `interview__complete` without asking the user — see [docs/frontmatter-schema.md](docs/frontmatter-schema.md#confirm-mode).
 10. **(Optional)** Add to `auto_start_skills_on_new_user` in `agent.yaml` if the skill should activate automatically for new users.
@@ -504,4 +504,4 @@ Existing tests under `tests/action/interview/`:
 
 ## License
 
-See the application-level [LICENSE](../../../../../../../../jvagent/LICENSE).
+See the application-level [LICENSE](../../../LICENSE).

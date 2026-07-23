@@ -227,7 +227,7 @@ falls back to a sibling env var when its primary key is unset:
 - `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE` — when `false`, skip Meta webhook override on action reload (default subscribe on reload)
 - `WHATSAPP_META_WAMID_DEDUP_TTL_SECONDS` — in-process wamid dedup TTL for meta webhooks (default `86400`)
 - `WHATSAPP_META_WAMID_DEDUP_MAX` — max wamid dedup cache entries (default `10000`)
-- **Voice calls (jvvoice)**: subscribe Meta webhook field `calls`; enable Calling API. Requires `jvagent/whatsapp_voice_action` with `JVVOICE_BASE_URL` + `JVVOICE_API_KEY`, plus a deployed **jvvoice** service. See [`.planning/runbooks/whatsapp-voice-calls.md`](../.planning/runbooks/whatsapp-voice-calls.md).
+- **Voice calls (jvvoice)**: subscribe Meta webhook field `calls`; enable Calling API. Requires `jvagent/whatsapp_voice_action` with `JVVOICE_BASE_URL` + `JVVOICE_API_KEY`, plus a deployed **jvvoice** service. See `jvagent/action/whatsapp/README.md` (voice / calling notes).
 
 ### jvvoice delegation (WhatsApp voice calls)
 - `JVVOICE_BASE_URL` — **jvagent**: public URL of jvvoice connector API (`POST /api/calls/accept`)

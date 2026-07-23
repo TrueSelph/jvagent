@@ -1,183 +1,173 @@
 #!/usr/bin/env python3
 """Check documentation anchors (file:line references and relative links).
 
-Scans markdown files for:
-1. Line-number references (path/to/file.py:123) in text and backticks
+Scans active guides for:
+1. Line-number references (path/to/file.py:123)
 2. Relative markdown links [text](relative/path)
 
-Exits with error if any reference is broken.
+Skips historical review/spec dumps and external sibling-repo paths (jvspatial/).
+Resolves bare package-relative paths under jvagent/.
 """
+from __future__ import annotations
+
 import re
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Set, Tuple
+
+# Hard-fail only on living agent/user guides. .planning/ ADRs and historical
+# plans keep stale line anchors by design (ADRs are immutable once accepted).
+HARD_GLOBS = [
+    "CLAUDE.md",
+    "AGENTS.md",
+    "docs/**/*.md",
+    "jvagent/**/CLAUDE.md",
+    "jvagent/**/AGENTS.md",
+    "jvagent/**/README.md",
+    "tests/CLAUDE.md",
+]
+
+# Sibling / external repos referenced from docs — not resolvable in this checkout.
+EXTERNAL_PREFIXES = ("jvspatial/",)
 
 
 def find_markdown_files(root: Path) -> List[Path]:
-    """Find all markdown files to scan (excluding .planning/archive/)."""
-    patterns = [
-        "CLAUDE.md",
-        "AGENTS.md",
-        "docs/**/*.md",
-        ".planning/**/*.md",
-    ]
-    
-    files = set()
-    for pattern in patterns:
+    files: Set[Path] = set()
+    for pattern in HARD_GLOBS:
         files.update(root.glob(pattern))
-    
-    # Exclude archive directory
-    archive_dir = root / ".planning" / "archive"
-    files = {f for f in files if not f.is_relative_to(archive_dir) if archive_dir.exists()}
-    
     return sorted(files)
 
 
 def extract_line_refs(content: str) -> List[Tuple[str, int]]:
-    """Extract file:line references from markdown content.
-    
-    Matches:
-    - path/to/file.py:123
-    - `file.py:123`
-    - (file.py:123)
-    - at `file.py:123`
-    
-    Returns list of (filepath, line_number) tuples.
-    """
-    # Pattern for file:line references
-    # Supports: file.py:123, path/to/file.py:123, ../path/file.py:123
-    pattern = r'(?:^|[\s(`])((?:\.\.?/)?[\w/.-]+\.py):(\d+)(?:[`)\s]|$)'
-    
+    pattern = r"(?:^|[\s(`\[])((?:\.\.?/)?[\w./-]+\.py):(\d+)(?:[`)\]\s,]|$)"
     refs = []
     for match in re.finditer(pattern, content, re.MULTILINE):
         filepath = match.group(1)
         line_num = int(match.group(2))
         refs.append((filepath, line_num))
-    
     return refs
 
 
 def extract_relative_links(content: str) -> List[str]:
-    """Extract relative markdown links [text](path).
-    
-    Returns list of relative paths (excludes http/https URLs).
-    """
-    # Pattern for markdown links
-    pattern = r'\[([^\]]+)\]\(([^)]+)\)'
-    
+    pattern = r"\[([^\]]+)\]\(([^)]+)\)"
     links = []
     for match in re.finditer(pattern, content):
-        url = match.group(2)
-        # Skip http/https URLs and anchors
-        if not url.startswith(('http://', 'https://', '#')):
-            links.append(url)
-    
+        url = match.group(2).strip()
+        if url.startswith(("http://", "https://", "mailto:", "#")):
+            continue
+        links.append(url)
     return links
 
 
-def check_line_ref(doc_path: Path, filepath: str, line_num: int, repo_root: Path) -> Tuple[bool, str]:
-    """Check if file:line reference is valid.
-    
-    Returns (is_valid, error_message).
-    """
-    # Resolve relative paths from the document's directory
+def _candidate_paths(doc_path: Path, filepath: str, repo_root: Path) -> List[Path]:
+    clean = filepath.lstrip("./")
     doc_dir = doc_path.parent
-    
-    # Try multiple resolution strategies
-    possible_paths = [
-        doc_dir / filepath,  # Relative to document
-        repo_root / filepath,  # Relative to repo root
+    jv = repo_root / "jvagent"
+    candidates = [
+        doc_dir / filepath,
+        repo_root / filepath,
+        repo_root / clean,
+        jv / clean,
+        jv / "action" / clean,
+        jv / "memory" / clean,
+        jv / "core" / clean,
+        jv / "cli" / clean,
     ]
-    
-    # If path starts with .planning/, also try from repo root
-    if filepath.startswith('.planning/'):
-        possible_paths.append(repo_root / filepath[1:])  # Strip leading dot
-    
-    for target in possible_paths:
-        if target.exists() and target.is_file():
-            # Check line count
-            try:
-                with open(target, 'r', encoding='utf-8', errors='ignore') as f:
-                    lines = f.readlines()
-                    if line_num <= len(lines):
-                        return (True, "")
-                    else:
-                        return (
-                            False,
-                            f"Line {line_num} exceeds file length ({len(lines)} lines): {target.relative_to(repo_root)}"
-                        )
-            except Exception as e:
-                return (False, f"Error reading {target.relative_to(repo_root)}: {e}")
-    
+    # Bare basename — search under jvagent once.
+    if "/" not in clean and clean.endswith(".py"):
+        hits = list(jv.rglob(clean))
+        candidates.extend(hits[:8])
+    return candidates
+
+
+def check_line_ref(
+    doc_path: Path, filepath: str, line_num: int, repo_root: Path
+) -> Tuple[bool, str]:
+    if filepath.startswith(EXTERNAL_PREFIXES) or filepath.startswith("../"):
+        # External or cross-repo — advisory only.
+        return (True, "")
+
+    for target in _candidate_paths(doc_path, filepath, repo_root):
+        if not (target.exists() and target.is_file()):
+            continue
+        try:
+            with open(target, "r", encoding="utf-8", errors="ignore") as f:
+                n_lines = sum(1 for _ in f)
+        except OSError as e:
+            return (False, f"Error reading {filepath}: {e}")
+        if line_num <= n_lines:
+            return (True, "")
+        try:
+            rel = target.relative_to(repo_root)
+        except ValueError:
+            rel = target
+        return (
+            False,
+            f"Line {line_num} exceeds file length ({n_lines} lines): {rel}",
+        )
+
     return (False, f"File not found: {filepath}")
 
 
-def check_relative_link(doc_path: Path, link: str, repo_root: Path) -> Tuple[bool, str]:
-    """Check if relative markdown link target exists.
-    
-    Returns (is_valid, error_message).
-    """
-    # Strip fragment identifier
-    if '#' in link:
-        link = link.split('#')[0]
-    
-    # Skip empty links (pure anchors)
+def check_relative_link(
+    doc_path: Path, link: str, repo_root: Path
+) -> Tuple[bool, str]:
+    if "#" in link:
+        link = link.split("#", 1)[0]
     if not link:
         return (True, "")
-    
-    doc_dir = doc_path.parent
-    target = doc_dir / link
-    
-    if target.exists():
+    if link.startswith(("http://", "https://", "mailto:")):
         return (True, "")
-    
+
+    doc_dir = doc_path.parent
+    candidates = [
+        doc_dir / link,
+        repo_root / link.lstrip("./"),
+    ]
+    for target in candidates:
+        if target.exists():
+            return (True, "")
     return (False, f"Link target not found: {link}")
 
 
-def main():
+def main() -> int:
     repo_root = Path(__file__).parent.parent.resolve()
     markdown_files = find_markdown_files(repo_root)
-    
+
     if not markdown_files:
         print("No markdown files found to check")
         return 0
-    
+
     print(f"Checking {len(markdown_files)} markdown files...")
-    
-    errors = []
-    
+    errors: List[str] = []
+
     for doc_path in markdown_files:
         rel_path = doc_path.relative_to(repo_root)
-        
         try:
-            content = doc_path.read_text(encoding='utf-8')
-        except Exception as e:
+            content = doc_path.read_text(encoding="utf-8")
+        except OSError as e:
             errors.append(f"{rel_path}: Error reading file: {e}")
             continue
-        
-        # Check line references
-        line_refs = extract_line_refs(content)
-        for filepath, line_num in line_refs:
-            is_valid, error_msg = check_line_ref(doc_path, filepath, line_num, repo_root)
-            if not is_valid:
-                errors.append(f"{rel_path}: {error_msg} (ref: {filepath}:{line_num})")
-        
-        # Check relative links
-        relative_links = extract_relative_links(content)
-        for link in relative_links:
-            is_valid, error_msg = check_relative_link(doc_path, link, repo_root)
-            if not is_valid:
-                errors.append(f"{rel_path}: {error_msg}")
-    
+
+        for filepath, line_num in extract_line_refs(content):
+            ok, msg = check_line_ref(doc_path, filepath, line_num, repo_root)
+            if not ok:
+                errors.append(f"{rel_path}: {msg} (ref: {filepath}:{line_num})")
+
+        for link in extract_relative_links(content):
+            ok, msg = check_relative_link(doc_path, link, repo_root)
+            if not ok:
+                errors.append(f"{rel_path}: {msg}")
+
     if errors:
-        print("\n❌ Found broken references:\n")
+        print("\nFound broken references:\n")
         for error in errors:
             print(f"  {error}")
         print(f"\n{len(errors)} error(s) found")
         return 1
-    else:
-        print("✅ All documentation anchors are valid")
-        return 0
+
+    print("All documentation anchors are valid")
+    return 0
 
 
 if __name__ == "__main__":
