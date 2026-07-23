@@ -50,9 +50,9 @@ async def task_tick_endpoint(
         }
     )
     if not monitor:
-        return {
-            "error": f"TaskMonitor action not found or enabled for agent {agent_id}"
-        }
+        raise ResourceNotFoundError(
+            f"TaskMonitor action not found or enabled for agent {agent_id}"
+        )
 
     result = await monitor.tick(dry_run=dry_run, conversation_id=conversation_id)
 

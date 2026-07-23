@@ -517,6 +517,10 @@ class MCPAction(Action):
         selected_names = allowed_names - denied_names
         return [names_to_tool[name] for name in names_to_tool if name in selected_names]
 
+    async def clear_session(self, server_name: str) -> None:
+        """Public: drop cached MCP client/tools for ``server_name``."""
+        await self._clear_session(server_name)
+
     async def _clear_session(self, server_name: str) -> None:
         entry = self._servers_by_name.get(server_name)
         if not entry:

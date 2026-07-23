@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute
 
 
-class MCPOAuthToken(Node):
-    """Stores the OAuth credentials (access/refresh tokens) for an MCP account.
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
-    This ensures that in serverless or ephemeral environments (e.g., AWS Lambda),
-    the OAuth tokens persist across invocations, and the wrapper script can
-    pull them and write them to the local filesystem before booting the MCP server.
+
+class MCPOAuthToken(Node):
+    """Stores encrypted OAuth credentials for an MCP account.
+
+    Ensures serverless / ephemeral environments can persist refresh tokens
+    across invocations. ``token_json`` is ciphertext (see oauth.token_crypto);
+    never log its contents.
     """
 
     server_name: str = attribute(
@@ -26,26 +30,26 @@ class MCPOAuthToken(Node):
     account_name: str = attribute(
         indexed=True,
         default="default",
-        description="Account identifier used within the MCP server config (e.g., integral).",
+        description="Account identifier used within the MCP server config.",
     )
 
     token_json: str = attribute(
         default="",
-        description="Serialized JSON containing access_token, refresh_token, client_id, etc.",
+        description="Encrypted JSON of refresh_token / client_id (no client_secret).",
     )
 
     created: datetime = attribute(
-        default_factory=datetime.utcnow,
+        default_factory=_utc_now,
         description="UTC timestamp when the credentials were first saved.",
     )
 
     updated: datetime = attribute(
-        default_factory=datetime.utcnow,
+        default_factory=_utc_now,
         description="UTC timestamp when the credentials were last refreshed or updated.",
     )
 
     def to_api_dict(self) -> Dict[str, Any]:
-        """Return a JSON-serializable dict for REST responses."""
+        """Return a JSON-serializable dict for REST responses (no secrets)."""
         return {
             "id": getattr(self, "id", None),
             "server_name": self.server_name,

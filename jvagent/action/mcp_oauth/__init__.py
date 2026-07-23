@@ -1,4 +1,4 @@
-"""MCP OAuth Action Package for integral-client-ai."""
+"""MCP OAuth Action Package."""
 
 from . import endpoints  # noqa: F401 - registers endpoints
 from .mcp_oauth_action import MCPOAuthAction

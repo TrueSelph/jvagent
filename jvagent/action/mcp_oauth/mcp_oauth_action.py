@@ -5,12 +5,18 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, ClassVar, Dict, List, Optional
 
+from jvspatial.core.annotations import attribute
 from jvspatial.core.context import GraphContext
 from jvspatial.db import get_database_manager
 
 from jvagent.action.base import Action
+from jvagent.action.oauth.token_crypto import (
+    decrypt_token_from_storage,
+    encrypt_token_for_storage,
+)
+from jvagent.core.public_url import get_public_base_url
 
 from .mcp_oauth_node import MCPOAuthToken
 
@@ -24,17 +30,40 @@ async def _get_ctx() -> GraphContext:
     return GraphContext(db)
 
 
-from jvspatial.core.annotations import attribute
+def _serialize_token_payload(token_data: Dict[str, Any]) -> str:
+    """Encrypt token JSON for at-rest storage.
 
-from jvagent.core.public_url import get_public_base_url
+    Never persist ``client_secret`` — callers resolve it from
+    ``GOOGLE_CLIENT_SECRETS_JSON`` at use time.
+    """
+    safe = {k: v for k, v in token_data.items() if k != "client_secret"}
+    return encrypt_token_for_storage(json.dumps(safe))
+
+
+def _deserialize_token_payload(stored: str) -> Optional[Dict[str, Any]]:
+    """Decrypt or accept legacy plaintext JSON token blobs."""
+    if not stored:
+        return None
+    plain = decrypt_token_from_storage(stored)
+    if not plain:
+        # decrypt returns empty on hard failure; try legacy plaintext JSON
+        try:
+            parsed = json.loads(stored)
+            if isinstance(parsed, dict):
+                return parsed
+        except (json.JSONDecodeError, TypeError):
+            return None
+        return None
+    try:
+        parsed = json.loads(plain)
+        return parsed if isinstance(parsed, dict) else None
+    except (json.JSONDecodeError, TypeError) as exc:
+        logger.error("Failed to parse stored token_json: %s", exc)
+        return None
 
 
 class MCPOAuthAction(Action):
-    """Action that coordinates saving, loading, and refreshing OAuth tokens for MCP servers.
-
-    This operates alongside jvagent/mcp to provide browser-based OAuth authorization
-    mechanisms for stdio subprocess servers (like google-workspace-mcp).
-    """
+    """Coordinates browser OAuth for stdio MCP servers (e.g. google-workspace-mcp)."""
 
     redirect_uri: str = attribute(
         default="",
@@ -45,18 +74,14 @@ class MCPOAuthAction(Action):
         description="The link to visit in your browser to authorize your Google Workspace accounts.",
     )
 
-    # Endpoints prefix to tell FastAPI to mount these routes
-    mcp_oauth_endpoint_path_prefixes: List[str] = [
-        "/api/mcp/{server_name}/auth",
-        "/api/mcp/{server_name}/auth/callback",
-    ]
+    # Extra routes live under /mcp/... (not /actions/{id}/); declare for deregister.
+    additional_endpoint_path_prefixes: ClassVar[List[str]] = ["/mcp/"]
 
     async def _apply_env_defaults(self) -> None:
         base = get_public_base_url()
         if base:
             base_clean = base.rstrip("/")
 
-            # Discover all configured MCP server names
             try:
                 ctx = await _get_ctx()
                 from jvagent.action.mcp.mcp_action import MCPAction
@@ -77,7 +102,6 @@ class MCPOAuthAction(Action):
             auth_urls = []
             redirect_uris = []
             for name in server_names:
-                # Only offer OAuth endpoints for actual configured servers
                 auth_urls.append(
                     f"{name}: {base_clean}/api/mcp/{name}/auth?account=integral"
                 )
@@ -104,11 +128,11 @@ class MCPOAuthAction(Action):
         account_name: str,
         token_data: Dict[str, Any],
     ) -> None:
-        """Create or update a token node in the graph database."""
+        """Create or update an encrypted token node in the graph database."""
         ctx = await _get_ctx()
         now = datetime.now(timezone.utc)
+        encrypted = _serialize_token_payload(token_data)
 
-        # Search for existing token node
         filters = {
             "context.server_name": server_name,
             "context.account_name": account_name,
@@ -117,7 +141,7 @@ class MCPOAuthAction(Action):
 
         if nodes:
             node = nodes[0]
-            node.token_json = json.dumps(token_data)
+            node.token_json = encrypted
             node.updated = now
             logger.info(
                 "Updating existing MCPOAuthToken for %s/%s", server_name, account_name
@@ -126,7 +150,7 @@ class MCPOAuthAction(Action):
             node = MCPOAuthToken(
                 server_name=server_name,
                 account_name=account_name,
-                token_json=json.dumps(token_data),
+                token_json=encrypted,
                 created=now,
                 updated=now,
             )
@@ -137,7 +161,6 @@ class MCPOAuthAction(Action):
 
         await node.save()
 
-        # Connect the token to the App node to keep graph structure valid
         from jvagent.core.app import App
 
         app = await App.get()
@@ -149,7 +172,7 @@ class MCPOAuthAction(Action):
         server_name: str,
         account_name: str,
     ) -> Optional[Dict[str, Any]]:
-        """Fetch the token data dictionary for a server/account pairing from the database."""
+        """Fetch decrypted token data for a server/account pairing."""
         ctx = await _get_ctx()
 
         filters = {
@@ -164,8 +187,4 @@ class MCPOAuthAction(Action):
         if not node.token_json:
             return None
 
-        try:
-            return json.loads(node.token_json)
-        except Exception as exc:
-            logger.error("Failed to parse stored token_json: %s", exc)
-            return None
+        return _deserialize_token_payload(node.token_json)

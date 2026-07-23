@@ -377,11 +377,11 @@ async def mcp_oauth_callback(server_name: str, code: str, state: str) -> HTMLRes
             return _oauth_error_html(f"Token exchange failed: {response.text}", 400)
         tokens = response.json()
 
-    # Package token details matching what google-workspace-mcp expects in tokens/{account}.json
+    # Package token details for google-workspace-mcp; client_secret is NOT
+    # persisted — resolved from GOOGLE_CLIENT_SECRETS_JSON at use time.
     payload = {
         "type": "authorized_user",
         "client_id": creds["client_id"],
-        "client_secret": creds["client_secret"],
         "refresh_token": tokens.get("refresh_token"),
     }
 
@@ -413,8 +413,7 @@ async def mcp_oauth_callback(server_name: str, code: str, state: str) -> HTMLRes
         nodes = await ctx.find_nodes(MCPAction, {})
         mcp = nodes[0] if nodes else None
         if mcp:
-            # Disconnect standard session so it spawns a fresh client with the new token next call
-            await mcp._clear_session(server_name)
+            await mcp.clear_session(server_name)
             logger.info("Cleared session for MCP server: %s", server_name)
     except Exception as exc:
         logger.warning("Failed to refresh MCP client session: %s", exc)
