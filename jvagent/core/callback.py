@@ -112,11 +112,6 @@ async def _resolve_and_validate(webhook_url: str) -> Tuple[str, List[str]]:
     return hostname, safe
 
 
-async def _validate_webhook_url(webhook_url: str) -> None:
-    """Validate that *webhook_url* resolves to a non-private IP."""
-    await _resolve_and_validate(webhook_url)
-
-
 async def _post_webhook_pinned_async(
     webhook_url: str, payload: Dict[str, Any], *, timeout: float = 10.0
 ) -> httpx.Response:
@@ -188,8 +183,6 @@ async def trigger_task_created_callback(
         # Check action config (more specific)
         dispatch_url = None
         try:
-            pass
-
             scheduler = await agent.get_action_by_type("TaskCreationInteractAction")
             if scheduler:
                 if (

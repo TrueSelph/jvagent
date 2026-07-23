@@ -80,7 +80,7 @@ When `stream=True` but content is published as a single whole message (e.g. non-
 - No chunk-size settings; boundaries are determined by the tokenizer.
 - If tiktoken is unavailable, falls back to character-by-character so no-space strings still stream.
 
-See `chunking.py` for `chunk_text_by_words()` and `chunk_text_by_chars()` for other use cases.
+See `chunking.py` for `chunk_text_by_lm_tokens()` for ResponseBus simulated streaming.
 
 ## Architecture
 

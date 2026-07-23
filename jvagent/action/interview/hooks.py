@@ -144,18 +144,6 @@ def append_hint(directive: str, hint: str) -> str:
     return f"{directive}\n{hint}"
 
 
-def with_hint(prompt: str, hint: str = "") -> str:
-    """Legacy helper: weave a field ``hint`` into USER-FACING prompt text.
-
-    Prefer :func:`field_prompt_directive`, which keeps the prompt user-facing and
-    attaches a non-empty ``hint`` into the guidance block after the marker. Field
-    hints also remain on ``field_reference`` / ``next_field`` for clarifications.
-    """
-    if not hint:
-        return prompt
-    return f"{prompt}\n\n{hint}"
-
-
 def field_prompt_directive(prompt: str, hint: str = "") -> str:
     """Frame a field's question; attach ``hint`` into the guidance block when set.
 

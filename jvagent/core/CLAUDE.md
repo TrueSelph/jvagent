@@ -42,7 +42,7 @@ It does **not** own: per-user state (that's `memory/`), action plugins (that's `
 | `cache.py` | Per-agent action-type index; `cache_manager` for `Agent.get()` |
 | `bootstrap_logger.py` | Startup logging context manager |
 | `bootstrap_update_mode.py` | `--update` / `--merge` / `--source` handling |
-| `graph_repair*.py` + `repair_phases/` | Reconciliation jobs (stale node cleanup, orphan repair) |
+| `graph_repair*.py` | Reconciliation jobs (stale node cleanup, orphan repair) |
 | `graph_repair_job.py` | Top-level repair orchestration |
 | `endpoints/` | Core HTTP routes (`agents.py`, `app.py`, `conversation.py`, `status.py`, `graph_repair.py`) |
 | `app_context.py` | `set_app_root()` / `get_app_root()` — used by CLI on startup |
@@ -77,7 +77,7 @@ It does **not** own: per-user state (that's `memory/`), action plugins (that's `
 |---|---|
 | A new App-level config key | `config.py` (`ConfigKey`, `ConfigSchema` pattern) |
 | A new App field | Match the `attribute(...)` style from `app.py`. Add to `app_yaml_validator.py`. |
-| A graph repair phase | `repair_phases/` — phases are isolated and registered via `repair_state.py`. |
+| A graph repair phase | `graph_repair_job.py` — phase tick functions are called from `run_repair_session`. |
 | A core HTTP route | `endpoints/`. Use `@endpoint("/api/...")` with `auth=True, roles=["admin"]` unless public. |
 | A bootstrap hook | `cli/bootstrap.py` is the orchestrator; add intermediate steps in `core/startup.py`. |
 | Programmatic proactive send (agent → user, no inbound) | Call `await agent.send_proactive_message(user_id=..., content=..., channel=...)`. See [`docs/proactive-messages.md`](../../docs/proactive-messages.md). Do NOT publish to `ResponseBus` directly from outside the walker pipeline — use this method so the bound Interaction is created and the response is recorded. |

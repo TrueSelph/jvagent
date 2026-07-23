@@ -101,16 +101,3 @@ def validate_parameters_schema(
     issues: List[Tuple[str, str]] = []
     _walk(schema, "$", issues)
     return issues
-
-
-def assert_parameters_schema_clean(tool_name: str, schema: Dict[str, Any]) -> None:
-    """Raise ``ValueError`` if the schema has portability issues.
-
-    Includes the ``tool_name`` in the error message so the offending tool
-    is obvious in tracebacks.
-    """
-    issues = validate_parameters_schema(schema)
-    if not issues:
-        return
-    detail = "; ".join(f"{p}: {m}" for p, m in issues)
-    raise ValueError(f"Tool {tool_name!r} has invalid parameters_schema: {detail}")

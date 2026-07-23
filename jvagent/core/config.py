@@ -41,11 +41,6 @@ def get_environment_mode() -> EnvironmentMode:
     return "development"
 
 
-def is_development_mode() -> bool:
-    """Check if running in development mode."""
-    return get_environment_mode() == "development"
-
-
 def is_production_mode() -> bool:
     """Check if running in production mode."""
     return get_environment_mode() == "production"
