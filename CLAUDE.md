@@ -125,6 +125,10 @@ pre-commit run --all-files           # full lint pass
 black jvagent/
 isort jvagent/ --profile black
 flake8 jvagent/ --config=.flake8
+# Bare `mypy jvagent/` reads [tool.mypy] in pyproject.toml (aligned with the
+# pre-commit mypy hook: strict_optional off, check_untyped_defs off,
+# ignore_missing_imports, follow_imports=silent). That is the enforced gate —
+# not full strict typing.
 mypy jvagent/
 ```
 
@@ -156,7 +160,10 @@ pytest tests/                  # or the affected slice(s) at minimum
 - Applies on every branch, including hotfix/docs/chore branches.
 
 ### When editing source
-- **Type-annotate everything.** Pydantic and jvspatial both rely on it.
+- **Type-annotate new and touched code.** Prefer annotations for readability and
+  IDE support; the enforced mypy gate matches pre-commit / `pyproject.toml`
+  (`strict_optional = false`, `check_untyped_defs = false`) — it does **not**
+  require full strict typing across the tree.
 - **Use `attribute(...)` for all persisted Node fields.** Plain class attributes are not persisted.
 - **Add a test slice** in `tests/action/{name}/` or `tests/{subsystem}/` for any new behavior.
 - **Run the commit gate above** (`pre-commit run --all-files` + `pytest`) before every commit and before claiming a change is done.
