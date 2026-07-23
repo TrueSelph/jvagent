@@ -49,7 +49,7 @@ jvagent is a modular AI agent platform built on jvspatial's graph primitives. Th
 | Issue | Severity | Fix | File(s) |
 |-------|----------|-----|---------|
 | LaTeX injection | Medium | Added `_safe_hex_color()` validator (hex regex), added `-no-shell-escape` to all LaTeX invocations | `skills/pdf_generation/scripts/latex_compiler.py` |
-| Webhook URL SSRF | Medium | Added `_validate_webhook_url()` with DNS resolution + `ipaddress` check blocking private/reserved IP ranges | `core/callback.py` |
+| Webhook URL SSRF | Medium | Added `_resolve_and_validate()` with DNS resolution + `ipaddress` check blocking private/reserved IP ranges, used by `_post_webhook_pinned_async()` | `core/callback.py` |
 | Rate limiter races | Medium | Replaced uninitialized `_lock` with `asyncio.Lock()`; made `check_rate_limit` / `record_request` async; updated callers | `action/interact/rate_limiter.py`, `action/interact/endpoints.py` |
 | Production-unsafe defaults | Low | Added `is_production_mode()` checks warning on: debug mode, empty admin password, runtime pip install in production | `cli/server_config.py` |
 | Frontend credential storage | Medium (partial) | Added persistent amber warning banner about plaintext storage; strengthened export notice; added preemptive warning for new users | `jvchat/src/components/Login.tsx` |
@@ -281,14 +281,11 @@ The `trigger_task_created_callback` and `_trigger_task_event_callback` functions
 
 **Original Finding (Low → addressed as Medium):** The webhook URL was used directly in `httpx.AsyncClient().post(webhook_url, ...)` without validating that it pointed to an expected destination. An attacker who could modify the agent configuration could set this to an arbitrary URL, causing SSRF against internal services.
 
-**Remediation:** Added `_validate_webhook_url()` function that:
+**Remediation:** Added `_resolve_and_validate()` function that:
 1. Parses the URL and resolves the hostname via `socket.getaddrinfo()` (dual-stack: `AF_UNSPEC`)
-2. Checks every resolved IP address against a static blocklist of private/reserved ranges:
-   - `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` (RFC 1918)
-   - `169.254.0.0/16` (link-local)
-   - `::1/128`, `fc00::/7`, `fe80::/10` (IPv6 loopback/ULA/link-local)
-3. Raises `ValueError` (caught by existing `except Exception` handler) if the target resolves to any blocked range
-4. Called immediately before `httpx.AsyncClient().post()` in both `_fire()` closures
+2. Checks every resolved IP address using `ipaddress` classifiers against private/reserved ranges (RFC 1918, link-local, loopback, multicast, etc.)
+3. Returns validated IPs that are pinned in `_post_webhook_pinned_async()` to defend against DNS rebinding TOCTOU
+4. All webhook calls use `_post_webhook_pinned_async()` which resolves once, validates, then connects to the validated IP with the original Host header (and SNI for HTTPS)
 
 Added imports: `ipaddress`, `socket`.
 

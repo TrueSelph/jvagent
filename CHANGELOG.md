@@ -29,6 +29,16 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   orchestrator.yaml profile name, examples/jvagent_app references orchestrator/leadgen
   agents, tests/CLAUDE.md layout, MCP README fileinterface pointer. Consolidated
   boolean-env parsers into `env_resolver.parse_bool_env`.
+- **Dead code and scaffolding removal (Wave 4).** Reverted `repair_phases/` parallel
+  M1 scaffolding — moved `RepairLimits`, `STATE_VERSION`, phase constants, and memory
+  repair functions inline into `graph_repair_job.py`; removed `_repair_checkpoint`
+  alias. Collapsed callback duplication — removed dead `try: pass` block and 
+  `_validate_webhook_url` wrapper. Deleted unused symbols: `get_conversation_history`,
+  `get_event_history`, `get_interpretation_history`, `get_context_history` (use
+  `get_interaction_history` with flags); `ToolSerializer`; `SkillActivationEnvelope`;
+  `chunk_text_by_words`, `chunk_text_by_chars` (keep `chunk_text_by_lm_tokens`);
+  `with_hint` from interview hooks; `is_development_mode`; `assert_parameters_schema_clean`.
+  Updated memory/README.md and docs/security-review.md to point to current functions.
 
 ### Changed
 

@@ -56,7 +56,7 @@ branch node under the `Conversation`; each `Artifact` is also connected from the
 
 - **Context**: Use `conversation.context` for reads and `conversation.update_context(updates)` for persisted writes.
 - **Interactions**: `add_interaction()`, `create_interaction()`, `get_interactions()`, `get_first_interaction()`, `get_last_interaction()`
-- **History**: `get_interaction_history()`, `get_conversation_history()`, `get_event_history()`, `get_interpretation_history()`, `get_context_history()`
+- **History**: `get_interaction_history()` (with flags: `with_utterance`, `with_response`, `with_interpretation`, `with_event`)
 - **Tasks (read)**: `get_tasks()`, `get_task()`, `get_active_tasks_for_context()`. All task writes go through `TaskStore` (see `docs/task-tracking.md`).
 
 ### Interaction

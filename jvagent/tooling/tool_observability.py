@@ -33,18 +33,3 @@ class ToolExecutionEnvelope:
             msg = str(exc).lower()
             _perm = ("permission denied", "not found", "invalid api key", "unsupported")
             self.recoverable = not any(m in msg for m in _perm)
-
-
-@dataclass
-class SkillActivationEnvelope:
-    skill_name: str
-    activated_at_iteration: int = 0
-    activated_at_ts: float = 0.0
-    closed_at_ts: float = 0.0
-    duration_ms: int = 0
-    tool_count: int = 0
-    tool_success_rate: Optional[float] = None
-    total_tool_latency_ms: int = 0
-    was_completed: bool = False
-    termination_reason: str = "abandoned"
-    preflight_warnings: int = 0
