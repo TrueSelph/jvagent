@@ -600,6 +600,159 @@ async def _chain_hint(
     return call_tool_directive(next_tool), next_tool
 
 
+async def _compose_success_response(
+    action: Any,
+    session: InterviewSession,
+    spec: InterviewSpec,
+    load_fn: Any,
+    visitor: Any,
+    payload: Dict[str, Any],
+    post_outcome: Dict[str, Any],
+    note_queue: List[str],
+    stored_for_each_child: bool,
+    system_queue: List[Dict[str, Any]],
+) -> None:
+    """Compose response payload for successful set_fields (no failures).
+    
+    Mutates payload dict in-place to add:
+    - response_directive
+    - next_field_key (if applicable)
+    - for_each metadata
+    - next_tool (if chaining)
+    - system_message
+    """
+    next_field = await build_next_field(session, spec, load_fn, visitor, action)
+    next_tool = post_outcome.get(
+        "next_tool",
+        "interview__next_field" if next_field else "interview__review",
+    )
+    notes_text = " ".join(n for n in note_queue if n).strip()
+    inline_question = bool(next_field) and (notes_text or stored_for_each_child)
+    
+    if inline_question:
+        # Inlining the next question bypasses interview__next_field, so carry
+        # what that tool would have provided: the canonical key (next_field_key
+        # below) and, for optional fields, the skip path.
+        assert next_field is not None  # narrowed by inline_question
+        next_fdef = resolve_field_def(session, spec, next_field["key"])
+        next_hint = (next_fdef.hint or "").strip() if next_fdef is not None else ""
+        prompt = str(next_field.get("prompt") or "")
+        if notes_text:
+            directive = append_hint(
+                user_followup_directive(notes_text, prompt),
+                next_hint,
+            )
+        else:
+            directive = field_prompt_directive(prompt, next_hint)
+        payload["response_directive"] = directive
+    else:
+        # No further questions — chain straight to review/complete with a
+        # single, unambiguous tool call. A "Tell the user … then call" reply
+        # is unreliable here: models tend to deliver the note and stop,
+        # skipping the chained review (notably alongside a competing reply
+        # directive such as a first-turn intro). Any pending note is carried
+        # as system_message below so it survives without blocking the chain.
+        payload["response_directive"] = call_tool_directive(next_tool)
+    
+    if next_field:
+        payload["next_field_key"] = next_field["key"]
+    
+    # Build for_each metadata
+    fe_meta = None
+    fe_store = get_for_each_store(session)
+    for parent_key in fe_store:
+        meta = build_for_each_metadata(session, spec, parent_key)
+        if meta:
+            fe_meta = meta
+            break
+    if fe_meta:
+        payload["for_each"] = fe_meta
+    elif stored_for_each_child:
+        for parent_key in fe_store:
+            state = fe_store[parent_key]
+            if isinstance(state, dict) and state.get("status") == STATUS_COMPLETE:
+                payload["for_each"] = {
+                    "parent": parent_key,
+                    "index": len(state.get("items") or []),
+                    "total": len(state.get("items") or []),
+                    "label": "",
+                    "complete": True,
+                }
+                break
+    
+    if not inline_question:
+        # next_tool signals a CHAIN: the model MUST call it before finalizing.
+        # The inline-question branch above is a terminal reply (the question is
+        # already in the directive), so it carries no next_tool — the directive
+        # is delivered and the turn ends, preserving the note.
+        payload["next_tool"] = next_tool
+    
+    system_message = compose_system_message(
+        system_queue,
+        fallback=str(post_outcome.get("system_message") or "").strip(),
+    )
+    if notes_text and not next_field:
+        # The note had no follow-up question to attach to; surface it as
+        # context so the model can relay it when it presents the review.
+        system_message = (
+            f"{notes_text} {system_message}".strip()
+            if system_message
+            else notes_text
+        )
+    
+    fe_payload = payload.get("for_each")
+    active_fe = get_active_for_each(session, spec)
+    example_child_keys = (
+        list(active_fe.state.get("child_keys") or []) if active_fe else None
+    )
+    if fe_payload and not fe_payload.get("complete"):
+        remaining = fe_payload.get("total", 0) - fe_payload.get("index", 0)
+        if remaining > 0:
+            child_key = next_field["key"] if next_field else ""
+            nudge = (
+                "for_each_staged: extract data for the remaining "
+                + str(remaining)
+                + " item(s) now if the user mentioned them — save whatever "
+                + "they gave for those items immediately even if the current "
+                + "item is still incomplete. Keys are 1-based indices "
+                + "(current="
+                + str(fe_payload.get("index"))
+                + ", total="
+                + str(fe_payload.get("total"))
+                + "). "
+            )
+            if child_key:
+                full_ex, partial_ex, _ = _for_each_staged_example_snippets(
+                    current_field_key=child_key,
+                    child_keys=example_child_keys,
+                )
+                nudge += (
+                    f"Example (full): {full_ex}. "
+                    f"Example (partial OK): {partial_ex}"
+                )
+            else:
+                nudge += (
+                    "Use 1-based indices matching for_each.index; partial "
+                    "maps per item are OK."
+                )
+            system_message = (
+                f"{system_message} {nudge}".strip() if system_message else nudge
+            )
+    elif fe_payload and fe_payload.get("complete"):
+        _, _, review_ex = _for_each_staged_example_snippets(
+            child_keys=example_child_keys,
+        )
+        nudge = (
+            "for_each_staged can update individual items during review. "
+            "Use 1-based indices, e.g. " + review_ex
+        )
+        system_message = (
+            f"{system_message} {nudge}".strip() if system_message else nudge
+        )
+    if system_message:
+        payload["system_message"] = system_message
+
+
 async def handle_set_fields(
     action: Any,
     fields: Optional[Dict[str, str]] = None,
@@ -1103,129 +1256,18 @@ async def handle_set_fields(
         # the per-field directives queued mid-batch (a later field in the same call
         # may have filled the field an earlier processor pointed at). Processor
         # notes are preserved and paired with that authoritative next step.
-        next_field = await build_next_field(session, spec, load_fn, visitor, action)
-        next_tool = post_outcome.get(
-            "next_tool",
-            "interview__next_field" if next_field else "interview__review",
-        )
-        notes_text = " ".join(n for n in note_queue if n).strip()
-        inline_question = bool(next_field) and (notes_text or stored_for_each_child)
-        if inline_question:
-            # Inlining the next question bypasses interview__next_field, so carry
-            # what that tool would have provided: the canonical key (next_field_key
-            # below) and, for optional fields, the skip path.
-            assert next_field is not None  # narrowed by inline_question
-            next_fdef = resolve_field_def(session, spec, next_field["key"])
-            next_hint = (next_fdef.hint or "").strip() if next_fdef is not None else ""
-            prompt = str(next_field.get("prompt") or "")
-            if notes_text:
-                directive = append_hint(
-                    user_followup_directive(notes_text, prompt),
-                    next_hint,
-                )
-            else:
-                directive = field_prompt_directive(prompt, next_hint)
-            payload["response_directive"] = directive
-        else:
-            # No further questions — chain straight to review/complete with a
-            # single, unambiguous tool call. A "Tell the user … then call" reply
-            # is unreliable here: models tend to deliver the note and stop,
-            # skipping the chained review (notably alongside a competing reply
-            # directive such as a first-turn intro). Any pending note is carried
-            # as system_message below so it survives without blocking the chain.
-            payload["response_directive"] = call_tool_directive(next_tool)
-        if next_field:
-            payload["next_field_key"] = next_field["key"]
-        fe_meta = None
-        fe_store = get_for_each_store(session)
-        for parent_key in fe_store:
-            meta = build_for_each_metadata(session, spec, parent_key)
-            if meta:
-                fe_meta = meta
-                break
-        if fe_meta:
-            payload["for_each"] = fe_meta
-        elif stored_for_each_child:
-            for parent_key in fe_store:
-                state = fe_store[parent_key]
-                if isinstance(state, dict) and state.get("status") == STATUS_COMPLETE:
-                    payload["for_each"] = {
-                        "parent": parent_key,
-                        "index": len(state.get("items") or []),
-                        "total": len(state.get("items") or []),
-                        "label": "",
-                        "complete": True,
-                    }
-                    break
-        if not inline_question:
-            # next_tool signals a CHAIN: the model MUST call it before finalizing.
-            # The inline-question branch above is a terminal reply (the question is
-            # already in the directive), so it carries no next_tool — the directive
-            # is delivered and the turn ends, preserving the note.
-            payload["next_tool"] = next_tool
-        system_message = compose_system_message(
+        await _compose_success_response(
+            action,
+            session,
+            spec,
+            load_fn,
+            visitor,
+            payload,
+            post_outcome,
+            note_queue,
+            stored_for_each_child,
             system_queue,
-            fallback=str(post_outcome.get("system_message") or "").strip(),
         )
-        if notes_text and not next_field:
-            # The note had no follow-up question to attach to; surface it as
-            # context so the model can relay it when it presents the review.
-            system_message = (
-                f"{notes_text} {system_message}".strip()
-                if system_message
-                else notes_text
-            )
-        fe_payload = payload.get("for_each")
-        active_fe = get_active_for_each(session, spec)
-        example_child_keys = (
-            list(active_fe.state.get("child_keys") or []) if active_fe else None
-        )
-        if fe_payload and not fe_payload.get("complete"):
-            remaining = fe_payload.get("total", 0) - fe_payload.get("index", 0)
-            if remaining > 0:
-                child_key = next_field["key"] if next_field else ""
-                nudge = (
-                    "for_each_staged: extract data for the remaining "
-                    + str(remaining)
-                    + " item(s) now if the user mentioned them — save whatever "
-                    + "they gave for those items immediately even if the current "
-                    + "item is still incomplete. Keys are 1-based indices "
-                    + "(current="
-                    + str(fe_payload.get("index"))
-                    + ", total="
-                    + str(fe_payload.get("total"))
-                    + "). "
-                )
-                if child_key:
-                    full_ex, partial_ex, _ = _for_each_staged_example_snippets(
-                        current_field_key=child_key,
-                        child_keys=example_child_keys,
-                    )
-                    nudge += (
-                        f"Example (full): {full_ex}. "
-                        f"Example (partial OK): {partial_ex}"
-                    )
-                else:
-                    nudge += (
-                        "Use 1-based indices matching for_each.index; partial "
-                        "maps per item are OK."
-                    )
-                system_message = (
-                    f"{system_message} {nudge}".strip() if system_message else nudge
-                )
-        elif fe_payload and fe_payload.get("complete"):
-            _, _, review_ex = _for_each_staged_example_snippets(
-                child_keys=example_child_keys,
-            )
-            nudge = (
-                "for_each_staged can update individual items during review. "
-                "Use 1-based indices, e.g. " + review_ex
-            )
-            system_message = (
-                f"{system_message} {nudge}".strip() if system_message else nudge
-            )
-        if system_message:
-            payload["system_message"] = system_message
 
     ok = payload.pop("ok")
     status = payload.pop("status")

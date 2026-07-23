@@ -26,6 +26,17 @@ ADR-0015 documented the initial configuration surface. As Wave 6 monolith splits
 - Propose a consolidated, well-documented configuration schema
 - Update or supersede ADR-0015 with the findings
 
+### Top Candidates for Audit
+
+Based on ADR-0015 and recent refactoring:
+- **`ack_transient_reasoning`** (bool) — Controls whether intermediate reasoning steps are acknowledged. May be redundant with streaming knobs.
+- **`enable_transient_reasoning`** (bool) — Toggles reasoning artifact generation. Consider merging with gearing controls.
+- Timeout cluster: `light_timeout_seconds`, `heavy_timeout_seconds`, `planning_timeout_seconds` — overlaps with model-gearing attributes.
+- Model gearing: `light_model_action_type`, `heavy_model_action_type` — ADR-0016 introduced these; confirm no redundancy with base model selection.
+- Skill activation surface: `skills`, `skill_config`, `enable_skill_*` flags — may benefit from nested schema.
+
+Audit should prioritize knobs with unclear boundaries or overlapping concerns.
+
 ## Consequences
 
 - Wave 6 extractions proceed without awaiting the audit
